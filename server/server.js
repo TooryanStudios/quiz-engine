@@ -411,6 +411,31 @@ function normalizeQuestionsPayload(data, quizSlug) {
 }
 
 async function getQuizData(quizSlug) {
+  // 1. Try Firestore first if a slug is given
+  if (quizSlug) {
+    try {
+      const db = getDbSafe();
+      if (db) {
+        const snap = await db.collection('quizzes')
+          .where('slug', '==', quizSlug)
+          .limit(1)
+          .get();
+        if (!snap.empty) {
+          const data = snap.docs[0].data();
+          if (Array.isArray(data.questions) && data.questions.length > 0) {
+            console.log(`[Quiz] Loaded "${data.title}" (${data.questions.length} Qs) from Firestore`);
+            return data.questions;
+          }
+        } else {
+          console.warn(`[Quiz] Slug "${quizSlug}" not found in Firestore.`);
+        }
+      }
+    } catch (err) {
+      console.warn('[Quiz] Firestore fetch failed:', err.message);
+    }
+  }
+
+  // 2. Fall back to HTTP QUIZ_DATA_URL
   try {
     const url = new URL(QUIZ_DATA_URL);
     if (quizSlug) url.searchParams.set('slug', quizSlug);
@@ -431,8 +456,10 @@ async function getQuizData(quizSlug) {
 
 async function refreshQuestions(quizSlug) {
   const remote = await getQuizData(quizSlug);
-  if (remote) QUESTIONS = remote;
-  else QUESTIONS = DEFAULT_QUESTIONS;
+  const questions = remote || DEFAULT_QUESTIONS;
+  // Also keep global QUESTIONS in sync for legacy callers
+  QUESTIONS = questions;
+  return questions;
 }
 
 // Prefetch on startup (best-effort)
@@ -529,7 +556,7 @@ function calculatePartialScore(timeTakenSec, fraction, streak, duration) {
 
 /** Broadcast the current question to all sockets in a room. */
 function sendQuestion(room) {
-  const q = QUESTIONS[room.questionIndex];
+  const q = room.questions[room.questionIndex];
   const duration = q.duration || config.GAME.QUESTION_DURATION_SEC;
   room.currentQuestionMeta = null;
 
@@ -557,7 +584,7 @@ function sendQuestion(room) {
 
   io.to(room.pin).emit('game:question', {
     questionIndex: room.questionIndex,
-    total: QUESTIONS.length,
+    total: room.questions.length,
     question: questionPayload,
     duration,
   });
@@ -582,7 +609,7 @@ function endQuestion(room) {
 
   room.state = 'leaderboard';
 
-  const q        = QUESTIONS[room.questionIndex];
+  const q        = room.questions[room.questionIndex];
   const duration = room.questionDuration || config.GAME.QUESTION_DURATION_SEC;
 
   // ── Compute per-player round scores ──────────────────────────────────
@@ -676,7 +703,7 @@ function endQuestion(room) {
   // ── Advance to leaderboard / next question ────────────────────────────
   setTimeout(() => {
     const leaderboard     = roundScores;
-    const isLastQuestion  = room.questionIndex >= QUESTIONS.length - 1;
+    const isLastQuestion  = room.questionIndex >= room.questions.length - 1;
 
     if (isLastQuestion) {
       room.state = 'finished';
@@ -708,6 +735,7 @@ io.on('connection', (socket) => {
       state: 'lobby',
       mode: activeMode,
       quizSlug: quizSlug || null,
+      questions: DEFAULT_QUESTIONS,
       questionIndex: 0,
       questionTimer: null,
       questionStartTime: 0,
@@ -809,11 +837,11 @@ io.on('connection', (socket) => {
     console.log(`[Room ${room.pin}] Game started by host ${socket.id}`);
 
     // Always refresh quiz data from the cloud before starting
-    await refreshQuestions(room.quizSlug);
+    room.questions = await refreshQuestions(room.quizSlug);
 
     // Broadcast game start to everyone in the room
     io.to(room.pin).emit('game:start', {
-      totalQuestions: QUESTIONS.length,
+      totalQuestions: room.questions.length,
     });
 
     // Small delay before first question (let clients animate into game view)
