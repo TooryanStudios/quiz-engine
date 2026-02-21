@@ -25,6 +25,7 @@ VITE_FIREBASE_APP_ID=
 VITE_STRIPE_PUBLISHABLE_KEY=
 VITE_STRIPE_TEST_PRICE_ID=
 VITE_API_BASE_URL=https://quizengine.onrender.com
+VITE_PAYMENTS_MODE=mock
 ```
 
 ## Firestore data model
@@ -56,6 +57,15 @@ VITE_API_BASE_URL=https://quizengine.onrender.com
 - Frontend: `POST /api/stripe/create-checkout-session`
 - Backend verifies webhook: `POST /api/stripe/webhook`
 - Webhook updates Firestore entitlements (`entitlements/{uid}`)
+
+## PoC mock payments
+
+For proof-of-concept without real money:
+
+- Set `VITE_PAYMENTS_MODE=mock` in admin app env
+- Set `PAYMENTS_MODE=mock` in quiz-engine backend env
+
+Billing page will use **Simulate Purchase** and grant entitlement directly.
 
 ## Shareable quiz links
 

@@ -48,11 +48,22 @@ Copy `.env.example` and fill:
 
 ```env
 QUIZ_DATA_URL=https://quizengine.onrender.com/api/quiz-data
+PAYMENTS_MODE=mock
 STRIPE_SECRET_KEY=sk_test_...
 STRIPE_WEBHOOK_SECRET=whsec_...
 FIREBASE_PROJECT_ID=your-project-id
 FIREBASE_SERVICE_ACCOUNT_JSON={...single-line-json...}
 ```
+
+### PoC payment mode (no real money)
+
+Set `PAYMENTS_MODE=mock` to bypass real Stripe charges.
+
+- Admin app calls mock purchase endpoint and grants entitlements directly.
+- Backend endpoint: `POST /api/payments/mock-purchase`.
+- `GET /health` shows current `paymentsMode`.
+
+When you are ready for real payments, switch to `PAYMENTS_MODE=stripe` and set Stripe secrets.
 
 ## Development
 

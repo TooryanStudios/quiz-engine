@@ -12,6 +12,7 @@ const { admin, getFirestore } = require('./firebaseAdmin');
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
 const stripe = stripeSecretKey ? require('stripe')(stripeSecretKey) : null;
 const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+const paymentsMode = process.env.PAYMENTS_MODE || 'mock';
 
 let firestore = null;
 function getDbSafe() {
@@ -22,6 +23,37 @@ function getDbSafe() {
     firestore = null;
   }
   return firestore;
+}
+
+async function grantPackEntitlement(userId, packId, plan = 'subscription') {
+  const db = getDbSafe();
+  if (!db || !userId || !packId) return false;
+
+  await db.collection('entitlements').doc(userId).set(
+    {
+      activePackIds: admin.firestore.FieldValue.arrayUnion(packId),
+      plan,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  return true;
+}
+
+async function revokePackEntitlement(userId, packId) {
+  const db = getDbSafe();
+  if (!db || !userId || !packId) return false;
+
+  await db.collection('entitlements').doc(userId).set(
+    {
+      activePackIds: admin.firestore.FieldValue.arrayRemove(packId),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  return true;
 }
 
 // Recorded once at process startup — shown on the home screen
@@ -44,7 +76,10 @@ const httpServer = http.createServer(app);
 app.use(express.static(path.join(__dirname, '../public')));
 
 // Health check endpoint (used by Render.com)
-app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+app.get('/health', (_req, res) => {
+  const firestoreReady = Boolean(getDbSafe());
+  res.json({ status: 'ok', paymentsMode, firestoreReady });
+});
 
 // Build info endpoint — returns server start time for the home screen version badge
 app.get('/api/build-info', (_req, res) => res.json({ buildTime: BUILD_TIME }));
@@ -69,39 +104,20 @@ app.post('/api/stripe/webhook', async (req, res) => {
   }
 
   try {
-    const db = getDbSafe();
-
-    if (event.type === 'checkout.session.completed' && db) {
+    if (event.type === 'checkout.session.completed') {
       const session = event.data.object;
       const userId = session.metadata?.uid;
       const packId = session.metadata?.packId;
 
-      if (userId && packId) {
-        await db.collection('entitlements').doc(userId).set(
-          {
-            activePackIds: admin.firestore.FieldValue.arrayUnion(packId),
-            plan: 'subscription',
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          },
-          { merge: true }
-        );
-      }
+      await grantPackEntitlement(userId, packId, 'subscription');
     }
 
-    if (event.type === 'customer.subscription.deleted' && db) {
+    if (event.type === 'customer.subscription.deleted') {
       const subscription = event.data.object;
       const userId = subscription.metadata?.uid;
       const packId = subscription.metadata?.packId;
 
-      if (userId && packId) {
-        await db.collection('entitlements').doc(userId).set(
-          {
-            activePackIds: admin.firestore.FieldValue.arrayRemove(packId),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          },
-          { merge: true }
-        );
-      }
+      await revokePackEntitlement(userId, packId);
     }
 
     return res.json({ received: true });
@@ -112,8 +128,58 @@ app.post('/api/stripe/webhook', async (req, res) => {
 
 app.use(express.json());
 
+// Mock purchase endpoint for PoC mode (no real charge)
+app.post('/api/payments/mock-purchase', async (req, res) => {
+  try {
+    const { uid, packId } = req.body || {};
+    if (!uid || !packId) {
+      return res.status(400).json({ message: 'uid and packId are required' });
+    }
+
+    const granted = await grantPackEntitlement(uid, packId, 'mock');
+    if (!granted) {
+      return res.status(503).json({
+        message: 'Firestore is not ready. Create Firestore Database and configure Firebase Admin env vars first.',
+      });
+    }
+
+    return res.json({
+      success: true,
+      mode: 'mock',
+      message: 'Mock purchase completed. Access granted.',
+      uid,
+      packId,
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Mock purchase failed' });
+  }
+});
+
 // Stripe checkout session (subscription)
 app.post('/api/stripe/create-checkout-session', async (req, res) => {
+  if (paymentsMode === 'mock') {
+    try {
+      const { uid, packId } = req.body || {};
+      if (uid && packId) {
+        const granted = await grantPackEntitlement(uid, packId, 'mock');
+        if (!granted) {
+          return res.status(503).json({
+            message: 'Firestore is not ready. Create Firestore Database and configure Firebase Admin env vars first.',
+          });
+        }
+      }
+
+      return res.json({
+        mode: 'mock',
+        simulated: true,
+        url: `https://${config.DOMAIN}/billing/success?mode=mock`,
+        message: 'Mock mode enabled. No real payment was processed.',
+      });
+    } catch (err) {
+      return res.status(500).json({ message: err.message || 'Mock checkout failed' });
+    }
+  }
+
   if (!stripe) {
     return res.status(501).json({
       message: 'Stripe is not configured. Set STRIPE_SECRET_KEY.',
