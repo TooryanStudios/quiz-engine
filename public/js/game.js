@@ -9,18 +9,6 @@ fetch('/api/build-info')
   })
   .catch(() => {});
 
-// Auto-fill PIN from URL query param (when player scans QR code)
-// NOTE: script is at bottom of <body> so DOM is already ready — no DOMContentLoaded needed
-(function () {
-  const params = new URLSearchParams(window.location.search);
-  const pinFromUrl = params.get('pin');
-  if (pinFromUrl) {
-    state.role = 'player';
-    document.getElementById('input-pin').value = pinFromUrl;
-    showView('view-player-join');
-  }
-})();
-
 // ─────────────────────────────────────────────
 // Socket.io connection
 // The server serves socket.io client at /socket.io/socket.io.js
@@ -468,3 +456,18 @@ socket.on('room:closed', ({ message }) => {
   document.getElementById('room-closed-msg').textContent = message;
   showView('view-room-closed');
 });
+
+// ─────────────────────────────────────────────
+// QR Auto-fill: runs LAST so state & showView are fully declared
+// If URL has ?pin=XXXXXX (from QR scan), skip home and go straight
+// to the player join view with PIN pre-filled.
+// ─────────────────────────────────────────────
+(function () {
+  const params = new URLSearchParams(window.location.search);
+  const pinFromUrl = params.get('pin');
+  if (pinFromUrl) {
+    state.role = 'player';
+    document.getElementById('input-pin').value = pinFromUrl;
+    showView('view-player-join');
+  }
+})();
