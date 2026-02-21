@@ -173,7 +173,13 @@ export function QuizEditorPage() {
   const [slug, setSlug] = useState('')
   const [visibility, setVisibility] = useState<'public' | 'private'>('public')
   const [questions, setQuestions] = useState<QuizQuestion[]>([starterQuestion])
-  const [status, setStatus] = useState('')
+  type StatusState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'success'; msg: string } | { kind: 'error'; msg: string } | { kind: 'info'; msg: string }
+  const [status, setStatus] = useState<StatusState>({ kind: 'idle' })
+
+  const showStatus = (s: StatusState, autoClear = false) => {
+    setStatus(s)
+    if (autoClear) setTimeout(() => setStatus({ kind: 'idle' }), 3000)
+  }
   const [loading, setLoading] = useState(!!routeId)
 
   // Always use the real logged-in user's UID
@@ -188,13 +194,13 @@ export function QuizEditorPage() {
     }
     getQuizById(routeId)
       .then((data) => {
-        if (!data) { setStatus('Quiz not found.'); return }
+        if (!data) { showStatus({ kind: 'error', msg: 'لم يُعثر على الاختبار.' }); return }
         setTitle(data.title)
         setSlug(data.slug)
         setVisibility(data.visibility)
         setQuestions(data.questions)
       })
-      .catch((err) => setStatus(`Load failed: ${err.message}`))
+      .catch((err) => showStatus({ kind: 'error', msg: `فشل التحميل: ${err.message}` }))
       .finally(() => setLoading(false))
   }, [routeId])
 
@@ -215,7 +221,7 @@ export function QuizEditorPage() {
     setTitle('Animals Pack Quiz')
     setSlug('animals-pack-quiz')
     setQuestions(SAMPLE_QUESTIONS)
-    setStatus('20 sample questions loaded — click Save Quiz to persist.')
+    showStatus({ kind: 'info', msg: 'تم تحميل 20 سؤالاً نموذجياً — اضغط حفظ للتخزين.' })
   }
 
   const removeQuestion = (index: number) => {
@@ -224,7 +230,7 @@ export function QuizEditorPage() {
 
   const saveQuiz = async () => {
     if (!ownerId) {
-      setStatus('Error: not signed in.')
+      showStatus({ kind: 'error', msg: 'خطأ: يجب تسجيل الدخول أولاً.' })
       return
     }
     const payload: QuizDoc = {
@@ -236,17 +242,18 @@ export function QuizEditorPage() {
       questions,
     }
 
+    showStatus({ kind: 'saving' })
     try {
       if (quizId) {
         await updateQuiz(quizId, payload)
-        setStatus(`Updated ✓ (${quizId})`)
+        showStatus({ kind: 'success', msg: 'تم تحديث الاختبار بنجاح ✓' }, true)
       } else {
         const id = await createQuiz(payload)
         setQuizId(id)
-        setStatus(`Saved ✓ (${id})`)
+        showStatus({ kind: 'success', msg: 'تم حفظ الاختبار بنجاح ✓' }, true)
       }
     } catch (error) {
-      setStatus(`Save failed: ${(error as Error).message}`)
+      showStatus({ kind: 'error', msg: `فشل الحفظ: ${(error as Error).message}` })
     }
   }
 
@@ -343,14 +350,38 @@ export function QuizEditorPage() {
 
       <section className="panel">
         <div className="grid grid-2">
-          <button type="button" onClick={addQuestion}>+ Add Question</button>
-          <button type="button" onClick={loadSamples} style={{ background: '#444' }}>Load 20 Samples</button>
+          <button type="button" onClick={addQuestion}>+ إضافة سؤال</button>
+          <button type="button" onClick={loadSamples} style={{ background: '#444' }}>تحميل 20 نموذجاً</button>
         </div>
         <div className="grid grid-2" style={{ marginTop: '0.75rem' }}>
-          <button type="button" onClick={() => navigate('/dashboard')} style={{ background: '#555' }}>Cancel</button>
-          <button type="button" onClick={saveQuiz}>Save Quiz</button>
+          <button type="button" onClick={() => navigate('/dashboard')} style={{ background: '#555' }}>إلغاء</button>
+          <button type="button" onClick={saveQuiz} disabled={status.kind === 'saving'} style={{ opacity: status.kind === 'saving' ? 0.6 : 1 }}>
+            {status.kind === 'saving' ? '⏳ جارٍ الحفظ...' : 'حفظ الاختبار'}
+          </button>
         </div>
-        {status && <p style={{ marginTop: '0.5rem' }}>{status}</p>}
+        {status.kind !== 'idle' && (
+          <p style={{
+            marginTop: '0.75rem',
+            padding: '0.5rem 0.75rem',
+            borderRadius: '6px',
+            fontSize: '0.9em',
+            background:
+              status.kind === 'saving' ? '#1a3a5c' :
+              status.kind === 'success' ? '#1a4a2e' :
+              status.kind === 'error' ? '#4a1a1a' : '#2a2a1a',
+            color:
+              status.kind === 'saving' ? '#7ac' :
+              status.kind === 'success' ? '#6f6' :
+              status.kind === 'error' ? '#f88' : '#fd6',
+            border: `1px solid ${
+              status.kind === 'saving' ? '#2a5a8c' :
+              status.kind === 'success' ? '#2a6a3e' :
+              status.kind === 'error' ? '#6a2a2a' : '#4a4a1a'
+            }`,
+          }}>
+            {status.kind === 'saving' ? '⏳ جارٍ الحفظ...' : status.msg}
+          </p>
+        )}
       </section>
     </>
   )
