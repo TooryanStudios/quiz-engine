@@ -95,6 +95,15 @@ body {
   object-fit: contain;
 }
 
+.home-hero-logo {
+  width: min(340px, 72vw);
+  height: auto;
+  display: block;
+  object-fit: contain;
+  margin-bottom: 18px;
+  filter: drop-shadow(0 8px 22px rgba(0, 0, 0, 0.45));
+}
+
 /* ═══════════════════════════════════════════
    Host Mode Toggle
 ═══════════════════════════════════════════ */
