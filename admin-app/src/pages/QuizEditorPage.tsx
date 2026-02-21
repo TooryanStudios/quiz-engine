@@ -44,9 +44,10 @@ export function QuizEditorPage() {
       .finally(() => setLoading(false))
   }, [routeId])
 
-  if (loading) return <section className="panel"><p>Loading quiz...</p></section>
-
+  // Must be declared before any early returns (Rules of Hooks)
   const shareUrl = useMemo(() => `https://quizengine.onrender.com/?quiz=${encodeURIComponent(slug)}`, [slug])
+
+  if (loading) return <section className="panel"><p>Loading quiz...</p></section>
 
   const updateQuestion = (index: number, patch: Partial<QuizQuestion>) => {
     setQuestions((prev) => prev.map((q, i) => (i === index ? { ...q, ...patch } : q)))
