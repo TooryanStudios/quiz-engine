@@ -10,16 +10,14 @@ fetch('/api/build-info')
   .catch(() => {});
 
 // Auto-fill PIN from URL query param (when player scans QR code)
+// NOTE: script is at bottom of <body> so DOM is already ready — no DOMContentLoaded needed
 (function () {
   const params = new URLSearchParams(window.location.search);
   const pinFromUrl = params.get('pin');
   if (pinFromUrl) {
-    // Switch straight to player join view with PIN pre-filled
     state.role = 'player';
-    window.addEventListener('DOMContentLoaded', () => {
-      document.getElementById('input-pin').value = pinFromUrl;
-      showView('view-player-join');
-    }, { once: true });
+    document.getElementById('input-pin').value = pinFromUrl;
+    showView('view-player-join');
   }
 })();
 
@@ -316,6 +314,15 @@ document.getElementById('form-join').addEventListener('submit', (e) => {
   state.pin = pin;
   state.nickname = nickname;
   socket.emit('player:join', { pin, nickname });
+});
+
+// Host Lobby — Back button (disconnect and return home)
+document.getElementById('btn-back-from-host-lobby').addEventListener('click', () => {
+  socket.disconnect();
+  socket.connect(); // fresh connection for next session
+  state.role = null;
+  state.pin = null;
+  showView('view-home');
 });
 
 // Host Start Game
