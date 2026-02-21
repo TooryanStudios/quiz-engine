@@ -326,19 +326,41 @@ app.get('/api/quiz-data', (_req, res) => res.json({ questions: QUESTIONS }));
 // ─────────────────────────────────────────────
 // Local IP detection + mode state
 // ─────────────────────────────────────────────
-function getLocalIp() {
-  const nets = os.networkInterfaces();
-  for (const name of Object.keys(nets)) {
-    for (const net of nets[name] || []) {
-      if (net.family === 'IPv4' && !net.internal) {
-        return net.address;
-      }
-    }
-  }
-  return null;
+function isPrivateIpv4(ip) {
+  if (!ip || typeof ip !== 'string') return false;
+  if (ip.startsWith('10.')) return true;
+  if (ip.startsWith('192.168.')) return true;
+  const m = ip.match(/^172\.(\d+)\./);
+  if (!m) return false;
+  const octet = Number(m[1]);
+  return octet >= 16 && octet <= 31;
 }
 
-const localIp = getLocalIp();
+function getLocalIps() {
+  const nets = os.networkInterfaces();
+  const all = [];
+
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name] || []) {
+      if (net.family !== 'IPv4' || net.internal) continue;
+      if (!isPrivateIpv4(net.address)) continue;
+      all.push({ name, address: net.address });
+    }
+  }
+
+  const rank = (name) => {
+    const n = String(name).toLowerCase();
+    if (/(wi-?fi|wlan|wireless|ethernet)/.test(n)) return 100;
+    if (/(vethernet|virtual|vmware|hyper-v|docker|tailscale|vpn|loopback)/.test(n)) return 10;
+    return 50;
+  };
+
+  all.sort((a, b) => rank(b.name) - rank(a.name));
+  return all;
+}
+
+const localIpCandidates = getLocalIps();
+const localIp = localIpCandidates[0]?.address || null;
 let activeMode = 'global';
 
 function getJoinBaseUrl(mode) {
@@ -371,8 +393,13 @@ async function buildRoomModePayload(room) {
     joinUrl,
     qrSvg,
     localIp,
+    localIpCandidates,
     localIpAvailable: Boolean(localIp),
-    warning: localIp ? '' : 'No LAN IP detected. Defaulting to Global mode.',
+    warning: localIp
+      ? (localIpCandidates.length > 1
+        ? `Using LAN IP ${localIp}. If scan fails, use PIN manually or switch adapter.`
+        : '')
+      : 'No private LAN IP detected. Defaulting to Global mode.',
   };
 }
 

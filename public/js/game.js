@@ -189,7 +189,7 @@ function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
 // ─────────────────────────────────────────────
 function applyModeInfo(data) {
   if (!data) return;
-  const { mode, joinUrl, qrSvg, localIpAvailable, warning } = data;
+  const { mode, joinUrl, qrSvg, localIp, localIpCandidates, localIpAvailable, warning } = data;
 
   const indicator = document.getElementById('mode-indicator');
   const warnEl    = document.getElementById('mode-warning');
@@ -218,9 +218,56 @@ function applyModeInfo(data) {
     }
   }
 
-  if (urlEl) urlEl.textContent = joinUrl || '—';
+  if (urlEl) {
+    const ips = Array.isArray(localIpCandidates)
+      ? localIpCandidates.map((entry) => entry.address).filter(Boolean)
+      : [];
+    const ipHint = mode === 'local' && ips.length > 1
+      ? `\nDetected IPs: ${ips.join(', ')}`
+      : '';
+    urlEl.textContent = joinUrl
+      ? `${joinUrl}${ipHint}`
+      : (localIp ? `http://${localIp} (pending room)` : '—');
+  }
   if (qrWrap) qrWrap.innerHTML = qrSvg || '';
 }
+
+function setConnectionStatus(kind, message) {
+  let el = document.getElementById('connection-status-chip');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'connection-status-chip';
+    el.style.position = 'fixed';
+    el.style.top = '12px';
+    el.style.left = '12px';
+    el.style.zIndex = '9999';
+    el.style.padding = '6px 10px';
+    el.style.borderRadius = '999px';
+    el.style.fontSize = '12px';
+    el.style.fontWeight = '700';
+    el.style.backdropFilter = 'blur(6px)';
+    el.style.border = '1px solid transparent';
+    document.body.appendChild(el);
+  }
+
+  if (kind === 'ok') {
+    el.style.background = 'rgba(16, 185, 129, 0.18)';
+    el.style.color = '#86efac';
+    el.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+  } else if (kind === 'warn') {
+    el.style.background = 'rgba(245, 158, 11, 0.18)';
+    el.style.color = '#fcd34d';
+    el.style.borderColor = 'rgba(245, 158, 11, 0.4)';
+  } else {
+    el.style.background = 'rgba(239, 68, 68, 0.18)';
+    el.style.color = '#fca5a5';
+    el.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+  }
+
+  el.textContent = message;
+}
+
+setConnectionStatus('warn', 'Connecting to server…');
 
 // ─────────────────────────────────────────────
 // Question Rendering — dispatcher
@@ -846,6 +893,18 @@ socket.on('room:created', ({ pin, ...modeInfo }) => {
 /** HOST: Mode updated (local/global) */
 socket.on('room:mode', (modeInfo) => {
   applyModeInfo(modeInfo);
+});
+
+socket.on('connect', () => {
+  setConnectionStatus('ok', 'Server connected');
+});
+
+socket.on('connect_error', () => {
+  setConnectionStatus('error', 'Cannot reach server. Check LAN / local mode IP.');
+});
+
+socket.on('disconnect', () => {
+  setConnectionStatus('warn', 'Connection lost. Reconnecting…');
 });
 
 /** PLAYER: Successfully joined the room */
