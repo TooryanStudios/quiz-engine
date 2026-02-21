@@ -110,6 +110,12 @@ function showView(viewId) {
   document.querySelectorAll('.view').forEach((v) => {
     v.classList.toggle('active', v.id === viewId);
   });
+
+  const activeView = document.getElementById(viewId);
+  const attribution = document.querySelector('.tooryan-attribution');
+  if (activeView && attribution && attribution.parentElement !== activeView) {
+    activeView.appendChild(attribution);
+  }
 }
 
 // ─────────────────────────────────────────────
