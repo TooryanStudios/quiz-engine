@@ -7,20 +7,6 @@
         { "fieldPath": "ownerId", "order": "ASCENDING" },
         { "fieldPath": "updatedAt", "order": "DESCENDING" }
       ]
-    },
-    {
-      "collectionGroup": "quizzes",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "slug", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "packs",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "slug", "order": "ASCENDING" }
-      ]
     }
   ],
   "fieldOverrides": []
