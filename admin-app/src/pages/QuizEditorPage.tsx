@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useParams } from 'react-router-dom'
 import { auth } from '../lib/firebase'
 import type { QuizDoc, QuizQuestion } from '../types/quiz'
-import { createQuiz, updateQuiz } from '../lib/quizRepo'
+import { createQuiz, getQuizById, updateQuiz } from '../lib/quizRepo'
 
 const starterQuestion: QuizQuestion = {
   type: 'single',
@@ -12,21 +13,38 @@ const starterQuestion: QuizQuestion = {
 }
 
 export function QuizEditorPage() {
-  const [quizId, setQuizId] = useState<string | null>(null)
-  const [title, setTitle] = useState('Animals Pack Quiz 1')
-  const [slug, setSlug] = useState('animals-pack-quiz-1')
+  const { id: routeId } = useParams<{ id: string }>()
+  const [quizId, setQuizId] = useState<string | null>(routeId ?? null)
+  const [title, setTitle] = useState('')
+  const [slug, setSlug] = useState('')
   const [visibility, setVisibility] = useState<'public' | 'private'>('public')
   const [questions, setQuestions] = useState<QuizQuestion[]>([starterQuestion])
   const [status, setStatus] = useState('')
+  const [loading, setLoading] = useState(!!routeId)
 
   // Always use the real logged-in user's UID
   const ownerId = auth.currentUser?.uid ?? ''
 
+  // Load existing quiz when editing
   useEffect(() => {
-    if (!auth.currentUser) {
-      setStatus('Not logged in — please sign in first.')
+    if (!routeId) {
+      setTitle('New Quiz')
+      setSlug('new-quiz')
+      return
     }
-  }, [])
+    getQuizById(routeId)
+      .then((data) => {
+        if (!data) { setStatus('Quiz not found.'); return }
+        setTitle(data.title)
+        setSlug(data.slug)
+        setVisibility(data.visibility)
+        setQuestions(data.questions)
+      })
+      .catch((err) => setStatus(`Load failed: ${err.message}`))
+      .finally(() => setLoading(false))
+  }, [routeId])
+
+  if (loading) return <section className="panel"><p>Loading quiz...</p></section>
 
   const shareUrl = useMemo(() => `https://quizengine.onrender.com/?quiz=${encodeURIComponent(slug)}`, [slug])
 
