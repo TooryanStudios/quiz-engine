@@ -1,5 +1,19 @@
 'use strict';
 
+// Auto-fill PIN from URL query param (when player scans QR code)
+(function () {
+  const params = new URLSearchParams(window.location.search);
+  const pinFromUrl = params.get('pin');
+  if (pinFromUrl) {
+    // Switch straight to player join view with PIN pre-filled
+    state.role = 'player';
+    window.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('input-pin').value = pinFromUrl;
+      showView('view-player-join');
+    }, { once: true });
+  }
+})();
+
 // ─────────────────────────────────────────────
 // Socket.io connection
 // The server serves socket.io client at /socket.io/socket.io.js
@@ -320,6 +334,16 @@ socket.on('room:created', ({ pin }) => {
   document.getElementById('host-pin').textContent = pin;
   document.getElementById('host-player-count').textContent = '0';
   document.getElementById('host-player-list').innerHTML = '';
+
+  // Generate QR code pointing to join URL with PIN pre-filled
+  const joinUrl = `${window.location.origin}/?pin=${pin}`;
+  const canvas = document.getElementById('host-qr-canvas');
+  QRCode.toCanvas(canvas, joinUrl, {
+    width: 180,
+    margin: 2,
+    color: { dark: '#ffffff', light: '#16213e' },
+  });
+
   showView('view-host-lobby');
 });
 

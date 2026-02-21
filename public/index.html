@@ -74,6 +74,14 @@
         <span class="pin-code" id="host-pin">------</span>
         <span class="pin-hint">Share this PIN with players</span>
       </div>
+      <!-- QR Code for players to scan -->
+      <div class="qr-section">
+        <p class="qr-label">Scan to join instantly</p>
+        <div class="qr-wrapper">
+          <canvas id="host-qr-canvas"></canvas>
+        </div>
+      </div>
+
       <div class="player-list-section">
         <h3>Players (<span id="host-player-count">0</span>)</h3>
         <ul class="player-list" id="host-player-list"></ul>
@@ -195,6 +203,8 @@
   </div>
 
   <!-- ─── Scripts ─── -->
+  <!-- QR Code generator (no build step needed) -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
   <!-- Load Socket.io client from the server (auto-served by socket.io) -->
   <script src="/socket.io/socket.io.js"></script>
   <script src="/js/game.js"></script>
