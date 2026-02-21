@@ -8,6 +8,9 @@
 </head>
 <body>
 
+  <!-- Global mute toggle (always visible) -->
+  <button class="btn-mute" id="btn-mute" title="Toggle sound">🔊</button>
+
   <!-- ═══════════════════════════════════════════
        VIEW: Home — Choose Host or Player
   ═══════════════════════════════════════════ -->
@@ -85,11 +88,12 @@
       <div class="player-list-section">
         <h3>Players (<span id="host-player-count">0</span>)</h3>
         <ul class="player-list" id="host-player-list"></ul>
+        <p class="hint-text" id="kick-hint" style="display:none">Tap a player to kick them</p>
       </div>
       <button class="btn btn-success full-width" id="btn-start-game" disabled>
         Start Game
       </button>
-      <p class="hint-text">Waiting for at least 1 player…</p>
+      <p class="hint-text" id="lobby-hint">Waiting for at least 1 player…</p>
     </div>
   </div>
 
@@ -116,13 +120,18 @@
        VIEW: Question — Host sees question + live counter
   ═══════════════════════════════════════════ -->
   <div id="view-host-question" class="view">
-    <div class="question-layout">
+    <div class="question-layout" id="host-question-layout">
       <div class="question-header">
         <span class="q-progress" id="host-q-progress">Q 1 / 8</span>
         <div class="timer-ring" id="host-timer-ring">
           <span class="timer-count" id="host-timer-count">30</span>
         </div>
         <span class="answer-counter" id="host-answer-counter">0 / 0 answered</span>
+      </div>
+      <!-- Host controls -->
+      <div class="host-controls">
+        <button class="btn btn-host-ctrl" id="btn-pause-resume">⏸️ Pause</button>
+        <button class="btn btn-host-ctrl btn-skip" id="btn-skip">⏩ Skip</button>
       </div>
       <div class="question-text-box">
         <p class="question-text" id="host-question-text">Loading question…</p>
@@ -137,12 +146,13 @@
        VIEW: Question — Player sees question + answer buttons
   ═══════════════════════════════════════════ -->
   <div id="view-player-question" class="view">
-    <div class="question-layout">
+    <div class="question-layout" id="player-question-layout">
       <div class="question-header">
         <span class="q-progress" id="player-q-progress">Q 1 / 8</span>
         <div class="timer-ring" id="player-timer-ring">
           <span class="timer-count" id="player-timer-count">30</span>
         </div>
+        <span class="streak-badge" id="player-streak-badge" style="display:none">🔥 <span id="player-streak-count">0</span></span>
       </div>
       <div class="question-text-box">
         <p class="question-text" id="player-question-text">Loading question…</p>
@@ -155,6 +165,17 @@
   </div>
 
   <!-- ═══════════════════════════════════════════
+       OVERLAY: Game Paused
+  ═══════════════════════════════════════════ -->
+  <div id="overlay-paused" class="pause-overlay" style="display:none">
+    <div class="pause-card">
+      <p class="pause-icon">⏸️</p>
+      <h2>Game Paused</h2>
+      <p class="pause-sub">Waiting for the host to resume…</p>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
        VIEW: Question Result (correct answer reveal)
   ═══════════════════════════════════════════ -->
   <div id="view-question-result" class="view">
@@ -162,6 +183,7 @@
       <h2 id="result-correct-label">✅ Correct Answer</h2>
       <p class="result-answer" id="result-correct-answer">—</p>
       <p id="result-player-score-msg" class="result-score-msg"></p>
+      <p id="result-streak-msg" class="result-streak-msg"></p>
     </div>
   </div>
 
@@ -205,6 +227,8 @@
   <!-- ─── Scripts ─── -->
   <!-- QR Code generator — browser-native, exposes window.QRCode -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <!-- Confetti for game over celebration -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
   <!-- Load Socket.io client from the server (auto-served by socket.io) -->
   <script src="/socket.io/socket.io.js"></script>
   <script src="/js/game.js"></script>

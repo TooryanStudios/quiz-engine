@@ -104,13 +104,139 @@ h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-dim); }
   font-size: 1rem;
 }
 
-.build-time {
-  font-size: 0.72rem;
-  color: var(--text-dim);
-  opacity: 0.55;
-  letter-spacing: 0.3px;
-  margin-top: -8px;
+/* ═══════════════════════════════════════════
+   Host Controls (pause, skip)
+═══════════════════════════════════════════ */
+.host-controls {
+  display: flex;
+  gap: 10px;
 }
+
+.btn-host-ctrl {
+  flex: 1;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.9rem;
+  padding: 10px 14px;
+}
+
+.btn-host-ctrl:hover { filter: brightness(1.2); }
+
+.btn-skip { background: #7c3aed; }
+
+/* ═══════════════════════════════════════════
+   Kick Button
+═══════════════════════════════════════════ */
+.player-chip.kickable {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 8px;
+}
+
+.btn-kick {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.75rem;
+  opacity: 0.5;
+  padding: 0;
+  line-height: 1;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+.btn-kick:hover { opacity: 1; transform: scale(1.2); }
+
+/* ═══════════════════════════════════════════
+   Pause Overlay
+═══════════════════════════════════════════ */
+.pause-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  backdrop-filter: blur(6px);
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.pause-card {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+
+.pause-icon { font-size: 3.5rem; }
+
+.pause-sub {
+  color: var(--text-dim);
+  animation: pulse 2s infinite;
+}
+
+/* ═══════════════════════════════════════════
+   Streak Badge
+═══════════════════════════════════════════ */
+.streak-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--opt-amber);
+  color: #000;
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-weight: 800;
+  font-size: 0.85rem;
+  animation: popIn 0.2s ease-out;
+}
+
+.result-streak-msg {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--opt-amber);
+  min-height: 1.4em;
+}
+
+.lb-streak {
+  font-size: 0.75rem;
+  background: var(--opt-amber);
+  color: #000;
+  border-radius: 10px;
+  padding: 1px 7px;
+  font-weight: 800;
+  margin-left: 4px;
+}
+
+/* ═══════════════════════════════════════════
+   Mute Button
+═══════════════════════════════════════════ */
+.btn-mute {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  background: var(--surface);
+  border: 1px solid var(--surface-2);
+  border-radius: 50%;
+  width: 42px;
+  height: 42px;
+  font-size: 1.1rem;
+  cursor: pointer;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.btn-mute:hover { background: var(--surface-2); }
 
 .hint-text {
   color: var(--text-dim);
@@ -302,6 +428,58 @@ input::placeholder { color: var(--text-dim); }
 @keyframes popIn {
   from { transform: scale(0.8); opacity: 0; }
   to   { transform: scale(1);   opacity: 1; }
+}
+
+/* Question slide-in from right */
+@keyframes slideInRight {
+  from { transform: translateX(32px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
+.question-layout.animate-in {
+  animation: slideInRight 0.3s ease-out;
+}
+
+/* Staggered option entrance */
+.stagger-1 { animation: popIn 0.2s ease-out 0.05s both; }
+.stagger-2 { animation: popIn 0.2s ease-out 0.12s both; }
+.stagger-3 { animation: popIn 0.2s ease-out 0.19s both; }
+.stagger-4 { animation: popIn 0.2s ease-out 0.26s both; }
+
+/* Answer reveal — correct bounce */
+@keyframes correctPulse {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.06); box-shadow: 0 0 24px rgba(45, 212, 191, 0.7); }
+  100% { transform: scale(1); }
+}
+
+/* Answer reveal — wrong shake */
+@keyframes wrongShake {
+  0%, 100% { transform: translateX(0); }
+  20%       { transform: translateX(-7px); }
+  60%       { transform: translateX(7px); }
+}
+
+.option-btn.reveal-correct {
+  animation: correctPulse 0.55s ease;
+  outline: 3px solid #fff;
+  filter: brightness(1.15);
+}
+
+.option-btn.reveal-wrong {
+  animation: wrongShake 0.4s ease;
+  opacity: 0.35;
+  filter: grayscale(0.5);
+}
+
+/* Timer urgent pulse */
+@keyframes timerPulse {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.18); }
+}
+
+.timer-ring.timer-urgent {
+  animation: timerPulse 0.45s infinite;
 }
 
 .waiting-text {

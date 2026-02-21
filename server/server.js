@@ -94,13 +94,10 @@ const rooms = new Map();
 /**
  * Room structure:
  * {
- *   pin: string,
- *   hostSocketId: string,
- *   players: Map<socketId, { id, nickname, score, currentAnswerIndex, answerTime }>,
- *   state: 'lobby' | 'question' | 'leaderboard' | 'finished',
- *   questionIndex: number,
- *   questionTimer: Timeout | null,
- *   questionStartTime: number,
+ *   pin, hostSocketId, state, questionIndex, questionTimer, questionStartTime,
+ *   paused, pausedTimeRemaining,
+ *   players: Map<socketId, { id, nickname, score, streak, maxStreak,
+ *                            currentAnswerIndex, answerTime }>
  * }
  */
 
@@ -126,19 +123,28 @@ function getPlayerList(room) {
     id: p.id,
     nickname: p.nickname,
     score: p.score,
+    streak: p.streak,
   }));
 }
 
+/** Find the room owned by a given host socket. */
+function findHostRoom(hostSocketId) {
+  return Array.from(rooms.values()).find((r) => r.hostSocketId === hostSocketId) || null;
+}
+
 /**
- * Score formula:
- *   correct answer → Score = 1000 × (1 - (timeTaken / totalTime) × 0.5)
- *   wrong answer   → 0
+ * Base score formula:
+ *   correct → 1000 × (1 - (timeTaken / totalTime) × 0.5)
+ *   wrong   → 0
+ * Streak bonus: +100 per consecutive correct (capped at +500 for 5+)
  */
-function calculateScore(timeTakenSec, isCorrect) {
+function calculateScore(timeTakenSec, isCorrect, streak) {
   if (!isCorrect) return 0;
   const total = config.GAME.QUESTION_DURATION_SEC;
   const ratio = Math.min(timeTakenSec, total) / total;
-  return Math.round(1000 * (1 - ratio * 0.5));
+  const base = Math.round(1000 * (1 - ratio * 0.5));
+  const streakBonus = Math.min(streak, 5) * 100; // up to +500
+  return base + streakBonus;
 }
 
 // ─────────────────────────────────────────────
@@ -152,15 +158,14 @@ function sendQuestion(room) {
   io.to(room.pin).emit('game:question', {
     questionIndex: room.questionIndex,
     total: QUESTIONS.length,
-    question: {
-      text: q.text,
-      options: q.options,
-    },
+    question: { text: q.text, options: q.options },
     duration: config.GAME.QUESTION_DURATION_SEC,
   });
 
   room.questionStartTime = Date.now();
   room.state = 'question';
+  room.paused = false;
+  room.pausedTimeRemaining = 0;
 
   // Server-side timer — locks answers when time is up
   room.questionTimer = setTimeout(() => {
@@ -183,7 +188,16 @@ function endQuestion(room) {
   const roundScores = [];
   room.players.forEach((player) => {
     const isCorrect = player.currentAnswerIndex === q.correctIndex;
-    const roundScore = calculateScore(player.answerTime, isCorrect);
+
+    // Update streak BEFORE calculating score so bonus applies immediately
+    if (isCorrect) {
+      player.streak++;
+      player.maxStreak = Math.max(player.maxStreak, player.streak);
+    } else {
+      player.streak = 0;
+    }
+
+    const roundScore = calculateScore(player.answerTime, isCorrect, player.streak);
     player.score += roundScore;
     roundScores.push({
       id: player.id,
@@ -191,8 +205,9 @@ function endQuestion(room) {
       roundScore,
       totalScore: player.score,
       isCorrect,
+      streak: player.streak,
     });
-    // Reset for next question
+    // Reset answer for next question
     player.currentAnswerIndex = -1;
     player.answerTime = config.GAME.QUESTION_DURATION_SEC;
   });
@@ -245,6 +260,8 @@ io.on('connection', (socket) => {
       questionIndex: 0,
       questionTimer: null,
       questionStartTime: 0,
+      paused: false,
+      pausedTimeRemaining: 0,
     };
 
     rooms.set(pin, room);
@@ -287,6 +304,8 @@ io.on('connection', (socket) => {
       id: socket.id,
       nickname: nickname.trim(),
       score: 0,
+      streak: 0,
+      maxStreak: 0,
       currentAnswerIndex: -1,
       answerTime: config.GAME.QUESTION_DURATION_SEC,
     };
@@ -345,6 +364,74 @@ io.on('connection', (socket) => {
     setTimeout(() => {
       sendQuestion(room);
     }, 1500);
+  });
+
+  // ── HOST: Pause the game ─────────────────────
+  socket.on('host:pause', () => {
+    const room = findHostRoom(socket.id);
+    if (!room || room.state !== 'question' || room.paused) return;
+
+    room.paused = true;
+    const elapsed = Date.now() - room.questionStartTime;
+    room.pausedTimeRemaining = Math.max(
+      0,
+      config.GAME.QUESTION_DURATION_SEC * 1000 - elapsed
+    );
+    clearTimeout(room.questionTimer);
+    room.questionTimer = null;
+
+    console.log(`[Room ${room.pin}] Paused. ${Math.ceil(room.pausedTimeRemaining / 1000)}s remaining.`);
+    io.to(room.pin).emit('game:paused', {
+      timeRemaining: Math.ceil(room.pausedTimeRemaining / 1000),
+    });
+  });
+
+  // ── HOST: Resume the game ────────────────────
+  socket.on('host:resume', () => {
+    const room = findHostRoom(socket.id);
+    if (!room || !room.paused) return;
+
+    room.paused = false;
+    // Shift questionStartTime so elapsed time is correct when resumed
+    room.questionStartTime = Date.now() - (
+      config.GAME.QUESTION_DURATION_SEC * 1000 - room.pausedTimeRemaining
+    );
+    room.questionTimer = setTimeout(() => endQuestion(room), room.pausedTimeRemaining);
+
+    console.log(`[Room ${room.pin}] Resumed. ${Math.ceil(room.pausedTimeRemaining / 1000)}s remaining.`);
+    io.to(room.pin).emit('game:resumed', {
+      timeRemaining: Math.ceil(room.pausedTimeRemaining / 1000),
+    });
+  });
+
+  // ── HOST: Skip current question ──────────────
+  socket.on('host:skip', () => {
+    const room = findHostRoom(socket.id);
+    if (!room || (room.state !== 'question' && !room.paused)) return;
+    console.log(`[Room ${room.pin}] Question skipped by host.`);
+    endQuestion(room);
+  });
+
+  // ── HOST: Kick a player from the lobby ───────
+  socket.on('host:kick', ({ playerId }) => {
+    const room = findHostRoom(socket.id);
+    if (!room || room.state !== 'lobby') return;
+
+    const player = room.players.get(playerId);
+    if (!player) return;
+
+    room.players.delete(playerId);
+
+    const playerSocket = io.sockets.sockets.get(playerId);
+    if (playerSocket) {
+      playerSocket.emit('room:kicked', {
+        message: 'You were removed from the room by the host.',
+      });
+      playerSocket.leave(room.pin);
+    }
+
+    console.log(`[Room ${room.pin}] Kicked player: ${player.nickname}`);
+    io.to(room.pin).emit('room:player_joined', { players: getPlayerList(room) });
   });
 
   // ── PLAYER: Submit an answer ─────────────────
