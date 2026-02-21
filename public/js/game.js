@@ -1071,9 +1071,19 @@ socket.on('room:closed', ({ message }) => {
 (function () {
   const params = new URLSearchParams(window.location.search);
   const pinFromUrl = params.get('pin');
+  const scanFallbackBanner = document.getElementById('scan-fallback-banner');
+
+  if (scanFallbackBanner) {
+    scanFallbackBanner.style.display = 'block';
+  }
+
   if (pinFromUrl) {
     state.role = 'player';
     document.getElementById('input-pin').value = pinFromUrl;
+    if (scanFallbackBanner) {
+      scanFallbackBanner.innerHTML =
+        `<strong>Scanned successfully.</strong><span>PIN <b>${escapeHtml(pinFromUrl)}</b> was filled automatically. If auto-join fails, tap Join Game manually.</span>`;
+    }
     showView('view-player-join');
   }
 })();

@@ -169,6 +169,25 @@ h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-dim); }
   font-size: 1rem;
 }
 
+.scan-fallback {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.18);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #fde68a;
+  font-size: 0.85rem;
+}
+
+.scan-fallback strong {
+  font-size: 0.86rem;
+  color: #facc15;
+}
+
 /* ═══════════════════════════════════════════
    Host Controls (pause, skip)
 ═══════════════════════════════════════════ */
