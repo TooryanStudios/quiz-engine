@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { auth } from '../lib/firebase'
 import type { QuizDoc, QuizQuestion } from '../types/quiz'
-import { createQuiz } from '../lib/quizRepo'
+import { createQuiz, updateQuiz } from '../lib/quizRepo'
 
 const starterQuestion: QuizQuestion = {
   type: 'single',
@@ -11,11 +12,21 @@ const starterQuestion: QuizQuestion = {
 }
 
 export function QuizEditorPage() {
-  const [ownerId, setOwnerId] = useState('owner_demo')
+  const [quizId, setQuizId] = useState<string | null>(null)
   const [title, setTitle] = useState('Animals Pack Quiz 1')
   const [slug, setSlug] = useState('animals-pack-quiz-1')
   const [visibility, setVisibility] = useState<'public' | 'private'>('public')
   const [questions, setQuestions] = useState<QuizQuestion[]>([starterQuestion])
+  const [status, setStatus] = useState('')
+
+  // Always use the real logged-in user's UID
+  const ownerId = auth.currentUser?.uid ?? ''
+
+  useEffect(() => {
+    if (!auth.currentUser) {
+      setStatus('Not logged in — please sign in first.')
+    }
+  }, [])
 
   const shareUrl = useMemo(() => `https://quizengine.onrender.com/?quiz=${encodeURIComponent(slug)}`, [slug])
 
@@ -28,6 +39,10 @@ export function QuizEditorPage() {
   }
 
   const saveQuiz = async () => {
+    if (!ownerId) {
+      setStatus('Error: not signed in.')
+      return
+    }
     const payload: QuizDoc = {
       ownerId,
       title,
@@ -38,10 +53,16 @@ export function QuizEditorPage() {
     }
 
     try {
-      const id = await createQuiz(payload)
-      alert(`Saved quiz: ${id}`)
+      if (quizId) {
+        await updateQuiz(quizId, payload)
+        setStatus(`Updated ✓ (${quizId})`)
+      } else {
+        const id = await createQuiz(payload)
+        setQuizId(id)
+        setStatus(`Saved ✓ (${id})`)
+      }
     } catch (error) {
-      alert(`Save failed: ${(error as Error).message}`)
+      setStatus(`Save failed: ${(error as Error).message}`)
     }
   }
 
@@ -50,7 +71,6 @@ export function QuizEditorPage() {
       <section className="panel">
         <h2>Quiz Editor</h2>
         <div className="grid">
-          <input value={ownerId} onChange={(e) => setOwnerId(e.target.value)} placeholder="Owner ID" />
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Quiz title" />
           <input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="Share slug" />
           <select value={visibility} onChange={(e) => setVisibility(e.target.value as 'public' | 'private')}>
@@ -92,6 +112,7 @@ export function QuizEditorPage() {
           <button type="button" onClick={addQuestion}>+ Add Question</button>
           <button type="button" onClick={saveQuiz}>Save Quiz</button>
         </div>
+        {status && <p style={{ marginTop: '0.5rem' }}>{status}</p>}
       </section>
     </>
   )
