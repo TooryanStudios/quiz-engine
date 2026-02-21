@@ -1,8 +1,14 @@
 export type QuestionType = 'single' | 'multi' | 'match' | 'order'
 
+export interface QuizMedia {
+  type: 'image' | 'gif' | 'video'
+  url: string
+}
+
 export interface QuizQuestion {
   type: QuestionType
   text: string
+  media?: QuizMedia
   options?: string[]
   correctIndex?: number
   correctIndices?: number[]

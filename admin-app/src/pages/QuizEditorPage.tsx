@@ -1,30 +1,160 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { auth } from '../lib/firebase'
-import type { QuizDoc, QuizQuestion } from '../types/quiz'
+import type { QuizDoc, QuizMedia, QuizQuestion } from '../types/quiz'
+import { createQuiz, getQuizById, updateQuiz } from '../lib/quizRepo'
+
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
+import { auth } from '../lib/firebase'
+import type { QuizDoc, QuizMedia, QuizQuestion } from '../types/quiz'
 import { createQuiz, getQuizById, updateQuiz } from '../lib/quizRepo'
 
 const SAMPLE_QUESTIONS: QuizQuestion[] = [
-  { type: 'single', text: 'What is the largest animal on Earth?', options: ['Elephant', 'Blue Whale', 'Giraffe', 'Great White Shark'], correctIndex: 1, duration: 20 },
-  { type: 'single', text: 'How many legs does a spider have?', options: ['6', '8', '10', '12'], correctIndex: 1, duration: 15 },
-  { type: 'single', text: 'Which animal is known as the King of the Jungle?', options: ['Tiger', 'Leopard', 'Lion', 'Cheetah'], correctIndex: 2, duration: 15 },
-  { type: 'single', text: 'What do pandas primarily eat?', options: ['Fish', 'Bamboo', 'Berries', 'Insects'], correctIndex: 1, duration: 20 },
-  { type: 'single', text: 'Which bird cannot fly?', options: ['Eagle', 'Parrot', 'Penguin', 'Sparrow'], correctIndex: 2, duration: 15 },
-  { type: 'single', text: 'How long is an elephant pregnant before giving birth?', options: ['6 months', '12 months', '18 months', '22 months'], correctIndex: 3, duration: 25 },
-  { type: 'single', text: 'What is a group of wolves called?', options: ['Herd', 'Pack', 'Flock', 'Colony'], correctIndex: 1, duration: 20 },
-  { type: 'multi', text: 'Which of the following are mammals? (select all)', options: ['Dolphin', 'Shark', 'Bat', 'Crocodile'], correctIndices: [0, 2], duration: 25 },
-  { type: 'multi', text: 'Which animals are nocturnal? (select all)', options: ['Owl', 'Eagle', 'Bat', 'Hawk'], correctIndices: [0, 2], duration: 25 },
-  { type: 'multi', text: 'Which of these animals hibernate? (select all)', options: ['Bear', 'Lion', 'Hedgehog', 'Giraffe'], correctIndices: [0, 2], duration: 25 },
-  { type: 'single', text: 'What is the fastest land animal?', options: ['Lion', 'Horse', 'Cheetah', 'Greyhound'], correctIndex: 2, duration: 15 },
-  { type: 'single', text: 'Which animal has the longest lifespan?', options: ['Elephant', 'Tortoise', 'Whale', 'Parrot'], correctIndex: 1, duration: 20 },
-  { type: 'single', text: 'How many hearts does an octopus have?', options: ['1', '2', '3', '4'], correctIndex: 2, duration: 20 },
-  { type: 'single', text: 'What colour is a polar bear\'s skin?', options: ['White', 'Pink', 'Black', 'Grey'], correctIndex: 2, duration: 20 },
-  { type: 'single', text: 'Which is the only mammal capable of true flight?', options: ['Flying squirrel', 'Bat', 'Sugar glider', 'Flying lemur'], correctIndex: 1, duration: 20 },
-  { type: 'order', text: 'Order these animals from smallest to largest', items: ['Mouse', 'Cat', 'Wolf', 'Horse'], correctOrder: [0, 1, 2, 3], duration: 30 },
-  { type: 'order', text: 'Order these animals by average lifespan (shortest first)', items: ['Mouse', 'Dog', 'Horse', 'Tortoise'], correctOrder: [0, 1, 2, 3], duration: 30 },
-  { type: 'match', text: 'Match each animal to its young', pairs: [{ left: 'Cow', right: 'Calf' }, { left: 'Sheep', right: 'Lamb' }, { left: 'Dog', right: 'Puppy' }, { left: 'Cat', right: 'Kitten' }], duration: 35 },
-  { type: 'match', text: 'Match each animal to its home', pairs: [{ left: 'Bee', right: 'Hive' }, { left: 'Bird', right: 'Nest' }, { left: 'Fox', right: 'Den' }, { left: 'Rabbit', right: 'Burrow' }], duration: 35 },
-  { type: 'single', text: 'Which animal sleeps standing up?', options: ['Elephant', 'Horse', 'Giraffe', 'All of the above'], correctIndex: 3, duration: 20 },
+  {
+    type: 'single', duration: 20,
+    text: '🐋 ما هو أكبر حيوان في العالم؟',
+    options: ['الفيل', 'الحوت الأزرق', 'القرش الأبيض', 'الزرافة'],
+    correctIndex: 1,
+    media: { type: 'image', url: 'https://upload.wikimedia.org/wikipedia/commons/b/bf/Humpback_Whale_underwater_shot.jpg' },
+  },
+  {
+    type: 'single', duration: 15,
+    text: '🕷️ كم عدد أرجل العنكبوت؟',
+    options: ['٦', '٨', '١٠', '١٢'],
+    correctIndex: 1,
+    media: { type: 'gif', url: 'https://media.giphy.com/media/3o7btXIhPqBJQnf0Wk/giphy.gif' },
+  },
+  {
+    type: 'single', duration: 15,
+    text: '🐧 أيّ الطيور لا يستطيع الطيران؟',
+    options: ['النسر', 'الببغاء', 'البطريق', 'العصفور'],
+    correctIndex: 2,
+    media: { type: 'image', url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/33/Penguin_in_Antarctica_jumping_out_of_the_water.jpg/640px-Penguin_in_Antarctica_jumping_out_of_the_water.jpg' },
+  },
+  {
+    type: 'single', duration: 15,
+    text: '🐆 ما هو أسرع حيوان على اليابسة؟',
+    options: ['الأسد', 'الحصان', 'الفهد', 'كلب الصيد'],
+    correctIndex: 2,
+    media: { type: 'gif', url: 'https://media.giphy.com/media/l0MYw6Cu1TfY3gsWk/giphy.gif' },
+  },
+  {
+    type: 'single', duration: 20,
+    text: '🐼 ماذا تأكل الباندا بشكل رئيسي؟',
+    options: ['السمك', 'الخيزران', 'التوت', 'الحشرات'],
+    correctIndex: 1,
+    media: { type: 'gif', url: 'https://media.giphy.com/media/SvH6pPyHCE2xi/giphy.gif' },
+  },
+  {
+    type: 'single', duration: 20,
+    text: '🐙 كم قلبًا يمتلك الأخطبوط؟',
+    options: ['١', '٢', '٣', '٤'],
+    correctIndex: 2,
+    media: { type: 'image', url: 'https://upload.wikimedia.org/wikipedia/commons/f/fe/Octopus3.jpg' },
+  },
+  {
+    type: 'single', duration: 20,
+    text: '🐻‍❄️ ما لون جلد الدب القطبي تحت فرائه الأبيض؟',
+    options: ['أبيض', 'وردي', 'أسود', 'رمادي'],
+    correctIndex: 2,
+    media: { type: 'image', url: 'https://upload.wikimedia.org/wikipedia/commons/1/1e/Polar_bear_on_the_ice.jpg' },
+  },
+  {
+    type: 'single', duration: 20,
+    text: '🦇 ما الثديي الوحيد القادر على الطيران الحقيقي؟',
+    options: ['السنجاب الطائر', 'الخفاش', 'الفلبيني الطائر', 'الليمور الطائر'],
+    correctIndex: 1,
+    media: { type: 'image', url: 'https://upload.wikimedia.org/wikipedia/commons/4/4b/Pipistrellus_pipistrellus_crop.jpg' },
+  },
+  {
+    type: 'single', duration: 25,
+    text: '🦒 كم يبلغ متوسط طول رقبة الزرافة؟',
+    options: ['متر واحد', 'مترين', 'ثلاثة أمتار', 'ستة أمتار'],
+    correctIndex: 1,
+    media: { type: 'image', url: 'https://upload.wikimedia.org/wikipedia/commons/9/9e/Giraffe_Mikumi_National_Park.jpg' },
+  },
+  {
+    type: 'single', duration: 20,
+    text: '🦎 أيّ الحيوانات يستطيع تغيير لونه؟',
+    options: ['الحرباء', 'السحلية', 'الضفدع', 'التمساح'],
+    correctIndex: 0,
+    media: { type: 'gif', url: 'https://media.giphy.com/media/3o7btT1T9qpQZWhNlK/giphy.gif' },
+  },
+  {
+    type: 'single', duration: 20,
+    text: '🐘 كم تستمر فترة حمل الفيلة؟',
+    options: ['٦ أشهر', '١٢ شهرًا', '١٨ شهرًا', '٢٢ شهرًا'],
+    correctIndex: 3,
+    media: { type: 'image', url: 'https://upload.wikimedia.org/wikipedia/commons/3/37/African_Bush_Elephant.jpg' },
+  },
+  {
+    type: 'single', duration: 20,
+    text: '🐢 أيّ الحيوانات يعيش أطول؟',
+    options: ['الفيل', 'السلحفاء', 'الحوت', 'الببغاء'],
+    correctIndex: 1,
+    media: { type: 'video', url: 'https://www.youtube.com/embed/WfGMYdalClU' },
+  },
+  {
+    type: 'single', duration: 20,
+    text: '🐺 ما اسم مجموعة الذئاب؟',
+    options: ['قطيع', 'عصابة', 'حزمة', 'مستعمرة'],
+    correctIndex: 1,
+    media: { type: 'gif', url: 'https://media.giphy.com/media/mOq9MgEDWXxMI/giphy.gif' },
+  },
+  {
+    type: 'single', duration: 20,
+    text: '🐴 أيّ الحيوانات ينام وهو واقف؟',
+    options: ['الفيل', 'الحصان', 'الزرافة', 'جميع ما سبق'],
+    correctIndex: 3,
+    media: { type: 'video', url: 'https://www.youtube.com/embed/g3G6pAQjRlM' },
+  },
+  {
+    type: 'multi', duration: 25,
+    text: '🦋 أيّ من هذه الحيوانات من الثدييات؟ (اختر كل ما ينطبق)',
+    options: ['الدلفين', 'القرش', 'الخفاش', 'التمساح'],
+    correctIndices: [0, 2],
+  },
+  {
+    type: 'multi', duration: 25,
+    text: '🦉 أيّ الحيوانات تنشط في الليل؟ (اختر كل ما ينطبق)',
+    options: ['البومة', 'النسر', 'الخفاش', 'الصقر'],
+    correctIndices: [0, 2],
+    media: { type: 'image', url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/10/Bubo_scandiacus_2_%28Bohuslav_Novy%29.jpg/640px-Bubo_scandiacus_2_%28Bohuslav_Novy%29.jpg' },
+  },
+  {
+    type: 'multi', duration: 25,
+    text: '🐻 أيّ الحيوانات تسبت في الشتاء؟ (اختر كل ما ينطبق)',
+    options: ['الدب', 'الأسد', 'القنفذ', 'الزرافة'],
+    correctIndices: [0, 2],
+    media: { type: 'image', url: 'https://upload.wikimedia.org/wikipedia/commons/9/9e/Grizz.jpg' },
+  },
+  {
+    type: 'order', duration: 30,
+    text: '📏 رتّب هذه الحيوانات من الأصغر إلى الأكبر',
+    items: ['فأر', 'قطة', 'ذئب', 'حصان'],
+    correctOrder: [0, 1, 2, 3],
+  },
+  {
+    type: 'match', duration: 35,
+    text: '🍼 طابق كل حيوان بصغيره',
+    pairs: [
+      { left: 'بقرة', right: 'عجل' },
+      { left: 'خروف', right: 'حَمَل' },
+      { left: 'كلب', right: 'جرو' },
+      { left: 'قطة', right: 'هريرة' },
+    ],
+  },
+  {
+    type: 'match', duration: 35,
+    text: '🏠 طابق كل حيوان بمسكنه',
+    pairs: [
+      { left: 'نحلة', right: 'خلية' },
+      { left: 'طائر', right: 'عُش' },
+      { left: 'ثعلب', right: 'وكر' },
+      { left: 'أرنب', right: 'جُحر' },
+    ],
+  },
 ]
 
 const starterQuestion: QuizQuestion = {
@@ -138,28 +268,75 @@ export function QuizEditorPage() {
       {questions.map((q, index) => (
         <section key={index} className="panel">
           <h3 style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>Question {index + 1}</span>
-            <button type="button" onClick={() => removeQuestion(index)} style={{ background: '#711', fontSize: '0.8em', padding: '0.2rem 0.6rem' }}>✕ Remove</button>
+            <span>سؤال {index + 1} — <span style={{ opacity: 0.5, fontSize: '0.8em' }}>{q.type}</span></span>
+            <button type="button" onClick={() => removeQuestion(index)} style={{ background: '#711', fontSize: '0.8em', padding: '0.2rem 0.6rem' }}>✕ حذف</button>
           </h3>
           <div className="grid">
             <select value={q.type} onChange={(e) => updateQuestion(index, { type: e.target.value as QuizQuestion['type'] })}>
-              <option value="single">Single</option>
-              <option value="multi">Multi</option>
-              <option value="match">Match</option>
-              <option value="order">Order</option>
+              <option value="single">اختيار واحد</option>
+              <option value="multi">اختيار متعدد</option>
+              <option value="match">مطابقة</option>
+              <option value="order">ترتيب</option>
             </select>
             <textarea
+              dir="auto"
               rows={3}
               value={q.text}
               onChange={(e) => updateQuestion(index, { text: e.target.value })}
-              placeholder="Question text"
+              placeholder="نص السؤال"
             />
             <input
               type="number"
               value={q.duration || 20}
               onChange={(e) => updateQuestion(index, { duration: Number(e.target.value) })}
-              placeholder="Duration seconds"
+              placeholder="المدة (ثانية)"
             />
+          </div>
+
+          {/* Media section */}
+          <div style={{ marginTop: '0.75rem', borderTop: '1px solid #333', paddingTop: '0.75rem' }}>
+            <label style={{ fontSize: '0.85em', opacity: 0.7 }}>وسائط السؤال</label>
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.4rem', flexWrap: 'wrap' }}>
+              <select
+                value={q.media?.type ?? 'none'}
+                onChange={(e) => {
+                  const t = e.target.value
+                  if (t === 'none') { const { media: _, ...rest } = q; updateQuestion(index, rest as Partial<QuizQuestion>) }
+                  else updateQuestion(index, { media: { type: t as QuizMedia['type'], url: q.media?.url ?? '' } })
+                }}
+                style={{ width: 'auto' }}
+              >
+                <option value="none">— بلا وسائط —</option>
+                <option value="image">🖼️ صورة</option>
+                <option value="gif">🎞️ GIF متحرك</option>
+                <option value="video">🎬 فيديو (YouTube embed)</option>
+              </select>
+              {q.media && (
+                <input
+                  style={{ flex: 1, minWidth: '200px' }}
+                  value={q.media.url}
+                  onChange={(e) => updateQuestion(index, { media: { ...q.media!, url: e.target.value } })}
+                  placeholder={q.media.type === 'video' ? 'https://www.youtube.com/embed/VIDEO_ID' : 'https://...'}
+                />
+              )}
+            </div>
+            {q.media?.url && (
+              <div style={{ marginTop: '0.5rem', maxWidth: 320 }}>
+                {(q.media.type === 'image' || q.media.type === 'gif') && (
+                  <img src={q.media.url} alt="preview" style={{ maxWidth: '100%', maxHeight: 180, borderRadius: 6, objectFit: 'cover' }} />
+                )}
+                {q.media.type === 'video' && (
+                  <iframe
+                    src={q.media.url}
+                    title="video preview"
+                    width="320" height="180"
+                    style={{ border: 'none', borderRadius: 6 }}
+                    allow="autoplay; encrypted-media"
+                    allowFullScreen
+                  />
+                )}
+              </div>
+            )}
           </div>
         </section>
       ))}
