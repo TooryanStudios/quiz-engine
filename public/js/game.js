@@ -67,7 +67,7 @@ fetch('/api/build-info')
 // Socket.io connection
 // The server serves socket.io client at /socket.io/socket.io.js
 // ─────────────────────────────────────────────
-const socket = io();
+const socket = io(window.location.origin);
 
 // ─────────────────────────────────────────────
 // State
@@ -86,6 +86,12 @@ const state = {
   myStreak: 0,
   isPaused: false,
   timerInterval: null,
+  // new: question-type extras
+  currentQuestionType: 'single',
+  matchConnections: [],    // matchConnections[leftIdx] = displayRightIdx (-1 = unset)
+  matchActiveLeft: -1,     // which left slot is currently "selected"
+  matchRights: [],         // shuffled right labels sent by server
+  orderItemOrder: [],      // current order of item indices on screen
 };
 
 // ─────────────────────────────────────────────
@@ -177,133 +183,374 @@ function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
 }
 
 // ─────────────────────────────────────────────
-// Question Rendering
+// Host Mode UI (Local / Global)
+// ─────────────────────────────────────────────
+function applyModeInfo(data) {
+  if (!data) return;
+  const { mode, joinUrl, qrSvg, localIpAvailable, warning } = data;
+
+  const indicator = document.getElementById('mode-indicator');
+  const warnEl    = document.getElementById('mode-warning');
+  const localBtn  = document.getElementById('btn-mode-local');
+  const globalBtn = document.getElementById('btn-mode-global');
+  const urlEl     = document.getElementById('host-join-url');
+  const qrWrap    = document.getElementById('host-qr-canvas');
+
+  if (indicator) {
+    indicator.textContent = mode === 'local' ? '📶 Local' : '🌐 Global';
+  }
+
+  if (localBtn && globalBtn) {
+    localBtn.classList.toggle('mode-active', mode === 'local');
+    globalBtn.classList.toggle('mode-active', mode !== 'local');
+    localBtn.disabled = !localIpAvailable;
+  }
+
+  if (warnEl) {
+    if (!localIpAvailable && warning) {
+      warnEl.textContent = warning;
+      warnEl.style.display = 'block';
+    } else {
+      warnEl.textContent = '';
+      warnEl.style.display = 'none';
+    }
+  }
+
+  if (urlEl) urlEl.textContent = joinUrl || '—';
+  if (qrWrap) qrWrap.innerHTML = qrSvg || '';
+}
+
+// ─────────────────────────────────────────────
+// Question Rendering — dispatcher
 // ─────────────────────────────────────────────
 function renderQuestion(data, isHost) {
   stopClientTimer();
-  state.hasAnswered = false;
-  state.myAnswerIndex = -1;
-  state.questionIndex = data.questionIndex;
-  state.totalQuestions = data.total;
-  state.questionDuration = data.duration;
+  state.hasAnswered       = false;
+  state.myAnswerIndex     = -1;
+  state.questionIndex     = data.questionIndex;
+  state.totalQuestions    = data.total;
+  state.questionDuration  = data.duration;
   state.questionStartTime = Date.now();
+  state.currentQuestionType = data.question.type;
 
   if (isHost) {
-    /** HOST QUESTION VIEW **/
-    document.getElementById('host-q-progress').textContent =
-      `Q ${data.questionIndex + 1} / ${data.total}`;
-    document.getElementById('host-question-text').textContent = data.question.text;
-    document.getElementById('host-answer-counter').textContent =
-      `0 / 0 answered`;
-
-    // Reset pause/resume button
-    const pauseBtn = document.getElementById('btn-pause-resume');
-    pauseBtn.textContent = '⏸️ Pause';
-    pauseBtn.dataset.paused = 'false';
-
-    const grid = document.getElementById('host-options-grid');
-    grid.innerHTML = data.question.options
-      .map(
-        (opt, i) =>
-          `<div class="option-card ${OPTION_COLORS[i]} stagger-${i + 1}">
-            <span class="opt-icon">${OPTION_ICONS[i]}</span>
-            <span class="opt-text">${escapeHtml(opt)}</span>
-          </div>`
-      )
-      .join('');
-
-    startClientTimer(
-      data.duration,
-      document.getElementById('host-timer-count'),
-      document.getElementById('host-timer-ring')
-    );
-
-    const layout = document.getElementById('host-question-layout');
-    layout.classList.remove('animate-in');
-    void layout.offsetWidth; // force reflow
-    layout.classList.add('animate-in');
-    showView('view-host-question');
+    renderHostQuestion(data);
   } else {
-    /** PLAYER QUESTION VIEW **/
-    document.getElementById('player-q-progress').textContent =
-      `Q ${data.questionIndex + 1} / ${data.total}`;
-    document.getElementById('player-question-text').textContent = data.question.text;
-    document.getElementById('player-answered-msg').textContent = '';
-
-    // Update streak badge
-    const streakBadge = document.getElementById('player-streak-badge');
-    if (state.myStreak >= 2) {
-      document.getElementById('player-streak-count').textContent = state.myStreak;
-      streakBadge.style.display = 'inline-flex';
-    } else {
-      streakBadge.style.display = 'none';
-    }
-
-    const grid = document.getElementById('player-options-grid');
-    grid.innerHTML = data.question.options
-      .map(
-        (opt, i) =>
-          `<button
-            class="option-btn ${OPTION_COLORS[i]} stagger-${i + 1}"
-            data-index="${i}"
-            aria-label="Option ${i + 1}: ${escapeHtml(opt)}"
-          >
-            <span class="opt-icon">${OPTION_ICONS[i]}</span>
-            <span class="opt-text">${escapeHtml(opt)}</span>
-          </button>`
-      )
-      .join('');
-
-    // Bind click handlers to answer buttons
-    grid.querySelectorAll('.option-btn').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        if (state.hasAnswered) return;
-        Sounds.click();
-        const answerIndex = parseInt(btn.dataset.index, 10);
-        submitAnswer(answerIndex);
-      });
-    });
-
-    startClientTimer(
-      data.duration,
-      document.getElementById('player-timer-count'),
-      document.getElementById('player-timer-ring')
-    );
-
-    const layout = document.getElementById('player-question-layout');
-    layout.classList.remove('animate-in');
-    void layout.offsetWidth;
-    layout.classList.add('animate-in');
-    showView('view-player-question');
+    renderPlayerQuestion(data);
   }
+}
+
+// ── Host view: shows question + non-interactive options/items ──────────
+function renderHostQuestion(data) {
+  const q = data.question;
+  document.getElementById('host-q-progress').textContent =
+    `Q ${data.questionIndex + 1} / ${data.total}`;
+  document.getElementById('host-question-text').textContent = q.text;
+  document.getElementById('host-answer-counter').textContent = '0 / 0 answered';
+
+  const pauseBtn = document.getElementById('btn-pause-resume');
+  pauseBtn.textContent = '⏸️ Pause';
+  pauseBtn.dataset.paused = 'false';
+
+  const grid = document.getElementById('host-options-grid');
+  if (q.type === 'single' || q.type === 'multi') {
+    grid.innerHTML = (q.options || []).map((opt, i) =>
+      `<div class="option-card ${OPTION_COLORS[i]} stagger-${i + 1}">
+        <span class="opt-icon">${OPTION_ICONS[i]}</span>
+        <span class="opt-text">${escapeHtml(opt)}</span>
+      </div>`
+    ).join('');
+  } else if (q.type === 'match') {
+    grid.innerHTML =
+      `<div class="host-pairs-preview">${(q.lefts || []).map((l, i) =>
+        `<div class="host-pair-row stagger-${Math.min(i + 1, 4)}">
+          <span class="host-pair-side">${escapeHtml(l)}</span>
+          <span class="host-pair-arrow">⟷</span>
+          <span class="host-pair-side host-pair-right">?</span>
+        </div>`
+      ).join('')}</div>`;
+  } else if (q.type === 'order') {
+    grid.innerHTML =
+      `<div class="host-order-preview">${(q.items || []).map((item, i) =>
+        `<div class="host-order-item stagger-${Math.min(i + 1, 4)}">${i + 1}. ${escapeHtml(item)}</div>`
+      ).join('')}</div>`;
+  }
+
+  startClientTimer(data.duration,
+    document.getElementById('host-timer-count'),
+    document.getElementById('host-timer-ring'));
+
+  const layout = document.getElementById('host-question-layout');
+  layout.classList.remove('animate-in');
+  void layout.offsetWidth;
+  layout.classList.add('animate-in');
+  showView('view-host-question');
+}
+
+// ── Player view: interactive answer UI per question type ───────────────
+function renderPlayerQuestion(data) {
+  const q = data.question;
+  document.getElementById('player-q-progress').textContent =
+    `Q ${data.questionIndex + 1} / ${data.total}`;
+  document.getElementById('player-question-text').textContent = q.text;
+  document.getElementById('player-answered-msg').textContent = '';
+
+  // Streak badge
+  const streakBadge = document.getElementById('player-streak-badge');
+  if (state.myStreak >= 2) {
+    document.getElementById('player-streak-count').textContent = state.myStreak;
+    streakBadge.style.display = 'inline-flex';
+  } else {
+    streakBadge.style.display = 'none';
+  }
+
+  // Reset all type containers
+  const optGrid   = document.getElementById('player-options-grid');
+  const matchCont = document.getElementById('player-match-container');
+  const orderCont = document.getElementById('player-order-container');
+  const submitBtn = document.getElementById('btn-submit-answer');
+  optGrid.style.display   = '';
+  matchCont.style.display = 'none';
+  orderCont.style.display = 'none';
+  submitBtn.style.display = 'none';
+  submitBtn.disabled      = false;
+  submitBtn.textContent   = '✔ تأكيد الإجابة';
+
+  if (q.type === 'single') {
+    renderSingleChoice(q);
+  } else if (q.type === 'multi') {
+    renderMultiChoice(q);
+  } else if (q.type === 'match') {
+    optGrid.style.display = 'none';
+    renderMatch(q);
+  } else if (q.type === 'order') {
+    optGrid.style.display = 'none';
+    renderOrder(q);
+  }
+
+  startClientTimer(data.duration,
+    document.getElementById('player-timer-count'),
+    document.getElementById('player-timer-ring'));
+
+  const layout = document.getElementById('player-question-layout');
+  layout.classList.remove('animate-in');
+  void layout.offsetWidth;
+  layout.classList.add('animate-in');
+  showView('view-player-question');
+}
+
+// ── Single choice (pick one, immediate submit) ─────────────────────────
+function renderSingleChoice(q) {
+  const grid = document.getElementById('player-options-grid');
+  grid.innerHTML = (q.options || []).map((opt, i) =>
+    `<button
+      class="option-btn ${OPTION_COLORS[i]} stagger-${i + 1}"
+      data-index="${i}"
+      aria-label="Option ${i + 1}: ${escapeHtml(opt)}"
+    >
+      <span class="opt-icon">${OPTION_ICONS[i]}</span>
+      <span class="opt-text">${escapeHtml(opt)}</span>
+    </button>`
+  ).join('');
+
+  grid.querySelectorAll('.option-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (state.hasAnswered) return;
+      Sounds.click();
+      submitAnswer({ answerIndex: parseInt(btn.dataset.index, 10) });
+    });
+  });
+}
+
+// ── Multi-select (pick all that apply, then tap Submit) ────────────────
+function renderMultiChoice(q) {
+  const grid    = document.getElementById('player-options-grid');
+  const submit  = document.getElementById('btn-submit-answer');
+  submit.style.display = 'block';
+  submit.disabled      = true;
+
+  grid.innerHTML = (q.options || []).map((opt, i) =>
+    `<button
+      class="option-btn ${OPTION_COLORS[i]} stagger-${i + 1}"
+      data-index="${i}"
+      aria-label="Option ${i + 1}: ${escapeHtml(opt)}"
+    >
+      <span class="opt-icon">${OPTION_ICONS[i]}</span>
+      <span class="opt-text">${escapeHtml(opt)}</span>
+    </button>`
+  ).join('');
+
+  grid.querySelectorAll('.option-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (state.hasAnswered) return;
+      Sounds.click();
+      btn.classList.toggle('multi-selected');
+      const anySelected = grid.querySelectorAll('.multi-selected').length > 0;
+      submit.disabled = !anySelected;
+    });
+  });
+}
+
+// ── Match / Connect (tap left slot → tap right chip to pair) ───────────
+function renderMatch(q) {
+  state.matchConnections = new Array(q.lefts.length).fill(-1);
+  state.matchActiveLeft  = -1;
+  state.matchRights      = q.rights;
+
+  document.getElementById('player-match-container').style.display = 'block';
+  const submit = document.getElementById('btn-submit-answer');
+  submit.style.display = 'block';
+  submit.disabled      = true;
+
+  refreshMatchUI(q.lefts, q.rights);
+}
+
+function refreshMatchUI(lefts, rights) {
+  const leftCol  = document.getElementById('match-left-col');
+  const rightPool = document.getElementById('match-right-pool');
+  const placed   = new Set(state.matchConnections.filter(v => v !== -1));
+
+  // Left slots
+  leftCol.innerHTML = lefts.map((l, i) => {
+    const ri      = state.matchConnections[i];
+    const filled  = ri !== -1;
+    const isActive = state.matchActiveLeft === i;
+    return `<div
+      class="match-left-item${filled ? ' match-filled ' + OPTION_COLORS[i] : ''}${isActive ? ' match-active-slot' : ''}"
+      data-left-idx="${i}">
+      <span class="match-left-label">${escapeHtml(l)}</span>
+      ${filled
+        ? `<span class="match-conn">${escapeHtml(rights[ri])}</span>`
+        : `<span class="match-placeholder">…</span>`
+      }
+    </div>`;
+  }).join('');
+
+  // Right chip pool (unplaced only)
+  rightPool.innerHTML = rights.map((r, i) => {
+    if (placed.has(i)) return '';
+    return `<div class="match-right-chip stagger-${(i % 4) + 1}" data-right-idx="${i}">${escapeHtml(r)}</div>`;
+  }).join('');
+
+  // Left slot click → select / unfit
+  leftCol.querySelectorAll('.match-left-item').forEach(el => {
+    el.addEventListener('click', () => {
+      if (state.hasAnswered) return;
+      const li = parseInt(el.dataset.leftIdx);
+      if (state.matchConnections[li] !== -1) {
+        // Remove existing connection
+        state.matchConnections[li] = -1;
+        state.matchActiveLeft = li;
+      } else {
+        state.matchActiveLeft = (state.matchActiveLeft === li) ? -1 : li;
+      }
+      checkMatchComplete();
+      refreshMatchUI(lefts, rights);
+    });
+  });
+
+  // Right chip click → attach to active / first-empty left slot
+  rightPool.querySelectorAll('.match-right-chip').forEach(el => {
+    el.addEventListener('click', () => {
+      if (state.hasAnswered) return;
+      Sounds.click();
+      const ri = parseInt(el.dataset.rightIdx);
+      let target = state.matchActiveLeft;
+      if (target === -1) {
+        target = state.matchConnections.indexOf(-1); // first empty
+      }
+      if (target !== -1) {
+        state.matchConnections[target] = ri;
+        // Advance to next empty slot
+        state.matchActiveLeft = state.matchConnections.indexOf(-1);
+      }
+      checkMatchComplete();
+      refreshMatchUI(lefts, rights);
+    });
+  });
+}
+
+function checkMatchComplete() {
+  const allFilled = state.matchConnections.every(v => v !== -1);
+  document.getElementById('btn-submit-answer').disabled = !allFilled;
+}
+
+// ── Order / Drag-to-Sort (↑↓ buttons to reorder) ──────────────────────
+function renderOrder(q) {
+  state.orderItemOrder = q.items.map((_, i) => i);
+
+  document.getElementById('player-order-container').style.display = 'block';
+  const submit = document.getElementById('btn-submit-answer');
+  submit.style.display = 'block';
+  submit.disabled      = false;
+
+  refreshOrderUI(q.items);
+}
+
+function refreshOrderUI(items) {
+  const list = document.getElementById('order-list');
+  list.innerHTML = state.orderItemOrder.map((itemIdx, pos) =>
+    `<li class="order-item stagger-${Math.min(pos + 1, 4)}" data-pos="${pos}">
+      <button class="btn-order-move btn-order-up" data-pos="${pos}" ${pos === 0 ? 'disabled' : ''} aria-label="Move up">↑</button>
+      <span class="order-label" dir="auto">${escapeHtml(items[itemIdx])}</span>
+      <button class="btn-order-move btn-order-dn" data-pos="${pos}" ${pos === state.orderItemOrder.length - 1 ? 'disabled' : ''} aria-label="Move down">↓</button>
+    </li>`
+  ).join('');
+
+  list.querySelectorAll('.btn-order-up').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (state.hasAnswered) return;
+      Sounds.click();
+      const pos = parseInt(btn.dataset.pos);
+      if (pos === 0) return;
+      [state.orderItemOrder[pos], state.orderItemOrder[pos - 1]] =
+        [state.orderItemOrder[pos - 1], state.orderItemOrder[pos]];
+      refreshOrderUI(items);
+    });
+  });
+
+  list.querySelectorAll('.btn-order-dn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (state.hasAnswered) return;
+      Sounds.click();
+      const pos = parseInt(btn.dataset.pos);
+      if (pos === state.orderItemOrder.length - 1) return;
+      [state.orderItemOrder[pos], state.orderItemOrder[pos + 1]] =
+        [state.orderItemOrder[pos + 1], state.orderItemOrder[pos]];
+      refreshOrderUI(items);
+    });
+  });
 }
 
 // ─────────────────────────────────────────────
 // Submit Answer (Player)
 // ─────────────────────────────────────────────
-function submitAnswer(answerIndex) {
+function submitAnswer(answer) {
   if (state.hasAnswered) return;
-  state.hasAnswered = true;
-  state.myAnswerIndex = answerIndex;
+  state.hasAnswered  = true;
 
-  socket.emit('player:answer', {
-    questionIndex: state.questionIndex,
-    answerIndex,
-  });
+  socket.emit('player:answer', { questionIndex: state.questionIndex, answer });
 
-  // Visually lock the buttons
-  const grid = document.getElementById('player-options-grid');
-  grid.querySelectorAll('.option-btn').forEach((btn, i) => {
-    btn.disabled = true;
-    if (i === answerIndex) {
-      btn.classList.add('selected');
-    } else {
-      btn.classList.add('dimmed');
-    }
-  });
+  const type = state.currentQuestionType;
+
+  if (type === 'single') {
+    const grid = document.getElementById('player-options-grid');
+    grid.querySelectorAll('.option-btn').forEach((btn, i) => {
+      btn.disabled = true;
+      if (i === answer.answerIndex) btn.classList.add('selected');
+      else                          btn.classList.add('dimmed');
+    });
+  } else {
+    // multi / match / order — disable the submit button
+    const btn = document.getElementById('btn-submit-answer');
+    btn.disabled    = true;
+    btn.textContent = '✔ تم الإرسال!';
+  }
 
   document.getElementById('player-answered-msg').textContent =
-    '✅ Answer submitted! Waiting for others…';
+    '✅ تم إرسال إجابتك! انتظر الآخرين…';
 }
 
 // ─────────────────────────────────────────────
@@ -313,38 +560,96 @@ function showQuestionResult(data) {
   stopClientTimer();
   document.getElementById('overlay-paused').style.display = 'none';
 
-  document.getElementById('result-correct-answer').textContent = data.correctOption;
-
-  // Animate options if still on question view (player answered)
-  const playerGrid = document.getElementById('player-options-grid');
-  playerGrid.querySelectorAll('.option-btn').forEach((btn, i) => {
-    btn.disabled = true;
-    if (i === data.correctIndex) {
-      btn.classList.remove('dimmed', 'selected');
-      btn.classList.add('reveal-correct');
-    } else {
-      btn.classList.remove('selected');
-      btn.classList.add('reveal-wrong');
-    }
-  });
-
-  // Show the player how many points they earned this round
-  const myRound = data.roundScores.find((r) => r.id === socket.id);
+  const labelEl    = document.getElementById('result-correct-label');
+  const answerEl   = document.getElementById('result-correct-answer');
+  const pairsEl    = document.getElementById('result-pairs-list');
   const resultMsg  = document.getElementById('result-player-score-msg');
   const streakMsg  = document.getElementById('result-streak-msg');
 
+  // Reset
+  pairsEl.style.display  = 'none';
+  answerEl.style.display = '';
+
+  const type = data.questionType;
+
+  if (type === 'single') {
+    labelEl.textContent   = '✅ الإجابة الصحيحة';
+    answerEl.textContent  = data.correctOption;
+
+    // Animate options grid
+    const grid = document.getElementById('player-options-grid');
+    grid.querySelectorAll('.option-btn').forEach((btn, i) => {
+      btn.disabled = true;
+      btn.classList.remove('multi-selected');
+      if (i === data.correctIndex) {
+        btn.classList.remove('dimmed', 'selected');
+        btn.classList.add('reveal-correct');
+      } else {
+        btn.classList.remove('selected');
+        btn.classList.add('reveal-wrong');
+      }
+    });
+
+  } else if (type === 'multi') {
+    labelEl.textContent  = '✅ الإجابات الصحيحة';
+    answerEl.textContent = (data.correctOptions || []).join('، ');
+
+    const grid = document.getElementById('player-options-grid');
+    grid.querySelectorAll('.option-btn').forEach((btn, i) => {
+      btn.disabled = true;
+      btn.classList.remove('multi-selected');
+      if ((data.correctIndices || []).includes(i)) {
+        btn.classList.add('reveal-correct');
+      } else {
+        btn.classList.add('reveal-wrong');
+      }
+    });
+
+  } else if (type === 'match') {
+    labelEl.textContent        = '✅ التطابق الصحيح';
+    answerEl.style.display     = 'none';
+    pairsEl.style.display      = 'block';
+    pairsEl.innerHTML = (data.correctPairs || []).map(p =>
+      `<li class="result-pair">
+        <span dir="auto">${escapeHtml(p.left)}</span>
+        <span class="pair-arrow">→</span>
+        <span dir="auto">${escapeHtml(p.right)}</span>
+      </li>`
+    ).join('');
+
+  } else if (type === 'order') {
+    labelEl.textContent    = '✅ الترتيب الصحيح';
+    answerEl.style.display = 'none';
+    pairsEl.style.display  = 'block';
+    pairsEl.innerHTML = (data.correctOrder || []).map((itemIdx, pos) =>
+      `<li class="result-pair">
+        <span class="result-order-rank">${pos + 1}</span>
+        <span dir="auto">${escapeHtml((data.items || [])[itemIdx] || '')}</span>
+      </li>`
+    ).join('');
+  }
+
+  // Score / streak message for player
+  const myRound = (data.roundScores || []).find(r => r.id === socket.id);
   if (state.role === 'player' && myRound) {
     state.myStreak = myRound.streak;
     state.myScore  = myRound.totalScore;
+
     if (myRound.isCorrect) {
       Sounds.correct();
       resultMsg.textContent = `+${myRound.roundScore} pts 🎉`;
-      resultMsg.className = 'result-score-msg correct';
-      streakMsg.textContent = myRound.streak >= 2 ? `🔥 ${myRound.streak} in a row!` : '';
+      resultMsg.className   = 'result-score-msg correct';
+      streakMsg.textContent = myRound.streak >= 2 ? `🔥 ${myRound.streak} على التوالي!` : '';
+    } else if (myRound.roundScore > 0) {
+      // Partial credit (match / order but not 100%)
+      Sounds.correct();
+      resultMsg.textContent = `+${myRound.roundScore} pts (جزئي)`;
+      resultMsg.className   = 'result-score-msg correct';
+      streakMsg.textContent = '';
     } else {
       Sounds.wrong();
-      resultMsg.textContent = 'Wrong answer. 0 pts.';
-      resultMsg.className = 'result-score-msg incorrect';
+      resultMsg.textContent = 'إجابة خاطئة. ٠ نقطة.';
+      resultMsg.className   = 'result-score-msg incorrect';
       streakMsg.textContent = '';
     }
   } else {
@@ -352,7 +657,6 @@ function showQuestionResult(data) {
     streakMsg.textContent = '';
   }
 
-  // Small delay so the reveal animation can be seen before switching views
   setTimeout(() => showView('view-question-result'), 400);
 }
 
@@ -448,6 +752,17 @@ document.getElementById('btn-back-from-host-lobby').addEventListener('click', ()
   showView('view-home');
 });
 
+// Host Lobby — Mode toggle
+document.getElementById('btn-mode-local').addEventListener('click', () => {
+  Sounds.click();
+  socket.emit('host:mode:set', { mode: 'local' });
+});
+
+document.getElementById('btn-mode-global').addEventListener('click', () => {
+  Sounds.click();
+  socket.emit('host:mode:set', { mode: 'global' });
+});
+
 // Host Start Game
 document.getElementById('btn-start-game').addEventListener('click', () => {
   Sounds.click();
@@ -468,6 +783,24 @@ document.getElementById('btn-pause-resume').addEventListener('click', () => {
 document.getElementById('btn-skip').addEventListener('click', () => {
   Sounds.click();
   socket.emit('host:skip');
+});
+
+// Submit answer (multi / match / order)
+document.getElementById('btn-submit-answer').addEventListener('click', () => {
+  if (state.hasAnswered) return;
+  Sounds.click();
+  const type = state.currentQuestionType;
+  if (type === 'multi') {
+    const selected = Array.from(
+      document.querySelectorAll('#player-options-grid .multi-selected')
+    ).map(el => parseInt(el.dataset.index, 10));
+    if (selected.length === 0) return;
+    submitAnswer({ answerIndices: selected });
+  } else if (type === 'match') {
+    submitAnswer({ matches: [...state.matchConnections] });
+  } else if (type === 'order') {
+    submitAnswer({ order: [...state.orderItemOrder] });
+  }
 });
 
 // Mute toggle
@@ -491,26 +824,19 @@ document.getElementById('btn-home-from-closed').addEventListener('click', () => 
 // ─────────────────────────────────────────────
 
 /** HOST: Room created successfully */
-socket.on('room:created', ({ pin }) => {
+socket.on('room:created', ({ pin, ...modeInfo }) => {
   state.pin = pin;
   document.getElementById('host-pin').textContent = pin;
   document.getElementById('host-player-count').textContent = '0';
   document.getElementById('host-player-list').innerHTML = '';
 
-  // Generate QR code pointing to join URL with PIN pre-filled
-  const joinUrl = `${window.location.origin}/?pin=${pin}`;
-  const qrContainer = document.getElementById('host-qr-canvas');
-  qrContainer.innerHTML = ''; // clear any previous QR
-  new QRCode(qrContainer, {
-    text: joinUrl,
-    width: 180,
-    height: 180,
-    colorDark: '#ffffff',
-    colorLight: '#16213e',
-    correctLevel: QRCode.CorrectLevel.H,
-  });
-
+  applyModeInfo(modeInfo);
   showView('view-host-lobby');
+});
+
+/** HOST: Mode updated (local/global) */
+socket.on('room:mode', (modeInfo) => {
+  applyModeInfo(modeInfo);
 });
 
 /** PLAYER: Successfully joined the room */
@@ -578,7 +904,12 @@ socket.on('game:paused', () => {
   Sounds.pause();
   const btn = document.getElementById('btn-pause-resume');
   if (btn) { btn.textContent = '▶️ Resume'; btn.dataset.paused = 'true'; }
-  document.getElementById('overlay-paused').style.display = 'flex';
+  const overlay = document.getElementById('overlay-paused');
+  if (state.role === 'host') {
+    overlay.style.display = 'none';
+  } else {
+    overlay.style.display = 'flex';
+  }
 });
 
 /** BOTH: Game resumed */

@@ -4,6 +4,8 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
+const os = require('os');
+const QRCode = require('qrcode');
 const config = require('../config');
 
 // Recorded once at process startup — shown on the home screen
@@ -12,6 +14,9 @@ const BUILD_TIME = new Date().toLocaleString('en-GB', {
   hour: '2-digit', minute: '2-digit', second: '2-digit',
   hour12: false, timeZoneName: 'short',
 });
+
+const QUIZ_DATA_URL =
+  process.env.QUIZ_DATA_URL || `https://${config.DOMAIN}/api/quiz-data`;
 
 // ─────────────────────────────────────────────
 // Express + HTTP server
@@ -39,51 +44,189 @@ const io = new Server(httpServer, {
 });
 
 // ─────────────────────────────────────────────
-// Hardcoded Quiz Questions
-// Each question has: text, options (4), correctIndex (0-based)
+// Quiz Questions — Arabic, mixed types
+//   single  → pick one option              (correctIndex)
+//   multi   → pick ALL correct options     (correctIndices[])
+//   match   → connect left→right pairs     (pairs[]{left,right})
+//   order   → drag to correct sequence     (items[], correctOrder[])
 // ─────────────────────────────────────────────
-const QUESTIONS = [
+const DEFAULT_QUESTIONS = [
+  // ── Single choice ──────────────────────────
   {
-    text: 'What is the capital of France?',
-    options: ['Berlin', 'Madrid', 'Paris', 'Rome'],
+    type: 'single',
+    text: 'ما هي عاصمة فرنسا؟',
+    options: ['برلين', 'مدريد', 'باريس', 'روما'],
     correctIndex: 2,
+    duration: 20,
   },
   {
-    text: 'How many planets are in our solar system?',
-    options: ['7', '8', '9', '10'],
+    type: 'single',
+    text: 'كم عدد الكواكب في المجموعة الشمسية؟',
+    options: ['٧', '٨', '٩', '١٠'],
     correctIndex: 1,
+    duration: 20,
   },
   {
-    text: 'Which element has the chemical symbol "O"?',
-    options: ['Gold', 'Oxygen', 'Osmium', 'Oganesson'],
+    type: 'single',
+    text: 'ما الرمز الكيميائي للذهب؟',
+    options: ['Fe', 'Au', 'Ag', 'Cu'],
     correctIndex: 1,
+    duration: 25,
   },
   {
-    text: 'Who painted the Mona Lisa?',
-    options: ['Michelangelo', 'Raphael', 'Caravaggio', 'Leonardo da Vinci'],
+    type: 'single',
+    text: 'ما أكبر محيطات الأرض؟',
+    options: ['الأطلسي', 'الهندي', 'القطبي الشمالي', 'الهادئ'],
     correctIndex: 3,
+    duration: 20,
   },
   {
-    text: 'What is 12 × 12?',
-    options: ['124', '144', '132', '148'],
-    correctIndex: 1,
-  },
-  {
-    text: 'Which country invented the World Wide Web?',
-    options: ['USA', 'Germany', 'United Kingdom', 'Japan'],
-    correctIndex: 2,
-  },
-  {
-    text: 'What is the largest ocean on Earth?',
-    options: ['Atlantic', 'Indian', 'Arctic', 'Pacific'],
-    correctIndex: 3,
-  },
-  {
-    text: 'Which programming language is known as the "language of the web"?',
+    type: 'single',
+    text: 'أي لغة برمجة تُعرف بـ"لغة الإنترنت"؟',
     options: ['Python', 'Java', 'JavaScript', 'C++'],
     correctIndex: 2,
+    duration: 20,
+  },
+  // ── Multi-select ───────────────────────────
+  {
+    type: 'multi',
+    text: 'أي من هذه الحيوانات ثدييات؟\n(اختر كل الإجابات الصحيحة)',
+    options: ['الدلفين', 'التمساح', 'الحوت', 'السلحفاة'],
+    correctIndices: [0, 2],
+    duration: 30,
+  },
+  {
+    type: 'multi',
+    text: 'أي من هذه الدول تقع في قارة أفريقيا؟\n(اختر كل الإجابات الصحيحة)',
+    options: ['المغرب', 'البرازيل', 'نيجيريا', 'الأرجنتين'],
+    correctIndices: [0, 2],
+    duration: 30,
+  },
+  // ── Match / Connect ────────────────────────
+  {
+    type: 'match',
+    text: 'طابق كل دولة بعاصمتها',
+    pairs: [
+      { left: 'فرنسا',    right: 'باريس'     },
+      { left: 'اليابان',  right: 'طوكيو'     },
+      { left: 'البرازيل', right: 'برازيليا'  },
+      { left: 'مصر',      right: 'القاهرة'   },
+    ],
+    duration: 45,
+  },
+  {
+    type: 'match',
+    text: 'طابق كل مخترع باختراعه',
+    pairs: [
+      { left: 'الهاتف',            right: 'غراهام بيل'       },
+      { left: 'المصباح الكهربائي', right: 'توماس إديسون'     },
+      { left: 'الطائرة',           right: 'الأخوان رايت'     },
+      { left: 'الراديو',           right: 'غوليلمو ماركوني'  },
+    ],
+    duration: 45,
+  },
+  // ── Order / Sort ───────────────────────────
+  {
+    type: 'order',
+    text: 'رتب هذه الكواكب من الأقرب إلى الأبعد عن الشمس',
+    // displayed scrambled; correctOrder = indices of items in the right sequence
+    items: ['المريخ', 'عطارد', 'الزهرة', 'الأرض'],
+    correctOrder: [1, 2, 3, 0], // عطارد، الزهرة، الأرض، المريخ
+    duration: 40,
+  },
+  {
+    type: 'order',
+    text: 'رتب هذه الأحداث التاريخية من الأقدم إلى الأحدث',
+    items: ['الثورة الفرنسية', 'اكتشاف أمريكا', 'الحرب العالمية الثانية', 'هبوط الإنسان على القمر'],
+    correctOrder: [1, 0, 2, 3], // 1492، 1789، 1939-45، 1969
+    duration: 40,
   },
 ];
+
+let QUESTIONS = DEFAULT_QUESTIONS;
+
+// Quiz data endpoint — used by remote fetch
+app.get('/api/quiz-data', (_req, res) => res.json({ questions: QUESTIONS }));
+
+// ─────────────────────────────────────────────
+// Local IP detection + mode state
+// ─────────────────────────────────────────────
+function getLocalIp() {
+  const nets = os.networkInterfaces();
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name] || []) {
+      if (net.family === 'IPv4' && !net.internal) {
+        return net.address;
+      }
+    }
+  }
+  return null;
+}
+
+const localIp = getLocalIp();
+let activeMode = 'global';
+
+function getJoinBaseUrl(mode) {
+  if (mode === 'local' && localIp) {
+    return `http://${localIp}:${config.PORT}`;
+  }
+  return `https://${config.DOMAIN}`;
+}
+
+async function buildRoomModePayload(room) {
+  let mode = room.mode || activeMode;
+  if (mode === 'local' && !localIp) {
+    mode = 'global';
+    room.mode = 'global';
+  }
+  const joinUrl = `${getJoinBaseUrl(mode)}/?pin=${room.pin}`;
+  let qrSvg = '';
+  try {
+    qrSvg = await QRCode.toString(joinUrl, {
+      type: 'svg',
+      margin: 1,
+      width: 200,
+    });
+  } catch (err) {
+    console.warn('[QR] Failed to generate SVG', err.message);
+  }
+
+  return {
+    mode,
+    joinUrl,
+    qrSvg,
+    localIp,
+    localIpAvailable: Boolean(localIp),
+    warning: localIp ? '' : 'No LAN IP detected. Defaulting to Global mode.',
+  };
+}
+
+// ─────────────────────────────────────────────
+// Hybrid data fetching
+// ─────────────────────────────────────────────
+async function getQuizData() {
+  try {
+    const res = await fetch(QUIZ_DATA_URL, {
+      headers: { Accept: 'application/json' },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const questions = Array.isArray(data) ? data : data.questions;
+    if (!Array.isArray(questions) || questions.length === 0) return null;
+    return questions;
+  } catch (err) {
+    console.warn('[Quiz] Remote fetch failed, using local questions.', err.message);
+    return null;
+  }
+}
+
+async function refreshQuestions() {
+  const remote = await getQuizData();
+  if (remote) QUESTIONS = remote;
+}
+
+// Prefetch on startup (best-effort)
+void refreshQuestions();
 
 // ─────────────────────────────────────────────
 // In-Memory Room State
@@ -94,10 +237,10 @@ const rooms = new Map();
 /**
  * Room structure:
  * {
- *   pin, hostSocketId, state, questionIndex, questionTimer, questionStartTime,
- *   paused, pausedTimeRemaining,
+ *   pin, hostSocketId, state, mode, questionIndex, questionTimer, questionStartTime,
+ *   questionDuration, paused, pausedTimeRemaining,
  *   players: Map<socketId, { id, nickname, score, streak, maxStreak,
- *                            currentAnswerIndex, answerTime }>
+ *                            currentAnswer, answerTime }>
  * }
  */
 
@@ -127,23 +270,46 @@ function getPlayerList(room) {
   }));
 }
 
+/** Build a leaderboard payload for game:over. */
+function buildLeaderboard(room) {
+  return Array.from(room.players.values())
+    .map((p) => ({
+      id: p.id,
+      nickname: p.nickname,
+      totalScore: p.score,
+      streak: p.streak,
+    }))
+    .sort((a, b) => b.totalScore - a.totalScore);
+}
+
 /** Find the room owned by a given host socket. */
 function findHostRoom(hostSocketId) {
   return Array.from(rooms.values()).find((r) => r.hostSocketId === hostSocketId) || null;
 }
 
 /**
- * Base score formula:
- *   correct → 1000 × (1 - (timeTaken / totalTime) × 0.5)
- *   wrong   → 0
- * Streak bonus: +100 per consecutive correct (capped at +500 for 5+)
+ * Binary score (single / multi): full points or zero.
+ * Streak bonus: +100 per consecutive correct (max +500 for 5+)
  */
-function calculateScore(timeTakenSec, isCorrect, streak) {
+function calculateScore(timeTakenSec, isCorrect, streak, duration) {
   if (!isCorrect) return 0;
-  const total = config.GAME.QUESTION_DURATION_SEC;
+  const total = duration || config.GAME.QUESTION_DURATION_SEC;
   const ratio = Math.min(timeTakenSec, total) / total;
   const base = Math.round(1000 * (1 - ratio * 0.5));
-  const streakBonus = Math.min(streak, 5) * 100; // up to +500
+  const streakBonus = Math.min(streak, 5) * 100;
+  return base + streakBonus;
+}
+
+/**
+ * Partial-credit score (match / order): fraction [0..1] of correct items.
+ * Streak bonus only applied when fraction === 1 (fully correct).
+ */
+function calculatePartialScore(timeTakenSec, fraction, streak, duration) {
+  if (fraction <= 0) return 0;
+  const total = duration || config.GAME.QUESTION_DURATION_SEC;
+  const ratio = Math.min(timeTakenSec, total) / total;
+  const base = Math.round(1000 * (1 - ratio * 0.5) * fraction);
+  const streakBonus = fraction === 1 ? Math.min(streak, 5) * 100 : 0;
   return base + streakBonus;
 }
 
@@ -154,23 +320,47 @@ function calculateScore(timeTakenSec, isCorrect, streak) {
 /** Broadcast the current question to all sockets in a room. */
 function sendQuestion(room) {
   const q = QUESTIONS[room.questionIndex];
-  // Only send text + options (never the correctIndex!) to clients
+  const duration = q.duration || config.GAME.QUESTION_DURATION_SEC;
+  room.currentQuestionMeta = null;
+
+  // Build the client-safe question payload (never send answer keys)
+  const questionPayload = { type: q.type, text: q.text };
+
+  if (q.type === 'single' || q.type === 'multi') {
+    questionPayload.options = q.options;
+
+  } else if (q.type === 'match') {
+    // Shuffle right items; store shuffle map so endQuestion can score
+    const n = q.pairs.length;
+    const rightOrder = Array.from({ length: n }, (_, i) => i); // rightOrder[displayIdx] = originalPairIdx
+    for (let i = n - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [rightOrder[i], rightOrder[j]] = [rightOrder[j], rightOrder[i]];
+    }
+    room.currentQuestionMeta = { rightOrder };
+    questionPayload.lefts  = q.pairs.map(p => p.left);
+    questionPayload.rights = rightOrder.map(i => q.pairs[i].right); // shuffled
+
+  } else if (q.type === 'order') {
+    questionPayload.items = q.items; // displayed in stored (scrambled) order
+  }
+
   io.to(room.pin).emit('game:question', {
     questionIndex: room.questionIndex,
     total: QUESTIONS.length,
-    question: { text: q.text, options: q.options },
-    duration: config.GAME.QUESTION_DURATION_SEC,
+    question: questionPayload,
+    duration,
   });
 
   room.questionStartTime = Date.now();
-  room.state = 'question';
+  room.questionDuration  = duration;
+  room.state  = 'question';
   room.paused = false;
   room.pausedTimeRemaining = 0;
 
-  // Server-side timer — locks answers when time is up
   room.questionTimer = setTimeout(() => {
     endQuestion(room);
-  }, config.GAME.QUESTION_DURATION_SEC * 1000);
+  }, duration * 1000);
 }
 
 /** End a question: reveal answer, compute scores, show leaderboard. */
@@ -182,22 +372,58 @@ function endQuestion(room) {
 
   room.state = 'leaderboard';
 
-  const q = QUESTIONS[room.questionIndex];
+  const q        = QUESTIONS[room.questionIndex];
+  const duration = room.questionDuration || config.GAME.QUESTION_DURATION_SEC;
 
-  // Compute per-player round scores and add to total
+  // ── Compute per-player round scores ──────────────────────────────────
   const roundScores = [];
-  room.players.forEach((player) => {
-    const isCorrect = player.currentAnswerIndex === q.correctIndex;
 
-    // Update streak BEFORE calculating score so bonus applies immediately
-    if (isCorrect) {
-      player.streak++;
-      player.maxStreak = Math.max(player.maxStreak, player.streak);
-    } else {
-      player.streak = 0;
+  room.players.forEach((player) => {
+    const answer      = player.currentAnswer;
+    const timeTaken   = player.answerTime;
+    let   isCorrect   = false;
+    let   roundScore  = 0;
+
+    if (q.type === 'single') {
+      isCorrect = answer && answer.answerIndex === q.correctIndex;
+      if (isCorrect) { player.streak++; player.maxStreak = Math.max(player.maxStreak, player.streak); }
+      else             player.streak = 0;
+      roundScore = calculateScore(timeTaken, isCorrect, player.streak, duration);
+
+    } else if (q.type === 'multi') {
+      const submitted = [...(answer?.answerIndices || [])].sort((a, b) => a - b);
+      const correct   = [...q.correctIndices].sort((a, b) => a - b);
+      isCorrect = submitted.length === correct.length && submitted.every((v, i) => v === correct[i]);
+      if (isCorrect) { player.streak++; player.maxStreak = Math.max(player.maxStreak, player.streak); }
+      else             player.streak = 0;
+      roundScore = calculateScore(timeTaken, isCorrect, player.streak, duration);
+
+    } else if (q.type === 'match') {
+      const submitted  = answer?.matches || [];
+      const rightOrder = room.currentQuestionMeta?.rightOrder || [];
+      let   correct    = 0;
+      for (let i = 0; i < q.pairs.length; i++) {
+        if (submitted[i] !== undefined && rightOrder[submitted[i]] === i) correct++;
+      }
+      const fraction  = correct / q.pairs.length;
+      isCorrect       = fraction === 1;
+      if (isCorrect) { player.streak++; player.maxStreak = Math.max(player.maxStreak, player.streak); }
+      else             player.streak = 0;
+      roundScore = calculatePartialScore(timeTaken, fraction, player.streak, duration);
+
+    } else if (q.type === 'order') {
+      const submitted = answer?.order || [];
+      let   correct   = 0;
+      q.correctOrder.forEach((itemIdx, pos) => {
+        if (submitted[pos] === itemIdx) correct++;
+      });
+      const fraction  = correct / q.items.length;
+      isCorrect       = fraction === 1;
+      if (isCorrect) { player.streak++; player.maxStreak = Math.max(player.maxStreak, player.streak); }
+      else             player.streak = 0;
+      roundScore = calculatePartialScore(timeTaken, fraction, player.streak, duration);
     }
 
-    const roundScore = calculateScore(player.answerTime, isCorrect, player.streak);
     player.score += roundScore;
     roundScores.push({
       id: player.id,
@@ -207,39 +433,52 @@ function endQuestion(room) {
       isCorrect,
       streak: player.streak,
     });
-    // Reset answer for next question
-    player.currentAnswerIndex = -1;
-    player.answerTime = config.GAME.QUESTION_DURATION_SEC;
+
+    // Reset for next question
+    player.currentAnswer = null;
+    player.answerTime    = duration;
   });
 
-  // Sort round scores descending
+  // Sort highest score first
   roundScores.sort((a, b) => b.totalScore - a.totalScore);
 
-  // Broadcast question result
-  io.to(room.pin).emit('question:end', {
-    correctIndex: q.correctIndex,
-    correctOption: q.options[q.correctIndex],
-    roundScores,
-  });
+  // ── Build correct-answer reveal payload ──────────────────────────────
+  const correctReveal = { questionType: q.type, roundScores };
 
-  // After a short pause, show leaderboard then advance
+  if (q.type === 'single') {
+    correctReveal.correctIndex  = q.correctIndex;
+    correctReveal.correctOption = q.options[q.correctIndex];
+
+  } else if (q.type === 'multi') {
+    correctReveal.correctIndices = q.correctIndices;
+    correctReveal.correctOptions = q.correctIndices.map(i => q.options[i]);
+
+  } else if (q.type === 'match') {
+    correctReveal.correctPairs = q.pairs; // [{left, right}]
+
+  } else if (q.type === 'order') {
+    correctReveal.items        = q.items;
+    correctReveal.correctOrder = q.correctOrder;
+  }
+
+  io.to(room.pin).emit('question:end', correctReveal);
+
+  // ── Advance to leaderboard / next question ────────────────────────────
   setTimeout(() => {
-    const leaderboard = roundScores; // already sorted
-    const isLastQuestion = room.questionIndex >= QUESTIONS.length - 1;
+    const leaderboard     = roundScores;
+    const isLastQuestion  = room.questionIndex >= QUESTIONS.length - 1;
 
     if (isLastQuestion) {
       room.state = 'finished';
       io.to(room.pin).emit('game:over', { leaderboard });
     } else {
       io.to(room.pin).emit('game:leaderboard', { leaderboard, isFinal: false });
-
-      // Advance to next question after leaderboard display time
       setTimeout(() => {
         room.questionIndex++;
         sendQuestion(room);
       }, config.GAME.LEADERBOARD_DURATION_MS);
     }
-  }, 2000); // 2s to show the correct answer highlight before leaderboard
+  }, 2000);
 }
 
 // ─────────────────────────────────────────────
@@ -249,7 +488,7 @@ io.on('connection', (socket) => {
   console.log(`[+] Socket connected: ${socket.id}`);
 
   // ── HOST: Create a new room ──────────────────
-  socket.on('host:create', () => {
+  socket.on('host:create', async () => {
     const pin = generatePIN();
 
     const room = {
@@ -257,9 +496,11 @@ io.on('connection', (socket) => {
       hostSocketId: socket.id,
       players: new Map(),
       state: 'lobby',
+      mode: activeMode,
       questionIndex: 0,
       questionTimer: null,
       questionStartTime: 0,
+      questionDuration: config.GAME.QUESTION_DURATION_SEC,
       paused: false,
       pausedTimeRemaining: 0,
     };
@@ -268,7 +509,8 @@ io.on('connection', (socket) => {
     socket.join(pin);
 
     console.log(`[Room] Created: PIN=${pin} by host=${socket.id}`);
-    socket.emit('room:created', { pin });
+    const modePayload = await buildRoomModePayload(room);
+    socket.emit('room:created', { pin, ...modePayload });
   });
 
   // ── PLAYER: Join a room ──────────────────────
@@ -306,7 +548,7 @@ io.on('connection', (socket) => {
       score: 0,
       streak: 0,
       maxStreak: 0,
-      currentAnswerIndex: -1,
+      currentAnswer: null,          // generic — set when player submits
       answerTime: config.GAME.QUESTION_DURATION_SEC,
     };
     room.players.set(socket.id, player);
@@ -332,7 +574,7 @@ io.on('connection', (socket) => {
   });
 
   // ── HOST: Start the game ─────────────────────
-  socket.on('host:start', () => {
+  socket.on('host:start', async () => {
     // Find the room this host owns
     const room = Array.from(rooms.values()).find(
       (r) => r.hostSocketId === socket.id
@@ -355,6 +597,9 @@ io.on('connection', (socket) => {
 
     console.log(`[Room ${room.pin}] Game started by host ${socket.id}`);
 
+    // Always refresh quiz data from the cloud before starting
+    await refreshQuestions();
+
     // Broadcast game start to everyone in the room
     io.to(room.pin).emit('game:start', {
       totalQuestions: QUESTIONS.length,
@@ -366,6 +611,23 @@ io.on('connection', (socket) => {
     }, 1500);
   });
 
+  // ── HOST: Set connection mode (local/global) ─
+  socket.on('host:mode:set', async ({ mode }) => {
+    const room = findHostRoom(socket.id);
+    if (!room || room.state !== 'lobby') return;
+
+    if (mode === 'local' && !localIp) {
+      room.mode = 'global';
+    } else {
+      room.mode = mode === 'local' ? 'local' : 'global';
+    }
+
+    activeMode = room.mode;
+
+    const payload = await buildRoomModePayload(room);
+    io.to(room.pin).emit('room:mode', payload);
+  });
+
   // ── HOST: Pause the game ─────────────────────
   socket.on('host:pause', () => {
     const room = findHostRoom(socket.id);
@@ -373,10 +635,8 @@ io.on('connection', (socket) => {
 
     room.paused = true;
     const elapsed = Date.now() - room.questionStartTime;
-    room.pausedTimeRemaining = Math.max(
-      0,
-      config.GAME.QUESTION_DURATION_SEC * 1000 - elapsed
-    );
+    const durMs   = (room.questionDuration || config.GAME.QUESTION_DURATION_SEC) * 1000;
+    room.pausedTimeRemaining = Math.max(0, durMs - elapsed);
     clearTimeout(room.questionTimer);
     room.questionTimer = null;
 
@@ -392,10 +652,8 @@ io.on('connection', (socket) => {
     if (!room || !room.paused) return;
 
     room.paused = false;
-    // Shift questionStartTime so elapsed time is correct when resumed
-    room.questionStartTime = Date.now() - (
-      config.GAME.QUESTION_DURATION_SEC * 1000 - room.pausedTimeRemaining
-    );
+    const durMs = (room.questionDuration || config.GAME.QUESTION_DURATION_SEC) * 1000;
+    room.questionStartTime = Date.now() - (durMs - room.pausedTimeRemaining);
     room.questionTimer = setTimeout(() => endQuestion(room), room.pausedTimeRemaining);
 
     console.log(`[Room ${room.pin}] Resumed. ${Math.ceil(room.pausedTimeRemaining / 1000)}s remaining.`);
@@ -435,46 +693,35 @@ io.on('connection', (socket) => {
   });
 
   // ── PLAYER: Submit an answer ─────────────────
-  socket.on('player:answer', ({ questionIndex, answerIndex }) => {
+  socket.on('player:answer', ({ questionIndex, answer }) => {
     const pin = socket.data.pin;
     if (!pin) return;
 
     const room = rooms.get(pin);
     if (!room || room.state !== 'question') return;
 
-    // Ignore answers for a different question (race condition guard)
     if (questionIndex !== room.questionIndex) return;
 
     const player = room.players.get(socket.id);
     if (!player) return;
 
     // Ignore if already answered
-    if (player.currentAnswerIndex !== -1) return;
+    if (player.currentAnswer !== null) return;
 
-    // Record the answer and time taken
-    const timeTakenMs = Date.now() - room.questionStartTime;
-    const timeTakenSec = timeTakenMs / 1000;
+    const timeTakenSec = (Date.now() - room.questionStartTime) / 1000;
+    player.currentAnswer = answer;
+    player.answerTime    = timeTakenSec;
 
-    player.currentAnswerIndex = answerIndex;
-    player.answerTime = timeTakenSec;
+    socket.emit('answer:received', { answer });
 
-    // Acknowledge to the player that their answer was received
-    socket.emit('answer:received', { answerIndex });
-
-    // Notify the host how many players have answered (live counter)
-    const answeredCount = Array.from(room.players.values()).filter(
-      (p) => p.currentAnswerIndex !== -1
-    ).length;
-
+    // Notify host with live counter
+    const answeredCount = Array.from(room.players.values()).filter(p => p.currentAnswer !== null).length;
     const hostSocket = io.sockets.sockets.get(room.hostSocketId);
     if (hostSocket) {
-      hostSocket.emit('question:answer_update', {
-        answered: answeredCount,
-        total: room.players.size,
-      });
+      hostSocket.emit('question:answer_update', { answered: answeredCount, total: room.players.size });
     }
 
-    // Auto-end question if everyone has answered
+    // Auto-end when everyone has answered
     if (answeredCount === room.players.size) {
       endQuestion(room);
     }
@@ -508,13 +755,21 @@ io.on('connection', (socket) => {
       console.log(`[Room ${hostedRoom.pin}] Host disconnected. Closing room.`);
       if (hostedRoom.questionTimer) clearTimeout(hostedRoom.questionTimer);
 
-      io.to(hostedRoom.pin).emit('room:closed', {
-        message: 'The host has disconnected. The game has ended.',
-      });
+      if (hostedRoom.state && hostedRoom.state !== 'lobby') {
+        hostedRoom.state = 'finished';
+        const leaderboard = buildLeaderboard(hostedRoom);
+        io.to(hostedRoom.pin).emit('game:over', { leaderboard });
+      } else {
+        io.to(hostedRoom.pin).emit('room:closed', {
+          message: 'The host has disconnected. The game has ended.',
+        });
+      }
 
-      // Remove all sockets from the Socket.io room
-      io.socketsLeave(hostedRoom.pin);
-      rooms.delete(hostedRoom.pin);
+      // Remove all sockets from the Socket.io room after a short delay
+      setTimeout(() => {
+        io.socketsLeave(hostedRoom.pin);
+        rooms.delete(hostedRoom.pin);
+      }, 500);
     }
   });
 });
@@ -522,7 +777,7 @@ io.on('connection', (socket) => {
 // ─────────────────────────────────────────────
 // Start Server
 // ─────────────────────────────────────────────
-httpServer.listen(config.PORT, () => {
+httpServer.listen(config.PORT, '0.0.0.0', () => {
   console.log(`
   ╔══════════════════════════════════════╗
   ║       Quiz Engine Server             ║

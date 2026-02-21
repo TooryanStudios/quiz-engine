@@ -71,7 +71,22 @@
   ═══════════════════════════════════════════ -->
   <div id="view-host-lobby" class="view">
     <div class="card lobby-card">
+      <img class="studio-logo" src="/logo.png" alt="Studio logo" />
       <button class="btn-back" id="btn-back-from-host-lobby">← Back</button>
+
+      <!-- Connection Mode Toggle -->
+      <div class="mode-toggle">
+        <div class="mode-header">
+          <span class="mode-indicator" id="mode-indicator">🌐 Global</span>
+          <span class="mode-warning" id="mode-warning" style="display:none"></span>
+        </div>
+        <div class="mode-buttons">
+          <button class="btn btn-mode" id="btn-mode-local">📶 Local</button>
+          <button class="btn btn-mode" id="btn-mode-global">🌐 Global</button>
+        </div>
+        <p class="mode-url" id="host-join-url">—</p>
+      </div>
+
       <div class="pin-display">
         <span class="pin-label">Room PIN</span>
         <span class="pin-code" id="host-pin">------</span>
@@ -102,6 +117,7 @@
   ═══════════════════════════════════════════ -->
   <div id="view-player-lobby" class="view">
     <div class="card lobby-card">
+      <img class="studio-logo" src="/logo.png" alt="Studio logo" />
       <div class="pin-display">
         <span class="pin-label">Room PIN</span>
         <span class="pin-code" id="player-room-pin">------</span>
@@ -158,8 +174,27 @@
         <p class="question-text" id="player-question-text">Loading question…</p>
       </div>
       <div class="options-grid" id="player-options-grid">
-        <!-- 4 answer buttons injected by game.js -->
+        <!-- single / multi buttons injected by game.js -->
       </div>
+
+      <!-- ── Match: tap-to-connect layout ── -->
+      <div id="player-match-container" class="match-container" style="display:none">
+        <div class="match-layout">
+          <div class="match-left-col"  id="match-left-col"></div>
+          <div class="match-right-pool" id="match-right-pool"></div>
+        </div>
+      </div>
+
+      <!-- ── Order: reorder list ── -->
+      <div id="player-order-container" class="order-container" style="display:none">
+        <ol class="order-list" id="order-list"></ol>
+      </div>
+
+      <!-- Submit button for multi / match / order (hidden for single) -->
+      <button id="btn-submit-answer" class="btn btn-success full-width" style="display:none">
+        ✔ تأكيد الإجابة
+      </button>
+
       <p class="answered-msg" id="player-answered-msg"></p>
     </div>
   </div>
@@ -180,8 +215,10 @@
   ═══════════════════════════════════════════ -->
   <div id="view-question-result" class="view">
     <div class="card center-card result-card">
-      <h2 id="result-correct-label">✅ Correct Answer</h2>
+      <h2 id="result-correct-label">✅ الإجابة الصحيحة</h2>
       <p class="result-answer" id="result-correct-answer">—</p>
+      <!-- For match / order types: correct pairs / sorted items -->
+      <ul class="result-pairs-list" id="result-pairs-list" style="display:none"></ul>
       <p id="result-player-score-msg" class="result-score-msg"></p>
       <p id="result-streak-msg" class="result-streak-msg"></p>
     </div>
@@ -225,8 +262,6 @@
   </div>
 
   <!-- ─── Scripts ─── -->
-  <!-- QR Code generator — browser-native, exposes window.QRCode -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <!-- Confetti for game over celebration -->
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
   <!-- Load Socket.io client from the server (auto-served by socket.io) -->
