@@ -1123,6 +1123,19 @@ socket.on('game:over', (data) => {
   }
   const listEl = document.getElementById('final-leaderboard-list');
   const newSessionBtn = document.getElementById('btn-start-new-session');
+  const winnerWrap = document.getElementById('winner-announcement');
+  const winnerNameEl = document.getElementById('winner-name');
+  const winnerScoreEl = document.getElementById('winner-score');
+
+  const winner = (data.leaderboard || [])[0];
+  if (winner) {
+    winnerWrap.style.display = 'block';
+    winnerNameEl.textContent = `👑 ${winner.nickname}`;
+    winnerScoreEl.textContent = `${winner.totalScore} pts`;
+  } else {
+    winnerWrap.style.display = 'none';
+  }
+
   newSessionBtn.style.display = state.role === 'host' ? 'block' : 'none';
   listEl.innerHTML = data.leaderboard
     .map(
