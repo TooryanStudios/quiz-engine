@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { auth } from '../lib/firebase'
 import { listMyQuizzes } from '../lib/quizRepo'
 
-type QuizItem = { id: string; title: string; slug: string; visibility: string }
+type QuizItem = { id: string; title: string; slug: string; visibility: string; questions: unknown[] }
 
 export function DashboardPage() {
   const [quizzes, setQuizzes] = useState<QuizItem[]>([])
@@ -36,6 +36,7 @@ export function DashboardPage() {
               <strong>{q.title}</strong>
               <span style={{ marginLeft: '0.75rem', opacity: 0.6, fontSize: '0.85em' }}>{q.slug}</span>
               <span style={{ marginLeft: '0.5rem', opacity: 0.5, fontSize: '0.75em' }}>[{q.visibility}]</span>
+              <span style={{ marginLeft: '0.5rem', background: '#333', borderRadius: '4px', padding: '0 6px', fontSize: '0.75em' }}>{q.questions?.length ?? 0} Qs</span>
             </div>
             <Link to={`/editor/${q.id}`}>
               <button>Edit</button>
