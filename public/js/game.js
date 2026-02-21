@@ -616,34 +616,34 @@ socket.on('question:end', (data) => {
 
 /** BOTH: Leaderboard between questions */
 socket.on('game:leaderboard', (data) => {
-  setTimeout(() => {
-    showLeaderboard(data, false);
-  }, 2000); // Wait for result screen to be visible briefly
+  // Server already waits 2s after question:end before sending this — no extra delay needed
+  showLeaderboard(data, false);
 });
 
 /** BOTH: Game over — final leaderboard */
 socket.on('game:over', (data) => {
-  setTimeout(() => {
-    Sounds.fanfare();
-    // Confetti celebration
-    if (typeof confetti === 'function') {
-      confetti({ particleCount: 160, spread: 80, origin: { y: 0.5 } });
-      setTimeout(() => confetti({ particleCount: 80, angle: 60, spread: 55, origin: { x: 0 } }), 400);
-      setTimeout(() => confetti({ particleCount: 80, angle: 120, spread: 55, origin: { x: 1 } }), 700);
-    }
-    const listEl = document.getElementById('final-leaderboard-list');
-    listEl.innerHTML = data.leaderboard
-      .map(
-        (entry, i) =>
-          `<li class="lb-entry ${entry.id === socket.id ? 'lb-mine' : ''}" style="animation-delay:${i * 0.07}s">
-            <span class="lb-rank">${i + 1}</span>
-            <span class="lb-nickname">${escapeHtml(entry.nickname)}</span>
-            <span class="lb-score">${entry.totalScore} pts</span>
-          </li>`
-      )
-      .join('');
-    showView('view-game-over');
-  }, 2500);
+  // Stop timer immediately — player may still be on question view if they never answered
+  stopClientTimer();
+  document.getElementById('overlay-paused').style.display = 'none';
+  Sounds.fanfare();
+  // Confetti celebration
+  if (typeof confetti === 'function') {
+    confetti({ particleCount: 160, spread: 80, origin: { y: 0.5 } });
+    setTimeout(() => confetti({ particleCount: 80, angle: 60, spread: 55, origin: { x: 0 } }), 400);
+    setTimeout(() => confetti({ particleCount: 80, angle: 120, spread: 55, origin: { x: 1 } }), 700);
+  }
+  const listEl = document.getElementById('final-leaderboard-list');
+  listEl.innerHTML = data.leaderboard
+    .map(
+      (entry, i) =>
+        `<li class="lb-entry ${entry.id === socket.id ? 'lb-mine' : ''}" style="animation-delay:${i * 0.07}s">
+          <span class="lb-rank">${i + 1}</span>
+          <span class="lb-nickname">${escapeHtml(entry.nickname)}</span>
+          <span class="lb-score">${entry.totalScore} pts</span>
+        </li>`
+    )
+    .join('');
+  showView('view-game-over');
 });
 
 /** PLAYER: Kicked by host */
