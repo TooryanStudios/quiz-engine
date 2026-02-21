@@ -6,6 +6,13 @@ const { Server } = require('socket.io');
 const path = require('path');
 const config = require('../config');
 
+// Recorded once at process startup — shown on the home screen
+const BUILD_TIME = new Date().toLocaleString('en-GB', {
+  year: 'numeric', month: 'short', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit',
+  hour12: false, timeZoneName: 'short',
+});
+
 // ─────────────────────────────────────────────
 // Express + HTTP server
 // ─────────────────────────────────────────────
@@ -17,6 +24,9 @@ app.use(express.static(path.join(__dirname, '../public')));
 
 // Health check endpoint (used by Render.com)
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+
+// Build info endpoint — returns server start time for the home screen version badge
+app.get('/api/build-info', (_req, res) => res.json({ buildTime: BUILD_TIME }));
 
 // ─────────────────────────────────────────────
 // Socket.io setup with CORS

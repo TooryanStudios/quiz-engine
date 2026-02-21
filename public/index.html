@@ -22,8 +22,7 @@
         <button class="btn btn-secondary" id="btn-become-player">
           🙋 I'm a Player
         </button>
-      </div>
-    </div>
+      </div>      <p class="build-time" id="build-time">Loading version…</p>    </div>
   </div>
 
   <!-- ═══════════════════════════════════════════
@@ -78,7 +77,7 @@
       <div class="qr-section">
         <p class="qr-label">Scan to join instantly</p>
         <div class="qr-wrapper">
-          <canvas id="host-qr-canvas"></canvas>
+          <div id="host-qr-canvas"></div>
         </div>
       </div>
 
@@ -203,8 +202,8 @@
   </div>
 
   <!-- ─── Scripts ─── -->
-  <!-- QR Code generator (no build step needed) -->
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <!-- QR Code generator — browser-native, exposes window.QRCode -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <!-- Load Socket.io client from the server (auto-served by socket.io) -->
   <script src="/socket.io/socket.io.js"></script>
   <script src="/js/game.js"></script>

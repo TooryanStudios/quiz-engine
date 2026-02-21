@@ -104,6 +104,14 @@ h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-dim); }
   font-size: 1rem;
 }
 
+.build-time {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  opacity: 0.55;
+  letter-spacing: 0.3px;
+  margin-top: -8px;
+}
+
 .hint-text {
   color: var(--text-dim);
   font-size: 0.85rem;

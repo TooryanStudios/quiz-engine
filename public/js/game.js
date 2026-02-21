@@ -1,5 +1,14 @@
 'use strict';
 
+// Fetch and display server build time on home screen
+fetch('/api/build-info')
+  .then((r) => r.json())
+  .then(({ buildTime }) => {
+    const el = document.getElementById('build-time');
+    if (el) el.textContent = `Build: ${buildTime}`;
+  })
+  .catch(() => {});
+
 // Auto-fill PIN from URL query param (when player scans QR code)
 (function () {
   const params = new URLSearchParams(window.location.search);
@@ -337,11 +346,15 @@ socket.on('room:created', ({ pin }) => {
 
   // Generate QR code pointing to join URL with PIN pre-filled
   const joinUrl = `${window.location.origin}/?pin=${pin}`;
-  const canvas = document.getElementById('host-qr-canvas');
-  QRCode.toCanvas(canvas, joinUrl, {
+  const qrContainer = document.getElementById('host-qr-canvas');
+  qrContainer.innerHTML = ''; // clear any previous QR
+  new QRCode(qrContainer, {
+    text: joinUrl,
     width: 180,
-    margin: 2,
-    color: { dark: '#ffffff', light: '#16213e' },
+    height: 180,
+    colorDark: '#ffffff',
+    colorLight: '#16213e',
+    correctLevel: QRCode.CorrectLevel.H,
   });
 
   showView('view-host-lobby');
