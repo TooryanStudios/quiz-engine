@@ -4,3 +4,7 @@ node_modules/
 npm-debug.log*
 .DS_Store
 *.log
+
+# Firebase service account key
+quizengine-e7818-firebase-adminsdk-fbsvc-fd72a24bae.json
+*-firebase-adminsdk-*.json
