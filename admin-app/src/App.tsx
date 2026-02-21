@@ -57,6 +57,10 @@ function App() {
           <Route path="/billing" element={<RequireAuth user={user}><BillingPage /></RequireAuth>} />
         </Routes>
       </main>
+      <div className="tooryan-attribution-admin" aria-label="Prototype attribution">
+        <img src="/images/TooryanLogo.png" alt="Tooryan Studios logo" />
+        <span>© Tooryan Studios — Prototype build</span>
+      </div>
     </div>
   )
 }
