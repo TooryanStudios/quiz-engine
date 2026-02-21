@@ -4,12 +4,6 @@ import { auth } from '../lib/firebase'
 import type { QuizDoc, QuizMedia, QuizQuestion } from '../types/quiz'
 import { createQuiz, getQuizById, updateQuiz } from '../lib/quizRepo'
 
-import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
-import { auth } from '../lib/firebase'
-import type { QuizDoc, QuizMedia, QuizQuestion } from '../types/quiz'
-import { createQuiz, getQuizById, updateQuiz } from '../lib/quizRepo'
-
 const SAMPLE_QUESTIONS: QuizQuestion[] = [
   {
     type: 'single', duration: 20,
