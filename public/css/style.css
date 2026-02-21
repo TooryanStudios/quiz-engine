@@ -240,6 +240,10 @@ h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-dim); }
   align-items: center;
 }
 
+#btn-overlay-resume {
+  margin-top: 6px;
+}
+
 .pause-icon { font-size: 3.5rem; }
 
 .pause-sub {

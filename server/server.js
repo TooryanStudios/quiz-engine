@@ -7,6 +7,22 @@ const path = require('path');
 const os = require('os');
 const QRCode = require('qrcode');
 const config = require('../config');
+const { admin, getFirestore } = require('./firebaseAdmin');
+
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+const stripe = stripeSecretKey ? require('stripe')(stripeSecretKey) : null;
+const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+let firestore = null;
+function getDbSafe() {
+  if (firestore) return firestore;
+  try {
+    firestore = getFirestore();
+  } catch (_err) {
+    firestore = null;
+  }
+  return firestore;
+}
 
 // Recorded once at process startup — shown on the home screen
 const BUILD_TIME = new Date().toLocaleString('en-GB', {
@@ -32,6 +48,99 @@ app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 // Build info endpoint — returns server start time for the home screen version badge
 app.get('/api/build-info', (_req, res) => res.json({ buildTime: BUILD_TIME }));
+
+// Stripe checkout session (subscription)
+app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
+
+// Stripe webhook — verifies signature and updates Firebase entitlements
+app.post('/api/stripe/webhook', async (req, res) => {
+  if (!stripe || !stripeWebhookSecret) {
+    return res.status(501).json({
+      message: 'Stripe webhook is not configured. Set STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET.',
+    });
+  }
+
+  const signature = req.headers['stripe-signature'];
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.body, signature, stripeWebhookSecret);
+  } catch (err) {
+    return res.status(400).json({ message: `Webhook signature error: ${err.message}` });
+  }
+
+  try {
+    const db = getDbSafe();
+
+    if (event.type === 'checkout.session.completed' && db) {
+      const session = event.data.object;
+      const userId = session.metadata?.uid;
+      const packId = session.metadata?.packId;
+
+      if (userId && packId) {
+        await db.collection('entitlements').doc(userId).set(
+          {
+            activePackIds: admin.firestore.FieldValue.arrayUnion(packId),
+            plan: 'subscription',
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
+    }
+
+    if (event.type === 'customer.subscription.deleted' && db) {
+      const subscription = event.data.object;
+      const userId = subscription.metadata?.uid;
+      const packId = subscription.metadata?.packId;
+
+      if (userId && packId) {
+        await db.collection('entitlements').doc(userId).set(
+          {
+            activePackIds: admin.firestore.FieldValue.arrayRemove(packId),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
+    }
+
+    return res.json({ received: true });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Webhook handler failed' });
+  }
+});
+
+app.use(express.json());
+
+// Stripe checkout session (subscription)
+app.post('/api/stripe/create-checkout-session', async (req, res) => {
+  if (!stripe) {
+    return res.status(501).json({
+      message: 'Stripe is not configured. Set STRIPE_SECRET_KEY.',
+    });
+  }
+
+  try {
+    const { priceId, uid, packId } = req.body || {};
+    if (!priceId) return res.status(400).json({ message: 'priceId is required' });
+
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: `https://${config.DOMAIN}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `https://${config.DOMAIN}/billing/cancel`,
+      allow_promotion_codes: true,
+      metadata: {
+        uid: uid || '',
+        packId: packId || '',
+      },
+    });
+
+    return res.json({ sessionId: session.id, url: session.url });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Stripe checkout failed' });
+  }
+});
 
 // ─────────────────────────────────────────────
 // Socket.io setup with CORS
@@ -204,14 +313,48 @@ async function buildRoomModePayload(room) {
 // ─────────────────────────────────────────────
 // Hybrid data fetching
 // ─────────────────────────────────────────────
-async function getQuizData() {
+function normalizeQuestionsPayload(data, quizSlug) {
+  if (!data) return null;
+
+  if (Array.isArray(data) && data.length > 0) {
+    if (data[0]?.type) return data;
+    if (data[0]?.questions) {
+      const match = quizSlug ? data.find((q) => q.slug === quizSlug) : data[0];
+      return Array.isArray(match?.questions) ? match.questions : null;
+    }
+  }
+
+  if (Array.isArray(data.questions) && data.questions.length > 0) {
+    if (data.questions[0]?.type) return data.questions;
+    if (data.questions[0]?.questions) {
+      const match = quizSlug ? data.questions.find((q) => q.slug === quizSlug) : data.questions[0];
+      return Array.isArray(match?.questions) ? match.questions : null;
+    }
+  }
+
+  if (Array.isArray(data.quizzes) && data.quizzes.length > 0) {
+    const match = quizSlug ? data.quizzes.find((q) => q.slug === quizSlug) : data.quizzes[0];
+    return Array.isArray(match?.questions) ? match.questions : null;
+  }
+
+  if (data.quiz && Array.isArray(data.quiz.questions)) {
+    return data.quiz.questions;
+  }
+
+  return null;
+}
+
+async function getQuizData(quizSlug) {
   try {
-    const res = await fetch(QUIZ_DATA_URL, {
+    const url = new URL(QUIZ_DATA_URL);
+    if (quizSlug) url.searchParams.set('slug', quizSlug);
+
+    const res = await fetch(url.toString(), {
       headers: { Accept: 'application/json' },
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    const questions = Array.isArray(data) ? data : data.questions;
+    const questions = normalizeQuestionsPayload(data, quizSlug);
     if (!Array.isArray(questions) || questions.length === 0) return null;
     return questions;
   } catch (err) {
@@ -220,9 +363,10 @@ async function getQuizData() {
   }
 }
 
-async function refreshQuestions() {
-  const remote = await getQuizData();
+async function refreshQuestions(quizSlug) {
+  const remote = await getQuizData(quizSlug);
   if (remote) QUESTIONS = remote;
+  else QUESTIONS = DEFAULT_QUESTIONS;
 }
 
 // Prefetch on startup (best-effort)
@@ -488,7 +632,7 @@ io.on('connection', (socket) => {
   console.log(`[+] Socket connected: ${socket.id}`);
 
   // ── HOST: Create a new room ──────────────────
-  socket.on('host:create', async () => {
+  socket.on('host:create', async ({ quizSlug } = {}) => {
     const pin = generatePIN();
 
     const room = {
@@ -497,6 +641,7 @@ io.on('connection', (socket) => {
       players: new Map(),
       state: 'lobby',
       mode: activeMode,
+      quizSlug: quizSlug || null,
       questionIndex: 0,
       questionTimer: null,
       questionStartTime: 0,
@@ -598,7 +743,7 @@ io.on('connection', (socket) => {
     console.log(`[Room ${room.pin}] Game started by host ${socket.id}`);
 
     // Always refresh quiz data from the cloud before starting
-    await refreshQuestions();
+    await refreshQuestions(room.quizSlug);
 
     // Broadcast game start to everyone in the room
     io.to(room.pin).emit('game:start', {

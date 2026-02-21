@@ -68,6 +68,8 @@ fetch('/api/build-info')
 // The server serves socket.io client at /socket.io/socket.io.js
 // ─────────────────────────────────────────────
 const socket = io(window.location.origin);
+const queryParams = new URLSearchParams(window.location.search);
+const quizSlugFromUrl = queryParams.get('quiz');
 
 // ─────────────────────────────────────────────
 // State
@@ -714,7 +716,7 @@ function showError(elId, message) {
 document.getElementById('btn-become-host').addEventListener('click', () => {
   Sounds.click();
   state.role = 'host';
-  socket.emit('host:create');
+  socket.emit('host:create', { quizSlug: quizSlugFromUrl || null });
 });
 
 // Home — Become Player
@@ -777,6 +779,13 @@ document.getElementById('btn-pause-resume').addEventListener('click', () => {
   } else {
     socket.emit('host:pause');
   }
+});
+
+// Pause overlay resume (host only)
+document.getElementById('btn-overlay-resume').addEventListener('click', () => {
+  if (state.role !== 'host') return;
+  Sounds.click();
+  socket.emit('host:resume');
 });
 
 // Host Skip question
@@ -905,10 +914,13 @@ socket.on('game:paused', () => {
   const btn = document.getElementById('btn-pause-resume');
   if (btn) { btn.textContent = '▶️ Resume'; btn.dataset.paused = 'true'; }
   const overlay = document.getElementById('overlay-paused');
+  const overlayBtn = document.getElementById('btn-overlay-resume');
   if (state.role === 'host') {
     overlay.style.display = 'none';
+    overlayBtn.style.display = 'none';
   } else {
     overlay.style.display = 'flex';
+    overlayBtn.style.display = 'none';
   }
 });
 
@@ -917,6 +929,7 @@ socket.on('game:resumed', ({ timeRemaining }) => {
   state.isPaused = false;
   Sounds.resume();
   document.getElementById('overlay-paused').style.display = 'none';
+  document.getElementById('btn-overlay-resume').style.display = 'none';
   const btn = document.getElementById('btn-pause-resume');
   if (btn) { btn.textContent = '⏸️ Pause'; btn.dataset.paused = 'false'; }
   // Restart client timer with remaining seconds

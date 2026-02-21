@@ -29,8 +29,30 @@ If `en0` is not your Wi-Fi interface, use `ifconfig` or `ip a` to find the activ
 The server fetches quiz data from the internet before each game start.
 - Default URL: `https://quizengine.onrender.com/api/quiz-data`
 - Override with env var: `QUIZ_DATA_URL=https://your-domain/quiz.json`
+- Optional shareable slug via host URL: `https://quizengine.onrender.com/?quiz=animals-pack-quiz-1`
+
+If a `quiz` slug is present, the host sends it to the server and the server requests remote data with `?slug=<quiz>`.
 
 The server handles all remote fetching so clients never hit CORS/HTTPS issues.
+
+## Stripe Subscription Endpoints
+
+- `POST /api/stripe/create-checkout-session` (requires `STRIPE_SECRET_KEY`)
+- `POST /api/stripe/webhook` (requires `STRIPE_WEBHOOK_SECRET`, verifies signature)
+
+Webhook now updates Firebase `entitlements/{userId}` using metadata (`uid`, `packId`).
+
+### Backend env setup
+
+Copy `.env.example` and fill:
+
+```env
+QUIZ_DATA_URL=https://quizengine.onrender.com/api/quiz-data
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+FIREBASE_PROJECT_ID=your-project-id
+FIREBASE_SERVICE_ACCOUNT_JSON={...single-line-json...}
+```
 
 ## Development
 

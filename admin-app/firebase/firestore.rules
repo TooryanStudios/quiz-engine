@@ -1,0 +1,38 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(ownerId) {
+      return isSignedIn() && request.auth.uid == ownerId;
+    }
+
+    // Public quizzes can be read by anyone for play mode
+    match /quizzes/{quizId} {
+      allow read: if resource.data.visibility == 'public' || isOwner(resource.data.ownerId);
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if isOwner(resource.data.ownerId);
+    }
+
+    // Packs are public for storefront display; only owners/admins can mutate
+    match /packs/{packId} {
+      allow read: if true;
+      allow create, update, delete: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+    }
+
+    // User profile and entitlements
+    match /users/{userId} {
+      allow read, update: if isSignedIn() && request.auth.uid == userId;
+      allow create: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    match /entitlements/{userId} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      // Write from trusted backend (Cloud Function/Admin SDK)
+      allow write: if false;
+    }
+  }
+}
