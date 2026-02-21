@@ -272,6 +272,40 @@ function setConnectionStatus(kind, message) {
 setConnectionStatus('warn', 'Connecting to server…');
 
 // ─────────────────────────────────────────────
+// Keep Screen Awake (Wake Lock API)
+// ─────────────────────────────────────────────
+let wakeLockSentinel = null;
+let wakeLockEnabled = false;
+
+async function requestScreenWakeLock() {
+  if (!wakeLockEnabled) return;
+  if (!('wakeLock' in navigator)) return;
+  try {
+    if (wakeLockSentinel) return;
+    wakeLockSentinel = await navigator.wakeLock.request('screen');
+    wakeLockSentinel.addEventListener('release', () => {
+      wakeLockSentinel = null;
+      if (wakeLockEnabled && !document.hidden) {
+        requestScreenWakeLock();
+      }
+    });
+  } catch (_err) {
+    // Unsupported / denied / non-secure context — ignore silently.
+  }
+}
+
+function enableKeepAwake() {
+  wakeLockEnabled = true;
+  requestScreenWakeLock();
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    requestScreenWakeLock();
+  }
+});
+
+// ─────────────────────────────────────────────
 // Question Rendering — dispatcher
 // ─────────────────────────────────────────────
 function renderQuestion(data, isHost) {
@@ -769,6 +803,7 @@ function updatePlayerScoreUI() {
 
 // Home — Become Host
 document.getElementById('btn-become-host').addEventListener('click', () => {
+  enableKeepAwake();
   Sounds.click();
   state.role = 'host';
   socket.emit('host:create', { quizSlug: quizSlugFromUrl || null });
@@ -776,6 +811,7 @@ document.getElementById('btn-become-host').addEventListener('click', () => {
 
 // Home — Become Player
 document.getElementById('btn-become-player').addEventListener('click', () => {
+  enableKeepAwake();
   Sounds.click();
   state.role = 'player';
   showView('view-player-join');
@@ -790,6 +826,7 @@ document.getElementById('btn-back-from-join').addEventListener('click', () => {
 // Player Join — Submit form
 document.getElementById('form-join').addEventListener('submit', (e) => {
   e.preventDefault();
+  enableKeepAwake();
   const pin = document.getElementById('input-pin').value.trim();
   const nickname = document.getElementById('input-nickname').value.trim();
   if (!pin || !nickname) return;
@@ -822,6 +859,7 @@ document.getElementById('btn-mode-global').addEventListener('click', () => {
 
 // Host Start Game
 document.getElementById('btn-start-game').addEventListener('click', () => {
+  enableKeepAwake();
   Sounds.click();
   socket.emit('host:start');
 });
