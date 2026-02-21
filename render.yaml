@@ -1,0 +1,15 @@
+# Render.com deployment configuration
+# Render reads this file automatically when you connect the repo.
+# No manual setup needed.
+
+services:
+  - type: web
+    name: quiz-engine
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    plan: free
+    envVars:
+      - key: NODE_ENV
+        value: production
+    healthCheckPath: /health

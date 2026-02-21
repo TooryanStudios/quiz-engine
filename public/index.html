@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quiz Engine</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════
+       VIEW: Home — Choose Host or Player
+  ═══════════════════════════════════════════ -->
+  <div id="view-home" class="view active">
+    <div class="card center-card">
+      <h1 class="logo">⚡ QuizEngine</h1>
+      <p class="subtitle">Real-time multiplayer quiz</p>
+      <div class="btn-group vertical">
+        <button class="btn btn-primary" id="btn-become-host">
+          🎙️ I'm a Host
+        </button>
+        <button class="btn btn-secondary" id="btn-become-player">
+          🙋 I'm a Player
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       VIEW: Player — Join Room Form
+  ═══════════════════════════════════════════ -->
+  <div id="view-player-join" class="view">
+    <div class="card center-card">
+      <button class="btn-back" id="btn-back-from-join">← Back</button>
+      <h2>Join a Game</h2>
+      <form id="form-join">
+        <div class="field">
+          <label for="input-pin">Room PIN</label>
+          <input
+            id="input-pin"
+            type="text"
+            inputmode="numeric"
+            pattern="[0-9]*"
+            maxlength="6"
+            placeholder="e.g. 482910"
+            autocomplete="off"
+            required
+          />
+        </div>
+        <div class="field">
+          <label for="input-nickname">Your Nickname</label>
+          <input
+            id="input-nickname"
+            type="text"
+            maxlength="20"
+            placeholder="e.g. SuperQuizzer"
+            autocomplete="off"
+            required
+          />
+        </div>
+        <p class="error-msg" id="join-error"></p>
+        <button type="submit" class="btn btn-primary full-width">Join Game</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       VIEW: Host — Lobby (waiting for players)
+  ═══════════════════════════════════════════ -->
+  <div id="view-host-lobby" class="view">
+    <div class="card lobby-card">
+      <div class="pin-display">
+        <span class="pin-label">Room PIN</span>
+        <span class="pin-code" id="host-pin">------</span>
+        <span class="pin-hint">Share this PIN with players</span>
+      </div>
+      <div class="player-list-section">
+        <h3>Players (<span id="host-player-count">0</span>)</h3>
+        <ul class="player-list" id="host-player-list"></ul>
+      </div>
+      <button class="btn btn-success full-width" id="btn-start-game" disabled>
+        Start Game
+      </button>
+      <p class="hint-text">Waiting for at least 1 player…</p>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       VIEW: Player — Lobby (waiting for host)
+  ═══════════════════════════════════════════ -->
+  <div id="view-player-lobby" class="view">
+    <div class="card lobby-card">
+      <div class="pin-display">
+        <span class="pin-label">Room PIN</span>
+        <span class="pin-code" id="player-room-pin">------</span>
+      </div>
+      <p class="waiting-text">
+        Waiting for the host to start…
+      </p>
+      <div class="player-list-section">
+        <h3>Players in room (<span id="player-player-count">0</span>)</h3>
+        <ul class="player-list" id="player-player-list"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       VIEW: Question — Host sees question + live counter
+  ═══════════════════════════════════════════ -->
+  <div id="view-host-question" class="view">
+    <div class="question-layout">
+      <div class="question-header">
+        <span class="q-progress" id="host-q-progress">Q 1 / 8</span>
+        <div class="timer-ring" id="host-timer-ring">
+          <span class="timer-count" id="host-timer-count">30</span>
+        </div>
+        <span class="answer-counter" id="host-answer-counter">0 / 0 answered</span>
+      </div>
+      <div class="question-text-box">
+        <p class="question-text" id="host-question-text">Loading question…</p>
+      </div>
+      <div class="options-grid" id="host-options-grid">
+        <!-- 4 option cards injected by game.js -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       VIEW: Question — Player sees question + answer buttons
+  ═══════════════════════════════════════════ -->
+  <div id="view-player-question" class="view">
+    <div class="question-layout">
+      <div class="question-header">
+        <span class="q-progress" id="player-q-progress">Q 1 / 8</span>
+        <div class="timer-ring" id="player-timer-ring">
+          <span class="timer-count" id="player-timer-count">30</span>
+        </div>
+      </div>
+      <div class="question-text-box">
+        <p class="question-text" id="player-question-text">Loading question…</p>
+      </div>
+      <div class="options-grid" id="player-options-grid">
+        <!-- 4 answer buttons injected by game.js -->
+      </div>
+      <p class="answered-msg" id="player-answered-msg"></p>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       VIEW: Question Result (correct answer reveal)
+  ═══════════════════════════════════════════ -->
+  <div id="view-question-result" class="view">
+    <div class="card center-card result-card">
+      <h2 id="result-correct-label">✅ Correct Answer</h2>
+      <p class="result-answer" id="result-correct-answer">—</p>
+      <p id="result-player-score-msg" class="result-score-msg"></p>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       VIEW: Leaderboard (between questions)
+  ═══════════════════════════════════════════ -->
+  <div id="view-leaderboard" class="view">
+    <div class="card leaderboard-card">
+      <h2 class="lb-title" id="lb-title">🏆 Leaderboard</h2>
+      <ol class="leaderboard-list" id="leaderboard-list"></ol>
+      <p class="lb-next-hint" id="lb-next-hint">Next question coming up…</p>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       VIEW: Game Over — Final Leaderboard
+  ═══════════════════════════════════════════ -->
+  <div id="view-game-over" class="view">
+    <div class="card leaderboard-card">
+      <h2 class="lb-title">🎉 Final Results</h2>
+      <ol class="leaderboard-list" id="final-leaderboard-list"></ol>
+      <button class="btn btn-primary full-width" id="btn-play-again">
+        Play Again
+      </button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       VIEW: Room Closed (host disconnected)
+  ═══════════════════════════════════════════ -->
+  <div id="view-room-closed" class="view">
+    <div class="card center-card">
+      <h2>🚪 Room Closed</h2>
+      <p id="room-closed-msg">The host has left the game.</p>
+      <button class="btn btn-primary full-width" id="btn-home-from-closed">
+        Back to Home
+      </button>
+    </div>
+  </div>
+
+  <!-- ─── Scripts ─── -->
+  <!-- Load Socket.io client from the server (auto-served by socket.io) -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/game.js"></script>
+</body>
+</html>
