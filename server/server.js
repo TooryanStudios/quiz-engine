@@ -936,6 +936,54 @@ io.on('connection', (socket) => {
     endQuestion(room);
   });
 
+  // ── HOST: End game now and show final results ─
+  socket.on('host:end', () => {
+    const room = findHostRoom(socket.id);
+    if (!room) return;
+    if (room.state === 'finished' || room.state === 'lobby') return;
+
+    clearTimeout(room.questionTimer);
+    room.questionTimer = null;
+    room.paused = false;
+    room.pausedTimeRemaining = 0;
+    room.state = 'finished';
+
+    const leaderboard = buildLeaderboard(room);
+    console.log(`[Room ${room.pin}] Ended by host ${socket.id}.`);
+    io.to(room.pin).emit('game:over', { leaderboard, endedByHost: true });
+  });
+
+  // ── HOST: Start a new session in same room ───
+  socket.on('host:new-session', async () => {
+    const room = findHostRoom(socket.id);
+    if (!room || room.state !== 'finished') return;
+
+    clearTimeout(room.questionTimer);
+    room.questionTimer = null;
+    room.state = 'lobby';
+    room.questionIndex = 0;
+    room.questionStartTime = 0;
+    room.questionDuration = config.GAME.QUESTION_DURATION_SEC;
+    room.paused = false;
+    room.pausedTimeRemaining = 0;
+    room.currentQuestionMeta = null;
+
+    room.players.forEach((player) => {
+      player.score = 0;
+      player.streak = 0;
+      player.maxStreak = 0;
+      player.currentAnswer = null;
+      player.answerTime = config.GAME.QUESTION_DURATION_SEC;
+    });
+
+    const modeInfo = await buildRoomModePayload(room);
+    console.log(`[Room ${room.pin}] New session started by host ${socket.id}.`);
+    io.to(room.pin).emit('room:reset', {
+      players: getPlayerList(room),
+      modeInfo,
+    });
+  });
+
   // ── HOST: Kick a player from the lobby ───────
   socket.on('host:kick', ({ playerId }) => {
     const room = findHostRoom(socket.id);

@@ -207,6 +207,7 @@ h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-dim); }
 .btn-host-ctrl:hover { filter: brightness(1.2); }
 
 .btn-skip { background: #7c3aed; }
+.btn-end { background: #b91c1c; }
 
 /* ═══════════════════════════════════════════
    Kick Button
@@ -707,6 +708,10 @@ input::placeholder { color: var(--text-dim); }
   text-align: left;
   transition: transform 0.1s, filter 0.2s;
   min-height: 64px;
+}
+
+.option-card {
+  cursor: default;
 }
 
 .option-btn:active { transform: scale(0.96); }

@@ -89,6 +89,7 @@
           <button class="btn btn-mode" id="btn-mode-global">🌐 Global</button>
         </div>
         <p class="mode-url" id="host-join-url">—</p>
+        <button class="btn btn-secondary full-width" id="btn-copy-join-url">📋 Copy Join URL</button>
       </div>
 
       <div class="pin-display">
@@ -152,6 +153,7 @@
       <div class="host-controls">
         <button class="btn btn-host-ctrl" id="btn-pause-resume">⏸️ Pause</button>
         <button class="btn btn-host-ctrl btn-skip" id="btn-skip">⏩ Skip</button>
+        <button class="btn btn-host-ctrl btn-end" id="btn-end-game">🛑 End Game</button>
       </div>
       <div class="question-text-box">
         <p class="question-text" id="host-question-text">Loading question…</p>
@@ -249,6 +251,9 @@
     <div class="card leaderboard-card">
       <h2 class="lb-title">🎉 Final Results</h2>
       <ol class="leaderboard-list" id="final-leaderboard-list"></ol>
+      <button class="btn btn-success full-width" id="btn-start-new-session" style="display:none">
+        🔄 Start New Session
+      </button>
       <button class="btn btn-primary full-width" id="btn-play-again">
         Play Again
       </button>

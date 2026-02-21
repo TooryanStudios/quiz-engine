@@ -94,6 +94,7 @@ const state = {
   matchActiveLeft: -1,     // which left slot is currently "selected"
   matchRights: [],         // shuffled right labels sent by server
   orderItemOrder: [],      // current order of item indices on screen
+  currentJoinUrl: '',
 };
 
 // ─────────────────────────────────────────────
@@ -229,6 +230,7 @@ function applyModeInfo(data) {
       ? `${joinUrl}${ipHint}`
       : (localIp ? `http://${localIp} (pending room)` : '—');
   }
+  state.currentJoinUrl = joinUrl || '';
   if (qrWrap) qrWrap.innerHTML = qrSvg || '';
 }
 
@@ -818,6 +820,30 @@ document.getElementById('btn-start-game').addEventListener('click', () => {
   socket.emit('host:start');
 });
 
+document.getElementById('btn-copy-join-url').addEventListener('click', async () => {
+  Sounds.click();
+  const btn = document.getElementById('btn-copy-join-url');
+  const url = state.currentJoinUrl;
+  if (!url) {
+    btn.textContent = '⚠️ No URL yet';
+    setTimeout(() => { btn.textContent = '📋 Copy Join URL'; }, 1400);
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    btn.textContent = '✅ Copied!';
+  } catch (_err) {
+    const temp = document.createElement('textarea');
+    temp.value = url;
+    document.body.appendChild(temp);
+    temp.select();
+    document.execCommand('copy');
+    temp.remove();
+    btn.textContent = '✅ Copied!';
+  }
+  setTimeout(() => { btn.textContent = '📋 Copy Join URL'; }, 1400);
+});
+
 // Host Pause / Resume
 document.getElementById('btn-pause-resume').addEventListener('click', () => {
   const btn = document.getElementById('btn-pause-resume');
@@ -839,6 +865,12 @@ document.getElementById('btn-overlay-resume').addEventListener('click', () => {
 document.getElementById('btn-skip').addEventListener('click', () => {
   Sounds.click();
   socket.emit('host:skip');
+});
+
+document.getElementById('btn-end-game').addEventListener('click', () => {
+  if (state.role !== 'host') return;
+  Sounds.click();
+  socket.emit('host:end');
 });
 
 // Submit answer (multi / match / order)
@@ -868,6 +900,12 @@ document.getElementById('btn-mute').addEventListener('click', () => {
 // Play Again button
 document.getElementById('btn-play-again').addEventListener('click', () => {
   location.reload();
+});
+
+document.getElementById('btn-start-new-session').addEventListener('click', () => {
+  if (state.role !== 'host') return;
+  Sounds.click();
+  socket.emit('host:new-session');
 });
 
 // Back to Home from Room Closed
@@ -1036,6 +1074,8 @@ socket.on('game:over', (data) => {
     setTimeout(() => confetti({ particleCount: 80, angle: 120, spread: 55, origin: { x: 1 } }), 700);
   }
   const listEl = document.getElementById('final-leaderboard-list');
+  const newSessionBtn = document.getElementById('btn-start-new-session');
+  newSessionBtn.style.display = state.role === 'host' ? 'block' : 'none';
   listEl.innerHTML = data.leaderboard
     .map(
       (entry, i) =>
@@ -1047,6 +1087,37 @@ socket.on('game:over', (data) => {
     )
     .join('');
   showView('view-game-over');
+});
+
+socket.on('room:reset', ({ players, modeInfo }) => {
+  stopClientTimer();
+  state.isPaused = false;
+  state.questionIndex = 0;
+  state.totalQuestions = 0;
+  state.myStreak = 0;
+  document.getElementById('overlay-paused').style.display = 'none';
+
+  if (state.role === 'host') {
+    if (modeInfo) applyModeInfo(modeInfo);
+    renderPlayerList(
+      players || [],
+      document.getElementById('host-player-list'),
+      document.getElementById('host-player-count'),
+      true
+    );
+    const startBtn = document.getElementById('btn-start-game');
+    startBtn.disabled = !(players && players.length > 0);
+    document.getElementById('lobby-hint').textContent =
+      players && players.length > 0 ? `${players.length} player(s) ready.` : 'Waiting for at least 1 player…';
+    showView('view-host-lobby');
+  } else {
+    renderPlayerList(
+      players || [],
+      document.getElementById('player-player-list'),
+      document.getElementById('player-player-count')
+    );
+    showView('view-player-lobby');
+  }
 });
 
 /** PLAYER: Kicked by host */
