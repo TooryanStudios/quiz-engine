@@ -685,6 +685,7 @@ function showQuestionResult(data) {
   if (state.role === 'player' && myRound) {
     state.myStreak = myRound.streak;
     state.myScore  = myRound.totalScore;
+    updatePlayerScoreUI();
 
     if (myRound.isCorrect) {
       Sounds.correct();
@@ -755,6 +756,11 @@ function showError(elId, message) {
     el.textContent = message;
     setTimeout(() => { el.textContent = ''; }, 4000);
   }
+}
+
+function updatePlayerScoreUI() {
+  const scoreEl = document.getElementById('player-score-count');
+  if (scoreEl) scoreEl.textContent = String(state.myScore || 0);
 }
 
 // ─────────────────────────────────────────────
@@ -949,6 +955,8 @@ socket.on('disconnect', () => {
 socket.on('room:joined', ({ pin, nickname, players }) => {
   state.pin = pin;
   state.nickname = nickname;
+  state.myScore = 0;
+  updatePlayerScoreUI();
   document.getElementById('player-room-pin').textContent = pin;
   renderPlayerList(
     players,
@@ -993,6 +1001,8 @@ socket.on('room:error', ({ message }) => {
 socket.on('game:start', ({ totalQuestions }) => {
   state.totalQuestions = totalQuestions;
   state.myStreak = 0;
+  state.myScore = 0;
+  updatePlayerScoreUI();
   Sounds.start();
 });
 
@@ -1095,6 +1105,8 @@ socket.on('room:reset', ({ players, modeInfo }) => {
   state.questionIndex = 0;
   state.totalQuestions = 0;
   state.myStreak = 0;
+  state.myScore = 0;
+  updatePlayerScoreUI();
   document.getElementById('overlay-paused').style.display = 'none';
 
   if (state.role === 'host') {

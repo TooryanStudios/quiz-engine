@@ -287,6 +287,20 @@ h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-dim); }
   animation: popIn 0.2s ease-out;
 }
 
+.score-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--surface-2);
+  color: var(--success);
+  border: 1px solid rgba(45, 212, 191, 0.35);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-weight: 800;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
 .result-streak-msg {
   font-size: 1.1rem;
   font-weight: 700;
