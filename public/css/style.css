@@ -96,11 +96,11 @@ body {
 }
 
 .home-hero-logo {
-  width: 50px;
-  height: 50px;
+  width: 100px;
+  height: 100px;
   display: block;
   object-fit: contain;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.35));
 }
 
@@ -351,24 +351,28 @@ h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-dim); }
 .btn-mute:hover { background: var(--surface-2); }
 
 .tooryan-attribution {
-  position: static;
+  position: fixed;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  z-index: 280;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 5px;
-  padding: 8px 0 2px;
+  gap: 8px;
+  padding: 6px 10px;
   font-size: 0.75rem;
   font-weight: 400;
   text-align: center;
   color: #cbd5e1;
-  background: transparent;
-  border: none;
-  margin-top: 10px;
+  background: rgba(11, 18, 32, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 999px;
 }
 
 .tooryan-attribution img {
-  width: 50px;
-  height: 50px;
+  width: 24px;
+  height: 24px;
   object-fit: contain;
 }
 
