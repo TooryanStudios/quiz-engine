@@ -84,6 +84,71 @@ app.get('/health', (_req, res) => {
 // Build info endpoint — returns server start time for the home screen version badge
 app.get('/api/build-info', (_req, res) => res.json({ buildTime: BUILD_TIME }));
 
+// Diagnostic endpoint — test quiz loading
+app.get('/api/quiz-diagnostic/:slug', async (req, res) => {
+  const slug = req.params.slug;
+  console.log(`[Diagnostic] Testing quiz load for slug="${slug}"`);
+  
+  const result = await getQuizData(slug);
+  
+  res.json({
+    slug,
+    success: result !== null,
+    questionsCount: result?.questions?.length || 0,
+    preset: result?.challengePreset || 'classic',
+    message: result 
+      ? `✓ Loaded ${result.questions.length} questions`
+      : '✗ Quiz not found or failed to load'
+  });
+});
+
+// Preview endpoint — view all quiz questions with answers (for testing/debugging)
+app.get('/api/quiz-preview/:slug', async (req, res) => {
+  const slug = req.params.slug;
+  console.log(`[Preview] Loading full quiz for preview: slug="${slug}"`);
+  
+  const result = await getQuizData(slug);
+  
+  if (!result) {
+    return res.status(404).json({
+      error: 'Quiz not found',
+      slug,
+      suggestion: 'Check the slug and verify the quiz exists in Firestore'
+    });
+  }
+
+  res.json({
+    slug,
+    preset: result.challengePreset || 'classic',
+    totalQuestions: result.questions.length,
+    questions: result.questions.map((q, idx) => ({
+      index: idx + 1,
+      type: q.type,
+      text: q.text,
+      ...(q.type === 'single' || q.type === 'multi' || q.type === 'boss' ? {
+        options: q.options,
+        ...(q.type !== 'boss' && { correctAnswer: q.answer || q.answers }),
+      } : {}),
+      ...(q.type === 'type' ? {
+        acceptedAnswers: q.acceptedAnswers,
+        inputPlaceholder: q.inputPlaceholder,
+      } : {}),
+      ...(q.type === 'match' ? {
+        pairs: q.pairs,
+      } : {}),
+      ...(q.type === 'order' ? {
+        items: q.items,
+        correctOrder: q.correctOrder,
+      } : {}),
+      ...(q.type === 'boss' ? {
+        boss: { name: q.bossName, hp: q.bossHp },
+        correctAnswer: q.answer || q.answers,
+      } : {}),
+      duration: q.duration || config.GAME.QUESTION_DURATION_SEC,
+    }))
+  });
+});
+
 // Stripe checkout session (subscription)
 app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
 
@@ -438,11 +503,14 @@ function normalizeQuestionsPayload(data, quizSlug) {
 }
 
 async function getQuizData(quizSlug) {
+  console.log(`[Quiz] Attempting to load quiz: slug="${quizSlug}"`);
+  
   // 1. Try Firestore first if a slug is given
   if (quizSlug) {
     try {
       const db = getDbSafe();
       if (db) {
+        console.log(`[Quiz] Querying Firestore for slug="${quizSlug}"...`);
         const snap = await db.collection('quizzes')
           .where('slug', '==', quizSlug)
           .limit(1)
@@ -450,16 +518,26 @@ async function getQuizData(quizSlug) {
         if (!snap.empty) {
           const data = snap.docs[0].data();
           if (Array.isArray(data.questions) && data.questions.length > 0) {
-            console.log(`[Quiz] Loaded "${data.title}" (${data.questions.length} Qs) from Firestore`);
-            return data.questions;
+            console.log(`[Quiz] ✓ Loaded "${data.title}" (${data.questions.length} Qs) from Firestore`);
+            return {
+              questions: data.questions,
+              challengePreset: data.challengePreset || 'classic',
+              challengeSettings: data.challengeSettings || null,
+            };
+          } else {
+            console.warn(`[Quiz] Firestore found document but no questions array`);
           }
         } else {
-          console.warn(`[Quiz] Slug "${quizSlug}" not found in Firestore.`);
+          console.warn(`[Quiz] Slug "${quizSlug}" not found in Firestore. (Check: is quiz published? Does slug match?)`);
         }
+      } else {
+        console.warn('[Quiz] Firestore database not available (check Firebase env vars)');
       }
     } catch (err) {
-      console.warn('[Quiz] Firestore fetch failed:', err.message);
+      console.error('[Quiz] Firestore fetch failed:', err.message);
     }
+  } else {
+    console.log('[Quiz] No slug provided, skipping Firestore lookup');
   }
 
   // 2. Fall back to HTTP QUIZ_DATA_URL
@@ -467,26 +545,42 @@ async function getQuizData(quizSlug) {
     const url = new URL(QUIZ_DATA_URL);
     if (quizSlug) url.searchParams.set('slug', quizSlug);
 
+    console.log(`[Quiz] Fetching from HTTP endpoint: ${url.toString()}`);
     const res = await fetch(url.toString(), {
       headers: { Accept: 'application/json' },
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const questions = normalizeQuestionsPayload(data, quizSlug);
-    if (!Array.isArray(questions) || questions.length === 0) return null;
-    return questions;
+    if (!Array.isArray(questions) || questions.length === 0) {
+      console.warn('[Quiz] HTTP endpoint returned no valid questions');
+      return null;
+    }
+    console.log(`[Quiz] ✓ Loaded ${questions.length} questions from HTTP endpoint`);
+    return {
+      questions,
+      challengePreset: 'classic',
+      challengeSettings: null,
+    };
   } catch (err) {
-    console.warn('[Quiz] Remote fetch failed, using local questions.', err.message);
+    console.error('[Quiz] Remote fetch failed:', err.message);
     return null;
   }
 }
 
 async function refreshQuestions(quizSlug) {
+  console.log(`[Quiz] Refreshing questions for slug="${quizSlug}"`);
   const remote = await getQuizData(quizSlug);
-  const questions = remote || DEFAULT_QUESTIONS;
+  const questions = remote?.questions || DEFAULT_QUESTIONS;
+  const challengeSettings = resolveChallengeSettings(remote);
   // Also keep global QUESTIONS in sync for legacy callers
   QUESTIONS = questions;
-  return questions;
+  console.log(`[Quiz] Loaded ${questions.length} questions (preset: ${remote?.challengePreset || 'classic'})`);
+  return {
+    questions,
+    challengePreset: remote?.challengePreset || 'classic',
+    challengeSettings,
+  };
 }
 
 // Prefetch on startup (best-effort)
@@ -577,6 +671,110 @@ function calculatePartialScore(timeTakenSec, fraction, streak, duration) {
   return base + streakBonus;
 }
 
+const ROLE_PREVIEW_MS = 3000;
+const ROLE_FREEZE_MS = 2000;
+const ROLE_WRONG_PENALTY = 80;
+const BOSS_TEAM_BONUS = 300;
+
+const CHALLENGE_PRESETS = {
+  easy: {
+    rolePreviewMs: 4500,
+    roleFreezeMs: 1500,
+    wrongPenalty: 40,
+    bossTeamBonus: 450,
+    bossDamageMin: 14,
+    bossDamageMax: 38,
+    bossDamageDecay: 0.45,
+  },
+  classic: {
+    rolePreviewMs: ROLE_PREVIEW_MS,
+    roleFreezeMs: ROLE_FREEZE_MS,
+    wrongPenalty: ROLE_WRONG_PENALTY,
+    bossTeamBonus: BOSS_TEAM_BONUS,
+    bossDamageMin: 10,
+    bossDamageMax: 30,
+    bossDamageDecay: 0.55,
+  },
+  hard: {
+    rolePreviewMs: 2000,
+    roleFreezeMs: 3000,
+    wrongPenalty: 140,
+    bossTeamBonus: 180,
+    bossDamageMin: 7,
+    bossDamageMax: 24,
+    bossDamageDecay: 0.72,
+  },
+};
+
+function getPresetSettings(name) {
+  if (name === 'easy' || name === 'hard' || name === 'classic') {
+    return { ...CHALLENGE_PRESETS[name] };
+  }
+  return { ...CHALLENGE_PRESETS.classic };
+}
+
+function resolveChallengeSettings(quizData) {
+  const presetName = quizData?.challengePreset;
+  const base = getPresetSettings(presetName);
+  return {
+    ...base,
+    ...(quizData?.challengeSettings || {}),
+  };
+}
+
+function normalizeTypedText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+function isTypedAnswerCorrect(answer, acceptedAnswers) {
+  const submitted = normalizeTypedText(answer?.textAnswer);
+  if (!submitted) return false;
+  const acceptedSet = new Set((acceptedAnswers || []).map(normalizeTypedText).filter(Boolean));
+  return acceptedSet.has(submitted);
+}
+
+function calculateBossDamage(timeTakenSec, duration, settings) {
+  const total = duration || config.GAME.QUESTION_DURATION_SEC;
+  const ratio = Math.min(timeTakenSec, total) / total;
+  const minDamage = Number(settings?.bossDamageMin ?? 10);
+  const maxDamage = Number(settings?.bossDamageMax ?? 30);
+  const decay = Number(settings?.bossDamageDecay ?? 0.55);
+  const spread = Math.max(0, maxDamage - minDamage);
+  const value = maxDamage - spread * ratio * (1 + decay * 0.2);
+  return Math.max(minDamage, Math.round(value));
+}
+
+function shuffleArray(input) {
+  const arr = [...input];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function assignAsymmetricRoles(room) {
+  const ids = shuffleArray(Array.from(room.players.keys()));
+  const roles = {
+    scholarId: ids[0] || null,
+    shieldId: ids[1] || null,
+    saboteurId: ids[2] || null,
+  };
+  room.roles = roles;
+  return roles;
+}
+
+function getRoleForPlayer(room, playerId) {
+  if (!room?.roles || !playerId) return null;
+  if (room.roles.scholarId === playerId) return 'scholar';
+  if (room.roles.shieldId === playerId) return 'shield';
+  if (room.roles.saboteurId === playerId) return 'saboteur';
+  return null;
+}
+
 // ─────────────────────────────────────────────
 // Game Flow
 // ─────────────────────────────────────────────
@@ -585,13 +783,23 @@ function calculatePartialScore(timeTakenSec, fraction, streak, duration) {
 function sendQuestion(room) {
   const q = room.questions[room.questionIndex];
   const duration = q.duration || config.GAME.QUESTION_DURATION_SEC;
-  room.currentQuestionMeta = null;
+  const challengeSettings = room.challengeSettings || CHALLENGE_PRESETS.classic;
+  room.currentQuestionMeta = {
+    shieldTargetId: null,
+    shieldActivatedBy: null,
+    saboteurUsedBy: null,
+    rightOrder: null,
+  };
+  room.answerOpenAt = Date.now();
 
   // Build the client-safe question payload (never send answer keys)
   const questionPayload = { type: q.type, text: q.text };
 
   if (q.type === 'single' || q.type === 'multi') {
     questionPayload.options = q.options;
+
+  } else if (q.type === 'type') {
+    questionPayload.inputPlaceholder = q.inputPlaceholder || 'Type your answer';
 
   } else if (q.type === 'match') {
     // Shuffle right items; store shuffle map so endQuestion can score
@@ -601,30 +809,71 @@ function sendQuestion(room) {
       const j = Math.floor(Math.random() * (i + 1));
       [rightOrder[i], rightOrder[j]] = [rightOrder[j], rightOrder[i]];
     }
-    room.currentQuestionMeta = { rightOrder };
+    room.currentQuestionMeta.rightOrder = rightOrder;
     questionPayload.lefts  = q.pairs.map(p => p.left);
     questionPayload.rights = rightOrder.map(i => q.pairs[i].right); // shuffled
 
   } else if (q.type === 'order') {
     questionPayload.items = q.items; // displayed in stored (scrambled) order
+
+  } else if (q.type === 'boss') {
+    const bossHp = Math.max(1, Number(q.bossHp) || 100);
+    room.currentQuestionMeta.bossName = q.bossName || 'Tooryan Boss';
+    room.currentQuestionMeta.bossMaxHp = bossHp;
+    room.currentQuestionMeta.bossRemainingHp = bossHp;
+    room.currentQuestionMeta.bossDefeated = false;
+    room.currentQuestionMeta.totalDamage = 0;
+    questionPayload.options = q.options;
+    questionPayload.boss = {
+      name: room.currentQuestionMeta.bossName,
+      maxHp: room.currentQuestionMeta.bossMaxHp,
+      remainingHp: room.currentQuestionMeta.bossRemainingHp,
+    };
   }
 
-  io.to(room.pin).emit('game:question', {
-    questionIndex: room.questionIndex,
-    total: room.questions.length,
-    question: questionPayload,
-    duration,
-  });
+  const dispatchQuestion = () => {
+    io.to(room.pin).emit('game:question', {
+      questionIndex: room.questionIndex,
+      total: room.questions.length,
+      question: questionPayload,
+      duration,
+      players: getPlayerList(room),
+    });
 
-  room.questionStartTime = Date.now();
-  room.questionDuration  = duration;
-  room.state  = 'question';
-  room.paused = false;
-  room.pausedTimeRemaining = 0;
+    room.questionStartTime = Date.now();
+    room.questionDuration  = duration;
+    room.state  = 'question';
+    room.paused = false;
+    room.pausedTimeRemaining = 0;
+    room.answerOpenAt = Date.now();
 
-  room.questionTimer = setTimeout(() => {
-    endQuestion(room);
-  }, duration * 1000);
+    room.questionTimer = setTimeout(() => {
+      endQuestion(room);
+    }, duration * 1000);
+  };
+
+  clearTimeout(room.previewTimer);
+  room.previewTimer = null;
+
+  const scholarId = room.roles?.scholarId;
+  const scholarSocket = scholarId ? io.sockets.sockets.get(scholarId) : null;
+
+  if (scholarSocket) {
+    room.state = 'question-pending';
+    scholarSocket.emit('game:question_preview', {
+      questionIndex: room.questionIndex,
+      total: room.questions.length,
+      question: questionPayload,
+      previewSeconds: Math.floor((challengeSettings.rolePreviewMs || ROLE_PREVIEW_MS) / 1000),
+      duration,
+    });
+    room.previewTimer = setTimeout(() => {
+      if (room.state !== 'question-pending') return;
+      dispatchQuestion();
+    }, challengeSettings.rolePreviewMs || ROLE_PREVIEW_MS);
+  } else {
+    dispatchQuestion();
+  }
 }
 
 /** End a question: reveal answer, compute scores, show leaderboard. */
@@ -633,11 +882,16 @@ function endQuestion(room) {
     clearTimeout(room.questionTimer);
     room.questionTimer = null;
   }
+  if (room.previewTimer) {
+    clearTimeout(room.previewTimer);
+    room.previewTimer = null;
+  }
 
   room.state = 'leaderboard';
 
   const q        = room.questions[room.questionIndex];
   const duration = room.questionDuration || config.GAME.QUESTION_DURATION_SEC;
+  const challengeSettings = room.challengeSettings || CHALLENGE_PRESETS.classic;
 
   // ── Compute per-player round scores ──────────────────────────────────
   const roundScores = [];
@@ -647,9 +901,16 @@ function endQuestion(room) {
     const timeTaken   = player.answerTime;
     let   isCorrect   = false;
     let   roundScore  = 0;
+    let   penalty     = 0;
 
     if (q.type === 'single') {
       isCorrect = answer && answer.answerIndex === q.correctIndex;
+      if (isCorrect) { player.streak++; player.maxStreak = Math.max(player.maxStreak, player.streak); }
+      else             player.streak = 0;
+      roundScore = calculateScore(timeTaken, isCorrect, player.streak, duration);
+
+    } else if (q.type === 'type') {
+      isCorrect = isTypedAnswerCorrect(answer, q.acceptedAnswers);
       if (isCorrect) { player.streak++; player.maxStreak = Math.max(player.maxStreak, player.streak); }
       else             player.streak = 0;
       roundScore = calculateScore(timeTaken, isCorrect, player.streak, duration);
@@ -686,13 +947,30 @@ function endQuestion(room) {
       if (isCorrect) { player.streak++; player.maxStreak = Math.max(player.maxStreak, player.streak); }
       else             player.streak = 0;
       roundScore = calculatePartialScore(timeTaken, fraction, player.streak, duration);
+
+    } else if (q.type === 'boss') {
+      isCorrect = answer && answer.answerIndex === q.correctIndex;
+      if (isCorrect) { player.streak++; player.maxStreak = Math.max(player.maxStreak, player.streak); }
+      else             player.streak = 0;
+      roundScore = calculateScore(timeTaken, isCorrect, player.streak, duration);
+
+      if (isCorrect && room.currentQuestionMeta) {
+        const damage = calculateBossDamage(timeTaken, duration, challengeSettings);
+        room.currentQuestionMeta.totalDamage += damage;
+      }
     }
 
-    player.score += roundScore;
+    if (!isCorrect && roundScore === 0) {
+      const shielded = room.currentQuestionMeta?.shieldTargetId === player.id;
+      penalty = shielded ? 0 : Number(challengeSettings.wrongPenalty || ROLE_WRONG_PENALTY);
+    }
+
+    player.score = Math.max(0, player.score + roundScore - penalty);
     roundScores.push({
       id: player.id,
       nickname: player.nickname,
       roundScore,
+      penalty,
       totalScore: player.score,
       isCorrect,
       streak: player.streak,
@@ -706,12 +984,34 @@ function endQuestion(room) {
   // Sort highest score first
   roundScores.sort((a, b) => b.totalScore - a.totalScore);
 
+  if (q.type === 'boss' && room.currentQuestionMeta) {
+    const remainingHp = Math.max(0, room.currentQuestionMeta.bossMaxHp - room.currentQuestionMeta.totalDamage);
+    room.currentQuestionMeta.bossRemainingHp = remainingHp;
+    room.currentQuestionMeta.bossDefeated = remainingHp <= 0;
+
+    if (room.currentQuestionMeta.bossDefeated) {
+      const teamBonus = Number(challengeSettings.bossTeamBonus || BOSS_TEAM_BONUS);
+      roundScores.forEach((entry) => {
+        const p = room.players.get(entry.id);
+        if (!p) return;
+        p.score += teamBonus;
+        entry.roundScore += teamBonus;
+        entry.totalScore = p.score;
+      });
+    }
+  }
+
+  roundScores.sort((a, b) => b.totalScore - a.totalScore);
+
   // ── Build correct-answer reveal payload ──────────────────────────────
   const correctReveal = { questionType: q.type, roundScores };
 
   if (q.type === 'single') {
     correctReveal.correctIndex  = q.correctIndex;
     correctReveal.correctOption = q.options[q.correctIndex];
+
+  } else if (q.type === 'type') {
+    correctReveal.acceptedAnswers = q.acceptedAnswers || [];
 
   } else if (q.type === 'multi') {
     correctReveal.correctIndices = q.correctIndices;
@@ -723,6 +1023,18 @@ function endQuestion(room) {
   } else if (q.type === 'order') {
     correctReveal.items        = q.items;
     correctReveal.correctOrder = q.correctOrder;
+
+  } else if (q.type === 'boss') {
+    correctReveal.correctIndex  = q.correctIndex;
+    correctReveal.correctOption = q.options[q.correctIndex];
+    correctReveal.boss = {
+      name: room.currentQuestionMeta?.bossName || q.bossName || 'Tooryan Boss',
+      maxHp: room.currentQuestionMeta?.bossMaxHp || Math.max(1, Number(q.bossHp) || 100),
+      remainingHp: room.currentQuestionMeta?.bossRemainingHp || 0,
+      totalDamage: room.currentQuestionMeta?.totalDamage || 0,
+      teamBonus: room.currentQuestionMeta?.bossDefeated ? Number(challengeSettings.bossTeamBonus || BOSS_TEAM_BONUS) : 0,
+      defeated: Boolean(room.currentQuestionMeta?.bossDefeated),
+    };
   }
 
   io.to(room.pin).emit('question:end', correctReveal);
@@ -763,12 +1075,17 @@ io.on('connection', (socket) => {
       mode: activeMode,
       quizSlug: quizSlug || null,
       questions: DEFAULT_QUESTIONS,
+      challengePreset: 'classic',
+      challengeSettings: getPresetSettings('classic'),
       questionIndex: 0,
       questionTimer: null,
       questionStartTime: 0,
       questionDuration: config.GAME.QUESTION_DURATION_SEC,
       paused: false,
       pausedTimeRemaining: 0,
+      previewTimer: null,
+      answerOpenAt: 0,
+      roles: null,
     };
 
     rooms.set(pin, room);
@@ -862,9 +1179,24 @@ io.on('connection', (socket) => {
     }
 
     console.log(`[Room ${room.pin}] Game started by host ${socket.id}`);
+    console.log(`[Room ${room.pin}] Quiz slug provided: "${room.quizSlug}"`);
 
     // Always refresh quiz data from the cloud before starting
-    room.questions = await refreshQuestions(room.quizSlug);
+    const quizData = await refreshQuestions(room.quizSlug);
+    room.questions = quizData.questions;
+    room.challengePreset = quizData.challengePreset || 'classic';
+    room.challengeSettings = quizData.challengeSettings || getPresetSettings('classic');
+    console.log(`[Room ${room.pin}] Loaded ${room.questions.length} questions from quiz data`);
+
+    const roles = assignAsymmetricRoles(room);
+    io.to(room.pin).emit('game:roles', {
+      roles,
+      players: getPlayerList(room),
+      challengePreset: room.challengePreset,
+      scholarPreviewSeconds: Math.floor((room.challengeSettings.rolePreviewMs || ROLE_PREVIEW_MS) / 1000),
+      saboteurFreezeSeconds: Math.floor((room.challengeSettings.roleFreezeMs || ROLE_FREEZE_MS) / 1000),
+      wrongPenalty: Number(room.challengeSettings.wrongPenalty || ROLE_WRONG_PENALTY),
+    });
 
     // Broadcast game start to everyone in the room
     io.to(room.pin).emit('game:start', {
@@ -931,7 +1263,7 @@ io.on('connection', (socket) => {
   // ── HOST: Skip current question ──────────────
   socket.on('host:skip', () => {
     const room = findHostRoom(socket.id);
-    if (!room || (room.state !== 'question' && !room.paused)) return;
+    if (!room || (room.state !== 'question' && room.state !== 'question-pending' && !room.paused)) return;
     console.log(`[Room ${room.pin}] Question skipped by host.`);
     endQuestion(room);
   });
@@ -944,6 +1276,8 @@ io.on('connection', (socket) => {
 
     clearTimeout(room.questionTimer);
     room.questionTimer = null;
+    clearTimeout(room.previewTimer);
+    room.previewTimer = null;
     room.paused = false;
     room.pausedTimeRemaining = 0;
     room.state = 'finished';
@@ -967,6 +1301,10 @@ io.on('connection', (socket) => {
     room.paused = false;
     room.pausedTimeRemaining = 0;
     room.currentQuestionMeta = null;
+    room.answerOpenAt = 0;
+    room.roles = null;
+    room.challengePreset = 'classic';
+    room.challengeSettings = getPresetSettings('classic');
 
     room.players.forEach((player) => {
       player.score = 0;
@@ -1019,6 +1357,8 @@ io.on('connection', (socket) => {
     const player = room.players.get(socket.id);
     if (!player) return;
 
+    if (room.answerOpenAt && Date.now() < room.answerOpenAt) return;
+
     // Ignore if already answered
     if (player.currentAnswer !== null) return;
 
@@ -1038,6 +1378,50 @@ io.on('connection', (socket) => {
     // Auto-end when everyone has answered
     if (answeredCount === room.players.size) {
       endQuestion(room);
+    }
+  });
+
+  socket.on('role:shield', ({ targetId }) => {
+    const pin = socket.data.pin;
+    if (!pin) return;
+    const room = rooms.get(pin);
+    if (!room || room.state !== 'question') return;
+
+    const myRole = getRoleForPlayer(room, socket.id);
+    if (myRole !== 'shield') return;
+    if (room.currentQuestionMeta?.shieldActivatedBy) return;
+    if (!targetId || targetId === socket.id || !room.players.has(targetId)) return;
+
+    room.currentQuestionMeta.shieldActivatedBy = socket.id;
+    room.currentQuestionMeta.shieldTargetId = targetId;
+
+    const targetSocket = io.sockets.sockets.get(targetId);
+    if (targetSocket) {
+      targetSocket.emit('role:shield_applied', {
+        from: room.players.get(socket.id)?.nickname || 'Shield',
+      });
+    }
+  });
+
+  socket.on('role:saboteur', ({ targetId }) => {
+    const pin = socket.data.pin;
+    if (!pin) return;
+    const room = rooms.get(pin);
+    if (!room || room.state !== 'question') return;
+
+    const myRole = getRoleForPlayer(room, socket.id);
+    if (myRole !== 'saboteur') return;
+    if (room.currentQuestionMeta?.saboteurUsedBy) return;
+    if (!targetId || targetId === socket.id || !room.players.has(targetId)) return;
+
+    room.currentQuestionMeta.saboteurUsedBy = socket.id;
+
+    const targetSocket = io.sockets.sockets.get(targetId);
+    if (targetSocket) {
+      targetSocket.emit('role:frozen', {
+        durationMs: Number(room.challengeSettings?.roleFreezeMs || ROLE_FREEZE_MS),
+        from: room.players.get(socket.id)?.nickname || 'Saboteur',
+      });
     }
   });
 
@@ -1068,6 +1452,7 @@ io.on('connection', (socket) => {
     if (hostedRoom) {
       console.log(`[Room ${hostedRoom.pin}] Host disconnected. Closing room.`);
       if (hostedRoom.questionTimer) clearTimeout(hostedRoom.questionTimer);
+      if (hostedRoom.previewTimer) clearTimeout(hostedRoom.previewTimer);
 
       if (hostedRoom.state && hostedRoom.state !== 'lobby') {
         hostedRoom.state = 'finished';

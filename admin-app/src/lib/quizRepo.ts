@@ -42,3 +42,11 @@ export async function updateQuiz(id: string, payload: Partial<QuizDoc>) {
     updatedAt: serverTimestamp(),
   })
 }
+
+export async function findQuizByOwnerAndSlug(ownerId: string, slug: string) {
+  const q = query(quizzesCol, where('ownerId', '==', ownerId), where('slug', '==', slug), limit(1))
+  const snap = await getDocs(q)
+  if (snap.empty) return null
+  const docSnap = snap.docs[0]
+  return { id: docSnap.id, ...(docSnap.data() as QuizDoc) }
+}

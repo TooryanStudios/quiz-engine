@@ -97,6 +97,7 @@
         <span class="pin-label">Room PIN</span>
         <span class="pin-code" id="host-pin">------</span>
         <span class="pin-hint">Share this PIN with players</span>
+        <span class="difficulty-label" id="host-lobby-difficulty">🟡 Difficulty: Classic</span>
       </div>
       <!-- QR Code for players to scan -->
       <div class="qr-section">
@@ -127,6 +128,7 @@
       <div class="pin-display">
         <span class="pin-label">Room PIN</span>
         <span class="pin-code" id="player-room-pin">------</span>
+        <span class="difficulty-label" id="player-lobby-difficulty">🟡 Difficulty: Classic</span>
       </div>
       <p class="waiting-text">
         Waiting for the host to start…
@@ -145,6 +147,7 @@
     <div class="question-layout" id="host-question-layout">
       <div class="question-header">
         <span class="q-progress" id="host-q-progress">Q 1 / 8</span>
+        <span class="difficulty-tag" id="host-q-difficulty">Classic</span>
         <div class="timer-ring" id="host-timer-ring">
           <span class="timer-count" id="host-timer-count">30</span>
         </div>
@@ -159,6 +162,13 @@
       <div class="question-text-box">
         <p class="question-text" id="host-question-text">Loading question…</p>
       </div>
+      <div id="host-boss-panel" class="boss-panel" style="display:none">
+        <div class="boss-row">
+          <span class="boss-name" id="host-boss-name">Tooryan Boss</span>
+          <span class="boss-hp" id="host-boss-hp">100 / 100</span>
+        </div>
+        <div class="boss-bar"><div class="boss-bar-fill" id="host-boss-bar-fill"></div></div>
+      </div>
       <div class="options-grid" id="host-options-grid">
         <!-- 4 option cards injected by game.js -->
       </div>
@@ -172,17 +182,31 @@
     <div class="question-layout" id="player-question-layout">
       <div class="question-header">
         <span class="q-progress" id="player-q-progress">Q 1 / 8</span>
+        <span class="difficulty-tag" id="player-q-difficulty">Classic</span>
         <div class="timer-ring" id="player-timer-ring">
           <span class="timer-count" id="player-timer-count">30</span>
         </div>
         <span class="score-badge" id="player-score-badge">💎 <span id="player-score-count">0</span> pts</span>
         <span class="streak-badge" id="player-streak-badge" style="display:none">🔥 <span id="player-streak-count">0</span></span>
+        <span class="role-badge" id="player-role-badge" style="display:none">Role: —</span>
       </div>
       <div class="question-text-box">
         <p class="question-text" id="player-question-text">Loading question…</p>
       </div>
       <div class="options-grid" id="player-options-grid">
         <!-- single / multi buttons injected by game.js -->
+      </div>
+
+      <div id="player-type-container" class="type-container" style="display:none">
+        <input id="player-type-input" type="text" autocomplete="off" placeholder="Type your answer" />
+      </div>
+
+      <div id="player-boss-panel" class="boss-panel" style="display:none">
+        <div class="boss-row">
+          <span class="boss-name" id="player-boss-name">Tooryan Boss</span>
+          <span class="boss-hp" id="player-boss-hp">100 / 100</span>
+        </div>
+        <div class="boss-bar"><div class="boss-bar-fill" id="player-boss-bar-fill"></div></div>
       </div>
 
       <!-- ── Match: tap-to-connect layout ── -->
@@ -203,6 +227,15 @@
         ✔ تأكيد الإجابة
       </button>
 
+      <div id="player-role-panel" class="role-panel" style="display:none">
+        <p id="player-role-panel-title">Role ability</p>
+        <div class="role-controls">
+          <select id="role-target-select"></select>
+          <button id="btn-role-action" class="btn btn-secondary" type="button">Use ability</button>
+        </div>
+        <p id="player-role-hint" class="hint-text"></p>
+      </div>
+
       <p class="answered-msg" id="player-answered-msg"></p>
     </div>
   </div>
@@ -218,6 +251,14 @@
       <button class="btn btn-primary" id="btn-overlay-resume" style="display:none">
         ▶️ Resume Game
       </button>
+    </div>
+  </div>
+
+  <div id="overlay-frozen" class="pause-overlay" style="display:none">
+    <div class="pause-card">
+      <p class="pause-icon">❄️</p>
+      <h2>Screen Frozen</h2>
+      <p class="pause-sub" id="frozen-msg">Saboteur used freeze ability</p>
     </div>
   </div>
 

@@ -19,6 +19,7 @@
     "stripe": "^18.5.0"
   },
   "devDependencies": {
-    "nodemon": "^3.0.3"
+    "nodemon": "^3.0.3",
+    "socket.io-client": "^4.8.3"
   }
 }

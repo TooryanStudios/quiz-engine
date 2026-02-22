@@ -95,7 +95,17 @@ const state = {
   matchRights: [],         // shuffled right labels sent by server
   orderItemOrder: [],      // current order of item indices on screen
   currentJoinUrl: '',
+  currentBoss: null,
+  myRole: null,
+  roleInfo: null,
+  questionPlayers: [],
+  roleAbilityUsed: false,
+  isFrozen: false,
+  currentDifficulty: 'classic',  // 'easy' | 'classic' | 'hard'
 };
+
+let scholarPreviewInterval = null;
+let frozenTimeout = null;
 
 // ─────────────────────────────────────────────
 // Option colors (Kahoot-style)
@@ -315,6 +325,7 @@ document.addEventListener('visibilitychange', () => {
 // Question Rendering — dispatcher
 // ─────────────────────────────────────────────
 function renderQuestion(data, isHost) {
+  clearScholarPreviewInterval();
   stopClientTimer();
   state.hasAnswered       = false;
   state.myAnswerIndex     = -1;
@@ -323,6 +334,9 @@ function renderQuestion(data, isHost) {
   state.questionDuration  = data.duration;
   state.questionStartTime = Date.now();
   state.currentQuestionType = data.question.type;
+  state.questionPlayers = data.players || [];
+  state.roleAbilityUsed = false;
+  setFrozenState(false);
 
   if (isHost) {
     renderHostQuestion(data);
@@ -344,6 +358,9 @@ function renderHostQuestion(data) {
   pauseBtn.dataset.paused = 'false';
 
   const grid = document.getElementById('host-options-grid');
+  const hostBossPanel = document.getElementById('host-boss-panel');
+  hostBossPanel.style.display = 'none';
+
   if (q.type === 'single' || q.type === 'multi') {
     grid.innerHTML = (q.options || []).map((opt, i) =>
       `<div class="option-card ${OPTION_COLORS[i]} stagger-${i + 1}">
@@ -351,6 +368,12 @@ function renderHostQuestion(data) {
         <span class="opt-text">${escapeHtml(opt)}</span>
       </div>`
     ).join('');
+  } else if (q.type === 'type') {
+    grid.innerHTML =
+      `<div class="host-type-preview">
+        <span class="host-type-label">Type Sprint</span>
+        <span class="host-type-hint">Players submit a typed answer</span>
+      </div>`;
   } else if (q.type === 'match') {
     grid.innerHTML =
       `<div class="host-pairs-preview">${(q.lefts || []).map((l, i) =>
@@ -365,6 +388,16 @@ function renderHostQuestion(data) {
       `<div class="host-order-preview">${(q.items || []).map((item, i) =>
         `<div class="host-order-item stagger-${Math.min(i + 1, 4)}">${i + 1}. ${escapeHtml(item)}</div>`
       ).join('')}</div>`;
+  } else if (q.type === 'boss') {
+    grid.innerHTML = (q.options || []).map((opt, i) =>
+      `<div class="option-card ${OPTION_COLORS[i]} stagger-${i + 1}">
+        <span class="opt-icon">${OPTION_ICONS[i]}</span>
+        <span class="opt-text">${escapeHtml(opt)}</span>
+      </div>`
+    ).join('');
+    state.currentBoss = q.boss || null;
+    updateBossPanel('host', q.boss || null);
+    hostBossPanel.style.display = 'block';
   }
 
   startClientTimer(data.duration,
@@ -397,18 +430,27 @@ function renderPlayerQuestion(data) {
 
   // Reset all type containers
   const optGrid   = document.getElementById('player-options-grid');
+  const typeCont  = document.getElementById('player-type-container');
+  const bossPanel = document.getElementById('player-boss-panel');
   const matchCont = document.getElementById('player-match-container');
   const orderCont = document.getElementById('player-order-container');
   const submitBtn = document.getElementById('btn-submit-answer');
   optGrid.style.display   = '';
+  typeCont.style.display  = 'none';
+  bossPanel.style.display = 'none';
   matchCont.style.display = 'none';
   orderCont.style.display = 'none';
   submitBtn.style.display = 'none';
   submitBtn.disabled      = false;
   submitBtn.textContent   = '✔ تأكيد الإجابة';
 
+  renderRolePanel(data.players || state.questionPlayers || []);
+
   if (q.type === 'single') {
     renderSingleChoice(q);
+  } else if (q.type === 'type') {
+    optGrid.style.display = 'none';
+    renderTypeSprint(q);
   } else if (q.type === 'multi') {
     renderMultiChoice(q);
   } else if (q.type === 'match') {
@@ -417,6 +459,8 @@ function renderPlayerQuestion(data) {
   } else if (q.type === 'order') {
     optGrid.style.display = 'none';
     renderOrder(q);
+  } else if (q.type === 'boss') {
+    renderBossQuestion(q);
   }
 
   startClientTimer(data.duration,
@@ -428,6 +472,46 @@ function renderPlayerQuestion(data) {
   void layout.offsetWidth;
   layout.classList.add('animate-in');
   showView('view-player-question');
+}
+
+function renderTypeSprint(q) {
+  const typeCont = document.getElementById('player-type-container');
+  const input = document.getElementById('player-type-input');
+  const submit = document.getElementById('btn-submit-answer');
+
+  typeCont.style.display = 'block';
+  submit.style.display = 'block';
+  submit.disabled = true;
+
+  input.value = '';
+  input.placeholder = q.inputPlaceholder || 'Type your answer';
+  input.disabled = false;
+
+  input.oninput = () => {
+    submit.disabled = input.value.trim().length === 0 || state.hasAnswered;
+  };
+}
+
+function renderBossQuestion(q) {
+  renderSingleChoice(q);
+  state.currentBoss = q.boss || null;
+  updateBossPanel('player', q.boss || null);
+  document.getElementById('player-boss-panel').style.display = 'block';
+}
+
+function updateBossPanel(prefix, boss) {
+  const nameEl = document.getElementById(`${prefix}-boss-name`);
+  const hpEl = document.getElementById(`${prefix}-boss-hp`);
+  const fillEl = document.getElementById(`${prefix}-boss-bar-fill`);
+  if (!nameEl || !hpEl || !fillEl || !boss) return;
+
+  const maxHp = Math.max(1, Number(boss.maxHp) || 100);
+  const remainingHp = Math.max(0, Number(boss.remainingHp) || 0);
+  const pct = Math.max(0, Math.min(100, Math.round((remainingHp / maxHp) * 100)));
+
+  nameEl.textContent = boss.name || 'Tooryan Boss';
+  hpEl.textContent = `${remainingHp} / ${maxHp}`;
+  fillEl.style.width = `${pct}%`;
 }
 
 // ── Single choice (pick one, immediate submit) ─────────────────────────
@@ -446,7 +530,7 @@ function renderSingleChoice(q) {
 
   grid.querySelectorAll('.option-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      if (state.hasAnswered) return;
+      if (state.hasAnswered || state.isFrozen) return;
       Sounds.click();
       submitAnswer({ answerIndex: parseInt(btn.dataset.index, 10) });
     });
@@ -473,7 +557,7 @@ function renderMultiChoice(q) {
 
   grid.querySelectorAll('.option-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      if (state.hasAnswered) return;
+      if (state.hasAnswered || state.isFrozen) return;
       Sounds.click();
       btn.classList.toggle('multi-selected');
       const anySelected = grid.querySelectorAll('.multi-selected').length > 0;
@@ -526,7 +610,7 @@ function refreshMatchUI(lefts, rights) {
   // Left slot click → select / unfit
   leftCol.querySelectorAll('.match-left-item').forEach(el => {
     el.addEventListener('click', () => {
-      if (state.hasAnswered) return;
+      if (state.hasAnswered || state.isFrozen) return;
       const li = parseInt(el.dataset.leftIdx);
       if (state.matchConnections[li] !== -1) {
         // Remove existing connection
@@ -543,7 +627,7 @@ function refreshMatchUI(lefts, rights) {
   // Right chip click → attach to active / first-empty left slot
   rightPool.querySelectorAll('.match-right-chip').forEach(el => {
     el.addEventListener('click', () => {
-      if (state.hasAnswered) return;
+      if (state.hasAnswered || state.isFrozen) return;
       Sounds.click();
       const ri = parseInt(el.dataset.rightIdx);
       let target = state.matchActiveLeft;
@@ -591,7 +675,7 @@ function refreshOrderUI(items) {
   list.querySelectorAll('.btn-order-up').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (state.hasAnswered) return;
+      if (state.hasAnswered || state.isFrozen) return;
       Sounds.click();
       const pos = parseInt(btn.dataset.pos);
       if (pos === 0) return;
@@ -604,7 +688,7 @@ function refreshOrderUI(items) {
   list.querySelectorAll('.btn-order-dn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (state.hasAnswered) return;
+      if (state.hasAnswered || state.isFrozen) return;
       Sounds.click();
       const pos = parseInt(btn.dataset.pos);
       if (pos === state.orderItemOrder.length - 1) return;
@@ -619,20 +703,23 @@ function refreshOrderUI(items) {
 // Submit Answer (Player)
 // ─────────────────────────────────────────────
 function submitAnswer(answer) {
-  if (state.hasAnswered) return;
+  if (state.hasAnswered || state.isFrozen) return;
   state.hasAnswered  = true;
 
   socket.emit('player:answer', { questionIndex: state.questionIndex, answer });
 
   const type = state.currentQuestionType;
 
-  if (type === 'single') {
+  if (type === 'single' || type === 'boss') {
     const grid = document.getElementById('player-options-grid');
     grid.querySelectorAll('.option-btn').forEach((btn, i) => {
       btn.disabled = true;
       if (i === answer.answerIndex) btn.classList.add('selected');
       else                          btn.classList.add('dimmed');
     });
+  } else if (type === 'type') {
+    const input = document.getElementById('player-type-input');
+    input.disabled = true;
   } else {
     // multi / match / order — disable the submit button
     const btn = document.getElementById('btn-submit-answer');
@@ -656,6 +743,7 @@ function showQuestionResult(data) {
   const pairsEl    = document.getElementById('result-pairs-list');
   const resultMsg  = document.getElementById('result-player-score-msg');
   const streakMsg  = document.getElementById('result-streak-msg');
+  let bossStatusText = '';
 
   // Reset
   pairsEl.style.display  = 'none';
@@ -680,6 +768,10 @@ function showQuestionResult(data) {
         btn.classList.add('reveal-wrong');
       }
     });
+
+  } else if (type === 'type') {
+    labelEl.textContent  = '✅ الإجابات المقبولة';
+    answerEl.textContent = (data.acceptedAnswers || []).join('، ');
 
   } else if (type === 'multi') {
     labelEl.textContent  = '✅ الإجابات الصحيحة';
@@ -718,6 +810,17 @@ function showQuestionResult(data) {
         <span dir="auto">${escapeHtml((data.items || [])[itemIdx] || '')}</span>
       </li>`
     ).join('');
+  } else if (type === 'boss') {
+    labelEl.textContent  = '⚔️ Boss Battle Result';
+    answerEl.textContent = `${data.correctOption || ''}`;
+
+    if (data.boss) {
+      bossStatusText = data.boss.defeated
+        ? `💥 ${data.boss.name} defeated!`
+        : `🛡️ ${data.boss.name} survived with ${data.boss.remainingHp}/${data.boss.maxHp} HP`;
+      resultMsg.textContent = `${bossStatusText} • Team Damage: ${data.boss.totalDamage}`;
+      resultMsg.className = `result-score-msg ${data.boss.defeated ? 'correct' : 'incorrect'}`;
+    }
   }
 
   // Score / streak message for player
@@ -732,21 +835,32 @@ function showQuestionResult(data) {
       resultMsg.textContent = `+${myRound.roundScore} pts 🎉`;
       resultMsg.className   = 'result-score-msg correct';
       streakMsg.textContent = myRound.streak >= 2 ? `🔥 ${myRound.streak} على التوالي!` : '';
+      if (bossStatusText) {
+        streakMsg.textContent = `${streakMsg.textContent ? `${streakMsg.textContent} • ` : ''}${bossStatusText}`;
+      }
     } else if (myRound.roundScore > 0) {
       // Partial credit (match / order but not 100%)
       Sounds.correct();
       resultMsg.textContent = `+${myRound.roundScore} pts (جزئي)`;
       resultMsg.className   = 'result-score-msg correct';
-      streakMsg.textContent = '';
+      streakMsg.textContent = bossStatusText;
     } else {
       Sounds.wrong();
       resultMsg.textContent = 'إجابة خاطئة. ٠ نقطة.';
       resultMsg.className   = 'result-score-msg incorrect';
-      streakMsg.textContent = '';
+      streakMsg.textContent = bossStatusText;
+    }
+
+    if (myRound.penalty > 0) {
+      resultMsg.textContent = `${resultMsg.textContent} (−${myRound.penalty} penalty)`;
+    }
+
+    if (data.boss?.teamBonus) {
+      streakMsg.textContent = `${streakMsg.textContent ? `${streakMsg.textContent} • ` : ''}🎁 Team bonus +${data.boss.teamBonus}`;
     }
   } else {
     resultMsg.textContent = '';
-    streakMsg.textContent = '';
+    streakMsg.textContent = bossStatusText;
   }
 
   setTimeout(() => showView('view-question-result'), 400);
@@ -801,6 +915,133 @@ function showError(elId, message) {
 function updatePlayerScoreUI() {
   const scoreEl = document.getElementById('player-score-count');
   if (scoreEl) scoreEl.textContent = String(state.myScore || 0);
+}
+
+function roleDisplayName(role) {
+  if (role === 'scholar') return '📘 Scholar';
+  if (role === 'shield') return '🛡️ Shield';
+  if (role === 'saboteur') return '❄️ Saboteur';
+  return 'Player';
+}
+
+function difficultyDisplay(preset) {
+  if (preset === 'easy') return '🟢 Easy';
+  if (preset === 'hard') return '🔴 Hard';
+  return '🟡 Classic';
+}
+
+function difficultyTag(preset) {
+  if (preset === 'easy') return 'Easy';
+  if (preset === 'hard') return 'Hard';
+  return 'Classic';
+}
+
+function updateDifficultyDisplay() {
+  const display = difficultyDisplay(state.currentDifficulty);
+  const tag = difficultyTag(state.currentDifficulty);
+  
+  // Update lobby displays
+  const hostLobbyDiff = document.getElementById('host-lobby-difficulty');
+  if (hostLobbyDiff) hostLobbyDiff.textContent = display;
+  
+  const playerLobbyDiff = document.getElementById('player-lobby-difficulty');
+  if (playerLobbyDiff) playerLobbyDiff.textContent = display;
+  
+  // Update question headers
+  const hostQDiff = document.getElementById('host-q-difficulty');
+  if (hostQDiff) hostQDiff.textContent = tag;
+  
+  const playerQDiff = document.getElementById('player-q-difficulty');
+  if (playerQDiff) playerQDiff.textContent = tag;
+}
+
+function setFrozenState(active, message) {
+  state.isFrozen = active;
+  const overlay = document.getElementById('overlay-frozen');
+  const msgEl = document.getElementById('frozen-msg');
+  if (msgEl && message) msgEl.textContent = message;
+  overlay.style.display = active ? 'flex' : 'none';
+}
+
+function clearScholarPreviewInterval() {
+  if (scholarPreviewInterval) {
+    clearInterval(scholarPreviewInterval);
+    scholarPreviewInterval = null;
+  }
+}
+
+function showScholarPreview(data) {
+  clearScholarPreviewInterval();
+  const q = data.question;
+  let left = Number(data.previewSeconds) || 3;
+
+  state.currentQuestionType = q.type;
+  document.getElementById('player-q-progress').textContent =
+    `Q ${data.questionIndex + 1} / ${data.total}`;
+  document.getElementById('player-question-text').textContent = q.text;
+  document.getElementById('player-options-grid').style.display = 'none';
+  document.getElementById('player-type-container').style.display = 'none';
+  document.getElementById('player-match-container').style.display = 'none';
+  document.getElementById('player-order-container').style.display = 'none';
+  document.getElementById('player-boss-panel').style.display = 'none';
+  document.getElementById('btn-submit-answer').style.display = 'none';
+  document.getElementById('player-answered-msg').textContent = `📘 Scholar preview: answers open in ${left}s`;
+  showView('view-player-question');
+
+  scholarPreviewInterval = setInterval(() => {
+    left -= 1;
+    if (left <= 0) {
+      clearScholarPreviewInterval();
+      return;
+    }
+    document.getElementById('player-answered-msg').textContent = `📘 Scholar preview: answers open in ${left}s`;
+  }, 1000);
+}
+
+function renderRolePanel(players = []) {
+  const badge = document.getElementById('player-role-badge');
+  const panel = document.getElementById('player-role-panel');
+  const title = document.getElementById('player-role-panel-title');
+  const hint = document.getElementById('player-role-hint');
+  const select = document.getElementById('role-target-select');
+  const actionBtn = document.getElementById('btn-role-action');
+
+  if (!state.myRole) {
+    badge.style.display = 'none';
+    panel.style.display = 'none';
+    return;
+  }
+
+  badge.style.display = 'inline-flex';
+  badge.textContent = roleDisplayName(state.myRole);
+
+  const targets = players.filter((p) => p.id !== socket.id);
+
+  if (state.myRole === 'scholar') {
+    panel.style.display = 'block';
+    title.textContent = 'Scholar passive ability';
+    hint.textContent = `You see each question ${state.roleInfo?.scholarPreviewSeconds || 3}s early.`;
+    select.style.display = 'none';
+    actionBtn.style.display = 'none';
+    return;
+  }
+
+  panel.style.display = 'block';
+  select.style.display = '';
+  actionBtn.style.display = '';
+  actionBtn.disabled = state.roleAbilityUsed || targets.length === 0;
+
+  if (state.myRole === 'shield') {
+    title.textContent = 'Shield ability';
+    hint.textContent = `Protect one teammate from -${state.roleInfo?.wrongPenalty || 80} penalty this question.`;
+  } else {
+    title.textContent = 'Saboteur ability';
+    hint.textContent = `Freeze one player for ${state.roleInfo?.saboteurFreezeSeconds || 2}s.`;
+  }
+
+  select.innerHTML = targets
+    .map((p) => `<option value="${p.id}">${escapeHtml(p.nickname)}</option>`)
+    .join('');
 }
 
 // ─────────────────────────────────────────────
@@ -925,10 +1166,15 @@ document.getElementById('btn-end-game').addEventListener('click', () => {
 
 // Submit answer (multi / match / order)
 document.getElementById('btn-submit-answer').addEventListener('click', () => {
-  if (state.hasAnswered) return;
+  if (state.hasAnswered || state.isFrozen) return;
   Sounds.click();
   const type = state.currentQuestionType;
-  if (type === 'multi') {
+  if (type === 'type') {
+    const input = document.getElementById('player-type-input');
+    const value = input.value.trim();
+    if (!value) return;
+    submitAnswer({ textAnswer: value });
+  } else if (type === 'multi') {
     const selected = Array.from(
       document.querySelectorAll('#player-options-grid .multi-selected')
     ).map(el => parseInt(el.dataset.index, 10));
@@ -939,6 +1185,21 @@ document.getElementById('btn-submit-answer').addEventListener('click', () => {
   } else if (type === 'order') {
     submitAnswer({ order: [...state.orderItemOrder] });
   }
+});
+
+document.getElementById('btn-role-action').addEventListener('click', () => {
+  if (state.isFrozen || state.roleAbilityUsed) return;
+  const targetId = document.getElementById('role-target-select').value;
+  if (!targetId) return;
+
+  if (state.myRole === 'shield') {
+    socket.emit('role:shield', { targetId });
+  } else if (state.myRole === 'saboteur') {
+    socket.emit('role:saboteur', { targetId });
+  }
+
+  state.roleAbilityUsed = true;
+  renderRolePanel(state.questionPlayers || []);
 });
 
 // Mute toggle
@@ -1050,11 +1311,47 @@ socket.on('game:start', ({ totalQuestions }) => {
   Sounds.start();
 });
 
+socket.on('game:roles', (data) => {
+  state.roleInfo = {
+    scholarPreviewSeconds: data.scholarPreviewSeconds || 3,
+    saboteurFreezeSeconds: data.saboteurFreezeSeconds || 2,
+    wrongPenalty: data.wrongPenalty || 80,
+  };
+  state.currentDifficulty = data.challengePreset || 'classic';
+  updateDifficultyDisplay();
+
+  const roles = data.roles || {};
+  if (roles.scholarId === socket.id) state.myRole = 'scholar';
+  else if (roles.shieldId === socket.id) state.myRole = 'shield';
+  else if (roles.saboteurId === socket.id) state.myRole = 'saboteur';
+  else state.myRole = null;
+});
+
+socket.on('game:question_preview', (data) => {
+  if (state.role !== 'player') return;
+  showScholarPreview(data);
+});
+
 /** BOTH: New question */
 socket.on('game:question', (data) => {
   state.isPaused = false;
   document.getElementById('overlay-paused').style.display = 'none';
   renderQuestion(data, state.role === 'host');
+});
+
+socket.on('role:shield_applied', ({ from }) => {
+  if (state.role !== 'player') return;
+  const msg = document.getElementById('player-answered-msg');
+  if (msg) msg.textContent = `🛡️ ${from} protected you from penalty this round.`;
+});
+
+socket.on('role:frozen', ({ durationMs, from }) => {
+  if (state.role !== 'player') return;
+  clearTimeout(frozenTimeout);
+  setFrozenState(true, `❄️ ${from} froze your screen for ${Math.ceil((durationMs || 2000) / 1000)}s`);
+  frozenTimeout = setTimeout(() => {
+    setFrozenState(false);
+  }, durationMs || 2000);
 });
 
 /** HOST: Game paused */
@@ -1118,7 +1415,9 @@ socket.on('game:leaderboard', (data) => {
 /** BOTH: Game over — final leaderboard */
 socket.on('game:over', (data) => {
   // Stop timer immediately — player may still be on question view if they never answered
+  clearScholarPreviewInterval();
   stopClientTimer();
+  setFrozenState(false);
   document.getElementById('overlay-paused').style.display = 'none';
   Sounds.fanfare();
   // Confetti celebration
@@ -1157,7 +1456,9 @@ socket.on('game:over', (data) => {
 });
 
 socket.on('room:reset', ({ players, modeInfo }) => {
+  clearScholarPreviewInterval();
   stopClientTimer();
+  setFrozenState(false);
   state.isPaused = false;
   state.questionIndex = 0;
   state.totalQuestions = 0;
