@@ -635,6 +635,7 @@ async function refreshQuestions(quizSlug) {
     questions,
     challengePreset: remote?.challengePreset || 'classic',
     challengeSettings,
+    randomizeQuestions: remote?.randomizeQuestions === true,
   };
 }
 
@@ -1309,7 +1310,9 @@ io.on('connection', (socket) => {
       return;
     }
 
-    room.questions = quizData.questions;
+    room.questions = quizData.randomizeQuestions
+      ? shuffleArray([...quizData.questions])
+      : quizData.questions;
     room.challengePreset = quizData.challengePreset || 'classic';
     room.challengeSettings = quizData.challengeSettings || getPresetSettings('classic');
     room.enableScholarRole = quizData.enableScholarRole === true; // disabled by default

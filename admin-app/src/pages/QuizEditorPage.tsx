@@ -205,6 +205,10 @@ export function QuizEditorPage() {
   const [tempChallenge, setTempChallenge] = useState<ChallengePreset>('classic')
   const [tempEnableScholarRole, setTempEnableScholarRole] = useState(false)
   const [metadataChecking, setMetadataChecking] = useState(false)
+  const [randomizeQuestions, setRandomizeQuestions] = useState(false)
+  const [tempRandomizeQuestions, setTempRandomizeQuestions] = useState(false)
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const [uploadingIndex, setUploadingIndex] = useState<number | null>(null)
   const [coverImage, setCoverImage] = useState<string>('')
   const [tempCoverImage, setTempCoverImage] = useState<string>('')
@@ -227,12 +231,24 @@ export function QuizEditorPage() {
 
   const ownerId = auth.currentUser?.uid ?? ''
 
+  const moveQuestion = (from: number, to: number) => {
+    if (from === to) return
+    setHasUnsavedChanges(true)
+    setQuestions((prev) => {
+      const next = [...prev]
+      const [item] = next.splice(from, 1)
+      next.splice(to, 0, item)
+      return next
+    })
+  }
+
   const openMetadataDialog = () => {
     setTempTitle(title)
     setTempSlug(ensureScopedSlug(slug, ownerId))
     setTempVisibility(visibility)
     setTempChallenge(challengePreset)
     setTempEnableScholarRole(enableScholarRole)
+    setTempRandomizeQuestions(randomizeQuestions)
     setTempCoverImage(coverImage)
     setShowMetadataDialog(true)
   }
@@ -262,6 +278,7 @@ export function QuizEditorPage() {
       setVisibility(tempVisibility)
       setChallengePreset(tempChallenge)
       setEnableScholarRole(tempEnableScholarRole)
+      setRandomizeQuestions(tempRandomizeQuestions)
       setCoverImage(tempCoverImage)
       setShowMetadataDialog(false)
     } catch (error) {
@@ -288,6 +305,7 @@ export function QuizEditorPage() {
         setVisibility(data.visibility)
         setChallengePreset(data.challengePreset || 'classic')
         setEnableScholarRole(data.enableScholarRole ?? false)
+        setRandomizeQuestions(data.randomizeQuestions ?? false)
         setCoverImage(data.coverImage ?? '')
         setQuestions(data.questions)
         setHasUnsavedChanges(false)
@@ -362,6 +380,7 @@ export function QuizEditorPage() {
       visibility,
       challengePreset,
       enableScholarRole,
+      randomizeQuestions,
       ...(coverImage ? { coverImage } : {}),
       tags: ['animals'],
       questions,
@@ -529,6 +548,20 @@ export function QuizEditorPage() {
                   </select>
                 </div>
               </div>
+
+              {/* Randomize questions toggle */}
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', userSelect: 'none', background: '#1e293b', padding: '0.75rem 1rem', borderRadius: '10px', border: '1px solid #334155' }}>
+                <input
+                  type="checkbox"
+                  checked={tempRandomizeQuestions}
+                  onChange={(e) => setTempRandomizeQuestions(e.target.checked)}
+                  style={{ width: '1.1rem', height: '1.1rem', accentColor: '#7c3aed', cursor: 'pointer' }}
+                />
+                <span style={{ fontSize: '0.9em' }}>
+                  <strong>🔀 ترتيب عشوائي للأسئلة</strong>
+                  <span style={{ opacity: 0.6, marginRight: '0.4rem' }}>(تُخلط الأسئلة في كل جلسة)</span>
+                </span>
+              </label>
 
               {/* Scholar role toggle */}
               <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', userSelect: 'none', background: '#1e293b', padding: '0.75rem 1rem', borderRadius: '10px', border: '1px solid #334155' }}>
@@ -703,6 +736,11 @@ export function QuizEditorPage() {
             <span style={{ background: '#1e293b', color: '#94a3b8', fontSize: '0.72rem', padding: '3px 12px', borderRadius: '999px' }}>
               📝 {questions.length} سؤال
             </span>
+            {randomizeQuestions && (
+              <span style={{ background: '#1e293b', color: '#a78bfa', fontSize: '0.72rem', padding: '3px 12px', borderRadius: '999px', border: '1px solid #7c3aed44' }}>
+                🔀 عشوائي
+              </span>
+            )}
             {quizId && (
               <a
                 href={`${SERVER_BASE}/?quiz=${quizId}`}
@@ -851,10 +889,41 @@ export function QuizEditorPage() {
       </div>
 
       {questions.map((q, index) => (
-        <section key={index} className="panel" style={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderLeft: '6px solid #3b82f6', padding: '1.2rem', borderRadius: '14px', marginBottom: '1.25rem', boxShadow: '0 4px 20px rgba(0,0,0,0.5)' }}>
+        <section
+          key={index}
+          className="panel"
+          draggable
+          onDragStart={() => setDragIndex(index)}
+          onDragOver={(e) => { e.preventDefault(); setDragOverIndex(index) }}
+          onDrop={() => { if (dragIndex !== null) moveQuestion(dragIndex, index); setDragIndex(null); setDragOverIndex(null) }}
+          onDragEnd={() => { setDragIndex(null); setDragOverIndex(null) }}
+          style={{
+            backgroundColor: '#0f172a',
+            border: dragOverIndex === index && dragIndex !== index
+              ? '1px solid #7c3aed'
+              : '1px solid #1e293b',
+            borderLeft: dragOverIndex === index && dragIndex !== index
+              ? '6px solid #7c3aed'
+              : '6px solid #3b82f6',
+            padding: '1.2rem',
+            borderRadius: '14px',
+            marginBottom: '1.25rem',
+            boxShadow: dragIndex === index
+              ? '0 0 0 2px #3b82f6, 0 8px 30px rgba(0,0,0,0.8)'
+              : '0 4px 20px rgba(0,0,0,0.5)',
+            opacity: dragIndex === index ? 0.5 : 1,
+            cursor: 'default',
+            transition: 'border-color 0.15s, box-shadow 0.15s, opacity 0.15s',
+          }}
+        >
           {/* Header with question number and type badge */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <span
+                draggable={false}
+                style={{ fontSize: '1.2rem', color: '#475569', cursor: 'grab', userSelect: 'none', lineHeight: 1, paddingTop: '2px' }}
+                title="اسحب لإعادة الترتيب"
+              >⠿</span>
               <h3 style={{ margin: '0', fontSize: '1.1em', color: '#fff' }}>
                 سؤال {index + 1}
               </h3>

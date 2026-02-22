@@ -44,6 +44,7 @@ export interface QuizDoc {
   challengePreset?: ChallengePreset
   challengeSettings?: ChallengeSettings
   enableScholarRole?: boolean  // disabled by default; not exposed in editor UI
+  randomizeQuestions?: boolean
   coverImage?: string
   tags: string[]
   questions: QuizQuestion[]
