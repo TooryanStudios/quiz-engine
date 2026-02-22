@@ -2,7 +2,7 @@ import { onAuthStateChanged, signOut } from 'firebase/auth'
 import type { User } from 'firebase/auth'
 import { useEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
-import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import './App.css'
 import { auth } from './lib/firebase'
 import { DialogProvider } from './lib/DialogContext'
@@ -15,6 +15,13 @@ import { PacksPage } from './pages/PacksPage'
 import { QuizEditorPage } from './pages/QuizEditorPage'
 import { QuizPreviewPage } from './pages/QuizPreviewPage'
 
+const NAV = [
+  { to: '/dashboard', icon: '🏠', label: 'Dashboard', end: true },
+  { to: '/editor',    icon: '✏️',  label: 'Quiz Editor' },
+  { to: '/packs',     icon: '📦', label: 'Packs' },
+  { to: '/billing',   icon: '💳', label: 'Billing' },
+]
+
 function RequireAuth({ user, children }: { user: User | null; children: ReactElement }) {
   if (!user) return <Navigate to="/login" replace />
   return children
@@ -24,6 +31,7 @@ function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
   const navigate = useNavigate()
   const location = useLocation()
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [burgerOpen, setBurgerOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
@@ -61,18 +69,34 @@ function App() {
   return (
     <ToastProvider>
       <DialogProvider>
-        <div className="admin-shell">
+        <div className={`admin-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
           <aside className="admin-sidebar">
-            {/* Brand */}
-            <h1>Quiz Engine Admin</h1>
+            {/* Brand + collapse toggle */}
+            <div className="sidebar-header">
+              <h1 className="sidebar-brand">Quiz Engine Admin</h1>
+              <button
+                className="sidebar-collapse-btn"
+                onClick={() => setSidebarCollapsed((c) => !c)}
+                title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              >
+                {sidebarCollapsed ? '›' : '‹'}
+              </button>
+            </div>
 
             {/* Desktop nav */}
             {user && (
               <nav className="sidebar-nav-desktop">
-                <Link to="/dashboard">Dashboard</Link>
-                <Link to="/editor">Quiz Editor</Link>
-                <Link to="/packs">Packs</Link>
-                <Link to="/billing">Billing</Link>
+                {NAV.map(({ to, icon, label, end }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    end={end}
+                    className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
+                  >
+                    <span className="nav-icon">{icon}</span>
+                    <span className="nav-label">{label}</span>
+                  </NavLink>
+                ))}
               </nav>
             )}
 
@@ -156,10 +180,16 @@ function App() {
             {/* Mobile nav drawer */}
             {user && (
               <nav className={`mobile-nav-drawer ${burgerOpen ? 'drawer-open' : ''}`}>
-                <Link to="/dashboard">Dashboard</Link>
-                <Link to="/editor">Quiz Editor</Link>
-                <Link to="/packs">Packs</Link>
-                <Link to="/billing">Billing</Link>
+                {NAV.map(({ to, icon, label, end }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    end={end}
+                    className={({ isActive }) => isActive ? 'active' : ''}
+                  >
+                    {icon} {label}
+                  </NavLink>
+                ))}
               </nav>
             )}
           </aside>
