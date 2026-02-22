@@ -106,41 +106,194 @@ export function DashboardPage() {
     }
   }
 
+  // ── Dashboard derived data ─────────────────────────────────────────────────
+  const authUser = auth.currentUser
+  const displayName = authUser?.displayName || authUser?.email?.split('@')[0] || 'there'
+  const hour = new Date().getHours()
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
+  const dateStr = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+  const totalQuestions = quizzes.reduce((sum, q) => sum + (q.questions?.length ?? 0), 0)
+  const publicCount = quizzes.filter(q => q.visibility === 'public').length
+  const privateCount = quizzes.filter(q => q.visibility === 'private').length
+  const recentQuizzes = [...quizzes]
+    .sort((a, b) => {
+      const ta = (a.updatedAt as { seconds: number } | null)?.seconds ?? 0
+      const tb = (b.updatedAt as { seconds: number } | null)?.seconds ?? 0
+      return tb - ta
+    })
+    .slice(0, 4)
+
   return (
     <div style={{ padding: '0' }}>
-      {/* ── Header bar ── */}
+      {/* ── Welcome banner ── */}
       <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: '2rem',
-        padding: '1.5rem 0 0',
+        paddingTop: '1.5rem', paddingBottom: '1.25rem',
+        marginBottom: '1.5rem',
+        borderBottom: '1px solid var(--border)',
+        display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem',
       }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: '1.6rem', fontWeight: 700, color: '#f1f5f9' }}>اختباراتي</h2>
-          <p style={{ margin: '0.3rem 0 0', fontSize: '0.9rem', color: '#64748b' }}>
-            {loading ? '...' : `${quizzes.length} اختبار`}
-          </p>
+          <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-bright)' }}>
+            {greeting}, {displayName} 👋
+          </h2>
+          <p style={{ margin: '0.25rem 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>{dateStr}</p>
         </div>
         <Link to="/editor" style={{ textDecoration: 'none' }}>
           <button style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-            padding: '0.7rem 1.4rem',
-            borderRadius: '10px',
+            display: 'flex', alignItems: 'center', gap: '0.5rem',
+            padding: '0.65rem 1.3rem', borderRadius: '10px',
             background: 'linear-gradient(135deg, #2563eb, #7c3aed)',
-            border: 'none',
-            color: '#fff',
-            fontSize: '0.95rem',
-            fontWeight: 600,
-            cursor: 'pointer',
-            boxShadow: '0 4px 15px rgba(37,99,235,0.4)',
-            transition: 'transform 0.15s, box-shadow 0.15s',
+            border: 'none', color: '#fff', fontSize: '0.9rem', fontWeight: 600,
+            cursor: 'pointer', boxShadow: '0 4px 14px rgba(37,99,235,0.35)', whiteSpace: 'nowrap',
           }}>
-            <span style={{ fontSize: '1.1rem' }}>＋</span> اختبار جديد
+            <span>＋</span> New Quiz
           </button>
         </Link>
+      </div>
+
+      {/* ── Stats row ── */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(145px, 1fr))',
+        gap: '1rem', marginBottom: '1.5rem',
+      }}>
+        {([
+          { icon: '📋', value: loading ? '—' : String(quizzes.length), label: 'Total Quizzes', accent: '#2563eb', bg: 'rgba(37,99,235,0.12)' },
+          { icon: '❓', value: loading ? '—' : String(totalQuestions), label: 'Questions', accent: '#7c3aed', bg: 'rgba(124,58,237,0.12)' },
+          { icon: '🌐', value: loading ? '—' : String(publicCount), label: 'Public', accent: '#059669', bg: 'rgba(5,150,105,0.12)' },
+          { icon: '🔒', value: loading ? '—' : String(privateCount), label: 'Private', accent: '#d97706', bg: 'rgba(217,119,6,0.12)' },
+        ] as const).map((sc) => (
+          <div key={sc.label} style={{
+            background: 'var(--bg-surface)', border: '1px solid var(--border)',
+            borderRadius: '14px', padding: '1rem 1.1rem',
+            display: 'flex', flexDirection: 'column', gap: '0.45rem',
+            position: 'relative', overflow: 'hidden',
+          }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: '10px', background: sc.bg,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem',
+            }}>
+              {sc.icon}
+            </div>
+            <div style={{ fontSize: '1.65rem', fontWeight: 800, color: 'var(--text-bright)', lineHeight: 1 }}>
+              {sc.value}
+            </div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+              {sc.label}
+            </div>
+            <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '3px', background: sc.accent, opacity: 0.6 }} />
+          </div>
+        ))}
+      </div>
+
+      {/* ── Quick Actions + Recently Updated ── */}
+      <div className="dashboard-mid-grid" style={{ marginBottom: '2.5rem' }}>
+        {/* Quick Actions */}
+        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '14px', padding: '1rem 1.1rem' }}>
+          <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: '0.75rem' }}>
+            Quick Actions
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+            {([
+              { icon: '＋', label: 'New Quiz', to: '/editor', primary: true },
+              { icon: '✏️', label: 'Quiz Editor', to: '/editor', primary: false },
+              { icon: '📦', label: 'Packs Library', to: '/packs', primary: false },
+              { icon: '💳', label: 'Billing', to: '/billing', primary: false },
+            ] as const).map((qa) => (
+              <Link key={qa.label} to={qa.to} style={{ textDecoration: 'none' }}>
+                <div
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '0.65rem',
+                    padding: '0.6rem 0.8rem', borderRadius: '9px',
+                    background: qa.primary ? 'linear-gradient(135deg, #2563eb, #7c3aed)' : 'var(--bg-deep)',
+                    border: qa.primary ? 'none' : '1px solid var(--border)',
+                    color: qa.primary ? '#fff' : 'var(--text)',
+                    cursor: 'pointer', transition: 'opacity 0.15s, transform 0.15s',
+                    fontSize: '0.85rem', fontWeight: qa.primary ? 700 : 500,
+                  }}
+                  onMouseEnter={(e) => {
+                    ;(e.currentTarget as HTMLElement).style.opacity = '0.85'
+                    ;(e.currentTarget as HTMLElement).style.transform = 'translateX(3px)'
+                  }}
+                  onMouseLeave={(e) => {
+                    ;(e.currentTarget as HTMLElement).style.opacity = '1'
+                    ;(e.currentTarget as HTMLElement).style.transform = 'translateX(0)'
+                  }}
+                >
+                  <span style={{ width: 20, textAlign: 'center', flexShrink: 0 }}>{qa.icon}</span>
+                  <span style={{ flex: 1 }}>{qa.label}</span>
+                  <span style={{ fontSize: '0.7rem', opacity: 0.4 }}>›</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        {/* Recently Updated */}
+        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '14px', padding: '1rem 1.1rem' }}>
+          <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: '0.75rem' }}>
+            Recently Updated
+          </div>
+          {loading ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {[1,2,3].map(i => (
+                <div key={i} style={{ height: 50, borderRadius: 10, background: 'linear-gradient(90deg, var(--bg-deep) 25%, var(--border) 50%, var(--bg-deep) 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.5s infinite' }} />
+              ))}
+            </div>
+          ) : recentQuizzes.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>No quizzes yet</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+              {recentQuizzes.map((q) => {
+                const emoji = pickEmoji(q.tags ?? [], q.title)
+                const badge = presetBadge(q.challengePreset)
+                return (
+                  <div key={q.id}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '0.75rem',
+                      padding: '0.6rem 0.75rem', borderRadius: '10px',
+                      background: 'var(--bg-deep)', border: '1px solid var(--border)',
+                      transition: 'border-color 0.15s',
+                    }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-strong)' }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)' }}
+                  >
+                    <span style={{ fontSize: '1.25rem', flexShrink: 0 }}>{emoji}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '0.83rem', fontWeight: 600, color: 'var(--text-bright)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {q.title}
+                      </div>
+                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '1px' }}>
+                        {q.questions?.length ?? 0} questions
+                        &nbsp;&middot;&nbsp;<span style={{ color: badge.color }}>{badge.label}</span>
+                        &nbsp;&middot;&nbsp;{q.visibility === 'public' ? '🌐 Public' : '🔒 Private'}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.3rem', flexShrink: 0 }}>
+                      <Link to={`/preview/${q.id}`} title="Preview" style={{ textDecoration: 'none' }}>
+                        <button style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-dim)', padding: '4px 8px', borderRadius: '6px', fontSize: '0.7rem', cursor: 'pointer' }}>👁️</button>
+                      </Link>
+                      <Link to={`/editor/${q.id}`} title="Edit" style={{ textDecoration: 'none' }}>
+                        <button style={{ background: '#2563eb', border: 'none', color: '#fff', padding: '4px 8px', borderRadius: '6px', fontSize: '0.7rem', cursor: 'pointer' }}>✏️</button>
+                      </Link>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── My Quizzes ── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+        <div>
+          <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: 'var(--text-bright)' }}>My Quizzes</h3>
+          <p style={{ margin: '0.2rem 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+            {loading ? '...' : `${quizzes.length} quiz${quizzes.length !== 1 ? 'zes' : ''}`}
+          </p>
+        </div>
       </div>
 
       {/* ── Loading skeleton ── */}

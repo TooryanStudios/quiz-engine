@@ -1,7 +1,39 @@
 :root {
   font-family: Inter, Segoe UI, system-ui, sans-serif;
-  color: #e2e8f0;
-  background: #020617;
+
+  /* ── Dark theme (default) ── */
+  --bg-page:        #020617;
+  --bg-surface:     #111827;
+  --bg-deep:        #0f172a;
+  --bg-input:       #0b1220;
+  --border:         #1f2937;
+  --border-mid:     #1e293b;
+  --border-strong:  #334155;
+  --text:           #e2e8f0;
+  --text-bright:    #f1f5f9;
+  --text-mid:       #cbd5e1;
+  --text-dim:       #94a3b8;
+  --text-muted:     #64748b;
+  --text-faint:     #4b5563;
+  --accent:         #2563eb;
+}
+
+/* ── Light theme ── */
+[data-theme="light"] {
+  --bg-page:        #f1f5f9;
+  --bg-surface:     #ffffff;
+  --bg-deep:        #f8fafc;
+  --bg-input:       #f1f5f9;
+  --border:         #e2e8f0;
+  --border-mid:     #cbd5e1;
+  --border-strong:  #94a3b8;
+  --text:           #1e293b;
+  --text-bright:    #0f172a;
+  --text-mid:       #475569;
+  --text-dim:       #64748b;
+  --text-muted:     #94a3b8;
+  --text-faint:     #94a3b8;
+  --accent:         #2563eb;
 }
 
 * {
@@ -11,8 +43,9 @@
 body {
   margin: 0;
   min-width: 320px;
-  background: #020617;
-  color: #e2e8f0;
+  background: var(--bg-page);
+  color: var(--text);
+  transition: background 0.2s ease, color 0.2s ease;
 }
 
 /* Mobile: ensure the viewport itself doesn't scroll — admin-main scrolls instead */

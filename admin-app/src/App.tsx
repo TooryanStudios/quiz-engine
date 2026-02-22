@@ -35,6 +35,15 @@ function App() {
   const [burgerOpen, setBurgerOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
+  const [theme, setTheme] = useState<'dark' | 'light'>(
+    () => (localStorage.getItem('quizAdminTheme') as 'dark' | 'light') || 'dark'
+  )
+
+  // Apply theme to document body
+  useEffect(() => {
+    document.body.setAttribute('data-theme', theme)
+    localStorage.setItem('quizAdminTheme', theme)
+  }, [theme])
 
   useEffect(() => {
     return onAuthStateChanged(auth, (u) => {
@@ -116,6 +125,21 @@ function App() {
                   </span>
                 </div>
                 <button onClick={() => signOut(auth)} className="sidebar-signout-btn">Sign Out</button>
+                <div className="theme-toggle-row">
+                  <span className="theme-toggle-label">Theme</span>
+                  <div className="theme-pill">
+                    <button
+                      className={`theme-pill-btn${theme === 'dark' ? ' active' : ''}`}
+                      onClick={() => setTheme('dark')}
+                      title="Dark theme"
+                    >🌙</button>
+                    <button
+                      className={`theme-pill-btn${theme === 'light' ? ' active' : ''}`}
+                      onClick={() => setTheme('light')}
+                      title="Light theme"
+                    >☀️</button>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -148,10 +172,25 @@ function App() {
                           </div>
                         )}
                         <div>
-                          <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#f1f5f9' }}>
+                          <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-bright)' }}>
                             {user.displayName || user.email?.split('@')[0]}
                           </div>
-                          <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{user.email}</div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{user.email}</div>
+                        </div>
+                      </div>
+                      <div className="mobile-theme-row">
+                        <span>Theme</span>
+                        <div className="theme-pill">
+                          <button
+                            className={`theme-pill-btn${theme === 'dark' ? ' active' : ''}`}
+                            onClick={() => setTheme('dark')}
+                            title="Dark theme"
+                          >🌙</button>
+                          <button
+                            className={`theme-pill-btn${theme === 'light' ? ' active' : ''}`}
+                            onClick={() => setTheme('light')}
+                            title="Light theme"
+                          >☀️</button>
                         </div>
                       </div>
                       <button
