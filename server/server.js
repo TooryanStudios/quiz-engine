@@ -77,8 +77,9 @@ app.use(express.static(path.join(__dirname, '../public')));
 
 // Health check endpoint (used by Render.com)
 app.get('/health', (_req, res) => {
-  const firestoreReady = Boolean(getDbSafe());
-  res.json({ status: 'ok', paymentsMode, firestoreReady });
+  const db = getDbSafe();
+  const firestoreReady = Boolean(db);
+  res.json({ status: 'ok', paymentsMode, firestoreReady, firebaseProjectId: process.env.FIREBASE_PROJECT_ID || null });
 });
 
 // Build info endpoint — returns server start time for the home screen version badge
@@ -1234,6 +1235,13 @@ io.on('connection', (socket) => {
 
     // Always refresh quiz data from the cloud before starting
     const quizData = await refreshQuestions(room.quizSlug);
+
+    // If a specific quiz was requested but couldn't be loaded, abort
+    if (room.quizSlug && quizData.questions === DEFAULT_QUESTIONS) {
+      socket.emit('room:error', { message: `Could not load quiz "${room.quizSlug}" from the database. Check that the quiz ID is correct and Firestore is connected.` });
+      return;
+    }
+
     room.questions = quizData.questions;
     room.challengePreset = quizData.challengePreset || 'classic';
     room.challengeSettings = quizData.challengeSettings || getPresetSettings('classic');
