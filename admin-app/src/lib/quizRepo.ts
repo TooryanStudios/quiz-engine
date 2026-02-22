@@ -5,6 +5,7 @@ import {
   getDoc,
   getDocs,
   limit,
+  orderBy,
   query,
   serverTimestamp,
   updateDoc,
@@ -49,4 +50,34 @@ export async function findQuizByOwnerAndSlug(ownerId: string, slug: string) {
   if (snap.empty) return null
   const docSnap = snap.docs[0]
   return { id: docSnap.id, ...(docSnap.data() as QuizDoc) }
+}
+
+export async function listPublicQuizzes() {
+  const q = query(quizzesCol, where('visibility', '==', 'public'), orderBy('updatedAt', 'desc'), limit(100))
+  const snap = await getDocs(q)
+  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as QuizDoc) }))
+}
+
+export async function cloneQuiz(source: QuizDoc & { id: string }, newOwnerId: string): Promise<string> {
+  const baseSlug = source.slug.replace(/-copy(-\d+)?$/, '')
+  const suffix = `-copy-${Date.now().toString(36)}`
+  const payload: QuizDoc = {
+    ownerId: newOwnerId,
+    title: `${source.title} (copy)`,
+    slug: `${baseSlug}${suffix}`,
+    description: source.description,
+    visibility: 'private',
+    priceTier: source.priceTier,
+    challengePreset: source.challengePreset,
+    challengeSettings: source.challengeSettings,
+    coverImage: source.coverImage,
+    tags: [...(source.tags ?? [])],
+    questions: source.questions.map((q) => ({ ...q })),
+  }
+  const docRef = await addDoc(quizzesCol, {
+    ...payload,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  })
+  return docRef.id
 }
