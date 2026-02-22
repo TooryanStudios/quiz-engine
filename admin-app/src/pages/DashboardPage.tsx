@@ -298,11 +298,11 @@ export function DashboardPage() {
 
       {/* ── Loading skeleton ── */}
       {loading && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.25rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem' }}>
           {[1,2,3,4,5,6].map((i) => (
             <div key={i} style={{
-              height: '280px',
-              borderRadius: '16px',
+              height: '190px',
+              borderRadius: '12px',
               background: 'linear-gradient(90deg, #1e293b 25%, #273549 50%, #1e293b 75%)',
               backgroundSize: '200% 100%',
               animation: 'shimmer 1.5s infinite',
@@ -335,8 +335,8 @@ export function DashboardPage() {
       {!loading && quizzes.length > 0 && (
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-          gap: '1.25rem',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+          gap: '1rem',
         }}>
           {quizzes.map((q) => {
             const coverImg = getCoverImage(q.questions ?? [])
@@ -366,7 +366,7 @@ export function DashboardPage() {
               >
                 {/* Cover image / gradient hero */}
                 <div style={{
-                  height: '160px',
+                  height: '100px',
                   position: 'relative',
                   overflow: 'hidden',
                   background: coverImg ? '#000' : gradient,
@@ -392,7 +392,7 @@ export function DashboardPage() {
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      fontSize: '4rem',
+                      fontSize: '2.8rem',
                       opacity: 0.6,
                       transition: 'transform 0.3s',
                       transform: isHovered ? 'scale(1.15)' : 'scale(1)',
@@ -456,11 +456,11 @@ export function DashboardPage() {
                 </div>
 
                 {/* Card body */}
-                <div style={{ padding: '1rem 1.1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem', flex: 1 }}>
+                <div style={{ padding: '0.65rem 0.85rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1 }}>
                   {/* Title row with three-dot menu */}
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.4rem' }}>
                     <div style={{
-                      fontSize: '1rem',
+                      fontSize: '0.875rem',
                       fontWeight: 700,
                       color: '#f1f5f9',
                       lineHeight: 1.35,
@@ -551,11 +551,11 @@ export function DashboardPage() {
                       <button
                         style={{
                           width: '100%',
-                          padding: '0.6rem',
+                          padding: '0.45rem',
                           borderRadius: '8px',
                           background: '#1e293b',
                           color: '#94a3b8',
-                          fontSize: '0.85rem',
+                          fontSize: '0.78rem',
                           fontWeight: 600,
                           border: 'none',
                           cursor: 'pointer',
@@ -571,11 +571,11 @@ export function DashboardPage() {
                       <button
                         style={{
                           width: '100%',
-                          padding: '0.6rem',
+                          padding: '0.45rem',
                           borderRadius: '8px',
                           background: '#1e293b',
                           color: '#fff',
-                          fontSize: '0.85rem',
+                          fontSize: '0.78rem',
                           fontWeight: 600,
                           border: 'none',
                           cursor: 'pointer',
@@ -595,11 +595,11 @@ export function DashboardPage() {
                           .then(() => alert('تم نسخ الرابط!'))
                       }}
                       style={{
-                        padding: '0.6rem 0.8rem',
+                        padding: '0.45rem 0.65rem',
                         borderRadius: '8px',
                         background: '#1e293b',
                         color: '#94a3b8',
-                        fontSize: '0.85rem',
+                        fontSize: '0.78rem',
                         border: 'none',
                         cursor: 'pointer',
                         transition: 'background 0.2s, color 0.2s',

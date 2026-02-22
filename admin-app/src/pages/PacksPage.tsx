@@ -174,10 +174,10 @@ export function PacksPage() {
 
       {/* Loading skeleton */}
       {loading && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.25rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem' }}>
           {[1,2,3,4,5,6].map((i) => (
             <div key={i} style={{
-              height: '300px', borderRadius: '16px',
+              height: '190px', borderRadius: '12px',
               background: 'linear-gradient(90deg, #1e293b 25%, #273549 50%, #1e293b 75%)',
               backgroundSize: '200% 100%', animation: 'shimmer 1.5s infinite',
             }} />
@@ -208,8 +208,8 @@ export function PacksPage() {
       {!loading && visible.length > 0 && (
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-          gap: '1.25rem',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+          gap: '1rem',
         }}>
           {visible.map((q) => {
             const isOwner = q.ownerId === currentUid
@@ -240,7 +240,7 @@ export function PacksPage() {
               >
                 {/* Cover hero */}
                 <div style={{
-                  height: '160px',
+                  height: '100px',
                   position: 'relative',
                   overflow: 'hidden',
                   background: coverImg ? '#000' : gradient,
@@ -261,7 +261,7 @@ export function PacksPage() {
                     <div style={{
                       width: '100%', height: '100%',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: '4rem', opacity: 0.6,
+                      fontSize: '2.8rem', opacity: 0.6,
                       transition: 'transform 0.3s',
                       transform: isHovered ? 'scale(1.15)' : 'scale(1)',
                     }}>
@@ -297,11 +297,11 @@ export function PacksPage() {
                 </div>
 
                 {/* Card body */}
-                <div style={{ padding: '1rem 1.1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem', flex: 1 }}>
+                <div style={{ padding: '0.65rem 0.85rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1 }}>
                   {/* Title row */}
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.4rem' }}>
                     <div style={{
-                      fontSize: '1rem', fontWeight: 700, color: '#f1f5f9', lineHeight: 1.35,
+                      fontSize: '0.875rem', fontWeight: 700, color: '#f1f5f9', lineHeight: 1.35,
                       display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
                       flex: 1,
                     }}>
@@ -391,7 +391,7 @@ export function PacksPage() {
                       <>
                         <Link to={`/preview/${q.id}`} style={{ textDecoration: 'none', flex: 1 }}>
                           <button
-                            style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', background: '#1e293b', color: '#94a3b8', fontSize: '0.85rem', fontWeight: 600, border: 'none', cursor: 'pointer', transition: 'background 0.2s, color 0.2s' }}
+                            style={{ width: '100%', padding: '0.45rem', borderRadius: '8px', background: '#1e293b', color: '#94a3b8', fontSize: '0.78rem', fontWeight: 600, border: 'none', cursor: 'pointer', transition: 'background 0.2s, color 0.2s' }}
                             onMouseEnter={(e) => { e.currentTarget.style.background = '#0e7490'; e.currentTarget.style.color = '#fff' }}
                             onMouseLeave={(e) => { e.currentTarget.style.background = '#1e293b'; e.currentTarget.style.color = '#94a3b8' }}
                           >
@@ -400,7 +400,7 @@ export function PacksPage() {
                         </Link>
                         <Link to={`/editor/${q.id}`} style={{ textDecoration: 'none', flex: 1 }}>
                           <button
-                            style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', background: '#1e293b', color: '#fff', fontSize: '0.85rem', fontWeight: 600, border: 'none', cursor: 'pointer', transition: 'background 0.2s' }}
+                            style={{ width: '100%', padding: '0.45rem', borderRadius: '8px', background: '#1e293b', color: '#fff', fontSize: '0.78rem', fontWeight: 600, border: 'none', cursor: 'pointer', transition: 'background 0.2s' }}
                             onMouseEnter={(e) => { e.currentTarget.style.background = 'linear-gradient(135deg, #2563eb, #7c3aed)' }}
                             onMouseLeave={(e) => { e.currentTarget.style.background = '#1e293b' }}
                           >
@@ -410,7 +410,7 @@ export function PacksPage() {
                         <button
                           title="Copy link"
                           onClick={() => navigator.clipboard?.writeText(`https://quizengine.onrender.com/?quiz=${encodeURIComponent(q.id)}`).then(() => alert('Link copied!'))}
-                          style={{ padding: '0.6rem 0.8rem', borderRadius: '8px', background: '#1e293b', color: '#94a3b8', fontSize: '0.85rem', border: 'none', cursor: 'pointer', flexShrink: 0, transition: 'background 0.2s, color 0.2s' }}
+                          style={{ padding: '0.45rem 0.65rem', borderRadius: '8px', background: '#1e293b', color: '#94a3b8', fontSize: '0.78rem', border: 'none', cursor: 'pointer', flexShrink: 0, transition: 'background 0.2s, color 0.2s' }}
                           onMouseEnter={(e) => { e.currentTarget.style.background = '#334155'; e.currentTarget.style.color = '#e2e8f0' }}
                           onMouseLeave={(e) => { e.currentTarget.style.background = '#1e293b'; e.currentTarget.style.color = '#94a3b8' }}
                         >
@@ -421,7 +421,7 @@ export function PacksPage() {
                       <>
                         <Link to={`/preview/${q.id}`} style={{ textDecoration: 'none', flex: 1 }}>
                           <button
-                            style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', background: '#1e293b', color: '#94a3b8', fontSize: '0.85rem', fontWeight: 600, border: 'none', cursor: 'pointer', transition: 'background 0.2s, color 0.2s' }}
+                            style={{ width: '100%', padding: '0.45rem', borderRadius: '8px', background: '#1e293b', color: '#94a3b8', fontSize: '0.78rem', fontWeight: 600, border: 'none', cursor: 'pointer', transition: 'background 0.2s, color 0.2s' }}
                             onMouseEnter={(e) => { e.currentTarget.style.background = '#0e7490'; e.currentTarget.style.color = '#fff' }}
                             onMouseLeave={(e) => { e.currentTarget.style.background = '#1e293b'; e.currentTarget.style.color = '#94a3b8' }}
                           >
@@ -431,7 +431,7 @@ export function PacksPage() {
                         <button
                           onClick={() => handleClone(q)}
                           disabled={cloningId === q.id}
-                          style={{ flex: 1, padding: '0.6rem', borderRadius: '8px', background: '#1e293b', color: '#fff', fontSize: '0.85rem', fontWeight: 600, border: 'none', cursor: cloningId === q.id ? 'not-allowed' : 'pointer', transition: 'background 0.2s', opacity: cloningId === q.id ? 0.6 : 1 }}
+                          style={{ flex: 1, padding: '0.45rem', borderRadius: '8px', background: '#1e293b', color: '#fff', fontSize: '0.78rem', fontWeight: 600, border: 'none', cursor: cloningId === q.id ? 'not-allowed' : 'pointer', transition: 'background 0.2s', opacity: cloningId === q.id ? 0.6 : 1 }}
                           onMouseEnter={(e) => { if (cloningId !== q.id) e.currentTarget.style.background = 'linear-gradient(135deg, #2563eb, #7c3aed)' }}
                           onMouseLeave={(e) => { e.currentTarget.style.background = '#1e293b' }}
                         >
