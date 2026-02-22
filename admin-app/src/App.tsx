@@ -49,41 +49,29 @@ function App() {
                 <Link to="/editor">Quiz Editor</Link>
                 <Link to="/packs">Packs</Link>
                 <Link to="/billing">Billing</Link>
-                <div style={{
-                  marginTop: 'auto',
-                  paddingTop: '1rem',
-                  borderTop: '1px solid #1e293b',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.6rem',
-                }}>
+              </nav>
+            )}
+            {user && (
+              <div className="sidebar-user">
+                <div className="sidebar-user-chip">
                   {user.photoURL ? (
                     <img
                       src={user.photoURL}
                       referrerPolicy="no-referrer"
                       alt=""
-                      style={{ width: '34px', height: '34px', borderRadius: '50%', flexShrink: 0 }}
+                      className="sidebar-user-avatar"
                     />
                   ) : (
-                    <div style={{
-                      width: '34px', height: '34px', borderRadius: '50%', flexShrink: 0,
-                      background: 'linear-gradient(135deg, #2563eb, #7c3aed)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: '0.75rem', fontWeight: 700, color: '#fff',
-                    }}>
+                    <div className="sidebar-user-avatar sidebar-user-initials">
                       {(user.displayName || user.email || '?').slice(0, 2).toUpperCase()}
                     </div>
                   )}
-                  <span style={{
-                    fontSize: '0.8rem', fontWeight: 600, color: '#e2e8f0',
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    flex: 1,
-                  }}>
+                  <span className="sidebar-user-name">
                     {user.displayName || user.email?.split('@')[0]}
                   </span>
                 </div>
-                <button onClick={() => signOut(auth)} style={{ marginTop: '0.5rem', cursor: 'pointer' }}>Sign Out</button>
-              </nav>
+                <button onClick={() => signOut(auth)} className="sidebar-signout-btn">Sign Out</button>
+              </div>
             )}
           </aside>
           <main className="admin-main">
