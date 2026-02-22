@@ -1,8 +1,8 @@
 import { onAuthStateChanged, signOut } from 'firebase/auth'
 import type { User } from 'firebase/auth'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
-import { Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import './App.css'
 import { auth } from './lib/firebase'
 import { DialogProvider } from './lib/DialogContext'
@@ -23,6 +23,10 @@ function RequireAuth({ user, children }: { user: User | null; children: ReactEle
 function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
   const navigate = useNavigate()
+  const location = useLocation()
+  const [burgerOpen, setBurgerOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const profileRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     return onAuthStateChanged(auth, (u) => {
@@ -33,6 +37,23 @@ function App() {
     })
   }, [navigate])
 
+  // Close burger + profile when route changes
+  useEffect(() => {
+    setBurgerOpen(false)
+    setProfileOpen(false)
+  }, [location.pathname])
+
+  // Close profile dropdown on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setProfileOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
   if (user === undefined) {
     return <div style={{ padding: '2rem' }}>Loading...</div>
   }
@@ -42,25 +63,25 @@ function App() {
       <DialogProvider>
         <div className="admin-shell">
           <aside className="admin-sidebar">
+            {/* Brand */}
             <h1>Quiz Engine Admin</h1>
+
+            {/* Desktop nav */}
             {user && (
-              <nav>
+              <nav className="sidebar-nav-desktop">
                 <Link to="/dashboard">Dashboard</Link>
                 <Link to="/editor">Quiz Editor</Link>
                 <Link to="/packs">Packs</Link>
                 <Link to="/billing">Billing</Link>
               </nav>
             )}
+
+            {/* Desktop user section */}
             {user && (
               <div className="sidebar-user">
                 <div className="sidebar-user-chip">
                   {user.photoURL ? (
-                    <img
-                      src={user.photoURL}
-                      referrerPolicy="no-referrer"
-                      alt=""
-                      className="sidebar-user-avatar"
-                    />
+                    <img src={user.photoURL} referrerPolicy="no-referrer" alt="" className="sidebar-user-avatar" />
                   ) : (
                     <div className="sidebar-user-avatar sidebar-user-initials">
                       {(user.displayName || user.email || '?').slice(0, 2).toUpperCase()}
@@ -72,6 +93,74 @@ function App() {
                 </div>
                 <button onClick={() => signOut(auth)} className="sidebar-signout-btn">Sign Out</button>
               </div>
+            )}
+
+            {/* ── Mobile top-bar controls ── */}
+            {user && (
+              <div className="mobile-bar-controls">
+                {/* Profile avatar → dropdown */}
+                <div className="mobile-profile-wrap" ref={profileRef}>
+                  <button
+                    className="mobile-avatar-btn"
+                    onClick={() => { setProfileOpen((o) => !o); setBurgerOpen(false) }}
+                    aria-label="Profile menu"
+                  >
+                    {user.photoURL ? (
+                      <img src={user.photoURL} referrerPolicy="no-referrer" alt="" className="sidebar-user-avatar" />
+                    ) : (
+                      <div className="sidebar-user-avatar sidebar-user-initials" style={{ fontSize: '0.65rem' }}>
+                        {(user.displayName || user.email || '?').slice(0, 2).toUpperCase()}
+                      </div>
+                    )}
+                  </button>
+                  {profileOpen && (
+                    <div className="mobile-profile-dropdown">
+                      <div className="mobile-profile-header">
+                        {user.photoURL ? (
+                          <img src={user.photoURL} referrerPolicy="no-referrer" alt="" style={{ width: 36, height: 36, borderRadius: '50%' }} />
+                        ) : (
+                          <div className="sidebar-user-avatar sidebar-user-initials" style={{ width: 36, height: 36, fontSize: '0.75rem' }}>
+                            {(user.displayName || user.email || '?').slice(0, 2).toUpperCase()}
+                          </div>
+                        )}
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#f1f5f9' }}>
+                            {user.displayName || user.email?.split('@')[0]}
+                          </div>
+                          <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{user.email}</div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => signOut(auth)}
+                        className="mobile-profile-signout"
+                      >
+                        Sign Out
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Burger button */}
+                <button
+                  className="burger-btn"
+                  onClick={() => { setBurgerOpen((o) => !o); setProfileOpen(false) }}
+                  aria-label="Toggle menu"
+                >
+                  <span className={`burger-line ${burgerOpen ? 'open-top' : ''}`} />
+                  <span className={`burger-line ${burgerOpen ? 'open-mid' : ''}`} />
+                  <span className={`burger-line ${burgerOpen ? 'open-bot' : ''}`} />
+                </button>
+              </div>
+            )}
+
+            {/* Mobile nav drawer */}
+            {user && (
+              <nav className={`mobile-nav-drawer ${burgerOpen ? 'drawer-open' : ''}`}>
+                <Link to="/dashboard">Dashboard</Link>
+                <Link to="/editor">Quiz Editor</Link>
+                <Link to="/packs">Packs</Link>
+                <Link to="/billing">Billing</Link>
+              </nav>
             )}
           </aside>
           <main className="admin-main">
