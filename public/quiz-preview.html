@@ -297,6 +297,47 @@
       padding: 40px 20px;
       color: #8892a4;
     }
+
+    .raw-toggle {
+      background: none;
+      border: 1px solid #334155;
+      color: #64748b;
+      font-size: 0.75rem;
+      padding: 3px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-top: 10px;
+      transition: all 0.15s;
+    }
+    .raw-toggle:hover { background: #1e293b; color: #94a3b8; }
+
+    .raw-block {
+      display: none;
+      background: #0f172a;
+      border: 1px solid #1e3a5f;
+      border-radius: 6px;
+      padding: 10px 14px;
+      margin-top: 8px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 0.78rem;
+      color: #7dd3fc;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 320px;
+      overflow-y: auto;
+    }
+
+    .media-badge {
+      display: inline-block;
+      background: rgba(251, 191, 36, 0.15);
+      border: 1px solid rgba(251, 191, 36, 0.4);
+      color: #fbbf24;
+      font-size: 0.75rem;
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-left: 8px;
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
@@ -396,21 +437,25 @@
         const card = document.createElement('div');
         card.className = 'question-card';
 
+        const hasMedia = q.media && q.media.url && q.media.type !== 'none';
+        const mediaBadge = hasMedia ? `<span class="media-badge">📎 ${q.media.type}</span>` : '';
+
         let content = `
           <div class="question-header">
             <div class="question-number">${q.index}</div>
             <div class="question-type">${q.type}</div>
+            ${mediaBadge}
           </div>
           <div class="question-content">
             <div class="question-text">${escapeHtml(q.text)}</div>
         `;
 
         // Render media if present
-        if (q.media && q.media.url && q.media.type !== 'none') {
+        if (hasMedia) {
           if (q.media.type === 'video') {
             content += `<video class="question-media-preview" src="${q.media.url}" controls muted playsinline></video>`;
           } else {
-            content += `<img class="question-media-preview" src="${q.media.url}" alt="media" />`;
+            content += `<img class="question-media-preview" src="${escapeHtml(q.media.url)}" alt="media" onerror="this.style.border='2px solid #e94560'; this.alt='⚠️ Image failed to load: ' + this.src;" />`;
           }
         }
 
@@ -471,6 +516,14 @@
         }
 
         content += `<div class="duration">⏱️ Duration: ${q.duration}s</div>`;
+
+        // Raw JSON toggle
+        const rawId = `raw-${q.index}`;
+        content += `
+          <button class="raw-toggle" onclick="toggleRaw('${rawId}')">{ } Show raw data</button>
+          <pre id="${rawId}" class="raw-block">${escapeHtml(JSON.stringify(q, null, 2))}</pre>
+        `;
+
         content += '</div>';
 
         card.innerHTML = content;
@@ -483,6 +536,18 @@
     function showStatus(message, type) {
       statusDiv.textContent = message;
       statusDiv.className = `status ${type}`;
+    }
+
+    function toggleRaw(id) {
+      const el = document.getElementById(id);
+      const btn = el.previousElementSibling;
+      if (el.style.display === 'block') {
+        el.style.display = 'none';
+        btn.textContent = '{ } Show raw data';
+      } else {
+        el.style.display = 'block';
+        btn.textContent = '{ } Hide raw data';
+      }
     }
 
     function escapeHtml(text) {

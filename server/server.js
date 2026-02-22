@@ -125,10 +125,11 @@ app.get('/api/quiz-preview/:slug', async (req, res) => {
       index: idx + 1,
       type: q.type,
       text: q.text,
-      ...(q.media && q.media.type !== 'none' && q.media.url ? { media: q.media } : {}),
+      ...(q.media && q.media.type && q.media.type !== 'none' && q.media.url ? { media: q.media } : {}),
       ...(q.type === 'single' || q.type === 'multi' || q.type === 'boss' ? {
         options: q.options,
-        ...(q.type !== 'boss' && { correctAnswer: q.answer || q.answers }),
+        ...(q.type === 'single' && { correctAnswer: q.correctIndex ?? q.answer ?? q.answers }),
+        ...(q.type === 'multi' && { correctAnswer: q.correctIndices ?? q.answers }),
       } : {}),
       ...(q.type === 'type' ? {
         acceptedAnswers: q.acceptedAnswers,
@@ -143,7 +144,7 @@ app.get('/api/quiz-preview/:slug', async (req, res) => {
       } : {}),
       ...(q.type === 'boss' ? {
         boss: { name: q.bossName, hp: q.bossHp },
-        correctAnswer: q.answer || q.answers,
+        correctAnswer: q.correctIndex ?? q.answer ?? q.answers,
       } : {}),
       duration: q.duration || config.GAME.QUESTION_DURATION_SEC,
     }))
