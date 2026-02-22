@@ -105,12 +105,26 @@ app.get('/api/quiz-diagnostic/:slug', async (req, res) => {
 // Quiz info endpoint — returns title + question count only (lightweight)
 app.get('/api/quiz-info/:slug', async (req, res) => {
   const slug = req.params.slug;
-  const result = await getQuizData(slug);
-  if (!result) return res.status(404).json({ error: 'Quiz not found' });
-  res.json({
-    title: result.title || slug,
-    questionCount: result.questions.length,
-  });
+  try {
+    const db = getDbSafe();
+    if (db) {
+      // Try direct doc ID lookup first
+      const docSnap = await db.collection('quizzes').doc(slug).get();
+      if (docSnap.exists) {
+        const data = docSnap.data();
+        return res.json({ title: data.title || slug, questionCount: (data.questions || []).length });
+      }
+      // Fall back to slug query
+      const snap = await db.collection('quizzes').where('slug', '==', slug).limit(1).get();
+      if (!snap.empty) {
+        const data = snap.docs[0].data();
+        return res.json({ title: data.title || slug, questionCount: (data.questions || []).length });
+      }
+    }
+  } catch (err) {
+    console.error('[quiz-info] Error:', err.message);
+  }
+  res.status(404).json({ error: 'Quiz not found' });
 });
 
 // Preview endpoint — view all quiz questions with answers (for testing/debugging)
