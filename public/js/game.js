@@ -72,17 +72,20 @@ const queryParams = new URLSearchParams(window.location.search);
 const quizSlugFromUrl = queryParams.get('quiz');
 
 // If a quiz slug is in the URL, show ID immediately then fetch title
+// Update both the home banner and the player-join banner
 if (quizSlugFromUrl) {
   const el = document.getElementById('quiz-title-banner');
-  if (el) {
-    el.textContent = `🆔 ${quizSlugFromUrl}`;
-    el.style.display = 'block';
-  }
+  const el2 = document.getElementById('join-quiz-title-banner');
+  const setText = (text) => {
+    if (el)  { el.textContent = text; el.style.display = 'block'; }
+    if (el2) { el2.textContent = text; el2.style.display = 'block'; }
+  };
+  setText(`🆔 ${quizSlugFromUrl}`);
   fetch(`/api/quiz-info/${encodeURIComponent(quizSlugFromUrl)}`)
     .then((r) => r.ok ? r.json() : null)
     .then((data) => {
-      if (!data || !el) return;
-      el.textContent = `📋 ${data.title}  •  🆔 ${quizSlugFromUrl}`;
+      if (!data) return;
+      setText(`📋 ${data.title}`);
     })
     .catch(() => {});
 }
@@ -1587,6 +1590,8 @@ socket.on('room:closed', ({ message }) => {
 // QR Auto-fill: runs LAST so state & showView are fully declared
 // If URL has ?pin=XXXXXX (from QR scan), skip home and go straight
 // to the player join view with PIN pre-filled.
+// If URL has ?quiz=... (from the host's share QR), skip home too —
+// the QR is only shared with players, so the host choice is irrelevant.
 // ─────────────────────────────────────────────
 (function () {
   const params = new URLSearchParams(window.location.search);
@@ -1603,6 +1608,14 @@ socket.on('room:closed', ({ message }) => {
     if (scanFallbackBanner) {
       scanFallbackBanner.innerHTML =
         `<strong>Scanned successfully.</strong><span>PIN <b>${escapeHtml(pinFromUrl)}</b> was filled automatically. If auto-join fails, tap Join Game manually.</span>`;
+    }
+    showView('view-player-join');
+  } else if (quizSlugFromUrl) {
+    // Came from a quiz QR code — host is already set up, go straight to player join
+    state.role = 'player';
+    if (scanFallbackBanner) {
+      scanFallbackBanner.innerHTML =
+        `<strong>Join as a player.</strong><span>Enter the Room PIN shown on the host screen, then your nickname.</span>`;
     }
     showView('view-player-join');
   }
