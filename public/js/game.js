@@ -392,6 +392,17 @@ function renderQuestionMedia(media, textElemId) {
   box.appendChild(el);
 }
 
+// ── Clear media from both host and player question boxes ──────────────
+function clearQuestionMedia() {
+  ['host-question-text', 'player-question-text'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const box = el.parentElement;
+    const m = box && box.querySelector('.question-media');
+    if (m) m.remove();
+  });
+}
+
 // ── Host view: shows question + non-interactive options/items ──────────
 function renderHostQuestion(data) {
   const q = data.question;
@@ -926,6 +937,9 @@ function showLeaderboard(data, isFinal) {
   hintEl.textContent  = isFinal ? '' : 'Next question coming up…';
   hintEl.style.display = isFinal ? 'none' : 'block';
 
+  // Clear previous question's media so it doesn't show behind the next question hint
+  clearQuestionMedia();
+
   const listEl = document.getElementById('leaderboard-list');
   listEl.innerHTML = data.leaderboard
     .map(
@@ -1358,6 +1372,22 @@ socket.on('game:start', ({ totalQuestions }) => {
   state.myScore = 0;
   updatePlayerScoreUI();
   Sounds.start();
+
+  // Preload all question images so they appear instantly during the game
+  if (quizSlugFromUrl) {
+    fetch(`/api/quiz-preview/${encodeURIComponent(quizSlugFromUrl)}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (!data || !Array.isArray(data.questions)) return;
+        data.questions.forEach((q) => {
+          if (q.media && q.media.url && q.media.type === 'image') {
+            const img = new Image();
+            img.src = q.media.url;
+          }
+        });
+      })
+      .catch(() => {});
+  }
 });
 
 socket.on('game:roles', (data) => {
