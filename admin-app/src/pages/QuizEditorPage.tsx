@@ -436,7 +436,7 @@ export function QuizEditorPage() {
               <div>
                 <label style={{ fontSize: '0.9em', opacity: 0.7, display: 'block', marginBottom: '0.5rem' }}>رابط المشاركة (URL)</label>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <span style={{ padding: '0.75rem', color: '#888', whiteSpace: 'nowrap' }}>{SERVER_BASE}/quiz/</span>
+                  <span style={{ padding: '0.75rem', color: '#888', whiteSpace: 'nowrap' }}>{SERVER_BASE}/?quiz=</span>
                   {getOwnerSlugPrefix(ownerId) && (
                     <span style={{ padding: '0.75rem', color: '#aaa', whiteSpace: 'nowrap' }}>{getOwnerSlugPrefix(ownerId)}-</span>
                   )}
@@ -564,9 +564,9 @@ export function QuizEditorPage() {
           <p style={{ margin: '0.25rem 0' }}><strong>الاسم:</strong> {title}</p>
           <p style={{ margin: '0.25rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <strong>الرابط:</strong>
-            <code>{SERVER_BASE}/quiz/{slug}</code>
+            <code>{SERVER_BASE}/?quiz={slug}</code>
             <a
-              href={`${SERVER_BASE}/quiz/${slug}`}
+              href={`${SERVER_BASE}/?quiz=${slug}`}
               target="_blank"
               rel="noopener noreferrer"
               title="فتح في تبويب جديد"
