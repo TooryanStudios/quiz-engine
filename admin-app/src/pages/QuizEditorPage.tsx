@@ -564,20 +564,23 @@ export function QuizEditorPage() {
           <p style={{ margin: '0.25rem 0' }}><strong>الاسم:</strong> {title}</p>
           <p style={{ margin: '0.25rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <strong>الرابط:</strong>
-            <code>{SERVER_BASE}/?quiz={slug}</code>
-            <a
-              href={`${SERVER_BASE}/?quiz=${slug}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="فتح في تبويب جديد"
-              style={{ color: '#60a5fa', lineHeight: 1, display: 'inline-flex', alignItems: 'center' }}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-                <polyline points="15 3 21 3 21 9"/>
-                <line x1="10" y1="14" x2="21" y2="3"/>
-              </svg>
-            </a>
+            {quizId
+              ? <><code>{SERVER_BASE}/?quiz={quizId}</code>
+                <a
+                  href={`${SERVER_BASE}/?quiz=${quizId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="فتح في تبويب جديد"
+                  style={{ color: '#60a5fa', lineHeight: 1, display: 'inline-flex', alignItems: 'center' }}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                    <polyline points="15 3 21 3 21 9"/>
+                    <line x1="10" y1="14" x2="21" y2="3"/>
+                  </svg>
+                </a></>
+              : <span style={{ color: '#888', fontStyle: 'italic' }}>احفظ الاختبار أولاً</span>
+            }
           </p>
           <p style={{ margin: '0.25rem 0' }}><strong>الخصوصية:</strong> {visibility === 'public' ? 'عام' : 'خاص'}</p>
           <p style={{ margin: '0.25rem 0' }}><strong>المستوى:</strong> {challengePreset}</p>

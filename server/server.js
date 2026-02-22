@@ -512,6 +512,23 @@ async function getQuizData(quizSlug) {
     try {
       const db = getDbSafe();
       if (db) {
+        // 1a. Try direct document ID lookup first (fast)
+        try {
+          const docSnap = await db.collection('quizzes').doc(quizSlug).get();
+          if (docSnap.exists) {
+            const data = docSnap.data();
+            if (Array.isArray(data.questions) && data.questions.length > 0) {
+              console.log(`[Quiz] ✓ Loaded "${data.title}" by doc ID (${data.questions.length} Qs)`);
+              return {
+                questions: data.questions,
+                challengePreset: data.challengePreset || 'classic',
+                challengeSettings: data.challengeSettings || null,
+              };
+            }
+          }
+        } catch (_) { /* not a valid doc ID, fall through to slug query */ }
+
+        // 1b. Fall back to slug query
         console.log(`[Quiz] Querying Firestore for slug="${quizSlug}"...`);
         const snap = await db.collection('quizzes')
           .where('slug', '==', quizSlug)
