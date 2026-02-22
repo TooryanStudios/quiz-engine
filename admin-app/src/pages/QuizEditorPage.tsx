@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { storage } from '../lib/firebase'
 import { useNavigate, useParams } from 'react-router-dom'
 import { auth } from '../lib/firebase'
 import { useDialog } from '../lib/DialogContext'
 import { useToast } from '../lib/ToastContext'
+import { useSubscription } from '../lib/useSubscription'
 import type { ChallengePreset, QuizDoc, QuizMedia, QuizQuestion, QuestionType } from '../types/quiz'
 import { createQuiz, findQuizByOwnerAndSlug, getQuizById, updateQuiz } from '../lib/quizRepo'
 
@@ -184,6 +187,7 @@ export function QuizEditorPage() {
   const navigate = useNavigate()
   const { show: showDialog } = useDialog()
   const { showToast } = useToast()
+  const { isSubscribed } = useSubscription()
   const [quizId, setQuizId] = useState<string | null>(routeId ?? null)
   const [title, setTitle] = useState('')
   const [slug, setSlug] = useState('')
@@ -1042,39 +1046,71 @@ export function QuizEditorPage() {
                       boxSizing: 'border-box',
                     }}
                   />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const input = document.createElement('input')
-                      input.type = 'file'
-                      input.accept = q.media?.type === 'video' ? 'video/*' : q.media?.type === 'gif' ? 'image/gif' : 'image/*'
-                      input.onchange = async (e) => {
-                        const file = (e.target as HTMLInputElement).files?.[0]
-                        if (!file) return
-                        
-                        // In a real app, you would upload this file to a server/storage
-                        // and get back a URL. For this PoC, we'll use a local object URL
-                        // or you can implement actual Firebase Storage upload here.
-                        const url = URL.createObjectURL(file)
-                        updateQuestion(index, { media: { ...q.media!, url } })
+                  {isSubscribed ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const input = document.createElement('input')
+                        input.type = 'file'
+                        input.accept = q.media?.type === 'video' ? 'video/*' : q.media?.type === 'gif' ? 'image/gif' : 'image/*'
+                        input.onchange = async (e) => {
+                          const file = (e.target as HTMLInputElement).files?.[0]
+                          if (!file) return
+                          try {
+                            const ext = file.name.split('.').pop() || 'bin'
+                            const path = `quiz-media/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+                            const storageRef = ref(storage, path)
+                            await uploadBytes(storageRef, file)
+                            const url = await getDownloadURL(storageRef)
+                            updateQuestion(index, { media: { ...q.media!, url } })
+                          } catch (err) {
+                            console.error('Upload failed', err)
+                            alert('Upload failed. Check Firebase Storage rules.')
+                          }
+                        }
+                        input.click()
+                      }}
+                      style={{
+                        padding: '0 0.75rem',
+                        borderRadius: '4px',
+                        border: '1px solid #475569',
+                        backgroundColor: '#1a5a8c',
+                        color: '#fff',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                      title="رفع ملف (مشتركون فقط)"
+                    >
+                      📁
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        alert(
+                          'رفع الملفات متاح للمشتركين فقط.\n\nيمكنك استخدام خدمات مجانية مثل imgbb.com أو cloudinary.com للحصول على رابط صورة دائم، ثم لصقه بزر 📋'
+                        )
                       }
-                      input.click()
-                    }}
-                    style={{
-                      padding: '0 0.75rem',
-                      borderRadius: '4px',
-                      border: '1px solid #475569',
-                      backgroundColor: '#1a5a8c',
-                      color: '#fff',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                    title="رفع ملف"
-                  >
-                    📁
-                  </button>
+                      style={{
+                        padding: '0 0.75rem',
+                        borderRadius: '4px',
+                        border: '1px solid #475569',
+                        backgroundColor: '#374151',
+                        color: '#9ca3af',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '2px',
+                        fontSize: '0.85em',
+                      }}
+                      title="رفع الملفات للمشتركين فقط — استخدم imgbb.com أو Cloudinary للحصول على رابط مجاني"
+                    >
+                      🔒📁
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={async () => {
