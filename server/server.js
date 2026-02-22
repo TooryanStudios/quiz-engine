@@ -125,6 +125,7 @@ app.get('/api/quiz-preview/:slug', async (req, res) => {
       index: idx + 1,
       type: q.type,
       text: q.text,
+      ...(q.media && q.media.type !== 'none' && q.media.url ? { media: q.media } : {}),
       ...(q.type === 'single' || q.type === 'multi' || q.type === 'boss' ? {
         options: q.options,
         ...(q.type !== 'boss' && { correctAnswer: q.answer || q.answers }),
@@ -794,6 +795,11 @@ function sendQuestion(room) {
 
   // Build the client-safe question payload (never send answer keys)
   const questionPayload = { type: q.type, text: q.text };
+
+  // Include media if set
+  if (q.media && q.media.type && q.media.type !== 'none' && q.media.url) {
+    questionPayload.media = q.media;
+  }
 
   if (q.type === 'single' || q.type === 'multi') {
     questionPayload.options = q.options;

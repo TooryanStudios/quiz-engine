@@ -277,6 +277,21 @@
       border-top: 1px solid rgba(136, 146, 164, 0.2);
     }
 
+    .question-media-preview {
+      max-width: 100%;
+      max-height: 240px;
+      border-radius: 8px;
+      object-fit: contain;
+      display: block;
+      margin: 10px 0;
+    }
+
+    video.question-media-preview {
+      width: 100%;
+      max-height: 240px;
+      border-radius: 8px;
+    }
+
     .no-questions {
       text-align: center;
       padding: 40px 20px;
@@ -389,6 +404,15 @@
           <div class="question-content">
             <div class="question-text">${escapeHtml(q.text)}</div>
         `;
+
+        // Render media if present
+        if (q.media && q.media.url && q.media.type !== 'none') {
+          if (q.media.type === 'video') {
+            content += `<video class="question-media-preview" src="${q.media.url}" controls muted playsinline></video>`;
+          } else {
+            content += `<img class="question-media-preview" src="${q.media.url}" alt="media" />`;
+          }
+        }
 
         if (q.type === 'single' || q.type === 'multi') {
           content += '<ul class="options-list">';

@@ -345,12 +345,39 @@ function renderQuestion(data, isHost) {
   }
 }
 
+// ── Shared: inject media element into a question-text-box ──────────────
+function renderQuestionMedia(media, textElemId) {
+  const textEl = document.getElementById(textElemId);
+  if (!textEl) return;
+  const box = textEl.parentElement;
+  const existing = box.querySelector('.question-media');
+  if (existing) existing.remove();
+  if (!media || !media.url || media.type === 'none') return;
+  let el;
+  if (media.type === 'video') {
+    el = document.createElement('video');
+    el.src = media.url;
+    el.controls = true;
+    el.autoplay = true;
+    el.muted = true;
+    el.loop = false;
+    el.playsInline = true;
+  } else {
+    el = document.createElement('img');
+    el.src = media.url;
+    el.alt = '';
+  }
+  el.className = 'question-media';
+  box.appendChild(el);
+}
+
 // ── Host view: shows question + non-interactive options/items ──────────
 function renderHostQuestion(data) {
   const q = data.question;
   document.getElementById('host-q-progress').textContent =
     `Q ${data.questionIndex + 1} / ${data.total}`;
   document.getElementById('host-question-text').textContent = q.text;
+  renderQuestionMedia(q.media || null, 'host-question-text');
   document.getElementById('host-answer-counter').textContent = '0 / 0 answered';
 
   const pauseBtn = document.getElementById('btn-pause-resume');
@@ -417,6 +444,7 @@ function renderPlayerQuestion(data) {
   document.getElementById('player-q-progress').textContent =
     `Q ${data.questionIndex + 1} / ${data.total}`;
   document.getElementById('player-question-text').textContent = q.text;
+  renderQuestionMedia(q.media || null, 'player-question-text');
   document.getElementById('player-answered-msg').textContent = '';
 
   // Streak badge
