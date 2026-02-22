@@ -72,6 +72,28 @@ const queryParams = new URLSearchParams(window.location.search);
 const quizSlugFromUrl = queryParams.get('quiz');
 
 // ─────────────────────────────────────────────
+// Session Persistence (reconnect support)
+// ─────────────────────────────────────────────
+function getOrCreatePlayerId() {
+  let id = localStorage.getItem('quizPlayerId');
+  if (!id) {
+    id = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    localStorage.setItem('quizPlayerId', id);
+  }
+  return id;
+}
+const myPlayerId = getOrCreatePlayerId();
+
+function saveGameSession(pin, nickname, avatar) {
+  localStorage.setItem('quizSession', JSON.stringify({ pin, nickname, avatar, playerId: myPlayerId }));
+}
+function clearGameSession() {
+  localStorage.removeItem('quizSession');
+}
+
+let rejoinAttempt = false; // true while an auto-rejoin is in flight
+
+// ─────────────────────────────────────────────
 // Predefined Avatar Set
 // ─────────────────────────────────────────────
 const AVATARS = ['🦁','🐯','🦊','🐼','🐨','🐸','🦄','🦖','🦝','🕺','🤖','👾','🎃','🧙','🦸','🐇','⚡','🔥','🎮','🏆'];
@@ -1193,7 +1215,7 @@ document.getElementById('form-join').addEventListener('submit', (e) => {
   Sounds.click();
   state.pin = pin;
   state.nickname = nickname;
-  socket.emit('player:join', { pin, nickname, avatar: state.avatar });
+  socket.emit('player:join', { pin, nickname, avatar: state.avatar, playerId: myPlayerId });
 });
 
 // Player Lobby — Edit Profile toggle
@@ -1397,6 +1419,9 @@ socket.on('room:joined', ({ pin, nickname, avatar, players }) => {
   updatePlayerScoreUI();
   document.getElementById('player-room-pin').textContent = pin;
 
+  // Save session for potential reconnect
+  saveGameSession(pin, nickname, avatar || '🎮');
+
   // Pre-fill edit form
   const editNickEl = document.getElementById('edit-nickname-input');
   if (editNickEl) editNickEl.value = nickname;
@@ -1443,6 +1468,86 @@ socket.on('room:player_joined', ({ players }) => {
       document.getElementById('player-player-count')
     );
   }
+});
+
+/** PLAYER: Rejoined a game in progress after disconnection */
+socket.on('room:rejoined', ({ pin, nickname, avatar, players, score, streak, roomState, role, questionData, leaderboard }) => {
+  rejoinAttempt = false;
+
+  state.pin = pin;
+  state.nickname = nickname;
+  state.avatar = avatar || '🎮';
+  state.role = 'player';
+  state.myScore = score || 0;
+  state.myStreak = streak || 0;
+  updatePlayerScoreUI();
+
+  if (role === 'scholar') state.myRole = 'scholar';
+  else if (role === 'shield') state.myRole = 'shield';
+  else if (role === 'saboteur') state.myRole = 'saboteur';
+  else state.myRole = null;
+
+  renderPlayerList(
+    players,
+    document.getElementById('player-player-list'),
+    document.getElementById('player-player-count')
+  );
+
+  setConnectionStatus('ok', 'Reconnected ✓');
+
+  if (roomState === 'lobby') {
+    showView('view-player-lobby');
+  } else if ((roomState === 'question' || roomState === 'question-pending') && questionData) {
+    renderQuestion({
+      questionIndex: questionData.questionIndex,
+      total: questionData.total,
+      question: questionData.question,
+      duration: questionData.duration,
+      players: questionData.players,
+    }, false);
+    // Sync the client timer to the server's elapsed time
+    state.questionStartTime = Date.now() - (questionData.duration - questionData.timeRemaining) * 1000;
+    if (questionData.hasAnswered) {
+      state.hasAnswered = true;
+      document.getElementById('player-answered-msg').textContent = '✅ تم إرسال إجابتك! انتظر الآخرين…';
+    }
+  } else if (roomState === 'finished' && leaderboard) {
+    const listEl = document.getElementById('final-leaderboard-list');
+    const winnerWrap = document.getElementById('winner-announcement');
+    const winnerNameEl = document.getElementById('winner-name');
+    const winnerScoreEl = document.getElementById('winner-score');
+    const newSessionBtn = document.getElementById('btn-start-new-session');
+    const winner = leaderboard[0];
+    if (winner) {
+      winnerWrap.style.display = 'block';
+      winnerNameEl.textContent = `👑 ${winner.nickname}`;
+      winnerScoreEl.textContent = `${winner.totalScore} pts`;
+    } else {
+      winnerWrap.style.display = 'none';
+    }
+    newSessionBtn.style.display = 'none';
+    listEl.innerHTML = leaderboard.map((entry, i) =>
+      `<li class="lb-entry ${entry.id === socket.id ? 'lb-mine' : ''}" style="animation-delay:${i * 0.07}s">
+        <span class="lb-rank">${i + 1}</span>
+        <span class="lb-nickname">${escapeHtml(entry.nickname)}</span>
+        <span class="lb-score">${entry.totalScore} pts</span>
+      </li>`
+    ).join('');
+    clearGameSession();
+    Sounds.fanfare();
+    showView('view-game-over');
+  } else {
+    // Fallback: show the player lobby
+    showView('view-player-lobby');
+  }
+});
+
+/** PLAYER: Server could not find the session to rejoin */
+socket.on('room:rejoin_failed', ({ message }) => {
+  rejoinAttempt = false;
+  clearGameSession();
+  setConnectionStatus('ok', 'Server connected');
+  showView('view-home');
 });
 
 /** BOTH: Error from server */
@@ -1606,6 +1711,7 @@ socket.on('game:leaderboard', (data) => {
 
 /** BOTH: Game over — final leaderboard */
 socket.on('game:over', (data) => {
+  clearGameSession();
   // Stop timer immediately — player may still be on question view if they never answered
   clearScholarPreviewInterval();
   stopClientTimer();
@@ -1684,6 +1790,7 @@ socket.on('room:reset', ({ players, modeInfo }) => {
 
 /** PLAYER: Kicked by host */
 socket.on('room:kicked', ({ message }) => {
+  clearGameSession();
   stopClientTimer();
   document.getElementById('room-closed-msg').textContent = message;
   showView('view-room-closed');
@@ -1691,6 +1798,7 @@ socket.on('room:kicked', ({ message }) => {
 
 /** PLAYER: Host disconnected */
 socket.on('room:closed', ({ message }) => {
+  clearGameSession();
   stopClientTimer();
   document.getElementById('room-closed-msg').textContent = message;
   showView('view-room-closed');
@@ -1728,5 +1836,29 @@ socket.on('room:closed', ({ message }) => {
         `<strong>Join as a player.</strong><span>Enter the Room PIN shown on the host screen, then your nickname.</span>`;
     }
     showView('view-player-join');
+  } else {
+    // Check for a saved game session and try to reconnect
+    const savedSession = localStorage.getItem('quizSession');
+    if (savedSession) {
+      try {
+        const { pin, playerId: savedPlayerId } = JSON.parse(savedSession);
+        if (pin && savedPlayerId) {
+          rejoinAttempt = true;
+          state.role = 'player';
+          setConnectionStatus('warn', 'Reconnecting to game…');
+          const attemptRejoin = () => {
+            socket.emit('player:rejoin', { pin, playerId: savedPlayerId });
+          };
+          if (socket.connected) {
+            attemptRejoin();
+          } else {
+            socket.once('connect', attemptRejoin);
+          }
+          return; // wait for room:rejoined or room:rejoin_failed
+        }
+      } catch (_e) {
+        clearGameSession();
+      }
+    }
   }
 })();

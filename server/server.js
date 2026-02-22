@@ -673,15 +673,20 @@ function generatePIN() {
   return pin;
 }
 
-/** Return a safe player list (array) suitable for broadcasting. */
+/** Return a safe player list (array) suitable for broadcasting.
+ *  Disconnected players are excluded — they may still be in the Map
+ *  during a 30-second rejoin window.
+ */
 function getPlayerList(room) {
-  return Array.from(room.players.values()).map((p) => ({
-    id: p.id,
-    nickname: p.nickname,
-    avatar: p.avatar || '🎮',
-    score: p.score,
-    streak: p.streak,
-  }));
+  return Array.from(room.players.values())
+    .filter((p) => !p.disconnected)
+    .map((p) => ({
+      id: p.id,
+      nickname: p.nickname,
+      avatar: p.avatar || '🎮',
+      score: p.score,
+      streak: p.streak,
+    }));
 }
 
 /** Build a leaderboard payload for game:over. */
@@ -891,6 +896,9 @@ function sendQuestion(room) {
       remainingHp: room.currentQuestionMeta.bossRemainingHp,
     };
   }
+
+  // Store client-safe payload so reconnecting players can receive the current question
+  room.currentQuestionPayload = { ...questionPayload };
 
   const dispatchQuestion = () => {
     io.to(room.pin).emit('game:question', {
@@ -1158,7 +1166,7 @@ io.on('connection', (socket) => {
   });
 
   // ── PLAYER: Join a room ──────────────────────
-  socket.on('player:join', ({ pin, nickname, avatar }) => {
+  socket.on('player:join', ({ pin, nickname, avatar, playerId }) => {
     const room = rooms.get(pin);
 
     // Room not found
@@ -1188,6 +1196,7 @@ io.on('connection', (socket) => {
     // Add player to room
     const player = {
       id: socket.id,
+      playerId: typeof playerId === 'string' ? playerId.slice(0, 64) : null,
       nickname: nickname.trim(),
       avatar: typeof avatar === 'string' ? avatar.slice(0, 8) : '🎮',
       score: 0,
@@ -1195,6 +1204,8 @@ io.on('connection', (socket) => {
       maxStreak: 0,
       currentAnswer: null,          // generic — set when player submits
       answerTime: config.GAME.QUESTION_DURATION_SEC,
+      disconnected: false,
+      disconnectTimer: null,
     };
     room.players.set(socket.id, player);
     socket.join(pin);
@@ -1482,15 +1493,16 @@ io.on('connection', (socket) => {
 
     socket.emit('answer:received', { answer });
 
-    // Notify host with live counter
-    const answeredCount = Array.from(room.players.values()).filter(p => p.currentAnswer !== null).length;
+    // Notify host with live counter (only connected players count)
+    const connectedPlayers = Array.from(room.players.values()).filter(p => !p.disconnected);
+    const answeredCount = connectedPlayers.filter(p => p.currentAnswer !== null).length;
     const hostSocket = io.sockets.sockets.get(room.hostSocketId);
     if (hostSocket) {
-      hostSocket.emit('question:answer_update', { answered: answeredCount, total: room.players.size });
+      hostSocket.emit('question:answer_update', { answered: answeredCount, total: connectedPlayers.length });
     }
 
-    // Auto-end when everyone has answered
-    if (answeredCount === room.players.size) {
+    // Auto-end when every connected player has answered
+    if (connectedPlayers.length > 0 && answeredCount === connectedPlayers.length) {
       endQuestion(room);
     }
   });
@@ -1539,6 +1551,83 @@ io.on('connection', (socket) => {
     }
   });
 
+  // ── PLAYER: Rejoin an in-progress game ───────
+  socket.on('player:rejoin', ({ pin, playerId }) => {
+    const room = rooms.get(pin);
+    if (!room) {
+      socket.emit('room:rejoin_failed', { message: 'Game not found. It may have ended.' });
+      return;
+    }
+
+    // Search for the player by stable playerId
+    let oldSocketId = null;
+    let existingPlayer = null;
+    for (const [sid, p] of room.players) {
+      if (p.playerId && p.playerId === playerId) {
+        oldSocketId = sid;
+        existingPlayer = p;
+        break;
+      }
+    }
+
+    if (!existingPlayer) {
+      socket.emit('room:rejoin_failed', { message: 'Session not found. Please join manually.' });
+      return;
+    }
+
+    // Cancel the expiry timer
+    if (existingPlayer.disconnectTimer) {
+      clearTimeout(existingPlayer.disconnectTimer);
+      existingPlayer.disconnectTimer = null;
+    }
+
+    // Re-map to the new socket
+    room.players.delete(oldSocketId);
+    existingPlayer.id = socket.id;
+    existingPlayer.disconnected = false;
+    room.players.set(socket.id, existingPlayer);
+    socket.join(pin);
+    socket.data.pin = pin;
+    socket.data.isHost = false;
+
+    console.log(`[Room ${pin}] Player reconnected: ${existingPlayer.nickname} (${socket.id})`);
+
+    const basePayload = {
+      pin,
+      nickname: existingPlayer.nickname,
+      avatar: existingPlayer.avatar,
+      players: getPlayerList(room),
+      score: existingPlayer.score,
+      streak: existingPlayer.streak,
+      roomState: room.state,
+      role: getRoleForPlayer(room, socket.id),
+    };
+
+    if ((room.state === 'question' || room.state === 'question-pending') && room.currentQuestionPayload) {
+      const elapsed = (Date.now() - room.questionStartTime) / 1000;
+      const timeRemaining = Math.max(1, room.questionDuration - elapsed);
+      socket.emit('room:rejoined', {
+        ...basePayload,
+        questionData: {
+          questionIndex: room.questionIndex,
+          total: room.questions.length,
+          question: room.currentQuestionPayload,
+          duration: room.questionDuration,
+          timeRemaining,
+          players: getPlayerList(room),
+          hasAnswered: existingPlayer.currentAnswer !== null,
+        },
+      });
+    } else if (room.state === 'finished') {
+      socket.emit('room:rejoined', { ...basePayload, leaderboard: buildLeaderboard(room) });
+    } else {
+      socket.emit('room:rejoined', basePayload);
+    }
+
+    // Notify everyone of the updated (restored) player list
+    io.to(pin).emit('room:player_joined', { players: getPlayerList(room) });
+  });
+
   // ── DISCONNECT ───────────────────────────────
   socket.on('disconnect', () => {
     console.log(`[-] Socket disconnected: ${socket.id}`);
@@ -1547,13 +1636,31 @@ io.on('connection', (socket) => {
     if (pin) {
       const room = rooms.get(pin);
       if (room) {
-        room.players.delete(socket.id);
-
-        if (room.state === 'lobby') {
-          // Notify remaining players about updated list
-          io.to(pin).emit('room:player_joined', {
-            players: getPlayerList(room),
-          });
+        const player = room.players.get(socket.id);
+        if (room.state === 'lobby' || !player) {
+          // In lobby: remove immediately and notify
+          room.players.delete(socket.id);
+          io.to(pin).emit('room:player_joined', { players: getPlayerList(room) });
+        } else {
+          // Mid-game: soft-disconnect — keep them in the Map for 30 s so they can rejoin
+          player.disconnected = true;
+          player.disconnectTimer = setTimeout(() => {
+            if (room.players.get(socket.id) === player && player.disconnected) {
+              room.players.delete(socket.id);
+              console.log(`[Room ${pin}] Reconnect window expired: ${player.nickname}`);
+              io.to(pin).emit('room:player_joined', { players: getPlayerList(room) });
+              // If all remaining connected players have answered, end the question now
+              if (room.state === 'question') {
+                const connected = Array.from(room.players.values()).filter(p => !p.disconnected);
+                const answered = connected.filter(p => p.currentAnswer !== null);
+                if (connected.length > 0 && answered.length === connected.length) {
+                  endQuestion(room);
+                }
+              }
+            }
+          }, 30000);
+          // Update player list (disconnected players are hidden by getPlayerList)
+          io.to(pin).emit('room:player_joined', { players: getPlayerList(room) });
         }
       }
       return;
