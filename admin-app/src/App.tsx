@@ -49,7 +49,40 @@ function App() {
                 <Link to="/editor">Quiz Editor</Link>
                 <Link to="/packs">Packs</Link>
                 <Link to="/billing">Billing</Link>
-                <button onClick={() => signOut(auth)} style={{ marginTop: '1rem', cursor: 'pointer' }}>Sign Out</button>
+                <div style={{
+                  marginTop: 'auto',
+                  paddingTop: '1rem',
+                  borderTop: '1px solid #1e293b',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.6rem',
+                }}>
+                  {user.photoURL ? (
+                    <img
+                      src={user.photoURL}
+                      referrerPolicy="no-referrer"
+                      alt=""
+                      style={{ width: '34px', height: '34px', borderRadius: '50%', flexShrink: 0 }}
+                    />
+                  ) : (
+                    <div style={{
+                      width: '34px', height: '34px', borderRadius: '50%', flexShrink: 0,
+                      background: 'linear-gradient(135deg, #2563eb, #7c3aed)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '0.75rem', fontWeight: 700, color: '#fff',
+                    }}>
+                      {(user.displayName || user.email || '?').slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
+                  <span style={{
+                    fontSize: '0.8rem', fontWeight: 600, color: '#e2e8f0',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    flex: 1,
+                  }}>
+                    {user.displayName || user.email?.split('@')[0]}
+                  </span>
+                </div>
+                <button onClick={() => signOut(auth)} style={{ marginTop: '0.5rem', cursor: 'pointer' }}>Sign Out</button>
               </nav>
             )}
           </aside>
