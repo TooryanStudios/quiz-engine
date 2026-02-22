@@ -320,24 +320,80 @@
   </div>
 
   <!-- ═══════════════════════════════════════════
-       VIEW: Game Over — Final Leaderboard
+       VIEW: Game Over — Podium Ceremony
   ═══════════════════════════════════════════ -->
   <div id="view-game-over" class="view">
-    <div class="card leaderboard-card">
-      <h2 class="lb-title">🎉 Final Results</h2>
-      <div id="winner-announcement" class="winner-announcement" style="display:none">
-        <p class="winner-label">🏆 Winner Announcement</p>
-        <p class="winner-name" id="winner-name">—</p>
-        <p class="winner-score" id="winner-score">0 pts</p>
+    <div class="podium-ceremony">
+
+      <h2 class="podium-title" id="podium-title">🎉 Final Results</h2>
+
+      <!-- ── Podium Stage ── -->
+      <div class="podium-stage" id="podium-stage">
+
+        <!-- 2nd place — left -->
+        <div class="podium-col podium-2nd" id="podium-slot-2">
+          <div class="podium-avatar-wrap">
+            <div class="podium-avatar" id="podium-avatar-2">🎮</div>
+            <div class="podium-nickname" id="podium-name-2">—</div>
+            <div class="podium-score" id="podium-score-2">0 pts</div>
+          </div>
+          <div class="podium-block podium-block-2">
+            <span class="podium-medal">🥈</span>
+            <span class="podium-rank-num">2</span>
+          </div>
+        </div>
+
+        <!-- 1st place — center (tallest) -->
+        <div class="podium-col podium-1st" id="podium-slot-1">
+          <div class="podium-avatar-wrap">
+            <div class="podium-trophy-crown">🏆</div>
+            <div class="podium-avatar podium-avatar-gold" id="podium-avatar-1">🎮</div>
+            <div class="podium-nickname podium-nickname-gold" id="podium-name-1">—</div>
+            <div class="podium-score podium-score-gold" id="podium-score-1">0 pts</div>
+          </div>
+          <div class="podium-block podium-block-1">
+            <span class="podium-medal">🥇</span>
+            <span class="podium-rank-num">1</span>
+          </div>
+        </div>
+
+        <!-- 3rd place — right -->
+        <div class="podium-col podium-3rd" id="podium-slot-3">
+          <div class="podium-avatar-wrap">
+            <div class="podium-avatar" id="podium-avatar-3">🎮</div>
+            <div class="podium-nickname" id="podium-name-3">—</div>
+            <div class="podium-score" id="podium-score-3">0 pts</div>
+          </div>
+          <div class="podium-block podium-block-3">
+            <span class="podium-medal">🥉</span>
+            <span class="podium-rank-num">3</span>
+          </div>
+        </div>
+
+      </div><!-- /podium-stage -->
+
+      <!-- ── Full leaderboard (fades in after podium ceremony) ── -->
+      <div class="podium-full-results" id="podium-full-results">
+        <div id="winner-announcement" class="winner-announcement" style="display:none">
+          <p class="winner-label">🏆 Winner</p>
+          <p class="winner-name" id="winner-name">—</p>
+          <p class="winner-score" id="winner-score">0 pts</p>
+        </div>
+        <details class="podium-details" id="podium-details">
+          <summary class="podium-details-summary">📋 Full Leaderboard</summary>
+          <ol class="leaderboard-list" id="final-leaderboard-list"></ol>
+        </details>
+        <div class="podium-actions">
+          <button class="btn btn-success full-width" id="btn-start-new-session" style="display:none">
+            🔄 Start New Session
+          </button>
+          <button class="btn btn-primary full-width" id="btn-play-again">
+            🔁 Play Again
+          </button>
+        </div>
       </div>
-      <ol class="leaderboard-list" id="final-leaderboard-list"></ol>
-      <button class="btn btn-success full-width" id="btn-start-new-session" style="display:none">
-        🔄 Start New Session
-      </button>
-      <button class="btn btn-primary full-width" id="btn-play-again">
-        Play Again
-      </button>
-    </div>
+
+    </div><!-- /podium-ceremony -->
   </div>
 
   <!-- ═══════════════════════════════════════════

@@ -1512,29 +1512,30 @@ socket.on('room:rejoined', ({ pin, nickname, avatar, players, score, streak, roo
       document.getElementById('player-answered-msg').textContent = '✅ تم إرسال إجابتك! انتظر الآخرين…';
     }
   } else if (roomState === 'finished' && leaderboard) {
-    const listEl = document.getElementById('final-leaderboard-list');
-    const winnerWrap = document.getElementById('winner-announcement');
-    const winnerNameEl = document.getElementById('winner-name');
-    const winnerScoreEl = document.getElementById('winner-score');
-    const newSessionBtn = document.getElementById('btn-start-new-session');
-    const winner = leaderboard[0];
-    if (winner) {
-      winnerWrap.style.display = 'block';
-      winnerNameEl.textContent = `👑 ${winner.nickname}`;
-      winnerScoreEl.textContent = `${winner.totalScore} pts`;
-    } else {
-      winnerWrap.style.display = 'none';
-    }
-    newSessionBtn.style.display = 'none';
-    listEl.innerHTML = leaderboard.map((entry, i) =>
+    // Populate podium immediately (no ceremony delay on rejoin)
+    document.getElementById('final-leaderboard-list').innerHTML = leaderboard.map((entry, i) =>
       `<li class="lb-entry ${entry.id === socket.id ? 'lb-mine' : ''}" style="animation-delay:${i * 0.07}s">
         <span class="lb-rank">${i + 1}</span>
         <span class="lb-nickname">${escapeHtml(entry.nickname)}</span>
         <span class="lb-score">${entry.totalScore} pts</span>
       </li>`
     ).join('');
+    const fillSlotRejoin = (slotId, avatarId, nameId, scoreId, entry) => {
+      if (!entry) { const el = document.getElementById(slotId); if (el) el.style.display = 'none'; return; }
+      document.getElementById(avatarId).textContent = entry.avatar || '🎮';
+      document.getElementById(nameId).textContent   = escapeHtml(entry.nickname);
+      document.getElementById(scoreId).textContent  = `${entry.totalScore} pts`;
+    };
+    fillSlotRejoin('podium-slot-1', 'podium-avatar-1', 'podium-name-1', 'podium-score-1', leaderboard[0]);
+    fillSlotRejoin('podium-slot-2', 'podium-avatar-2', 'podium-name-2', 'podium-score-2', leaderboard[1]);
+    fillSlotRejoin('podium-slot-3', 'podium-avatar-3', 'podium-name-3', 'podium-score-3', leaderboard[2]);
+    ['podium-slot-1', 'podium-slot-2', 'podium-slot-3'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el && el.style.display !== 'none') { el.style.opacity = '1'; el.classList.add('podium-revealed'); }
+    });
+    document.getElementById('podium-full-results').classList.add('podium-results-visible');
+    document.getElementById('btn-start-new-session').style.display = 'none';
     clearGameSession();
-    Sounds.fanfare();
     showView('view-game-over');
   } else {
     // Fallback: show the player lobby
@@ -1709,48 +1710,97 @@ socket.on('game:leaderboard', (data) => {
   showLeaderboard(data, false);
 });
 
-/** BOTH: Game over — final leaderboard */
+/** BOTH: Game over — Podium Ceremony */
 socket.on('game:over', (data) => {
   clearGameSession();
-  // Stop timer immediately — player may still be on question view if they never answered
   clearScholarPreviewInterval();
   stopClientTimer();
   setFrozenState(false);
   document.getElementById('overlay-paused').style.display = 'none';
-  Sounds.fanfare();
-  // Confetti celebration
-  if (typeof confetti === 'function') {
-    confetti({ particleCount: 160, spread: 80, origin: { y: 0.5 } });
-    setTimeout(() => confetti({ particleCount: 80, angle: 60, spread: 55, origin: { x: 0 } }), 400);
-    setTimeout(() => confetti({ particleCount: 80, angle: 120, spread: 55, origin: { x: 1 } }), 700);
-  }
-  const listEl = document.getElementById('final-leaderboard-list');
+
+  const lb = data.leaderboard || [];
   const newSessionBtn = document.getElementById('btn-start-new-session');
+  newSessionBtn.style.display = state.role === 'host' ? 'block' : 'none';
+
+  // Populate full leaderboard list
+  document.getElementById('final-leaderboard-list').innerHTML = lb
+    .map((entry, i) =>
+      `<li class="lb-entry ${entry.id === socket.id ? 'lb-mine' : ''}" style="animation-delay:${i * 0.07}s">
+        <span class="lb-rank">${i + 1}</span>
+        <span class="lb-nickname">${escapeHtml(entry.nickname)}</span>
+        <span class="lb-score">${entry.totalScore} pts</span>
+      </li>`
+    ).join('');
+
+  // Populate winner-announcement (hidden; kept for rejoin compat)
   const winnerWrap = document.getElementById('winner-announcement');
   const winnerNameEl = document.getElementById('winner-name');
   const winnerScoreEl = document.getElementById('winner-score');
-
-  const winner = (data.leaderboard || [])[0];
-  if (winner) {
-    winnerWrap.style.display = 'block';
-    winnerNameEl.textContent = `👑 ${winner.nickname}`;
-    winnerScoreEl.textContent = `${winner.totalScore} pts`;
-  } else {
-    winnerWrap.style.display = 'none';
+  const w1 = lb[0];
+  if (w1) {
+    winnerNameEl.textContent = `👑 ${w1.nickname}`;
+    winnerScoreEl.textContent = `${w1.totalScore} pts`;
+    winnerWrap.style.display = 'none'; // podium replaces this
   }
 
-  newSessionBtn.style.display = state.role === 'host' ? 'block' : 'none';
-  listEl.innerHTML = data.leaderboard
-    .map(
-      (entry, i) =>
-        `<li class="lb-entry ${entry.id === socket.id ? 'lb-mine' : ''}" style="animation-delay:${i * 0.07}s">
-          <span class="lb-rank">${i + 1}</span>
-          <span class="lb-nickname">${escapeHtml(entry.nickname)}</span>
-          <span class="lb-score">${entry.totalScore} pts</span>
-        </li>`
-    )
-    .join('');
+  // Helper: fill a podium slot
+  function fillSlot(slotId, avatarId, nameId, scoreId, entry) {
+    if (!entry) {
+      document.getElementById(slotId).style.display = 'none';
+      return;
+    }
+    document.getElementById(avatarId).textContent = entry.avatar || '🎮';
+    document.getElementById(nameId).textContent   = escapeHtml(entry.nickname);
+    document.getElementById(scoreId).textContent  = `${entry.totalScore} pts`;
+  }
+
+  fillSlot('podium-slot-1', 'podium-avatar-1', 'podium-name-1', 'podium-score-1', lb[0]);
+  fillSlot('podium-slot-2', 'podium-avatar-2', 'podium-name-2', 'podium-score-2', lb[1]);
+  fillSlot('podium-slot-3', 'podium-avatar-3', 'podium-name-3', 'podium-score-3', lb[2]);
+
+  // Reset visual state
+  ['podium-slot-1', 'podium-slot-2', 'podium-slot-3'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.classList.remove('podium-revealed'); el.style.opacity = '0'; el.style.display = ''; }
+  });
+  const fullResults = document.getElementById('podium-full-results');
+  fullResults.classList.remove('podium-results-visible');
+
   showView('view-game-over');
+  Sounds.fanfare();
+
+  // ── Sequential reveal: 3rd → 2nd → 1st ──
+  const REVEAL_INTERVAL = 1700;
+
+  // 3rd place (right pillar, shortest)
+  setTimeout(() => {
+    const el = document.getElementById('podium-slot-3');
+    if (el && lb[2]) el.classList.add('podium-revealed');
+  }, 600);
+
+  // 2nd place (left pillar, medium)
+  setTimeout(() => {
+    const el = document.getElementById('podium-slot-2');
+    if (el && lb[1]) el.classList.add('podium-revealed');
+  }, 600 + REVEAL_INTERVAL);
+
+  // 1st place (center pillar, tallest) — full celebration
+  setTimeout(() => {
+    const el = document.getElementById('podium-slot-1');
+    if (el && lb[0]) el.classList.add('podium-revealed');
+    Sounds.fanfare();
+    if (typeof confetti === 'function') {
+      confetti({ particleCount: 180, spread: 90, origin: { y: 0.45 } });
+      setTimeout(() => confetti({ particleCount: 90, angle: 55, spread: 60, origin: { x: 0 } }), 350);
+      setTimeout(() => confetti({ particleCount: 90, angle: 125, spread: 60, origin: { x: 1 } }), 650);
+      setTimeout(() => confetti({ particleCount: 60, spread: 120, origin: { y: 0.3 }, colors: ['#facc15','#fb923c','#34d399'] }), 1100);
+    }
+  }, 600 + REVEAL_INTERVAL * 2);
+
+  // Full results fade in after the ceremony
+  setTimeout(() => {
+    fullResults.classList.add('podium-results-visible');
+  }, 600 + REVEAL_INTERVAL * 2 + 1400);
 });
 
 socket.on('room:reset', ({ players, modeInfo }) => {

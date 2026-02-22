@@ -695,6 +695,7 @@ function buildLeaderboard(room) {
     .map((p) => ({
       id: p.id,
       nickname: p.nickname,
+      avatar: p.avatar || '🎮',
       totalScore: p.score,
       streak: p.streak,
     }))
@@ -1038,6 +1039,7 @@ function endQuestion(room) {
     roundScores.push({
       id: player.id,
       nickname: player.nickname,
+      avatar: player.avatar || '🎮',
       roundScore,
       penalty,
       totalScore: player.score,

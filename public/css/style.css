@@ -1301,6 +1301,214 @@ video.question-media {
 }
 
 /* ═══════════════════════════════════════════
+   Podium Ceremony (Game Over)
+═══════════════════════════════════════════ */
+.podium-ceremony {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+  width: 100%;
+  max-width: 540px;
+  margin: 0 auto;
+  padding: 20px 12px 32px;
+}
+
+.podium-title {
+  font-size: 2rem;
+  font-weight: 900;
+  text-align: center;
+  letter-spacing: -0.5px;
+  animation: fadeSlideDown 0.5s ease-out both;
+}
+
+/* ── Stage: three columns, aligned at bottom ── */
+.podium-stage {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+}
+
+/* Shared column */
+.podium-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  opacity: 0;
+  transform: translateY(-40px);
+  transition: none;
+}
+.podium-col.podium-revealed {
+  animation: podiumDrop 0.65s cubic-bezier(0.22, 1.5, 0.5, 1) forwards;
+}
+
+@keyframes podiumDrop {
+  from { opacity: 0; transform: translateY(-55px) scale(0.88); }
+  70%  { opacity: 1; transform: translateY(6px) scale(1.02); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ── Player info above the block ── */
+.podium-avatar-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding-bottom: 10px;
+}
+
+.podium-trophy-crown {
+  font-size: 2.6rem;
+  line-height: 1;
+  filter: drop-shadow(0 0 10px rgba(250, 204, 21, 0.75));
+  animation: trophyBob 2s ease-in-out infinite;
+}
+@keyframes trophyBob {
+  0%, 100% { transform: translateY(0) rotate(-4deg); }
+  50%       { transform: translateY(-6px) rotate(4deg); }
+}
+
+.podium-avatar {
+  font-size: 2.8rem;
+  line-height: 1;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 50%;
+  width: 58px;
+  height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(255, 255, 255, 0.12);
+}
+.podium-avatar-gold {
+  border-color: #facc15;
+  box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.28), 0 0 18px rgba(250, 204, 21, 0.4);
+  font-size: 3.2rem;
+  width: 68px;
+  height: 68px;
+}
+
+.podium-nickname {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  text-align: center;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.podium-nickname-gold {
+  font-size: 1rem;
+  color: #fef08a;
+  text-shadow: 0 0 12px rgba(250, 204, 21, 0.55);
+  max-width: 140px;
+}
+
+.podium-score {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--success);
+  white-space: nowrap;
+}
+.podium-score-gold {
+  font-size: 0.95rem;
+  color: #facc15;
+}
+
+/* ── The colored block (staircase heights) ── */
+.podium-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding-top: 10px;
+  gap: 6px;
+  border-radius: 8px 8px 0 0;
+  width: 110px;
+}
+
+.podium-block-1 {
+  height: 120px;
+  width: 130px;
+  background: linear-gradient(160deg, #fbbf24 0%, #d97706 60%, #92400e 100%);
+  box-shadow: 0 -4px 24px rgba(251, 191, 36, 0.45), inset 0 1px 0 rgba(255,255,255,0.25);
+}
+.podium-block-2 {
+  height: 85px;
+  background: linear-gradient(160deg, #cbd5e1 0%, #94a3b8 55%, #475569 100%);
+  box-shadow: 0 -4px 18px rgba(148, 163, 184, 0.3), inset 0 1px 0 rgba(255,255,255,0.2);
+}
+.podium-block-3 {
+  height: 60px;
+  background: linear-gradient(160deg, #d97706 0%, #b45309 55%, #78350f 100%);
+  box-shadow: 0 -4px 14px rgba(180, 83, 9, 0.3), inset 0 1px 0 rgba(255,255,255,0.15);
+}
+
+.podium-medal {
+  font-size: 1.4rem;
+  line-height: 1;
+}
+.podium-rank-num {
+  font-size: 1.5rem;
+  font-weight: 900;
+  color: rgba(255, 255, 255, 0.78);
+  line-height: 1;
+}
+
+/* ── Full results section (fades in last) ── */
+.podium-full-results {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+.podium-full-results.podium-results-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.podium-details {
+  background: var(--surface);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.podium-details-summary {
+  padding: 12px 16px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  color: var(--text-dim);
+  border-bottom: 1px solid transparent;
+}
+.podium-details[open] .podium-details-summary {
+  border-bottom-color: var(--border);
+  color: var(--text);
+}
+.podium-details .leaderboard-list {
+  padding: 10px 14px 14px;
+}
+
+.podium-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+@keyframes fadeSlideDown {
+  from { opacity: 0; transform: translateY(-14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ═══════════════════════════════════════════
    Arabic / auto-direction text
 ═══════════════════════════════════════════ */
 .question-text {
