@@ -8,6 +8,8 @@ import { useToast } from '../lib/ToastContext'
 import type { ChallengePreset, QuizDoc, QuizMedia, QuizQuestion, QuestionType } from '../types/quiz'
 import { createQuiz, findQuizByOwnerAndSlug, getQuizById, updateQuiz } from '../lib/quizRepo'
 
+const SERVER_BASE = import.meta.env.VITE_API_BASE_URL || 'https://quizengine.onrender.com'
+
 const SAMPLE_QUESTIONS: QuizQuestion[] = [
   {
     type: 'single', duration: 20,
@@ -431,7 +433,7 @@ export function QuizEditorPage() {
               <div>
                 <label style={{ fontSize: '0.9em', opacity: 0.7, display: 'block', marginBottom: '0.5rem' }}>رابط المشاركة (URL)</label>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <span style={{ padding: '0.75rem', color: '#888', whiteSpace: 'nowrap' }}>localhost:3001/quiz/</span>
+                  <span style={{ padding: '0.75rem', color: '#888', whiteSpace: 'nowrap' }}>{SERVER_BASE}/quiz/</span>
                   {getOwnerSlugPrefix(ownerId) && (
                     <span style={{ padding: '0.75rem', color: '#aaa', whiteSpace: 'nowrap' }}>{getOwnerSlugPrefix(ownerId)}-</span>
                   )}
@@ -557,7 +559,7 @@ export function QuizEditorPage() {
         <h2>Quiz Editor</h2>
         <div style={{ padding: '1rem', background: '#0f172a', borderRadius: '4px', fontSize: '0.9em' }}>
           <p style={{ margin: '0.25rem 0' }}><strong>الاسم:</strong> {title}</p>
-          <p style={{ margin: '0.25rem 0' }}><strong>الرابط:</strong> <code>localhost:3001/quiz/{slug}</code></p>
+          <p style={{ margin: '0.25rem 0' }}><strong>الرابط:</strong> <code>{SERVER_BASE}/quiz/{slug}</code></p>
           <p style={{ margin: '0.25rem 0' }}><strong>الخصوصية:</strong> {visibility === 'public' ? 'عام' : 'خاص'}</p>
           <p style={{ margin: '0.25rem 0' }}><strong>المستوى:</strong> {challengePreset}</p>
         </div>
@@ -577,7 +579,7 @@ export function QuizEditorPage() {
           <button type="button" onClick={loadSamples} style={{ background: '#444' }}>تحميل عينات شاملة</button>
           <button 
             type="button" 
-            onClick={() => window.open(`http://localhost:3001/quiz-preview.html?quiz=${encodeURIComponent(slug)}`, '_blank')}
+            onClick={() => window.open(`${SERVER_BASE}/quiz-preview.html?quiz=${encodeURIComponent(slug)}`, '_blank')}
             style={{ background: '#1a5a8c' }}
             title="Preview all questions with answers"
           >
