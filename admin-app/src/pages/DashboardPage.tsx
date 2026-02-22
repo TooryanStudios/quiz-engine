@@ -305,36 +305,42 @@ export function DashboardPage() {
                   {/* Actions */}
                   <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
                     <Link to={`/preview/${q.id}`} style={{ textDecoration: 'none', flex: 1 }}>
-                      <button style={{
-                        width: '100%',
-                        padding: '0.6rem',
-                        borderRadius: '8px',
-                        background: isHovered ? '#0e7490' : '#1e293b',
-                        color: isHovered ? '#fff' : '#94a3b8',
-                        fontSize: '0.85rem',
-                        fontWeight: 600,
-                        border: 'none',
-                        cursor: 'pointer',
-                        transition: 'background 0.2s, color 0.2s',
-                      }}>
+                      <button
+                        style={{
+                          width: '100%',
+                          padding: '0.6rem',
+                          borderRadius: '8px',
+                          background: '#1e293b',
+                          color: '#94a3b8',
+                          fontSize: '0.85rem',
+                          fontWeight: 600,
+                          border: 'none',
+                          cursor: 'pointer',
+                          transition: 'background 0.2s, color 0.2s',
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = '#0e7490'; e.currentTarget.style.color = '#fff' }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = '#1e293b'; e.currentTarget.style.color = '#94a3b8' }}
+                      >
                         👁️ معاينة
                       </button>
                     </Link>
                     <Link to={`/editor/${q.id}`} style={{ textDecoration: 'none', flex: 1 }}>
-                      <button style={{
-                        width: '100%',
-                        padding: '0.6rem',
-                        borderRadius: '8px',
-                        background: isHovered
-                          ? 'linear-gradient(135deg, #2563eb, #7c3aed)'
-                          : '#1e293b',
-                        color: '#fff',
-                        fontSize: '0.85rem',
-                        fontWeight: 600,
-                        border: 'none',
-                        cursor: 'pointer',
-                        transition: 'background 0.2s',
-                      }}>
+                      <button
+                        style={{
+                          width: '100%',
+                          padding: '0.6rem',
+                          borderRadius: '8px',
+                          background: '#1e293b',
+                          color: '#fff',
+                          fontSize: '0.85rem',
+                          fontWeight: 600,
+                          border: 'none',
+                          cursor: 'pointer',
+                          transition: 'background 0.2s',
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'linear-gradient(135deg, #2563eb, #7c3aed)' }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = '#1e293b' }}
+                      >
                         ✏️ تعديل
                       </button>
                     </Link>
