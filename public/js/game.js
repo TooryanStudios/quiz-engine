@@ -54,21 +54,6 @@ const Sounds = {
   },
 };
 
-// If a quiz slug is in the URL, fetch and show its title on the home screen
-if (quizSlugFromUrl) {
-  fetch(`/api/quiz-info/${encodeURIComponent(quizSlugFromUrl)}`)
-    .then((r) => r.ok ? r.json() : null)
-    .then((data) => {
-      if (!data) return;
-      const el = document.getElementById('quiz-title-banner');
-      if (el) {
-        el.textContent = `📋 ${data.title}`;
-        el.style.display = 'block';
-      }
-    })
-    .catch(() => {});
-}
-
 // Fetch and display server build time on home screen
 fetch('/api/build-info')
   .then((r) => r.json())
@@ -85,6 +70,21 @@ fetch('/api/build-info')
 const socket = io(window.location.origin);
 const queryParams = new URLSearchParams(window.location.search);
 const quizSlugFromUrl = queryParams.get('quiz');
+
+// If a quiz slug is in the URL, fetch and show its title on the home screen
+if (quizSlugFromUrl) {
+  fetch(`/api/quiz-info/${encodeURIComponent(quizSlugFromUrl)}`)
+    .then((r) => r.ok ? r.json() : null)
+    .then((data) => {
+      if (!data) return;
+      const el = document.getElementById('quiz-title-banner');
+      if (el) {
+        el.textContent = `📋 ${data.title}`;
+        el.style.display = 'block';
+      }
+    })
+    .catch(() => {});
+}
 
 // ─────────────────────────────────────────────
 // State
