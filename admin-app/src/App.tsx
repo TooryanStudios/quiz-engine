@@ -13,6 +13,7 @@ import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/LoginPage'
 import { PacksPage } from './pages/PacksPage'
 import { QuizEditorPage } from './pages/QuizEditorPage'
+import { QuizPreviewPage } from './pages/QuizPreviewPage'
 
 function RequireAuth({ user, children }: { user: User | null; children: ReactElement }) {
   if (!user) return <Navigate to="/login" replace />
@@ -59,6 +60,7 @@ function App() {
               <Route path="/dashboard" element={<RequireAuth user={user}><DashboardPage /></RequireAuth>} />
               <Route path="/editor" element={<RequireAuth user={user}><QuizEditorPage /></RequireAuth>} />
               <Route path="/editor/:id" element={<RequireAuth user={user}><QuizEditorPage /></RequireAuth>} />
+              <Route path="/preview/:id" element={<RequireAuth user={user}><QuizPreviewPage /></RequireAuth>} />
               <Route path="/packs" element={<RequireAuth user={user}><PacksPage /></RequireAuth>} />
               <Route path="/billing" element={<RequireAuth user={user}><BillingPage /></RequireAuth>} />
             </Routes>

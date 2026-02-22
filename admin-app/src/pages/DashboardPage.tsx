@@ -304,6 +304,22 @@ export function DashboardPage() {
 
                   {/* Actions */}
                   <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                    <Link to={`/preview/${q.id}`} style={{ textDecoration: 'none', flex: 1 }}>
+                      <button style={{
+                        width: '100%',
+                        padding: '0.6rem',
+                        borderRadius: '8px',
+                        background: isHovered ? '#0e7490' : '#1e293b',
+                        color: isHovered ? '#fff' : '#94a3b8',
+                        fontSize: '0.85rem',
+                        fontWeight: 600,
+                        border: 'none',
+                        cursor: 'pointer',
+                        transition: 'background 0.2s, color 0.2s',
+                      }}>
+                        👁️ معاينة
+                      </button>
+                    </Link>
                     <Link to={`/editor/${q.id}`} style={{ textDecoration: 'none', flex: 1 }}>
                       <button style={{
                         width: '100%',
