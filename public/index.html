@@ -68,8 +68,12 @@
           />
         </div>
         <div class="field">
-          <label class="avatar-picker-label">Choose Your Avatar</label>
-          <div class="avatar-grid" id="join-avatar-grid"></div>
+          <label>Avatar</label>
+          <button type="button" id="join-avatar-btn" class="avatar-trigger-btn">
+            <span class="avatar-trigger-icon" id="join-avatar-display">🎮</span>
+            <span class="avatar-trigger-label">Choose Avatar</span>
+            <span class="avatar-trigger-arrow">›</span>
+          </button>
         </div>
         <p class="error-msg" id="join-error"></p>
         <button type="submit" class="btn btn-primary full-width">Join Game</button>
@@ -153,7 +157,11 @@
           </div>
           <div class="field" style="gap:6px;">
             <label>Avatar</label>
-            <div class="avatar-grid" id="lobby-avatar-grid"></div>
+            <button type="button" id="lobby-avatar-btn" class="avatar-trigger-btn">
+              <span class="avatar-trigger-icon" id="lobby-avatar-display">🎮</span>
+              <span class="avatar-trigger-label">Change Avatar</span>
+              <span class="avatar-trigger-arrow">›</span>
+            </button>
           </div>
         </div>
       </div>
@@ -342,6 +350,17 @@
       <button class="btn btn-primary full-width" id="btn-home-from-closed">
         Back to Home
       </button>
+    </div>
+  </div>
+
+  <!-- Avatar Picker Modal (shared) -->
+  <div id="avatar-picker-modal" class="avatar-picker-modal" style="display:none" role="dialog" aria-modal="true" aria-label="Choose your avatar">
+    <div class="avatar-picker-dialog">
+      <div class="avatar-picker-header">
+        <span>Choose Your Avatar</span>
+        <button type="button" id="btn-close-avatar-picker" class="avatar-picker-close">&times;</button>
+      </div>
+      <div class="avatar-grid" id="modal-avatar-grid"></div>
     </div>
   </div>
 

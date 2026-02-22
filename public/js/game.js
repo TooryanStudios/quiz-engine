@@ -228,20 +228,44 @@ function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
 }
 
 // ─────────────────────────────────────────────
-// Avatar Grid Helper
+// Avatar Picker Modal
 // ─────────────────────────────────────────────
-function renderAvatarGrid(gridEl, selectedAvatar, onSelect) {
-  gridEl.innerHTML = AVATARS.map((a) =>
-    `<button type="button" class="avatar-option${a === selectedAvatar ? ' selected' : ''}" data-avatar="${a}">${a}</button>`
+function openAvatarPicker(currentAvatar, onSelect) {
+  const modal = document.getElementById('avatar-picker-modal');
+  const grid  = document.getElementById('modal-avatar-grid');
+
+  grid.innerHTML = AVATARS.map((a) =>
+    `<button type="button" class="avatar-option${a === currentAvatar ? ' selected' : ''}" data-avatar="${a}">${a}</button>`
   ).join('');
-  gridEl.querySelectorAll('.avatar-option').forEach((btn) => {
+
+  grid.querySelectorAll('.avatar-option').forEach((btn) => {
     btn.addEventListener('click', () => {
-      gridEl.querySelectorAll('.avatar-option').forEach((b) => b.classList.remove('selected'));
-      btn.classList.add('selected');
       onSelect(btn.dataset.avatar);
+      modal.style.display = 'none';
     });
   });
+
+  modal.style.display = 'flex';
 }
+
+// Close modal via × button or clicking the backdrop
+document.getElementById('btn-close-avatar-picker').addEventListener('click', () => {
+  document.getElementById('avatar-picker-modal').style.display = 'none';
+});
+document.getElementById('avatar-picker-modal').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) e.currentTarget.style.display = 'none';
+});
+
+// Join form — avatar trigger
+document.getElementById('join-avatar-btn').addEventListener('click', () => {
+  openAvatarPicker(state.avatar, (a) => {
+    state.avatar = a;
+    document.getElementById('join-avatar-display').textContent = a;
+    const lbl = document.querySelector('#join-avatar-btn .avatar-trigger-label');
+    if (lbl) lbl.textContent = 'Avatar selected ✓';
+  });
+});
+
 
 // ─────────────────────────────────────────────
 // Host Mode UI (Local / Global)
@@ -1377,13 +1401,18 @@ socket.on('room:joined', ({ pin, nickname, avatar, players }) => {
   const editNickEl = document.getElementById('edit-nickname-input');
   if (editNickEl) editNickEl.value = nickname;
 
-  // Init lobby avatar grid (avatar changes emit immediately)
-  const lobbyGrid = document.getElementById('lobby-avatar-grid');
-  if (lobbyGrid) {
-    renderAvatarGrid(lobbyGrid, state.avatar, (a) => {
-      state.avatar = a;
-      socket.emit('player:update_profile', { nickname: state.nickname, avatar: a });
-    });
+  // Wire lobby avatar trigger button
+  const lobbyBtn = document.getElementById('lobby-avatar-btn');
+  const lobbyDisplayEl = document.getElementById('lobby-avatar-display');
+  if (lobbyDisplayEl) lobbyDisplayEl.textContent = state.avatar;
+  if (lobbyBtn) {
+    lobbyBtn.onclick = () => {
+      openAvatarPicker(state.avatar, (a) => {
+        state.avatar = a;
+        if (lobbyDisplayEl) lobbyDisplayEl.textContent = a;
+        socket.emit('player:update_profile', { nickname: state.nickname, avatar: a });
+      });
+    };
   }
 
   renderPlayerList(
@@ -1438,14 +1467,9 @@ socket.on('room:profile_updated', ({ nickname, avatar }) => {
   const editNickEl = document.getElementById('edit-nickname-input');
   if (editNickEl) editNickEl.value = nickname;
 
-  // Re-render lobby avatar grid with new selection
-  const lobbyGrid = document.getElementById('lobby-avatar-grid');
-  if (lobbyGrid) {
-    renderAvatarGrid(lobbyGrid, avatar, (a) => {
-      state.avatar = a;
-      socket.emit('player:update_profile', { nickname: state.nickname, avatar: a });
-    });
-  }
+  // Update lobby avatar trigger display
+  const lobbyDisplayEl = document.getElementById('lobby-avatar-display');
+  if (lobbyDisplayEl) lobbyDisplayEl.textContent = avatar;
 
   // Clear errors and close panel
   const errEl = document.getElementById('edit-profile-error');
@@ -1680,10 +1704,6 @@ socket.on('room:closed', ({ message }) => {
 // the QR is only shared with players, so the host choice is irrelevant.
 // ─────────────────────────────────────────────
 (function () {
-  // Initialize join avatar picker
-  const joinAvatarGrid = document.getElementById('join-avatar-grid');
-  if (joinAvatarGrid) renderAvatarGrid(joinAvatarGrid, state.avatar, (a) => { state.avatar = a; });
-
   const params = new URLSearchParams(window.location.search);
   const pinFromUrl = params.get('pin');
   const scanFallbackBanner = document.getElementById('scan-fallback-banner');
