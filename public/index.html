@@ -67,6 +67,10 @@
             required
           />
         </div>
+        <div class="field">
+          <label class="avatar-picker-label">Choose Your Avatar</label>
+          <div class="avatar-grid" id="join-avatar-grid"></div>
+        </div>
         <p class="error-msg" id="join-error"></p>
         <button type="submit" class="btn btn-primary full-width">Join Game</button>
       </form>
@@ -135,6 +139,24 @@
       <p class="waiting-text">
         Waiting for the host to start…
       </p>
+      <!-- Edit profile before game starts -->
+      <div style="display:flex;flex-direction:column;gap:8px;width:100%;">
+        <button class="edit-profile-toggle" id="btn-edit-profile">✏️ Edit Name &amp; Avatar</button>
+        <div class="edit-profile-panel" id="edit-profile-panel">
+          <div class="field" style="gap:6px;">
+            <label>Nickname</label>
+            <div class="edit-profile-row">
+              <input id="edit-nickname-input" class="edit-profile-input" maxlength="20" placeholder="New nickname" autocomplete="off" />
+              <button type="button" class="btn btn-primary" id="btn-save-profile" style="padding:10px 18px;white-space:nowrap">Save</button>
+            </div>
+            <p class="error-msg" id="edit-profile-error"></p>
+          </div>
+          <div class="field" style="gap:6px;">
+            <label>Avatar</label>
+            <div class="avatar-grid" id="lobby-avatar-grid"></div>
+          </div>
+        </div>
+      </div>
       <div class="player-list-section">
         <h3>Players in room (<span id="player-player-count">0</span>)</h3>
         <ul class="player-list" id="player-player-list"></ul>

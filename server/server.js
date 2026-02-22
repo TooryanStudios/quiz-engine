@@ -678,6 +678,7 @@ function getPlayerList(room) {
   return Array.from(room.players.values()).map((p) => ({
     id: p.id,
     nickname: p.nickname,
+    avatar: p.avatar || '🎮',
     score: p.score,
     streak: p.streak,
   }));
@@ -1157,7 +1158,7 @@ io.on('connection', (socket) => {
   });
 
   // ── PLAYER: Join a room ──────────────────────
-  socket.on('player:join', ({ pin, nickname }) => {
+  socket.on('player:join', ({ pin, nickname, avatar }) => {
     const room = rooms.get(pin);
 
     // Room not found
@@ -1188,6 +1189,7 @@ io.on('connection', (socket) => {
     const player = {
       id: socket.id,
       nickname: nickname.trim(),
+      avatar: typeof avatar === 'string' ? avatar.slice(0, 8) : '🎮',
       score: 0,
       streak: 0,
       maxStreak: 0,
@@ -1207,6 +1209,7 @@ io.on('connection', (socket) => {
     socket.emit('room:joined', {
       pin,
       nickname: player.nickname,
+      avatar: player.avatar,
       players: getPlayerList(room),
     });
 
@@ -1214,6 +1217,49 @@ io.on('connection', (socket) => {
     io.to(pin).emit('room:player_joined', {
       players: getPlayerList(room),
     });
+  });
+
+  // ── PLAYER: Update profile (nickname / avatar) ──
+  socket.on('player:update_profile', ({ nickname, avatar }) => {
+    const pin = socket.data.pin;
+    if (!pin) return;
+    const room = rooms.get(pin);
+    if (!room || room.state !== 'lobby') return;
+    const player = room.players.get(socket.id);
+    if (!player) return;
+
+    let changed = false;
+
+    if (nickname && typeof nickname === 'string') {
+      const newNick = nickname.trim().slice(0, 20);
+      if (newNick && newNick !== player.nickname) {
+        const taken = Array.from(room.players.values()).some(
+          (p) => p.id !== socket.id && p.nickname.toLowerCase() === newNick.toLowerCase()
+        );
+        if (taken) {
+          socket.emit('room:error', { message: 'That nickname is already taken.' });
+          return;
+        }
+        player.nickname = newNick;
+        changed = true;
+      }
+    }
+
+    if (avatar && typeof avatar === 'string') {
+      player.avatar = avatar.slice(0, 8);
+      changed = true;
+    }
+
+    if (!changed) return;
+
+    // Confirm to the player
+    socket.emit('room:profile_updated', {
+      nickname: player.nickname,
+      avatar: player.avatar,
+    });
+
+    // Broadcast updated player list to everyone
+    io.to(pin).emit('room:player_joined', { players: getPlayerList(room) });
   });
 
   // ── HOST: Start the game ─────────────────────

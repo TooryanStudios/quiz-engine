@@ -71,6 +71,11 @@ const socket = io(window.location.origin);
 const queryParams = new URLSearchParams(window.location.search);
 const quizSlugFromUrl = queryParams.get('quiz');
 
+// ─────────────────────────────────────────────
+// Predefined Avatar Set
+// ─────────────────────────────────────────────
+const AVATARS = ['🦁','🐯','🦊','🐼','🐨','🐸','🦄','🦖','🦝','🕺','🤖','👾','🎃','🧙','🦸','🐇','⚡','🔥','🎮','🏆'];
+
 // If a quiz slug is in the URL, show ID immediately then fetch title
 // Update both the home banner and the player-join banner
 if (quizSlugFromUrl) {
@@ -121,6 +126,7 @@ const state = {
   roleAbilityUsed: false,
   isFrozen: false,
   currentDifficulty: 'classic',  // 'easy' | 'classic' | 'hard'
+  avatar: '🎮',  // selected avatar emoji
 };
 
 let scholarPreviewInterval = null;
@@ -199,6 +205,7 @@ function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
       .map(
         (p) =>
           `<li class="player-chip kickable" data-id="${p.id}">
+            <span class="avatar-circle">${p.avatar || '🎮'}</span>
             ${escapeHtml(p.nickname)}
             <button class="btn-kick" data-id="${p.id}" title="Kick player">❌</button>
           </li>`
@@ -215,9 +222,25 @@ function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
     if (kickHint) kickHint.style.display = players.length > 0 ? 'block' : 'none';
   } else {
     listEl.innerHTML = players
-      .map((p) => `<li class="player-chip">${escapeHtml(p.nickname)}</li>`)
+      .map((p) => `<li class="player-chip"><span class="avatar-circle">${p.avatar || '🎮'}</span>${escapeHtml(p.nickname)}</li>`)
       .join('');
   }
+}
+
+// ─────────────────────────────────────────────
+// Avatar Grid Helper
+// ─────────────────────────────────────────────
+function renderAvatarGrid(gridEl, selectedAvatar, onSelect) {
+  gridEl.innerHTML = AVATARS.map((a) =>
+    `<button type="button" class="avatar-option${a === selectedAvatar ? ' selected' : ''}" data-avatar="${a}">${a}</button>`
+  ).join('');
+  gridEl.querySelectorAll('.avatar-option').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      gridEl.querySelectorAll('.avatar-option').forEach((b) => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      onSelect(btn.dataset.avatar);
+    });
+  });
 }
 
 // ─────────────────────────────────────────────
@@ -1146,7 +1169,26 @@ document.getElementById('form-join').addEventListener('submit', (e) => {
   Sounds.click();
   state.pin = pin;
   state.nickname = nickname;
-  socket.emit('player:join', { pin, nickname });
+  socket.emit('player:join', { pin, nickname, avatar: state.avatar });
+});
+
+// Player Lobby — Edit Profile toggle
+document.getElementById('btn-edit-profile').addEventListener('click', () => {
+  const panel = document.getElementById('edit-profile-panel');
+  panel.classList.toggle('open');
+});
+
+// Player Lobby — Save profile (nickname change)
+document.getElementById('btn-save-profile').addEventListener('click', () => {
+  const newNick = document.getElementById('edit-nickname-input').value.trim();
+  const errEl = document.getElementById('edit-profile-error');
+  if (!newNick) {
+    if (errEl) errEl.textContent = 'Nickname cannot be empty.';
+    return;
+  }
+  if (errEl) errEl.textContent = '';
+  Sounds.click();
+  socket.emit('player:update_profile', { nickname: newNick, avatar: state.avatar });
 });
 
 // Host Lobby — Back button
@@ -1323,12 +1365,27 @@ socket.on('disconnect', () => {
 });
 
 /** PLAYER: Successfully joined the room */
-socket.on('room:joined', ({ pin, nickname, players }) => {
+socket.on('room:joined', ({ pin, nickname, avatar, players }) => {
   state.pin = pin;
   state.nickname = nickname;
+  state.avatar = avatar || '🎮';
   state.myScore = 0;
   updatePlayerScoreUI();
   document.getElementById('player-room-pin').textContent = pin;
+
+  // Pre-fill edit form
+  const editNickEl = document.getElementById('edit-nickname-input');
+  if (editNickEl) editNickEl.value = nickname;
+
+  // Init lobby avatar grid (avatar changes emit immediately)
+  const lobbyGrid = document.getElementById('lobby-avatar-grid');
+  if (lobbyGrid) {
+    renderAvatarGrid(lobbyGrid, state.avatar, (a) => {
+      state.avatar = a;
+      socket.emit('player:update_profile', { nickname: state.nickname, avatar: a });
+    });
+  }
+
   renderPlayerList(
     players,
     document.getElementById('player-player-list'),
@@ -1361,11 +1418,40 @@ socket.on('room:player_joined', ({ players }) => {
 
 /** BOTH: Error from server */
 socket.on('room:error', ({ message }) => {
-  if (state.role === 'player') {
+  const editPanel = document.getElementById('edit-profile-panel');
+  if (state.role === 'player' && editPanel && editPanel.classList.contains('open')) {
+    const errEl = document.getElementById('edit-profile-error');
+    if (errEl) errEl.textContent = `⚠️ ${message}`;
+  } else if (state.role === 'player') {
     showError('join-error', `⚠️ ${message}`);
   } else {
     alert(`Server error: ${message}`);
   }
+});
+
+/** PLAYER: Server confirmed profile update */
+socket.on('room:profile_updated', ({ nickname, avatar }) => {
+  state.nickname = nickname;
+  state.avatar = avatar;
+
+  // Update edit form
+  const editNickEl = document.getElementById('edit-nickname-input');
+  if (editNickEl) editNickEl.value = nickname;
+
+  // Re-render lobby avatar grid with new selection
+  const lobbyGrid = document.getElementById('lobby-avatar-grid');
+  if (lobbyGrid) {
+    renderAvatarGrid(lobbyGrid, avatar, (a) => {
+      state.avatar = a;
+      socket.emit('player:update_profile', { nickname: state.nickname, avatar: a });
+    });
+  }
+
+  // Clear errors and close panel
+  const errEl = document.getElementById('edit-profile-error');
+  if (errEl) errEl.textContent = '';
+  const panel = document.getElementById('edit-profile-panel');
+  if (panel) panel.classList.remove('open');
 });
 
 /** BOTH: Game is starting */
@@ -1594,6 +1680,10 @@ socket.on('room:closed', ({ message }) => {
 // the QR is only shared with players, so the host choice is irrelevant.
 // ─────────────────────────────────────────────
 (function () {
+  // Initialize join avatar picker
+  const joinAvatarGrid = document.getElementById('join-avatar-grid');
+  if (joinAvatarGrid) renderAvatarGrid(joinAvatarGrid, state.avatar, (a) => { state.avatar = a; });
+
   const params = new URLSearchParams(window.location.search);
   const pinFromUrl = params.get('pin');
   const scanFallbackBanner = document.getElementById('scan-fallback-banner');
