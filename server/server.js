@@ -587,6 +587,14 @@ async function getQuizData(quizSlug) {
     console.log('[Quiz] No slug provided, skipping Firestore lookup');
   }
 
+  // If a specific quiz ID/slug was requested, do NOT fall back to generic HTTP data.
+  // Returning null here ensures the host gets an explicit room:error instead of silently
+  // starting a game with mock/demo questions.
+  if (quizSlug) {
+    console.warn('[Quiz] Explicit quiz requested but not found in Firestore; skipping HTTP fallback');
+    return null;
+  }
+
   // 2. Fall back to HTTP QUIZ_DATA_URL
   try {
     const url = new URL(QUIZ_DATA_URL);
