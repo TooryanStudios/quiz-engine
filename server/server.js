@@ -102,6 +102,17 @@ app.get('/api/quiz-diagnostic/:slug', async (req, res) => {
   });
 });
 
+// Quiz info endpoint — returns title + question count only (lightweight)
+app.get('/api/quiz-info/:slug', async (req, res) => {
+  const slug = req.params.slug;
+  const result = await getQuizData(slug);
+  if (!result) return res.status(404).json({ error: 'Quiz not found' });
+  res.json({
+    title: result.title || slug,
+    questionCount: result.questions.length,
+  });
+});
+
 // Preview endpoint — view all quiz questions with answers (for testing/debugging)
 app.get('/api/quiz-preview/:slug', async (req, res) => {
   const slug = req.params.slug;
@@ -520,6 +531,7 @@ async function getQuizData(quizSlug) {
             if (Array.isArray(data.questions) && data.questions.length > 0) {
               console.log(`[Quiz] ✓ Loaded "${data.title}" by doc ID (${data.questions.length} Qs)`);
               return {
+                title: data.title || null,
                 questions: data.questions,
                 challengePreset: data.challengePreset || 'classic',
                 challengeSettings: data.challengeSettings || null,
@@ -539,6 +551,7 @@ async function getQuizData(quizSlug) {
           if (Array.isArray(data.questions) && data.questions.length > 0) {
             console.log(`[Quiz] ✓ Loaded "${data.title}" (${data.questions.length} Qs) from Firestore`);
             return {
+              title: data.title || null,
               questions: data.questions,
               challengePreset: data.challengePreset || 'classic',
               challengeSettings: data.challengeSettings || null,
