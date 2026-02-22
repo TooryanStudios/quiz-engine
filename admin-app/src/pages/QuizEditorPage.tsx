@@ -8,7 +8,10 @@ import { useToast } from '../lib/ToastContext'
 import type { ChallengePreset, QuizDoc, QuizMedia, QuizQuestion, QuestionType } from '../types/quiz'
 import { createQuiz, findQuizByOwnerAndSlug, getQuizById, updateQuiz } from '../lib/quizRepo'
 
-const SERVER_BASE = import.meta.env.VITE_API_BASE_URL || 'https://quizengine.onrender.com'
+const SERVER_BASE = import.meta.env.VITE_API_BASE_URL ||
+  (typeof window !== 'undefined' && window.location.hostname === 'localhost'
+    ? 'http://localhost:3001'
+    : 'https://quizengine.onrender.com')
 
 const SAMPLE_QUESTIONS: QuizQuestion[] = [
   {
