@@ -196,12 +196,14 @@ export function QuizEditorPage() {
   const [slug, setSlug] = useState('')
   const [visibility, setVisibility] = useState<'public' | 'private'>('public')
   const [challengePreset, setChallengePreset] = useState<ChallengePreset>('classic')
+  const [enableScholarRole, setEnableScholarRole] = useState(false)
   const [questions, setQuestions] = useState<QuizQuestion[]>([starterQuestion])
   const [showMetadataDialog, setShowMetadataDialog] = useState(false)
   const [tempTitle, setTempTitle] = useState('')
   const [tempSlug, setTempSlug] = useState('')
   const [tempVisibility, setTempVisibility] = useState<'public' | 'private'>('public')
   const [tempChallenge, setTempChallenge] = useState<ChallengePreset>('classic')
+  const [tempEnableScholarRole, setTempEnableScholarRole] = useState(false)
   const [metadataChecking, setMetadataChecking] = useState(false)
   const [uploadingIndex, setUploadingIndex] = useState<number | null>(null)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
@@ -227,6 +229,7 @@ export function QuizEditorPage() {
     setTempSlug(ensureScopedSlug(slug, ownerId))
     setTempVisibility(visibility)
     setTempChallenge(challengePreset)
+    setTempEnableScholarRole(enableScholarRole)
     setShowMetadataDialog(true)
   }
 
@@ -254,6 +257,7 @@ export function QuizEditorPage() {
       setSlug(nextSlug)
       setVisibility(tempVisibility)
       setChallengePreset(tempChallenge)
+      setEnableScholarRole(tempEnableScholarRole)
       setShowMetadataDialog(false)
     } catch (error) {
       showStatus({ kind: 'error', msg: `فشل التحقق: ${(error as Error).message}` })
@@ -278,6 +282,7 @@ export function QuizEditorPage() {
         setSlug(data.slug)
         setVisibility(data.visibility)
         setChallengePreset(data.challengePreset || 'classic')
+        setEnableScholarRole(data.enableScholarRole ?? false)
         setQuestions(data.questions)
         setHasUnsavedChanges(false)
       })
@@ -350,6 +355,7 @@ export function QuizEditorPage() {
       slug,
       visibility,
       challengePreset,
+      enableScholarRole,
       tags: ['animals'],
       questions,
     }
@@ -516,6 +522,20 @@ export function QuizEditorPage() {
                   </select>
                 </div>
               </div>
+
+              {/* Scholar role toggle */}
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', userSelect: 'none' }}>
+                <input
+                  type="checkbox"
+                  checked={tempEnableScholarRole}
+                  onChange={(e) => setTempEnableScholarRole(e.target.checked)}
+                  style={{ width: '1.1rem', height: '1.1rem', accentColor: '#1a5a8c', cursor: 'pointer' }}
+                />
+                <span style={{ fontSize: '0.9em' }}>
+                  <strong>📘 تفعيل دور Scholar</strong>
+                  <span style={{ opacity: 0.6, marginRight: '0.4rem' }}>(يرى أسئلة اللعبة مبكرًا)</span>
+                </span>
+              </label>
             </div>
 
             <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '2rem' }}>
@@ -601,7 +621,7 @@ export function QuizEditorPage() {
           <button type="button" onClick={loadSamples} style={{ background: '#444' }}>تحميل عينات شاملة</button>
           <button 
             type="button" 
-            onClick={() => window.open(`${SERVER_BASE}/quiz-preview.html?quiz=${encodeURIComponent(slug)}`, '_blank')}
+            onClick={() => window.open(`${SERVER_BASE}/quiz-preview.html?quiz=${encodeURIComponent(quizId || slug)}`, '_blank')}
             style={{ background: '#1a5a8c' }}
             title="Preview all questions with answers"
           >
