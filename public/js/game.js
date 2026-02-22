@@ -71,17 +71,18 @@ const socket = io(window.location.origin);
 const queryParams = new URLSearchParams(window.location.search);
 const quizSlugFromUrl = queryParams.get('quiz');
 
-// If a quiz slug is in the URL, fetch and show its title on the home screen
+// If a quiz slug is in the URL, show ID immediately then fetch title
 if (quizSlugFromUrl) {
+  const el = document.getElementById('quiz-title-banner');
+  if (el) {
+    el.textContent = `🆔 ${quizSlugFromUrl}`;
+    el.style.display = 'block';
+  }
   fetch(`/api/quiz-info/${encodeURIComponent(quizSlugFromUrl)}`)
     .then((r) => r.ok ? r.json() : null)
     .then((data) => {
-      if (!data) return;
-      const el = document.getElementById('quiz-title-banner');
-      if (el) {
-        el.textContent = `📋 ${data.title}`;
-        el.style.display = 'block';
-      }
+      if (!data || !el) return;
+      el.textContent = `📋 ${data.title}  •  🆔 ${quizSlugFromUrl}`;
     })
     .catch(() => {});
 }
