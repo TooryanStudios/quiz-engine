@@ -5,7 +5,6 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { auth } from '../lib/firebase'
 import { useDialog } from '../lib/DialogContext'
 import { useToast } from '../lib/ToastContext'
-import { useSubscription } from '../lib/useSubscription'
 import type { ChallengePreset, QuizDoc, QuizMedia, QuizQuestion, QuestionType } from '../types/quiz'
 import { createQuiz, findQuizByOwnerAndSlug, getQuizById, updateQuiz } from '../lib/quizRepo'
 
@@ -187,7 +186,6 @@ export function QuizEditorPage() {
   const navigate = useNavigate()
   const { show: showDialog } = useDialog()
   const { showToast } = useToast()
-  const { isSubscribed } = useSubscription()
   const [quizId, setQuizId] = useState<string | null>(routeId ?? null)
   const [title, setTitle] = useState('')
   const [slug, setSlug] = useState('')
@@ -200,6 +198,8 @@ export function QuizEditorPage() {
   const [tempVisibility, setTempVisibility] = useState<'public' | 'private'>('public')
   const [tempChallenge, setTempChallenge] = useState<ChallengePreset>('classic')
   const [metadataChecking, setMetadataChecking] = useState(false)
+  const [uploadingIndex, setUploadingIndex] = useState<number | null>(null)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   type StatusState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'success'; msg: string } | { kind: 'error'; msg: string } | { kind: 'info'; msg: string }
   const [status, setStatus] = useState<StatusState>({ kind: 'idle' })
 
@@ -274,6 +274,7 @@ export function QuizEditorPage() {
         setVisibility(data.visibility)
         setChallengePreset(data.challengePreset || 'classic')
         setQuestions(data.questions)
+        setHasUnsavedChanges(false)
       })
       .catch((err) => showStatus({ kind: 'error', msg: `فشل التحميل: ${err.message}` }))
       .finally(() => setLoading(false))
@@ -286,18 +287,22 @@ export function QuizEditorPage() {
   const slugTailInvalid = !slugTailNormalized
 
   const replaceQuestion = (index: number, next: QuizQuestion) => {
+    setHasUnsavedChanges(true)
     setQuestions((prev) => prev.map((q, i) => (i === index ? next : q)))
   }
 
   const updateQuestion = (index: number, patch: Partial<QuizQuestion>) => {
+    setHasUnsavedChanges(true)
     setQuestions((prev) => prev.map((q, i) => (i === index ? { ...q, ...patch } : q)))
   }
 
   const addQuestion = () => {
+    setHasUnsavedChanges(true)
     setQuestions((prev) => [...prev, { ...starterQuestion }])
   }
 
   const loadSamples = () => {
+    setHasUnsavedChanges(true)
     setTitle('Animals Pack Quiz')
     setSlug('animals-pack-quiz')
     setQuestions(SAMPLE_QUESTIONS)
@@ -312,6 +317,7 @@ export function QuizEditorPage() {
       cancelText: 'إلغاء',
       isDangerous: true,
       onConfirm: () => {
+        setHasUnsavedChanges(true)
         setQuestions((prev) => prev.filter((_, i) => i !== index))
       },
     })
@@ -349,11 +355,13 @@ export function QuizEditorPage() {
       if (quizId) {
         await updateQuiz(quizId, payload)
         showStatus({ kind: 'idle' })
+        setHasUnsavedChanges(false)
         showToast({ message: 'تم تحديث الاختبار بنجاح', type: 'success' })
       } else {
         const id = await createQuiz(payload)
         setQuizId(id)
         showStatus({ kind: 'idle' })
+        setHasUnsavedChanges(false)
         showToast({ message: 'تم حفظ الاختبار بنجاح', type: 'success' })
       }
     } catch (error) {
@@ -575,8 +583,19 @@ export function QuizEditorPage() {
           >
             👁️ معاينة الأسئلة
           </button>
-          <button type="button" onClick={saveQuiz} disabled={status.kind === 'saving'} style={{ opacity: status.kind === 'saving' ? 0.6 : 1 }}>
-            {status.kind === 'saving' ? '⏳ جارٍ الحفظ...' : 'حفظ الاختبار'}
+          <button
+            type="button"
+            onClick={saveQuiz}
+            disabled={status.kind === 'saving'}
+            style={{
+              opacity: status.kind === 'saving' ? 0.6 : 1,
+              background: hasUnsavedChanges ? '#d97706' : undefined,
+              boxShadow: hasUnsavedChanges ? '0 0 0 2px #fbbf24' : undefined,
+              fontWeight: hasUnsavedChanges ? 'bold' : undefined,
+            }}
+            title={hasUnsavedChanges ? 'يوجد تغييرات غير محفوظة!' : ''}
+          >
+            {status.kind === 'saving' ? '⏳ جارٍ الحفظ...' : hasUnsavedChanges ? '💾 حفظ الاختبار ●' : 'حفظ الاختبار'}
           </button>
           <button type="button" onClick={() => navigate('/dashboard')} style={{ background: '#555' }}>إلغاء</button>
         </div>
@@ -1046,71 +1065,64 @@ export function QuizEditorPage() {
                       boxSizing: 'border-box',
                     }}
                   />
-                  {isSubscribed ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const input = document.createElement('input')
-                        input.type = 'file'
-                        input.accept = q.media?.type === 'video' ? 'video/*' : q.media?.type === 'gif' ? 'image/gif' : 'image/*'
-                        input.onchange = async (e) => {
-                          const file = (e.target as HTMLInputElement).files?.[0]
-                          if (!file) return
-                          try {
-                            const ext = file.name.split('.').pop() || 'bin'
-                            const path = `quiz-media/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
-                            const storageRef = ref(storage, path)
-                            await uploadBytes(storageRef, file)
-                            const url = await getDownloadURL(storageRef)
-                            updateQuestion(index, { media: { ...q.media!, url } })
-                          } catch (err) {
-                            console.error('Upload failed', err)
-                            alert('Upload failed. Check Firebase Storage rules.')
-                          }
+                  <button
+                    type="button"
+                    disabled={uploadingIndex === index}
+                    onClick={() => {
+                      const input = document.createElement('input')
+                      input.type = 'file'
+                      input.accept = q.media?.type === 'video' ? 'video/*' : q.media?.type === 'gif' ? 'image/gif' : 'image/*'
+                      input.onchange = async (e) => {
+                        const file = (e.target as HTMLInputElement).files?.[0]
+                        if (!file) return
+                        setUploadingIndex(index)
+                        try {
+                          const ext = file.name.split('.').pop() || 'bin'
+                          const path = `quiz-media/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+                          const storageRef = ref(storage, path)
+                          await uploadBytes(storageRef, file)
+                          const url = await getDownloadURL(storageRef)
+                          updateQuestion(index, { media: { ...q.media!, url } })
+                        } catch (err) {
+                          console.error('Upload failed', err)
+                          alert('Upload failed. Check Firebase Storage rules.')
+                        } finally {
+                          setUploadingIndex(null)
                         }
-                        input.click()
-                      }}
-                      style={{
-                        padding: '0 0.75rem',
-                        borderRadius: '4px',
-                        border: '1px solid #475569',
-                        backgroundColor: '#1a5a8c',
-                        color: '#fff',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                      title="رفع ملف (مشتركون فقط)"
-                    >
-                      📁
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        alert(
-                          'رفع الملفات متاح للمشتركين فقط.\n\nيمكنك استخدام خدمات مجانية مثل imgbb.com أو cloudinary.com للحصول على رابط صورة دائم، ثم لصقه بزر 📋'
-                        )
                       }
-                      style={{
-                        padding: '0 0.75rem',
-                        borderRadius: '4px',
-                        border: '1px solid #475569',
-                        backgroundColor: '#374151',
-                        color: '#9ca3af',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '2px',
-                        fontSize: '0.85em',
-                      }}
-                      title="رفع الملفات للمشتركين فقط — استخدم imgbb.com أو Cloudinary للحصول على رابط مجاني"
-                    >
-                      🔒📁
-                    </button>
-                  )}
+                      input.click()
+                    }}
+                    style={{
+                      padding: '0 0.75rem',
+                      borderRadius: '4px',
+                      border: '1px solid #475569',
+                      backgroundColor: uploadingIndex === index ? '#0f2a40' : '#1a5a8c',
+                      color: uploadingIndex === index ? '#7dd3fc' : '#fff',
+                      cursor: uploadingIndex === index ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px',
+                      minWidth: '2.5rem',
+                      fontSize: '0.8em',
+                    }}
+                    title={uploadingIndex === index ? 'جارٍ الرفع...' : 'رفع ملف'}
+                  >
+                    {uploadingIndex === index ? (
+                      <>
+                        <span style={{
+                          display: 'inline-block',
+                          width: '12px',
+                          height: '12px',
+                          border: '2px solid #7dd3fc',
+                          borderTopColor: 'transparent',
+                          borderRadius: '50%',
+                          animation: 'spin 0.7s linear infinite',
+                        }} />
+                        <span>رفع...</span>
+                      </>
+                    ) : '📁'}
+                  </button>
                   <button
                     type="button"
                     onClick={async () => {
@@ -1161,7 +1173,10 @@ export function QuizEditorPage() {
                       display: 'block'
                     }} 
                     onError={(e) => {
-                      (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="300" height="150"%3E%3Crect fill="%23333" width="300" height="150"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%23888" font-size="12"%3Eخطأ في التحميل%3C/text%3E%3C/svg%3E'
+                      const t = e.target as HTMLImageElement
+                      t.onerror = null
+                      t.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='160' viewBox='0 0 320 160'%3E%3Crect width='320' height='160' fill='%231e293b'/%3E%3Ctext x='50%25' y='44%25' font-family='sans-serif' font-size='28' fill='%2364748b' text-anchor='middle' dominant-baseline='middle'%3E%F0%9F%96%BC%EF%B8%8F%3C/text%3E%3Ctext x='50%25' y='68%25' font-family='sans-serif' font-size='12' fill='%2364748b' text-anchor='middle' dominant-baseline='middle'%3EImage unavailable%3C/text%3E%3C/svg%3E"
+                      t.style.opacity = '0.5'
                     }}
                   />
                 )}

@@ -366,6 +366,11 @@ function renderQuestionMedia(media, textElemId) {
     el = document.createElement('img');
     el.src = media.url;
     el.alt = '';
+    el.onerror = function() {
+      this.onerror = null;
+      this.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='160' viewBox='0 0 320 160'%3E%3Crect width='320' height='160' fill='%231e293b'/%3E%3Ctext x='50%25' y='44%25' font-family='sans-serif' font-size='28' fill='%2364748b' text-anchor='middle' dominant-baseline='middle'%3E%F0%9F%96%BC%EF%B8%8F%3C/text%3E%3Ctext x='50%25' y='68%25' font-family='sans-serif' font-size='12' fill='%2364748b' text-anchor='middle' dominant-baseline='middle'%3EImage unavailable%3C/text%3E%3C/svg%3E";
+      this.style.opacity = '0.5';
+    };
   }
   el.className = 'question-media';
   box.appendChild(el);
