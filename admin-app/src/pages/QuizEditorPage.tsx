@@ -206,6 +206,9 @@ export function QuizEditorPage() {
   const [tempEnableScholarRole, setTempEnableScholarRole] = useState(false)
   const [metadataChecking, setMetadataChecking] = useState(false)
   const [uploadingIndex, setUploadingIndex] = useState<number | null>(null)
+  const [coverImage, setCoverImage] = useState<string>('')
+  const [tempCoverImage, setTempCoverImage] = useState<string>('')
+  const [uploadingCover, setUploadingCover] = useState(false)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   type StatusState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'success'; msg: string } | { kind: 'error'; msg: string } | { kind: 'info'; msg: string }
   const [status, setStatus] = useState<StatusState>({ kind: 'idle' })
@@ -230,6 +233,7 @@ export function QuizEditorPage() {
     setTempVisibility(visibility)
     setTempChallenge(challengePreset)
     setTempEnableScholarRole(enableScholarRole)
+    setTempCoverImage(coverImage)
     setShowMetadataDialog(true)
   }
 
@@ -258,6 +262,7 @@ export function QuizEditorPage() {
       setVisibility(tempVisibility)
       setChallengePreset(tempChallenge)
       setEnableScholarRole(tempEnableScholarRole)
+      setCoverImage(tempCoverImage)
       setShowMetadataDialog(false)
     } catch (error) {
       showStatus({ kind: 'error', msg: `فشل التحقق: ${(error as Error).message}` })
@@ -283,6 +288,7 @@ export function QuizEditorPage() {
         setVisibility(data.visibility)
         setChallengePreset(data.challengePreset || 'classic')
         setEnableScholarRole(data.enableScholarRole ?? false)
+        setCoverImage(data.coverImage ?? '')
         setQuestions(data.questions)
         setHasUnsavedChanges(false)
       })
@@ -356,6 +362,7 @@ export function QuizEditorPage() {
       visibility,
       challengePreset,
       enableScholarRole,
+      coverImage: coverImage || undefined,
       tags: ['animals'],
       questions,
     }
@@ -402,18 +409,18 @@ export function QuizEditorPage() {
         >
           <div
             style={{
-              backgroundColor: '#1a1a1a',
-              borderRadius: '8px',
-              border: '1px solid #475569',
-              boxShadow: '0 10px 40px rgba(0, 0, 0, 0.8)',
-              minWidth: '400px',
-              maxWidth: '500px',
+              backgroundColor: '#0f172a',
+              borderRadius: '16px',
+              border: '1px solid #334155',
+              boxShadow: '0 20px 60px rgba(0, 0, 0, 0.9)',
+              minWidth: '440px',
+              maxWidth: '540px',
               padding: '2rem',
               animation: 'slideUp 0.3s ease-out',
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 style={{ marginTop: 0, marginBottom: '1.5rem', color: '#fff' }}>إعدادات الاختبار</h2>
+            <h2 style={{ marginTop: 0, marginBottom: '1.5rem', color: '#f1f5f9', fontSize: '1.3rem', fontWeight: 800 }}>⚙️ إعدادات الاختبار</h2>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div>
@@ -429,9 +436,9 @@ export function QuizEditorPage() {
                   style={{
                     width: '100%',
                     padding: '0.75rem',
-                    borderRadius: '4px',
-                    border: '1px solid #475569',
-                    backgroundColor: '#0f172a',
+                    borderRadius: '8px',
+                    border: '1px solid #334155',
+                    backgroundColor: '#1e293b',
                     color: '#fff',
                     boxSizing: 'border-box',
                     fontSize: '1em',
@@ -459,9 +466,9 @@ export function QuizEditorPage() {
                     style={{
                       flex: 1,
                       padding: '0.75rem',
-                      borderRadius: '4px',
-                      border: '1px solid #475569',
-                      backgroundColor: '#0f172a',
+                      borderRadius: '8px',
+                      border: '1px solid #334155',
+                      backgroundColor: '#1e293b',
                       color: '#fff',
                       boxSizing: 'border-box',
                       fontSize: '1em',
@@ -487,9 +494,9 @@ export function QuizEditorPage() {
                     style={{
                       width: '100%',
                       padding: '0.75rem',
-                      borderRadius: '4px',
-                      border: '1px solid #475569',
-                      backgroundColor: '#0f172a',
+                      borderRadius: '8px',
+                      border: '1px solid #334155',
+                      backgroundColor: '#1e293b',
                       color: '#fff',
                       boxSizing: 'border-box',
                       fontSize: '1em',
@@ -508,9 +515,9 @@ export function QuizEditorPage() {
                     style={{
                       width: '100%',
                       padding: '0.75rem',
-                      borderRadius: '4px',
-                      border: '1px solid #475569',
-                      backgroundColor: '#0f172a',
+                      borderRadius: '8px',
+                      border: '1px solid #334155',
+                      backgroundColor: '#1e293b',
                       color: '#fff',
                       boxSizing: 'border-box',
                       fontSize: '1em',
@@ -524,7 +531,7 @@ export function QuizEditorPage() {
               </div>
 
               {/* Scholar role toggle */}
-              <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', userSelect: 'none' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', userSelect: 'none', background: '#1e293b', padding: '0.75rem 1rem', borderRadius: '10px', border: '1px solid #334155' }}>
                 <input
                   type="checkbox"
                   checked={tempEnableScholarRole}
@@ -536,6 +543,80 @@ export function QuizEditorPage() {
                   <span style={{ opacity: 0.6, marginRight: '0.4rem' }}>(يرى أسئلة اللعبة مبكرًا)</span>
                 </span>
               </label>
+
+              {/* Cover image */}
+              <div>
+                <label style={{ fontSize: '0.9em', opacity: 0.7, display: 'block', marginBottom: '0.5rem' }}>🖼️ صورة الغلاف</label>
+                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                  <input
+                    type="text"
+                    value={tempCoverImage}
+                    onChange={(e) => setTempCoverImage(e.target.value)}
+                    placeholder="https://..."
+                    style={{
+                      flex: 1, padding: '0.75rem', borderRadius: '8px',
+                      border: '1px solid #334155', backgroundColor: '#1e293b',
+                      color: '#fff', boxSizing: 'border-box', fontSize: '0.9em',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={uploadingCover}
+                    onClick={() => {
+                      const inp = document.createElement('input')
+                      inp.type = 'file'
+                      inp.accept = 'image/*'
+                      inp.onchange = async (e) => {
+                        const file = (e.target as HTMLInputElement).files?.[0]
+                        if (!file) return
+                        setUploadingCover(true)
+                        try {
+                          const ext = file.name.split('.').pop() || 'jpg'
+                          const path = `quiz-covers/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+                          const storageRef = ref(storage, path)
+                          await uploadBytes(storageRef, file)
+                          const url = await getDownloadURL(storageRef)
+                          setTempCoverImage(url)
+                        } catch (err) {
+                          console.error('Cover upload failed', err)
+                        } finally {
+                          setUploadingCover(false)
+                        }
+                      }
+                      inp.click()
+                    }}
+                    style={{
+                      padding: '0 1rem', borderRadius: '8px', border: 'none',
+                      background: uploadingCover ? '#0f2a40' : '#1a5a8c',
+                      color: uploadingCover ? '#7dd3fc' : '#fff',
+                      cursor: uploadingCover ? 'not-allowed' : 'pointer',
+                      whiteSpace: 'nowrap', fontSize: '0.85em', fontWeight: 600,
+                    }}
+                  >
+                    {uploadingCover ? '⏳' : '📁 رفع'}
+                  </button>
+                </div>
+                {tempCoverImage && (
+                  <div style={{ marginTop: '0.5rem', borderRadius: '10px', overflow: 'hidden', height: '110px', position: 'relative' }}>
+                    <img
+                      src={tempCoverImage}
+                      alt="cover preview"
+                      style={{ width: '100%', height: '110px', objectFit: 'cover', display: 'block' }}
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setTempCoverImage('')}
+                      style={{
+                        position: 'absolute', top: '6px', left: '6px',
+                        background: 'rgba(0,0,0,0.7)', border: 'none', color: '#fff',
+                        borderRadius: '50%', width: '24px', height: '24px',
+                        cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                    >✕</button>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '2rem' }}>
@@ -545,10 +626,10 @@ export function QuizEditorPage() {
                   disabled={metadataChecking}
                   style={{
                     padding: '0.75rem 1.5rem',
-                    borderRadius: '4px',
+                    borderRadius: '8px',
                     border: 'none',
-                    backgroundColor: '#333',
-                    color: '#fff',
+                    backgroundColor: '#1e293b',
+                    color: '#94a3b8',
                     cursor: metadataChecking ? 'not-allowed' : 'pointer',
                     opacity: metadataChecking ? 0.6 : 1,
                     fontSize: '1em',
@@ -562,9 +643,9 @@ export function QuizEditorPage() {
                 disabled={metadataChecking}
                 style={{
                   padding: '0.75rem 1.5rem',
-                  borderRadius: '4px',
+                  borderRadius: '8px',
                   border: 'none',
-                  backgroundColor: '#1a5a8c',
+                  background: 'linear-gradient(135deg, #2563eb, #7c3aed)',
                   color: '#fff',
                   cursor: metadataChecking ? 'not-allowed' : 'pointer',
                   opacity: metadataChecking ? 0.6 : 1,
@@ -578,75 +659,199 @@ export function QuizEditorPage() {
         </div>
       )}
 
-      <section className="panel">
-        <h2>Quiz Editor</h2>
-        <div style={{ padding: '1rem', background: '#0f172a', borderRadius: '4px', fontSize: '0.9em' }}>
-          <p style={{ margin: '0.25rem 0' }}><strong>الاسم:</strong> {title}</p>
-          <p style={{ margin: '0.25rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <strong>الرابط:</strong>
-            {quizId
-              ? <><code>{SERVER_BASE}/?quiz={quizId}</code>
-                <a
-                  href={`${SERVER_BASE}/?quiz=${quizId}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="فتح في تبويب جديد"
-                  style={{ color: '#60a5fa', lineHeight: 1, display: 'inline-flex', alignItems: 'center' }}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-                    <polyline points="15 3 21 3 21 9"/>
-                    <line x1="10" y1="14" x2="21" y2="3"/>
-                  </svg>
-                </a></>
-              : <span style={{ color: '#888', fontStyle: 'italic' }}>احفظ الاختبار أولاً</span>
-            }
-          </p>
-          <p style={{ margin: '0.25rem 0' }}><strong>الخصوصية:</strong> {visibility === 'public' ? 'عام' : 'خاص'}</p>
-          <p style={{ margin: '0.25rem 0' }}><strong>المستوى:</strong> {challengePreset}</p>
+      {/* ── Hero header ── */}
+      <div style={{
+        background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%)',
+        border: '1px solid #1e293b',
+        borderRadius: '16px',
+        marginBottom: '1.25rem',
+        position: 'relative',
+        overflow: 'hidden',
+      }}>
+        {/* Cover image */}
+        {coverImage ? (
+          <div style={{ width: '100%', height: '180px', overflow: 'hidden', position: 'relative' }}>
+            <img src={coverImage} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.65 }} />
+            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, #0f172a 0%, transparent 60%)' }} />
+          </div>
+        ) : (
+          <div style={{
+            position: 'absolute', top: '-40px', right: '-40px',
+            width: '200px', height: '200px', borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(99,102,241,0.15) 0%, transparent 70%)',
+            pointerEvents: 'none',
+          }} />
+        )}
+        <div style={{ padding: '1.5rem 2rem' }}>
+          <h1 style={{ margin: '0 0 0.75rem', fontSize: '1.5rem', fontWeight: 800, color: '#f1f5f9' }}>
+            {title || 'اختبار جديد'}
+          </h1>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+            <span style={{
+              background: challengePreset === 'easy' ? '#16a34a' : challengePreset === 'hard' ? '#dc2626' : '#2563eb',
+              color: '#fff', fontSize: '0.72rem', fontWeight: 700, padding: '3px 12px', borderRadius: '999px',
+            }}>
+              {challengePreset === 'easy' ? 'سهل' : challengePreset === 'hard' ? 'صعب' : 'عادي'}
+            </span>
+            <span style={{
+              background: '#1e293b', color: visibility === 'public' ? '#86efac' : '#fca5a5',
+              fontSize: '0.72rem', fontWeight: 600, padding: '3px 12px', borderRadius: '999px',
+              border: `1px solid ${visibility === 'public' ? '#16a34a44' : '#dc262644'}`,
+            }}>
+              {visibility === 'public' ? '🌐 عام' : '🔒 خاص'}
+            </span>
+            <span style={{ background: '#1e293b', color: '#94a3b8', fontSize: '0.72rem', padding: '3px 12px', borderRadius: '999px' }}>
+              📝 {questions.length} سؤال
+            </span>
+            {quizId && (
+              <a
+                href={`${SERVER_BASE}/?quiz=${quizId}`}
+                target="_blank" rel="noopener noreferrer"
+                style={{ background: '#1e293b', color: '#60a5fa', fontSize: '0.72rem', padding: '3px 12px', borderRadius: '999px', textDecoration: 'none' }}
+              >
+                🔗 رابط اللعبة ↗
+              </a>
+            )}
+          </div>
         </div>
-      </section>
+      </div>
 
-      <section className="panel" style={{ position: 'sticky', top: 0, zIndex: 100, backgroundColor: '#1e293b', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }}>
+      {/* ── Sticky toolbar ── */}
+      <div style={{
+        position: 'sticky', top: 0, zIndex: 100,
+        background: '#0f172a',
+        border: '1px solid #1e293b',
+        borderRadius: '14px',
+        padding: '0.75rem 1.25rem',
+        marginBottom: '1.25rem',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.7)',
+      }}>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
           <button
             type="button"
             onClick={openMetadataDialog}
-            style={{ background: '#1a5a8c' }}
-            title="Modify quiz settings"
+            style={{
+              background: '#1e293b', border: '1px solid #334155', color: '#94a3b8',
+              padding: '0.5rem 1rem', borderRadius: '8px', fontSize: '0.85rem',
+              cursor: 'pointer', transition: 'all 0.15s',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = '#334155'; e.currentTarget.style.color = '#e2e8f0' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = '#1e293b'; e.currentTarget.style.color = '#94a3b8' }}
           >
-            ⚙️ إعدادات الاختبار
+            ⚙️ إعدادات
           </button>
-          <button type="button" onClick={addQuestion}>+ إضافة سؤال</button>
-          <button type="button" onClick={loadSamples} style={{ background: '#444' }}>تحميل عينات شاملة</button>
-          <button 
-            type="button" 
-            onClick={() => window.open(`${SERVER_BASE}/quiz-preview.html?quiz=${encodeURIComponent(quizId || slug)}`, '_blank')}
-            style={{ background: '#1a5a8c' }}
-            title="Preview all questions with answers"
+          <button
+            type="button"
+            onClick={addQuestion}
+            style={{
+              background: '#1e293b', border: '1px solid #334155', color: '#94a3b8',
+              padding: '0.5rem 1rem', borderRadius: '8px', fontSize: '0.85rem',
+              cursor: 'pointer', transition: 'all 0.15s',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = '#334155'; e.currentTarget.style.color = '#e2e8f0' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = '#1e293b'; e.currentTarget.style.color = '#94a3b8' }}
           >
-            👁️ معاينة الأسئلة
+            + إضافة سؤال
+          </button>
+          <button
+            type="button"
+            onClick={loadSamples}
+            style={{
+              background: '#1e293b', border: '1px solid #334155', color: '#64748b',
+              padding: '0.5rem 1rem', borderRadius: '8px', fontSize: '0.85rem',
+              cursor: 'pointer', transition: 'all 0.15s',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = '#334155'; e.currentTarget.style.color = '#94a3b8' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = '#1e293b'; e.currentTarget.style.color = '#64748b' }}
+          >
+            تحميل عينات
+          </button>
+          {quizId && (
+            <button
+              type="button"
+              onClick={() => window.open(`/preview/${quizId}`, '_blank')}
+              style={{
+                background: '#1e293b', border: '1px solid #0e7490', color: '#22d3ee',
+                padding: '0.5rem 1rem', borderRadius: '8px', fontSize: '0.85rem',
+                cursor: 'pointer', transition: 'all 0.15s',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = '#0e7490'; e.currentTarget.style.color = '#fff' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = '#1e293b'; e.currentTarget.style.color = '#22d3ee' }}
+            >
+              👁️ معاينة
+            </button>
+          )}
+          <div style={{ flex: 1 }} />
+
+          {/* User profile chip */}
+          {auth.currentUser && (() => {
+            const user = auth.currentUser!
+            const name = user.displayName || user.email?.split('@')[0] || 'مستخدم'
+            const initials = name.slice(0, 2).toUpperCase()
+            return (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '0.5rem',
+                background: '#1e293b', border: '1px solid #334155',
+                borderRadius: '999px', padding: '0.3rem 0.75rem 0.3rem 0.35rem',
+              }}>
+                {user.photoURL ? (
+                  <img
+                    src={user.photoURL}
+                    alt={name}
+                    referrerPolicy="no-referrer"
+                    style={{ width: '26px', height: '26px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
+                  />
+                ) : (
+                  <div style={{
+                    width: '26px', height: '26px', borderRadius: '50%', flexShrink: 0,
+                    background: 'linear-gradient(135deg, #2563eb, #7c3aed)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '0.65rem', fontWeight: 700, color: '#fff',
+                  }}>
+                    {initials}
+                  </div>
+                )}
+                <span style={{ fontSize: '0.78rem', color: '#cbd5e1', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {name}
+                </span>
+              </div>
+            )
+          })()}
+
+          <button
+            type="button"
+            onClick={() => navigate('/dashboard')}
+            style={{
+              background: 'transparent', border: 'none', color: '#64748b',
+              padding: '0.5rem 0.75rem', borderRadius: '8px', fontSize: '0.85rem', cursor: 'pointer',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = '#94a3b8' }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = '#64748b' }}
+          >
+            ← لوحة التحكم
           </button>
           <button
             type="button"
             onClick={saveQuiz}
             disabled={status.kind === 'saving'}
             style={{
+              background: hasUnsavedChanges
+                ? 'linear-gradient(135deg, #d97706, #b45309)'
+                : 'linear-gradient(135deg, #2563eb, #7c3aed)',
+              border: 'none', color: '#fff',
+              padding: '0.5rem 1.25rem', borderRadius: '8px', fontSize: '0.85rem',
+              fontWeight: 700, cursor: status.kind === 'saving' ? 'not-allowed' : 'pointer',
               opacity: status.kind === 'saving' ? 0.6 : 1,
-              background: hasUnsavedChanges ? '#d97706' : undefined,
-              boxShadow: hasUnsavedChanges ? '0 0 0 2px #fbbf24' : undefined,
-              fontWeight: hasUnsavedChanges ? 'bold' : undefined,
+              boxShadow: hasUnsavedChanges ? '0 0 0 2px #fbbf2444' : undefined,
             }}
-            title={hasUnsavedChanges ? 'يوجد تغييرات غير محفوظة!' : ''}
           >
-            {status.kind === 'saving' ? '⏳ جارٍ الحفظ...' : hasUnsavedChanges ? '💾 حفظ الاختبار ●' : 'حفظ الاختبار'}
+            {status.kind === 'saving' ? '⏳ جارٍ الحفظ...' : hasUnsavedChanges ? '💾 حفظ ●' : '💾 حفظ'}
           </button>
-          <button type="button" onClick={() => navigate('/dashboard')} style={{ background: '#555' }}>إلغاء</button>
         </div>
-      </section>
+      </div>
 
       {questions.map((q, index) => (
-        <section key={index} className="panel" style={{ backgroundColor: '#1e293b', border: '2px solid #64748b', borderLeft: '6px solid #3b82f6', padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem', boxShadow: '0 4px 12px rgba(0,0,0,0.4)' }}>
+        <section key={index} className="panel" style={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderLeft: '6px solid #3b82f6', padding: '1.2rem', borderRadius: '14px', marginBottom: '1.25rem', boxShadow: '0 4px 20px rgba(0,0,0,0.5)' }}>
           {/* Header with question number and type badge */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
@@ -1249,6 +1454,10 @@ export function QuizEditorPage() {
         @keyframes slideUp {
           from { transform: translateY(20px); opacity: 0; }
           to { transform: translateY(0); opacity: 1; }
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
         }
       `}</style>
     </>
