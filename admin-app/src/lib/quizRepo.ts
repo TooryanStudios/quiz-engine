@@ -38,8 +38,12 @@ export async function createQuiz(payload: QuizDoc) {
 }
 
 export async function updateQuiz(id: string, payload: Partial<QuizDoc>) {
+  // Firestore rejects `undefined` values — strip them before sending
+  const clean = Object.fromEntries(
+    Object.entries(payload).filter(([, v]) => v !== undefined)
+  )
   await updateDoc(doc(db, 'quizzes', id), {
-    ...payload,
+    ...clean,
     updatedAt: serverTimestamp(),
   })
 }

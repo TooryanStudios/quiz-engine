@@ -362,7 +362,7 @@ export function QuizEditorPage() {
       visibility,
       challengePreset,
       enableScholarRole,
-      coverImage: coverImage || undefined,
+      ...(coverImage ? { coverImage } : {}),
       tags: ['animals'],
       questions,
     }

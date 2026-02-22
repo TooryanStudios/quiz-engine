@@ -1527,102 +1527,102 @@ video.question-media {
 }
 
 /* ═══════════════════════════════════════════
-   Match / Connect question
+   Match / Connect — drag-and-drop
 ═══════════════════════════════════════════ */
-.match-container {
-  width: 100%;
-}
+.match-container { width: 100%; }
 
-.match-layout {
+.match-dnd-layout {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: 14px;
   align-items: start;
 }
 
-/* Left: fixed labeled slots */
-.match-left-col {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+/* Left column: label + drop zone rows */
+.match-dnd-slots  { display: flex; flex-direction: column; gap: 10px; }
+
+.match-dnd-row    { display: flex; flex-direction: column; gap: 4px; }
+
+.match-dnd-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  padding: 0 4px;
+  unicode-bidi: plaintext;
 }
 
-.match-left-item {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 10px 12px;
-  background: var(--surface-2);
+.match-dropzone {
+  min-height: 52px;
   border-radius: var(--radius);
-  border: 2px solid transparent;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
-  min-height: 56px;
+  border: 2px dashed rgba(255,255,255,0.2);
+  display: flex;
+  align-items: center;
   justify-content: center;
+  padding: 6px 8px;
+  transition: border-color 0.15s, background 0.15s;
 }
+.match-dz-empty  { background: var(--surface); }
+.match-dz-filled { border-style: solid; border-color: rgba(255,255,255,0.25); background: var(--surface-2); }
+.match-dz-hover  { border-color: var(--accent) !important; background: rgba(233,69,96,0.15) !important; }
 
-.match-left-item:hover   { border-color: var(--text-dim); }
-
-.match-left-item.match-active-slot {
-  border-color: var(--accent);
-  background: #3d0e1f;
-}
-
-.match-left-item.match-filled {
-  border-color: rgba(255,255,255,0.3);
-}
-
-.match-left-label {
-  font-size: 0.85rem;
-  font-weight: 700;
+.match-drop-hint {
+  font-size: 0.75rem;
   color: var(--text-dim);
-  unicode-bidi: plaintext;
-}
-
-.match-conn {
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: #fff;
-  unicode-bidi: plaintext;
-}
-
-.match-placeholder {
-  font-size: 0.85rem;
-  color: var(--text-dim);
+  opacity: 0.45;
   font-style: italic;
 }
 
-/* Right: draggable/tappable chips pool */
-.match-right-pool {
+/* Right column: chip pool */
+.match-dnd-pool {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  padding-top: 22px; /* visually align with first slot */
 }
 
-.match-right-chip {
-  padding: 12px 14px;
-  background: var(--opt-violet);
+.match-pool-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  opacity: 0.6;
+  margin-bottom: 2px;
+}
+
+/* Chips (shared between pool and placed-in-slot) */
+.match-chip {
+  padding: 11px 14px;
   border-radius: var(--radius);
   font-weight: 700;
   font-size: 0.9rem;
-  cursor: pointer;
-  transition: transform 0.1s, filter 0.15s;
+  cursor: grab;
   text-align: center;
   unicode-bidi: plaintext;
   user-select: none;
+  touch-action: none;
+  transition: opacity 0.15s;
+  display: inline-block;
+  width: 100%;
+  box-sizing: border-box;
+}
+.match-chip:active { cursor: grabbing; }
+
+/* Ghost that follows pointer */
+.match-drag-ghost {
+  box-shadow: 0 10px 30px rgba(0,0,0,0.6) !important;
+  cursor: grabbing !important;
+  border-radius: var(--radius) !important;
+  background: var(--opt-violet) !important;
 }
 
-.match-right-chip:hover  { filter: brightness(1.2); }
-.match-right-chip:active { transform: scale(0.95); }
-
-/* Host preview for match */
+/* Host preview for match (unchanged) */
 .host-pairs-preview {
   display: flex;
   flex-direction: column;
   gap: 8px;
   grid-column: span 2;
 }
-
 .host-pair-row {
   display: flex;
   align-items: center;
@@ -1631,13 +1631,12 @@ video.question-media {
   border-radius: 10px;
   padding: 10px 14px;
 }
-
 .host-pair-side  { flex: 1; font-weight: 700; unicode-bidi: plaintext; }
 .host-pair-right { color: var(--text-dim); }
 .host-pair-arrow { color: var(--text-dim); font-size: 1.1rem; }
 
 /* ═══════════════════════════════════════════
-   Order / Sort question
+   Order / Sort — drag-and-drop
 ═══════════════════════════════════════════ */
 .order-container { width: 100%; }
 
@@ -1646,15 +1645,31 @@ video.question-media {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  padding: 0;
+  margin: 0;
 }
 
 .order-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   background: var(--surface-2);
   border-radius: var(--radius);
-  padding: 12px 14px;
+  padding: 14px 16px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  transition: opacity 0.15s, box-shadow 0.15s;
+}
+.order-item:active { cursor: grabbing; }
+.order-dragging-source { opacity: 0.2 !important; }
+
+.order-drag-handle {
+  font-size: 1.3rem;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  cursor: grab;
+  line-height: 1;
 }
 
 .order-label {
@@ -1662,27 +1677,25 @@ video.question-media {
   font-weight: 700;
   font-size: 0.95rem;
   text-align: center;
+  unicode-bidi: plaintext;
 }
 
-.btn-order-move {
-  background: var(--surface);
-  border: 2px solid var(--surface-2);
-  border-radius: 8px;
-  width: 36px;
-  height: 36px;
-  font-size: 1rem;
-  cursor: pointer;
-  color: var(--text);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: background 0.15s, transform 0.1s;
+.order-drag-ghost {
+  box-shadow: 0 10px 30px rgba(0,0,0,0.6) !important;
+  cursor: grabbing !important;
+  border-radius: var(--radius) !important;
 }
 
-.btn-order-move:hover:not(:disabled)  { background: var(--accent); }
-.btn-order-move:active:not(:disabled) { transform: scale(0.92); }
-.btn-order-move:disabled              { opacity: 0.25; cursor: default; }
+.order-insert-indicator {
+  height: 4px;
+  background: var(--accent);
+  border-radius: 2px;
+  width: 100%;
+  box-shadow: 0 0 10px var(--accent);
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
 
 /* Host preview for order */
 .host-order-preview {
@@ -1691,7 +1704,6 @@ video.question-media {
   gap: 8px;
   grid-column: span 2;
 }
-
 .host-order-item {
   background: var(--surface-2);
   border-radius: 10px;

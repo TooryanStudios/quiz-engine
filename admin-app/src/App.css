@@ -240,8 +240,8 @@
 /* ── Mobile: fixed top header ─────────────── */
 
 /* Hide mobile-only elements on desktop */
-.mobile-bar-controls { display: none; }
-.mobile-nav-drawer   { display: none; }
+.mobile-bar-controls { display: none !important; }
+.mobile-nav-drawer   { display: none !important; }
 
 @media (max-width: 768px) {
   /* Single column; sidebar taken out of flow via position:fixed */
@@ -418,7 +418,7 @@
 
   /* ── Mobile nav drawer ── */
   .mobile-nav-drawer {
-    display: flex;
+    display: flex !important;
     flex-direction: column;
     width: 100%;
     max-height: 0;

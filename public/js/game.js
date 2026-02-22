@@ -137,9 +137,10 @@ const state = {
   // new: question-type extras
   currentQuestionType: 'single',
   matchConnections: [],    // matchConnections[leftIdx] = displayRightIdx (-1 = unset)
-  matchActiveLeft: -1,     // which left slot is currently "selected"
+  matchLefts: [],          // left-side labels (sent by server)
   matchRights: [],         // shuffled right labels sent by server
   orderItemOrder: [],      // current order of item indices on screen
+  orderItems: [],          // original item labels for order question
   currentJoinUrl: '',
   currentBoss: null,
   myRole: null,
@@ -698,10 +699,24 @@ function renderMultiChoice(q) {
   });
 }
 
-// ── Match / Connect (tap left slot → tap right chip to pair) ───────────
+// ═══════════════════════════════════════════════════════════
+//  Shared pointer-based drag-and-drop state
+// ═══════════════════════════════════════════════════════════
+let _drag = null;
+function _removeDragGhost() { document.getElementById('__dgh')?.remove(); }
+function _dropzoneAt(x, y) {
+  for (const el of document.elementsFromPoint(x, y)) {
+    if (el.dataset && el.dataset.dropzone !== undefined) return el;
+  }
+  return null;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Match / Connect — drag-and-drop
+// ═══════════════════════════════════════════════════════════
 function renderMatch(q) {
   state.matchConnections = new Array(q.lefts.length).fill(-1);
-  state.matchActiveLeft  = -1;
+  state.matchLefts       = q.lefts;
   state.matchRights      = q.rights;
 
   document.getElementById('player-match-container').style.display = 'block';
@@ -709,72 +724,104 @@ function renderMatch(q) {
   submit.style.display = 'block';
   submit.disabled      = true;
 
-  refreshMatchUI(q.lefts, q.rights);
+  buildMatchUI();
 }
 
-function refreshMatchUI(lefts, rights) {
-  const leftCol  = document.getElementById('match-left-col');
-  const rightPool = document.getElementById('match-right-pool');
-  const placed   = new Set(state.matchConnections.filter(v => v !== -1));
+function buildMatchUI() {
+  if (state.hasAnswered) return;
+  const lefts  = state.matchLefts;
+  const rights = state.matchRights;
+  const placed = new Set(state.matchConnections.filter(v => v !== -1));
+  const container = document.getElementById('player-match-container');
 
-  // Left slots
-  leftCol.innerHTML = lefts.map((l, i) => {
-    const ri      = state.matchConnections[i];
-    const filled  = ri !== -1;
-    const isActive = state.matchActiveLeft === i;
-    return `<div
-      class="match-left-item${filled ? ' match-filled ' + OPTION_COLORS[i] : ''}${isActive ? ' match-active-slot' : ''}"
-      data-left-idx="${i}">
-      <span class="match-left-label">${escapeHtml(l)}</span>
-      ${filled
-        ? `<span class="match-conn">${escapeHtml(rights[ri])}</span>`
-        : `<span class="match-placeholder">…</span>`
-      }
+  container.innerHTML = `
+    <div class="match-dnd-layout">
+      <div class="match-dnd-slots">
+        ${lefts.map((l, i) => {
+          const ri     = state.matchConnections[i];
+          const filled = ri !== -1;
+          const col    = OPTION_COLORS[i % OPTION_COLORS.length];
+          return `<div class="match-dnd-row">
+            <div class="match-dnd-label">${escapeHtml(l)}</div>
+            <div class="match-dropzone ${filled ? 'match-dz-filled ' + col : 'match-dz-empty'}" data-dropzone="${i}">
+              ${filled
+                ? `<span class="match-chip in-slot ${col}" data-chip-idx="${ri}" data-in-slot="${i}">${escapeHtml(rights[ri])}</span>`
+                : `<span class="match-drop-hint">drop here</span>`}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="match-dnd-pool">
+        <span class="match-pool-label">Drag to match</span>
+        ${rights.map((r, i) => {
+          if (placed.has(i)) return '';
+          return `<span class="match-chip in-pool opt-violet" data-chip-idx="${i}" data-in-slot="-1">${escapeHtml(r)}</span>`;
+        }).join('')}
+      </div>
     </div>`;
-  }).join('');
 
-  // Right chip pool (unplaced only)
-  rightPool.innerHTML = rights.map((r, i) => {
-    if (placed.has(i)) return '';
-    return `<div class="match-right-chip stagger-${(i % 4) + 1}" data-right-idx="${i}">${escapeHtml(r)}</div>`;
-  }).join('');
-
-  // Left slot click → select / unfit
-  leftCol.querySelectorAll('.match-left-item').forEach(el => {
-    el.addEventListener('click', () => {
-      if (state.hasAnswered || state.isFrozen) return;
-      const li = parseInt(el.dataset.leftIdx);
-      if (state.matchConnections[li] !== -1) {
-        // Remove existing connection
-        state.matchConnections[li] = -1;
-        state.matchActiveLeft = li;
-      } else {
-        state.matchActiveLeft = (state.matchActiveLeft === li) ? -1 : li;
-      }
-      checkMatchComplete();
-      refreshMatchUI(lefts, rights);
-    });
+  container.querySelectorAll('.match-chip').forEach(chip => {
+    chip.addEventListener('pointerdown', _matchChipPointerDown);
   });
+  checkMatchComplete();
+}
 
-  // Right chip click → attach to active / first-empty left slot
-  rightPool.querySelectorAll('.match-right-chip').forEach(el => {
-    el.addEventListener('click', () => {
-      if (state.hasAnswered || state.isFrozen) return;
-      Sounds.click();
-      const ri = parseInt(el.dataset.rightIdx);
-      let target = state.matchActiveLeft;
-      if (target === -1) {
-        target = state.matchConnections.indexOf(-1); // first empty
-      }
-      if (target !== -1) {
-        state.matchConnections[target] = ri;
-        // Advance to next empty slot
-        state.matchActiveLeft = state.matchConnections.indexOf(-1);
-      }
-      checkMatchComplete();
-      refreshMatchUI(lefts, rights);
-    });
-  });
+function _matchChipPointerDown(e) {
+  if (state.hasAnswered || state.isFrozen) return;
+  e.preventDefault();
+  const chip    = e.currentTarget;
+  const chipIdx  = parseInt(chip.dataset.chipIdx);
+  const fromSlot = parseInt(chip.dataset.inSlot);  // -1 = in pool
+  const rect     = chip.getBoundingClientRect();
+
+  const ghost = document.createElement('span');
+  ghost.id        = '__dgh';
+  ghost.className = 'match-chip match-drag-ghost';
+  ghost.textContent = chip.textContent;
+  ghost.style.cssText = `position:fixed;pointer-events:none;z-index:9999;
+    width:${rect.width}px;left:${rect.left}px;top:${rect.top}px;
+    opacity:0.9;transform:scale(1.1) rotate(-2deg);`;
+  document.body.appendChild(ghost);
+  chip.style.opacity = '0.2';
+
+  _drag = { type:'match', chipIdx, fromSlot, sourceEl:chip, ghost,
+            offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top };
+
+  document.addEventListener('pointermove', _matchDragMove);
+  document.addEventListener('pointerup',   _matchDragEnd, { once: true });
+}
+
+function _matchDragMove(e) {
+  if (!_drag || _drag.type !== 'match') return;
+  _drag.ghost.style.left = (e.clientX - _drag.offsetX) + 'px';
+  _drag.ghost.style.top  = (e.clientY - _drag.offsetY) + 'px';
+  document.querySelectorAll('.match-dropzone').forEach(dz => dz.classList.remove('match-dz-hover'));
+  const dz = _dropzoneAt(e.clientX, e.clientY);
+  if (dz) dz.classList.add('match-dz-hover');
+}
+
+function _matchDragEnd(e) {
+  document.removeEventListener('pointermove', _matchDragMove);
+  if (!_drag || _drag.type !== 'match') { _drag = null; return; }
+  _removeDragGhost();
+  document.querySelectorAll('.match-dropzone').forEach(dz => dz.classList.remove('match-dz-hover'));
+
+  const dz = _dropzoneAt(e.clientX, e.clientY);
+  if (dz) {
+    const toSlot  = parseInt(dz.dataset.dropzone);
+    const existed = state.matchConnections[toSlot];
+    state.matchConnections[toSlot] = _drag.chipIdx;
+    if (_drag.fromSlot !== -1) {
+      // Chip came from another slot — swap the displaced chip back
+      state.matchConnections[_drag.fromSlot] = (existed !== -1) ? existed : -1;
+    }
+    Sounds.click();
+  } else {
+    // Dropped outside any zone — return chip to pool
+    if (_drag.fromSlot !== -1) state.matchConnections[_drag.fromSlot] = -1;
+  }
+  _drag = null;
+  buildMatchUI();
 }
 
 function checkMatchComplete() {
@@ -782,53 +829,109 @@ function checkMatchComplete() {
   document.getElementById('btn-submit-answer').disabled = !allFilled;
 }
 
-// ── Order / Drag-to-Sort (↑↓ buttons to reorder) ──────────────────────
+// ═══════════════════════════════════════════════════════════
+//  Order / Sort — drag-and-drop
+// ═══════════════════════════════════════════════════════════
 function renderOrder(q) {
   state.orderItemOrder = q.items.map((_, i) => i);
+  state.orderItems     = q.items;
 
   document.getElementById('player-order-container').style.display = 'block';
   const submit = document.getElementById('btn-submit-answer');
   submit.style.display = 'block';
   submit.disabled      = false;
 
-  refreshOrderUI(q.items);
+  buildOrderUI();
 }
 
-function refreshOrderUI(items) {
-  const list = document.getElementById('order-list');
+function buildOrderUI() {
+  if (state.hasAnswered) return;
+  const items = state.orderItems;
+  const list  = document.getElementById('order-list');
   list.innerHTML = state.orderItemOrder.map((itemIdx, pos) =>
-    `<li class="order-item stagger-${Math.min(pos + 1, 4)}" data-pos="${pos}">
-      <button class="btn-order-move btn-order-up" data-pos="${pos}" ${pos === 0 ? 'disabled' : ''} aria-label="Move up">↑</button>
+    `<li class="order-item stagger-${Math.min(pos+1,4)}" data-pos="${pos}">
+      <span class="order-drag-handle" aria-hidden="true">⠿</span>
       <span class="order-label" dir="auto">${escapeHtml(items[itemIdx])}</span>
-      <button class="btn-order-move btn-order-dn" data-pos="${pos}" ${pos === state.orderItemOrder.length - 1 ? 'disabled' : ''} aria-label="Move down">↓</button>
     </li>`
   ).join('');
 
-  list.querySelectorAll('.btn-order-up').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (state.hasAnswered || state.isFrozen) return;
-      Sounds.click();
-      const pos = parseInt(btn.dataset.pos);
-      if (pos === 0) return;
-      [state.orderItemOrder[pos], state.orderItemOrder[pos - 1]] =
-        [state.orderItemOrder[pos - 1], state.orderItemOrder[pos]];
-      refreshOrderUI(items);
-    });
+  list.querySelectorAll('.order-item').forEach(item => {
+    item.addEventListener('pointerdown', _orderItemPointerDown);
   });
+}
 
-  list.querySelectorAll('.btn-order-dn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (state.hasAnswered || state.isFrozen) return;
-      Sounds.click();
-      const pos = parseInt(btn.dataset.pos);
-      if (pos === state.orderItemOrder.length - 1) return;
-      [state.orderItemOrder[pos], state.orderItemOrder[pos + 1]] =
-        [state.orderItemOrder[pos + 1], state.orderItemOrder[pos]];
-      refreshOrderUI(items);
-    });
-  });
+function _orderItemPointerDown(e) {
+  if (state.hasAnswered || state.isFrozen) return;
+  e.preventDefault();
+  const item    = e.currentTarget;
+  const fromPos = parseInt(item.dataset.pos);
+  const rect    = item.getBoundingClientRect();
+
+  const ghost = document.createElement('li');
+  ghost.id        = '__dgh';
+  ghost.className = 'order-item order-drag-ghost';
+  ghost.innerHTML = item.innerHTML;
+  ghost.style.cssText = `position:fixed;pointer-events:none;z-index:9999;
+    width:${rect.width}px;left:${rect.left}px;top:${rect.top}px;
+    opacity:0.9;transform:rotate(-1.5deg) scale(1.03);`;
+  document.body.appendChild(ghost);
+  item.classList.add('order-dragging-source');
+
+  // Drop indicator line
+  const ind = document.createElement('li');
+  ind.id        = '__ord_ind';
+  ind.className = 'order-insert-indicator';
+  document.getElementById('order-list').appendChild(ind);
+
+  _drag = { type:'order', fromPos, sourceEl:item, ghost,
+            offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top,
+            insertAt: fromPos };
+
+  document.addEventListener('pointermove', _orderDragMove);
+  document.addEventListener('pointerup',   _orderDragEnd, { once: true });
+}
+
+function _orderDragMove(e) {
+  if (!_drag || _drag.type !== 'order') return;
+  _drag.ghost.style.left = (e.clientX - _drag.offsetX) + 'px';
+  _drag.ghost.style.top  = (e.clientY - _drag.offsetY) + 'px';
+
+  const list  = document.getElementById('order-list');
+  const items = [...list.querySelectorAll('.order-item:not(.order-dragging-source)')];
+  const ind   = document.getElementById('__ord_ind');
+  if (!ind) return;
+
+  let insertAt = state.orderItemOrder.length;
+  for (const it of items) {
+    const r = it.getBoundingClientRect();
+    if (e.clientY < r.top + r.height / 2) {
+      insertAt = parseInt(it.dataset.pos);
+      break;
+    }
+  }
+  // Compensate for the removed source item
+  _drag.insertAt = insertAt;
+  const target = items.find(it => parseInt(it.dataset.pos) >= insertAt);
+  if (target) list.insertBefore(ind, target);
+  else        list.appendChild(ind);
+}
+
+function _orderDragEnd() {
+  document.removeEventListener('pointermove', _orderDragMove);
+  if (!_drag || _drag.type !== 'order') { _drag = null; return; }
+  const fromPos  = _drag.fromPos;
+  const insertAt = _drag.insertAt;
+  _removeDragGhost();
+  document.getElementById('__ord_ind')?.remove();
+  _drag = null;
+
+  const arr = [...state.orderItemOrder];
+  const [moved] = arr.splice(fromPos, 1);
+  const target  = Math.min(Math.max(insertAt > fromPos ? insertAt - 1 : insertAt, 0), arr.length);
+  arr.splice(target, 0, moved);
+  state.orderItemOrder = arr;
+  Sounds.click();
+  buildOrderUI();
 }
 
 // ─────────────────────────────────────────────
