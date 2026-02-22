@@ -235,65 +235,80 @@
   color: #e2e8f0 !important;
 }
 
-/* ── Mobile: top bar ──────────────────────── */
+/* ── Mobile: fixed top header ─────────────── */
 
 /* Hide mobile-only elements on desktop */
 .mobile-bar-controls { display: none; }
 .mobile-nav-drawer   { display: none; }
 
 @media (max-width: 768px) {
+  /* Single column; sidebar is taken out of flow via position:fixed */
   .admin-shell {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
+    display: block;
   }
 
   .tooryan-attribution-admin {
-    grid-column: 1;
+    grid-column: unset;
   }
 
+  /* ── Fixed top bar ── */
   .admin-sidebar {
-    height: auto;
-    position: sticky;
+    position: fixed;
     top: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    height: auto;
     z-index: 200;
-    flex-direction: column;
-    align-items: stretch;
-    padding: 0;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 14px;
+    min-height: 54px;
     border-right: none;
     border-bottom: 1px solid #1f2937;
     overflow: visible;
+    flex-wrap: wrap;
+    /* cancel desktop sticky/height */
+    max-height: none;
+    transition: none;
   }
 
-  .admin-sidebar h1 {
+  /* Hide collapse btn — irrelevant on mobile */
+  .sidebar-collapse-btn { display: none !important; }
+
+  /* Show brand in header row */
+  .sidebar-header {
+    flex: 1;
+    margin-bottom: 0;
+    min-width: 0;
+  }
+
+  .sidebar-brand {
     font-size: 14px;
-    margin: 0;
-    padding: 0;
+    opacity: 1 !important;
+    max-width: none !important;
+    width: auto !important;
   }
 
   /* Hide desktop nav + user section on mobile */
   .sidebar-nav-desktop { display: none !important; }
   .sidebar-user        { display: none !important; }
 
-  /* Top bar row: brand + controls */
-  .admin-sidebar > h1,
+  /* Push content below the fixed bar */
+  .admin-main {
+    padding-top: calc(54px + 16px);
+  }
+
+  /* mobile bar controls visible */
   .mobile-bar-controls {
     display: flex;
     align-items: center;
-  }
-
-  /* Reuse aside as a flex row for the top bar */
-  .admin-sidebar {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 14px;
-    min-height: 52px;
-    flex-wrap: wrap;
   }
 
   /* ── Burger button ── */
   .mobile-bar-controls {
-    display: flex;
+    display: flex !important;
     align-items: center;
     gap: 10px;
   }
