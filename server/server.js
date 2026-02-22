@@ -814,7 +814,7 @@ function shuffleArray(input) {
 function assignAsymmetricRoles(room) {
   const ids = shuffleArray(Array.from(room.players.keys()));
   const roles = {
-    scholarId: ids[0] || null,
+    scholarId: room.enableScholarRole ? (ids[0] || null) : null,
     shieldId: ids[1] || null,
     saboteurId: ids[2] || null,
   };
@@ -1253,6 +1253,7 @@ io.on('connection', (socket) => {
     room.questions = quizData.questions;
     room.challengePreset = quizData.challengePreset || 'classic';
     room.challengeSettings = quizData.challengeSettings || getPresetSettings('classic');
+    room.enableScholarRole = quizData.enableScholarRole === true; // disabled by default
     console.log(`[Room ${room.pin}] Loaded ${room.questions.length} questions from quiz data`);
 
     const roles = assignAsymmetricRoles(room);

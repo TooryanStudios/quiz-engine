@@ -43,6 +43,7 @@ export interface QuizDoc {
   priceTier?: 'free' | 'starter' | 'pro'
   challengePreset?: ChallengePreset
   challengeSettings?: ChallengeSettings
+  enableScholarRole?: boolean  // disabled by default; not exposed in editor UI
   tags: string[]
   questions: QuizQuestion[]
   createdAt?: unknown
