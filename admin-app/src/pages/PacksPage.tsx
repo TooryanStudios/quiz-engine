@@ -1,7 +1,7 @@
-﻿import { useEffect, useState } from 'react'
+﻿import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { auth } from '../lib/firebase'
-import { cloneQuiz, listPublicQuizzes } from '../lib/quizRepo'
+import { cloneQuiz, listPublicQuizzes, updateQuiz } from '../lib/quizRepo'
 import type { QuizDoc, QuizQuestion } from '../types/quiz'
 
 type QuizItem = QuizDoc & { id: string }
@@ -55,8 +55,11 @@ export function PacksPage() {
   const [error, setError] = useState('')
   const [cloningId, setCloningId] = useState<string | null>(null)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
+  const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [filter, setFilter] = useState<'all' | 'mine' | 'others'>('all')
   const [search, setSearch] = useState('')
+  const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     listPublicQuizzes()
@@ -64,6 +67,38 @@ export function PacksPage() {
       .catch(() => setError('Failed to load public quizzes.'))
       .finally(() => setLoading(false))
   }, [])
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpenId(null)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  async function handleVisibilityChange(quiz: QuizItem, newVis: 'public' | 'private') {
+    setMenuOpenId(null)
+    if (newVis === quiz.visibility) return
+    if (newVis === 'private') {
+      const ok = window.confirm(
+        `Make "${quiz.title}" private?\n\nIt will be removed from the Public Library and no one else can see it.`
+      )
+      if (!ok) return
+    }
+    setUpdatingId(quiz.id)
+    try {
+      await updateQuiz(quiz.id, { visibility: newVis })
+      // Quiz is now private → remove from the public list
+      setQuizzes((prev) => prev.filter((q) => q.id !== quiz.id))
+    } catch {
+      alert('Failed to update visibility. Please try again.')
+    } finally {
+      setUpdatingId(null)
+    }
+  }
 
   async function handleClone(quiz: QuizItem) {
     if (!currentUid) return
@@ -263,11 +298,67 @@ export function PacksPage() {
 
                 {/* Card body */}
                 <div style={{ padding: '1rem 1.1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem', flex: 1 }}>
-                  <div style={{
-                    fontSize: '1rem', fontWeight: 700, color: '#f1f5f9', lineHeight: 1.35,
-                    display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-                  }}>
-                    {q.title}
+                  {/* Title row */}
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.4rem' }}>
+                    <div style={{
+                      fontSize: '1rem', fontWeight: 700, color: '#f1f5f9', lineHeight: 1.35,
+                      display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                      flex: 1,
+                    }}>
+                      {q.title}
+                    </div>
+                    {/* Three-dot menu — only for owned quizzes */}
+                    {isOwner && (
+                      <div style={{ position: 'relative', flexShrink: 0 }} ref={menuOpenId === q.id ? menuRef : undefined}>
+                        <button
+                          title="More options"
+                          onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === q.id ? null : q.id) }}
+                          disabled={updatingId === q.id}
+                          style={{
+                            background: 'transparent', border: 'none', color: '#64748b',
+                            fontSize: '1.1rem', padding: '2px 6px', cursor: 'pointer',
+                            borderRadius: '6px', lineHeight: 1, transition: 'background 0.15s, color 0.15s',
+                            opacity: updatingId === q.id ? 0.4 : 1,
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = '#1e293b'; e.currentTarget.style.color = '#e2e8f0' }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#64748b' }}
+                        >
+                          {updatingId === q.id ? '…' : '⋯'}
+                        </button>
+                        {menuOpenId === q.id && (
+                          <div style={{
+                            position: 'absolute', top: '100%', right: 0, zIndex: 50,
+                            background: '#1e293b', border: '1px solid #334155',
+                            borderRadius: '10px', minWidth: '170px',
+                            boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                            overflow: 'hidden', marginTop: '4px',
+                          }}>
+                            <div style={{ padding: '6px 10px', fontSize: '0.65rem', color: '#64748b', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                              Visibility
+                            </div>
+                            {(['public', 'private'] as const).map((v) => (
+                              <button
+                                key={v}
+                                onClick={(e) => { e.stopPropagation(); handleVisibilityChange(q, v) }}
+                                style={{
+                                  width: '100%', display: 'flex', alignItems: 'center', gap: '0.5rem',
+                                  padding: '8px 14px', background: q.visibility === v ? '#0f172a' : 'transparent',
+                                  border: 'none', color: q.visibility === v ? '#f1f5f9' : '#94a3b8',
+                                  fontSize: '0.82rem', cursor: 'pointer', textAlign: 'left',
+                                  transition: 'background 0.15s',
+                                }}
+                                onMouseEnter={(e) => { if (q.visibility !== v) e.currentTarget.style.background = '#273549' }}
+                                onMouseLeave={(e) => { if (q.visibility !== v) e.currentTarget.style.background = 'transparent' }}
+                              >
+                                <span>{v === 'public' ? '🌐' : '🔒'}</span>
+                                <span style={{ flex: 1 }}>{v === 'public' ? 'Public' : 'Private'}</span>
+                                {q.visibility === v && <span style={{ fontSize: '0.7rem', color: '#2563eb' }}>✓</span>}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {q.description && (
