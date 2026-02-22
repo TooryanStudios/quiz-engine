@@ -15,8 +15,23 @@ body {
   color: #e2e8f0;
 }
 
+/* Mobile: ensure the viewport itself doesn't scroll — admin-main scrolls instead */
+@media (max-width: 768px) {
+  html, body {
+    height: 100%;
+    overflow: hidden;
+  }
+  #root {
+    height: 100%;
+  }
+}
+
 h2 {
   margin: 0 0 10px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 p {

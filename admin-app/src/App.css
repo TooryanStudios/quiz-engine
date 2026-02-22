@@ -242,13 +242,18 @@
 .mobile-nav-drawer   { display: none; }
 
 @media (max-width: 768px) {
-  /* Single column; sidebar is taken out of flow via position:fixed */
+  /* Single column; sidebar taken out of flow via position:fixed */
   .admin-shell {
-    display: block;
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    height: 100vh; /* fallback */
+    overflow: hidden;
+    padding-top: 54px; /* reserve space for the fixed header */
   }
 
   .tooryan-attribution-admin {
-    grid-column: unset;
+    display: none;
   }
 
   /* ── Fixed top bar ── */
@@ -295,9 +300,14 @@
   .sidebar-nav-desktop { display: none !important; }
   .sidebar-user        { display: none !important; }
 
-  /* Push content below the fixed bar */
+  /* Push content below the fixed bar — main becomes the scroll container */
   .admin-main {
-    padding-top: calc(54px + 16px);
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-top: 16px;
+    /* override desktop padding-top */
+    padding-bottom: 24px;
   }
 
   /* mobile bar controls visible */
