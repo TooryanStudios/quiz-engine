@@ -17,17 +17,17 @@ function getCoverImage(questions: QuizQuestion[]): string | null {
 
 function pickEmoji(tags: string[], title: string): string {
   const text = [...tags, title].join(' ').toLowerCase()
-  if (/(geo|Ø¬ØºØ±Ø§Ù|world|Ø¹Ø§Ù„Ù…|map|Ø®Ø±ÙŠØ·Ø©)/.test(text)) return 'ðŸ—ºï¸'
-  if (/(sport|Ø±ÙŠØ§Ø¶|ÙƒØ±Ø©|ball|Ø£ÙˆÙ„Ù…Ø¨)/.test(text)) return 'âš½'
-  if (/(science|Ø¹Ù„ÙˆÙ…|tech|ØªÙƒÙ†ÙˆÙ„|physics|chem)/.test(text)) return 'âš—ï¸'
-  if (/(history|ØªØ§Ø±ÙŠØ®|islam|Ø¥Ø³Ù„Ø§Ù…|arab|Ø¹Ø±Ø¨)/.test(text)) return 'ðŸ“œ'
-  if (/(nature|Ø·Ø¨ÙŠØ¹Ø©|animal|Ø­ÙŠÙˆØ§Ù†|plant|Ù†Ø¨Ø§Øª)/.test(text)) return 'ðŸŒ¿'
-  if (/(culture|Ø«Ù‚Ø§ÙØ©|art|ÙÙ†|music|Ù…ÙˆØ³ÙŠÙ‚|general|Ø¹Ø§Ù…)/.test(text)) return 'ðŸŽ¨'
-  if (/(math|Ø±ÙŠØ§Ø¶ÙŠØ§Øª|number|Ø¹Ø¯Ø¯)/.test(text)) return 'ðŸ”¢'
-  if (/(food|Ø·Ø¹Ø§Ù…|cook|Ø·Ø¨Ø®)/.test(text)) return 'ðŸ•'
-  if (/(movie|film|Ø³ÙŠÙ†Ù…Ø§|cinema)/.test(text)) return 'ðŸŽ¬'
-  if (/(music|Ù…ÙˆØ³ÙŠÙ‚Ù‰|song|Ø£ØºÙ†ÙŠØ©)/.test(text)) return 'ðŸŽµ'
-  return 'ðŸ§ '
+  if (/(geo|جغراف|world|عالم|map|خريطة)/.test(text)) return '🗺️'
+  if (/(sport|رياض|كرة|ball|أولمب)/.test(text)) return '⚽'
+  if (/(science|علوم|tech|تكنول|physics|chem)/.test(text)) return '⚗️'
+  if (/(history|تاريخ|islam|إسلام|arab|عرب)/.test(text)) return '📜'
+  if (/(nature|طبيعة|animal|حيوان|plant|نبات)/.test(text)) return '🌿'
+  if (/(culture|ثقافة|art|فن|music|موسيق|general|عام)/.test(text)) return '🎨'
+  if (/(math|رياضيات|number|عدد)/.test(text)) return '🔢'
+  if (/(food|طعام|cook|طبخ)/.test(text)) return '🍕'
+  if (/(movie|film|سينما|cinema)/.test(text)) return '🎬'
+  if (/(music|موسيقى|song|أغنية)/.test(text)) return '🎵'
+  return '🧠'
 }
 
 const GRADIENTS = [
@@ -139,13 +139,13 @@ export function PacksPage() {
         <div>
           <h2 style={{ margin: 0, fontSize: '1.6rem', fontWeight: 700, color: '#f1f5f9' }}>Public Quiz Library</h2>
           <p style={{ margin: '0.3rem 0 0', fontSize: '0.9rem', color: '#64748b' }}>
-            {loading ? 'â€¦' : `${visible.length} quiz${visible.length !== 1 ? 'zes' : ''} Â· Browse, preview or clone`}
+            {loading ? '…' : `${visible.length} quiz${visible.length !== 1 ? 'zes' : ''} · Browse, preview or clone`}
           </p>
         </div>
         {/* Filter + Search */}
         <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>
           <input
-            placeholder="Searchâ€¦"
+            placeholder="Search…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ width: '180px', padding: '8px 12px', fontSize: '0.85rem' }}
@@ -194,7 +194,7 @@ export function PacksPage() {
           textAlign: 'center', padding: '5rem 2rem',
           border: '2px dashed #1e293b', borderRadius: '20px', color: '#475569',
         }}>
-          <div style={{ fontSize: '3.5rem', marginBottom: '1rem' }}>ðŸ“­</div>
+          <div style={{ fontSize: '3.5rem', marginBottom: '1rem' }}>🔭</div>
           <h3 style={{ color: '#94a3b8', margin: '0 0 0.5rem' }}>No quizzes found</h3>
           <p style={{ margin: 0 }}>
             {quizzes.length === 0
@@ -292,7 +292,7 @@ export function PacksPage() {
                     padding: '3px 10px', borderRadius: '999px',
                     backdropFilter: 'blur(4px)',
                   }}>
-                    ðŸ“ {q.questions?.length ?? 0} questions
+                    📝 {q.questions?.length ?? 0} questions
                   </div>
                 </div>
 
@@ -395,7 +395,7 @@ export function PacksPage() {
                             onMouseEnter={(e) => { e.currentTarget.style.background = '#0e7490'; e.currentTarget.style.color = '#fff' }}
                             onMouseLeave={(e) => { e.currentTarget.style.background = '#1e293b'; e.currentTarget.style.color = '#94a3b8' }}
                           >
-                            ðŸ‘ï¸ Preview
+                            👁️ Preview
                           </button>
                         </Link>
                         <Link to={`/editor/${q.id}`} style={{ textDecoration: 'none', flex: 1 }}>
@@ -404,7 +404,7 @@ export function PacksPage() {
                             onMouseEnter={(e) => { e.currentTarget.style.background = 'linear-gradient(135deg, #2563eb, #7c3aed)' }}
                             onMouseLeave={(e) => { e.currentTarget.style.background = '#1e293b' }}
                           >
-                            âœï¸ Edit
+                            ✏️ Edit
                           </button>
                         </Link>
                         <button
@@ -414,7 +414,7 @@ export function PacksPage() {
                           onMouseEnter={(e) => { e.currentTarget.style.background = '#334155'; e.currentTarget.style.color = '#e2e8f0' }}
                           onMouseLeave={(e) => { e.currentTarget.style.background = '#1e293b'; e.currentTarget.style.color = '#94a3b8' }}
                         >
-                          ðŸ”—
+                          🔗
                         </button>
                       </>
                     ) : (
@@ -425,7 +425,7 @@ export function PacksPage() {
                             onMouseEnter={(e) => { e.currentTarget.style.background = '#0e7490'; e.currentTarget.style.color = '#fff' }}
                             onMouseLeave={(e) => { e.currentTarget.style.background = '#1e293b'; e.currentTarget.style.color = '#94a3b8' }}
                           >
-                            ðŸ‘ï¸ Preview
+                            👁️ Preview
                           </button>
                         </Link>
                         <button
@@ -435,7 +435,7 @@ export function PacksPage() {
                           onMouseEnter={(e) => { if (cloningId !== q.id) e.currentTarget.style.background = 'linear-gradient(135deg, #2563eb, #7c3aed)' }}
                           onMouseLeave={(e) => { e.currentTarget.style.background = '#1e293b' }}
                         >
-                          {cloningId === q.id ? 'Cloningâ€¦' : 'â‘‚ Clone'}
+                          {cloningId === q.id ? 'Cloning…' : '⎘ Clone'}
                         </button>
                       </>
                     )}
