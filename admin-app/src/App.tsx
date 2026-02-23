@@ -131,7 +131,7 @@ function App() {
                 </div>
               )}
 
-              <h1 className="sidebar-brand">Quiz Engine Admin</h1>
+              <h1 className="sidebar-brand">QYan Gaming</h1>
               <button
                 className="sidebar-collapse-btn"
                 onClick={() => setSidebarCollapsed((c) => !c)}

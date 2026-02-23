@@ -1,4 +1,4 @@
-# Quiz Engine Admin App
+# QYan Gaming Admin App
 
 Separate admin app to manage quizzes, packs, and subscription billing.
 
