@@ -1,6 +1,6 @@
 import { onAuthStateChanged, signOut } from 'firebase/auth'
 import type { User } from 'firebase/auth'
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import './App.css'
@@ -9,13 +9,13 @@ import { DialogProvider } from './lib/DialogContext'
 import { ToastProvider } from './lib/ToastContext'
 import { Dialog } from './components/Dialog'
 import logoImg from './assets/QYan_logo_300x164.jpg'
-import { BillingPage } from './pages/BillingPage'
-import { DashboardPage } from './pages/DashboardPage'
-import { LoginPage } from './pages/LoginPage'
-import { PacksPage } from './pages/PacksPage'
-import { ProfilePage } from './pages/ProfilePage'
-import { QuizEditorPage } from './pages/QuizEditorPage'
-import { QuizPreviewPage } from './pages/QuizPreviewPage'
+const BillingPage     = lazy(() => import('./pages/BillingPage').then(m => ({ default: m.BillingPage })))
+const DashboardPage   = lazy(() => import('./pages/DashboardPage').then(m => ({ default: m.DashboardPage })))
+const LoginPage       = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })))
+const PacksPage       = lazy(() => import('./pages/PacksPage').then(m => ({ default: m.PacksPage })))
+const ProfilePage     = lazy(() => import('./pages/ProfilePage').then(m => ({ default: m.ProfilePage })))
+const QuizEditorPage  = lazy(() => import('./pages/QuizEditorPage').then(m => ({ default: m.QuizEditorPage })))
+const QuizPreviewPage = lazy(() => import('./pages/QuizPreviewPage').then(m => ({ default: m.QuizPreviewPage })))
 
 const NAV = [
   { to: '/dashboard', icon: '🏠', label: 'Dashboard', end: true },
@@ -320,6 +320,12 @@ function App() {
             )}
           </aside>
           <main className="admin-main">
+            <Suspense fallback={
+              <div className="app-loading-screen">
+                <img src={logoImg} alt="QYan" className="app-loading-logo" />
+                <div className="app-loading-spinner" />
+              </div>
+            }>
             <Routes>
               <Route path="/" element={<Navigate to={user ? '/dashboard' : '/login'} replace />} />
               <Route path="/login" element={<LoginPage />} />
@@ -331,6 +337,7 @@ function App() {
               <Route path="/billing" element={<RequireAuth user={user}><BillingPage /></RequireAuth>} />
               <Route path="/profile" element={<RequireAuth user={user}><ProfilePage /></RequireAuth>} />
             </Routes>
+            </Suspense>
           </main>
           <div className="tooryan-attribution-admin" aria-label="Prototype attribution">
             <span>© Tooryan Studios — Prototype build</span>
