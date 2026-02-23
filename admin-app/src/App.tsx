@@ -8,6 +8,7 @@ import { auth } from './lib/firebase'
 import { DialogProvider } from './lib/DialogContext'
 import { ToastProvider } from './lib/ToastContext'
 import { Dialog } from './components/Dialog'
+import logoImg from './assets/QYan_logo_300x164.jpg'
 import { BillingPage } from './pages/BillingPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/LoginPage'
@@ -74,7 +75,12 @@ function App() {
   }, [])
 
   if (user === undefined) {
-    return <div style={{ padding: '2rem' }}>Loading...</div>
+    return (
+      <div className="app-loading-screen">
+        <img src={logoImg} alt="QYan" className="app-loading-logo" />
+        <div className="app-loading-spinner" />
+      </div>
+    )
   }
 
   return (
