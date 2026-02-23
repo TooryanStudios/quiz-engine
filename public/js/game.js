@@ -105,7 +105,7 @@ if (quizSlugFromUrl) {
   const el2 = document.getElementById('join-quiz-title-banner');
   const setText = (text) => {
     if (el)  { el.textContent = text; el.style.display = 'block'; }
-    if (el2) { el2.textContent = text; el2.style.display = 'block'; }
+    // intentionally not shown on player join screen
   };
   setText(`🆔 ${quizSlugFromUrl}`);
   fetch(`/api/quiz-info/${encodeURIComponent(quizSlugFromUrl)}`)
@@ -1963,10 +1963,12 @@ socket.on('room:closed', ({ message }) => {
 // to the player join view with PIN pre-filled.
 // If URL has ?quiz=... (from the host's share QR), skip home too —
 // the QR is only shared with players, so the host choice is irrelevant.
+// If URL has ?quiz=...&mode=host, skip home and go directly to host mode
 // ─────────────────────────────────────────────
 (function () {
   const params = new URLSearchParams(window.location.search);
   const pinFromUrl = params.get('pin');
+  const modeFromUrl = params.get('mode');
   const scanFallbackBanner = document.getElementById('scan-fallback-banner');
 
   if (scanFallbackBanner) {
@@ -1981,12 +1983,26 @@ socket.on('room:closed', ({ message }) => {
         `<strong>Scanned successfully.</strong><span>PIN <b>${escapeHtml(pinFromUrl)}</b> was filled automatically. If auto-join fails, tap Join Game manually.</span>`;
     }
     showView('view-player-join');
+  } else if (quizSlugFromUrl && modeFromUrl === 'host') {
+    // Clicked Play from admin — go directly to host mode
+    // Show a launching state on the home view while socket connects
+    const btnGroup = document.querySelector('#view-home .btn-group');
+    const subtitle = document.querySelector('#view-home .subtitle');
+    if (btnGroup) btnGroup.innerHTML = '<p style="color:#2dd4bf;font-size:1.1rem;font-weight:700;letter-spacing:1px;animation:pulse 1.2s infinite">⏳ Launching game…</p>';
+    if (subtitle) subtitle.textContent = 'Connecting to server, please wait…';
+    enableKeepAwake();
+    state.role = 'host';
+    const doHostCreate = () => socket.emit('host:create', { quizSlug: quizSlugFromUrl });
+    if (socket.connected) {
+      doHostCreate();
+    } else {
+      socket.once('connect', doHostCreate);
+    }
   } else if (quizSlugFromUrl) {
     // Came from a quiz QR code — host is already set up, go straight to player join
     state.role = 'player';
     if (scanFallbackBanner) {
-      scanFallbackBanner.innerHTML =
-        `<strong>Join as a player.</strong><span>Enter the Room PIN shown on the host screen, then your nickname.</span>`;
+      scanFallbackBanner.style.display = 'none';
     }
     showView('view-player-join');
   } else {

@@ -1,6 +1,7 @@
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -35,6 +36,10 @@ export async function createQuiz(payload: QuizDoc) {
     updatedAt: serverTimestamp(),
   })
   return docRef.id
+}
+
+export async function deleteQuiz(id: string) {
+  await deleteDoc(doc(db, 'quizzes', id))
 }
 
 export async function updateQuiz(id: string, payload: Partial<QuizDoc>) {
@@ -76,10 +81,16 @@ export async function cloneQuiz(source: QuizDoc & { id: string }, newOwnerId: st
     challengeSettings: source.challengeSettings,
     coverImage: source.coverImage,
     tags: [...(source.tags ?? [])],
-    questions: source.questions.map((q) => ({ ...q })),
+    questions: [...(source.questions ?? [])],
+    randomizeQuestions: source.randomizeQuestions,
+    enableScholarRole: source.enableScholarRole,
   }
+  // Strip undefined fields — Firestore rejects them
+  const clean = Object.fromEntries(
+    Object.entries(payload).filter(([, v]) => v !== undefined)
+  )
   const docRef = await addDoc(quizzesCol, {
-    ...payload,
+    ...clean,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })

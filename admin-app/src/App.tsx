@@ -12,6 +12,7 @@ import { BillingPage } from './pages/BillingPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/LoginPage'
 import { PacksPage } from './pages/PacksPage'
+import { ProfilePage } from './pages/ProfilePage'
 import { QuizEditorPage } from './pages/QuizEditorPage'
 import { QuizPreviewPage } from './pages/QuizPreviewPage'
 
@@ -82,6 +83,47 @@ function App() {
           <aside className="admin-sidebar">
             {/* Brand + collapse toggle */}
             <div className="sidebar-header">
+              {user && (
+                <div className="header-profile-mobile" ref={profileRef}>
+                  <button
+                    className="mobile-avatar-btn"
+                    onClick={() => { setProfileOpen((o) => !o); setBurgerOpen(false) }}
+                    aria-label="Profile menu"
+                    title="Profile"
+                  >
+                    {user.photoURL ? (
+                      <img src={user.photoURL} referrerPolicy="no-referrer" alt="" className="sidebar-user-avatar" />
+                    ) : (
+                      <div className="sidebar-user-avatar sidebar-user-initials" style={{ fontSize: '0.65rem' }}>
+                        {(user.displayName || user.email || '?').slice(0, 2).toUpperCase()}
+                      </div>
+                    )}
+                  </button>
+
+                  {profileOpen && (
+                    <div className="header-profile-dropdown">
+                      <button
+                        className="header-profile-action"
+                        onClick={() => {
+                          setProfileOpen(false)
+                          navigate('/profile')
+                        }}
+                        type="button"
+                      >
+                        👤 Visit Profile
+                      </button>
+                      <button
+                        className="header-profile-action danger"
+                        onClick={() => signOut(auth)}
+                        type="button"
+                      >
+                        🚪 Sign Out
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <h1 className="sidebar-brand">Quiz Engine Admin</h1>
               <button
                 className="sidebar-collapse-btn"
@@ -146,89 +188,127 @@ function App() {
             {/* ── Mobile top-bar controls ── */}
             {user && (
               <div className="mobile-bar-controls">
-                {/* Profile avatar → dropdown */}
-                <div className="mobile-profile-wrap" ref={profileRef}>
-                  <button
-                    className="mobile-avatar-btn"
-                    onClick={() => { setProfileOpen((o) => !o); setBurgerOpen(false) }}
-                    aria-label="Profile menu"
-                  >
-                    {user.photoURL ? (
-                      <img src={user.photoURL} referrerPolicy="no-referrer" alt="" className="sidebar-user-avatar" />
-                    ) : (
-                      <div className="sidebar-user-avatar sidebar-user-initials" style={{ fontSize: '0.65rem' }}>
-                        {(user.displayName || user.email || '?').slice(0, 2).toUpperCase()}
-                      </div>
-                    )}
-                  </button>
-                  {profileOpen && (
-                    <div className="mobile-profile-dropdown">
-                      <div className="mobile-profile-header">
-                        {user.photoURL ? (
-                          <img src={user.photoURL} referrerPolicy="no-referrer" alt="" style={{ width: 36, height: 36, borderRadius: '50%' }} />
-                        ) : (
-                          <div className="sidebar-user-avatar sidebar-user-initials" style={{ width: 36, height: 36, fontSize: '0.75rem' }}>
-                            {(user.displayName || user.email || '?').slice(0, 2).toUpperCase()}
-                          </div>
-                        )}
-                        <div>
-                          <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-bright)' }}>
-                            {user.displayName || user.email?.split('@')[0]}
-                          </div>
-                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{user.email}</div>
-                        </div>
-                      </div>
-                      <div className="mobile-theme-row">
-                        <span>Theme</span>
-                        <div className="theme-pill">
-                          <button
-                            className={`theme-pill-btn${theme === 'dark' ? ' active' : ''}`}
-                            onClick={() => setTheme('dark')}
-                            title="Dark theme"
-                          >🌙</button>
-                          <button
-                            className={`theme-pill-btn${theme === 'light' ? ' active' : ''}`}
-                            onClick={() => setTheme('light')}
-                            title="Light theme"
-                          >☀️</button>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => signOut(auth)}
-                        className="mobile-profile-signout"
-                      >
-                        Sign Out
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Burger button */}
+                {/* Burger button only */}
                 <button
                   className="burger-btn"
                   onClick={() => { setBurgerOpen((o) => !o); setProfileOpen(false) }}
                   aria-label="Toggle menu"
+                  title="Menu"
                 >
                   <span className={`burger-line ${burgerOpen ? 'open-top' : ''}`} />
                   <span className={`burger-line ${burgerOpen ? 'open-mid' : ''}`} />
                   <span className={`burger-line ${burgerOpen ? 'open-bot' : ''}`} />
                 </button>
+
+                {/* Overlay to close drawer on tap */}
+                {burgerOpen && (
+                  <div
+                    className="mobile-drawer-overlay"
+                    onClick={() => setBurgerOpen(false)}
+                    aria-label="Close menu"
+                  />
+                )}
               </div>
             )}
 
             {/* Mobile nav drawer */}
             {user && (
               <nav className={`mobile-nav-drawer ${burgerOpen ? 'drawer-open' : ''}`}>
-                {NAV.map(({ to, icon, label, end }) => (
-                  <NavLink
-                    key={to}
-                    to={to}
-                    end={end}
-                    className={({ isActive }) => isActive ? 'active' : ''}
+                {/* Navigation links */}
+                <div style={{ flex: 1, overflowY: 'auto' }}>
+                  {NAV.map(({ to, icon, label, end }) => (
+                    <NavLink
+                      key={to}
+                      to={to}
+                      end={end}
+                      className={({ isActive }) => isActive ? 'active' : ''}
+                    >
+                      <span style={{ marginRight: '0.6rem' }}>{icon}</span>
+                      {label}
+                    </NavLink>
+                  ))}
+                </div>
+
+                {/* Divider */}
+                <div style={{ height: '1px', background: 'var(--border)', margin: '0.5rem 0' }}></div>
+
+                {/* Profile section in drawer */}
+                <div style={{ padding: '12px 0' }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.75rem',
+                    padding: '12px 20px',
+                    marginBottom: '0.5rem',
+                  }}>
+                    {user.photoURL ? (
+                      <img src={user.photoURL} referrerPolicy="no-referrer" alt="" style={{ width: 32, height: 32, borderRadius: '50%' }} />
+                    ) : (
+                      <div className="sidebar-user-avatar sidebar-user-initials" style={{ width: 32, height: 32, fontSize: '0.7rem' }}>
+                        {(user.displayName || user.email || '?').slice(0, 2).toUpperCase()}
+                      </div>
+                    )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text)' }}>
+                        {user.displayName || user.email?.split('@')[0]}
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {user.email}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '10px 20px',
+                    fontSize: '0.85rem',
+                    color: 'var(--text-dim)',
+                    marginBottom: '0.5rem',
+                  }}>
+                    <span>Theme</span>
+                    <div className="theme-pill">
+                      <button
+                        className={`theme-pill-btn${theme === 'dark' ? ' active' : ''}`}
+                        onClick={() => setTheme('dark')}
+                        title="Dark theme"
+                      >🌙</button>
+                      <button
+                        className={`theme-pill-btn${theme === 'light' ? ' active' : ''}`}
+                        onClick={() => setTheme('light')}
+                        title="Light theme"
+                      >☀️</button>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => signOut(auth)}
+                    style={{
+                      width: 'calc(100% - 40px)',
+                      margin: '0 20px',
+                      background: 'transparent',
+                      border: '1px solid var(--border-mid)',
+                      color: '#f87171',
+                      fontSize: '0.85rem',
+                      fontWeight: 600,
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      transition: 'background 0.15s, border-color 0.15s',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'var(--bg-deep)';
+                      e.currentTarget.style.borderColor = 'var(--border-strong)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'transparent';
+                      e.currentTarget.style.borderColor = 'var(--border-mid)';
+                    }}
                   >
-                    {icon} {label}
-                  </NavLink>
-                ))}
+                    Sign Out
+                  </button>
+                </div>
               </nav>
             )}
           </aside>
@@ -242,6 +322,7 @@ function App() {
               <Route path="/preview/:id" element={<RequireAuth user={user}><QuizPreviewPage /></RequireAuth>} />
               <Route path="/packs" element={<RequireAuth user={user}><PacksPage /></RequireAuth>} />
               <Route path="/billing" element={<RequireAuth user={user}><BillingPage /></RequireAuth>} />
+              <Route path="/profile" element={<RequireAuth user={user}><ProfilePage /></RequireAuth>} />
             </Routes>
           </main>
           <div className="tooryan-attribution-admin" aria-label="Prototype attribution">

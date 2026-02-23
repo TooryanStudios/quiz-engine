@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
-  <title>Quiz Engine</title>
+  <title>QYan</title>
   <link rel="stylesheet" href="/css/style.css" />
   <!-- Prevent browser zoom (Ctrl+scroll, Ctrl+±, pinch) -->
   <script>
@@ -20,9 +20,9 @@
        VIEW: Home — Choose Host or Player
   ═══════════════════════════════════════════ -->
   <div id="view-home" class="view active">
-    <img class="home-hero-logo" src="/images/TooryanLogo.png" alt="Tooryan Studios" />
+    <img class="home-hero-logo" src="/images/QYan_logo_300x164.jpg" alt="QYan" />
     <div class="card center-card">
-      <h1 class="logo">⚡ QuizEngine</h1>
+      <h1 class="logo">⚡ QYan</h1>
       <p class="subtitle">Real-time multiplayer quiz</p>
       <p id="quiz-title-banner" style="display:none; font-size:1.1rem; font-weight:600; color:#60a5fa; margin:0.25rem 0 0.75rem; text-align:center;"></p>
       <div class="btn-group vertical">
@@ -41,6 +41,8 @@
   <div id="view-player-join" class="view">
     <div class="card center-card">
       <button class="btn-back" id="btn-back-from-join">← Back</button>
+      <img class="studio-logo" src="/images/QYan_logo_300x164.jpg" alt="QYan logo" style="margin-bottom:0.1rem;" />
+      <span style="font-size:0.75rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);opacity:0.7;margin-bottom:0.5rem;">QYan 2026</span>
       <h2>Join a Game</h2>
       <p id="join-quiz-title-banner" style="display:none; font-size:1rem; font-weight:600; color:#60a5fa; margin:0 0 0.75rem; text-align:center;"></p>
       <div id="scan-fallback-banner" class="scan-fallback" style="display:none">
@@ -63,22 +65,19 @@
         </div>
         <div class="field">
           <label for="input-nickname">Your Nickname</label>
-          <input
-            id="input-nickname"
-            type="text"
-            maxlength="20"
-            placeholder="e.g. SuperQuizzer"
-            autocomplete="off"
-            required
-          />
-        </div>
-        <div class="field">
-          <label>Avatar</label>
-          <button type="button" id="join-avatar-btn" class="avatar-trigger-btn">
-            <span class="avatar-trigger-icon" id="join-avatar-display">🎮</span>
-            <span class="avatar-trigger-label">Choose Avatar</span>
-            <span class="avatar-trigger-arrow">›</span>
-          </button>
+          <div class="nickname-avatar-row">
+            <input
+              id="input-nickname"
+              type="text"
+              maxlength="20"
+              placeholder="e.g. SuperQuizzer"
+              autocomplete="off"
+              required
+            />
+            <button type="button" id="join-avatar-btn" class="avatar-trigger-btn avatar-trigger-inline">
+              <span class="avatar-trigger-icon" id="join-avatar-display">🎮</span>
+            </button>
+          </div>
         </div>
         <p class="error-msg" id="join-error"></p>
         <button type="submit" class="btn btn-primary full-width">Join Game</button>
@@ -91,19 +90,29 @@
   ═══════════════════════════════════════════ -->
   <div id="view-host-lobby" class="view">
     <div class="card lobby-card">
-      <img class="studio-logo" src="/images/TooryanLogo.png" alt="Tooryan Studios logo" />
-      <button class="btn-back" id="btn-back-from-host-lobby">← Back</button>
-
-      <!-- Connection Mode Toggle -->
-      <div class="mode-toggle">
-        <div class="mode-header">
+      <div class="lobby-header">
+        <!-- Mode icons — top-left corner -->
+        <div class="lobby-mode-corner">
           <span class="mode-indicator" id="mode-indicator">🌐 Global</span>
           <span class="mode-warning" id="mode-warning" style="display:none"></span>
+          <button class="btn-mode-icon" id="btn-mode-local" title="Local LAN">📶</button>
+          <button class="btn-mode-icon" id="btn-mode-global" title="Global Web">🌐</button>
         </div>
-        <div class="mode-buttons">
-          <button class="btn btn-mode" id="btn-mode-local">📶 Local LAN</button>
-          <button class="btn btn-mode" id="btn-mode-global">🌐 Global Web</button>
+        <!-- Logo — centered -->
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+          <img class="studio-logo" src="/images/QYan_logo_300x164.jpg" alt="QYan logo" />
+          <span style="font-size:0.75rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);opacity:0.7;">QYan 2026</span>
         </div>
+        <!-- Home — top-right corner -->
+        <button class="btn-back-top-right" id="btn-back-from-host-lobby" title="Back to home">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M10.707 2.293a1 1 0 0 0-1.414 0l-7 7A1 1 0 0 0 3 11h1v6a1 1 0 0 0 1 1h4v-4h2v4h4a1 1 0 0 0 1-1v-6h1a1 1 0 0 0 .707-1.707l-7-7z"/></svg>
+        </button>
+      </div>
+
+      <!-- Hidden mode URL + copy (functional, not shown in UI) -->
+      <div class="mode-toggle" style="display:none">
+        <div class="mode-header"></div>
+        <div class="mode-buttons"></div>
         <p class="mode-url" id="host-join-url">—</p>
         <button class="btn btn-secondary full-width" id="btn-copy-join-url">📋 Copy Join URL</button>
       </div>
@@ -111,8 +120,6 @@
       <div class="pin-display">
         <span class="pin-label">Room PIN</span>
         <span class="pin-code" id="host-pin">------</span>
-        <span class="pin-hint">Share this PIN with players</span>
-        <span class="difficulty-label" id="host-lobby-difficulty">🟡 Difficulty: Classic</span>
       </div>
       <!-- QR Code for players to scan -->
       <div class="qr-section">
@@ -122,15 +129,17 @@
         </div>
       </div>
 
+      <button class="btn btn-success full-width" id="btn-start-game" disabled>
+        🚀 Start Game
+      </button>
+      <p class="hint-text" id="lobby-hint">Need at least 1 player to start</p>
+
       <div class="player-list-section">
-        <h3>Players (<span id="host-player-count">0</span>)</h3>
+        <h3>Players Joined (<span id="host-player-count">0</span>)</h3>
         <ul class="player-list" id="host-player-list"></ul>
         <p class="hint-text" id="kick-hint" style="display:none">Tap a player to kick them</p>
+        <p class="player-waiting-msg" id="player-waiting-msg">Waiting for players to join...</p>
       </div>
-      <button class="btn btn-success full-width" id="btn-start-game" disabled>
-        Start Game
-      </button>
-      <p class="hint-text" id="lobby-hint">Waiting for at least 1 player…</p>
     </div>
   </div>
 
@@ -139,7 +148,7 @@
   ═══════════════════════════════════════════ -->
   <div id="view-player-lobby" class="view">
     <div class="card lobby-card">
-      <img class="studio-logo" src="/images/TooryanLogo.png" alt="Tooryan Studios logo" />
+      <img class="studio-logo" src="/images/QYan_logo_300x164.jpg" alt="QYan logo" />
       <div class="pin-display">
         <span class="pin-label">Room PIN</span>
         <span class="pin-code" id="player-room-pin">------</span>
@@ -201,7 +210,7 @@
       </div>
       <div id="host-boss-panel" class="boss-panel" style="display:none">
         <div class="boss-row">
-          <span class="boss-name" id="host-boss-name">Tooryan Boss</span>
+          <span class="boss-name" id="host-boss-name">QYan Boss</span>
           <span class="boss-hp" id="host-boss-hp">100 / 100</span>
         </div>
         <div class="boss-bar"><div class="boss-bar-fill" id="host-boss-bar-fill"></div></div>
@@ -240,7 +249,7 @@
 
       <div id="player-boss-panel" class="boss-panel" style="display:none">
         <div class="boss-row">
-          <span class="boss-name" id="player-boss-name">Tooryan Boss</span>
+          <span class="boss-name" id="player-boss-name">QYan Boss</span>
           <span class="boss-hp" id="player-boss-hp">100 / 100</span>
         </div>
         <div class="boss-bar"><div class="boss-bar-fill" id="player-boss-bar-fill"></div></div>
@@ -420,8 +429,8 @@
     </div>
   </div>
 
-  <div class="tooryan-attribution" aria-label="Prototype attribution">
-    <span>© Tooryan Studios — Prototype build</span>
+  <div class="qyan-attribution" aria-label="QYan attribution">
+    <span>© QYan — Prototype build</span>
   </div>
 
   <!-- ─── Scripts ─── -->
@@ -429,6 +438,6 @@
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
   <!-- Load Socket.io client from the server (auto-served by socket.io) -->
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/js/game.js"></script>
+  <script src="/js/game.js?v=4"></script>
 </body>
 </html>

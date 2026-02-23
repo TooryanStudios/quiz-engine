@@ -1,6 +1,6 @@
 /**
  * seed-quizzes.js
- * Creates 6 Arabic quizzes (20 questions each) in Firestore.
+ * Creates 7 Arabic quizzes (6 × 20 questions + 1 × 25 kids questions) in Firestore.
  *
  * Usage:
  *   node scripts/seed-quizzes.js --owner <FIREBASE_USER_UID>

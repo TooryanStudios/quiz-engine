@@ -1,5 +1,5 @@
 :root {
-  font-family: Inter, Segoe UI, system-ui, sans-serif;
+  font-family: 'Cairo', 'Segoe UI', Tahoma, system-ui, sans-serif;
 
   /* ── Dark theme (default) ── */
   --bg-page:        #020617;
@@ -40,12 +40,37 @@
   box-sizing: border-box;
 }
 
+html {
+  font-size: 90%;
+}
+
 body {
   margin: 0;
   min-width: 320px;
   background: var(--bg-page);
   color: var(--text);
+  font-family: inherit;
+  text-align: start;
   transition: background 0.2s ease, color 0.2s ease;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  text-align: start;
+}
+
+input,
+textarea {
+  unicode-bidi: plaintext;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 0.58;
 }
 
 /* Mobile: ensure the viewport itself doesn't scroll — admin-main scrolls instead */

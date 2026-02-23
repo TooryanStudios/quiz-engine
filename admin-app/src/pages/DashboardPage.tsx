@@ -1,10 +1,17 @@
-import { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { auth } from '../lib/firebase'
 import { listMyQuizzes, updateQuiz } from '../lib/quizRepo'
 import type { QuizDoc, QuizQuestion } from '../types/quiz'
+import { useTheme } from '../lib/useTheme'
+import placeholderImg from '../assets/QYan_logo_300x164.jpg'
 
 type QuizItem = QuizDoc & { id: string }
+
+const IS_LOCAL_DEV = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
+const SERVER_BASE = IS_LOCAL_DEV
+  ? (import.meta.env.VITE_LOCAL_GAME_URL || 'http://localhost:3001')
+  : (import.meta.env.VITE_API_BASE_URL || 'https://quizengine.onrender.com')
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -62,7 +69,10 @@ export function DashboardPage() {
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
   const [updatingId, setUpdatingId] = useState<string | null>(null)
+  const [visibleCount, setVisibleCount] = useState(6)
   const menuRef = useRef<HTMLDivElement>(null)
+  const appTheme = useTheme()
+  const dark = appTheme === 'dark'
 
   useEffect(() => {
     const uid = auth.currentUser?.uid
@@ -303,7 +313,7 @@ export function DashboardPage() {
             <div key={i} style={{
               height: '190px',
               borderRadius: '12px',
-              background: 'linear-gradient(90deg, #1e293b 25%, #273549 50%, #1e293b 75%)',
+              background: dark ? 'linear-gradient(90deg, #1e293b 25%, #273549 50%, #1e293b 75%)' : 'linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%)',
               backgroundSize: '200% 100%',
               animation: 'shimmer 1.5s infinite',
             }} />
@@ -316,9 +326,9 @@ export function DashboardPage() {
         <div style={{
           textAlign: 'center',
           padding: '5rem 2rem',
-          border: '2px dashed #1e293b',
+          border: `2px dashed ${dark ? '#1e293b' : '#cbd5e1'}`,
           borderRadius: '20px',
-          color: '#475569',
+          color: 'var(--text-mid)',
         }}>
           <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>📋</div>
           <h3 style={{ color: '#94a3b8', margin: '0 0 0.5rem' }}>لا توجد اختبارات بعد</h3>
@@ -333,289 +343,276 @@ export function DashboardPage() {
 
       {/* ── Card grid ── */}
       {!loading && quizzes.length > 0 && (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-          gap: '1rem',
-        }}>
-          {quizzes.map((q) => {
+        <>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+            gap: '1rem',
+          }}>
+            {quizzes.slice(0, visibleCount).map((q) => {
             const coverImg = getCoverImage(q.questions ?? [])
             const emoji = pickEmoji(q.tags ?? [], q.title)
-            const gradient = pickGradient(q.title)
             const badge = presetBadge(q.challengePreset)
             const isHovered = hoveredId === q.id
+
+            const aBtnStyle: React.CSSProperties = {
+              width: '100%', padding: '0.38rem 0.5rem', borderRadius: '7px',
+              background: dark ? '#1e293b' : '#f1f5f9',
+              color: dark ? '#94a3b8' : '#475569',
+              fontSize: '0.75rem', fontWeight: 600,
+              border: `1px solid ${dark ? '#273549' : '#e2e8f0'}`,
+              cursor: 'pointer', transition: 'background 0.15s, color 0.15s',
+            }
+            const aBtnPrimary: React.CSSProperties = {
+              ...aBtnStyle,
+              background: dark ? '#1e3a5f' : '#dbeafe',
+              color: dark ? '#93c5fd' : '#1d4ed8',
+              border: `1px solid ${dark ? '#1e4a7a' : '#bfdbfe'}`,
+            }
+
             return (
               <div
                 key={q.id}
                 onMouseEnter={() => setHoveredId(q.id)}
-                onMouseLeave={() => setHoveredId(null)}
+                onMouseLeave={() => { setHoveredId(null); setMenuOpenId(null) }}
                 style={{
-                  borderRadius: '16px',
-                  overflow: 'hidden',
-                  background: '#0f172a',
-                  border: '1px solid #1e293b',
-                  boxShadow: isHovered
-                    ? '0 20px 50px rgba(0,0,0,0.6), 0 0 0 1px rgba(99,102,241,0.4)'
-                    : '0 4px 20px rgba(0,0,0,0.4)',
-                  transform: isHovered ? 'translateY(-4px) scale(1.01)' : 'translateY(0) scale(1)',
-                  transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                  borderRadius: '14px',
+                  background: dark ? '#0f172a' : '#ffffff',
+                  border: `1px solid ${isHovered ? (dark ? '#334155' : '#cbd5e1') : (dark ? '#1e293b' : '#e2e8f0')}`,
+                  boxShadow: isHovered ? (dark ? '0 12px 32px rgba(0,0,0,0.5)' : '0 8px 24px rgba(0,0,0,0.1)') : (dark ? '0 2px 8px rgba(0,0,0,0.3)' : '0 1px 4px rgba(0,0,0,0.06)'),
+                  transform: isHovered ? 'translateY(-3px)' : 'translateY(0)',
+                  transition: 'transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease',
                   display: 'flex',
                   flexDirection: 'column',
                   cursor: 'pointer',
+                  position: 'relative',
                 }}
               >
                 {/* Cover image / gradient hero */}
                 <div style={{
-                  height: '100px',
+                  height: '120px',
                   position: 'relative',
                   overflow: 'hidden',
-                  background: coverImg ? '#000' : gradient,
+                  background: coverImg ? '#000' : '#0f172a',
+                  flexShrink: 0,
+                  borderRadius: '13px 13px 0 0',
                 }}>
-                  {coverImg ? (
-                    <img
-                      src={coverImg}
-                      alt={q.title}
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover',
-                        opacity: 0.75,
-                        transition: 'opacity 0.3s, transform 0.3s',
-                        transform: isHovered ? 'scale(1.06)' : 'scale(1)',
-                      }}
-                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
-                    />
-                  ) : (
+                  <img
+                    src={coverImg || placeholderImg}
+                    alt={q.title}
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).onerror = null }}
+                    style={{
+                      width: '100%', height: '100%',
+                      objectFit: coverImg ? 'cover' : 'contain',
+                      opacity: isHovered ? 0.95 : coverImg ? 0.75 : 0.85,
+                      transition: 'opacity 0.3s, transform 0.4s',
+                      transform: isHovered ? 'scale(1.05)' : 'scale(1)',
+                      padding: coverImg ? 0 : '16px',
+                    }}
+                  />
+                  {/* Centered play button overlay */}
+                  <a
+                    href={`${SERVER_BASE}/?quiz=${encodeURIComponent(q.id)}&mode=host`}
+                    target="_blank" rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      position: 'absolute',
+                      top: '50%', left: '50%',
+                      transform: isHovered ? 'translate(-50%, -50%) scale(1)' : 'translate(-50%, -50%) scale(0.8)',
+                      opacity: isHovered ? 1 : 0,
+                      transition: 'opacity 0.2s, transform 0.2s',
+                      padding: '0.4rem 1rem',
+                      borderRadius: '10px',
+                      whiteSpace: 'nowrap',
+                      background: 'rgba(22,163,74,0.9)', backdropFilter: 'blur(4px)',
+                      border: '2px solid rgba(255,255,255,0.5)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem',
+                      color: '#fff', fontSize: '0.82rem', fontWeight: 700,
+                      textDecoration: 'none', zIndex: 5,
+                      boxShadow: '0 4px 14px rgba(0,0,0,0.5)',
+                    }}
+                  >
+                    &#9654; Play
+                  </a>
+                  {/* Subtle bottom fade */}
+                  <div style={{
+                    position: 'absolute', inset: 0,
+                    background: dark
+                      ? 'linear-gradient(to top, rgba(15,23,42,0.9) 0%, transparent 60%)'
+                      : 'linear-gradient(to top, rgba(255,255,255,0.85) 0%, transparent 55%)',
+                    pointerEvents: 'none',
+                  }} />
+                  {/* Owner avatar */}
+                  {(() => {
+                    const photoURL = auth.currentUser?.photoURL ?? null
+                    const displayName = auth.currentUser?.displayName ?? auth.currentUser?.email ?? q.ownerId
+                    const initials = displayName.slice(0, 2).toUpperCase()
+                    const hue = q.ownerId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360
+                    const avBg = `hsl(${hue}, 55%, 40%)`
+                    return photoURL ? (
+                      <img src={photoURL} alt="owner" style={{
+                        position: 'absolute', top: '6px', left: '6px',
+                        width: '28px', height: '28px', borderRadius: '50%',
+                        objectFit: 'cover', border: '2px solid rgba(255,255,255,0.4)',
+                        boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
+                      }} />
+                    ) : (
+                      <div style={{
+                        position: 'absolute', top: '6px', left: '6px',
+                        width: '28px', height: '28px', borderRadius: '50%',
+                        background: avBg, display: 'flex', alignItems: 'center',
+                        justifyContent: 'center', fontSize: '0.6rem', fontWeight: 700, color: '#fff',
+                        border: '2px solid rgba(255,255,255,0.25)',
+                        boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
+                      }}>
+                        {initials}
+                      </div>
+                    )
+                  })()}
+                  {/* Preset badge — shown on hover only */}
+                  {badge.label !== 'Custom' && (
                     <div style={{
-                      width: '100%',
-                      height: '100%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '2.8rem',
-                      opacity: 0.6,
-                      transition: 'transform 0.3s',
-                      transform: isHovered ? 'scale(1.15)' : 'scale(1)',
+                      position: 'absolute', top: '6px', right: '6px',
+                      background: badge.color, color: '#fff',
+                      fontSize: '0.62rem', fontWeight: 700,
+                      padding: '2px 7px', borderRadius: '999px',
+                      opacity: isHovered ? 1 : 0.6,
+                      transition: 'opacity 0.2s',
                     }}>
-                      {emoji}
+                      {badge.label}
                     </div>
                   )}
-                  {/* Dark gradient overlay */}
-                  <div style={{
-                    position: 'absolute',
-                    inset: 0,
-                    background: 'linear-gradient(to top, rgba(15,23,42,1) 0%, rgba(15,23,42,0.3) 60%, transparent 100%)',
-                  }} />
-                  {/* Preset badge */}
-                  <div style={{
-                    position: 'absolute',
-                    top: '10px',
-                    right: '10px',
-                    background: badge.color,
-                    color: '#fff',
-                    fontSize: '0.7rem',
-                    fontWeight: 700,
-                    padding: '3px 10px',
-                    borderRadius: '999px',
-                    letterSpacing: '0.03em',
-                    backdropFilter: 'blur(4px)',
-                  }}>
-                    {badge.label}
-                  </div>
-                  {/* Visibility badge */}
-                  <div style={{
-                    position: 'absolute',
-                    top: '10px',
-                    left: '10px',
-                    background: 'rgba(0,0,0,0.55)',
-                    color: q.visibility === 'public' ? '#86efac' : '#fca5a5',
-                    fontSize: '0.7rem',
-                    fontWeight: 600,
-                    padding: '3px 10px',
-                    borderRadius: '999px',
-                    backdropFilter: 'blur(4px)',
-                    border: `1px solid ${q.visibility === 'public' ? '#16a34a44' : '#dc262644'}`,
-                  }}>
-                    {q.visibility === 'public' ? '🌐 عام' : '🔒 خاص'}
-                  </div>
-                  {/* Question count bubble */}
-                  <div style={{
-                    position: 'absolute',
-                    bottom: '10px',
-                    left: '10px',
-                    background: 'rgba(0,0,0,0.6)',
-                    color: '#e2e8f0',
-                    fontSize: '0.72rem',
-                    fontWeight: 600,
-                    padding: '3px 10px',
-                    borderRadius: '999px',
-                    backdropFilter: 'blur(4px)',
-                  }}>
-                    📝 {q.questions?.length ?? 0} سؤال
-                  </div>
                 </div>
 
-                {/* Card body */}
-                <div style={{ padding: '0.65rem 0.85rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1 }}>
-                  {/* Title row with three-dot menu */}
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.4rem' }}>
-                    <div style={{
-                      fontSize: '0.875rem',
-                      fontWeight: 700,
-                      color: '#f1f5f9',
-                      lineHeight: 1.35,
-                      display: '-webkit-box',
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: 'vertical',
-                      overflow: 'hidden',
-                      flex: 1,
-                    }}>
-                      {q.title}
-                    </div>
-                    {/* Three-dot menu */}
-                    <div style={{ position: 'relative', flexShrink: 0 }} ref={menuOpenId === q.id ? menuRef : undefined}>
+                {/* Three-dot menu — card-level to avoid hero clip */}
+                {badge.label === 'Custom' && (
+                  <div
+                    style={{ position: 'absolute', top: '6px', right: '6px', zIndex: 10 }}
+                    ref={menuOpenId === q.id ? menuRef : undefined}
+                  >
+                    <div style={{ opacity: isHovered ? 1 : 0, transition: 'opacity 0.15s' }}>
                       <button
                         title="More options"
                         onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === q.id ? null : q.id) }}
                         disabled={updatingId === q.id}
                         style={{
-                          background: 'transparent', border: 'none', color: '#64748b',
-                          fontSize: '1.1rem', padding: '2px 6px', cursor: 'pointer',
-                          borderRadius: '6px', lineHeight: 1, transition: 'background 0.15s, color 0.15s',
+                          background: dark ? 'rgba(15,23,42,0.8)' : 'rgba(255,255,255,0.88)', backdropFilter: 'blur(6px)',
+                          border: `1px solid ${dark ? '#334155' : '#cbd5e1'}`, color: dark ? '#94a3b8' : '#475569',
+                          fontSize: '0.85rem', padding: '3px 7px', cursor: 'pointer',
+                          borderRadius: '6px', lineHeight: 1,
                           opacity: updatingId === q.id ? 0.4 : 1,
                         }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = '#1e293b'; e.currentTarget.style.color = '#e2e8f0' }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#64748b' }}
                       >
                         {updatingId === q.id ? '…' : '⋯'}
                       </button>
-                      {menuOpenId === q.id && (
-                        <div style={{
-                          position: 'absolute', top: '100%', right: 0, zIndex: 50,
-                          background: '#1e293b', border: '1px solid #334155',
-                          borderRadius: '10px', minWidth: '170px',
-                          boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-                          overflow: 'hidden', marginTop: '4px',
-                        }}>
-                          <div style={{ padding: '6px 10px', fontSize: '0.65rem', color: '#64748b', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                            Visibility
-                          </div>
-                          {(['public', 'private'] as const).map((v) => (
-                            <button
-                              key={v}
-                              onClick={(e) => { e.stopPropagation(); handleVisibilityChange(q, v) }}
-                              style={{
-                                width: '100%', display: 'flex', alignItems: 'center', gap: '0.5rem',
-                                padding: '8px 14px', background: q.visibility === v ? '#0f172a' : 'transparent',
-                                border: 'none', color: q.visibility === v ? '#f1f5f9' : '#94a3b8',
-                                fontSize: '0.82rem', cursor: 'pointer', textAlign: 'left',
-                                transition: 'background 0.15s',
-                              }}
-                              onMouseEnter={(e) => { if (q.visibility !== v) e.currentTarget.style.background = '#273549' }}
-                              onMouseLeave={(e) => { if (q.visibility !== v) e.currentTarget.style.background = 'transparent' }}
-                            >
-                              <span>{v === 'public' ? '🌐' : '🔒'}</span>
-                              <span style={{ flex: 1 }}>{v === 'public' ? 'Public' : 'Private'}</span>
-                              {q.visibility === v && <span style={{ fontSize: '0.7rem', color: '#2563eb' }}>✓</span>}
-                            </button>
-                          ))}
+                    </div>
+                    {menuOpenId === q.id && (
+                      <div style={{
+                        position: 'absolute', top: '100%', right: 0, zIndex: 50,
+                        background: dark ? '#1e293b' : '#ffffff',
+                        border: `1px solid ${dark ? '#334155' : '#e2e8f0'}`,
+                        borderRadius: '10px', minWidth: '160px',
+                        boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                        overflow: 'hidden', marginTop: '4px',
+                      }}>
+                        <div style={{ padding: '6px 10px', fontSize: '0.62rem', color: dark ? '#64748b' : '#94a3b8', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                          Visibility
                         </div>
-                      )}
-                    </div>
+                        {(['public', 'private'] as const).map((v) => (
+                          <button
+                            key={v}
+                            onClick={(e) => { e.stopPropagation(); handleVisibilityChange(q, v) }}
+                            style={{
+                              width: '100%', display: 'flex', alignItems: 'center', gap: '0.5rem',
+                              padding: '8px 12px', background: q.visibility === v ? (dark ? '#0f172a' : '#f1f5f9') : 'transparent',
+                              border: 'none', color: q.visibility === v ? (dark ? '#f1f5f9' : '#0f172a') : (dark ? '#94a3b8' : '#64748b'),
+                              fontSize: '0.8rem', cursor: 'pointer', textAlign: 'left',
+                              transition: 'background 0.15s',
+                            }}
+                            onMouseEnter={(e) => { if (q.visibility !== v) e.currentTarget.style.background = dark ? '#273549' : '#f8fafc' }}
+                            onMouseLeave={(e) => { if (q.visibility !== v) e.currentTarget.style.background = 'transparent' }}
+                          >
+                            <span>{v === 'public' ? '🌐' : '🔒'}</span>
+                            <span style={{ flex: 1 }}>{v === 'public' ? 'عام' : 'خاص'}</span>
+                            {q.visibility === v && <span style={{ fontSize: '0.7rem', color: '#2563eb' }}>✓</span>}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
+                )}
 
-                  {/* Tags */}
-                  {(q.tags ?? []).length > 0 && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                      {(q.tags ?? []).slice(0, 3).map((tag) => (
-                        <span key={tag} style={{
-                          fontSize: '0.68rem',
-                          background: '#1e293b',
-                          color: '#94a3b8',
-                          padding: '2px 8px',
-                          borderRadius: '999px',
-                          border: '1px solid #334155',
-                        }}>
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Spacer */}
-                  <div style={{ flex: 1 }} />
-
-                  {/* Actions */}
-                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-                    <Link to={`/preview/${q.id}`} style={{ textDecoration: 'none', flex: 1 }}>
-                      <button
-                        style={{
-                          width: '100%',
-                          padding: '0.45rem',
-                          borderRadius: '8px',
-                          background: '#1e293b',
-                          color: '#94a3b8',
-                          fontSize: '0.78rem',
-                          fontWeight: 600,
-                          border: 'none',
-                          cursor: 'pointer',
-                          transition: 'background 0.2s, color 0.2s',
-                        }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = '#0e7490'; e.currentTarget.style.color = '#fff' }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = '#1e293b'; e.currentTarget.style.color = '#94a3b8' }}
-                      >
-                        👁️ معاينة
-                      </button>
-                    </Link>
-                    <Link to={`/editor/${q.id}`} style={{ textDecoration: 'none', flex: 1 }}>
-                      <button
-                        style={{
-                          width: '100%',
-                          padding: '0.45rem',
-                          borderRadius: '8px',
-                          background: '#1e293b',
-                          color: '#fff',
-                          fontSize: '0.78rem',
-                          fontWeight: 600,
-                          border: 'none',
-                          cursor: 'pointer',
-                          transition: 'background 0.2s',
-                        }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = 'linear-gradient(135deg, #2563eb, #7c3aed)' }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = '#1e293b' }}
-                      >
-                        ✏️ تعديل
-                      </button>
-                    </Link>
-                    <button
-                      title="نسخ رابط الاختبار"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        navigator.clipboard?.writeText(`https://quizengine.onrender.com/?quiz=${encodeURIComponent(q.id)}`)
-                          .then(() => alert('تم نسخ الرابط!'))
-                      }}
-                      style={{
-                        padding: '0.45rem 0.65rem',
-                        borderRadius: '8px',
-                        background: '#1e293b',
-                        color: '#94a3b8',
-                        fontSize: '0.78rem',
-                        border: 'none',
-                        cursor: 'pointer',
-                        transition: 'background 0.2s, color 0.2s',
-                        flexShrink: 0,
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = '#334155'; e.currentTarget.style.color = '#e2e8f0' }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = '#1e293b'; e.currentTarget.style.color = '#94a3b8' }}
-                    >
-                      🔗
-                    </button>
+                {/* Card body — title + count only */}
+                <div style={{ padding: '0.65rem 0.8rem 0.5rem' }}>
+                  <div style={{
+                    fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-bright)', lineHeight: 1.4,
+                    display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                    marginBottom: '0.25rem',
+                  }}>
+                    {q.title}
                   </div>
+                  <div style={{ fontSize: '0.72rem', color: '#475569', fontWeight: 500 }}>
+                    {q.questions?.length ?? 0} سؤال
+                  </div>
+                </div>
+
+                {/* Hover action bar */}
+                <div style={{
+                  display: 'flex', gap: '0.4rem',
+                  padding: '0 0.7rem 0.7rem',
+                  opacity: isHovered ? 1 : 0,
+                  transform: isHovered ? 'translateY(0)' : 'translateY(4px)',
+                  transition: 'opacity 0.18s ease, transform 0.18s ease',
+                  pointerEvents: isHovered ? 'auto' : 'none',
+                }}>
+                  <Link to={`/preview/${q.id}`} style={{ textDecoration: 'none', flex: 1 }}>
+                    <button style={aBtnStyle}
+                      onMouseEnter={(e) => Object.assign(e.currentTarget.style, { background: dark ? '#273549' : '#e2e8f0', color: dark ? '#e2e8f0' : '#0f172a' })}
+                      onMouseLeave={(e) => Object.assign(e.currentTarget.style, { background: dark ? '#1e293b' : '#f1f5f9', color: dark ? '#94a3b8' : '#475569' })}
+                    >معاينة</button>
+                  </Link>
+                  <Link to={`/editor/${q.id}`} style={{ textDecoration: 'none', flex: 1 }}>
+                    <button style={aBtnPrimary}
+                      onMouseEnter={(e) => Object.assign(e.currentTarget.style, { background: '#1d4ed8', color: '#fff', borderColor: '#2563eb' })}
+                    onMouseLeave={(e) => Object.assign(e.currentTarget.style, { background: dark ? '#1e3a5f' : '#dbeafe', color: dark ? '#93c5fd' : '#1d4ed8', borderColor: dark ? '#1e4a7a' : '#bfdbfe' })}
+                    >تعديل</button>
+                  </Link>
+                  <button
+                    title="نسخ رابط الاختبار"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      navigator.clipboard?.writeText(`${SERVER_BASE}/?quiz=${encodeURIComponent(q.id)}`)
+                        .then(() => alert('تم نسخ الرابط!'))
+                    }}
+                    style={{ ...aBtnStyle, width: 'auto', flex: 'none', padding: '0.38rem 0.55rem' }}
+                    onMouseEnter={(e) => Object.assign(e.currentTarget.style, { background: dark ? '#273549' : '#e2e8f0', color: dark ? '#e2e8f0' : '#0f172a' })}
+                    onMouseLeave={(e) => Object.assign(e.currentTarget.style, { background: dark ? '#1e293b' : '#f1f5f9', color: dark ? '#94a3b8' : '#475569' })}
+                  >🔗</button>
                 </div>
               </div>
             )
           })}
-        </div>
+          </div>
+          {visibleCount < quizzes.length && (
+            <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
+              <button
+                onClick={() => setVisibleCount((c) => c + 6)}
+                style={{
+                  padding: '0.65rem 2.25rem', borderRadius: '10px', fontSize: '0.875rem', fontWeight: 700,
+                  background: 'linear-gradient(135deg, #2563eb, #7c3aed)',
+                  color: '#fff',
+                  border: 'none',
+                  cursor: 'pointer', transition: 'opacity 0.15s, transform 0.15s',
+                  boxShadow: '0 4px 14px rgba(37,99,235,0.4)',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.85'; e.currentTarget.style.transform = 'translateY(-1px)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(0)' }}
+              >
+                Load more · {Math.min(6, quizzes.length - visibleCount)} more
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       <style>{`

@@ -1,11 +1,11 @@
-# Quiz Engine
+# QYan
 
-Real-time multiplayer quiz engine with host/player views, QR join, and multiple question types.
+Real-time multiplayer quiz platform with host/player views, QR join, and multiple question types.
 
 ## Local vs Global Mode
 
 The host lobby includes a toggle:
-- **Global**: QR points to `https://quizengine.onrender.com`
+- **Global**: QR points to `https://qyan.onrender.com`
 - **Local**: QR points to `http://<YOUR_LOCAL_IP>:<PORT>`
 
 The server automatically detects your LAN IPv4 address. If detection fails (no Wi-Fi or firewall blocks it), the app defaults to Global mode and shows a warning.
@@ -27,9 +27,9 @@ If `en0` is not your Wi-Fi interface, use `ifconfig` or `ip a` to find the activ
 ## Remote Quiz Data Source
 
 The server fetches quiz data from the internet before each game start.
-- Default URL: `https://quizengine.onrender.com/api/quiz-data`
+- Default URL: `https://qyan.onrender.com/api/quiz-data`
 - Override with env var: `QUIZ_DATA_URL=https://your-domain/quiz.json`
-- Optional shareable slug via host URL: `https://quizengine.onrender.com/?quiz=animals-pack-quiz-1`
+- Optional shareable slug via host URL: `https://qyan.onrender.com/?quiz=animals-pack-quiz-1`
 
 If a `quiz` slug is present, the host sends it to the server and the server requests remote data with `?slug=<quiz>`.
 

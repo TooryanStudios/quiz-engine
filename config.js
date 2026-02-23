@@ -1,5 +1,5 @@
 /**
- * Centralized configuration for the Quiz Engine.
+ * Centralized configuration for QYan.
  * Change DOMAIN here when moving to a new server or subdomain.
  */
 module.exports = {
@@ -7,11 +7,11 @@ module.exports = {
 
   // The public-facing domain for this service.
   // Update this when moving from PoC to production.
-  DOMAIN: process.env.DOMAIN || 'quizengine.onrender.com',
+  DOMAIN: process.env.DOMAIN || 'qyan.onrender.com',
 
   // CORS: allow connections from these origins
   CORS_ORIGINS: [
-    'https://quizengine.onrender.com',
+    'https://qyan.onrender.com',
     'https://tailorjoin.khuyoot.app',
     'http://localhost:3001',
     'http://127.0.0.1:3001',
