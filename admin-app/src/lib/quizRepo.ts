@@ -6,6 +6,7 @@ import {
   getDoc,
   getDocs,
   limit,
+  onSnapshot,
   orderBy,
   query,
   serverTimestamp,
@@ -21,6 +22,17 @@ export async function listMyQuizzes(ownerId: string) {
   const q = query(quizzesCol, where('ownerId', '==', ownerId), limit(50))
   const snap = await getDocs(q)
   return snap.docs.map((d) => ({ id: d.id, ...(d.data() as QuizDoc) }))
+}
+
+export function subscribeMyQuizzes(
+  ownerId: string,
+  onData: (quizzes: ({ id: string } & QuizDoc)[]) => void,
+  onError?: (e: Error) => void
+) {
+  const q = query(quizzesCol, where('ownerId', '==', ownerId), limit(50))
+  return onSnapshot(q, (snap) => {
+    onData(snap.docs.map((d) => ({ id: d.id, ...(d.data() as QuizDoc) })))
+  }, onError)
 }
 
 export async function getQuizById(id: string) {

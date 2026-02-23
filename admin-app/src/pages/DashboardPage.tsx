@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { auth } from '../lib/firebase'
-import { listMyQuizzes, updateQuiz } from '../lib/quizRepo'
+import { subscribeMyQuizzes, updateQuiz } from '../lib/quizRepo'
 import type { QuizDoc, QuizQuestion } from '../types/quiz'
 import { useTheme } from '../lib/useTheme'
 import placeholderImg from '../assets/QYan_logo_300x164.jpg'
@@ -63,10 +63,12 @@ export function DashboardPage() {
   useEffect(() => {
     const uid = auth.currentUser?.uid
     if (!uid) { setLoading(false); return }
-    listMyQuizzes(uid)
-      .then((list) => setQuizzes(list as QuizItem[]))
-      .catch(console.error)
-      .finally(() => setLoading(false))
+    const unsub = subscribeMyQuizzes(
+      uid,
+      (list) => { setQuizzes(list as QuizItem[]); setLoading(false) },
+      (err) => { console.error(err); setLoading(false) }
+    )
+    return unsub
   }, [])
 
   // Close menu when clicking outside
