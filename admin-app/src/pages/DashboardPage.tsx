@@ -40,20 +40,6 @@ function pickEmoji(tags: string[], title: string): string {
 }
 
 /** Pick a gradient by hashing the quiz title */
-const GRADIENTS = [
-  'linear-gradient(135deg, #1a1a6e 0%, #0f4c75 100%)',
-  'linear-gradient(135deg, #0d2137 0%, #1b4332 100%)',
-  'linear-gradient(135deg, #2d0036 0%, #6b21a8 100%)',
-  'linear-gradient(135deg, #1c0b00 0%, #9a3412 100%)',
-  'linear-gradient(135deg, #0a0a0a 0%, #1e3a5f 100%)',
-  'linear-gradient(135deg, #0b3d0b 0%, #065f46 100%)',
-]
-function pickGradient(title: string): string {
-  let hash = 0
-  for (let i = 0; i < title.length; i++) hash = (hash * 31 + title.charCodeAt(i)) | 0
-  return GRADIENTS[Math.abs(hash) % GRADIENTS.length]
-}
-
 /** Preset → label + colour */
 function presetBadge(preset?: string) {
   if (preset === 'easy') return { label: 'سهل', color: '#16a34a' }
@@ -351,7 +337,6 @@ export function DashboardPage() {
           }}>
             {quizzes.slice(0, visibleCount).map((q) => {
             const coverImg = getCoverImage(q.questions ?? [])
-            const emoji = pickEmoji(q.tags ?? [], q.title)
             const badge = presetBadge(q.challengePreset)
             const isHovered = hoveredId === q.id
 

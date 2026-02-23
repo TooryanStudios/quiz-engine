@@ -211,7 +211,7 @@ export function QuizEditorPage() {
 
   // AI Feature States
   const [aiAction, setAiAction] = useState<'generate' | 'recheck' | null>(null)
-  const [aiGenerating, setAiGenerating] = useState(false)
+
   const [aiPrompt, setAiPrompt] = useState('')
   const [isNarrowScreen, setIsNarrowScreen] = useState(window.innerWidth < 768)
   
@@ -1905,7 +1905,7 @@ export function QuizEditorPage() {
                         textAlign: 'center'
                       }}
                     />
-                    <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'var(--border-strong)', display: 'flex', alignItems: 'center', justifyCenter: 'center', fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 'bold' }}>⇄</div>
+                    <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'var(--border-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 'bold' }}>⇄</div>
                     <input
                       value={pair.right}
                       onChange={(e) => {

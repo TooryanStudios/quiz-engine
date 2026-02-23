@@ -23,34 +23,7 @@ function getCoverImage(questions: QuizQuestion[]): string | null {
   return null
 }
 
-function pickEmoji(tags: string[], title: string): string {
-  const text = [...tags, title].join(' ').toLowerCase()
-  if (/(geo|جغراف|world|عالم|map|خريطة)/.test(text)) return '🗺️'
-  if (/(sport|رياض|كرة|ball|أولمب)/.test(text)) return '⚽'
-  if (/(science|علوم|tech|تكنول|physics|chem)/.test(text)) return '⚗️'
-  if (/(history|تاريخ|islam|إسلام|arab|عرب)/.test(text)) return '📜'
-  if (/(nature|طبيعة|animal|حيوان|plant|نبات)/.test(text)) return '🌿'
-  if (/(culture|ثقافة|art|فن|music|موسيق|general|عام)/.test(text)) return '🎨'
-  if (/(math|رياضيات|number|عدد)/.test(text)) return '🔢'
-  if (/(food|طعام|cook|طبخ)/.test(text)) return '🍕'
-  if (/(movie|film|سينما|cinema)/.test(text)) return '🎬'
-  if (/(music|موسيقى|song|أغنية)/.test(text)) return '🎵'
-  return '🧠'
-}
 
-const GRADIENTS = [
-  'linear-gradient(135deg, #1a1a6e 0%, #0f4c75 100%)',
-  'linear-gradient(135deg, #0d2137 0%, #1b4332 100%)',
-  'linear-gradient(135deg, #2d0036 0%, #6b21a8 100%)',
-  'linear-gradient(135deg, #1c0b00 0%, #9a3412 100%)',
-  'linear-gradient(135deg, #0a0a0a 0%, #1e3a5f 100%)',
-  'linear-gradient(135deg, #0b3d0b 0%, #065f46 100%)',
-]
-function pickGradient(title: string): string {
-  let hash = 0
-  for (let i = 0; i < title.length; i++) hash = (hash * 31 + title.charCodeAt(i)) | 0
-  return GRADIENTS[Math.abs(hash) % GRADIENTS.length]
-}
 
 // â”€â”€ component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -223,7 +196,6 @@ export function PacksPage() {
             {shownQuizzes.map((q) => {
             const isOwner = q.ownerId === currentUid
             const coverImg = q.coverImage || getCoverImage(q.questions ?? [])
-            const emoji = pickEmoji(q.tags ?? [], q.title)
             const isHovered = hoveredId === q.id
 
             return (
