@@ -835,24 +835,21 @@ button:disabled {
 }
 
 .login-logo {
-  width: 90px;
+  width: 140px;
   height: auto;
-  border-radius: 12px;
-  margin-bottom: 16px;
+  border-radius: 16px;
+  margin-bottom: 24px;
 }
 
 .login-title {
-  font-size: 1.5rem;
+  font-size: 1.8rem;
   font-weight: 800;
   margin: 0;
   color: var(--text-bright);
 }
 
 .login-subtitle {
-  font-size: 0.875rem;
-  color: var(--text-muted);
-  font-weight: 500;
-  margin-top: 4px;
+  display: none;
 }
 
 .login-divider {
@@ -901,9 +898,10 @@ button:disabled {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  padding: 12px 20px !important;
-  font-weight: 600 !important;
-  font-size: 1rem !important;
+  padding: 18px 20px !important;
+  font-weight: 700 !important;
+  font-size: 1.1rem !important;
+  border-radius: 12px !important;
   transition: all 0.2s !important;
   box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }

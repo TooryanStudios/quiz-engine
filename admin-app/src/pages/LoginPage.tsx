@@ -27,8 +27,7 @@ export function LoginPage() {
       <div className="login-card">
         <div className="login-brand">
           <img src={logoImg} alt="QYan Logo" className="login-logo" />
-          <h1 className="login-title">Quiz Engine</h1>
-          <p className="login-subtitle">Admin Dashboard</p>
+          <h1 className="login-title">QYan Gaming</h1>
         </div>
 
         <div className="login-divider"></div>
