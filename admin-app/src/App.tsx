@@ -37,7 +37,8 @@ function App() {
   const [profileOpen, setProfileOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
   const [theme, setTheme] = useState<'dark' | 'light'>(
-    () => (localStorage.getItem('quizAdminTheme') as 'dark' | 'light') || 'dark'
+    () => (localStorage.getItem('quizAdminTheme') as 'dark' | 'light') ||
+          (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
   )
 
   // Apply theme to document body

@@ -337,6 +337,19 @@ function applyModeInfo(data) {
   }
   state.currentJoinUrl = joinUrl || '';
   if (qrWrap) qrWrap.innerHTML = qrSvg || '';
+
+  // Populate share URL bar
+  const shareInput = document.getElementById('share-url-input');
+  if (shareInput && joinUrl) {
+    shareInput.value = joinUrl;
+    const msg = encodeURIComponent(`Join my quiz game! 🎮 Click here to play: ${joinUrl}`);
+    const wa = document.getElementById('share-whatsapp');
+    const tg = document.getElementById('share-telegram');
+    const tw = document.getElementById('share-twitter');
+    if (wa) wa.href = `https://wa.me/?text=${msg}`;
+    if (tg) tg.href = `https://t.me/share/url?url=${encodeURIComponent(joinUrl)}&text=${encodeURIComponent('Join my quiz game! 🎮')}`;
+    if (tw) tw.href = `https://x.com/intent/tweet?text=${msg}`;
+  }
 }
 
 function setConnectionStatus(kind, message) {
@@ -1350,7 +1363,7 @@ document.getElementById('btn-back-from-host-lobby').addEventListener('click', ()
   showView('view-home');
 });
 
-// Host Lobby — Mode toggle
+// Host Lobby — mode toggle
 document.getElementById('btn-mode-local').addEventListener('click', () => {
   Sounds.click();
   socket.emit('host:mode:set', { mode: 'local' });
@@ -1359,6 +1372,25 @@ document.getElementById('btn-mode-local').addEventListener('click', () => {
 document.getElementById('btn-mode-global').addEventListener('click', () => {
   Sounds.click();
   socket.emit('host:mode:set', { mode: 'global' });
+});
+
+// Host Lobby — Share copy button
+document.getElementById('btn-share-copy').addEventListener('click', async () => {
+  const url = state.currentJoinUrl;
+  if (!url) return;
+  Sounds.click();
+  const btn = document.getElementById('btn-share-copy');
+  try {
+    await navigator.clipboard.writeText(url);
+    btn.textContent = '✓ Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.innerHTML = '<svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z"/><path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z"/></svg> Copy';
+      btn.classList.remove('copied');
+    }, 2000);
+  } catch {
+    prompt('Copy this link:', url);
+  }
 });
 
 // Host Start Game

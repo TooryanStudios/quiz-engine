@@ -677,6 +677,11 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
     grid-row: 3;
   }
   
+  .share-url-section {
+    grid-column: 1 / -1;
+    grid-row: 4;
+  }
+  
   .qr-wrapper svg,
   .qr-wrapper canvas {
     width: 280px;
@@ -685,17 +690,17 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   
   #btn-start-game {
     grid-column: 1 / -1;
-    grid-row: 4;
+    grid-row: 5;
   }
   
   .hint-text {
     grid-column: 1 / -1;
-    grid-row: 5;
+    grid-row: 6;
   }
 
   .player-list-section {
     grid-column: 1 / -1;
-    grid-row: 6;
+    grid-row: 7;
   }
 }
 
@@ -761,6 +766,98 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   height: 220px;
   border-radius: 8px;
 }
+
+/* ═══════════════════════════════════════════
+   Share URL Bar
+═══════════════════════════════════════════ */
+.share-url-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.share-url-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  margin: 0;
+  text-align: center;
+}
+
+.share-url-row {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.share-url-input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  font-size: 0.78rem;
+  background: var(--bg);
+  border: 1px solid var(--surface-2);
+  border-radius: 8px;
+  color: var(--text-dim);
+  cursor: text;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-copy-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 14px;
+  background: var(--surface-2);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.share-copy-btn:hover {
+  background: rgba(99,102,241,0.25);
+}
+
+.share-copy-btn.copied {
+  background: rgba(45,212,191,0.2);
+  color: #2dd4bf;
+}
+
+.share-social-row {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+
+.share-social-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: opacity 0.15s, transform 0.15s;
+  flex: 1;
+  justify-content: center;
+}
+
+.share-social-btn:hover { opacity: 0.85; transform: translateY(-1px); }
+
+.share-wa  { background: #25d366; color: #fff; }
+.share-tg  { background: #229ed9; color: #fff; }
+.share-tw  { background: #000; color: #fff; border: 1px solid #333; }
 
 /* ═══════════════════════════════════════════
    Player List
