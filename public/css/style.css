@@ -835,22 +835,23 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
 
 .share-social-row {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   justify-content: center;
 }
 
 .share-social-btn {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 6px 12px;
+  gap: 6px;
+  padding: 7px 16px;
   border-radius: 8px;
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   font-weight: 700;
   text-decoration: none;
   transition: opacity 0.15s, transform 0.15s;
-  flex: 1;
+  flex: 0 0 auto;
   justify-content: center;
+  white-space: nowrap;
 }
 
 .share-social-btn:hover { opacity: 0.85; transform: translateY(-1px); }
