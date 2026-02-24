@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
   <title>QYan</title>
-  <link rel="stylesheet" href="/css/style.css?v=47" />
+  <link rel="stylesheet" href="/css/style.css?v=48" />
   <!-- Prevent browser zoom (Ctrl+scroll, Ctrl+±, pinch) -->
   <script>
     document.addEventListener('wheel', function(e){ if(e.ctrlKey){ e.preventDefault(); } }, { passive: false });
@@ -544,11 +544,20 @@
     <span>© QYan — Prototype build</span>
   </div>
 
+  <div id="diag-panel" class="diag-panel" role="status" aria-live="polite">
+    <div class="diag-title">Diagnose</div>
+    <div class="diag-row"><span>View</span><strong id="diag-view">-</strong></div>
+    <div class="diag-row"><span>Role</span><strong id="diag-role">-</strong></div>
+    <div class="diag-row"><span>Socket</span><strong id="diag-socket">-</strong></div>
+    <div class="diag-row"><span>Event</span><strong id="diag-event">-</strong></div>
+    <div class="diag-row"><span>Error</span><strong id="diag-error">none</strong></div>
+  </div>
+
   <!-- ─── Scripts ─── -->
   <!-- Confetti for game over celebration -->
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
   <!-- Load Socket.io client from the server (auto-served by socket.io) -->
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/js/game.js?v=47"></script>
+  <script src="/js/game.js?v=48"></script>
 </body>
 </html>

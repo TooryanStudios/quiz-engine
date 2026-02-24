@@ -288,6 +288,32 @@ function rerenderHostPlayerStage() {
 let scholarPreviewInterval = null;
 let frozenTimeout = null;
 
+const diagnoseState = {
+  view: '-',
+  role: '-',
+  socket: 'connecting',
+  event: 'boot',
+  error: 'none',
+};
+
+function setDiagnoseField(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
+}
+
+function updateDiagnose(partial = {}) {
+  Object.assign(diagnoseState, partial);
+  setDiagnoseField('diag-view', diagnoseState.view || '-');
+  setDiagnoseField('diag-role', diagnoseState.role || state.role || '-');
+  setDiagnoseField('diag-socket', diagnoseState.socket || '-');
+  setDiagnoseField('diag-event', diagnoseState.event || '-');
+  setDiagnoseField('diag-error', diagnoseState.error || 'none');
+}
+
+function markDiagEvent(name) {
+  updateDiagnose({ event: name, role: state.role || '-' });
+}
+
 // ─────────────────────────────────────────────
 // Option colors (Kahoot-style)
 // ─────────────────────────────────────────────
@@ -307,6 +333,7 @@ function showView(viewId) {
   if (activeView && attribution && attribution.parentElement !== activeView) {
     activeView.appendChild(attribution);
   }
+  updateDiagnose({ view: viewId, role: state.role || '-' });
 }
 
 function startHostLaunch(quizSlug = null) {
@@ -551,9 +578,23 @@ function setConnectionStatus(kind, message) {
   }
 
   el.textContent = message;
+  updateDiagnose({ socket: `${kind}: ${message}` });
 }
 
 setConnectionStatus('warn', 'Connecting to server…');
+
+window.addEventListener('error', (event) => {
+  const message = event?.error?.message || event?.message || 'Unknown runtime error';
+  updateDiagnose({ error: message, event: 'window:error' });
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  const reason = event?.reason;
+  const message = typeof reason === 'string'
+    ? reason
+    : (reason?.message || 'Unhandled promise rejection');
+  updateDiagnose({ error: message, event: 'promise:rejection' });
+});
 
 // ─────────────────────────────────────────────
 // Keep Screen Awake (Wake Lock API)
@@ -729,76 +770,89 @@ function renderHostQuestion(data) {
 
 // ── Player view: interactive answer UI per question type ───────────────
 function renderPlayerQuestion(data) {
-  const q = data.question;
-  const qProg = document.getElementById('player-q-progress');
-  if (qProg) qProg.textContent = `Q ${data.questionIndex + 1} / ${data.total}`;
-  const qText = document.getElementById('player-question-text');
-  if (qText) qText.textContent = q.text;
-  
-  renderQuestionMedia(q.media || null, 'player-question-text');
-  
-  const ansMsg = document.getElementById('player-answered-msg');
-  if (ansMsg) ansMsg.textContent = '';
+  try {
+    markDiagEvent('render:player_question');
+    const q = data.question;
+    const qProg = document.getElementById('player-q-progress');
+    if (qProg) qProg.textContent = `Q ${data.questionIndex + 1} / ${data.total}`;
+    const qText = document.getElementById('player-question-text');
+    if (qText) qText.textContent = q.text;
 
-  // Streak badge
-  const streakBadge = document.getElementById('player-streak-badge');
-  if (streakBadge) {
-    if (state.myStreak >= 2) {
-      const sCount = document.getElementById('player-streak-count');
-      if (sCount) sCount.textContent = state.myStreak;
-      streakBadge.style.display = 'inline-flex';
-    } else {
-      streakBadge.style.display = 'none';
+    renderQuestionMedia(q.media || null, 'player-question-text');
+
+    const ansMsg = document.getElementById('player-answered-msg');
+    if (ansMsg) ansMsg.textContent = '';
+
+    // Streak badge
+    const streakBadge = document.getElementById('player-streak-badge');
+    if (streakBadge) {
+      if (state.myStreak >= 2) {
+        const sCount = document.getElementById('player-streak-count');
+        if (sCount) sCount.textContent = state.myStreak;
+        streakBadge.style.display = 'inline-flex';
+      } else {
+        streakBadge.style.display = 'none';
+      }
     }
-  }
 
-  // Reset all type containers
-  const optGrid   = document.getElementById('player-options-grid');
-  const typeCont  = document.getElementById('player-type-container');
-  const bossPanel = document.getElementById('player-boss-panel');
-  const matchCont = document.getElementById('player-match-container');
-  const orderCont = document.getElementById('player-order-container');
-  const submitBtn = document.getElementById('btn-submit-answer');
-  
-  if (optGrid)   optGrid.style.display   = '';
-  if (typeCont)  typeCont.style.display  = 'none';
-  if (bossPanel) bossPanel.style.display = 'none';
-  if (matchCont) matchCont.style.display = 'none';
-  if (orderCont) orderCont.style.display = 'none';
-  if (submitBtn) {
+    // Reset all type containers
+    const optGrid   = document.getElementById('player-options-grid');
+    const typeCont  = document.getElementById('player-type-container');
+    const bossPanel = document.getElementById('player-boss-panel');
+    const matchCont = document.getElementById('player-match-container');
+    const orderCont = document.getElementById('player-order-container');
+    const submitBtn = document.getElementById('btn-submit-answer');
+
+    if (!optGrid || !typeCont || !bossPanel || !matchCont || !orderCont || !submitBtn) {
+      throw new Error('Player question UI is missing one or more required elements');
+    }
+
+    optGrid.style.display   = '';
+    typeCont.style.display  = 'none';
+    bossPanel.style.display = 'none';
+    matchCont.style.display = 'none';
+    orderCont.style.display = 'none';
     submitBtn.style.display = 'none';
     submitBtn.disabled      = false;
     submitBtn.textContent   = '✔ تأكيد الإجابة';
+
+    renderRolePanel(data.players || state.questionPlayers || []);
+
+    if (q.type === 'single') {
+      renderSingleChoice(q);
+    } else if (q.type === 'type') {
+      optGrid.style.display = 'none';
+      renderTypeSprint(q);
+    } else if (q.type === 'multi') {
+      renderMultiChoice(q);
+    } else if (q.type === 'match') {
+      optGrid.style.display = 'none';
+      renderMatch(q);
+    } else if (q.type === 'order') {
+      optGrid.style.display = 'none';
+      renderOrder(q);
+    } else if (q.type === 'boss') {
+      renderBossQuestion(q);
+    }
+
+    startClientTimer(data.duration,
+      document.getElementById('player-timer-count'),
+      document.getElementById('player-timer-ring'));
+
+    const layout = document.getElementById('player-question-layout');
+    if (layout) {
+      layout.classList.remove('animate-in');
+      void layout.offsetWidth;
+      layout.classList.add('animate-in');
+    }
+    showView('view-player-question');
+  } catch (err) {
+    console.error('renderPlayerQuestion failed:', err);
+    updateDiagnose({ error: err?.message || 'renderPlayerQuestion failed', event: 'render:player_question:error' });
+    showView('view-player-question');
+    const ansMsg = document.getElementById('player-answered-msg');
+    if (ansMsg) ansMsg.textContent = 'تعذر تحميل السؤال بالكامل. راجع لوحة Diagnose.';
   }
-
-  renderRolePanel(data.players || state.questionPlayers || []);
-
-  if (q.type === 'single') {
-    renderSingleChoice(q);
-  } else if (q.type === 'type') {
-    optGrid.style.display = 'none';
-    renderTypeSprint(q);
-  } else if (q.type === 'multi') {
-    renderMultiChoice(q);
-  } else if (q.type === 'match') {
-    optGrid.style.display = 'none';
-    renderMatch(q);
-  } else if (q.type === 'order') {
-    optGrid.style.display = 'none';
-    renderOrder(q);
-  } else if (q.type === 'boss') {
-    renderBossQuestion(q);
-  }
-
-  startClientTimer(data.duration,
-    document.getElementById('player-timer-count'),
-    document.getElementById('player-timer-ring'));
-
-  const layout = document.getElementById('player-question-layout');
-  layout.classList.remove('animate-in');
-  void layout.offsetWidth;
-  layout.classList.add('animate-in');
-  showView('view-player-question');
 }
 
 function renderTypeSprint(q) {
@@ -1438,6 +1492,8 @@ function renderRolePanel(players = []) {
   const select = document.getElementById('role-target-select');
   const actionBtn = document.getElementById('btn-role-action');
 
+  if (!badge || !panel || !title || !hint || !select || !actionBtn) return;
+
   if (!state.myRole) {
     badge.style.display = 'none';
     panel.style.display = 'none';
@@ -1912,20 +1968,24 @@ socket.on('room:mode', (modeInfo) => {
 });
 
 socket.on('connect', () => {
+  markDiagEvent('socket:connect');
   setConnectionStatus('ok', 'Server connected');
 });
 
 socket.on('connect_error', () => {
+  markDiagEvent('socket:connect_error');
   setConnectionStatus('error', 'Cannot reach server. Check LAN / local mode IP.');
 });
 
 socket.on('disconnect', () => {
+  markDiagEvent('socket:disconnect');
   setConnectionStatus('warn', 'Connection lost. Reconnecting…');
 });
 
 /** PLAYER: Successfully joined the room */
 socket.on('room:joined', ({ pin, nickname, avatar, players }) => {
   try {
+    markDiagEvent('room:joined');
     state.pin = pin;
     state.nickname = nickname;
     state.avatar = avatar || '🎮';
@@ -1965,6 +2025,7 @@ socket.on('room:joined', ({ pin, nickname, avatar, players }) => {
     showView('view-player-lobby');
   } catch (err) {
     console.error('Error in room:joined:', err);
+    updateDiagnose({ error: err?.message || 'room:joined failed', event: 'room:joined:error' });
     // Attempt fallback show even if updates fail
     showView('view-player-lobby');
   }
@@ -1996,6 +2057,7 @@ socket.on('room:player_joined', ({ players }) => {
 /** PLAYER: Rejoined a game in progress after disconnection */
 socket.on('room:rejoined', ({ pin, nickname, avatar, players, score, streak, roomState, role, questionData, leaderboard }) => {
   try {
+    markDiagEvent('room:rejoined');
     rejoinAttempt = false;
 
     state.pin = pin;
@@ -2089,6 +2151,7 @@ socket.on('room:rejoined', ({ pin, nickname, avatar, players, score, streak, roo
     }
   } catch (err) {
     console.error('Error in room:rejoined:', err);
+    updateDiagnose({ error: err?.message || 'room:rejoined failed', event: 'room:rejoined:error' });
     showView('view-player-lobby'); // Safe fallback
   }
 });
@@ -2160,6 +2223,7 @@ socket.on('room:profile_updated', ({ nickname, avatar }) => {
 
 /** BOTH: Game is starting */
 socket.on('game:start', ({ totalQuestions }) => {
+  markDiagEvent('game:start');
   state.totalQuestions = totalQuestions;
   state.myStreak = 0;
   state.myScore = 0;
@@ -2206,11 +2270,18 @@ socket.on('game:question_preview', (data) => {
 
 /** BOTH: New question */
 socket.on('game:question', (data) => {
-  state.isPaused = false;
-  document.getElementById('overlay-paused').style.display = 'none';
-  // If host is also playing, show the player (interactive) question view
-  const isHostOnly = state.role === 'host' && !state.hostIsPlayer;
-  renderQuestion(data, isHostOnly);
+  try {
+    markDiagEvent('game:question');
+    state.isPaused = false;
+    const pauseOverlay = document.getElementById('overlay-paused');
+    if (pauseOverlay) pauseOverlay.style.display = 'none';
+    // If host is also playing, show the player (interactive) question view
+    const isHostOnly = state.role === 'host' && !state.hostIsPlayer;
+    renderQuestion(data, isHostOnly);
+  } catch (err) {
+    console.error('Error in game:question:', err);
+    updateDiagnose({ error: err?.message || 'game:question failed', event: 'game:question:error' });
+  }
 });
 
 socket.on('role:shield_applied', ({ from }) => {
