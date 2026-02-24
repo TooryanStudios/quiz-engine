@@ -7,7 +7,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <link rel="stylesheet" href="/css/style.css?v=60" />
+  <link rel="stylesheet" href="/css/style.css?v=61" />
   <!-- Prevent browser zoom (Ctrl+scroll, Ctrl+±, pinch) -->
   <script>
     document.addEventListener('wheel', function(e){ if(e.ctrlKey){ e.preventDefault(); } }, { passive: false });
@@ -41,7 +41,12 @@
         <button class="btn btn-secondary" id="btn-become-player">
           🙋 I'm a Player
         </button>
-      </div>      <p class="build-time" id="build-time">Loading version…</p>    </div>
+      </div>
+      <button class="btn btn-secondary full-width" id="btn-open-test-home" style="margin-top:10px; border:2px dashed rgba(96,165,250,.55);">
+        🧪 Test Renderers
+      </button>
+      <p class="build-time" id="build-time">Loading version…</p>
+    </div>
   </div>
 
   <!-- ═══════════════════════════════════════════
@@ -950,9 +955,14 @@
   <script type="module">
     // TEMPORARY: Test renderer controls - Remove after V59 testing
     import { showTestPanel, hideTestPanel } from './js/test-renderers.js';
-    
-    document.getElementById('btn-open-test').addEventListener('click', showTestPanel);
-    document.getElementById('btn-close-test').addEventListener('click', hideTestPanel);
+
+    ['btn-open-test', 'btn-open-test-home'].forEach((id) => {
+      const button = document.getElementById(id);
+      if (button) button.addEventListener('click', showTestPanel);
+    });
+
+    const closeButton = document.getElementById('btn-close-test');
+    if (closeButton) closeButton.addEventListener('click', hideTestPanel);
   </script>
   
   <!-- ═══════════════════════════════════════════════════════════════════
@@ -965,7 +975,7 @@
   <!-- Load Socket.io client from the server (auto-served by socket.io) -->
   <script src="/socket.io/socket.io.js"></script>
   <!-- Main game logic (ES6 module) -->
-  <script type="module" src="/js/game.js?v=60"></script>
+  <script type="module" src="/js/game.js?v=61"></script>
   <!-- TEMPORARY: Test renderer module - Remove after V59 testing -->
   <script type="module" src="/js/test-renderers.js"></script>
 </body>
