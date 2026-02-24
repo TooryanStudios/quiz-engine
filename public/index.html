@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
   <title>QYan</title>
-  <link rel="stylesheet" href="/css/style.css?v=45" />
+  <link rel="stylesheet" href="/css/style.css?v=46" />
   <!-- Prevent browser zoom (Ctrl+scroll, Ctrl+±, pinch) -->
   <script>
     document.addEventListener('wheel', function(e){ if(e.ctrlKey){ e.preventDefault(); } }, { passive: false });
@@ -207,7 +207,7 @@
       <!-- ── Player grid (placeholders fill → real cards as players join) ── -->
       <div id="host-as-player-section" class="host-as-player-section">
         <div class="host-as-player-header">
-          <span class="host-as-player-label">Players</span>
+          <span class="host-as-player-label" dir="rtl">اللاعبون</span>
           <span class="host-as-player-count" id="host-player-count">0</span>
         </div>
         <ul class="host-player-stage" id="host-player-list" aria-label="Players joined"></ul>
@@ -549,6 +549,6 @@
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
   <!-- Load Socket.io client from the server (auto-served by socket.io) -->
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/js/game.js?v=45"></script>
+  <script src="/js/game.js?v=46"></script>
 </body>
 </html>
