@@ -1786,8 +1786,12 @@ socket.on('room:created', ({ pin, ...modeInfo }) => {
   state.hostLobbyPlayers = [];
   state.pin = pin;
   document.getElementById('host-pin').textContent = pin;
-  document.getElementById('host-player-count').textContent = '0';
-  document.getElementById('host-player-list').innerHTML = '';
+  renderPlayerList(
+    [],
+    document.getElementById('host-player-list'),
+    document.getElementById('host-player-count'),
+    true
+  );
 
   applyModeInfo(modeInfo);
   showView('view-host-lobby');

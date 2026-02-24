@@ -1150,6 +1150,11 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   box-shadow: none;
 }
 
+#view-host-lobby .host-presence-section {
+  background: var(--bg);
+  border-radius: var(--radius);
+}
+
 #view-host-lobby .player-list-section h3 {
   font-size: 0.9rem;
   letter-spacing: 0.4px;
@@ -1223,8 +1228,8 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
 #view-host-lobby .player-stage-placeholder {
   border-radius: 12px;
   min-height: 44px;
-  background: rgba(148, 163, 184, 0.2);
-  border: 1px dashed rgba(148, 163, 184, 0.35);
+  background: rgba(71, 85, 105, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.28);
   opacity: 0.9;
 }
 
