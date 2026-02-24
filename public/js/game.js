@@ -324,11 +324,27 @@ const OPTION_ICONS  = ['A', 'B', 'C', 'D'];
 // View Management
 // ─────────────────────────────────────────────
 function showView(viewId) {
+  const activeView = document.getElementById(viewId);
+  if (!activeView) {
+    const current = document.querySelector('.view.active');
+    const fallbackId = current?.id || 'view-home';
+    const fallbackView = document.getElementById(fallbackId);
+    if (fallbackView && !current) {
+      fallbackView.classList.add('active');
+    }
+    updateDiagnose({
+      view: fallbackId,
+      error: `Missing view id: ${viewId}`,
+      event: 'showView:error',
+      role: state.role || '-',
+    });
+    return;
+  }
+
   document.querySelectorAll('.view').forEach((v) => {
     v.classList.toggle('active', v.id === viewId);
   });
 
-  const activeView = document.getElementById(viewId);
   const attribution = document.querySelector('.tooryan-attribution');
   if (activeView && attribution && attribution.parentElement !== activeView) {
     activeView.appendChild(attribution);
@@ -1562,10 +1578,15 @@ document.getElementById('form-join').addEventListener('submit', (e) => {
   enableKeepAwake();
   const pin = document.getElementById('input-pin').value.trim();
   const nickname = document.getElementById('input-nickname').value.trim();
-  if (!pin || !nickname) return;
+  markDiagEvent('ui:join_submit');
+  if (!pin || !nickname) {
+    updateDiagnose({ error: 'PIN or nickname missing', event: 'ui:join_submit:invalid' });
+    return;
+  }
   Sounds.click();
   state.pin = pin;
   state.nickname = nickname;
+  setConnectionStatus('warn', 'Joining room…');
   socket.emit('player:join', { pin, nickname, avatar: state.avatar, playerId: myPlayerId });
 });
 
@@ -2566,3 +2587,8 @@ socket.on('room:closed', ({ message }) => {
     }
   }
 })();
+
+if (!document.querySelector('.view.active')) {
+  showView('view-home');
+  updateDiagnose({ event: 'startup:view_recovered', error: 'Recovered from empty active view' });
+}
