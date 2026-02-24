@@ -368,18 +368,21 @@ function stopClientTimer() {
 // Player List Rendering
 // ─────────────────────────────────────────────
 function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
-  countEl.textContent = players.length;
+  if (!listEl) return;
+  const playersArr = Array.isArray(players) ? players : [];
+  if (countEl) countEl.textContent = playersArr.length;
+  
   const kickHint = document.getElementById('kick-hint');
   const waitingEl = isHostLobby ? document.getElementById('player-waiting-msg') : null;
 
   if (isHostLobby) {
-    state.hostLobbyPlayers = Array.isArray(players) ? [...players] : [];
+    state.hostLobbyPlayers = [...playersArr];
     const stageVariant = useHostPlayerStageVariant();
     applyHostPlayerStageVariantClass(listEl, stageVariant);
-    const visiblePlayers = players.length > HOST_PLAYER_PLACEHOLDER_COUNT
-      ? players.slice(0, HOST_PLAYER_PLACEHOLDER_COUNT - 1)
-      : players.slice(0, HOST_PLAYER_PLACEHOLDER_COUNT);
-    const overflowCount = Math.max(0, players.length - HOST_PLAYER_PLACEHOLDER_COUNT);
+    const visiblePlayers = playersArr.length > HOST_PLAYER_PLACEHOLDER_COUNT
+      ? playersArr.slice(0, HOST_PLAYER_PLACEHOLDER_COUNT - 1)
+      : playersArr.slice(0, HOST_PLAYER_PLACEHOLDER_COUNT);
+    const overflowCount = Math.max(0, playersArr.length - HOST_PLAYER_PLACEHOLDER_COUNT);
 
     const stageItems = [];
     for (let slotIndex = 0; slotIndex < HOST_PLAYER_PLACEHOLDER_COUNT; slotIndex++) {
@@ -402,10 +405,10 @@ function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
         socket.emit('host:kick', { playerId: btn.dataset.id });
       });
     });
-    if (kickHint) kickHint.style.display = players.length > 0 ? 'block' : 'none';
-    if (waitingEl) waitingEl.style.display = players.length > 0 ? 'none' : 'block';
+    if (kickHint) kickHint.style.display = playersArr.length > 0 ? 'block' : 'none';
+    if (waitingEl) waitingEl.style.display = playersArr.length > 0 ? 'none' : 'block';
   } else {
-    listEl.innerHTML = players
+    listEl.innerHTML = playersArr
       .map((p) => `<li class="player-chip"><span class="avatar-circle">${p.avatar || '🎮'}</span>${escapeHtml(p.nickname)}</li>`)
       .join('');
   }
@@ -655,15 +658,20 @@ function clearQuestionMedia() {
 // ── Host view: shows question + non-interactive options/items ──────────
 function renderHostQuestion(data) {
   const q = data.question;
-  document.getElementById('host-q-progress').textContent =
-    `Q ${data.questionIndex + 1} / ${data.total}`;
-  document.getElementById('host-question-text').textContent = q.text;
+  const hProg = document.getElementById('host-q-progress');
+  const hText = document.getElementById('host-question-text');
+  const hAns = document.getElementById('host-answer-counter');
+  
+  if (hProg) hProg.textContent = `Q ${data.questionIndex + 1} / ${data.total}`;
+  if (hText) hText.textContent = q.text;
   renderQuestionMedia(q.media || null, 'host-question-text');
-  document.getElementById('host-answer-counter').textContent = '0 / 0 answered';
+  if (hAns) hAns.textContent = '0 / 0 answered';
 
   const pauseBtn = document.getElementById('btn-pause-resume');
-  pauseBtn.textContent = '⏸️ Pause';
-  pauseBtn.dataset.paused = 'false';
+  if (pauseBtn) {
+    pauseBtn.textContent = '⏸️ Pause';
+    pauseBtn.dataset.paused = 'false';
+  }
 
   const grid = document.getElementById('host-options-grid');
   const hostBossPanel = document.getElementById('host-boss-panel');
@@ -722,19 +730,26 @@ function renderHostQuestion(data) {
 // ── Player view: interactive answer UI per question type ───────────────
 function renderPlayerQuestion(data) {
   const q = data.question;
-  document.getElementById('player-q-progress').textContent =
-    `Q ${data.questionIndex + 1} / ${data.total}`;
-  document.getElementById('player-question-text').textContent = q.text;
+  const qProg = document.getElementById('player-q-progress');
+  if (qProg) qProg.textContent = `Q ${data.questionIndex + 1} / ${data.total}`;
+  const qText = document.getElementById('player-question-text');
+  if (qText) qText.textContent = q.text;
+  
   renderQuestionMedia(q.media || null, 'player-question-text');
-  document.getElementById('player-answered-msg').textContent = '';
+  
+  const ansMsg = document.getElementById('player-answered-msg');
+  if (ansMsg) ansMsg.textContent = '';
 
   // Streak badge
   const streakBadge = document.getElementById('player-streak-badge');
-  if (state.myStreak >= 2) {
-    document.getElementById('player-streak-count').textContent = state.myStreak;
-    streakBadge.style.display = 'inline-flex';
-  } else {
-    streakBadge.style.display = 'none';
+  if (streakBadge) {
+    if (state.myStreak >= 2) {
+      const sCount = document.getElementById('player-streak-count');
+      if (sCount) sCount.textContent = state.myStreak;
+      streakBadge.style.display = 'inline-flex';
+    } else {
+      streakBadge.style.display = 'none';
+    }
   }
 
   // Reset all type containers
@@ -744,14 +759,17 @@ function renderPlayerQuestion(data) {
   const matchCont = document.getElementById('player-match-container');
   const orderCont = document.getElementById('player-order-container');
   const submitBtn = document.getElementById('btn-submit-answer');
-  optGrid.style.display   = '';
-  typeCont.style.display  = 'none';
-  bossPanel.style.display = 'none';
-  matchCont.style.display = 'none';
-  orderCont.style.display = 'none';
-  submitBtn.style.display = 'none';
-  submitBtn.disabled      = false;
-  submitBtn.textContent   = '✔ تأكيد الإجابة';
+  
+  if (optGrid)   optGrid.style.display   = '';
+  if (typeCont)  typeCont.style.display  = 'none';
+  if (bossPanel) bossPanel.style.display = 'none';
+  if (matchCont) matchCont.style.display = 'none';
+  if (orderCont) orderCont.style.display = 'none';
+  if (submitBtn) {
+    submitBtn.style.display = 'none';
+    submitBtn.disabled      = false;
+    submitBtn.textContent   = '✔ تأكيد الإجابة';
+  }
 
   renderRolePanel(data.players || state.questionPlayers || []);
 
@@ -1907,132 +1925,171 @@ socket.on('disconnect', () => {
 
 /** PLAYER: Successfully joined the room */
 socket.on('room:joined', ({ pin, nickname, avatar, players }) => {
-  state.pin = pin;
-  state.nickname = nickname;
-  state.avatar = avatar || '🎮';
-  state.myScore = 0;
-  updatePlayerScoreUI();
-  document.getElementById('player-room-pin').textContent = pin;
+  try {
+    state.pin = pin;
+    state.nickname = nickname;
+    state.avatar = avatar || '🎮';
+    state.myScore = 0;
+    updatePlayerScoreUI();
+    
+    const pinEl = document.getElementById('player-room-pin');
+    if (pinEl) pinEl.textContent = pin;
 
-  // Save session for potential reconnect
-  saveGameSession(pin, nickname, avatar || '🎮');
+    // Save session for potential reconnect
+    saveGameSession(pin, nickname, avatar || '🎮');
 
-  // Pre-fill edit form
-  const editNickEl = document.getElementById('edit-nickname-input');
-  if (editNickEl) editNickEl.value = nickname;
+    // Pre-fill edit form
+    const editNickEl = document.getElementById('edit-nickname-input');
+    if (editNickEl) editNickEl.value = nickname;
 
-  // Wire lobby avatar trigger button
-  const lobbyBtn = document.getElementById('lobby-avatar-btn');
-  const lobbyDisplayEl = document.getElementById('lobby-avatar-display');
-  if (lobbyDisplayEl) lobbyDisplayEl.textContent = state.avatar;
-  if (lobbyBtn) {
-    lobbyBtn.onclick = () => {
-      openAvatarPicker(state.avatar, (a) => {
-        state.avatar = a;
-        if (lobbyDisplayEl) lobbyDisplayEl.textContent = a;
-        socket.emit('player:update_profile', { nickname: state.nickname, avatar: a });
-      });
-    };
+    // Wire lobby avatar trigger button
+    const lobbyBtn = document.getElementById('lobby-avatar-btn');
+    const lobbyDisplayEl = document.getElementById('lobby-avatar-display');
+    if (lobbyDisplayEl) lobbyDisplayEl.textContent = state.avatar;
+    if (lobbyBtn) {
+      lobbyBtn.onclick = () => {
+        openAvatarPicker(state.avatar, (a) => {
+          state.avatar = a;
+          if (lobbyDisplayEl) lobbyDisplayEl.textContent = a;
+          socket.emit('player:update_profile', { nickname: state.nickname, avatar: a });
+        });
+      };
+    }
+
+    const listEl = document.getElementById('player-player-list');
+    const countEl = document.getElementById('player-player-count');
+    if (listEl && countEl) {
+      renderPlayerList(players, listEl, countEl);
+    }
+    
+    showView('view-player-lobby');
+  } catch (err) {
+    console.error('Error in room:joined:', err);
+    // Attempt fallback show even if updates fail
+    showView('view-player-lobby');
   }
-
-  renderPlayerList(
-    players,
-    document.getElementById('player-player-list'),
-    document.getElementById('player-player-count')
-  );
-  showView('view-player-lobby');
 });
 
 /** BOTH: Someone joined — update player list */
 socket.on('room:player_joined', ({ players }) => {
-  if (state.role === 'host') {
-    renderPlayerList(
-      players,
-      document.getElementById('host-player-list'),
-      document.getElementById('host-player-count'),
-      true // isHostLobby — show kick buttons
-    );
-    const startBtn = document.getElementById('btn-start-game');
-    startBtn.disabled = players.length === 0;
-  } else {
-    renderPlayerList(
-      players,
-      document.getElementById('player-player-list'),
-      document.getElementById('player-player-count')
-    );
+  try {
+    if (state.role === 'host') {
+      const listEl = document.getElementById('host-player-list');
+      const countEl = document.getElementById('host-player-count');
+      if (listEl && countEl) {
+        renderPlayerList(players, listEl, countEl, true);
+      }
+      const startBtn = document.getElementById('btn-start-game');
+      if (startBtn) startBtn.disabled = players.length === 0;
+    } else {
+      const listEl = document.getElementById('player-player-list');
+      const countEl = document.getElementById('player-player-count');
+      if (listEl && countEl) {
+        renderPlayerList(players, listEl, countEl);
+      }
+    }
+  } catch (err) {
+    console.error('Error in room:player_joined:', err);
   }
 });
 
 /** PLAYER: Rejoined a game in progress after disconnection */
 socket.on('room:rejoined', ({ pin, nickname, avatar, players, score, streak, roomState, role, questionData, leaderboard }) => {
-  rejoinAttempt = false;
+  try {
+    rejoinAttempt = false;
 
-  state.pin = pin;
-  state.nickname = nickname;
-  state.avatar = avatar || '🎮';
-  state.role = 'player';
-  state.myScore = score || 0;
-  state.myStreak = streak || 0;
-  updatePlayerScoreUI();
+    state.pin = pin;
+    state.nickname = nickname;
+    state.avatar = avatar || '🎮';
+    state.role = 'player';
+    state.myScore = score || 0;
+    state.myStreak = streak || 0;
+    updatePlayerScoreUI();
 
-  if (role === 'scholar') state.myRole = 'scholar';
-  else if (role === 'shield') state.myRole = 'shield';
-  else if (role === 'saboteur') state.myRole = 'saboteur';
-  else state.myRole = null;
+    if (role === 'scholar') state.myRole = 'scholar';
+    else if (role === 'shield') state.myRole = 'shield';
+    else if (role === 'saboteur') state.myRole = 'saboteur';
+    else state.myRole = null;
 
-  renderPlayerList(
-    players,
-    document.getElementById('player-player-list'),
-    document.getElementById('player-player-count')
-  );
-
-  setConnectionStatus('ok', 'Reconnected ✓');
-
-  if (roomState === 'lobby') {
-    showView('view-player-lobby');
-  } else if ((roomState === 'question' || roomState === 'question-pending') && questionData) {
-    renderQuestion({
-      questionIndex: questionData.questionIndex,
-      total: questionData.total,
-      question: questionData.question,
-      duration: questionData.duration,
-      players: questionData.players,
-    }, false);
-    // Sync the client timer to the server's elapsed time
-    state.questionStartTime = Date.now() - (questionData.duration - questionData.timeRemaining) * 1000;
-    if (questionData.hasAnswered) {
-      state.hasAnswered = true;
-      document.getElementById('player-answered-msg').textContent = '✅ تم إرسال إجابتك! انتظر الآخرين…';
+    const listEl = document.getElementById('player-player-list');
+    const countEl = document.getElementById('player-player-count');
+    if (listEl && countEl && Array.isArray(players)) {
+      renderPlayerList(players, listEl, countEl);
     }
-  } else if (roomState === 'finished' && leaderboard) {
-    // Populate podium immediately (no ceremony delay on rejoin)
-    document.getElementById('final-leaderboard-list').innerHTML = leaderboard.map((entry, i) =>
-      `<li class="lb-entry ${entry.id === socket.id ? 'lb-mine' : ''}" style="animation-delay:${i * 0.07}s">
-        <span class="lb-rank">${i + 1}</span>
-        <span class="lb-nickname">${escapeHtml(entry.nickname)}</span>
-        <span class="lb-score">${entry.totalScore} pts</span>
-      </li>`
-    ).join('');
-    const fillSlotRejoin = (slotId, avatarId, nameId, scoreId, entry) => {
-      if (!entry) { const el = document.getElementById(slotId); if (el) el.style.display = 'none'; return; }
-      document.getElementById(avatarId).textContent = entry.avatar || '🎮';
-      document.getElementById(nameId).textContent   = escapeHtml(entry.nickname);
-      document.getElementById(scoreId).textContent  = `${entry.totalScore} pts`;
-    };
-    fillSlotRejoin('podium-slot-1', 'podium-avatar-1', 'podium-name-1', 'podium-score-1', leaderboard[0]);
-    fillSlotRejoin('podium-slot-2', 'podium-avatar-2', 'podium-name-2', 'podium-score-2', leaderboard[1]);
-    fillSlotRejoin('podium-slot-3', 'podium-avatar-3', 'podium-name-3', 'podium-score-3', leaderboard[2]);
-    ['podium-slot-1', 'podium-slot-2', 'podium-slot-3'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el && el.style.display !== 'none') { el.style.opacity = '1'; el.classList.add('podium-revealed'); }
-    });
-    document.getElementById('podium-full-results').classList.add('podium-results-visible');
-    document.getElementById('btn-start-new-session').style.display = 'none';
-    clearGameSession();
-    showView('view-game-over');
-  } else {
-    // Fallback: show the player lobby
-    showView('view-player-lobby');
+
+    setConnectionStatus('ok', 'Reconnected ✓');
+
+    if (roomState === 'lobby') {
+      showView('view-player-lobby');
+    } else if ((roomState === 'question' || roomState === 'question-pending') && questionData) {
+      renderQuestion({
+        questionIndex: questionData.questionIndex,
+        total: questionData.total,
+        question: questionData.question,
+        duration: questionData.duration,
+        players: questionData.players,
+      }, false);
+      // Sync the client timer to the server's elapsed time
+      state.questionStartTime = Date.now() - (questionData.duration - questionData.timeRemaining) * 1000;
+      const ansMsg = document.getElementById('player-answered-msg');
+      if (questionData.hasAnswered && ansMsg) {
+        state.hasAnswered = true;
+        ansMsg.textContent = '✅ تم إرسال إجابتك! انتظر الآخرين…';
+      }
+    } else if (roomState === 'finished' && leaderboard) {
+      // Populate podium immediately (no ceremony delay on rejoin)
+      const fullList = document.getElementById('final-leaderboard-list');
+      if (fullList) {
+        fullList.innerHTML = leaderboard.map((entry, i) =>
+          `<li class="lb-entry ${entry.id === socket.id ? 'lb-mine' : ''}" style="animation-delay:${i * 0.07}s">
+            <span class="lb-rank">${i + 1}</span>
+            <span class="lb-nickname">${escapeHtml(entry.nickname)}</span>
+            <span class="lb-score">${entry.totalScore} pts</span>
+          </li>`
+        ).join('');
+      }
+      
+      const fillSlotRejoin = (slotId, avatarId, nameId, scoreId, entry) => {
+        if (!entry) {
+          const el = document.getElementById(slotId);
+          if (el) el.style.display = 'none';
+          return;
+        }
+        const av = document.getElementById(avatarId);
+        const nm = document.getElementById(nameId);
+        const sc = document.getElementById(scoreId);
+        if (av) av.textContent = entry.avatar || '🎮';
+        if (nm) nm.textContent = escapeHtml(entry.nickname);
+        if (sc) sc.textContent = `${entry.totalScore} pts`;
+      };
+      
+      fillSlotRejoin('podium-slot-1', 'podium-avatar-1', 'podium-name-1', 'podium-score-1', leaderboard[0]);
+      fillSlotRejoin('podium-slot-2', 'podium-avatar-2', 'podium-name-2', 'podium-score-2', leaderboard[1]);
+      fillSlotRejoin('podium-slot-3', 'podium-avatar-3', 'podium-name-3', 'podium-score-3', leaderboard[2]);
+      
+      ['podium-slot-1', 'podium-slot-2', 'podium-slot-3'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el && el.style.display !== 'none') {
+          el.style.opacity = '1';
+          el.classList.add('podium-revealed');
+        }
+      });
+      
+      const resPanel = document.getElementById('podium-full-results');
+      if (resPanel) resPanel.classList.add('podium-results-visible');
+      
+      const newSessBtn = document.getElementById('btn-start-new-session');
+      if (newSessBtn) newSessBtn.style.display = 'none';
+      
+      clearGameSession();
+      showView('view-game-over');
+    } else {
+      // Fallback: show the player lobby
+      showView('view-player-lobby');
+    }
+  } catch (err) {
+    console.error('Error in room:rejoined:', err);
+    showView('view-player-lobby'); // Safe fallback
   }
 });
 
@@ -2346,21 +2403,20 @@ socket.on('room:reset', ({ players, modeInfo }) => {
 
   if (state.role === 'host') {
     if (modeInfo) applyModeInfo(modeInfo);
-    renderPlayerList(
-      players || [],
-      document.getElementById('host-player-list'),
-      document.getElementById('host-player-count'),
-      true
-    );
+    const listEl = document.getElementById('host-player-list');
+    const countEl = document.getElementById('host-player-count');
+    if (listEl && countEl) {
+      renderPlayerList(players || [], listEl, countEl, true);
+    }
     const startBtn = document.getElementById('btn-start-game');
-    startBtn.disabled = !(players && players.length > 0);
+    if (startBtn) startBtn.disabled = !(players && players.length > 0);
     showView('view-host-lobby');
   } else {
-    renderPlayerList(
-      players || [],
-      document.getElementById('player-player-list'),
-      document.getElementById('player-player-count')
-    );
+    const listEl = document.getElementById('player-player-list');
+    const countEl = document.getElementById('player-player-count');
+    if (listEl && countEl) {
+      renderPlayerList(players || [], listEl, countEl);
+    }
     showView('view-player-lobby');
   }
 });

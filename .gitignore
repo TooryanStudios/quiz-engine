@@ -9,3 +9,7 @@ npm-debug.log*
 quizengine-e7818-firebase-adminsdk-fbsvc-fd72a24bae.json
 *-firebase-adminsdk-*.json
 admin-app/
+
+functions/lib/
+functions/node_modules/
+tmp_*
