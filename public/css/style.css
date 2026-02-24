@@ -70,7 +70,7 @@ html.autohost-launch #view-home {
   display: none !important;
 }
 
-html.autohost-launch #view-host-loading {
+html.autohost-launch #view-host-loading.active {
   display: flex !important;
   flex-direction: column;
 }

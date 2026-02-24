@@ -1564,6 +1564,7 @@ document.getElementById('btn-home-from-closed').addEventListener('click', () => 
 /** HOST: Room created successfully */
 socket.on('room:created', ({ pin, ...modeInfo }) => {
   state.hostCreatePending = false;
+  document.documentElement.classList.remove('autohost-launch');
   state.pin = pin;
   document.getElementById('host-pin').textContent = pin;
   document.getElementById('host-player-count').textContent = '0';
@@ -1751,6 +1752,7 @@ socket.on('host:joined_as_player', ({ joined, nickname, avatar }) => {
 socket.on('room:error', ({ message }) => {
   if (state.role === 'host') {
     state.hostCreatePending = false;
+    document.documentElement.classList.remove('autohost-launch');
   }
   const editPanel = document.getElementById('edit-profile-panel');
   if (state.role === 'player' && editPanel && editPanel.classList.contains('open')) {
