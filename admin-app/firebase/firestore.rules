@@ -1,0 +1,77 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(ownerId) {
+      return isSignedIn() && request.auth.uid == ownerId;
+    }
+
+    // Primary: custom `admin` claim set by the grantAdminClaim Cloud Function.
+    // The email fallback is temporary for existing sessions that predate the
+    // claim. Once the admin calls grantAdminClaim (done automatically by
+    // App.tsx on sign-in), the email line below can be removed.
+    function isMasterAdmin() {
+      return isSignedIn() && (
+        request.auth.token.get('admin', false) == true
+      );
+    }
+
+    function isValidVoiceTestRoom(roomId) {
+      return roomId.matches('^test-[a-z0-9-]{3,36}$');
+    }
+
+    // Public quizzes can be read by anyone for play mode
+    match /quizzes/{quizId} {
+      allow read: if resource.data.visibility == 'public' || isOwner(resource.data.ownerId);
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if isOwner(resource.data.ownerId);
+    }
+
+    // Packs are public for storefront display; only owners/admins can mutate
+    match /packs/{packId} {
+      allow read: if true;
+      allow create, update, delete: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+    }
+
+    // User profiles: users can read/write their own; master admin can read/write all
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isMasterAdmin();
+      allow create, update: if isOwner(userId) || isMasterAdmin();
+      allow delete: if isMasterAdmin();
+    }
+
+    match /entitlements/{userId} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow write: if false;
+    }
+
+    // Experimental voice signaling (testing only)
+    // Room id must start with `test-` to keep scope intentionally limited.
+    match /voiceRooms/{roomId} {
+      allow read, create, update: if isSignedIn() && isValidVoiceTestRoom(roomId);
+      allow delete: if false;
+
+      match /participants/{participantId} {
+        allow read: if isSignedIn() && isValidVoiceTestRoom(roomId);
+        allow create, update, delete: if isSignedIn() && isValidVoiceTestRoom(roomId);
+      }
+
+      match /signals/{signalId} {
+        allow read: if isSignedIn() && isValidVoiceTestRoom(roomId);
+        allow create: if isSignedIn() && isValidVoiceTestRoom(roomId);
+        allow update, delete: if false;
+      }
+    }
+
+    // Platform-wide engagement stats (write: any signed-in user; read: any signed-in user)
+    match /platform_stats/{docId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if false;
+    }
+  }
+}

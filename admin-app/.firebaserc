@@ -1,0 +1,10 @@
+{
+  "projects": {
+    "default": "qyan-om",
+    "legacy": "quizengine-e7818",
+    "new": "qyan-om",
+    "staging": "qyan-om"
+  },
+  "targets": {},
+  "etags": {}
+}

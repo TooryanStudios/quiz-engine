@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/jpeg" href="/images/QYan_logo_300x164.jpg" />
+    <link rel="apple-touch-icon" href="/images/QYan_logo_300x164.jpg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Playpen+Sans+Arabic:wght@200&display=swap" rel="stylesheet" />
+    <title>QYan Gaming</title>
+    <meta name="title" content="QYan Gaming" />
+    <meta name="description" content="تحدى أصدقاءك واختبر معلوماتك" />
+
+    <!-- Open Graph / Facebook / WhatsApp -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://quizengine-e7818.web.app/" />
+    <meta property="og:title" content="QYan Gaming" />
+    <meta property="og:description" content="تحدى أصدقاءك واختبر معلوماتك" />
+    <meta property="og:image" content="https://quizengine-e7818.web.app/images/QYan_logo_300x164.jpg" />
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content="https://quizengine-e7818.web.app/" />
+    <meta property="twitter:title" content="QYan Gaming" />
+    <meta property="twitter:description" content="تحدى أصدقاءك واختبر معلوماتك" />
+    <meta property="twitter:image" content="https://quizengine-e7818.web.app/images/QYan_logo_300x164.jpg" />
+    <!-- Apply saved theme immediately to avoid flash -->
+    <script>
+      (function(){
+        try {
+          document.documentElement.setAttribute('data-theme', 'light');
+          localStorage.setItem('quizAdminTheme', 'light');
+        } catch(e) {}
+      })();
+    </script>
+    <!-- Prevent browser zoom (Ctrl+scroll, Ctrl+±, pinch) and page dragging -->
+    <script>
+      document.addEventListener('wheel', function(e){ if(e.ctrlKey){ e.preventDefault(); } }, { passive: false });
+      document.addEventListener('keydown', function(e){ if(e.ctrlKey && (e.key==='+' || e.key==='-' || e.key==='=' || e.key==='0')){ e.preventDefault(); } });
+      /* Block touchmove on the document itself (iOS rubber-band / overscroll prevention).
+         Scrollable children opt back in with their own non-passive touchmove handlers. */
+      document.addEventListener('touchmove', function(e) {
+        if (e.target && e.target.closest && e.target.closest('[data-scrollable]')) return;
+        e.preventDefault();
+      }, { passive: false });
+    </script>
+    <script type="module" crossorigin src="/assets/index-1--qr7Nr.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/react-vendor-Cdbk_uD4.js">
+    <link rel="modulepreload" crossorigin href="/assets/firebase-app-08Eyd_Cl.js">
+    <link rel="modulepreload" crossorigin href="/assets/firebase-firestore-Cd4_utO_.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-BWB1JkxQ.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
