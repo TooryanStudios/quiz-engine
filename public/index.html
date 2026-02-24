@@ -7,7 +7,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <link rel="stylesheet" href="/css/style.css?v=63" />
+  <link rel="stylesheet" href="/css/style.css?v=64" />
   <!-- Prevent browser zoom (Ctrl+scroll, Ctrl+±, pinch) -->
   <script>
     document.addEventListener('wheel', function(e){ if(e.ctrlKey){ e.preventDefault(); } }, { passive: false });
@@ -42,25 +42,8 @@
           🙋 I'm a Player
         </button>
       </div>
-      <button class="btn btn-secondary full-width" id="btn-open-test-home" onclick="window.__openTestPanel && window.__openTestPanel()" style="margin-top:10px; border:2px dashed rgba(96,165,250,.55);">
-        🧪 Test Renderers
-      </button>
       <p class="build-time" id="build-time">Loading version…</p>
     </div>
-
-    <button id="btn-open-test-bottom" class="btn btn-primary" onclick="window.__openTestPanel && window.__openTestPanel()" style="
-      position: fixed;
-      left: 50%;
-      bottom: 14px;
-      transform: translateX(-50%);
-      z-index: 10002;
-      padding: 10px 18px;
-      border-radius: 999px;
-      font-weight: 700;
-      box-shadow: 0 8px 20px rgba(0,0,0,.35);
-    ">
-      🧪 Test Renderers
-    </button>
   </div>
 
   <!-- ═══════════════════════════════════════════
@@ -821,196 +804,12 @@
     })();
   </script>
 
-  <!-- ═══════════════════════════════════════════════════════════════════
-       ⚠️ TEMPORARY: TEST RENDERER PANEL - REMOVE AFTER V59 TESTING ⚠️
-       ═══════════════════════════════════════════════════════════════════ -->
-  
-  <!-- Floating test button (bottom-right corner) -->
-  <button id="btn-open-test" class="btn-test-trigger" onclick="window.__openTestPanel && window.__openTestPanel()" style="
-    position: fixed;
-    bottom: 80px;
-    right: 20px;
-    z-index: 10000;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    border: 2px solid rgba(255,255,255,0.3);
-    padding: 12px 20px;
-    border-radius: 12px;
-    font-weight: 700;
-    font-size: 0.9rem;
-    cursor: pointer;
-    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-    transition: all 0.2s ease;
-  " onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
-    🧪 Test Renderers
-  </button>
-
-  <!-- Test Panel Overlay -->
-  <div id="test-renderer-panel" style="
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.9);
-    z-index: 10001;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-    box-sizing: border-box;
-  ">
-    <!-- Test Controls Header -->
-    <div style="
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      padding: 15px 25px;
-      border-radius: 12px 12px 0 0;
-      width: 100%;
-      max-width: 800px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-    ">
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <h2 style="margin: 0; font-size: 1.3rem;">🧪 Renderer Test Mode</h2>
-        <button id="btn-close-test" style="
-          background: rgba(255, 255, 255, 0.2);
-          border: 1px solid rgba(255, 255, 255, 0.3);
-          color: white;
-          padding: 8px 16px;
-          border-radius: 8px;
-          cursor: pointer;
-          font-weight: 600;
-        ">✕ Close</button>
-      </div>
-      <p id="test-info" style="margin: 8px 0 0 0; opacity: 0.9; font-size: 0.95rem;">Loading...</p>
-    </div>
-
-    <!-- Test Question Container (mimics player question view) -->
-    <div id="test-question-container" style="
-      background: linear-gradient(to bottom, #0f172a, #1e293b);
-      width: 100%;
-      max-width: 800px;
-      min-height: 400px;
-      padding: 30px;
-      box-sizing: border-box;
-      overflow-y: auto;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-    ">
-      <!-- Question text -->
-      <div id="player-question-text" style="
-        color: white;
-        font-size: 1.3rem;
-        font-weight: 600;
-        margin-bottom: 25px;
-        text-align: center;
-      ">Question will appear here...</div>
-
-      <!-- All question type containers (same as in main game) -->
-      <div id="player-options-grid" style="
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 12px;
-        margin-bottom: 20px;
-      "></div>
-
-      <div id="player-type-container" style="display: none;">
-        <input type="text" id="player-type-input" placeholder="Type your answer..." style="
-          width: 100%;
-          padding: 15px;
-          font-size: 1.1rem;
-          border: 2px solid #475569;
-          border-radius: 8px;
-          background: #1e293b;
-          color: white;
-          box-sizing: border-box;
-        " />
-      </div>
-
-      <div id="player-boss-panel" class="boss-panel" style="display:none">
-        <div class="boss-row">
-          <span class="boss-name" id="player-boss-name">Test Boss</span>
-          <span class="boss-hp" id="player-boss-hp">75 / 100</span>
-        </div>
-        <div class="boss-bar"><div class="boss-bar-fill" id="player-boss-bar-fill"></div></div>
-      </div>
-
-      <div id="player-match-container" class="match-container" style="display:none"></div>
-      
-      <div id="player-order-container" class="order-container" style="display:none">
-        <ol class="order-list" id="order-list"></ol>
-      </div>
-
-      <!-- Submit button (for multi/match/order/type) -->
-      <button id="btn-submit-answer" class="btn btn-success full-width" style="display:none; margin-top: 20px;">
-        ✔ Submit Answer
-      </button>
-    </div>
-
-    <!-- Test Navigation Controls -->
-    <div style="
-      background: #1e293b;
-      padding: 20px 25px;
-      border-radius: 0 0 12px 12px;
-      width: 100%;
-      max-width: 800px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-      display: flex;
-      gap: 12px;
-      justify-content: center;
-      align-items: center;
-    ">
-      <button id="btn-test-prev" class="btn btn-secondary" style="flex: 1;">← Previous</button>
-      <button id="btn-test-submit" class="btn btn-primary" style="flex: 1;">📋 Get Answer</button>
-      <button id="btn-test-next" class="btn btn-secondary" style="flex: 1;">Next →</button>
-    </div>
-  </div>
-
-  <script type="module">
-    // TEMPORARY: Test renderer controls - Remove after V59 testing
-    import { showTestPanel, hideTestPanel } from './js/test-renderers.js';
-
-    window.__openTestPanel = () => {
-      try {
-        showTestPanel();
-      } catch (err) {
-        console.error('[TEST] open failed:', err);
-        const panel = document.getElementById('test-renderer-panel');
-        if (panel) panel.style.display = 'flex';
-      }
-    };
-
-    window.__closeTestPanel = () => {
-      try {
-        hideTestPanel();
-      } catch (err) {
-        console.error('[TEST] close failed:', err);
-        const panel = document.getElementById('test-renderer-panel');
-        if (panel) panel.style.display = 'none';
-      }
-    };
-
-    ['btn-open-test', 'btn-open-test-home', 'btn-open-test-bottom'].forEach((id) => {
-      const button = document.getElementById(id);
-      if (button) button.addEventListener('click', window.__openTestPanel);
-    });
-
-    const closeButton = document.getElementById('btn-close-test');
-    if (closeButton) closeButton.addEventListener('click', window.__closeTestPanel);
-  </script>
-  
-  <!-- ═══════════════════════════════════════════════════════════════════
-       END TEMPORARY TEST CODE
-       ═══════════════════════════════════════════════════════════════════ -->
-
   <!-- ─── Scripts ─── -->
   <!-- Confetti for game over celebration (async — non-blocking) -->
   <script async src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
   <!-- Load Socket.io client from the server (auto-served by socket.io) -->
   <script src="/socket.io/socket.io.js"></script>
   <!-- Main game logic (ES6 module) -->
-  <script type="module" src="/js/game.js?v=63"></script>
-  <!-- TEMPORARY: Test renderer module - Remove after V59 testing -->
-  <script type="module" src="/js/test-renderers.js"></script>
+  <script type="module" src="/js/game.js?v=64"></script>
 </body>
 </html>
