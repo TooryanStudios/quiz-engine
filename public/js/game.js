@@ -112,18 +112,15 @@ function setHostQuizTitle(text) {
   hostQuizTitleEl.style.display = 'block';
 }
 
-// If a quiz slug is in the URL, show ID immediately then fetch title
-// Update both the home banner and the player-join banner
+// If a quiz slug is in the URL, fetch and show title only (no slug flicker)
 if (quizSlugFromUrl) {
   const el = document.getElementById('quiz-title-banner');
-  const el2 = document.getElementById('join-quiz-title-banner');
-  setHostQuizTitle(quizSlugFromUrl);
+  setHostQuizTitle('');
   const setText = (text) => {
     if (!isAutoHostLaunch && el)  { el.textContent = text; el.style.display = 'block'; }
-    setHostQuizTitle(text.replace(/^📋\s*/, '').replace(/^🆔\s*/, ''));
+    setHostQuizTitle(text.replace(/^📋\s*/, ''));
     // intentionally not shown on player join screen
   };
-  setText(`🆔 ${quizSlugFromUrl}`);
   fetch(`/api/quiz-info/${encodeURIComponent(quizSlugFromUrl)}`)
     .then((r) => r.ok ? r.json() : null)
     .then((data) => {
