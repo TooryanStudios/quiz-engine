@@ -1028,15 +1028,6 @@ function showLeaderboard(data, isFinal) {
 // ─────────────────────────────────────────────
 // Utils
 // ─────────────────────────────────────────────
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
 function showError(elId, message) {
   const el = document.getElementById(elId);
   if (el) {
