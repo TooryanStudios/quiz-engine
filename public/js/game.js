@@ -384,45 +384,6 @@ function startHostLaunch(quizSlug = null) {
 }
 
 // ─────────────────────────────────────────────
-// Timer
-// ─────────────────────────────────────────────
-function startClientTimer(duration, countEl, ringEl) {
-  stopClientTimer();
-  let remaining = duration;
-
-  function tick() {
-    remaining = Math.max(0, duration - Math.round((Date.now() - state.questionStartTime) / 1000));
-    countEl.textContent = remaining;
-
-    const pct = remaining / duration;
-    ringEl.style.setProperty('--timer-pct', pct);
-
-    if (pct <= 0.2) {
-      ringEl.classList.add('timer-danger', 'timer-urgent');
-      Sounds.urgentTick();
-    } else if (pct <= 0.4) {
-      ringEl.classList.add('timer-danger');
-      ringEl.classList.remove('timer-urgent');
-      Sounds.tick();
-    } else {
-      ringEl.classList.remove('timer-danger', 'timer-urgent');
-    }
-
-    if (remaining <= 0) stopClientTimer();
-  }
-
-  tick();
-  state.timerInterval = setInterval(tick, 500);
-}
-
-function stopClientTimer() {
-  if (state.timerInterval) {
-    clearInterval(state.timerInterval);
-    state.timerInterval = null;
-  }
-}
-
-// ─────────────────────────────────────────────
 // Player List Rendering
 // ─────────────────────────────────────────────
 function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
