@@ -168,7 +168,109 @@ const state = {
   avatar: '🎮',  // selected avatar emoji
   hostIsPlayer: false,       // experimental: host joined as a player too
   hostCreatePending: false,
+  hostPlayerStageVariant: null,
+  hostPlayerStageSelection: 'auto',
+  hostLobbyPlayers: [],
 };
+
+const HOST_PLAYER_STAGE_VARIANTS = {
+  neonArcade: {
+    id: 'neonArcade',
+    listClass: 'stage-neon-arcade',
+    cardClass: 'card-neon-arcade',
+  },
+  quizArena: {
+    id: 'quizArena',
+    listClass: 'stage-quiz-arena',
+    cardClass: 'card-quiz-arena',
+  },
+  partyConfetti: {
+    id: 'partyConfetti',
+    listClass: 'stage-party-confetti',
+    cardClass: 'card-party-confetti',
+  },
+};
+
+const hostPlayerStageConfig = {
+  enabled: true,
+  activeVariants: ['neonArcade', 'quizArena', 'partyConfetti'],
+  randomizePerSession: true,
+  fallbackVariant: 'neonArcade',
+};
+
+const HOST_STAGE_STORAGE_KEY = 'qyanHostStageVariant';
+
+function useHostPlayerStageVariant() {
+  if (!hostPlayerStageConfig.enabled) return null;
+  if (state.hostPlayerStageSelection && state.hostPlayerStageSelection !== 'auto') {
+    return HOST_PLAYER_STAGE_VARIANTS[state.hostPlayerStageSelection] || null;
+  }
+  const available = hostPlayerStageConfig.activeVariants
+    .map((id) => HOST_PLAYER_STAGE_VARIANTS[id])
+    .filter(Boolean);
+  if (!available.length) {
+    return HOST_PLAYER_STAGE_VARIANTS[hostPlayerStageConfig.fallbackVariant] || null;
+  }
+
+  if (!hostPlayerStageConfig.randomizePerSession && state.hostPlayerStageVariant) {
+    return state.hostPlayerStageVariant;
+  }
+
+  if (!state.hostPlayerStageVariant) {
+    const randomIndex = Math.floor(Math.random() * available.length);
+    state.hostPlayerStageVariant = available[randomIndex];
+  }
+  return state.hostPlayerStageVariant;
+}
+
+function renderHostPlayerStageCard(player, index, variant) {
+  const cardVariantClass = variant?.cardClass || '';
+  const animationDelay = Math.min(index, 8) * 70;
+  const safeName = escapeHtml(player.nickname);
+  return `<li class="player-chip kickable player-stage-card ${cardVariantClass}" data-id="${player.id}" style="animation-delay:${animationDelay}ms">
+            <span class="avatar-circle player-stage-avatar">${player.avatar || '🎮'}</span>
+            <span class="player-stage-name">${safeName}</span>
+            <button class="btn-kick" data-id="${player.id}" title="Remove player" aria-label="Remove ${safeName}">✕</button>
+          </li>`;
+}
+
+function applyHostPlayerStageVariantClass(listEl, variant) {
+  Object.values(HOST_PLAYER_STAGE_VARIANTS).forEach((entry) => {
+    if (entry?.listClass) listEl.classList.remove(entry.listClass);
+  });
+  if (variant?.listClass) listEl.classList.add(variant.listClass);
+}
+
+function syncHostStageSelects(value) {
+  ['host-stage-variant', 'host-stage-variant-join'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.value = value;
+  });
+}
+
+function applyHostStageSelection(value, persist = true) {
+  const selected = value || 'auto';
+  state.hostPlayerStageSelection = selected;
+  if (selected === 'auto') {
+    state.hostPlayerStageVariant = null;
+  } else {
+    state.hostPlayerStageVariant = HOST_PLAYER_STAGE_VARIANTS[selected] || null;
+  }
+  syncHostStageSelects(selected);
+  if (persist) {
+    try {
+      localStorage.setItem(HOST_STAGE_STORAGE_KEY, selected);
+    } catch (_err) {}
+  }
+  rerenderHostPlayerStage();
+}
+
+function rerenderHostPlayerStage() {
+  const listEl = document.getElementById('host-player-list');
+  const countEl = document.getElementById('host-player-count');
+  if (!listEl || !countEl) return;
+  renderPlayerList(state.hostLobbyPlayers || [], listEl, countEl, true);
+}
 
 let scholarPreviewInterval = null;
 let frozenTimeout = null;
@@ -255,18 +357,15 @@ function stopClientTimer() {
 function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
   countEl.textContent = players.length;
   const kickHint = document.getElementById('kick-hint');
+  const waitingEl = isHostLobby ? document.getElementById('player-waiting-msg') : null;
 
   if (isHostLobby) {
+    state.hostLobbyPlayers = Array.isArray(players) ? [...players] : [];
+    const stageVariant = useHostPlayerStageVariant();
+    applyHostPlayerStageVariantClass(listEl, stageVariant);
     // Host lobby: show kick buttons
     listEl.innerHTML = players
-      .map(
-        (p) =>
-          `<li class="player-chip kickable" data-id="${p.id}">
-            <span class="avatar-circle">${p.avatar || '🎮'}</span>
-            ${escapeHtml(p.nickname)}
-            <button class="btn-kick" data-id="${p.id}" title="Kick player">❌</button>
-          </li>`
-      )
+      .map((p, index) => renderHostPlayerStageCard(p, index, stageVariant))
       .join('');
     // Attach kick listeners
     listEl.querySelectorAll('.btn-kick').forEach((btn) => {
@@ -277,6 +376,7 @@ function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
       });
     });
     if (kickHint) kickHint.style.display = players.length > 0 ? 'block' : 'none';
+    if (waitingEl) waitingEl.style.display = players.length > 0 ? 'none' : 'block';
   } else {
     listEl.innerHTML = players
       .map((p) => `<li class="player-chip"><span class="avatar-circle">${p.avatar || '🎮'}</span>${escapeHtml(p.nickname)}</li>`)
@@ -1428,6 +1528,27 @@ if (hostMenuPlayerBtn) {
   });
 }
 
+const hostStageVariantSelect = document.getElementById('host-stage-variant');
+if (hostStageVariantSelect) {
+  hostStageVariantSelect.addEventListener('change', () => {
+    applyHostStageSelection(hostStageVariantSelect.value || 'auto');
+  });
+}
+
+const hostStageVariantJoinSelect = document.getElementById('host-stage-variant-join');
+if (hostStageVariantJoinSelect) {
+  hostStageVariantJoinSelect.addEventListener('change', () => {
+    applyHostStageSelection(hostStageVariantJoinSelect.value || 'auto');
+  });
+}
+
+try {
+  const storedStageSelection = localStorage.getItem(HOST_STAGE_STORAGE_KEY) || 'auto';
+  applyHostStageSelection(storedStageSelection, false);
+} catch (_err) {
+  applyHostStageSelection('auto', false);
+}
+
 document.addEventListener('click', (e) => {
   if (!hostHomeMenu || hostHomeMenu.style.display === 'none') return;
   if (hostHomeMenu.contains(e.target) || hostMenuBtn?.contains(e.target)) return;
@@ -1618,6 +1739,8 @@ document.getElementById('btn-home-from-closed').addEventListener('click', () => 
 socket.on('room:created', ({ pin, ...modeInfo }) => {
   state.hostCreatePending = false;
   document.documentElement.classList.remove('autohost-launch');
+  if (state.hostPlayerStageSelection === 'auto') state.hostPlayerStageVariant = null;
+  state.hostLobbyPlayers = [];
   state.pin = pin;
   document.getElementById('host-pin').textContent = pin;
   document.getElementById('host-player-count').textContent = '0';
