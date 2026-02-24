@@ -1,58 +1,11 @@
-'use strict';
-
 // ─────────────────────────────────────────────
-// Sound Engine (synthesized via Web Audio API — no files needed)
+// ES6 Module Imports
 // ─────────────────────────────────────────────
-let audioCtx = null;
-let muted = false;
-
-function getAudioCtx() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  return audioCtx;
-}
-
-function playTone(freq, type, duration, volume = 0.25, delay = 0) {
-  if (muted) return;
-  try {
-    const ctx = getAudioCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.type = type;
-    osc.frequency.value = freq;
-    gain.gain.setValueAtTime(volume, ctx.currentTime + delay);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + duration);
-    osc.start(ctx.currentTime + delay);
-    osc.stop(ctx.currentTime + delay + duration);
-  } catch (e) {}
-}
-
-const Sounds = {
-  click:    () => playTone(600, 'sine', 0.06, 0.15),
-  tick:     () => playTone(880, 'square', 0.04, 0.1),
-  urgentTick: () => { playTone(1100, 'square', 0.05, 0.18); },
-  correct:  () => {
-    playTone(523, 'sine', 0.1, 0.35);
-    playTone(659, 'sine', 0.1, 0.35, 0.11);
-    playTone(784, 'sine', 0.18, 0.35, 0.22);
-  },
-  wrong:    () => {
-    playTone(220, 'sawtooth', 0.15, 0.3);
-    playTone(160, 'sawtooth', 0.15, 0.3, 0.14);
-  },
-  start:    () => {
-    [440, 554, 659, 880].forEach((f, i) => playTone(f, 'sine', 0.12, 0.3, i * 0.1));
-  },
-  fanfare:  () => {
-    [523, 659, 784, 1046, 1318].forEach((f, i) => playTone(f, 'sine', 0.22, 0.4, i * 0.09));
-  },
-  pause:    () => playTone(300, 'sine', 0.2, 0.2),
-  resume:   () => {
-    playTone(440, 'sine', 0.1, 0.2);
-    playTone(550, 'sine', 0.1, 0.2, 0.1);
-  },
-};
+import { state, updateState, resetQuestionState} from './state/GameState.js';
+import { Sounds, setMuted, isMuted } from './utils/sounds.js';
+import { showView, safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js';
+import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js';
+import { QuestionRendererFactory } from './renderers/QuestionRenderer.js';
 
 // Fetch and display server build time on home screen
 fetch('/api/build-info')
@@ -354,13 +307,8 @@ function pushJoinDebugLog(message) {
 }
 
 // ─────────────────────────────────────────────
-// Option colors (Kahoot-style)
-// ─────────────────────────────────────────────
-const OPTION_COLORS = ['opt-violet', 'opt-cyan', 'opt-amber', 'opt-emerald'];
-const OPTION_ICONS  = ['A', 'B', 'C', 'D'];
-
-// ─────────────────────────────────────────────
 // View Management
+// Note: OPTION_COLORS, OPTION_ICONS, and escapeHtml are imported from utils/dom.js
 // ─────────────────────────────────────────────
 function normalizeViewDom() {
   try {
@@ -817,23 +765,9 @@ function clearQuestionMedia() {
   });
 }
 
-// ── Helper: Safe element access ─────────────────────────────────────
-function safeGet(id) {
-  const el = document.getElementById(id);
-  if (!el && window.__dbgLog) window.__dbgLog('MISSING ELEMENT: ' + id);
-  return el;
-}
-
-function safeSetDisplay(id, display) {
-  const el = document.getElementById(id);
-  if (el) el.style.display = display;
-}
-
-function hideConnectionChip() {
-  safeSetDisplay('connection-status-chip', 'none');
-}
-
 // ── Host view: shows question + non-interactive options/items ──────────
+// Note: Helper functions (safeGet, safeSetDisplay, hideConnectionChip, etc.) 
+// are now imported from utils/dom.js
 function renderHostQuestion(data) {
   try {
     console.log('[v54] renderHostQuestion', JSON.stringify({type: data&&data.question&&data.question.type, qi: data&&data.questionIndex}).substring(0,80));
@@ -865,47 +799,11 @@ function renderHostQuestion(data) {
     const hostBossPanel = safeGet('host-boss-panel');
     if (hostBossPanel) hostBossPanel.style.display = 'none';
 
+    // Use the new modular renderer system for host view
     if (!grid) {
       if (window.__dbgLog) window.__dbgLog('ERR: host-options-grid missing');
     } else {
-      if (q.type === 'single' || q.type === 'multi') {
-        grid.innerHTML = (q.options || []).map((opt, i) =>
-          `<div class="option-card ${OPTION_COLORS[i]} stagger-${i + 1}">
-            <span class="opt-icon">${OPTION_ICONS[i]}</span>
-            <span class="opt-text">${escapeHtml(opt)}</span>
-          </div>`
-        ).join('');
-      } else if (q.type === 'type') {
-        grid.innerHTML =
-          `<div class="host-type-preview">
-            <span class="host-type-label">Type Sprint</span>
-            <span class="host-type-hint">Players submit a typed answer</span>
-          </div>`;
-      } else if (q.type === 'match') {
-        grid.innerHTML =
-          `<div class="host-pairs-preview">${(q.lefts || []).map((l, i) =>
-            `<div class="host-pair-row stagger-${Math.min(i + 1, 4)}">
-              <span class="host-pair-side">${escapeHtml(l)}</span>
-              <span class="host-pair-arrow">⟷</span>
-              <span class="host-pair-side host-pair-right">?</span>
-            </div>`
-          ).join('')}</div>`;
-      } else if (q.type === 'order') {
-        grid.innerHTML =
-          `<div class="host-order-preview">${(q.items || []).map((item, i) =>
-            `<div class="host-order-item stagger-${Math.min(i + 1, 4)}">${i + 1}. ${escapeHtml(item)}</div>`
-          ).join('')}</div>`;
-      } else if (q.type === 'boss') {
-        grid.innerHTML = (q.options || []).map((opt, i) =>
-          `<div class="option-card ${OPTION_COLORS[i]} stagger-${i + 1}">
-            <span class="opt-icon">${OPTION_ICONS[i]}</span>
-            <span class="opt-text">${escapeHtml(opt)}</span>
-          </div>`
-        ).join('');
-        state.currentBoss = q.boss || null;
-        updateBossPanel('host', q.boss || null);
-        if (hostBossPanel) hostBossPanel.style.display = 'block';
-      }
+      QuestionRendererFactory.render(q, true, null);
     }
 
     startClientTimer(data.duration,
@@ -976,22 +874,8 @@ function renderPlayerQuestion(data) {
 
     renderRolePanel(data.players || state.questionPlayers || []);
 
-    if (q.type === 'single') {
-      renderSingleChoice(q);
-    } else if (q.type === 'type') {
-      safeSetDisplay('player-options-grid', 'none');
-      renderTypeSprint(q);
-    } else if (q.type === 'multi') {
-      renderMultiChoice(q);
-    } else if (q.type === 'match') {
-      safeSetDisplay('player-options-grid', 'none');
-      renderMatch(q);
-    } else if (q.type === 'order') {
-      safeSetDisplay('player-options-grid', 'none');
-      renderOrder(q);
-    } else if (q.type === 'boss') {
-      renderBossQuestion(q);
-    }
+    // Use the new modular renderer system
+    QuestionRendererFactory.render(q, false, submitAnswer);
 
     startClientTimer(data.duration,
       safeGet('player-timer-count'),
@@ -1015,332 +899,10 @@ function renderPlayerQuestion(data) {
   }
 }
 
-function renderTypeSprint(q) {
-  const typeCont = document.getElementById('player-type-container');
-  const input = document.getElementById('player-type-input');
-  const submit = document.getElementById('btn-submit-answer');
-
-  typeCont.style.display = 'block';
-  submit.style.display = 'block';
-  submit.disabled = true;
-
-  input.value = '';
-  input.placeholder = q.inputPlaceholder || 'Type your answer';
-  input.disabled = false;
-
-  input.oninput = () => {
-    submit.disabled = input.value.trim().length === 0 || state.hasAnswered;
-  };
-}
-
-function renderBossQuestion(q) {
-  renderSingleChoice(q);
-  state.currentBoss = q.boss || null;
-  updateBossPanel('player', q.boss || null);
-  document.getElementById('player-boss-panel').style.display = 'block';
-}
-
-function updateBossPanel(prefix, boss) {
-  const nameEl = document.getElementById(`${prefix}-boss-name`);
-  const hpEl = document.getElementById(`${prefix}-boss-hp`);
-  const fillEl = document.getElementById(`${prefix}-boss-bar-fill`);
-  if (!nameEl || !hpEl || !fillEl || !boss) return;
-
-  const maxHp = Math.max(1, Number(boss.maxHp) || 100);
-  const remainingHp = Math.max(0, Number(boss.remainingHp) || 0);
-  const pct = Math.max(0, Math.min(100, Math.round((remainingHp / maxHp) * 100)));
-
-  nameEl.textContent = boss.name || 'Tooryan Boss';
-  hpEl.textContent = `${remainingHp} / ${maxHp}`;
-  fillEl.style.width = `${pct}%`;
-}
-
-// ── Single choice (pick one, immediate submit) ─────────────────────────
-function renderSingleChoice(q) {
-  const grid = document.getElementById('player-options-grid');
-  grid.innerHTML = (q.options || []).map((opt, i) =>
-    `<button
-      class="option-btn ${OPTION_COLORS[i]} stagger-${i + 1}"
-      data-index="${i}"
-      aria-label="Option ${i + 1}: ${escapeHtml(opt)}"
-    >
-      <span class="opt-icon">${OPTION_ICONS[i]}</span>
-      <span class="opt-text">${escapeHtml(opt)}</span>
-    </button>`
-  ).join('');
-
-  grid.querySelectorAll('.option-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      if (state.hasAnswered || state.isFrozen) return;
-      Sounds.click();
-      submitAnswer({ answerIndex: parseInt(btn.dataset.index, 10) });
-    });
-  });
-}
-
-// ── Multi-select (pick all that apply, then tap Submit) ────────────────
-function renderMultiChoice(q) {
-  const grid    = document.getElementById('player-options-grid');
-  const submit  = document.getElementById('btn-submit-answer');
-  submit.style.display = 'block';
-  submit.disabled      = true;
-
-  grid.innerHTML = (q.options || []).map((opt, i) =>
-    `<button
-      class="option-btn ${OPTION_COLORS[i]} stagger-${i + 1}"
-      data-index="${i}"
-      aria-label="Option ${i + 1}: ${escapeHtml(opt)}"
-    >
-      <span class="opt-icon">${OPTION_ICONS[i]}</span>
-      <span class="opt-text">${escapeHtml(opt)}</span>
-    </button>`
-  ).join('');
-
-  grid.querySelectorAll('.option-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      if (state.hasAnswered || state.isFrozen) return;
-      Sounds.click();
-      btn.classList.toggle('multi-selected');
-      const anySelected = grid.querySelectorAll('.multi-selected').length > 0;
-      submit.disabled = !anySelected;
-    });
-  });
-}
-
-// �?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?
-//  Shared pointer-based drag-and-drop state
-// �?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?
-let _drag = null;
-function _removeDragGhost() { document.getElementById('__dgh')?.remove(); }
-function _dropzoneAt(x, y) {
-  for (const el of document.elementsFromPoint(x, y)) {
-    if (el.dataset && el.dataset.dropzone !== undefined) return el;
-  }
-  return null;
-}
-
-// �?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?
-//  Match / Connect — drag-and-drop
-// �?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?
-function renderMatch(q) {
-  state.matchConnections = new Array(q.lefts.length).fill(-1);
-  state.matchLefts       = q.lefts;
-  state.matchRights      = q.rights;
-
-  document.getElementById('player-match-container').style.display = 'block';
-  const submit = document.getElementById('btn-submit-answer');
-  submit.style.display = 'block';
-  submit.disabled      = true;
-
-  buildMatchUI();
-}
-
-function buildMatchUI() {
-  if (state.hasAnswered) return;
-  const lefts  = state.matchLefts;
-  const rights = state.matchRights;
-  const placed = new Set(state.matchConnections.filter(v => v !== -1));
-  const container = document.getElementById('player-match-container');
-
-  container.innerHTML = `
-    <div class="match-dnd-layout">
-      <div class="match-dnd-slots">
-        ${lefts.map((l, i) => {
-          const ri     = state.matchConnections[i];
-          const filled = ri !== -1;
-          const col    = OPTION_COLORS[i % OPTION_COLORS.length];
-          return `<div class="match-dnd-row">
-            <div class="match-dnd-label">${escapeHtml(l)}</div>
-            <div class="match-dropzone ${filled ? 'match-dz-filled ' + col : 'match-dz-empty'}" data-dropzone="${i}">
-              ${filled
-                ? `<span class="match-chip in-slot ${col}" data-chip-idx="${ri}" data-in-slot="${i}">${escapeHtml(rights[ri])}</span>`
-                : `<span class="match-drop-hint">drop here</span>`}
-            </div>
-          </div>`;
-        }).join('')}
-      </div>
-      <div class="match-dnd-pool">
-        <span class="match-pool-label">Drag to match</span>
-        ${rights.map((r, i) => {
-          if (placed.has(i)) return '';
-          return `<span class="match-chip in-pool opt-violet" data-chip-idx="${i}" data-in-slot="-1">${escapeHtml(r)}</span>`;
-        }).join('')}
-      </div>
-    </div>`;
-
-  container.querySelectorAll('.match-chip').forEach(chip => {
-    chip.addEventListener('pointerdown', _matchChipPointerDown);
-  });
-  checkMatchComplete();
-}
-
-function _matchChipPointerDown(e) {
-  if (state.hasAnswered || state.isFrozen) return;
-  e.preventDefault();
-  const chip    = e.currentTarget;
-  const chipIdx  = parseInt(chip.dataset.chipIdx);
-  const fromSlot = parseInt(chip.dataset.inSlot);  // -1 = in pool
-  const rect     = chip.getBoundingClientRect();
-
-  const ghost = document.createElement('span');
-  ghost.id        = '__dgh';
-  ghost.className = 'match-chip match-drag-ghost';
-  ghost.textContent = chip.textContent;
-  ghost.style.cssText = `position:fixed;pointer-events:none;z-index:9999;
-    width:${rect.width}px;left:${rect.left}px;top:${rect.top}px;
-    opacity:0.9;transform:scale(1.1) rotate(-2deg);`;
-  document.body.appendChild(ghost);
-  chip.style.opacity = '0.2';
-
-  _drag = { type:'match', chipIdx, fromSlot, sourceEl:chip, ghost,
-            offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top };
-
-  document.addEventListener('pointermove', _matchDragMove);
-  document.addEventListener('pointerup',   _matchDragEnd, { once: true });
-}
-
-function _matchDragMove(e) {
-  if (!_drag || _drag.type !== 'match') return;
-  _drag.ghost.style.left = (e.clientX - _drag.offsetX) + 'px';
-  _drag.ghost.style.top  = (e.clientY - _drag.offsetY) + 'px';
-  document.querySelectorAll('.match-dropzone').forEach(dz => dz.classList.remove('match-dz-hover'));
-  const dz = _dropzoneAt(e.clientX, e.clientY);
-  if (dz) dz.classList.add('match-dz-hover');
-}
-
-function _matchDragEnd(e) {
-  document.removeEventListener('pointermove', _matchDragMove);
-  if (!_drag || _drag.type !== 'match') { _drag = null; return; }
-  _removeDragGhost();
-  document.querySelectorAll('.match-dropzone').forEach(dz => dz.classList.remove('match-dz-hover'));
-
-  const dz = _dropzoneAt(e.clientX, e.clientY);
-  if (dz) {
-    const toSlot  = parseInt(dz.dataset.dropzone);
-    const existed = state.matchConnections[toSlot];
-    state.matchConnections[toSlot] = _drag.chipIdx;
-    if (_drag.fromSlot !== -1) {
-      // Chip came from another slot — swap the displaced chip back
-      state.matchConnections[_drag.fromSlot] = (existed !== -1) ? existed : -1;
-    }
-    Sounds.click();
-  } else {
-    // Dropped outside any zone — return chip to pool
-    if (_drag.fromSlot !== -1) state.matchConnections[_drag.fromSlot] = -1;
-  }
-  _drag = null;
-  buildMatchUI();
-}
-
-function checkMatchComplete() {
-  const allFilled = state.matchConnections.every(v => v !== -1);
-  document.getElementById('btn-submit-answer').disabled = !allFilled;
-}
-
-// �?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?
-//  Order / Sort — drag-and-drop
-// �?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?
-function renderOrder(q) {
-  state.orderItemOrder = q.items.map((_, i) => i);
-  state.orderItems     = q.items;
-
-  document.getElementById('player-order-container').style.display = 'block';
-  const submit = document.getElementById('btn-submit-answer');
-  submit.style.display = 'block';
-  submit.disabled      = false;
-
-  buildOrderUI();
-}
-
-function buildOrderUI() {
-  if (state.hasAnswered) return;
-  const items = state.orderItems;
-  const list  = document.getElementById('order-list');
-  list.innerHTML = state.orderItemOrder.map((itemIdx, pos) =>
-    `<li class="order-item stagger-${Math.min(pos+1,4)}" data-pos="${pos}">
-      <span class="order-drag-handle" aria-hidden="true">⠿</span>
-      <span class="order-label" dir="auto">${escapeHtml(items[itemIdx])}</span>
-    </li>`
-  ).join('');
-
-  list.querySelectorAll('.order-item').forEach(item => {
-    item.addEventListener('pointerdown', _orderItemPointerDown);
-  });
-}
-
-function _orderItemPointerDown(e) {
-  if (state.hasAnswered || state.isFrozen) return;
-  e.preventDefault();
-  const item    = e.currentTarget;
-  const fromPos = parseInt(item.dataset.pos);
-  const rect    = item.getBoundingClientRect();
-
-  const ghost = document.createElement('li');
-  ghost.id        = '__dgh';
-  ghost.className = 'order-item order-drag-ghost';
-  ghost.innerHTML = item.innerHTML;
-  ghost.style.cssText = `position:fixed;pointer-events:none;z-index:9999;
-    width:${rect.width}px;left:${rect.left}px;top:${rect.top}px;
-    opacity:0.9;transform:rotate(-1.5deg) scale(1.03);`;
-  document.body.appendChild(ghost);
-  item.classList.add('order-dragging-source');
-
-  // Drop indicator line
-  const ind = document.createElement('li');
-  ind.id        = '__ord_ind';
-  ind.className = 'order-insert-indicator';
-  document.getElementById('order-list').appendChild(ind);
-
-  _drag = { type:'order', fromPos, sourceEl:item, ghost,
-            offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top,
-            insertAt: fromPos };
-
-  document.addEventListener('pointermove', _orderDragMove);
-  document.addEventListener('pointerup',   _orderDragEnd, { once: true });
-}
-
-function _orderDragMove(e) {
-  if (!_drag || _drag.type !== 'order') return;
-  _drag.ghost.style.left = (e.clientX - _drag.offsetX) + 'px';
-  _drag.ghost.style.top  = (e.clientY - _drag.offsetY) + 'px';
-
-  const list  = document.getElementById('order-list');
-  const items = [...list.querySelectorAll('.order-item:not(.order-dragging-source)')];
-  const ind   = document.getElementById('__ord_ind');
-  if (!ind) return;
-
-  let insertAt = state.orderItemOrder.length;
-  for (const it of items) {
-    const r = it.getBoundingClientRect();
-    if (e.clientY < r.top + r.height / 2) {
-      insertAt = parseInt(it.dataset.pos);
-      break;
-    }
-  }
-  // Compensate for the removed source item
-  _drag.insertAt = insertAt;
-  const target = items.find(it => parseInt(it.dataset.pos) >= insertAt);
-  if (target) list.insertBefore(ind, target);
-  else        list.appendChild(ind);
-}
-
-function _orderDragEnd() {
-  document.removeEventListener('pointermove', _orderDragMove);
-  if (!_drag || _drag.type !== 'order') { _drag = null; return; }
-  const fromPos  = _drag.fromPos;
-  const insertAt = _drag.insertAt;
-  _removeDragGhost();
-  document.getElementById('__ord_ind')?.remove();
-  _drag = null;
-
-  const arr = [...state.orderItemOrder];
-  const [moved] = arr.splice(fromPos, 1);
-  const target  = Math.min(Math.max(insertAt > fromPos ? insertAt - 1 : insertAt, 0), arr.length);
-  arr.splice(target, 0, moved);
-  state.orderItemOrder = arr;
-  Sounds.click();
-  buildOrderUI();
-}
+// ─────────────────────────────────────────────
+// Note: All question type renderers have been moved to modular ES6 files
+// in public/js/renderers/. They are now accessed via QuestionRendererFactory.
+// ─────────────────────────────────────────────
 
 // ─────────────────────────────────────────────
 // Submit Answer (Player)
@@ -2076,26 +1638,15 @@ document.getElementById('btn-end-game').addEventListener('click', () => {
   socket.emit('host:end');
 });
 
-// Submit answer (multi / match / order)
+// Submit answer (multi / match / order / type)
 document.getElementById('btn-submit-answer').addEventListener('click', () => {
   if (state.hasAnswered || state.isFrozen) return;
   Sounds.click();
-  const type = state.currentQuestionType;
-  if (type === 'type') {
-    const input = document.getElementById('player-type-input');
-    const value = input.value.trim();
-    if (!value) return;
-    submitAnswer({ textAnswer: value });
-  } else if (type === 'multi') {
-    const selected = Array.from(
-      document.querySelectorAll('#player-options-grid .multi-selected')
-    ).map(el => parseInt(el.dataset.index, 10));
-    if (selected.length === 0) return;
-    submitAnswer({ answerIndices: selected });
-  } else if (type === 'match') {
-    submitAnswer({ matches: [...state.matchConnections] });
-  } else if (type === 'order') {
-    submitAnswer({ order: [...state.orderItemOrder] });
+  
+  // Use the renderer factory to get the answer in the correct format
+  const answer = QuestionRendererFactory.getAnswer();
+  if (answer) {
+    submitAnswer(answer);
   }
 });
 
@@ -2116,8 +1667,8 @@ document.getElementById('btn-role-action').addEventListener('click', () => {
 
 // Mute toggle
 document.getElementById('btn-mute').addEventListener('click', () => {
-  muted = !muted;
-  document.getElementById('btn-mute').textContent = muted ? '🔇' : '🔊';
+  setMuted(!isMuted());
+  document.getElementById('btn-mute').textContent = isMuted() ? '🔇' : '🔊';
 });
 
 // Play Again button
