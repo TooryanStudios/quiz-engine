@@ -112,15 +112,18 @@ function setHostQuizTitle(text) {
   hostQuizTitleEl.style.display = 'block';
 }
 
-// If a quiz slug is in the URL, fetch and show title only (no slug flicker)
+// If a quiz slug is in the URL, show ID immediately then fetch title
+// Update both the home banner and the player-join banner
 if (quizSlugFromUrl) {
   const el = document.getElementById('quiz-title-banner');
-  setHostQuizTitle('');
+  const el2 = document.getElementById('join-quiz-title-banner');
+  setHostQuizTitle(quizSlugFromUrl);
   const setText = (text) => {
     if (!isAutoHostLaunch && el)  { el.textContent = text; el.style.display = 'block'; }
-    setHostQuizTitle(text.replace(/^📋\s*/, ''));
+    setHostQuizTitle(text.replace(/^📋\s*/, '').replace(/^🆔\s*/, ''));
     // intentionally not shown on player join screen
   };
+  setText(`🆔 ${quizSlugFromUrl}`);
   fetch(`/api/quiz-info/${encodeURIComponent(quizSlugFromUrl)}`)
     .then((r) => r.ok ? r.json() : null)
     .then((data) => {
@@ -187,7 +190,7 @@ const HOST_PLAYER_STAGE_VARIANTS = {
     cardClass: 'card-party-confetti',
   },
 };
-const HOST_PLAYER_PLACEHOLDER_COUNT = 8;
+const HOST_PLAYER_PLACEHOLDER_COUNT = 10;
 
 const hostPlayerStageConfig = {
   enabled: true,
@@ -251,6 +254,10 @@ function syncHostStageSelects(value) {
   ['host-stage-variant', 'host-stage-variant-join'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.value = value;
+  });
+  // sync custom preset buttons
+  document.querySelectorAll('#anim-preset-menu .anim-preset-btn').forEach((btn) => {
+    btn.classList.toggle('anim-preset-active', btn.dataset.value === value);
   });
 }
 
@@ -1508,26 +1515,30 @@ document.getElementById('btn-save-profile').addEventListener('click', () => {
 // Host Lobby — Back button
 const hostMenuBtn = document.getElementById('btn-back-from-host-lobby');
 const hostHomeMenu = document.getElementById('host-home-menu');
+const shareUrlSection = document.getElementById('share-url-section');
+const shareMenuBtn    = document.getElementById('btn-share-menu');
+const shareActions    = document.getElementById('share-actions');
+
+function setShareOpen(isOpen) {
+  if (shareActions) shareActions.classList.toggle('share-open', !!isOpen);
+  if (shareMenuBtn)  shareMenuBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+}
+
+if (shareMenuBtn) {
+  shareMenuBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    setShareOpen(!shareActions?.classList.contains('share-open'));
+  });
+}
+
+document.addEventListener('click', (e) => {
+  if (!shareActions?.classList.contains('share-open')) return;
+  if (shareActions.contains(e.target) || shareMenuBtn?.contains(e.target)) return;
+  setShareOpen(false);
+});
+
 const hostMenuHostBtn = document.getElementById('btn-home-menu-host');
 const hostMenuPlayerBtn = document.getElementById('btn-home-menu-player');
-const hostMenuJoinPlayerBtn = document.getElementById('btn-home-menu-join-player');
-const hostMenuPlayerForm = document.getElementById('host-menu-player-form');
-const hostMenuPlayerInput = document.getElementById('host-menu-player-nickname');
-const hostMenuPlayerSubmit = document.getElementById('btn-home-menu-join-submit');
-const hostMenuPlayerStatus = document.getElementById('host-menu-player-status');
-
-function setHostMenuJoinLabel() {
-  if (!hostMenuJoinPlayerBtn) return;
-  const title = hostMenuJoinPlayerBtn.querySelector('.host-menu-item-title');
-  const desc = hostMenuJoinPlayerBtn.querySelector('.host-menu-item-desc');
-  if (state.hostIsPlayer) {
-    if (title) title.textContent = 'Leave as player';
-    if (desc) desc.textContent = 'Stop playing from this host device';
-  } else {
-    if (title) title.textContent = 'Join as player too';
-    if (desc) desc.textContent = 'Play from this host device inside the same session';
-  }
-}
 
 function closeHostHomeMenu() {
   if (hostHomeMenu) hostHomeMenu.style.display = 'none';
@@ -1566,33 +1577,6 @@ if (hostMenuPlayerBtn) {
   });
 }
 
-if (hostMenuJoinPlayerBtn) {
-  hostMenuJoinPlayerBtn.addEventListener('click', () => {
-    if (state.hostIsPlayer) {
-      Sounds.click();
-      socket.emit('host:join_as_player', { nickname: '' });
-      return;
-    }
-    if (hostMenuPlayerForm) {
-      const show = hostMenuPlayerForm.style.display === 'none';
-      hostMenuPlayerForm.style.display = show ? 'flex' : 'none';
-      if (show) hostMenuPlayerInput?.focus();
-    }
-  });
-}
-
-if (hostMenuPlayerSubmit) {
-  hostMenuPlayerSubmit.addEventListener('click', () => {
-    const nickname = hostMenuPlayerInput?.value.trim();
-    if (!nickname) {
-      if (hostMenuPlayerStatus) hostMenuPlayerStatus.textContent = '⚠️ Please enter a nickname.';
-      return;
-    }
-    Sounds.click();
-    socket.emit('host:join_as_player', { nickname, avatar: state.avatar });
-  });
-}
-
 const hostStageVariantSelect = document.getElementById('host-stage-variant');
 if (hostStageVariantSelect) {
   hostStageVariantSelect.addEventListener('change', () => {
@@ -1617,8 +1601,77 @@ try {
 document.addEventListener('click', (e) => {
   if (!hostHomeMenu || hostHomeMenu.style.display === 'none') return;
   if (hostHomeMenu.contains(e.target) || hostMenuBtn?.contains(e.target)) return;
-  if (hostMenuPlayerForm) hostMenuPlayerForm.style.display = 'none';
   closeHostHomeMenu();
+});
+
+// Theme toggle
+const THEME_KEY = 'qyanTheme';
+const btnThemeToggle = document.getElementById('btn-theme-toggle');
+const iconMoon = document.getElementById('icon-theme-moon');
+const iconSun  = document.getElementById('icon-theme-sun');
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  const isLight = theme === 'light';
+  if (iconMoon) iconMoon.style.display = isLight ? 'none' : '';
+  if (iconSun)  iconSun.style.display  = isLight ? '' : 'none';
+  try { localStorage.setItem(THEME_KEY, theme); } catch (_) {}
+}
+
+// Theme label update
+function updateThemeLabel() {
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  const lbl = document.getElementById('theme-toggle-label');
+  if (lbl) lbl.textContent = isLight ? 'Switch to Dark' : 'Switch to Light';
+}
+
+if (btnThemeToggle) {
+  btnThemeToggle.addEventListener('click', () => {
+    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+    applyTheme(isLight ? 'dark' : 'light');
+    updateThemeLabel();
+  });
+}
+
+try {
+  applyTheme(localStorage.getItem(THEME_KEY) || 'dark');
+  updateThemeLabel();
+} catch (_) {
+  applyTheme('dark');
+  updateThemeLabel();
+}
+
+// Animation preset icon menu
+const btnAnimPreset  = document.getElementById('btn-anim-preset');
+const animPresetMenu = document.getElementById('anim-preset-menu');
+
+function closeAnimPresetMenu() {
+  // Anim preset is now embedded in burger — close the burger instead
+  closeHostHomeMenu();
+}
+
+if (btnAnimPreset && animPresetMenu) {
+  btnAnimPreset.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = animPresetMenu.style.display !== 'none';
+    if (isOpen) { closeAnimPresetMenu(); }
+    else {
+      animPresetMenu.style.display = 'flex';
+      btnAnimPreset.setAttribute('aria-expanded', 'true');
+    }
+  });
+
+  animPresetMenu.querySelectorAll('.anim-preset-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      applyHostStageSelection(btn.dataset.value || 'auto');
+      closeAnimPresetMenu();
+    });
+  });
+}
+
+// Anim preset buttons (now inline in burger menu — no external toggle needed)
+document.addEventListener('click', (e) => {
+  // Kept for compat — anim-preset is embedded so no external dismiss needed
 });
 
 // Host Lobby — mode toggle
@@ -1649,6 +1702,73 @@ document.getElementById('btn-share-copy').addEventListener('click', async () => 
   } catch {
     prompt('Copy this link:', url);
   }
+});
+
+// Diagnose — add fake test players
+const FAKE_NAMES   = ['Alice','Bob','Carlos','Diana','Eve','Frank','Grace','Hank','Ivy','Jack','Kara','Leo'];
+const FAKE_AVATARS = ['🦦','🐼','🦱','🐯','🦄','🐸','🐙','🦋','🦤','🐺','🐻','🦝'];
+const btnDiagnose  = document.getElementById('btn-diagnose');
+
+if (btnDiagnose) {
+  btnDiagnose.addEventListener('click', () => {
+    if (!state.hostLobbyPlayers) state.hostLobbyPlayers = [];
+    // long-press (pointerdown >600ms) clears; single click adds one
+    const idx = state.hostLobbyPlayers.filter(p => p.id?.startsWith('fake-')).length;
+    if (idx >= HOST_PLAYER_PLACEHOLDER_COUNT) {
+      // all slots filled — clear fakes
+      state.hostLobbyPlayers = state.hostLobbyPlayers.filter(p => !p.id?.startsWith('fake-'));
+    } else {
+      state.hostLobbyPlayers.push({
+        id: 'fake-' + Date.now(),
+        nickname: FAKE_NAMES[idx % FAKE_NAMES.length],
+        avatar: FAKE_AVATARS[idx % FAKE_AVATARS.length],
+      });
+    }
+    rerenderHostPlayerStage();
+  });
+}
+
+// Host-as-Player toggle
+const chkHostAsPlayer = document.getElementById('chk-host-as-player');
+const hostPlayerForm  = document.getElementById('host-player-form');
+const hostAsPlayerSection = document.getElementById('host-as-player-section');
+if (chkHostAsPlayer) {
+  chkHostAsPlayer.addEventListener('change', () => {
+    if (hostAsPlayerSection) {
+      hostAsPlayerSection.classList.toggle('join-enabled', !!chkHostAsPlayer.checked);
+    }
+    if (hostPlayerForm) {
+      hostPlayerForm.style.display = chkHostAsPlayer.checked ? 'flex' : 'none';
+    }
+    if (!chkHostAsPlayer.checked && state.hostIsPlayer) {
+      // Toggle off — ask server to remove us
+      socket.emit('host:join_as_player', { nickname: '' });
+    }
+  });
+
+  if (hostAsPlayerSection) {
+    hostAsPlayerSection.classList.toggle('join-enabled', !!chkHostAsPlayer.checked);
+  }
+}
+
+document.getElementById('btn-host-join-as-player')?.addEventListener('click', () => {
+  const nickname = document.getElementById('host-player-nickname')?.value.trim();
+  if (!nickname) {
+    const st = document.getElementById('host-as-player-status');
+    if (st) st.textContent = '\u26a0\ufe0f Please enter a nickname.';
+    return;
+  }
+  Sounds.click();
+  socket.emit('host:join_as_player', { nickname, avatar: state.avatar });
+});
+
+document.getElementById('btn-host-cancel-join')?.addEventListener('click', () => {
+  if (chkHostAsPlayer) chkHostAsPlayer.checked = false;
+  if (hostAsPlayerSection) hostAsPlayerSection.classList.remove('join-enabled');
+  if (hostPlayerForm) hostPlayerForm.style.display = 'none';
+  const st = document.getElementById('host-as-player-status');
+  if (st) st.textContent = '';
+  if (state.hostIsPlayer) socket.emit('host:join_as_player', { nickname: '' });
 });
 
 // Host Start Game
@@ -1783,12 +1903,8 @@ socket.on('room:created', ({ pin, ...modeInfo }) => {
   state.hostLobbyPlayers = [];
   state.pin = pin;
   document.getElementById('host-pin').textContent = pin;
-  renderPlayerList(
-    [],
-    document.getElementById('host-player-list'),
-    document.getElementById('host-player-count'),
-    true
-  );
+  document.getElementById('host-player-count').textContent = '0';
+  document.getElementById('host-player-list').innerHTML = '';
 
   applyModeInfo(modeInfo);
   showView('view-host-lobby');
@@ -1860,8 +1976,6 @@ socket.on('room:player_joined', ({ players }) => {
     );
     const startBtn = document.getElementById('btn-start-game');
     startBtn.disabled = players.length === 0;
-    document.getElementById('lobby-hint').textContent =
-      players.length > 0 ? `${players.length} player(s) ready.` : 'Waiting for at least 1 player…';
   } else {
     renderPlayerList(
       players,
@@ -1955,14 +2069,20 @@ socket.on('room:rejoin_failed', ({ message }) => {
 /** HOST: Server confirmed host joined as player */
 socket.on('host:joined_as_player', ({ joined, nickname, avatar }) => {
   state.hostIsPlayer = !!joined;
-  setHostMenuJoinLabel();
-  const statusEl = hostMenuPlayerStatus;
+  const statusEl = document.getElementById('host-as-player-status');
+  const chk = document.getElementById('chk-host-as-player');
+  const hostAsPlayerBlock = document.getElementById('host-as-player-section');
   if (joined) {
     if (statusEl) statusEl.textContent = `\u2705 Joined as "${nickname}" — you will play too!`;
-    if (hostMenuPlayerForm) hostMenuPlayerForm.style.display = 'none';
+    if (chk) chk.checked = true;
+    if (hostAsPlayerBlock) hostAsPlayerBlock.classList.add('join-enabled');
+    if (hostPlayerForm) hostPlayerForm.style.display = 'flex';
   } else {
     if (statusEl) statusEl.textContent = '';
-    if (hostMenuPlayerForm) hostMenuPlayerForm.style.display = 'none';
+    const form = document.getElementById('host-player-form');
+    if (form) form.style.display = 'none';
+    if (chk) chk.checked = false;
+    if (hostAsPlayerBlock) hostAsPlayerBlock.classList.remove('join-enabled');
   }
 });
 
@@ -2234,12 +2354,17 @@ socket.on('room:reset', ({ players, modeInfo }) => {
   state.myStreak = 0;
   state.myScore = 0;
   state.hostIsPlayer = false;
-  setHostMenuJoinLabel();
   updatePlayerScoreUI();
   document.getElementById('overlay-paused').style.display = 'none';
-  // Reset the host-as-player menu UI for the fresh session
-  if (hostMenuPlayerForm) hostMenuPlayerForm.style.display = 'none';
-  if (hostMenuPlayerStatus) hostMenuPlayerStatus.textContent = '';
+  // Reset the host-as-player UI for the fresh session
+  const chkReset = document.getElementById('chk-host-as-player');
+  if (chkReset) chkReset.checked = false;
+  const formReset = document.getElementById('host-player-form');
+  if (formReset) formReset.style.display = 'none';
+  const hostAsPlayerBlockReset = document.getElementById('host-as-player-section');
+  if (hostAsPlayerBlockReset) hostAsPlayerBlockReset.classList.remove('join-enabled');
+  const statusReset = document.getElementById('host-as-player-status');
+  if (statusReset) statusReset.textContent = '';
 
   if (state.role === 'host') {
     if (modeInfo) applyModeInfo(modeInfo);
@@ -2251,8 +2376,6 @@ socket.on('room:reset', ({ players, modeInfo }) => {
     );
     const startBtn = document.getElementById('btn-start-game');
     startBtn.disabled = !(players && players.length > 0);
-    document.getElementById('lobby-hint').textContent =
-      players && players.length > 0 ? `${players.length} player(s) ready.` : 'Waiting for at least 1 player…';
     showView('view-host-lobby');
   } else {
     renderPlayerList(
