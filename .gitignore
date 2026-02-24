@@ -8,3 +8,4 @@ npm-debug.log*
 # Firebase service account key
 quizengine-e7818-firebase-adminsdk-fbsvc-fd72a24bae.json
 *-firebase-adminsdk-*.json
+admin-app/
