@@ -153,15 +153,33 @@
         <button class="btn btn-secondary full-width" id="btn-copy-join-url">📋 Copy Join URL</button>
       </div>
 
-      <div class="pin-display">
-        <span class="pin-label">Room PIN</span>
-        <span class="host-quiz-title" id="host-quiz-title" style="display:none"></span>
-        <span class="pin-code" id="host-pin">------</span>
+      <div class="player-list-section">
+        <div class="host-stage-controls">
+          <label for="host-stage-variant">Player Animation</label>
+          <select id="host-stage-variant" class="host-stage-select">
+            <option value="auto" selected>Auto (Random)</option>
+            <option value="neonArcade">Neon Arcade</option>
+            <option value="quizArena">Quiz Arena</option>
+            <option value="partyConfetti">Party Confetti</option>
+          </select>
+        </div>
+        <h3>Player Parade (<span id="host-player-count">0</span>)</h3>
+        <ul class="player-list host-player-stage" id="host-player-list"></ul>
+        <p class="hint-text" id="kick-hint" style="display:none">Hover a player card to reveal remove</p>
+        <p class="player-waiting-msg" id="player-waiting-msg">Waiting for players to join...</p>
       </div>
-      <!-- QR Code for players to scan -->
-      <div class="qr-section">
-        <div class="qr-wrapper">
-          <div id="host-qr-canvas"></div>
+
+      <div class="host-pin-qr-row">
+        <div class="pin-display">
+          <span class="pin-label">Room PIN</span>
+          <span class="host-quiz-title" id="host-quiz-title" style="display:none"></span>
+          <span class="pin-code" id="host-pin">------</span>
+        </div>
+        <!-- QR Code for players to scan -->
+        <div class="qr-section">
+          <div class="qr-wrapper">
+            <div id="host-qr-canvas"></div>
+          </div>
         </div>
       </div>
 
@@ -218,21 +236,6 @@
       </button>
       <p class="hint-text" id="lobby-hint">Need at least 1 player to start</p>
 
-      <div class="player-list-section">
-        <div class="host-stage-controls">
-          <label for="host-stage-variant">Player Animation</label>
-          <select id="host-stage-variant" class="host-stage-select">
-            <option value="auto" selected>Auto (Random)</option>
-            <option value="neonArcade">Neon Arcade</option>
-            <option value="quizArena">Quiz Arena</option>
-            <option value="partyConfetti">Party Confetti</option>
-          </select>
-        </div>
-        <h3>Player Parade (<span id="host-player-count">0</span>)</h3>
-        <ul class="player-list host-player-stage" id="host-player-list"></ul>
-        <p class="hint-text" id="kick-hint" style="display:none">Hover a player card to reveal remove</p>
-        <p class="player-waiting-msg" id="player-waiting-msg">Waiting for players to join...</p>
-      </div>
     </div>
   </div>
 

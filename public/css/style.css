@@ -1164,6 +1164,23 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   min-height: 72px;
 }
 
+#view-host-lobby .host-pin-qr-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+#view-host-lobby .host-pin-qr-row .pin-display {
+  min-height: 150px;
+  justify-content: center;
+}
+
+#view-host-lobby .host-pin-qr-row .qr-section {
+  margin: 0;
+}
+
 #view-host-lobby .host-player-stage {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1290,6 +1307,14 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
 }
 
 @media (max-width: 420px) {
+  #view-host-lobby .host-pin-qr-row {
+    grid-template-columns: 1fr;
+  }
+
+  #view-host-lobby .host-pin-qr-row .pin-display {
+    min-height: 0;
+  }
+
   #view-host-lobby .host-player-stage {
     grid-template-columns: 1fr;
   }
