@@ -73,6 +73,15 @@ const app = express();
 const httpServer = http.createServer(app);
 
 // Serve static frontend files
+// Prevent caching of HTML pages so users always get the latest version
+app.use((req, res, next) => {
+  if (req.path === '/' || req.path.endsWith('.html')) {
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+  }
+  next();
+});
 app.use(express.static(path.join(__dirname, '../public')));
 
 // Health check endpoint (used by Render.com)

@@ -4,7 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
   <title>QYan</title>
-  <link rel="stylesheet" href="/css/style.css?v=50" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <link rel="stylesheet" href="/css/style.css?v=51" />
   <!-- Prevent browser zoom (Ctrl+scroll, Ctrl+±, pinch) -->
   <script>
     document.addEventListener('wheel', function(e){ if(e.ctrlKey){ e.preventDefault(); } }, { passive: false });
@@ -567,11 +570,48 @@
     <div class="diag-row"><span>Error</span><strong id="diag-error">none</strong></div>
   </div>
 
+  <!-- ─── Inline debug: runs BEFORE any external script ─── -->
+  <script>
+    (function() {
+      // Crash-proof active-view tracker — visible even if game.js fails
+      var dbg = document.createElement('div');
+      dbg.id = 'inline-dbg';
+      dbg.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#111;color:#0f0;font:bold 11px monospace;padding:3px 8px;pointer-events:none;opacity:0.85;white-space:nowrap;overflow:hidden;';
+      dbg.textContent = 'v51 boot';
+      document.body.appendChild(dbg);
+
+      window.__dbgLog = function(msg) {
+        dbg.textContent = msg;
+        console.log('[v51-dbg] ' + msg);
+      };
+
+      // Track active .view changes via MutationObserver
+      var observer = new MutationObserver(function() {
+        var active = document.querySelector('.view.active');
+        window.__dbgLog('view=' + (active ? active.id : 'NONE'));
+      });
+      // Observe class changes on all .view elements
+      setTimeout(function() {
+        var views = document.querySelectorAll('.view');
+        for (var i = 0; i < views.length; i++) {
+          observer.observe(views[i], { attributes: true, attributeFilter: ['class'] });
+        }
+        var active = document.querySelector('.view.active');
+        window.__dbgLog('init view=' + (active ? active.id : 'NONE') + ' views=' + views.length);
+      }, 0);
+
+      // Catch any script error
+      window.addEventListener('error', function(e) {
+        window.__dbgLog('ERR: ' + (e.message || e) + ' @ ' + (e.filename||'').split('/').pop() + ':' + e.lineno);
+      });
+    })();
+  </script>
+
   <!-- ─── Scripts ─── -->
-  <!-- Confetti for game over celebration -->
-  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+  <!-- Confetti for game over celebration (async — non-blocking) -->
+  <script async src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
   <!-- Load Socket.io client from the server (auto-served by socket.io) -->
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/js/game.js?v=50"></script>
+  <script src="/js/game.js?v=51"></script>
 </body>
 </html>
