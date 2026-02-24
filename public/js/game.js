@@ -150,6 +150,7 @@ const state = {
   isFrozen: false,
   currentDifficulty: 'classic',  // 'easy' | 'classic' | 'hard'
   avatar: '🎮',  // selected avatar emoji
+  hostIsPlayer: false,       // experimental: host joined as a player too
 };
 
 let scholarPreviewInterval = null;
@@ -1393,6 +1394,32 @@ document.getElementById('btn-share-copy').addEventListener('click', async () => 
   }
 });
 
+// Host-as-Player toggle
+const chkHostAsPlayer = document.getElementById('chk-host-as-player');
+const hostPlayerForm  = document.getElementById('host-player-form');
+if (chkHostAsPlayer) {
+  chkHostAsPlayer.addEventListener('change', () => {
+    if (hostPlayerForm) {
+      hostPlayerForm.style.display = chkHostAsPlayer.checked ? 'flex' : 'none';
+    }
+    if (!chkHostAsPlayer.checked && state.hostIsPlayer) {
+      // Toggle off — ask server to remove us
+      socket.emit('host:join_as_player', { nickname: '' });
+    }
+  });
+}
+
+document.getElementById('btn-host-join-as-player')?.addEventListener('click', () => {
+  const nickname = document.getElementById('host-player-nickname')?.value.trim();
+  if (!nickname) {
+    const st = document.getElementById('host-as-player-status');
+    if (st) st.textContent = '\u26a0\ufe0f Please enter a nickname.';
+    return;
+  }
+  Sounds.click();
+  socket.emit('host:join_as_player', { nickname, avatar: state.avatar });
+});
+
 // Host Start Game
 document.getElementById('btn-start-game').addEventListener('click', () => {
   enableKeepAwake();
@@ -1686,6 +1713,22 @@ socket.on('room:rejoin_failed', ({ message }) => {
   showView('view-home');
 });
 
+/** HOST: Server confirmed host joined as player */
+socket.on('host:joined_as_player', ({ joined, nickname, avatar }) => {
+  state.hostIsPlayer = !!joined;
+  const statusEl = document.getElementById('host-as-player-status');
+  const chk = document.getElementById('chk-host-as-player');
+  if (joined) {
+    if (statusEl) statusEl.textContent = `\u2705 Joined as "${nickname}" — you will play too!`;
+    if (chk) chk.checked = true;
+  } else {
+    if (statusEl) statusEl.textContent = '';
+    const form = document.getElementById('host-player-form');
+    if (form) form.style.display = 'none';
+    if (chk) chk.checked = false;
+  }
+});
+
 /** BOTH: Error from server */
 socket.on('room:error', ({ message }) => {
   const editPanel = document.getElementById('edit-profile-panel');
@@ -1769,7 +1812,9 @@ socket.on('game:question_preview', (data) => {
 socket.on('game:question', (data) => {
   state.isPaused = false;
   document.getElementById('overlay-paused').style.display = 'none';
-  renderQuestion(data, state.role === 'host');
+  // If host is also playing, show the player (interactive) question view
+  const isHostOnly = state.role === 'host' && !state.hostIsPlayer;
+  renderQuestion(data, isHostOnly);
 });
 
 socket.on('role:shield_applied', ({ from }) => {
@@ -1947,8 +1992,16 @@ socket.on('room:reset', ({ players, modeInfo }) => {
   state.totalQuestions = 0;
   state.myStreak = 0;
   state.myScore = 0;
+  state.hostIsPlayer = false;
   updatePlayerScoreUI();
   document.getElementById('overlay-paused').style.display = 'none';
+  // Reset the host-as-player UI for the fresh session
+  const chkReset = document.getElementById('chk-host-as-player');
+  if (chkReset) chkReset.checked = false;
+  const formReset = document.getElementById('host-player-form');
+  if (formReset) formReset.style.display = 'none';
+  const statusReset = document.getElementById('host-as-player-status');
+  if (statusReset) statusReset.textContent = '';
 
   if (state.role === 'host') {
     if (modeInfo) applyModeInfo(modeInfo);

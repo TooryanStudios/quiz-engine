@@ -1168,6 +1168,50 @@ io.on('connection', (socket) => {
     socket.emit('room:created', { pin, ...modePayload });
   });
 
+  // ── HOST: Join the game as a player too ───────
+  socket.on('host:join_as_player', ({ nickname, avatar }) => {
+    const room = Array.from(rooms.values()).find((r) => r.hostSocketId === socket.id);
+    if (!room) { socket.emit('room:error', { message: 'Room not found.' }); return; }
+    if (room.state !== 'lobby') { socket.emit('room:error', { message: 'Can only join as player in lobby.' }); return; }
+
+    // Remove previous host-player entry if they toggle off and back on
+    if (room.hostIsPlayer) {
+      room.players.delete(socket.id);
+      room.hostIsPlayer = false;
+      socket.data.pin = null;
+      socket.emit('host:joined_as_player', { joined: false });
+      io.to(room.pin).emit('room:player_joined', { players: getPlayerList(room) });
+      return;
+    }
+
+    const nameTaken = Array.from(room.players.values()).some(
+      (p) => p.nickname.toLowerCase() === (nickname || '').trim().toLowerCase()
+    );
+    if (nameTaken) { socket.emit('room:error', { message: 'That nickname is already taken.' }); return; }
+
+    const player = {
+      id: socket.id,
+      playerId: null,
+      nickname: (nickname || 'Host').trim(),
+      avatar: typeof avatar === 'string' ? avatar.slice(0, 8) : '🎮',
+      score: 0,
+      streak: 0,
+      maxStreak: 0,
+      currentAnswer: null,
+      answerTime: config.GAME.QUESTION_DURATION_SEC,
+      disconnected: false,
+      disconnectTimer: null,
+      isHostPlayer: true,
+    };
+    room.players.set(socket.id, player);
+    socket.data.pin = room.pin;   // enables player:answer to work
+    room.hostIsPlayer = true;
+
+    console.log(`[Room ${room.pin}] Host joined as player: ${player.nickname}`);
+    socket.emit('host:joined_as_player', { joined: true, nickname: player.nickname, avatar: player.avatar });
+    io.to(room.pin).emit('room:player_joined', { players: getPlayerList(room) });
+  });
+
   // ── PLAYER: Join a room ──────────────────────
   socket.on('player:join', ({ pin, nickname, avatar, playerId }) => {
     const room = rooms.get(pin);
@@ -1292,6 +1336,8 @@ io.on('connection', (socket) => {
       socket.emit('room:error', { message: 'Need at least one player to start.' });
       return;
     }
+    // If the only "player" is the host themselves, that's still valid
+    // (room.hostIsPlayer=true means host socket is in room.players)
 
     if (room.state !== 'lobby') {
       socket.emit('room:error', { message: 'Game already started.' });
@@ -1327,6 +1373,26 @@ io.on('connection', (socket) => {
       saboteurFreezeSeconds: Math.floor((room.challengeSettings.roleFreezeMs || ROLE_FREEZE_MS) / 1000),
       wrongPenalty: Number(room.challengeSettings.wrongPenalty || ROLE_WRONG_PENALTY),
     });
+
+    // ── Update Metadata: totalSessions & totalPlayers ──
+    const db = getDbSafe();
+    if (db && room.quizSlug) {
+      db.collection('quizzes').doc(room.quizSlug).update({
+        totalSessions: admin.firestore.FieldValue.increment(1),
+        totalPlayers: admin.firestore.FieldValue.increment(room.players.size),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }).catch(err => console.error(`[Metadata Error] Failed to update sessions: ${err.message}`));
+
+      // Also log the individual session for Master Admin
+      db.collection('game_sessions').add({
+        quizId: room.quizSlug,
+        pin: room.pin,
+        playerCount: room.players.size,
+        startedAt: admin.firestore.FieldValue.serverTimestamp(),
+        hostId: room.hostSocketId,
+        questionsCount: room.questions.length,
+      }).catch(err => console.error(`[Metadata Error] Failed to log session: ${err.message}`));
+    }
 
     // Broadcast game start to everyone in the room
     io.to(room.pin).emit('game:start', {
@@ -1435,6 +1501,13 @@ io.on('connection', (socket) => {
     room.roles = null;
     room.challengePreset = 'classic';
     room.challengeSettings = getPresetSettings('classic');
+
+    // Remove the host-player entry so they can choose fresh for the next session
+    if (room.hostIsPlayer) {
+      room.players.delete(socket.id);
+      room.hostIsPlayer = false;
+      socket.data.pin = null;
+    }
 
     room.players.forEach((player) => {
       player.score = 0;
