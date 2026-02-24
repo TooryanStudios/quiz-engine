@@ -1,8 +1,8 @@
-'use strict';
+﻿'use strict';
 
-// ─────────────────────────────────────────────
-// Sound Engine (synthesized via Web Audio API — no files needed)
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Sound Engine (synthesized via Web Audio API â€” no files needed)
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let audioCtx = null;
 let muted = false;
 
@@ -63,19 +63,19 @@ fetch('/api/build-info')
   })
   .catch(() => {});
 
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Socket.io connection
 // The server serves socket.io client at /socket.io/socket.io.js
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const socket = io(window.location.origin);
 const queryParams = new URLSearchParams(window.location.search);
 const quizSlugFromUrl = queryParams.get('quiz');
 const modeFromUrl = queryParams.get('mode');
 const isAutoHostLaunch = !!(quizSlugFromUrl && modeFromUrl === 'host');
 
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Session Persistence (reconnect support)
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function getOrCreatePlayerId() {
   let id = localStorage.getItem('quizPlayerId');
   if (!id) {
@@ -95,10 +95,10 @@ function clearGameSession() {
 
 let rejoinAttempt = false; // true while an auto-rejoin is in flight
 
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Predefined Avatar Set
-// ─────────────────────────────────────────────
-const AVATARS = ['🦁','🐯','🦊','🐼','🐨','🐸','🦄','🦖','🦝','🕺','🤖','👾','🎃','🧙','🦸','🐇','⚡','🔥','🎮','🏆'];
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const AVATARS = ['ðŸ¦','ðŸ¯','ðŸ¦Š','ðŸ¼','ðŸ¨','ðŸ¸','ðŸ¦„','ðŸ¦–','ðŸ¦','ðŸ•º','ðŸ¤–','ðŸ‘¾','ðŸŽƒ','ðŸ§™','ðŸ¦¸','ðŸ‡','âš¡','ðŸ”¥','ðŸŽ®','ðŸ†'];
 
 const hostQuizTitleEl = document.getElementById('host-quiz-title');
 function setHostQuizTitle(text) {
@@ -120,22 +120,22 @@ if (quizSlugFromUrl) {
   setHostQuizTitle(quizSlugFromUrl);
   const setText = (text) => {
     if (!isAutoHostLaunch && el)  { el.textContent = text; el.style.display = 'block'; }
-    setHostQuizTitle(text.replace(/^📋\s*/, '').replace(/^🆔\s*/, ''));
+    setHostQuizTitle(text.replace(/^ðŸ“‹\s*/, '').replace(/^ðŸ†”\s*/, ''));
     // intentionally not shown on player join screen
   };
-  setText(`🆔 ${quizSlugFromUrl}`);
+  setText(`ðŸ†” ${quizSlugFromUrl}`);
   fetch(`/api/quiz-info/${encodeURIComponent(quizSlugFromUrl)}`)
     .then((r) => r.ok ? r.json() : null)
     .then((data) => {
       if (!data) return;
-      setText(`📋 ${data.title}`);
+      setText(`ðŸ“‹ ${data.title}`);
     })
     .catch(() => {});
 }
 
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // State
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const state = {
   role: null,          // 'host' | 'player'
   pin: null,
@@ -165,7 +165,7 @@ const state = {
   roleAbilityUsed: false,
   isFrozen: false,
   currentDifficulty: 'classic',  // 'easy' | 'classic' | 'hard'
-  avatar: '🎮',  // selected avatar emoji
+  avatar: 'ðŸŽ®',  // selected avatar emoji
   hostIsPlayer: false,       // experimental: host joined as a player too
   hostCreatePending: false,
   hostPlayerStageVariant: null,
@@ -229,9 +229,9 @@ function renderHostPlayerStageCard(player, index, variant) {
   const animationDelay = Math.min(index, 8) * 70;
   const safeName = escapeHtml(player.nickname);
   return `<li class="player-chip kickable player-stage-card ${cardVariantClass}" data-id="${player.id}" style="animation-delay:${animationDelay}ms">
-            <span class="avatar-circle player-stage-avatar">${player.avatar || '🎮'}</span>
+            <span class="avatar-circle player-stage-avatar">${player.avatar || 'ðŸŽ®'}</span>
             <span class="player-stage-name">${safeName}</span>
-            <button class="btn-kick" data-id="${player.id}" title="Remove player" aria-label="Remove ${safeName}">✕</button>
+            <button class="btn-kick" data-id="${player.id}" title="Remove player" aria-label="Remove ${safeName}">âœ•</button>
           </li>`;
 }
 
@@ -348,42 +348,106 @@ function pushJoinDebugLog(message) {
   log.scrollTop = log.scrollHeight;
 }
 
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Option colors (Kahoot-style)
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const OPTION_COLORS = ['opt-violet', 'opt-cyan', 'opt-amber', 'opt-emerald'];
 const OPTION_ICONS  = ['A', 'B', 'C', 'D'];
 
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // View Management
-// ─────────────────────────────────────────────
-function showView(viewId) {
-  const activeView = document.getElementById(viewId);
-  if (!activeView) {
-    const current = document.querySelector('.view.active');
-    const fallbackId = current?.id || 'view-home';
-    const fallbackView = document.getElementById(fallbackId);
-    if (fallbackView && !current) {
-      fallbackView.classList.add('active');
-    }
-    updateDiagnose({
-      view: fallbackId,
-      error: `Missing view id: ${viewId}`,
-      event: 'showView:error',
-      role: state.role || '-',
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function normalizeViewDom() {
+  try {
+    const body = document.body;
+    if (!body) return;
+
+    // Keep views before overlays/diagnostics when possible.
+    const anchor =
+      document.getElementById('overlay-paused') ||
+      document.getElementById('overlay-frozen') ||
+      document.getElementById('diag-panel') ||
+      document.querySelector('.qyan-attribution');
+
+    document.querySelectorAll('.view').forEach((v) => {
+      if (!v || !v.id) return;
+      if (v.parentElement && v.parentElement !== body) {
+        console.warn('normalizeViewDom: moving', v.id, 'out of', v.parentElement);
+        if (anchor && anchor.parentElement === body) body.insertBefore(v, anchor);
+        else body.appendChild(v);
+      }
     });
-    return;
+  } catch (e) {
+    console.warn('normalizeViewDom failed:', e);
   }
+}
 
-  document.querySelectorAll('.view').forEach((v) => {
-    v.classList.toggle('active', v.id === viewId);
-  });
+function showView(viewId) {
+  try {
+    normalizeViewDom();
 
-  const attribution = document.querySelector('.tooryan-attribution');
-  if (activeView && attribution && attribution.parentElement !== activeView) {
-    activeView.appendChild(attribution);
+    const activeView = document.getElementById(viewId);
+    if (!activeView) {
+      if (window.__dbgLog) window.__dbgLog('showView: MISSING ' + viewId);
+      const current = document.querySelector('.view.active');
+      const fallbackId = current?.id || 'view-home';
+      updateDiagnose({
+        view: fallbackId,
+        error: `Missing view id: ${viewId}`,
+        event: 'showView:error',
+        role: state.role || '-',
+      });
+      return;
+    }
+
+    document.querySelectorAll('.view').forEach((v) => {
+      // Defensive: debug tools or previous crashes can leave inline styles
+      // (e.g. display:none / fixed positioning) that override CSS.
+      v.style.display = '';
+      v.style.position = '';
+      v.style.top = '';
+      v.style.left = '';
+      v.style.width = '';
+      v.style.height = '';
+      v.style.zIndex = '';
+      v.style.background = '';
+      v.style.overflowY = '';
+      v.style.flexDirection = '';
+      v.style.alignItems = '';
+      v.style.justifyContent = '';
+      v.style.transform = '';
+      v.style.visibility = '';
+      v.style.opacity = '';
+      v.style.pointerEvents = '';
+      v.classList.toggle('active', v.id === viewId);
+    });
+
+    // Fix attribution class name from .tooryan-attribution to .qyan-attribution
+    const attribution = document.querySelector('.qyan-attribution');
+    if (activeView && attribution && attribution.parentElement !== activeView) {
+      activeView.appendChild(attribution);
+    }
+    updateDiagnose({ view: viewId, role: state.role || '-' });
+
+    // Debug helper: keep the green outline in sync even if showView() is
+    // called repeatedly with the same viewId (no MutationObserver event).
+    if (window.__dbgLog) {
+      try {
+        document.querySelectorAll('.view').forEach((v) => {
+          v.style.border = 'none';
+          v.style.boxShadow = 'none';
+        });
+        const active = document.querySelector('.view.active');
+        if (active) {
+          active.style.border = '3px solid #0f0';
+          active.style.boxShadow = 'inset 0 0 40px rgba(0,255,0,0.1)';
+        }
+      } catch (_e) {}
+    }
+  } catch (err) {
+    console.error('showView failed:', err);
+    if (window.__dbgLog) window.__dbgLog('showView CRASH: ' + err.message);
   }
-  updateDiagnose({ view: viewId, role: state.role || '-' });
 }
 
 function startHostLaunch(quizSlug = null) {
@@ -392,7 +456,7 @@ function startHostLaunch(quizSlug = null) {
   state.role = 'host';
   state.hostCreatePending = true;
   showView('view-host-loading');
-  setConnectionStatus('warn', 'Preparing host room…');
+  setConnectionStatus('warn', 'Preparing host roomâ€¦');
 
   const doHostCreate = () => socket.emit('host:create', { quizSlug: quizSlug || null });
   if (socket.connected) {
@@ -402,9 +466,9 @@ function startHostLaunch(quizSlug = null) {
   }
 }
 
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Timer
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function startClientTimer(duration, countEl, ringEl) {
   stopClientTimer();
   let remaining = duration;
@@ -441,9 +505,9 @@ function stopClientTimer() {
   }
 }
 
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Player List Rendering
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
   if (!listEl) return;
   const playersArr = Array.isArray(players) ? players : [];
@@ -486,14 +550,14 @@ function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
     if (waitingEl) waitingEl.style.display = playersArr.length > 0 ? 'none' : 'block';
   } else {
     listEl.innerHTML = playersArr
-      .map((p) => `<li class="player-chip"><span class="avatar-circle">${p.avatar || '🎮'}</span>${escapeHtml(p.nickname)}</li>`)
+      .map((p) => `<li class="player-chip"><span class="avatar-circle">${p.avatar || 'ðŸŽ®'}</span>${escapeHtml(p.nickname)}</li>`)
       .join('');
   }
 }
 
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Avatar Picker Modal
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function openAvatarPicker(currentAvatar, onSelect) {
   const modal = document.getElementById('avatar-picker-modal');
   const grid  = document.getElementById('modal-avatar-grid');
@@ -514,7 +578,7 @@ function openAvatarPicker(currentAvatar, onSelect) {
   modal.style.display = 'flex';
 }
 
-// Close modal via × button or clicking the backdrop
+// Close modal via Ã— button or clicking the backdrop
 document.getElementById('btn-close-avatar-picker').addEventListener('click', () => {
   document.getElementById('avatar-picker-modal').style.display = 'none';
 });
@@ -522,20 +586,20 @@ document.getElementById('avatar-picker-modal').addEventListener('click', (e) => 
   if (e.target === e.currentTarget) e.currentTarget.style.display = 'none';
 });
 
-// Join form — avatar trigger
+// Join form â€” avatar trigger
 document.getElementById('join-avatar-btn').addEventListener('click', () => {
   openAvatarPicker(state.avatar, (a) => {
     state.avatar = a;
     document.getElementById('join-avatar-display').textContent = a;
     const lbl = document.querySelector('#join-avatar-btn .avatar-trigger-label');
-    if (lbl) lbl.textContent = 'Avatar selected ✓';
+    if (lbl) lbl.textContent = 'Avatar selected âœ“';
   });
 });
 
 
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Host Mode UI (Local / Global)
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function applyModeInfo(data) {
   if (!data) return;
   const { mode, joinUrl, qrSvg, localIp, localIpCandidates, localIpAvailable, warning } = data;
@@ -576,7 +640,7 @@ function applyModeInfo(data) {
       : '';
     urlEl.textContent = joinUrl
       ? `${joinUrl}${ipHint}`
-      : (localIp ? `http://${localIp} (pending room)` : '—');
+      : (localIp ? `http://${localIp} (pending room)` : 'â€”');
   }
   state.currentJoinUrl = joinUrl || '';
   if (qrWrap) qrWrap.innerHTML = qrSvg || '';
@@ -585,12 +649,12 @@ function applyModeInfo(data) {
   const shareInput = document.getElementById('share-url-input');
   if (shareInput && joinUrl) {
     shareInput.value = joinUrl;
-    const msg = encodeURIComponent(`Join my quiz game! 🎮 Click here to play: ${joinUrl}`);
+    const msg = encodeURIComponent(`Join my quiz game! ðŸŽ® Click here to play: ${joinUrl}`);
     const wa = document.getElementById('share-whatsapp');
     const tg = document.getElementById('share-telegram');
     const tw = document.getElementById('share-twitter');
     if (wa) wa.href = `https://wa.me/?text=${msg}`;
-    if (tg) tg.href = `https://t.me/share/url?url=${encodeURIComponent(joinUrl)}&text=${encodeURIComponent('Join my quiz game! 🎮')}`;
+    if (tg) tg.href = `https://t.me/share/url?url=${encodeURIComponent(joinUrl)}&text=${encodeURIComponent('Join my quiz game! ðŸŽ®')}`;
     if (tw) tw.href = `https://x.com/intent/tweet?text=${msg}`;
   }
 }
@@ -631,7 +695,7 @@ function setConnectionStatus(kind, message) {
   updateDiagnose({ socket: `${kind}: ${message}` });
 }
 
-setConnectionStatus('warn', 'Connecting to server…');
+setConnectionStatus('warn', 'Connecting to serverâ€¦');
 
 window.addEventListener('error', (event) => {
   const message = event?.error?.message || event?.message || 'Unknown runtime error';
@@ -648,9 +712,9 @@ window.addEventListener('unhandledrejection', (event) => {
   updateDiagnose({ error: message, event: 'promise:rejection' });
 });
 
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Keep Screen Awake (Wake Lock API)
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let wakeLockSentinel = null;
 let wakeLockEnabled = false;
 
@@ -667,7 +731,7 @@ async function requestScreenWakeLock() {
       }
     });
   } catch (_err) {
-    // Unsupported / denied / non-secure context — ignore silently.
+    // Unsupported / denied / non-secure context â€” ignore silently.
   }
 }
 
@@ -682,9 +746,9 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
-// ─────────────────────────────────────────────
-// Question Rendering — dispatcher
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Question Rendering â€” dispatcher
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function renderQuestion(data, isHost) {
   clearScholarPreviewInterval();
   stopClientTimer();
@@ -706,7 +770,7 @@ function renderQuestion(data, isHost) {
   }
 }
 
-// ── Shared: inject media element into a question-text-box ──────────────
+// â”€â”€ Shared: inject media element into a question-text-box â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function renderQuestionMedia(media, textElemId) {
   const textEl = document.getElementById(textElemId);
   if (!textEl) return;
@@ -737,7 +801,7 @@ function renderQuestionMedia(media, textElemId) {
   box.appendChild(el);
 }
 
-// ── Clear media from both host and player question boxes ──────────────
+// â”€â”€ Clear media from both host and player question boxes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function clearQuestionMedia() {
   ['host-question-text', 'player-question-text'].forEach((id) => {
     const el = document.getElementById(id);
@@ -748,98 +812,142 @@ function clearQuestionMedia() {
   });
 }
 
-// ── Host view: shows question + non-interactive options/items ──────────
-function renderHostQuestion(data) {
-  const q = data.question;
-  const hProg = document.getElementById('host-q-progress');
-  const hText = document.getElementById('host-question-text');
-  const hAns = document.getElementById('host-answer-counter');
-  
-  if (hProg) hProg.textContent = `Q ${data.questionIndex + 1} / ${data.total}`;
-  if (hText) hText.textContent = q.text;
-  renderQuestionMedia(q.media || null, 'host-question-text');
-  if (hAns) hAns.textContent = '0 / 0 answered';
-
-  const pauseBtn = document.getElementById('btn-pause-resume');
-  if (pauseBtn) {
-    pauseBtn.textContent = '⏸️ Pause';
-    pauseBtn.dataset.paused = 'false';
-  }
-
-  const grid = document.getElementById('host-options-grid');
-  const hostBossPanel = document.getElementById('host-boss-panel');
-  hostBossPanel.style.display = 'none';
-
-  if (q.type === 'single' || q.type === 'multi') {
-    grid.innerHTML = (q.options || []).map((opt, i) =>
-      `<div class="option-card ${OPTION_COLORS[i]} stagger-${i + 1}">
-        <span class="opt-icon">${OPTION_ICONS[i]}</span>
-        <span class="opt-text">${escapeHtml(opt)}</span>
-      </div>`
-    ).join('');
-  } else if (q.type === 'type') {
-    grid.innerHTML =
-      `<div class="host-type-preview">
-        <span class="host-type-label">Type Sprint</span>
-        <span class="host-type-hint">Players submit a typed answer</span>
-      </div>`;
-  } else if (q.type === 'match') {
-    grid.innerHTML =
-      `<div class="host-pairs-preview">${(q.lefts || []).map((l, i) =>
-        `<div class="host-pair-row stagger-${Math.min(i + 1, 4)}">
-          <span class="host-pair-side">${escapeHtml(l)}</span>
-          <span class="host-pair-arrow">⟷</span>
-          <span class="host-pair-side host-pair-right">?</span>
-        </div>`
-      ).join('')}</div>`;
-  } else if (q.type === 'order') {
-    grid.innerHTML =
-      `<div class="host-order-preview">${(q.items || []).map((item, i) =>
-        `<div class="host-order-item stagger-${Math.min(i + 1, 4)}">${i + 1}. ${escapeHtml(item)}</div>`
-      ).join('')}</div>`;
-  } else if (q.type === 'boss') {
-    grid.innerHTML = (q.options || []).map((opt, i) =>
-      `<div class="option-card ${OPTION_COLORS[i]} stagger-${i + 1}">
-        <span class="opt-icon">${OPTION_ICONS[i]}</span>
-        <span class="opt-text">${escapeHtml(opt)}</span>
-      </div>`
-    ).join('');
-    state.currentBoss = q.boss || null;
-    updateBossPanel('host', q.boss || null);
-    hostBossPanel.style.display = 'block';
-  }
-
-  startClientTimer(data.duration,
-    document.getElementById('host-timer-count'),
-    document.getElementById('host-timer-ring'));
-
-  const layout = document.getElementById('host-question-layout');
-  layout.classList.remove('animate-in');
-  void layout.offsetWidth;
-  layout.classList.add('animate-in');
-  showView('view-host-question');
+// â”€â”€ Helper: Safe element access â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function safeGet(id) {
+  const el = document.getElementById(id);
+  if (!el && window.__dbgLog) window.__dbgLog('MISSING ELEMENT: ' + id);
+  return el;
 }
 
-// ── Player view: interactive answer UI per question type ───────────────
+function safeSetDisplay(id, display) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = display;
+}
+
+function hideConnectionChip() {
+  safeSetDisplay('connection-status-chip', 'none');
+}
+
+// â”€â”€ Host view: shows question + non-interactive options/items â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function renderHostQuestion(data) {
+  try {
+    console.log('[v54] renderHostQuestion', JSON.stringify({type: data&&data.question&&data.question.type, qi: data&&data.questionIndex}).substring(0,80));
+    if (window.__dbgLog) window.__dbgLog('renderHostQ: ' + (data&&data.question ? data.question.type : 'NO-DATA'));
+    if (!data || !data.question) {
+      console.error('renderHostQuestion: Missing data', data);
+      if (window.__dbgLog) window.__dbgLog('ERR: Missing question data');
+      return;
+    }
+    
+    hideConnectionChip();
+    const q = data.question;
+    const hProg = safeGet('host-q-progress');
+    const hText = safeGet('host-question-text');
+    const hAns = safeGet('host-answer-counter');
+    
+    if (hProg) hProg.textContent = `Q ${(data.questionIndex || 0) + 1} / ${data.total || '?'}`;
+    if (hText) hText.textContent = q.text || 'Question text missing';
+    renderQuestionMedia(q.media || null, 'host-question-text');
+    if (hAns) hAns.textContent = '0 / 0 answered';
+
+    const pauseBtn = safeGet('btn-pause-resume');
+    if (pauseBtn) {
+      pauseBtn.textContent = 'â¸ï¸ Pause';
+      pauseBtn.dataset.paused = 'false';
+    }
+
+    const grid = safeGet('host-options-grid');
+    const hostBossPanel = safeGet('host-boss-panel');
+    if (hostBossPanel) hostBossPanel.style.display = 'none';
+
+    if (!grid) {
+      if (window.__dbgLog) window.__dbgLog('ERR: host-options-grid missing');
+    } else {
+      if (q.type === 'single' || q.type === 'multi') {
+        grid.innerHTML = (q.options || []).map((opt, i) =>
+          `<div class="option-card ${OPTION_COLORS[i]} stagger-${i + 1}">
+            <span class="opt-icon">${OPTION_ICONS[i]}</span>
+            <span class="opt-text">${escapeHtml(opt)}</span>
+          </div>`
+        ).join('');
+      } else if (q.type === 'type') {
+        grid.innerHTML =
+          `<div class="host-type-preview">
+            <span class="host-type-label">Type Sprint</span>
+            <span class="host-type-hint">Players submit a typed answer</span>
+          </div>`;
+      } else if (q.type === 'match') {
+        grid.innerHTML =
+          `<div class="host-pairs-preview">${(q.lefts || []).map((l, i) =>
+            `<div class="host-pair-row stagger-${Math.min(i + 1, 4)}">
+              <span class="host-pair-side">${escapeHtml(l)}</span>
+              <span class="host-pair-arrow">âŸ·</span>
+              <span class="host-pair-side host-pair-right">?</span>
+            </div>`
+          ).join('')}</div>`;
+      } else if (q.type === 'order') {
+        grid.innerHTML =
+          `<div class="host-order-preview">${(q.items || []).map((item, i) =>
+            `<div class="host-order-item stagger-${Math.min(i + 1, 4)}">${i + 1}. ${escapeHtml(item)}</div>`
+          ).join('')}</div>`;
+      } else if (q.type === 'boss') {
+        grid.innerHTML = (q.options || []).map((opt, i) =>
+          `<div class="option-card ${OPTION_COLORS[i]} stagger-${i + 1}">
+            <span class="opt-icon">${OPTION_ICONS[i]}</span>
+            <span class="opt-text">${escapeHtml(opt)}</span>
+          </div>`
+        ).join('');
+        state.currentBoss = q.boss || null;
+        updateBossPanel('host', q.boss || null);
+        if (hostBossPanel) hostBossPanel.style.display = 'block';
+      }
+    }
+
+    startClientTimer(data.duration,
+      safeGet('host-timer-count'),
+      safeGet('host-timer-ring'));
+
+    const layout = safeGet('host-question-layout');
+    if (layout) {
+      layout.classList.remove('animate-in');
+      void layout.offsetWidth;
+      layout.classList.add('animate-in');
+    }
+    showView('view-host-question');
+    if (window.__dbgLog) window.__dbgLog('renderHost: DONE (' + q.type + ')');
+  } catch (err) {
+    console.error('renderHostQuestion failed:', err);
+    if (window.__dbgLog) window.__dbgLog('CRASH: renderHost: ' + err.message);
+    showView('view-host-question');
+  }
+}
+
+// â”€â”€ Player view: interactive answer UI per question type â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function renderPlayerQuestion(data) {
   try {
+    if (!data || !data.question) {
+      if (window.__dbgLog) window.__dbgLog('ERR: renderPlayer missing data');
+      return;
+    }
+    
+    hideConnectionChip();
     markDiagEvent('render:player_question');
     const q = data.question;
-    const qProg = document.getElementById('player-q-progress');
-    if (qProg) qProg.textContent = `Q ${data.questionIndex + 1} / ${data.total}`;
-    const qText = document.getElementById('player-question-text');
-    if (qText) qText.textContent = q.text;
+    const qProg = safeGet('player-q-progress');
+    if (qProg) qProg.textContent = `Q ${(data.questionIndex || 0) + 1} / ${data.total || '?'}`;
+    const qText = safeGet('player-question-text');
+    if (qText) qText.textContent = q.text || 'Question text missing';
 
     renderQuestionMedia(q.media || null, 'player-question-text');
 
-    const ansMsg = document.getElementById('player-answered-msg');
+    const ansMsg = safeGet('player-answered-msg');
     if (ansMsg) ansMsg.textContent = '';
 
     // Streak badge
-    const streakBadge = document.getElementById('player-streak-badge');
+    const streakBadge = safeGet('player-streak-badge');
     if (streakBadge) {
       if (state.myStreak >= 2) {
-        const sCount = document.getElementById('player-streak-count');
+        const sCount = safeGet('player-streak-count');
         if (sCount) sCount.textContent = state.myStreak;
         streakBadge.style.display = 'inline-flex';
       } else {
@@ -848,62 +956,57 @@ function renderPlayerQuestion(data) {
     }
 
     // Reset all type containers
-    const optGrid   = document.getElementById('player-options-grid');
-    const typeCont  = document.getElementById('player-type-container');
-    const bossPanel = document.getElementById('player-boss-panel');
-    const matchCont = document.getElementById('player-match-container');
-    const orderCont = document.getElementById('player-order-container');
-    const submitBtn = document.getElementById('btn-submit-answer');
-
-    if (!optGrid || !typeCont || !bossPanel || !matchCont || !orderCont || !submitBtn) {
-      throw new Error('Player question UI is missing one or more required elements');
+    safeSetDisplay('player-options-grid', '');
+    safeSetDisplay('player-type-container', 'none');
+    safeSetDisplay('player-boss-panel', 'none');
+    safeSetDisplay('player-match-container', 'none');
+    safeSetDisplay('player-order-container', 'none');
+    
+    const submitBtn = safeGet('btn-submit-answer');
+    if (submitBtn) {
+      submitBtn.style.display = 'none';
+      submitBtn.disabled      = false;
+      submitBtn.textContent   = 'âœ” ØªØ£ÙƒÙŠØ¯ Ø§Ù„Ø¥Ø¬Ø§Ø¨Ø©';
     }
-
-    optGrid.style.display   = '';
-    typeCont.style.display  = 'none';
-    bossPanel.style.display = 'none';
-    matchCont.style.display = 'none';
-    orderCont.style.display = 'none';
-    submitBtn.style.display = 'none';
-    submitBtn.disabled      = false;
-    submitBtn.textContent   = '✔ تأكيد الإجابة';
 
     renderRolePanel(data.players || state.questionPlayers || []);
 
     if (q.type === 'single') {
       renderSingleChoice(q);
     } else if (q.type === 'type') {
-      optGrid.style.display = 'none';
+      safeSetDisplay('player-options-grid', 'none');
       renderTypeSprint(q);
     } else if (q.type === 'multi') {
       renderMultiChoice(q);
     } else if (q.type === 'match') {
-      optGrid.style.display = 'none';
+      safeSetDisplay('player-options-grid', 'none');
       renderMatch(q);
     } else if (q.type === 'order') {
-      optGrid.style.display = 'none';
+      safeSetDisplay('player-options-grid', 'none');
       renderOrder(q);
     } else if (q.type === 'boss') {
       renderBossQuestion(q);
     }
 
     startClientTimer(data.duration,
-      document.getElementById('player-timer-count'),
-      document.getElementById('player-timer-ring'));
+      safeGet('player-timer-count'),
+      safeGet('player-timer-ring'));
 
-    const layout = document.getElementById('player-question-layout');
+    const layout = safeGet('player-question-layout');
     if (layout) {
       layout.classList.remove('animate-in');
       void layout.offsetWidth;
       layout.classList.add('animate-in');
     }
     showView('view-player-question');
+    if (window.__dbgLog) window.__dbgLog('renderPlayer: DONE (' + q.type + ')');
   } catch (err) {
     console.error('renderPlayerQuestion failed:', err);
     updateDiagnose({ error: err?.message || 'renderPlayerQuestion failed', event: 'render:player_question:error' });
+    if (window.__dbgLog) window.__dbgLog('CRASH: renderPlayer: ' + err.message);
     showView('view-player-question');
-    const ansMsg = document.getElementById('player-answered-msg');
-    if (ansMsg) ansMsg.textContent = 'تعذر تحميل السؤال بالكامل. راجع لوحة Diagnose.';
+    const ansMsg = safeGet('player-answered-msg');
+    if (ansMsg) ansMsg.textContent = 'ØªØ¹Ø°Ø± ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ø³Ø¤Ø§Ù„ Ø¨Ø§Ù„ÙƒØ§Ù…Ù„. Ø±Ø§Ø¬Ø¹ Ù„ÙˆØ­Ø© Diagnose.';
   }
 }
 
@@ -947,7 +1050,7 @@ function updateBossPanel(prefix, boss) {
   fillEl.style.width = `${pct}%`;
 }
 
-// ── Single choice (pick one, immediate submit) ─────────────────────────
+// â”€â”€ Single choice (pick one, immediate submit) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function renderSingleChoice(q) {
   const grid = document.getElementById('player-options-grid');
   grid.innerHTML = (q.options || []).map((opt, i) =>
@@ -970,7 +1073,7 @@ function renderSingleChoice(q) {
   });
 }
 
-// ── Multi-select (pick all that apply, then tap Submit) ────────────────
+// â”€â”€ Multi-select (pick all that apply, then tap Submit) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function renderMultiChoice(q) {
   const grid    = document.getElementById('player-options-grid');
   const submit  = document.getElementById('btn-submit-answer');
@@ -999,9 +1102,9 @@ function renderMultiChoice(q) {
   });
 }
 
-// ═══════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //  Shared pointer-based drag-and-drop state
-// ═══════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 let _drag = null;
 function _removeDragGhost() { document.getElementById('__dgh')?.remove(); }
 function _dropzoneAt(x, y) {
@@ -1011,9 +1114,9 @@ function _dropzoneAt(x, y) {
   return null;
 }
 
-// ═══════════════════════════════════════════════════════════
-//  Match / Connect — drag-and-drop
-// ═══════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+//  Match / Connect â€” drag-and-drop
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function renderMatch(q) {
   state.matchConnections = new Array(q.lefts.length).fill(-1);
   state.matchLefts       = q.lefts;
@@ -1112,12 +1215,12 @@ function _matchDragEnd(e) {
     const existed = state.matchConnections[toSlot];
     state.matchConnections[toSlot] = _drag.chipIdx;
     if (_drag.fromSlot !== -1) {
-      // Chip came from another slot — swap the displaced chip back
+      // Chip came from another slot â€” swap the displaced chip back
       state.matchConnections[_drag.fromSlot] = (existed !== -1) ? existed : -1;
     }
     Sounds.click();
   } else {
-    // Dropped outside any zone — return chip to pool
+    // Dropped outside any zone â€” return chip to pool
     if (_drag.fromSlot !== -1) state.matchConnections[_drag.fromSlot] = -1;
   }
   _drag = null;
@@ -1129,9 +1232,9 @@ function checkMatchComplete() {
   document.getElementById('btn-submit-answer').disabled = !allFilled;
 }
 
-// ═══════════════════════════════════════════════════════════
-//  Order / Sort — drag-and-drop
-// ═══════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+//  Order / Sort â€” drag-and-drop
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function renderOrder(q) {
   state.orderItemOrder = q.items.map((_, i) => i);
   state.orderItems     = q.items;
@@ -1150,7 +1253,7 @@ function buildOrderUI() {
   const list  = document.getElementById('order-list');
   list.innerHTML = state.orderItemOrder.map((itemIdx, pos) =>
     `<li class="order-item stagger-${Math.min(pos+1,4)}" data-pos="${pos}">
-      <span class="order-drag-handle" aria-hidden="true">⠿</span>
+      <span class="order-drag-handle" aria-hidden="true">â ¿</span>
       <span class="order-label" dir="auto">${escapeHtml(items[itemIdx])}</span>
     </li>`
   ).join('');
@@ -1234,9 +1337,9 @@ function _orderDragEnd() {
   buildOrderUI();
 }
 
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Submit Answer (Player)
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function submitAnswer(answer) {
   if (state.hasAnswered || state.isFrozen) return;
   state.hasAnswered  = true;
@@ -1256,19 +1359,19 @@ function submitAnswer(answer) {
     const input = document.getElementById('player-type-input');
     input.disabled = true;
   } else {
-    // multi / match / order — disable the submit button
+    // multi / match / order â€” disable the submit button
     const btn = document.getElementById('btn-submit-answer');
     btn.disabled    = true;
-    btn.textContent = '✔ تم الإرسال!';
+    btn.textContent = 'âœ” ØªÙ… Ø§Ù„Ø¥Ø±Ø³Ø§Ù„!';
   }
 
   document.getElementById('player-answered-msg').textContent =
-    '✅ تم إرسال إجابتك! انتظر الآخرين…';
+    'âœ… ØªÙ… Ø¥Ø±Ø³Ø§Ù„ Ø¥Ø¬Ø§Ø¨ØªÙƒ! Ø§Ù†ØªØ¸Ø± Ø§Ù„Ø¢Ø®Ø±ÙŠÙ†â€¦';
 }
 
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Question Result Screen
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function showQuestionResult(data) {
   stopClientTimer();
   document.getElementById('overlay-paused').style.display = 'none';
@@ -1287,7 +1390,7 @@ function showQuestionResult(data) {
   const type = data.questionType;
 
   if (type === 'single') {
-    labelEl.textContent   = '✅ الإجابة الصحيحة';
+    labelEl.textContent   = 'âœ… Ø§Ù„Ø¥Ø¬Ø§Ø¨Ø© Ø§Ù„ØµØ­ÙŠØ­Ø©';
     answerEl.textContent  = data.correctOption;
 
     // Animate options grid
@@ -1305,12 +1408,12 @@ function showQuestionResult(data) {
     });
 
   } else if (type === 'type') {
-    labelEl.textContent  = '✅ الإجابات المقبولة';
-    answerEl.textContent = (data.acceptedAnswers || []).join('، ');
+    labelEl.textContent  = 'âœ… Ø§Ù„Ø¥Ø¬Ø§Ø¨Ø§Øª Ø§Ù„Ù…Ù‚Ø¨ÙˆÙ„Ø©';
+    answerEl.textContent = (data.acceptedAnswers || []).join('ØŒ ');
 
   } else if (type === 'multi') {
-    labelEl.textContent  = '✅ الإجابات الصحيحة';
-    answerEl.textContent = (data.correctOptions || []).join('، ');
+    labelEl.textContent  = 'âœ… Ø§Ù„Ø¥Ø¬Ø§Ø¨Ø§Øª Ø§Ù„ØµØ­ÙŠØ­Ø©';
+    answerEl.textContent = (data.correctOptions || []).join('ØŒ ');
 
     const grid = document.getElementById('player-options-grid');
     grid.querySelectorAll('.option-btn').forEach((btn, i) => {
@@ -1324,19 +1427,19 @@ function showQuestionResult(data) {
     });
 
   } else if (type === 'match') {
-    labelEl.textContent        = '✅ التطابق الصحيح';
+    labelEl.textContent        = 'âœ… Ø§Ù„ØªØ·Ø§Ø¨Ù‚ Ø§Ù„ØµØ­ÙŠØ­';
     answerEl.style.display     = 'none';
     pairsEl.style.display      = 'block';
     pairsEl.innerHTML = (data.correctPairs || []).map(p =>
       `<li class="result-pair">
         <span dir="auto">${escapeHtml(p.left)}</span>
-        <span class="pair-arrow">→</span>
+        <span class="pair-arrow">â†’</span>
         <span dir="auto">${escapeHtml(p.right)}</span>
       </li>`
     ).join('');
 
   } else if (type === 'order') {
-    labelEl.textContent    = '✅ الترتيب الصحيح';
+    labelEl.textContent    = 'âœ… Ø§Ù„ØªØ±ØªÙŠØ¨ Ø§Ù„ØµØ­ÙŠØ­';
     answerEl.style.display = 'none';
     pairsEl.style.display  = 'block';
     pairsEl.innerHTML = (data.correctOrder || []).map((itemIdx, pos) =>
@@ -1346,14 +1449,14 @@ function showQuestionResult(data) {
       </li>`
     ).join('');
   } else if (type === 'boss') {
-    labelEl.textContent  = '⚔️ Boss Battle Result';
+    labelEl.textContent  = 'âš”ï¸ Boss Battle Result';
     answerEl.textContent = `${data.correctOption || ''}`;
 
     if (data.boss) {
       bossStatusText = data.boss.defeated
-        ? `💥 ${data.boss.name} defeated!`
-        : `🛡️ ${data.boss.name} survived with ${data.boss.remainingHp}/${data.boss.maxHp} HP`;
-      resultMsg.textContent = `${bossStatusText} • Team Damage: ${data.boss.totalDamage}`;
+        ? `ðŸ’¥ ${data.boss.name} defeated!`
+        : `ðŸ›¡ï¸ ${data.boss.name} survived with ${data.boss.remainingHp}/${data.boss.maxHp} HP`;
+      resultMsg.textContent = `${bossStatusText} â€¢ Team Damage: ${data.boss.totalDamage}`;
       resultMsg.className = `result-score-msg ${data.boss.defeated ? 'correct' : 'incorrect'}`;
     }
   }
@@ -1367,31 +1470,31 @@ function showQuestionResult(data) {
 
     if (myRound.isCorrect) {
       Sounds.correct();
-      resultMsg.textContent = `+${myRound.roundScore} pts 🎉`;
+      resultMsg.textContent = `+${myRound.roundScore} pts ðŸŽ‰`;
       resultMsg.className   = 'result-score-msg correct';
-      streakMsg.textContent = myRound.streak >= 2 ? `🔥 ${myRound.streak} على التوالي!` : '';
+      streakMsg.textContent = myRound.streak >= 2 ? `ðŸ”¥ ${myRound.streak} Ø¹Ù„Ù‰ Ø§Ù„ØªÙˆØ§Ù„ÙŠ!` : '';
       if (bossStatusText) {
-        streakMsg.textContent = `${streakMsg.textContent ? `${streakMsg.textContent} • ` : ''}${bossStatusText}`;
+        streakMsg.textContent = `${streakMsg.textContent ? `${streakMsg.textContent} â€¢ ` : ''}${bossStatusText}`;
       }
     } else if (myRound.roundScore > 0) {
       // Partial credit (match / order but not 100%)
       Sounds.correct();
-      resultMsg.textContent = `+${myRound.roundScore} pts (جزئي)`;
+      resultMsg.textContent = `+${myRound.roundScore} pts (Ø¬Ø²Ø¦ÙŠ)`;
       resultMsg.className   = 'result-score-msg correct';
       streakMsg.textContent = bossStatusText;
     } else {
       Sounds.wrong();
-      resultMsg.textContent = 'إجابة خاطئة. ٠ نقطة.';
+      resultMsg.textContent = 'Ø¥Ø¬Ø§Ø¨Ø© Ø®Ø§Ø·Ø¦Ø©. Ù  Ù†Ù‚Ø·Ø©.';
       resultMsg.className   = 'result-score-msg incorrect';
       streakMsg.textContent = bossStatusText;
     }
 
     if (myRound.penalty > 0) {
-      resultMsg.textContent = `${resultMsg.textContent} (−${myRound.penalty} penalty)`;
+      resultMsg.textContent = `${resultMsg.textContent} (âˆ’${myRound.penalty} penalty)`;
     }
 
     if (data.boss?.teamBonus) {
-      streakMsg.textContent = `${streakMsg.textContent ? `${streakMsg.textContent} • ` : ''}🎁 Team bonus +${data.boss.teamBonus}`;
+      streakMsg.textContent = `${streakMsg.textContent ? `${streakMsg.textContent} â€¢ ` : ''}ðŸŽ Team bonus +${data.boss.teamBonus}`;
     }
   } else {
     resultMsg.textContent = '';
@@ -1401,15 +1504,15 @@ function showQuestionResult(data) {
   setTimeout(() => showView('view-question-result'), 400);
 }
 
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Leaderboard Screen
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function showLeaderboard(data, isFinal) {
   const titleEl = document.getElementById('lb-title');
   const hintEl  = document.getElementById('lb-next-hint');
 
-  titleEl.textContent = isFinal ? '🎉 Final Results' : '🏆 Leaderboard';
-  hintEl.textContent  = isFinal ? '' : 'Next question coming up…';
+  titleEl.textContent = isFinal ? 'ðŸŽ‰ Final Results' : 'ðŸ† Leaderboard';
+  hintEl.textContent  = isFinal ? '' : 'Next question coming upâ€¦';
   hintEl.style.display = isFinal ? 'none' : 'block';
 
   // Clear previous question's media so it doesn't show behind the next question hint
@@ -1421,7 +1524,7 @@ function showLeaderboard(data, isFinal) {
       (entry, i) =>
         `<li class="lb-entry ${entry.id === socket.id ? 'lb-mine' : ''}" style="animation-delay:${i * 0.07}s">
           <span class="lb-rank">${i + 1}</span>
-          <span class="lb-nickname">${escapeHtml(entry.nickname)}${entry.streak >= 2 ? ` <span class="lb-streak">🔥${entry.streak}</span>` : ''}</span>
+          <span class="lb-nickname">${escapeHtml(entry.nickname)}${entry.streak >= 2 ? ` <span class="lb-streak">ðŸ”¥${entry.streak}</span>` : ''}</span>
           <span class="lb-score">${entry.totalScore} pts</span>
         </li>`
     )
@@ -1430,9 +1533,9 @@ function showLeaderboard(data, isFinal) {
   showView('view-leaderboard');
 }
 
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Utils
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function escapeHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -1456,16 +1559,16 @@ function updatePlayerScoreUI() {
 }
 
 function roleDisplayName(role) {
-  if (role === 'scholar') return '📘 Scholar';
-  if (role === 'shield') return '🛡️ Shield';
-  if (role === 'saboteur') return '❄️ Saboteur';
+  if (role === 'scholar') return 'ðŸ“˜ Scholar';
+  if (role === 'shield') return 'ðŸ›¡ï¸ Shield';
+  if (role === 'saboteur') return 'â„ï¸ Saboteur';
   return 'Player';
 }
 
 function difficultyDisplay(preset) {
-  if (preset === 'easy') return '🟢 Easy';
-  if (preset === 'hard') return '🔴 Hard';
-  return '🟡 Classic';
+  if (preset === 'easy') return 'ðŸŸ¢ Easy';
+  if (preset === 'hard') return 'ðŸ”´ Hard';
+  return 'ðŸŸ¡ Classic';
 }
 
 function difficultyTag(preset) {
@@ -1523,7 +1626,7 @@ function showScholarPreview(data) {
   document.getElementById('player-order-container').style.display = 'none';
   document.getElementById('player-boss-panel').style.display = 'none';
   document.getElementById('btn-submit-answer').style.display = 'none';
-  document.getElementById('player-answered-msg').textContent = `📘 Scholar preview: answers open in ${left}s`;
+  document.getElementById('player-answered-msg').textContent = `ðŸ“˜ Scholar preview: answers open in ${left}s`;
   showView('view-player-question');
 
   scholarPreviewInterval = setInterval(() => {
@@ -1532,7 +1635,7 @@ function showScholarPreview(data) {
       clearScholarPreviewInterval();
       return;
     }
-    document.getElementById('player-answered-msg').textContent = `📘 Scholar preview: answers open in ${left}s`;
+    document.getElementById('player-answered-msg').textContent = `ðŸ“˜ Scholar preview: answers open in ${left}s`;
   }, 1000);
 }
 
@@ -1584,17 +1687,17 @@ function renderRolePanel(players = []) {
     .join('');
 }
 
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // UI Event Listeners
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-// Home — Become Host
+// Home â€” Become Host
 document.getElementById('btn-become-host').addEventListener('click', () => {
   Sounds.click();
   startHostLaunch(quizSlugFromUrl || null);
 });
 
-// Home — Become Player
+// Home â€” Become Player
 document.getElementById('btn-become-player').addEventListener('click', () => {
   enableKeepAwake();
   Sounds.click();
@@ -1602,7 +1705,7 @@ document.getElementById('btn-become-player').addEventListener('click', () => {
   showView('view-player-join');
 });
 
-// Player Join — Back button
+// Player Join â€” Back button
 document.getElementById('btn-back-from-join').addEventListener('click', () => {
   Sounds.click();
   showView('view-home');
@@ -1615,7 +1718,7 @@ if (closeJoinDebugBtn) {
   });
 }
 
-// Player Join — Submit form
+// Player Join â€” Submit form
 let joinTimeoutId = null;
 document.getElementById('form-join').addEventListener('submit', (e) => {
   e.preventDefault();
@@ -1636,17 +1739,17 @@ document.getElementById('form-join').addEventListener('submit', (e) => {
 
   // Visual feedback: disable join button and show joining state
   const joinBtn = e.target.querySelector('button[type="submit"]');
-  if (joinBtn) { joinBtn.disabled = true; joinBtn.textContent = 'Joining…'; }
+  if (joinBtn) { joinBtn.disabled = true; joinBtn.textContent = 'Joiningâ€¦'; }
 
   pushJoinDebugLog(`emit player:join pin=${pin} nickname=${nickname} connected=${socket.connected}`);
-  setConnectionStatus('warn', 'Joining room…');
+  setConnectionStatus('warn', 'Joining roomâ€¦');
 
   // Timeout failsafe: if no response in 10 seconds, show error
   clearTimeout(joinTimeoutId);
   joinTimeoutId = setTimeout(() => {
     if (window.__dbgLog) window.__dbgLog('join TIMEOUT 10s');
-    pushJoinDebugLog('⚠️ TIMEOUT: No room:joined received after 10 seconds');
-    showError('join-error', '⚠️ Timeout joining room. Check your connection and try again.');
+    pushJoinDebugLog('âš ï¸ TIMEOUT: No room:joined received after 10 seconds');
+    showError('join-error', 'âš ï¸ Timeout joining room. Check your connection and try again.');
     setConnectionStatus('error', 'Join timeout');
     if (joinBtn) { joinBtn.disabled = false; joinBtn.textContent = 'Join Game'; }
   }, 10000);
@@ -1654,13 +1757,13 @@ document.getElementById('form-join').addEventListener('submit', (e) => {
   socket.emit('player:join', { pin, nickname, avatar: state.avatar, playerId: myPlayerId });
 });
 
-// Player Lobby — Edit Profile toggle
+// Player Lobby â€” Edit Profile toggle
 document.getElementById('btn-edit-profile').addEventListener('click', () => {
   const panel = document.getElementById('edit-profile-panel');
   panel.classList.toggle('open');
 });
 
-// Player Lobby — Save profile (nickname change)
+// Player Lobby â€” Save profile (nickname change)
 document.getElementById('btn-save-profile').addEventListener('click', () => {
   const newNick = document.getElementById('edit-nickname-input').value.trim();
   const errEl = document.getElementById('edit-profile-error');
@@ -1673,7 +1776,7 @@ document.getElementById('btn-save-profile').addEventListener('click', () => {
   socket.emit('player:update_profile', { nickname: newNick, avatar: state.avatar });
 });
 
-// Host Lobby — Back button
+// Host Lobby â€” Back button
 const hostMenuBtn = document.getElementById('btn-back-from-host-lobby');
 const hostHomeMenu = document.getElementById('host-home-menu');
 const shareUrlSection = document.getElementById('share-url-section');
@@ -1807,7 +1910,7 @@ const btnAnimPreset  = document.getElementById('btn-anim-preset');
 const animPresetMenu = document.getElementById('anim-preset-menu');
 
 function closeAnimPresetMenu() {
-  // Anim preset is now embedded in burger — close the burger instead
+  // Anim preset is now embedded in burger â€” close the burger instead
   closeHostHomeMenu();
 }
 
@@ -1830,12 +1933,12 @@ if (btnAnimPreset && animPresetMenu) {
   });
 }
 
-// Anim preset buttons (now inline in burger menu — no external toggle needed)
+// Anim preset buttons (now inline in burger menu â€” no external toggle needed)
 document.addEventListener('click', (e) => {
-  // Kept for compat — anim-preset is embedded so no external dismiss needed
+  // Kept for compat â€” anim-preset is embedded so no external dismiss needed
 });
 
-// Host Lobby — mode toggle
+// Host Lobby â€” mode toggle
 document.getElementById('btn-mode-local').addEventListener('click', () => {
   Sounds.click();
   socket.emit('host:mode:set', { mode: 'local' });
@@ -1846,7 +1949,7 @@ document.getElementById('btn-mode-global').addEventListener('click', () => {
   socket.emit('host:mode:set', { mode: 'global' });
 });
 
-// Host Lobby — Share copy button
+// Host Lobby â€” Share copy button
 document.getElementById('btn-share-copy').addEventListener('click', async () => {
   const url = state.currentJoinUrl;
   if (!url) return;
@@ -1878,7 +1981,7 @@ if (chkHostAsPlayer) {
       hostPlayerForm.style.display = chkHostAsPlayer.checked ? 'flex' : 'none';
     }
     if (!chkHostAsPlayer.checked && state.hostIsPlayer) {
-      // Toggle off — ask server to remove us
+      // Toggle off â€” ask server to remove us
       socket.emit('host:join_as_player', { nickname: '' });
     }
   });
@@ -1920,13 +2023,13 @@ document.getElementById('btn-copy-join-url').addEventListener('click', async () 
   const btn = document.getElementById('btn-copy-join-url');
   const url = state.currentJoinUrl;
   if (!url) {
-    btn.textContent = '⚠️ No URL yet';
-    setTimeout(() => { btn.textContent = '📋 Copy Join URL'; }, 1400);
+    btn.textContent = 'âš ï¸ No URL yet';
+    setTimeout(() => { btn.textContent = 'ðŸ“‹ Copy Join URL'; }, 1400);
     return;
   }
   try {
     await navigator.clipboard.writeText(url);
-    btn.textContent = '✅ Copied!';
+    btn.textContent = 'âœ… Copied!';
   } catch (_err) {
     const temp = document.createElement('textarea');
     temp.value = url;
@@ -1934,9 +2037,9 @@ document.getElementById('btn-copy-join-url').addEventListener('click', async () 
     temp.select();
     document.execCommand('copy');
     temp.remove();
-    btn.textContent = '✅ Copied!';
+    btn.textContent = 'âœ… Copied!';
   }
-  setTimeout(() => { btn.textContent = '📋 Copy Join URL'; }, 1400);
+  setTimeout(() => { btn.textContent = 'ðŸ“‹ Copy Join URL'; }, 1400);
 });
 
 // Host Pause / Resume
@@ -2009,7 +2112,7 @@ document.getElementById('btn-role-action').addEventListener('click', () => {
 // Mute toggle
 document.getElementById('btn-mute').addEventListener('click', () => {
   muted = !muted;
-  document.getElementById('btn-mute').textContent = muted ? '🔇' : '🔊';
+  document.getElementById('btn-mute').textContent = muted ? 'ðŸ”‡' : 'ðŸ”Š';
 });
 
 // Play Again button
@@ -2028,9 +2131,9 @@ document.getElementById('btn-home-from-closed').addEventListener('click', () => 
   location.reload();
 });
 
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Socket.io Event Handlers
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** HOST: Room created successfully */
 socket.on('room:created', ({ pin, ...modeInfo }) => {
@@ -2067,7 +2170,7 @@ socket.on('connect_error', () => {
 socket.on('disconnect', () => {
   markDiagEvent('socket:disconnect');
   pushJoinDebugLog('socket disconnected; reconnecting');
-  setConnectionStatus('warn', 'Connection lost. Reconnecting…');
+  setConnectionStatus('warn', 'Connection lost. Reconnectingâ€¦');
 });
 
 /** PLAYER: Successfully joined the room */
@@ -2094,7 +2197,7 @@ socket.on('room:joined', (data) => {
     pushJoinDebugLog(`room:joined success players=${Array.isArray(players) ? players.length : 0}`);
     state.pin = pin;
     state.nickname = nickname;
-    state.avatar = avatar || '🎮';
+    state.avatar = avatar || 'ðŸŽ®';
     state.myScore = 0;
     updatePlayerScoreUI();
     
@@ -2102,7 +2205,7 @@ socket.on('room:joined', (data) => {
     if (pinEl) pinEl.textContent = pin;
 
     // Save session for potential reconnect
-    saveGameSession(pin, nickname, avatar || '🎮');
+    saveGameSession(pin, nickname, avatar || 'ðŸŽ®');
 
     // Pre-fill edit form
     const editNickEl = document.getElementById('edit-nickname-input');
@@ -2140,7 +2243,7 @@ socket.on('room:joined', (data) => {
   }
 });
 
-/** BOTH: Someone joined — update player list */
+/** BOTH: Someone joined â€” update player list */
 socket.on('room:player_joined', ({ players }) => {
   try {
     if (state.role === 'host') {
@@ -2171,7 +2274,7 @@ socket.on('room:rejoined', ({ pin, nickname, avatar, players, score, streak, roo
 
     state.pin = pin;
     state.nickname = nickname;
-    state.avatar = avatar || '🎮';
+    state.avatar = avatar || 'ðŸŽ®';
     state.role = 'player';
     state.myScore = score || 0;
     state.myStreak = streak || 0;
@@ -2188,7 +2291,7 @@ socket.on('room:rejoined', ({ pin, nickname, avatar, players, score, streak, roo
       renderPlayerList(players, listEl, countEl);
     }
 
-    setConnectionStatus('ok', 'Reconnected ✓');
+    setConnectionStatus('ok', 'Reconnected âœ“');
 
     if (roomState === 'lobby') {
       showView('view-player-lobby');
@@ -2205,7 +2308,7 @@ socket.on('room:rejoined', ({ pin, nickname, avatar, players, score, streak, roo
       const ansMsg = document.getElementById('player-answered-msg');
       if (questionData.hasAnswered && ansMsg) {
         state.hasAnswered = true;
-        ansMsg.textContent = '✅ تم إرسال إجابتك! انتظر الآخرين…';
+        ansMsg.textContent = 'âœ… ØªÙ… Ø¥Ø±Ø³Ø§Ù„ Ø¥Ø¬Ø§Ø¨ØªÙƒ! Ø§Ù†ØªØ¸Ø± Ø§Ù„Ø¢Ø®Ø±ÙŠÙ†â€¦';
       }
     } else if (roomState === 'finished' && leaderboard) {
       // Populate podium immediately (no ceremony delay on rejoin)
@@ -2229,7 +2332,7 @@ socket.on('room:rejoined', ({ pin, nickname, avatar, players, score, streak, roo
         const av = document.getElementById(avatarId);
         const nm = document.getElementById(nameId);
         const sc = document.getElementById(scoreId);
-        if (av) av.textContent = entry.avatar || '🎮';
+        if (av) av.textContent = entry.avatar || 'ðŸŽ®';
         if (nm) nm.textContent = escapeHtml(entry.nickname);
         if (sc) sc.textContent = `${entry.totalScore} pts`;
       };
@@ -2280,7 +2383,7 @@ socket.on('host:joined_as_player', ({ joined, nickname, avatar }) => {
   const chk = document.getElementById('chk-host-as-player');
   const hostAsPlayerBlock = document.getElementById('host-as-player-section');
   if (joined) {
-    if (statusEl) statusEl.textContent = `\u2705 Joined as "${nickname}" — you will play too!`;
+    if (statusEl) statusEl.textContent = `\u2705 Joined as "${nickname}" â€” you will play too!`;
     if (chk) chk.checked = true;
     if (hostAsPlayerBlock) hostAsPlayerBlock.classList.add('join-enabled');
     if (hostPlayerForm) hostPlayerForm.style.display = 'flex';
@@ -2310,9 +2413,9 @@ socket.on('room:error', ({ message }) => {
   const editPanel = document.getElementById('edit-profile-panel');
   if (state.role === 'player' && editPanel && editPanel.classList.contains('open')) {
     const errEl = document.getElementById('edit-profile-error');
-    if (errEl) errEl.textContent = `⚠️ ${message}`;
+    if (errEl) errEl.textContent = `âš ï¸ ${message}`;
   } else if (state.role === 'player') {
-    showError('join-error', `⚠️ ${message}`);
+    showError('join-error', `âš ï¸ ${message}`);
   } else {
     alert(`Server error: ${message}`);
   }
@@ -2395,6 +2498,7 @@ socket.on('game:question', (data) => {
     const pauseOverlay = document.getElementById('overlay-paused');
     if (pauseOverlay) pauseOverlay.style.display = 'none';
     // If host is also playing, show the player (interactive) question view
+    console.log('[v54] game:question fired, state.role=' + state.role + ', hostIsPlayer=' + state.hostIsPlayer + ', qi=' + data.questionIndex); if (window.__dbgLog) window.__dbgLog('game:Q role=' + state.role + ' qi=' + data.questionIndex);
     const isHostOnly = state.role === 'host' && !state.hostIsPlayer;
     renderQuestion(data, isHostOnly);
   } catch (err) {
@@ -2407,13 +2511,13 @@ socket.on('game:question', (data) => {
 socket.on('role:shield_applied', ({ from }) => {
   if (state.role !== 'player') return;
   const msg = document.getElementById('player-answered-msg');
-  if (msg) msg.textContent = `🛡️ ${from} protected you from penalty this round.`;
+  if (msg) msg.textContent = `ðŸ›¡ï¸ ${from} protected you from penalty this round.`;
 });
 
 socket.on('role:frozen', ({ durationMs, from }) => {
   if (state.role !== 'player') return;
   clearTimeout(frozenTimeout);
-  setFrozenState(true, `❄️ ${from} froze your screen for ${Math.ceil((durationMs || 2000) / 1000)}s`);
+  setFrozenState(true, `â„ï¸ ${from} froze your screen for ${Math.ceil((durationMs || 2000) / 1000)}s`);
   frozenTimeout = setTimeout(() => {
     setFrozenState(false);
   }, durationMs || 2000);
@@ -2425,7 +2529,7 @@ socket.on('game:paused', () => {
   stopClientTimer();
   Sounds.pause();
   const btn = document.getElementById('btn-pause-resume');
-  if (btn) { btn.textContent = '▶️ Resume'; btn.dataset.paused = 'true'; }
+  if (btn) { btn.textContent = 'â–¶ï¸ Resume'; btn.dataset.paused = 'true'; }
   const overlay = document.getElementById('overlay-paused');
   const overlayBtn = document.getElementById('btn-overlay-resume');
   if (state.role === 'host') {
@@ -2444,7 +2548,7 @@ socket.on('game:resumed', ({ timeRemaining }) => {
   document.getElementById('overlay-paused').style.display = 'none';
   document.getElementById('btn-overlay-resume').style.display = 'none';
   const btn = document.getElementById('btn-pause-resume');
-  if (btn) { btn.textContent = '⏸️ Pause'; btn.dataset.paused = 'false'; }
+  if (btn) { btn.textContent = 'â¸ï¸ Pause'; btn.dataset.paused = 'false'; }
   // Restart client timer with remaining seconds
   state.questionStartTime = Date.now() - ((state.questionDuration - timeRemaining) * 1000);
   const isHost = state.role === 'host';
@@ -2466,18 +2570,18 @@ socket.on('answer:received', () => {
   // UI already updated in submitAnswer()
 });
 
-/** BOTH: Question ended — show correct answer */
+/** BOTH: Question ended â€” show correct answer */
 socket.on('question:end', (data) => {
   showQuestionResult(data);
 });
 
 /** BOTH: Leaderboard between questions */
 socket.on('game:leaderboard', (data) => {
-  // Server already waits 2s after question:end before sending this — no extra delay needed
+  // Server already waits 2s after question:end before sending this â€” no extra delay needed
   showLeaderboard(data, false);
 });
 
-/** BOTH: Game over — Podium Ceremony */
+/** BOTH: Game over â€” Podium Ceremony */
 socket.on('game:over', (data) => {
   clearGameSession();
   clearScholarPreviewInterval();
@@ -2505,7 +2609,7 @@ socket.on('game:over', (data) => {
   const winnerScoreEl = document.getElementById('winner-score');
   const w1 = lb[0];
   if (w1) {
-    winnerNameEl.textContent = `👑 ${w1.nickname}`;
+    winnerNameEl.textContent = `ðŸ‘‘ ${w1.nickname}`;
     winnerScoreEl.textContent = `${w1.totalScore} pts`;
     winnerWrap.style.display = 'none'; // podium replaces this
   }
@@ -2516,7 +2620,7 @@ socket.on('game:over', (data) => {
       document.getElementById(slotId).style.display = 'none';
       return;
     }
-    document.getElementById(avatarId).textContent = entry.avatar || '🎮';
+    document.getElementById(avatarId).textContent = entry.avatar || 'ðŸŽ®';
     document.getElementById(nameId).textContent   = escapeHtml(entry.nickname);
     document.getElementById(scoreId).textContent  = `${entry.totalScore} pts`;
   }
@@ -2536,7 +2640,7 @@ socket.on('game:over', (data) => {
   showView('view-game-over');
   Sounds.fanfare();
 
-  // ── Sequential reveal: 3rd → 2nd → 1st ──
+  // â”€â”€ Sequential reveal: 3rd â†’ 2nd â†’ 1st â”€â”€
   const REVEAL_INTERVAL = 1700;
 
   // 3rd place (right pillar, shortest)
@@ -2551,7 +2655,7 @@ socket.on('game:over', (data) => {
     if (el && lb[1]) el.classList.add('podium-revealed');
   }, 600 + REVEAL_INTERVAL);
 
-  // 1st place (center pillar, tallest) — full celebration
+  // 1st place (center pillar, tallest) â€” full celebration
   setTimeout(() => {
     const el = document.getElementById('podium-slot-1');
     if (el && lb[0]) el.classList.add('podium-revealed');
@@ -2628,18 +2732,44 @@ socket.on('room:closed', ({ message }) => {
   showView('view-room-closed');
 });
 
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // QR Auto-fill: runs LAST so state & showView are fully declared
 // If URL has ?pin=XXXXXX (from QR scan), skip home and go straight
 // to the player join view with PIN pre-filled.
-// If URL has ?quiz=... (from the host's share QR), skip home too —
+// If URL has ?quiz=... (from the host's share QR), skip home too â€”
 // the QR is only shared with players, so the host choice is irrelevant.
 // If URL has ?quiz=...&mode=host, skip home and go directly to host mode
-// ─────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 (function () {
   const params = new URLSearchParams(window.location.search);
   const pinFromUrl = params.get('pin');
   const scanFallbackBanner = document.getElementById('scan-fallback-banner');
+
+  // Question-only mode: hide diagnostics/debug UI and wait for mirrored questions
+  if (isQuestionOnly) {
+    document.body.classList.add('question-only');
+    const diag = document.getElementById('diag-panel');
+    if (diag) diag.style.display = 'none';
+    const dbg = document.getElementById('inline-dbg');
+    if (dbg) dbg.style.display = 'none';
+
+    if (questionMirror) {
+      questionMirror.addEventListener('message', (ev) => {
+        const msg = ev?.data;
+        if (!msg || !msg.type) return;
+        if (questionOnlyMode === 'host' && msg.type === 'hostQuestion') {
+          try { renderHostQuestion(msg.payload); } catch (_e) {}
+        }
+        if (questionOnlyMode === 'player' && msg.type === 'playerQuestion') {
+          try { renderPlayerQuestion(msg.payload); } catch (_e) {}
+        }
+      });
+    }
+
+    // Show the locked view immediately (content will update via mirror)
+    showView(questionOnlyMode === 'host' ? 'view-host-question' : 'view-player-question');
+    return;
+  }
 
   if (scanFallbackBanner) {
     scanFallbackBanner.style.display = 'block';
@@ -2651,10 +2781,10 @@ socket.on('room:closed', ({ message }) => {
     if (scanFallbackBanner) scanFallbackBanner.style.display = 'none';
     showView('view-player-join');
   } else if (isAutoHostLaunch) {
-    // Clicked Play from admin — go directly to branded loading, then host lobby
+    // Clicked Play from admin â€” go directly to branded loading, then host lobby
     startHostLaunch(quizSlugFromUrl);
   } else if (quizSlugFromUrl) {
-    // Came from a quiz QR code — host is already set up, go straight to player join
+    // Came from a quiz QR code â€” host is already set up, go straight to player join
     state.role = 'player';
     if (scanFallbackBanner) {
       scanFallbackBanner.style.display = 'none';
@@ -2669,7 +2799,7 @@ socket.on('room:closed', ({ message }) => {
         if (pin && savedPlayerId) {
           rejoinAttempt = true;
           state.role = 'player';
-          setConnectionStatus('warn', 'Reconnecting to game…');
+          setConnectionStatus('warn', 'Reconnecting to gameâ€¦');
           const attemptRejoin = () => {
             socket.emit('player:rejoin', { pin, playerId: savedPlayerId });
           };
@@ -2691,3 +2821,10 @@ if (!document.querySelector('.view.active')) {
   showView('view-home');
   updateDiagnose({ event: 'startup:view_recovered', error: 'Recovered from empty active view' });
 }
+
+//  v54 debug surface 
+window._qState = state;
+window._renderHostQuestion = renderHostQuestion;
+window._renderPlayerQuestion = renderPlayerQuestion;
+window._showView = showView;
+console.log('[game.js v54] Debug surface ready: window._qState, window._renderHostQuestion');
