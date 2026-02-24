@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
   <title>QYan</title>
-  <link rel="stylesheet" href="/css/style.css?v=49" />
+  <link rel="stylesheet" href="/css/style.css?v=50" />
   <!-- Prevent browser zoom (Ctrl+scroll, Ctrl+±, pinch) -->
   <script>
     document.addEventListener('wheel', function(e){ if(e.ctrlKey){ e.preventDefault(); } }, { passive: false });
@@ -540,6 +540,20 @@
     </div>
   </div>
 
+  <div id="join-debug-modal" class="join-debug-modal" style="display:none" role="dialog" aria-modal="true" aria-label="Join diagnostics">
+    <div class="join-debug-dialog">
+      <div class="join-debug-header">
+        <strong>Join Diagnose</strong>
+        <button type="button" id="btn-close-join-debug" class="join-debug-close" aria-label="Close diagnostics">&times;</button>
+      </div>
+      <div class="join-debug-meta">
+        <span id="join-debug-pin">PIN: -</span>
+        <span id="join-debug-nick">Nick: -</span>
+      </div>
+      <div id="join-debug-log" class="join-debug-log"></div>
+    </div>
+  </div>
+
   <div class="qyan-attribution" aria-label="QYan attribution">
     <span>© QYan — Prototype build</span>
   </div>
@@ -558,6 +572,6 @@
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
   <!-- Load Socket.io client from the server (auto-served by socket.io) -->
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/js/game.js?v=49"></script>
+  <script src="/js/game.js?v=50"></script>
 </body>
 </html>

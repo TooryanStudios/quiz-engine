@@ -312,6 +312,40 @@ function updateDiagnose(partial = {}) {
 
 function markDiagEvent(name) {
   updateDiagnose({ event: name, role: state.role || '-' });
+  pushJoinDebugLog(`event: ${name}`);
+}
+
+function getJoinDebugNodes() {
+  return {
+    modal: document.getElementById('join-debug-modal'),
+    log: document.getElementById('join-debug-log'),
+    pin: document.getElementById('join-debug-pin'),
+    nick: document.getElementById('join-debug-nick'),
+  };
+}
+
+function openJoinDebugDialog(pin, nickname) {
+  const { modal, log, pin: pinEl, nick: nickEl } = getJoinDebugNodes();
+  if (!modal || !log) return;
+  if (pinEl) pinEl.textContent = `PIN: ${pin || '-'}`;
+  if (nickEl) nickEl.textContent = `Nick: ${nickname || '-'}`;
+  log.textContent = '';
+  modal.style.display = 'flex';
+  pushJoinDebugLog('Join button clicked');
+  pushJoinDebugLog(`socket.connected=${socket.connected}`);
+}
+
+function closeJoinDebugDialog() {
+  const { modal } = getJoinDebugNodes();
+  if (modal) modal.style.display = 'none';
+}
+
+function pushJoinDebugLog(message) {
+  const { log } = getJoinDebugNodes();
+  if (!log) return;
+  const stamp = new Date().toLocaleTimeString();
+  log.textContent += `[${stamp}] ${message}\n`;
+  log.scrollTop = log.scrollHeight;
 }
 
 // ─────────────────────────────────────────────
@@ -601,6 +635,7 @@ setConnectionStatus('warn', 'Connecting to server…');
 
 window.addEventListener('error', (event) => {
   const message = event?.error?.message || event?.message || 'Unknown runtime error';
+  pushJoinDebugLog(`window error: ${message}`);
   updateDiagnose({ error: message, event: 'window:error' });
 });
 
@@ -609,6 +644,7 @@ window.addEventListener('unhandledrejection', (event) => {
   const message = typeof reason === 'string'
     ? reason
     : (reason?.message || 'Unhandled promise rejection');
+  pushJoinDebugLog(`promise rejection: ${message}`);
   updateDiagnose({ error: message, event: 'promise:rejection' });
 });
 
@@ -1572,20 +1608,30 @@ document.getElementById('btn-back-from-join').addEventListener('click', () => {
   showView('view-home');
 });
 
+const closeJoinDebugBtn = document.getElementById('btn-close-join-debug');
+if (closeJoinDebugBtn) {
+  closeJoinDebugBtn.addEventListener('click', () => {
+    closeJoinDebugDialog();
+  });
+}
+
 // Player Join — Submit form
 document.getElementById('form-join').addEventListener('submit', (e) => {
   e.preventDefault();
   enableKeepAwake();
   const pin = document.getElementById('input-pin').value.trim();
   const nickname = document.getElementById('input-nickname').value.trim();
+  openJoinDebugDialog(pin, nickname);
   markDiagEvent('ui:join_submit');
   if (!pin || !nickname) {
+    pushJoinDebugLog('Blocked: PIN or nickname is missing');
     updateDiagnose({ error: 'PIN or nickname missing', event: 'ui:join_submit:invalid' });
     return;
   }
   Sounds.click();
   state.pin = pin;
   state.nickname = nickname;
+  pushJoinDebugLog(`emit player:join pin=${pin} nickname=${nickname}`);
   setConnectionStatus('warn', 'Joining room…');
   socket.emit('player:join', { pin, nickname, avatar: state.avatar, playerId: myPlayerId });
 });
@@ -1990,16 +2036,19 @@ socket.on('room:mode', (modeInfo) => {
 
 socket.on('connect', () => {
   markDiagEvent('socket:connect');
+  pushJoinDebugLog('socket connected');
   setConnectionStatus('ok', 'Server connected');
 });
 
 socket.on('connect_error', () => {
   markDiagEvent('socket:connect_error');
+  pushJoinDebugLog('socket connect_error');
   setConnectionStatus('error', 'Cannot reach server. Check LAN / local mode IP.');
 });
 
 socket.on('disconnect', () => {
   markDiagEvent('socket:disconnect');
+  pushJoinDebugLog('socket disconnected; reconnecting');
   setConnectionStatus('warn', 'Connection lost. Reconnecting…');
 });
 
@@ -2007,6 +2056,7 @@ socket.on('disconnect', () => {
 socket.on('room:joined', ({ pin, nickname, avatar, players }) => {
   try {
     markDiagEvent('room:joined');
+    pushJoinDebugLog(`room:joined success players=${Array.isArray(players) ? players.length : 0}`);
     state.pin = pin;
     state.nickname = nickname;
     state.avatar = avatar || '🎮';
@@ -2046,6 +2096,7 @@ socket.on('room:joined', ({ pin, nickname, avatar, players }) => {
     showView('view-player-lobby');
   } catch (err) {
     console.error('Error in room:joined:', err);
+    pushJoinDebugLog(`room:joined error: ${err?.message || err}`);
     updateDiagnose({ error: err?.message || 'room:joined failed', event: 'room:joined:error' });
     // Attempt fallback show even if updates fail
     showView('view-player-lobby');
@@ -2207,6 +2258,7 @@ socket.on('host:joined_as_player', ({ joined, nickname, avatar }) => {
 
 /** BOTH: Error from server */
 socket.on('room:error', ({ message }) => {
+  pushJoinDebugLog(`room:error ${message}`);
   if (state.role === 'host') {
     state.hostCreatePending = false;
     document.documentElement.classList.remove('autohost-launch');
@@ -2245,6 +2297,7 @@ socket.on('room:profile_updated', ({ nickname, avatar }) => {
 /** BOTH: Game is starting */
 socket.on('game:start', ({ totalQuestions }) => {
   markDiagEvent('game:start');
+  pushJoinDebugLog(`game:start totalQuestions=${totalQuestions}`);
   state.totalQuestions = totalQuestions;
   state.myStreak = 0;
   state.myScore = 0;
@@ -2293,6 +2346,7 @@ socket.on('game:question_preview', (data) => {
 socket.on('game:question', (data) => {
   try {
     markDiagEvent('game:question');
+    pushJoinDebugLog(`game:question index=${data?.questionIndex} type=${data?.question?.type}`);
     state.isPaused = false;
     const pauseOverlay = document.getElementById('overlay-paused');
     if (pauseOverlay) pauseOverlay.style.display = 'none';
@@ -2301,6 +2355,7 @@ socket.on('game:question', (data) => {
     renderQuestion(data, isHostOnly);
   } catch (err) {
     console.error('Error in game:question:', err);
+    pushJoinDebugLog(`game:question error: ${err?.message || err}`);
     updateDiagnose({ error: err?.message || 'game:question failed', event: 'game:question:error' });
   }
 });
