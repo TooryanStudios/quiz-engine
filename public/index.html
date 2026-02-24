@@ -7,7 +7,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <link rel="stylesheet" href="/css/style.css?v=56" />
+  <link rel="stylesheet" href="/css/style.css?v=57" />
   <!-- Prevent browser zoom (Ctrl+scroll, Ctrl+±, pinch) -->
   <script>
     document.addEventListener('wheel', function(e){ if(e.ctrlKey){ e.preventDefault(); } }, { passive: false });
@@ -576,7 +576,7 @@
   <!-- ─── Inline debug: runs BEFORE any external script ─── -->
   <script>
     (function() {
-      // v56 - Fixed isQuestionOnly undefined reference
+      // v57 - Fixed Arabic text encoding corruption
       var dbg = document.createElement('div');
       dbg.id = 'inline-dbg';
       dbg.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#111;color:#0f0;font:bold 10px monospace;padding:4px 8px;pointer-events:auto;opacity:0.95;display:flex;align-items:center;gap:8px;overflow-x:auto;border-bottom:1px solid #0f0;';
@@ -819,6 +819,6 @@
   <script async src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
   <!-- Load Socket.io client from the server (auto-served by socket.io) -->
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/js/game.js?v=56"></script>
+  <script src="/js/game.js?v=57"></script>
 </body>
 </html>
