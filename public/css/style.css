@@ -205,7 +205,7 @@ html.autohost-launch #view-host-loading.active {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  min-width: 140px;
+  min-width: 260px;
   background: var(--surface);
   border: 1px solid rgba(255,255,255,0.15);
   border-radius: 10px;
@@ -233,10 +233,43 @@ html.autohost-launch #view-host-loading.active {
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .host-home-menu-btn:hover {
   background: rgba(255,255,255,0.08);
+}
+
+.host-menu-item-title {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.host-menu-item-desc {
+  font-size: 0.73rem;
+  color: var(--text-dim);
+  line-height: 1.25;
+  white-space: normal;
+}
+
+.host-menu-player-form {
+  margin-top: 4px;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.38);
+  border: 1px solid rgba(255,255,255,0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.host-menu-player-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
 }
 
 .home-hero-logo {

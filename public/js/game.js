@@ -1513,6 +1513,24 @@ const hostMenuBtn = document.getElementById('btn-back-from-host-lobby');
 const hostHomeMenu = document.getElementById('host-home-menu');
 const hostMenuHostBtn = document.getElementById('btn-home-menu-host');
 const hostMenuPlayerBtn = document.getElementById('btn-home-menu-player');
+const hostMenuJoinPlayerBtn = document.getElementById('btn-home-menu-join-player');
+const hostMenuPlayerForm = document.getElementById('host-menu-player-form');
+const hostMenuPlayerInput = document.getElementById('host-menu-player-nickname');
+const hostMenuPlayerSubmit = document.getElementById('btn-home-menu-join-submit');
+const hostMenuPlayerStatus = document.getElementById('host-menu-player-status');
+
+function setHostMenuJoinLabel() {
+  if (!hostMenuJoinPlayerBtn) return;
+  const title = hostMenuJoinPlayerBtn.querySelector('.host-menu-item-title');
+  const desc = hostMenuJoinPlayerBtn.querySelector('.host-menu-item-desc');
+  if (state.hostIsPlayer) {
+    if (title) title.textContent = 'Leave as player';
+    if (desc) desc.textContent = 'Stop playing from this host device';
+  } else {
+    if (title) title.textContent = 'Join as player too';
+    if (desc) desc.textContent = 'Play from this host device inside the same session';
+  }
+}
 
 function closeHostHomeMenu() {
   if (hostHomeMenu) hostHomeMenu.style.display = 'none';
@@ -1551,6 +1569,33 @@ if (hostMenuPlayerBtn) {
   });
 }
 
+if (hostMenuJoinPlayerBtn) {
+  hostMenuJoinPlayerBtn.addEventListener('click', () => {
+    if (state.hostIsPlayer) {
+      Sounds.click();
+      socket.emit('host:join_as_player', { nickname: '' });
+      return;
+    }
+    if (hostMenuPlayerForm) {
+      const show = hostMenuPlayerForm.style.display === 'none';
+      hostMenuPlayerForm.style.display = show ? 'flex' : 'none';
+      if (show) hostMenuPlayerInput?.focus();
+    }
+  });
+}
+
+if (hostMenuPlayerSubmit) {
+  hostMenuPlayerSubmit.addEventListener('click', () => {
+    const nickname = hostMenuPlayerInput?.value.trim();
+    if (!nickname) {
+      if (hostMenuPlayerStatus) hostMenuPlayerStatus.textContent = '⚠️ Please enter a nickname.';
+      return;
+    }
+    Sounds.click();
+    socket.emit('host:join_as_player', { nickname, avatar: state.avatar });
+  });
+}
+
 const hostStageVariantSelect = document.getElementById('host-stage-variant');
 if (hostStageVariantSelect) {
   hostStageVariantSelect.addEventListener('change', () => {
@@ -1575,6 +1620,7 @@ try {
 document.addEventListener('click', (e) => {
   if (!hostHomeMenu || hostHomeMenu.style.display === 'none') return;
   if (hostHomeMenu.contains(e.target) || hostMenuBtn?.contains(e.target)) return;
+  if (hostMenuPlayerForm) hostMenuPlayerForm.style.display = 'none';
   closeHostHomeMenu();
 });
 
@@ -1606,32 +1652,6 @@ document.getElementById('btn-share-copy').addEventListener('click', async () => 
   } catch {
     prompt('Copy this link:', url);
   }
-});
-
-// Host-as-Player toggle
-const chkHostAsPlayer = document.getElementById('chk-host-as-player');
-const hostPlayerForm  = document.getElementById('host-player-form');
-if (chkHostAsPlayer) {
-  chkHostAsPlayer.addEventListener('change', () => {
-    if (hostPlayerForm) {
-      hostPlayerForm.style.display = chkHostAsPlayer.checked ? 'flex' : 'none';
-    }
-    if (!chkHostAsPlayer.checked && state.hostIsPlayer) {
-      // Toggle off — ask server to remove us
-      socket.emit('host:join_as_player', { nickname: '' });
-    }
-  });
-}
-
-document.getElementById('btn-host-join-as-player')?.addEventListener('click', () => {
-  const nickname = document.getElementById('host-player-nickname')?.value.trim();
-  if (!nickname) {
-    const st = document.getElementById('host-as-player-status');
-    if (st) st.textContent = '\u26a0\ufe0f Please enter a nickname.';
-    return;
-  }
-  Sounds.click();
-  socket.emit('host:join_as_player', { nickname, avatar: state.avatar });
 });
 
 // Host Start Game
@@ -1934,16 +1954,14 @@ socket.on('room:rejoin_failed', ({ message }) => {
 /** HOST: Server confirmed host joined as player */
 socket.on('host:joined_as_player', ({ joined, nickname, avatar }) => {
   state.hostIsPlayer = !!joined;
-  const statusEl = document.getElementById('host-as-player-status');
-  const chk = document.getElementById('chk-host-as-player');
+  setHostMenuJoinLabel();
+  const statusEl = hostMenuPlayerStatus;
   if (joined) {
     if (statusEl) statusEl.textContent = `\u2705 Joined as "${nickname}" — you will play too!`;
-    if (chk) chk.checked = true;
+    if (hostMenuPlayerForm) hostMenuPlayerForm.style.display = 'none';
   } else {
     if (statusEl) statusEl.textContent = '';
-    const form = document.getElementById('host-player-form');
-    if (form) form.style.display = 'none';
-    if (chk) chk.checked = false;
+    if (hostMenuPlayerForm) hostMenuPlayerForm.style.display = 'none';
   }
 });
 
@@ -2215,15 +2233,12 @@ socket.on('room:reset', ({ players, modeInfo }) => {
   state.myStreak = 0;
   state.myScore = 0;
   state.hostIsPlayer = false;
+  setHostMenuJoinLabel();
   updatePlayerScoreUI();
   document.getElementById('overlay-paused').style.display = 'none';
-  // Reset the host-as-player UI for the fresh session
-  const chkReset = document.getElementById('chk-host-as-player');
-  if (chkReset) chkReset.checked = false;
-  const formReset = document.getElementById('host-player-form');
-  if (formReset) formReset.style.display = 'none';
-  const statusReset = document.getElementById('host-as-player-status');
-  if (statusReset) statusReset.textContent = '';
+  // Reset the host-as-player menu UI for the fresh session
+  if (hostMenuPlayerForm) hostMenuPlayerForm.style.display = 'none';
+  if (hostMenuPlayerStatus) hostMenuPlayerStatus.textContent = '';
 
   if (state.role === 'host') {
     if (modeInfo) applyModeInfo(modeInfo);
