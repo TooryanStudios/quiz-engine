@@ -72,6 +72,16 @@ const QUIZ_DATA_URL =
 const app = express();
 const httpServer = http.createServer(app);
 
+// Ensure UTF-8 encoding for all text responses
+app.use((req, res, next) => {
+  const originalJson = res.json;
+  res.json = function(data) {
+    res.set('Content-Type', 'application/json; charset=utf-8');
+    return originalJson.call(this, data);
+  };
+  next();
+});
+
 // Serve static frontend files
 // Prevent caching of HTML pages so users always get the latest version
 app.use((req, res, next) => {
@@ -79,6 +89,7 @@ app.use((req, res, next) => {
     res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.set('Pragma', 'no-cache');
     res.set('Expires', '0');
+    res.set('Content-Type', 'text/html; charset=utf-8');
   }
   next();
 });
