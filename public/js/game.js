@@ -971,7 +971,7 @@ function renderPlayerQuestion(data) {
     if (submitBtn) {
       submitBtn.style.display = 'none';
       submitBtn.disabled      = false;
-      submitBtn.textContent   = 'âœ” ØªØ£ÙƒÙŠØ¯ Ø§Ù„Ø¥Ø¬Ø§Ø¨Ø©';
+      submitBtn.textContent   = '✔ تأكيد الإجابة';
     }
 
     renderRolePanel(data.players || state.questionPlayers || []);
