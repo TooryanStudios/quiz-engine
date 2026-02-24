@@ -47,6 +47,7 @@ export const state = {
   // UI state
   isFrozen: false,
   isPaused: false,
+  timerInterval: null,
   currentDifficulty: 'classic',
   currentJoinUrl: '',
   

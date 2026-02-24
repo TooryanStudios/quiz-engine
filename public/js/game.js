@@ -92,44 +92,8 @@ if (quizSlugFromUrl) {
 }
 
 // ─────────────────────────────────────────────
-// State
+// State is now imported from state/GameState.js
 // ─────────────────────────────────────────────
-const state = {
-  role: null,          // 'host' | 'player'
-  pin: null,
-  nickname: null,
-  questionIndex: 0,
-  totalQuestions: 0,
-  questionDuration: 30,
-  questionStartTime: null,
-  hasAnswered: false,
-  myAnswerIndex: -1,
-  myScore: 0,
-  myStreak: 0,
-  isPaused: false,
-  timerInterval: null,
-  // new: question-type extras
-  currentQuestionType: 'single',
-  matchConnections: [],    // matchConnections[leftIdx] = displayRightIdx (-1 = unset)
-  matchLefts: [],          // left-side labels (sent by server)
-  matchRights: [],         // shuffled right labels sent by server
-  orderItemOrder: [],      // current order of item indices on screen
-  orderItems: [],          // original item labels for order question
-  currentJoinUrl: '',
-  currentBoss: null,
-  myRole: null,
-  roleInfo: null,
-  questionPlayers: [],
-  roleAbilityUsed: false,
-  isFrozen: false,
-  currentDifficulty: 'classic',  // 'easy' | 'classic' | 'hard'
-  avatar: '🎮',  // selected avatar emoji
-  hostIsPlayer: false,       // experimental: host joined as a player too
-  hostCreatePending: false,
-  hostPlayerStageVariant: null,
-  hostPlayerStageSelection: 'auto',
-  hostLobbyPlayers: [],
-};
 
 const HOST_PLAYER_STAGE_VARIANTS = {
   neonArcade: {
