@@ -100,13 +100,27 @@ let rejoinAttempt = false; // true while an auto-rejoin is in flight
 // ─────────────────────────────────────────────
 const AVATARS = ['🦁','🐯','🦊','🐼','🐨','🐸','🦄','🦖','🦝','🕺','🤖','👾','🎃','🧙','🦸','🐇','⚡','🔥','🎮','🏆'];
 
+const hostQuizTitleEl = document.getElementById('host-quiz-title');
+function setHostQuizTitle(text) {
+  if (!hostQuizTitleEl) return;
+  if (!text) {
+    hostQuizTitleEl.style.display = 'none';
+    hostQuizTitleEl.textContent = '';
+    return;
+  }
+  hostQuizTitleEl.textContent = text;
+  hostQuizTitleEl.style.display = 'block';
+}
+
 // If a quiz slug is in the URL, show ID immediately then fetch title
 // Update both the home banner and the player-join banner
-if (quizSlugFromUrl && !isAutoHostLaunch) {
+if (quizSlugFromUrl) {
   const el = document.getElementById('quiz-title-banner');
   const el2 = document.getElementById('join-quiz-title-banner');
+  setHostQuizTitle(quizSlugFromUrl);
   const setText = (text) => {
-    if (el)  { el.textContent = text; el.style.display = 'block'; }
+    if (!isAutoHostLaunch && el)  { el.textContent = text; el.style.display = 'block'; }
+    setHostQuizTitle(text.replace(/^📋\s*/, '').replace(/^🆔\s*/, ''));
     // intentionally not shown on player join screen
   };
   setText(`🆔 ${quizSlugFromUrl}`);
@@ -325,7 +339,7 @@ function applyModeInfo(data) {
   const qrWrap    = document.getElementById('host-qr-canvas');
 
   if (indicator) {
-    indicator.textContent = mode === 'local' ? '📶 Local' : '🌐 Global';
+    indicator.textContent = mode === 'local' ? 'Local' : 'Global';
   }
 
   if (localBtn && globalBtn) {
@@ -1372,13 +1386,52 @@ document.getElementById('btn-save-profile').addEventListener('click', () => {
 });
 
 // Host Lobby — Back button
-document.getElementById('btn-back-from-host-lobby').addEventListener('click', () => {
-  Sounds.click();
+const hostMenuBtn = document.getElementById('btn-back-from-host-lobby');
+const hostHomeMenu = document.getElementById('host-home-menu');
+const hostMenuHostBtn = document.getElementById('btn-home-menu-host');
+const hostMenuPlayerBtn = document.getElementById('btn-home-menu-player');
+
+function closeHostHomeMenu() {
+  if (hostHomeMenu) hostHomeMenu.style.display = 'none';
+}
+
+function resetHostRoomConnection() {
   socket.disconnect();
   socket.connect();
-  state.role = null;
   state.pin = null;
-  showView('view-home');
+  state.hostCreatePending = false;
+}
+
+if (hostMenuBtn) {
+  hostMenuBtn.addEventListener('click', (e) => {
+    Sounds.click();
+    e.stopPropagation();
+    if (!hostHomeMenu) return;
+    hostHomeMenu.style.display = hostHomeMenu.style.display === 'none' ? 'flex' : 'none';
+  });
+}
+
+if (hostMenuHostBtn) {
+  hostMenuHostBtn.addEventListener('click', () => {
+    closeHostHomeMenu();
+    resetHostRoomConnection();
+    startHostLaunch(quizSlugFromUrl || null);
+  });
+}
+
+if (hostMenuPlayerBtn) {
+  hostMenuPlayerBtn.addEventListener('click', () => {
+    closeHostHomeMenu();
+    resetHostRoomConnection();
+    state.role = 'player';
+    showView('view-player-join');
+  });
+}
+
+document.addEventListener('click', (e) => {
+  if (!hostHomeMenu || hostHomeMenu.style.display === 'none') return;
+  if (hostHomeMenu.contains(e.target) || hostMenuBtn?.contains(e.target)) return;
+  closeHostHomeMenu();
 });
 
 // Host Lobby — mode toggle
@@ -1400,10 +1453,10 @@ document.getElementById('btn-share-copy').addEventListener('click', async () => 
   const btn = document.getElementById('btn-share-copy');
   try {
     await navigator.clipboard.writeText(url);
-    btn.textContent = '✓ Copied!';
+    btn.title = 'Copied!';
     btn.classList.add('copied');
     setTimeout(() => {
-      btn.innerHTML = '<svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z"/><path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z"/></svg> Copy';
+      btn.title = 'Copy link';
       btn.classList.remove('copied');
     }, 2000);
   } catch {
