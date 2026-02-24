@@ -190,6 +190,7 @@ const HOST_PLAYER_STAGE_VARIANTS = {
     cardClass: 'card-party-confetti',
   },
 };
+const HOST_PLAYER_PLACEHOLDER_COUNT = 8;
 
 const hostPlayerStageConfig = {
   enabled: true,
@@ -232,6 +233,14 @@ function renderHostPlayerStageCard(player, index, variant) {
             <span class="player-stage-name">${safeName}</span>
             <button class="btn-kick" data-id="${player.id}" title="Remove player" aria-label="Remove ${safeName}">✕</button>
           </li>`;
+}
+
+function renderHostPlayerStagePlaceholder(slotIndex) {
+  return `<li class="player-chip player-stage-placeholder" data-slot="${slotIndex}" aria-hidden="true"></li>`;
+}
+
+function renderHostPlayerOverflowCard(extraCount) {
+  return `<li class="player-chip player-stage-overflow" aria-label="${extraCount} more players">+${extraCount}</li>`;
 }
 
 function applyHostPlayerStageVariantClass(listEl, variant) {
@@ -363,10 +372,24 @@ function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
     state.hostLobbyPlayers = Array.isArray(players) ? [...players] : [];
     const stageVariant = useHostPlayerStageVariant();
     applyHostPlayerStageVariantClass(listEl, stageVariant);
-    // Host lobby: show kick buttons
-    listEl.innerHTML = players
-      .map((p, index) => renderHostPlayerStageCard(p, index, stageVariant))
-      .join('');
+    const visiblePlayers = players.length > HOST_PLAYER_PLACEHOLDER_COUNT
+      ? players.slice(0, HOST_PLAYER_PLACEHOLDER_COUNT - 1)
+      : players.slice(0, HOST_PLAYER_PLACEHOLDER_COUNT);
+    const overflowCount = Math.max(0, players.length - HOST_PLAYER_PLACEHOLDER_COUNT);
+
+    const stageItems = [];
+    for (let slotIndex = 0; slotIndex < HOST_PLAYER_PLACEHOLDER_COUNT; slotIndex++) {
+      if (slotIndex < visiblePlayers.length) {
+        stageItems.push(renderHostPlayerStageCard(visiblePlayers[slotIndex], slotIndex, stageVariant));
+      } else if (overflowCount > 0 && slotIndex === HOST_PLAYER_PLACEHOLDER_COUNT - 1) {
+        stageItems.push(renderHostPlayerOverflowCard(overflowCount));
+      } else {
+        stageItems.push(renderHostPlayerStagePlaceholder(slotIndex));
+      }
+    }
+
+    // Host lobby: show kick buttons + placeholders
+    listEl.innerHTML = stageItems.join('');
     // Attach kick listeners
     listEl.querySelectorAll('.btn-kick').forEach((btn) => {
       btn.addEventListener('click', (e) => {
