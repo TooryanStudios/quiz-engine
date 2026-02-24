@@ -124,13 +124,15 @@
           <img class="studio-logo" src="/images/QYan_logo_300x164.jpg" alt="QYan logo" />
           <span style="font-size:0.75rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);opacity:0.7;">QYan 2026</span>
         </div>
-        <!-- Home — top-right corner -->
-        <button class="btn-back-top-right" id="btn-back-from-host-lobby" title="Open menu">
-          <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M10.707 2.293a1 1 0 0 0-1.414 0l-7 7A1 1 0 0 0 3 11h1v6a1 1 0 0 0 1 1h4v-4h2v4h4a1 1 0 0 0 1-1v-6h1a1 1 0 0 0 .707-1.707l-7-7z"/></svg>
-        </button>
-        <div class="host-home-menu" id="host-home-menu" style="display:none">
-          <button class="host-home-menu-btn" id="btn-home-menu-host">Host</button>
-          <button class="host-home-menu-btn" id="btn-home-menu-player">Player</button>
+        <!-- Menu — top-right corner -->
+        <div class="host-menu-anchor">
+          <button class="btn-back-top-right" id="btn-back-from-host-lobby" title="Open menu" aria-label="Open menu">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M3 5.75A.75.75 0 0 1 3.75 5h12.5a.75.75 0 0 1 0 1.5H3.75A.75.75 0 0 1 3 5.75Zm0 4.25a.75.75 0 0 1 .75-.75h12.5a.75.75 0 0 1 0 1.5H3.75A.75.75 0 0 1 3 10Zm0 4.25a.75.75 0 0 1 .75-.75h12.5a.75.75 0 0 1 0 1.5H3.75a.75.75 0 0 1-.75-.75Z"/></svg>
+          </button>
+          <div class="host-home-menu" id="host-home-menu" style="display:none">
+            <button class="host-home-menu-btn" id="btn-home-menu-host">Host</button>
+            <button class="host-home-menu-btn" id="btn-home-menu-player">Player</button>
+          </div>
         </div>
       </div>
 
@@ -160,7 +162,7 @@
         <div class="share-toolbar">
           <p class="share-url-label">Share</p>
           <button class="share-copy-btn icon-only" id="btn-share-copy" title="Copy link" aria-label="Copy link">
-            <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z"/><path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z"/></svg>
+            <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path d="M3 10.75a.75.75 0 0 1 .75-.75h6.19L8.22 8.28a.75.75 0 1 1 1.06-1.06l3 3a.75.75 0 0 1 0 1.06l-3 3a.75.75 0 1 1-1.06-1.06L9.94 11.5H3.75A.75.75 0 0 1 3 10.75Z"/><path d="M12.5 3.75A1.75 1.75 0 0 0 10.75 2h-7A1.75 1.75 0 0 0 2 3.75v11.5C2 16.216 2.784 17 3.75 17h7a1.75 1.75 0 0 0 1.75-1.75v-1a.75.75 0 0 0-1.5 0v1a.25.25 0 0 1-.25.25h-7a.25.25 0 0 1-.25-.25V3.75a.25.25 0 0 1 .25-.25h7a.25.25 0 0 1 .25.25v1a.75.75 0 0 0 1.5 0v-1Z"/></svg>
           </button>
           <a id="share-whatsapp" class="share-social-btn share-wa" href="#" target="_blank" rel="noopener">
             <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
@@ -209,9 +211,18 @@
       <p class="hint-text" id="lobby-hint">Need at least 1 player to start</p>
 
       <div class="player-list-section">
-        <h3>Players Joined (<span id="host-player-count">0</span>)</h3>
-        <ul class="player-list" id="host-player-list"></ul>
-        <p class="hint-text" id="kick-hint" style="display:none">Tap a player to kick them</p>
+        <div class="host-stage-controls">
+          <label for="host-stage-variant">Player Animation</label>
+          <select id="host-stage-variant" class="host-stage-select">
+            <option value="auto" selected>Auto (Random)</option>
+            <option value="neonArcade">Neon Arcade</option>
+            <option value="quizArena">Quiz Arena</option>
+            <option value="partyConfetti">Party Confetti</option>
+          </select>
+        </div>
+        <h3>Player Parade (<span id="host-player-count">0</span>)</h3>
+        <ul class="player-list host-player-stage" id="host-player-list"></ul>
+        <p class="hint-text" id="kick-hint" style="display:none">Hover a player card to reveal remove</p>
         <p class="player-waiting-msg" id="player-waiting-msg">Waiting for players to join...</p>
       </div>
     </div>

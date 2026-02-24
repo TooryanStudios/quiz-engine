@@ -203,7 +203,7 @@ html.autohost-launch #view-host-loading.active {
 
 .host-home-menu {
   position: absolute;
-  top: 48px;
+  top: calc(100% + 8px);
   right: 0;
   min-width: 140px;
   background: var(--surface);
@@ -215,6 +215,12 @@ html.autohost-launch #view-host-loading.active {
   flex-direction: column;
   gap: 4px;
   z-index: 20;
+}
+
+.host-menu-anchor {
+  position: relative;
+  display: flex;
+  align-items: center;
 }
 
 .host-home-menu-btn {
@@ -339,20 +345,40 @@ h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-dim); }
   align-items: center;
   gap: 6px;
   padding-right: 8px;
+  position: relative;
 }
 
 .btn-kick {
-  background: none;
-  border: none;
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #fecaca;
   cursor: pointer;
-  font-size: 0.75rem;
-  opacity: 0.5;
+  font-size: 0.72rem;
+  opacity: 0;
+  pointer-events: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  position: absolute;
+  top: 6px;
+  right: 6px;
   padding: 0;
   line-height: 1;
-  transition: opacity 0.15s, transform 0.1s;
+  transform: translateY(-4px) scale(0.88);
+  transition: opacity 0.2s ease, transform 0.2s ease, background 0.2s ease;
 }
 
-.btn-kick:hover { opacity: 1; transform: scale(1.2); }
+.player-chip.kickable:hover .btn-kick,
+.player-chip.kickable:focus-within .btn-kick {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.btn-kick:hover {
+  background: rgba(239, 68, 68, 0.32);
+  transform: translateY(0) scale(1.08);
+}
 
 /* ═══════════════════════════════════════════
    Pause Overlay
@@ -1084,17 +1110,181 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
 }
 
 #view-host-lobby .player-list-section {
-  gap: 8px;
-  padding: 10px;
+  gap: 10px;
+  padding: 12px;
+  background: linear-gradient(150deg, rgba(45, 212, 191, 0.12), rgba(14, 116, 144, 0.08));
+  border: 1px solid rgba(45, 212, 191, 0.24);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03);
 }
 
 #view-host-lobby .player-list-section h3 {
-  font-size: 0.95rem;
+  font-size: 0.9rem;
+  letter-spacing: 0.4px;
 }
 
-#view-host-lobby .player-chip {
-  padding: 6px 10px 6px 8px;
-  font-size: 0.82rem;
+.host-stage-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.host-stage-controls label {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+}
+
+.host-stage-select {
+  min-width: 160px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(15, 23, 42, 0.55);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.host-stage-select:focus {
+  outline: none;
+  border-color: rgba(45, 212, 191, 0.55);
+}
+
+#view-host-lobby .player-list {
+  min-height: 72px;
+}
+
+#view-host-lobby .host-player-stage {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+#view-host-lobby .host-player-stage.stage-neon-arcade {
+  --stage-accent-soft: rgba(45, 212, 191, 0.28);
+}
+
+#view-host-lobby .host-player-stage.stage-quiz-arena {
+  --stage-accent-soft: rgba(59, 130, 246, 0.24);
+}
+
+#view-host-lobby .host-player-stage.stage-party-confetti {
+  --stage-accent-soft: rgba(250, 204, 21, 0.2);
+}
+
+#view-host-lobby .player-stage-card {
+  position: relative;
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(45, 212, 191, 0.92), rgba(20, 184, 166, 0.78));
+  color: #032b24;
+  padding: 10px 30px 10px 9px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  box-shadow: 0 8px 18px rgba(6, 78, 59, 0.24);
+  animation: hostPlayerJoin 0.55s cubic-bezier(0.22, 1.25, 0.4, 1) both;
+}
+
+#view-host-lobby .player-stage-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid transparent;
+  pointer-events: none;
+}
+
+#view-host-lobby .player-stage-card.card-neon-arcade {
+  background: linear-gradient(145deg, rgba(45, 212, 191, 0.96), rgba(16, 185, 129, 0.84));
+  box-shadow: 0 8px 18px rgba(6, 78, 59, 0.24), 0 0 16px rgba(45, 212, 191, 0.24);
+}
+
+#view-host-lobby .player-stage-card.card-neon-arcade::after {
+  border-color: rgba(236, 254, 255, 0.42);
+}
+
+#view-host-lobby .player-stage-card.card-quiz-arena {
+  background: linear-gradient(145deg, rgba(96, 165, 250, 0.95), rgba(59, 130, 246, 0.85));
+  color: #082f49;
+  box-shadow: 0 8px 20px rgba(30, 64, 175, 0.24);
+}
+
+#view-host-lobby .player-stage-card.card-quiz-arena::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  border-radius: 14px 0 0 14px;
+  background: rgba(255,255,255,0.58);
+}
+
+#view-host-lobby .player-stage-card.card-party-confetti {
+  background: linear-gradient(145deg, rgba(251, 191, 36, 0.95), rgba(249, 115, 22, 0.84));
+  color: #431407;
+  box-shadow: 0 8px 18px rgba(194, 65, 12, 0.28);
+}
+
+#view-host-lobby .player-stage-card.card-party-confetti::after {
+  border-color: rgba(255,255,255,0.45);
+  animation: confettiSparkle 1.2s ease-in-out infinite;
+}
+
+#view-host-lobby .player-stage-avatar {
+  width: 30px;
+  height: 30px;
+  font-size: 1rem;
+  background: rgba(2, 44, 34, 0.12);
+  border: 1px solid rgba(2, 44, 34, 0.12);
+}
+
+#view-host-lobby .player-stage-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#view-host-lobby .player-waiting-msg {
+  font-size: 0.8rem;
+  opacity: 0.95;
+}
+
+@keyframes hostPlayerJoin {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.92) rotate(-1.5deg);
+  }
+  65% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1.02) rotate(0.6deg);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotate(0deg);
+  }
+}
+
+@keyframes confettiSparkle {
+  0%, 100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+@media (max-width: 420px) {
+  #view-host-lobby .host-player-stage {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ═══════════════════════════════════════════
