@@ -1276,20 +1276,6 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   justify-content: space-between;
 }
 
-.btn-diagnose {
-  font-size: 0.65rem;
-  font-weight: 800;
-  padding: 2px 6px;
-  border-radius: 6px;
-  border: 1px dashed rgba(250,204,21,0.5);
-  background: rgba(250,204,21,0.1);
-  color: rgba(250,204,21,0.9);
-  cursor: pointer;
-  transition: background 0.15s;
-  line-height: 1.4;
-}
-.btn-diagnose:hover { background: rgba(250,204,21,0.2); }
-
 .host-as-player-label {
   font-size: 0.68rem;
   text-transform: uppercase;

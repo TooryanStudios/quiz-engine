@@ -1706,30 +1706,6 @@ document.getElementById('btn-share-copy').addEventListener('click', async () => 
   }
 });
 
-// Diagnose — add fake test players
-const FAKE_NAMES   = ['Alice','Bob','Carlos','Diana','Eve','Frank','Grace','Hank','Ivy','Jack','Kara','Leo'];
-const FAKE_AVATARS = ['🦦','🐼','🦱','🐯','🦄','🐸','🐙','🦋','🦤','🐺','🐻','🦝'];
-const btnDiagnose  = document.getElementById('btn-diagnose');
-
-if (btnDiagnose) {
-  btnDiagnose.addEventListener('click', () => {
-    if (!state.hostLobbyPlayers) state.hostLobbyPlayers = [];
-    // long-press (pointerdown >600ms) clears; single click adds one
-    const idx = state.hostLobbyPlayers.filter(p => p.id?.startsWith('fake-')).length;
-    if (idx >= HOST_PLAYER_PLACEHOLDER_COUNT) {
-      // all slots filled — clear fakes
-      state.hostLobbyPlayers = state.hostLobbyPlayers.filter(p => !p.id?.startsWith('fake-'));
-    } else {
-      state.hostLobbyPlayers.push({
-        id: 'fake-' + Date.now(),
-        nickname: FAKE_NAMES[idx % FAKE_NAMES.length],
-        avatar: FAKE_AVATARS[idx % FAKE_AVATARS.length],
-      });
-    }
-    rerenderHostPlayerStage();
-  });
-}
-
 // Host-as-Player toggle
 const chkHostAsPlayer = document.getElementById('chk-host-as-player');
 const hostPlayerForm  = document.getElementById('host-player-form');
