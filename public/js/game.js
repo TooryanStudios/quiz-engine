@@ -190,7 +190,7 @@ const HOST_PLAYER_STAGE_VARIANTS = {
     cardClass: 'card-party-confetti',
   },
 };
-const HOST_PLAYER_PLACEHOLDER_COUNT = 10;
+const HOST_PLAYER_PLACEHOLDER_COUNT = 8;
 
 const hostPlayerStageConfig = {
   enabled: true,
