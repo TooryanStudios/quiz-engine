@@ -73,6 +73,11 @@ const quizSlugFromUrl = queryParams.get('quiz');
 const modeFromUrl = queryParams.get('mode');
 const isAutoHostLaunch = !!(quizSlugFromUrl && modeFromUrl === 'host');
 
+// Question-only mirror mode (for POP-Q debug button)
+const questionOnlyMode = queryParams.get('questionOnly'); // 'host' or 'player'
+const isQuestionOnly = !!questionOnlyMode;
+const questionMirror = window.opener || null;
+
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Session Persistence (reconnect support)
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
