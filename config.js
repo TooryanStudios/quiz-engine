@@ -7,10 +7,11 @@ module.exports = {
 
   // The public-facing domain for this service.
   // Update this when moving from PoC to production.
-  DOMAIN: process.env.DOMAIN || 'quizengine.onrender.com',
+  DOMAIN: process.env.DOMAIN || 'play.qyan.app',
 
   // CORS: allow connections from these origins
   CORS_ORIGINS: [
+    'https://play.qyan.app',
     'https://quizengine.onrender.com',
     'https://tailorjoin.khuyoot.app',
     'http://localhost:3001',

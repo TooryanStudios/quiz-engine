@@ -456,11 +456,44 @@ const localIpCandidates = getLocalIps();
 const localIp = localIpCandidates[0]?.address || null;
 let activeMode = 'global';
 
-function getJoinBaseUrl(mode) {
+function normalizePublicBaseUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
+  const cleaned = rawUrl.trim().replace(/\/+$/, '');
+  if (!cleaned) return null;
+  if (/^https?:\/\//i.test(cleaned)) return cleaned;
+  return `https://${cleaned}`;
+}
+
+function resolveSocketPublicBaseUrl(socket) {
+  const envBase = normalizePublicBaseUrl(process.env.PUBLIC_BASE_URL || process.env.APP_BASE_URL);
+  if (envBase) return envBase;
+
+  const forwardedProto = socket.handshake.headers['x-forwarded-proto'];
+  const forwardedHost = socket.handshake.headers['x-forwarded-host'];
+  if (forwardedHost) {
+    const proto = typeof forwardedProto === 'string' && forwardedProto.length > 0
+      ? forwardedProto.split(',')[0].trim()
+      : 'https';
+    const base = normalizePublicBaseUrl(`${proto}://${String(forwardedHost).split(',')[0].trim()}`);
+    if (base) return base;
+  }
+
+  const origin = socket.handshake.headers.origin;
+  const originBase = normalizePublicBaseUrl(origin);
+  if (originBase) return originBase;
+
+  const host = socket.handshake.headers.host;
+  const hostBase = normalizePublicBaseUrl(host);
+  if (hostBase) return hostBase;
+
+  return normalizePublicBaseUrl(config.DOMAIN) || `https://${config.DOMAIN}`;
+}
+
+function getJoinBaseUrl(mode, room) {
   if (mode === 'local' && localIp) {
     return `http://${localIp}:${config.PORT}`;
   }
-  return `https://${config.DOMAIN}`;
+  return room.publicBaseUrl || normalizePublicBaseUrl(config.DOMAIN) || `https://${config.DOMAIN}`;
 }
 
 async function buildRoomModePayload(room) {
@@ -469,7 +502,7 @@ async function buildRoomModePayload(room) {
     mode = 'global';
     room.mode = 'global';
   }
-  const joinUrl = `${getJoinBaseUrl(mode)}/?pin=${room.pin}`;
+  const joinUrl = `${getJoinBaseUrl(mode, room)}/?pin=${room.pin}`;
   let qrSvg = '';
   try {
     qrSvg = await QRCode.toString(joinUrl, {
@@ -1138,6 +1171,7 @@ io.on('connection', (socket) => {
   // ── HOST: Create a new room ──────────────────
   socket.on('host:create', async ({ quizSlug } = {}) => {
     const pin = generatePIN();
+    const publicBaseUrl = resolveSocketPublicBaseUrl(socket);
 
     const room = {
       pin,
@@ -1158,6 +1192,7 @@ io.on('connection', (socket) => {
       previewTimer: null,
       answerOpenAt: 0,
       roles: null,
+      publicBaseUrl,
     };
 
     rooms.set(pin, room);
