@@ -3,7 +3,7 @@
 // ─────────────────────────────────────────────
 import { state, updateState, resetQuestionState} from './state/GameState.js';
 import { Sounds, setMuted, isMuted } from './utils/sounds.js';
-import { showView, safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js';
+import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js';
 import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js';
 import { QuestionRendererFactory } from './renderers/QuestionRenderer.js';
 
