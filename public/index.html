@@ -7,7 +7,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <link rel="stylesheet" href="/css/style.css?v=62" />
+  <link rel="stylesheet" href="/css/style.css?v=63" />
   <!-- Prevent browser zoom (Ctrl+scroll, Ctrl+±, pinch) -->
   <script>
     document.addEventListener('wheel', function(e){ if(e.ctrlKey){ e.preventDefault(); } }, { passive: false });
@@ -42,13 +42,13 @@
           🙋 I'm a Player
         </button>
       </div>
-      <button class="btn btn-secondary full-width" id="btn-open-test-home" style="margin-top:10px; border:2px dashed rgba(96,165,250,.55);">
+      <button class="btn btn-secondary full-width" id="btn-open-test-home" onclick="window.__openTestPanel && window.__openTestPanel()" style="margin-top:10px; border:2px dashed rgba(96,165,250,.55);">
         🧪 Test Renderers
       </button>
       <p class="build-time" id="build-time">Loading version…</p>
     </div>
 
-    <button id="btn-open-test-bottom" class="btn btn-primary" style="
+    <button id="btn-open-test-bottom" class="btn btn-primary" onclick="window.__openTestPanel && window.__openTestPanel()" style="
       position: fixed;
       left: 50%;
       bottom: 14px;
@@ -826,7 +826,7 @@
        ═══════════════════════════════════════════════════════════════════ -->
   
   <!-- Floating test button (bottom-right corner) -->
-  <button id="btn-open-test" class="btn-test-trigger" style="
+  <button id="btn-open-test" class="btn-test-trigger" onclick="window.__openTestPanel && window.__openTestPanel()" style="
     position: fixed;
     bottom: 80px;
     right: 20px;
@@ -970,13 +970,33 @@
     // TEMPORARY: Test renderer controls - Remove after V59 testing
     import { showTestPanel, hideTestPanel } from './js/test-renderers.js';
 
+    window.__openTestPanel = () => {
+      try {
+        showTestPanel();
+      } catch (err) {
+        console.error('[TEST] open failed:', err);
+        const panel = document.getElementById('test-renderer-panel');
+        if (panel) panel.style.display = 'flex';
+      }
+    };
+
+    window.__closeTestPanel = () => {
+      try {
+        hideTestPanel();
+      } catch (err) {
+        console.error('[TEST] close failed:', err);
+        const panel = document.getElementById('test-renderer-panel');
+        if (panel) panel.style.display = 'none';
+      }
+    };
+
     ['btn-open-test', 'btn-open-test-home', 'btn-open-test-bottom'].forEach((id) => {
       const button = document.getElementById(id);
-      if (button) button.addEventListener('click', showTestPanel);
+      if (button) button.addEventListener('click', window.__openTestPanel);
     });
 
     const closeButton = document.getElementById('btn-close-test');
-    if (closeButton) closeButton.addEventListener('click', hideTestPanel);
+    if (closeButton) closeButton.addEventListener('click', window.__closeTestPanel);
   </script>
   
   <!-- ═══════════════════════════════════════════════════════════════════
@@ -989,7 +1009,7 @@
   <!-- Load Socket.io client from the server (auto-served by socket.io) -->
   <script src="/socket.io/socket.io.js"></script>
   <!-- Main game logic (ES6 module) -->
-  <script type="module" src="/js/game.js?v=62"></script>
+  <script type="module" src="/js/game.js?v=63"></script>
   <!-- TEMPORARY: Test renderer module - Remove after V59 testing -->
   <script type="module" src="/js/test-renderers.js"></script>
 </body>
