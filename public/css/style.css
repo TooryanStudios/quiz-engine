@@ -60,6 +60,31 @@ body {
   flex-direction: column;
 }
 
+html.autohost-launch #view-home .btn-group,
+html.autohost-launch #view-home .subtitle,
+html.autohost-launch #view-home #quiz-title-banner {
+  display: none !important;
+}
+
+html.autohost-launch #view-home {
+  display: none !important;
+}
+
+html.autohost-launch #view-host-loading {
+  display: flex !important;
+  flex-direction: column;
+}
+
+.host-loading-card h2 {
+  font-size: 1.5rem;
+  font-weight: 800;
+}
+
+.host-loading-logo {
+  width: 150px;
+  height: 86px;
+}
+
 /* ═══════════════════════════════════════════
    Card
 ═══════════════════════════════════════════ */

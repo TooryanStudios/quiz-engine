@@ -9,6 +9,12 @@
   <script>
     document.addEventListener('wheel', function(e){ if(e.ctrlKey){ e.preventDefault(); } }, { passive: false });
     document.addEventListener('keydown', function(e){ if(e.ctrlKey && (e.key==='+' || e.key==='-' || e.key==='=' || e.key==='0')){ e.preventDefault(); } });
+    (function () {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('quiz') && params.get('mode') === 'host') {
+        document.documentElement.classList.add('autohost-launch');
+      }
+    })();
   </script>
 </head>
 <body>
@@ -33,6 +39,17 @@
           🙋 I'm a Player
         </button>
       </div>      <p class="build-time" id="build-time">Loading version…</p>    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       VIEW: Host — Loading (before room is ready)
+  ═══════════════════════════════════════════ -->
+  <div id="view-host-loading" class="view">
+    <div class="card center-card host-loading-card">
+      <img class="studio-logo host-loading-logo" src="/images/QYan_logo_300x164.jpg" alt="QYan logo" />
+      <h2>Preparing your game</h2>
+      <p class="waiting-text">Loading quiz data and creating room…</p>
+    </div>
   </div>
 
   <!-- ═══════════════════════════════════════════

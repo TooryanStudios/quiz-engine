@@ -70,6 +70,8 @@ fetch('/api/build-info')
 const socket = io(window.location.origin);
 const queryParams = new URLSearchParams(window.location.search);
 const quizSlugFromUrl = queryParams.get('quiz');
+const modeFromUrl = queryParams.get('mode');
+const isAutoHostLaunch = !!(quizSlugFromUrl && modeFromUrl === 'host');
 
 // ─────────────────────────────────────────────
 // Session Persistence (reconnect support)
@@ -100,7 +102,7 @@ const AVATARS = ['🦁','🐯','🦊','🐼','🐨','🐸','🦄','🦖','🦝',
 
 // If a quiz slug is in the URL, show ID immediately then fetch title
 // Update both the home banner and the player-join banner
-if (quizSlugFromUrl) {
+if (quizSlugFromUrl && !isAutoHostLaunch) {
   const el = document.getElementById('quiz-title-banner');
   const el2 = document.getElementById('join-quiz-title-banner');
   const setText = (text) => {
@@ -151,6 +153,7 @@ const state = {
   currentDifficulty: 'classic',  // 'easy' | 'classic' | 'hard'
   avatar: '🎮',  // selected avatar emoji
   hostIsPlayer: false,       // experimental: host joined as a player too
+  hostCreatePending: false,
 };
 
 let scholarPreviewInterval = null;
@@ -174,6 +177,22 @@ function showView(viewId) {
   const attribution = document.querySelector('.tooryan-attribution');
   if (activeView && attribution && attribution.parentElement !== activeView) {
     activeView.appendChild(attribution);
+  }
+}
+
+function startHostLaunch(quizSlug = null) {
+  if (state.hostCreatePending) return;
+  enableKeepAwake();
+  state.role = 'host';
+  state.hostCreatePending = true;
+  showView('view-host-loading');
+  setConnectionStatus('warn', 'Preparing host room…');
+
+  const doHostCreate = () => socket.emit('host:create', { quizSlug: quizSlug || null });
+  if (socket.connected) {
+    doHostCreate();
+  } else {
+    socket.once('connect', doHostCreate);
   }
 }
 
@@ -1302,10 +1321,8 @@ function renderRolePanel(players = []) {
 
 // Home — Become Host
 document.getElementById('btn-become-host').addEventListener('click', () => {
-  enableKeepAwake();
   Sounds.click();
-  state.role = 'host';
-  socket.emit('host:create', { quizSlug: quizSlugFromUrl || null });
+  startHostLaunch(quizSlugFromUrl || null);
 });
 
 // Home — Become Player
@@ -1546,6 +1563,7 @@ document.getElementById('btn-home-from-closed').addEventListener('click', () => 
 
 /** HOST: Room created successfully */
 socket.on('room:created', ({ pin, ...modeInfo }) => {
+  state.hostCreatePending = false;
   state.pin = pin;
   document.getElementById('host-pin').textContent = pin;
   document.getElementById('host-player-count').textContent = '0';
@@ -1731,6 +1749,9 @@ socket.on('host:joined_as_player', ({ joined, nickname, avatar }) => {
 
 /** BOTH: Error from server */
 socket.on('room:error', ({ message }) => {
+  if (state.role === 'host') {
+    state.hostCreatePending = false;
+  }
   const editPanel = document.getElementById('edit-profile-panel');
   if (state.role === 'player' && editPanel && editPanel.classList.contains('open')) {
     const errEl = document.getElementById('edit-profile-error');
@@ -2053,7 +2074,6 @@ socket.on('room:closed', ({ message }) => {
 (function () {
   const params = new URLSearchParams(window.location.search);
   const pinFromUrl = params.get('pin');
-  const modeFromUrl = params.get('mode');
   const scanFallbackBanner = document.getElementById('scan-fallback-banner');
 
   if (scanFallbackBanner) {
@@ -2068,21 +2088,9 @@ socket.on('room:closed', ({ message }) => {
         `<strong>Scanned successfully.</strong><span>PIN <b>${escapeHtml(pinFromUrl)}</b> was filled automatically. If auto-join fails, tap Join Game manually.</span>`;
     }
     showView('view-player-join');
-  } else if (quizSlugFromUrl && modeFromUrl === 'host') {
-    // Clicked Play from admin — go directly to host mode
-    // Show a launching state on the home view while socket connects
-    const btnGroup = document.querySelector('#view-home .btn-group');
-    const subtitle = document.querySelector('#view-home .subtitle');
-    if (btnGroup) btnGroup.innerHTML = '<p style="color:#2dd4bf;font-size:1.1rem;font-weight:700;letter-spacing:1px;animation:pulse 1.2s infinite">⏳ Launching game…</p>';
-    if (subtitle) subtitle.textContent = 'Connecting to server, please wait…';
-    enableKeepAwake();
-    state.role = 'host';
-    const doHostCreate = () => socket.emit('host:create', { quizSlug: quizSlugFromUrl });
-    if (socket.connected) {
-      doHostCreate();
-    } else {
-      socket.once('connect', doHostCreate);
-    }
+  } else if (isAutoHostLaunch) {
+    // Clicked Play from admin — go directly to branded loading, then host lobby
+    startHostLaunch(quizSlugFromUrl);
   } else if (quizSlugFromUrl) {
     // Came from a quiz QR code — host is already set up, go straight to player join
     state.role = 'player';
