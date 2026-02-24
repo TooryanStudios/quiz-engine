@@ -5,6 +5,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  increment,
   limit,
   onSnapshot,
   orderBy,
@@ -17,6 +18,12 @@ import { db } from './firebase'
 import type { QuizDoc } from '../types/quiz'
 
 const quizzesCol = collection(db, 'quizzes')
+
+export async function incrementShareCount(id: string) {
+  await updateDoc(doc(db, 'quizzes', id), {
+    shareCount: increment(1)
+  })
+}
 
 export async function listMyQuizzes(ownerId: string) {
   const q = query(quizzesCol, where('ownerId', '==', ownerId), limit(50))
@@ -44,8 +51,13 @@ export async function getQuizById(id: string) {
 export async function createQuiz(payload: QuizDoc) {
   const docRef = await addDoc(quizzesCol, {
     ...payload,
+    originalOwnerId: payload.ownerId,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
+    totalPlays: 0,
+    totalSessions: 0,
+    totalPlayers: 0,
+    shareCount: 0,
   })
   return docRef.id
 }
@@ -75,6 +87,56 @@ export async function findQuizByOwnerAndSlug(ownerId: string, slug: string) {
 
 export async function listPublicQuizzes() {
   const q = query(quizzesCol, where('visibility', '==', 'public'), orderBy('updatedAt', 'desc'), limit(100))
+  const snap = await getDocs(q)
+  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as QuizDoc) }))
+}
+
+export async function listPublicQuizzesByOwner(ownerId: string) {
+  const q = query(
+    quizzesCol,
+    where('ownerId', '==', ownerId),
+    where('visibility', '==', 'public'),
+    orderBy('updatedAt', 'desc'),
+    limit(20),
+  )
+  const snap = await getDocs(q)
+  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as QuizDoc) }))
+}
+
+export async function listFeaturedQuizzes() {
+  try {
+    const q = query(
+      quizzesCol,
+      where('visibility', '==', 'public'),
+      where('featured', '==', true),
+      orderBy('updatedAt', 'desc'),
+      limit(20),
+    )
+    const snap = await getDocs(q)
+    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as QuizDoc) }))
+  } catch {
+    const q = query(
+      quizzesCol,
+      where('visibility', '==', 'public'),
+      orderBy('updatedAt', 'desc'),
+      limit(100),
+    )
+    const snap = await getDocs(q)
+    return snap.docs
+      .map((d) => ({ id: d.id, ...(d.data() as QuizDoc) }))
+      .filter((quiz) => quiz.featured)
+      .slice(0, 20)
+  }
+}
+
+export async function listFeaturedQuizzesByOwner(ownerId: string) {
+  const q = query(
+    quizzesCol,
+    where('ownerId', '==', ownerId),
+    where('featured', '==', true),
+    orderBy('updatedAt', 'desc'),
+    limit(20),
+  )
   const snap = await getDocs(q)
   return snap.docs.map((d) => ({ id: d.id, ...(d.data() as QuizDoc) }))
 }

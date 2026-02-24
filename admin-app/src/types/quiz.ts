@@ -36,6 +36,7 @@ export interface QuizQuestion {
 export interface QuizDoc {
   id?: string
   ownerId: string
+  originalOwnerId?: string // Link to the original creator if cloned
   title: string
   slug: string
   description?: string
@@ -43,11 +44,23 @@ export interface QuizDoc {
   priceTier?: 'free' | 'starter' | 'pro'
   challengePreset?: ChallengePreset
   challengeSettings?: ChallengeSettings
-  enableScholarRole?: boolean  // disabled by default; not exposed in editor UI
+  enableScholarRole?: boolean
   randomizeQuestions?: boolean
   coverImage?: string
   tags: string[]
   questions: QuizQuestion[]
-  createdAt?: unknown
-  updatedAt?: unknown
+
+  // Dashboard
+  featured?: boolean   // admin-pinned to the welcome strip
+
+  // Rating (future)
+  rating?: { total: number; count: number }
+
+  // Metadata/Stats
+  createdAt?: any
+  updatedAt?: any
+  totalPlays?: number
+  totalSessions?: number
+  totalPlayers?: number
+  shareCount?: number
 }

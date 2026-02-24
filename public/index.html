@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
   <title>QYan</title>
-  <link rel="stylesheet" href="/css/style.css?v=42" />
+  <link rel="stylesheet" href="/css/style.css?v=43" />
   <!-- Prevent browser zoom (Ctrl+scroll, Ctrl+±, pinch) -->
   <script>
     document.addEventListener('wheel', function(e){ if(e.ctrlKey){ e.preventDefault(); } }, { passive: false });
@@ -60,20 +60,11 @@
       <button class="btn-back" id="btn-back-from-join">← Back</button>
       <img class="studio-logo" src="/images/QYan_logo_300x164.jpg" alt="QYan logo" style="margin-bottom:0.1rem;" />
       <span style="font-size:0.75rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);opacity:0.7;margin-bottom:0.5rem;">QYan 2026</span>
-      <h2>Join a Game</h2>
+      <h2 dir="rtl">انضم إلى لعبة</h2>
       <p id="join-quiz-title-banner" style="display:none; font-size:1rem; font-weight:600; color:#60a5fa; margin:0 0 0.75rem; text-align:center;"></p>
       <div id="scan-fallback-banner" class="scan-fallback" style="display:none">
         <strong>Having trouble after scanning?</strong>
         <span>Use the Room PIN shown on the host screen and join manually.</span>
-      </div>
-      <div class="host-stage-controls host-stage-controls-join">
-        <label for="host-stage-variant-join">Player Animation</label>
-        <select id="host-stage-variant-join" class="host-stage-select">
-          <option value="auto" selected>Auto (Random)</option>
-          <option value="neonArcade">Neon Arcade</option>
-          <option value="quizArena">Quiz Arena</option>
-          <option value="partyConfetti">Party Confetti</option>
-        </select>
       </div>
       <form id="form-join">
         <div class="field">
@@ -561,6 +552,6 @@
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
   <!-- Load Socket.io client from the server (auto-served by socket.io) -->
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/js/game.js?v=42"></script>
+  <script src="/js/game.js?v=43"></script>
 </body>
 </html>

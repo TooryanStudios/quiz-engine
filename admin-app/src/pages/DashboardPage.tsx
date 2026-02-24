@@ -1,17 +1,22 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { auth } from '../lib/firebase'
-import { subscribeMyQuizzes, updateQuiz } from '../lib/quizRepo'
+import { incrementShareCount, listFeaturedQuizzes, subscribeMyQuizzes, updateQuiz } from '../lib/quizRepo'
+import { incrementPlatformStat } from '../lib/adminRepo'
+import { guardedLaunchGame } from '../lib/gameLaunch'
 import type { QuizDoc, QuizQuestion } from '../types/quiz'
 import { useTheme } from '../lib/useTheme'
 import placeholderImg from '../assets/QYan_logo_300x164.jpg'
+import { useToast } from '../lib/ToastContext'
 
 type QuizItem = QuizDoc & { id: string }
 
 const IS_LOCAL_DEV = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
+const MASTER_EMAIL = import.meta.env.VITE_MASTER_EMAIL as string | undefined
+const FEATURED_CACHE_KEY = 'dashboard:featured-cache:v1'
 const SERVER_BASE = IS_LOCAL_DEV
   ? (import.meta.env.VITE_LOCAL_GAME_URL || 'http://localhost:3001')
-  : (import.meta.env.VITE_API_BASE_URL || 'https://quizengine.onrender.com')
+  : (import.meta.env.VITE_API_BASE_URL || 'https://play.qyan.app')
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -56,9 +61,39 @@ export function DashboardPage() {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [visibleCount, setVisibleCount] = useState(6)
+  const [publicQuizzes, setPublicQuizzes] = useState<QuizItem[]>([])
+  const [loadingPublic, setLoadingPublic] = useState(true)
   const menuRef = useRef<HTMLDivElement>(null)
+  const { showToast } = useToast()
   const appTheme = useTheme()
   const dark = appTheme === 'dark'
+  const isMasterAdmin = !!(MASTER_EMAIL && auth.currentUser?.email === MASTER_EMAIL)
+
+  useEffect(() => {
+    const uid = auth.currentUser?.uid
+    if (!uid) { setLoadingPublic(false); return }
+    const cached = sessionStorage.getItem(FEATURED_CACHE_KEY)
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached) as QuizItem[]
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setPublicQuizzes(parsed)
+          setLoadingPublic(false)
+        }
+      } catch {
+        sessionStorage.removeItem(FEATURED_CACHE_KEY)
+      }
+    }
+    // Show platform-wide featured (admin-pinned) quizzes to all users
+    listFeaturedQuizzes()
+      .then((list) => {
+        const next = list as QuizItem[]
+        setPublicQuizzes(next)
+        sessionStorage.setItem(FEATURED_CACHE_KEY, JSON.stringify(next))
+      })
+      .catch(console.error)
+      .finally(() => setLoadingPublic(false))
+  }, [])
 
   useEffect(() => {
     const uid = auth.currentUser?.uid
@@ -102,6 +137,47 @@ export function DashboardPage() {
     } finally {
       setUpdatingId(null)
     }
+  }
+
+  async function handleToggleFeatured(quiz: QuizItem) {
+    setMenuOpenId(null)
+    const newFeatured = !quiz.featured
+    setUpdatingId(quiz.id)
+    try {
+      await updateQuiz(quiz.id, { featured: newFeatured })
+      setQuizzes((prev) =>
+        prev.map((q) => q.id === quiz.id ? { ...q, featured: newFeatured } : q)
+      )
+      // Refresh the welcome strip using platform-wide featured
+      const featured = await listFeaturedQuizzes().catch(() => [])
+      setPublicQuizzes(featured as QuizItem[])
+      showToast({ message: newFeatured ? '📌 تم التثبيت في الرئيسية' : 'تم إلغاء التثبيت', type: 'success' })
+    } catch {
+      showToast({ message: 'Failed to update. Please try again.', type: 'error' })
+    } finally {
+      setUpdatingId(null)
+    }
+  }
+
+  async function handleLaunchGame(quizId: string) {
+    const gameUrl = `${SERVER_BASE}/?quiz=${encodeURIComponent(quizId)}&mode=host`
+    await guardedLaunchGame({
+      serverBase: SERVER_BASE,
+      gameUrl,
+      onUnavailable: () => {
+        showToast({
+          message: 'Game server is temporarily unavailable. Please try again in a moment.',
+          type: 'error',
+        })
+      },
+      onPopupBlocked: () => {
+        showToast({
+          message: 'Popup was blocked. Please allow popups and try again.',
+          type: 'info',
+        })
+      },
+      onLaunch: () => { void incrementPlatformStat('sessionHosted') },
+    })
   }
 
   // ── Dashboard derived data ─────────────────────────────────────────────────
@@ -149,6 +225,157 @@ export function DashboardPage() {
           </button>
         </Link>
       </div>
+
+      {/* ── Play Now — Public Quizzes (own public quizzes only) ── */}
+      {(loadingPublic || publicQuizzes.length > 0) && (
+      <div style={{ marginBottom: '2rem' }}>
+
+        {/* Section header */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '0.9rem' }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-bright)' }}>
+              🎮 جاهز للعب؟
+            </h3>
+          </div>
+          <Link to="/packs" style={{
+            textDecoration: 'none', fontSize: '0.75rem', fontWeight: 700,
+            color: dark ? '#a78bfa' : '#7c3aed', whiteSpace: 'nowrap',
+            padding: '4px 10px', borderRadius: 999,
+            background: dark ? 'rgba(124,58,237,0.12)' : 'rgba(124,58,237,0.08)',
+            border: `1px solid ${dark ? 'rgba(124,58,237,0.25)' : 'rgba(124,58,237,0.18)'}`,
+          }}>
+            اكتشف المزيد ←
+          </Link>
+        </div>
+
+        {/* Horizontal scroll strip */}
+        <div style={{
+          display: 'flex', gap: '0.75rem',
+          overflowX: 'auto', paddingBottom: '4px',
+          scrollSnapType: 'x mandatory',
+          WebkitOverflowScrolling: 'touch' as const,
+          msOverflowStyle: 'none' as const,
+        }}>
+          {loadingPublic
+            ? [1,2,3,4,5].map(i => (
+                <div key={i} style={{
+                  minWidth: 148, height: 218, borderRadius: 16, flexShrink: 0,
+                  background: dark
+                    ? 'linear-gradient(90deg,#1e293b 25%,#273549 50%,#1e293b 75%)'
+                    : 'linear-gradient(90deg,#e2e8f0 25%,#f1f5f9 50%,#e2e8f0 75%)',
+                  backgroundSize: '200% 100%', animation: 'shimmer 1.5s infinite',
+                }} />
+              ))
+            : publicQuizzes.slice(0, 6).map((q) => {
+                const coverImg = q.coverImage || getCoverImage(q.questions ?? [])
+                const emoji = pickEmoji(q.tags ?? [], q.title)
+                const badge = presetBadge(q.challengePreset)
+                return (
+                  <div
+                    key={q.id}
+                    style={{
+                      minWidth: 148, maxWidth: 148, flexShrink: 0,
+                      scrollSnapAlign: 'start',
+                      borderRadius: 16,
+                      background: dark ? '#0f172a' : '#fff',
+                      border: `1px solid ${dark ? '#1e293b' : '#e8edf5'}`,
+                      boxShadow: dark ? '0 2px 12px rgba(0,0,0,0.4)' : '0 2px 10px rgba(0,0,0,0.07)',
+                      display: 'flex', flexDirection: 'column', overflow: 'hidden',
+                      transition: 'transform 0.18s, box-shadow 0.18s',
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.transform = 'translateY(-4px)'
+                      e.currentTarget.style.boxShadow = dark ? '0 12px 28px rgba(0,0,0,0.55)' : '0 8px 22px rgba(0,0,0,0.13)'
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.transform = 'translateY(0)'
+                      e.currentTarget.style.boxShadow = dark ? '0 2px 12px rgba(0,0,0,0.4)' : '0 2px 10px rgba(0,0,0,0.07)'
+                    }}
+                  >
+                    {/* Cover image */}
+                    <div style={{
+                      height: 100, position: 'relative', flexShrink: 0,
+                      background: '#0a0f1a', overflow: 'hidden',
+                    }}>
+                      <img
+                        src={coverImg || placeholderImg}
+                        alt={q.title}
+                        onError={e => { (e.currentTarget as HTMLImageElement).src = placeholderImg }}
+                        style={{
+                          width: '100%', height: '100%',
+                          objectFit: coverImg ? 'cover' : 'contain',
+                          opacity: coverImg ? 0.88 : 0.4,
+                          padding: coverImg ? 0 : 14,
+                        }}
+                      />
+                      {/* emoji badge */}
+                      <span style={{
+                        position: 'absolute', top: 6, left: 7,
+                        background: 'rgba(0,0,0,0.52)', backdropFilter: 'blur(4px)',
+                        borderRadius: 7, padding: '2px 6px', fontSize: '0.85rem',
+                        border: '1px solid rgba(255,255,255,0.06)',
+                      }}>{emoji}</span>
+                      {/* difficulty badge */}
+                      <span style={{
+                        position: 'absolute', top: 7, right: 7,
+                        background: badge.color, color: '#fff',
+                        fontSize: '0.52rem', fontWeight: 800,
+                        padding: '2px 7px', borderRadius: 999,
+                        letterSpacing: '0.05em', textTransform: 'uppercase' as const,
+                      }}>{badge.label}</span>
+                    </div>
+
+                    {/* Title + question count */}
+                    <div style={{ padding: '0.55rem 0.65rem 0.4rem', flex: 1 }}>
+                      <div style={{
+                        fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-bright)',
+                        lineHeight: 1.35,
+                        display: '-webkit-box', WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical' as const, overflow: 'hidden',
+                        marginBottom: '0.25rem',
+                      }}>{q.title}</div>
+                      <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+                        {q.questions?.length ?? 0} سؤال
+                      </div>
+                    </div>
+
+                    {/* Large play button */}
+                    <a
+                      href={`${SERVER_BASE}/?quiz=${encodeURIComponent(q.id)}&mode=host`}
+                      target="_blank" rel="noopener noreferrer"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        void handleLaunchGame(q.id)
+                      }}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        gap: '0.35rem',
+                        margin: '0 0.55rem 0.55rem',
+                        padding: '0.62rem 0',
+                        borderRadius: 11,
+                        background: 'linear-gradient(135deg, #16a34a, #15803d)',
+                        color: '#fff', textDecoration: 'none',
+                        fontSize: '0.82rem', fontWeight: 800,
+                        letterSpacing: '0.02em',
+                        boxShadow: '0 3px 10px rgba(22,163,74,0.38)',
+                        transition: 'filter 0.15s',
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.filter = 'brightness(1.12)' }}
+                      onMouseLeave={e => { e.currentTarget.style.filter = 'brightness(1)' }}
+                    >
+                      <svg viewBox="0 0 20 20" fill="currentColor" width="13" height="13" style={{ flexShrink: 0 }}>
+                        <path d="M6.3 2.84A1.5 1.5 0 004 4.11v11.78a1.5 1.5 0 002.3 1.27l9.344-5.891a1.5 1.5 0 000-2.538L6.3 2.84z"/>
+                      </svg>
+                      العب الآن
+                    </a>
+                  </div>
+                )
+              })
+          }
+        </div>
+
+      </div>
+      )}
 
       {/* ── Stats row ── */}
       <div style={{
@@ -338,7 +565,7 @@ export function DashboardPage() {
             gap: '1rem',
           }}>
             {quizzes.slice(0, visibleCount).map((q) => {
-            const coverImg = getCoverImage(q.questions ?? [])
+            const coverImg = q.coverImage || getCoverImage(q.questions ?? [])
             const badge = presetBadge(q.challengePreset)
             const isHovered = hoveredId === q.id
 
@@ -361,7 +588,7 @@ export function DashboardPage() {
               <div
                 key={q.id}
                 onMouseEnter={() => setHoveredId(q.id)}
-                onMouseLeave={() => { setHoveredId(null); setMenuOpenId(null) }}
+                onMouseLeave={() => { setHoveredId(null); if (menuOpenId !== q.id) setMenuOpenId(null) }}
                 style={{
                   borderRadius: '14px',
                   background: dark ? '#0f172a' : '#ffffff',
@@ -387,7 +614,9 @@ export function DashboardPage() {
                   <img
                     src={coverImg || placeholderImg}
                     alt={q.title}
-                    onError={(e) => { (e.currentTarget as HTMLImageElement).onerror = null }}
+                    onError={(e) => { 
+                      ;(e.currentTarget as HTMLImageElement).src = placeholderImg
+                    }}
                     style={{
                       width: '100%', height: '100%',
                       objectFit: coverImg ? 'cover' : 'contain',
@@ -401,7 +630,11 @@ export function DashboardPage() {
                   <a
                     href={`${SERVER_BASE}/?quiz=${encodeURIComponent(q.id)}&mode=host`}
                     target="_blank" rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      void handleLaunchGame(q.id)
+                    }}
                     style={{
                       position: 'absolute',
                       top: '50%', left: '50%',
@@ -432,27 +665,34 @@ export function DashboardPage() {
                   {/* Owner avatar */}
                   {(() => {
                     const photoURL = auth.currentUser?.photoURL ?? null
-                    const displayName = auth.currentUser?.displayName ?? auth.currentUser?.email ?? q.ownerId
-                    const initials = displayName.slice(0, 2).toUpperCase()
+                    const dName = auth.currentUser?.displayName || auth.currentUser?.email || q.ownerId
+                    const initials = dName.slice(0, 2).toUpperCase()
                     const hue = q.ownerId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360
                     const avBg = `hsl(${hue}, 55%, 40%)`
-                    return photoURL ? (
-                      <img src={photoURL} alt="owner" style={{
-                        position: 'absolute', top: '6px', left: '6px',
-                        width: '28px', height: '28px', borderRadius: '50%',
-                        objectFit: 'cover', border: '2px solid rgba(255,255,255,0.4)',
-                        boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
-                      }} />
-                    ) : (
+                    return (
                       <div style={{
                         position: 'absolute', top: '6px', left: '6px',
                         width: '28px', height: '28px', borderRadius: '50%',
-                        background: avBg, display: 'flex', alignItems: 'center',
-                        justifyContent: 'center', fontSize: '0.6rem', fontWeight: 700, color: '#fff',
+                        background: avBg, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: '0.6rem', fontWeight: 700, color: '#fff',
                         border: '2px solid rgba(255,255,255,0.25)',
                         boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
+                        overflow: 'hidden',
+                        zIndex: 6,
                       }}>
                         {initials}
+                        {photoURL && (
+                          <img 
+                            src={photoURL} 
+                            alt="" 
+                            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+                            style={{
+                              position: 'absolute', inset: 0,
+                              width: '100%', height: '100%',
+                              objectFit: 'cover',
+                            }} 
+                          />
+                        )}
                       </div>
                     )
                   })()}
@@ -469,14 +709,27 @@ export function DashboardPage() {
                       {badge.label}
                     </div>
                   )}
+                  {/* Pin indicator — always visible when featured */}
+                  {q.featured && (
+                    <div style={{
+                      position: 'absolute', bottom: '6px', left: '6px',
+                      background: 'rgba(180, 83, 9, 0.92)', backdropFilter: 'blur(4px)',
+                      color: '#fff', fontSize: '0.62rem', fontWeight: 700,
+                      padding: '2px 7px', borderRadius: '999px',
+                      display: 'flex', alignItems: 'center', gap: '3px',
+                      boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
+                      zIndex: 7,
+                    }}>
+                      📌 <span>مثبّت</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Three-dot menu — card-level to avoid hero clip */}
-                {badge.label === 'Custom' && (
-                  <div
-                    style={{ position: 'absolute', top: '6px', right: '6px', zIndex: 10 }}
-                    ref={menuOpenId === q.id ? menuRef : undefined}
-                  >
+                <div
+                  style={{ position: 'absolute', top: '6px', right: '6px', zIndex: 10 }}
+                  ref={menuOpenId === q.id ? menuRef : undefined}
+                >
                     <div style={{ opacity: isHovered ? 1 : 0, transition: 'opacity 0.15s' }}>
                       <button
                         title="More options"
@@ -492,8 +745,8 @@ export function DashboardPage() {
                       >
                         {updatingId === q.id ? '…' : '⋯'}
                       </button>
-                    </div>
-                    {menuOpenId === q.id && (
+                  </div>
+                  {menuOpenId === q.id && (
                       <div style={{
                         position: 'absolute', top: '100%', right: 0, zIndex: 50,
                         background: dark ? '#1e293b' : '#ffffff',
@@ -524,21 +777,43 @@ export function DashboardPage() {
                             {q.visibility === v && <span style={{ fontSize: '0.7rem', color: '#2563eb' }}>✓</span>}
                           </button>
                         ))}
+                        {isMasterAdmin && (
+                        <>
+                        <div style={{ height: 1, background: dark ? '#1e293b' : '#f1f5f9', margin: '4px 0' }} />
+                        <div style={{ padding: '4px 10px', fontSize: '0.62rem', color: dark ? '#64748b' : '#94a3b8', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                          Dashboard
+                        </div>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); void handleToggleFeatured(q) }}
+                          style={{
+                            width: '100%', display: 'flex', alignItems: 'center', gap: '0.5rem',
+                            padding: '8px 12px', background: q.featured ? (dark ? '#0f172a' : '#fef9c3') : 'transparent',
+                            border: 'none', color: q.featured ? '#b45309' : (dark ? '#94a3b8' : '#64748b'),
+                            fontSize: '0.8rem', cursor: 'pointer', textAlign: 'left',
+                            transition: 'background 0.15s',
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = dark ? '#273549' : '#f8fafc' }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = q.featured ? (dark ? '#0f172a' : '#fef9c3') : 'transparent' }}
+                        >
+                          <span>{q.featured ? '📌' : '📍'}</span>
+                          <span style={{ flex: 1 }}>{q.featured ? 'إلغاء التثبيت' : 'تثبيت في الرئيسية'}</span>
+                          {q.featured && <span style={{ fontSize: '0.7rem', color: '#d97706' }}>✓</span>}
+                        </button>
+                        </>)}
                       </div>
                     )}
-                  </div>
-                )}
+                </div>
 
                 {/* Card body — title + count only */}
-                <div style={{ padding: '0.65rem 0.8rem 0.5rem' }}>
+                <div style={{ padding: '0.65rem 0.8rem 0.5rem', textAlign: 'center' }}>
                   <div style={{
-                    fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-bright)', lineHeight: 1.4,
+                    fontSize: '0.875rem', fontWeight: 400, color: 'var(--text-bright)', lineHeight: 1.4,
                     display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
                     marginBottom: '0.25rem',
                   }}>
                     {q.title}
                   </div>
-                  <div style={{ fontSize: '0.72rem', color: '#475569', fontWeight: 500 }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-mid)', fontWeight: 500 }}>
                     {q.questions?.length ?? 0} سؤال
                   </div>
                 </div>
@@ -569,7 +844,10 @@ export function DashboardPage() {
                     onClick={(e) => {
                       e.stopPropagation()
                       navigator.clipboard?.writeText(`${SERVER_BASE}/?quiz=${encodeURIComponent(q.id)}`)
-                        .then(() => alert('تم نسخ الرابط!'))
+                        .then(() => {
+                          showToast({ message: 'تم نسخ الرابط!', type: 'success' })
+                          incrementShareCount(q.id).catch(console.error)
+                        })
                     }}
                     style={{ ...aBtnStyle, width: 'auto', flex: 'none', padding: '0.38rem 0.55rem' }}
                     onMouseEnter={(e) => Object.assign(e.currentTarget.style, { background: dark ? '#273549' : '#e2e8f0', color: dark ? '#e2e8f0' : '#0f172a' })}

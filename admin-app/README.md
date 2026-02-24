@@ -74,3 +74,25 @@ Use public slug links:
 `https://quizengine.onrender.com/?quiz=<slug>`
 
 The quiz engine server fetches quiz data by slug from cloud source.
+
+## Experimental voice chat (testing only)
+
+The admin app includes a test page at `/voice-lab` for real-time voice trials.
+
+- Status: experimental (not production-ready)
+- Scope: small room tests only (recommended 2–4 users)
+- Room format: must start with `test-` (example: `test-team-a`)
+- Signaling: Firestore (`voiceRooms/{roomId}` with `participants` and `signals` subcollections)
+
+### Cost notes
+
+- Browser-to-browser audio uses WebRTC peer-to-peer where possible.
+- Current test setup uses free public STUN and no TURN relay.
+- Main Firestore cost is signaling reads/writes (usually low for test usage).
+- For production reliability, TURN is typically required and becomes the main bandwidth cost.
+
+### Integration notes
+
+1. Keep Voice Lab behind authenticated admin users only.
+2. Restrict test room IDs and Firestore rules (already enforced by `test-` room format).
+3. For production rollout, move signaling to dedicated backend controls and add managed TURN.

@@ -2,15 +2,15 @@ import { useState, useEffect } from 'react'
 
 export function useTheme(): 'dark' | 'light' {
   const [theme, setTheme] = useState<'dark' | 'light'>(
-    () => (document.body.getAttribute('data-theme') as 'dark' | 'light') || 'dark'
+    () => (document.documentElement.getAttribute('data-theme') as 'dark' | 'light') || 'light'
   )
 
   useEffect(() => {
     const observer = new MutationObserver(() => {
-      const t = document.body.getAttribute('data-theme') as 'dark' | 'light'
-      setTheme(t || 'dark')
+      const t = document.documentElement.getAttribute('data-theme') as 'dark' | 'light'
+      setTheme(t || 'light')
     })
-    observer.observe(document.body, { attributes: true, attributeFilter: ['data-theme'] })
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
     return () => observer.disconnect()
   }, [])
 

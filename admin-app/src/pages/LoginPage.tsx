@@ -1,22 +1,65 @@
-import { signInWithPopup } from 'firebase/auth'
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { signInWithPopup, signInWithRedirect } from 'firebase/auth'
+import { useState, useEffect } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { auth, googleProvider } from '../lib/firebase'
+import { useToast } from '../lib/ToastContext'
 import logoImg from '../assets/QYan_logo_300x164.jpg'
 
 export function LoginPage() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const { showToast } = useToast()
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const wasSignedOut = !!(location.state as { signedOut?: boolean } | null)?.signedOut
+  const [showBanner, setShowBanner] = useState(wasSignedOut)
+
+  useEffect(() => {
+    if (!wasSignedOut) return
+    // Clear the router state so a refresh won't re-show the banner
+    window.history.replaceState({}, '')
+    const t = setTimeout(() => setShowBanner(false), 3000)
+    return () => clearTimeout(t)
+  }, [wasSignedOut])
+
+  useEffect(() => {
+    // Warm dashboard chunk while the user is on login to speed post-sign-in navigation.
+    void import('./DashboardPage')
+  }, [])
 
   const handleGoogleLogin = async () => {
     setError('')
     setLoading(true)
     try {
       await signInWithPopup(auth, googleProvider)
+      showToast({ 
+        message: 'Sign in successful! Loading your data...', 
+        type: 'info',
+        durationMs: 4000 
+      })
       navigate('/dashboard', { replace: true })
     } catch (err: unknown) {
+      const code = typeof err === 'object' && err !== null && 'code' in err
+        ? String((err as { code?: string }).code)
+        : ''
+
+      if (code === 'auth/popup-blocked' || code === 'auth/cancelled-popup-request') {
+        showToast({
+          message: 'Popup was blocked. Redirecting to Google sign-in...',
+          type: 'info',
+          durationMs: 3000,
+        })
+        await signInWithRedirect(auth, googleProvider)
+        return
+      }
+
+      if (code === 'auth/popup-closed-by-user') {
+        setError('Sign-in popup was closed before completing login.')
+        return
+      }
+
       if (err instanceof Error) setError(err.message)
+      else setError('Sign in failed. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -27,15 +70,21 @@ export function LoginPage() {
       <div className="login-card">
         <div className="login-brand">
           <img src={logoImg} alt="QYan Logo" className="login-logo" />
-          <h1 className="login-title">QYan Gaming</h1>
+          <h1 className="login-title">Q<span>Yan</span> Gaming</h1>
         </div>
 
         <div className="login-divider"></div>
 
         <div className="login-body">
-          <h2>Admin Login</h2>
+          <h2>⚡ حان وقت التحدي</h2>
           <p>Please sign in with your Google account to manage your quizzes and content.</p>
-          
+
+          {showBanner && (
+            <div className="login-signedout-banner">
+              <span>✓</span> تم تسجيل الخروج بنجاح
+            </div>
+          )}
+
           {error && (
             <div className="login-error">
               <span className="error-icon">⚠️</span>
@@ -63,7 +112,7 @@ export function LoginPage() {
         </div>
 
         <div className="login-footer">
-          &copy; 2026 QYan Quiz Engine
+          &copy; 2026 QYan - Development phase
         </div>
       </div>
     </main>

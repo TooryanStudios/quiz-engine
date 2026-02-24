@@ -418,15 +418,17 @@ function openAvatarPicker(currentAvatar, onSelect) {
   const modal = document.getElementById('avatar-picker-modal');
   const grid  = document.getElementById('modal-avatar-grid');
 
-  grid.innerHTML = AVATARS.map((a) =>
-    `<button type="button" class="avatar-option${a === currentAvatar ? ' selected' : ''}" data-avatar="${a}">${a}</button>`
-  ).join('');
-
-  grid.querySelectorAll('.avatar-option').forEach((btn) => {
+  grid.innerHTML = '';
+  AVATARS.forEach((a) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'avatar-option' + (a === currentAvatar ? ' selected' : '');
+    btn.textContent = a;
     btn.addEventListener('click', () => {
-      onSelect(btn.dataset.avatar);
+      onSelect(a);
       modal.style.display = 'none';
     });
+    grid.appendChild(btn);
   });
 
   modal.style.display = 'flex';
@@ -2423,10 +2425,7 @@ socket.on('room:closed', ({ message }) => {
   if (pinFromUrl) {
     state.role = 'player';
     document.getElementById('input-pin').value = pinFromUrl;
-    if (scanFallbackBanner) {
-      scanFallbackBanner.innerHTML =
-        `<strong>Scanned successfully.</strong><span>PIN <b>${escapeHtml(pinFromUrl)}</b> was filled automatically. If auto-join fails, tap Join Game manually.</span>`;
-    }
+    if (scanFallbackBanner) scanFallbackBanner.style.display = 'none';
     showView('view-player-join');
   } else if (isAutoHostLaunch) {
     // Clicked Play from admin — go directly to branded loading, then host lobby

@@ -1,25 +1,8 @@
 :root {
-  font-family: 'Cairo', 'Segoe UI', Tahoma, system-ui, sans-serif;
+  font-family: 'Playpen Sans Arabic', system-ui, sans-serif;
+  font-weight: 200;
 
-  /* ── Dark theme (default) ── */
-  --bg-page:        #020617;
-  --bg-surface:     #111827;
-  --bg-deep:        #0f172a;
-  --bg-input:       #0b1220;
-  --border:         #1f2937;
-  --border-mid:     #1e293b;
-  --border-strong:  #334155;
-  --text:           #e2e8f0;
-  --text-bright:    #f1f5f9;
-  --text-mid:       #cbd5e1;
-  --text-dim:       #94a3b8;
-  --text-muted:     #64748b;
-  --text-faint:     #4b5563;
-  --accent:         #2563eb;
-}
-
-/* ── Light theme ── */
-[data-theme="light"] {
+  /* ── Light theme (default) ── */
   --bg-page:        #f1f5f9;
   --bg-surface:     #ffffff;
   --bg-deep:        #f8fafc;
@@ -36,22 +19,51 @@
   --accent:         #2563eb;
 }
 
+/* ── Dark theme ── */
+[data-theme="dark"] {
+  --bg-page:        #020617;
+  --bg-surface:     #111827;
+  --bg-deep:        #0f172a;
+  --bg-input:       #0b1220;
+  --border:         #1f2937;
+  --border-mid:     #1e293b;
+  --border-strong:  #334155;
+  --text:           #e2e8f0;
+  --text-bright:    #f1f5f9;
+  --text-mid:       #cbd5e1;
+  --text-dim:       #94a3b8;
+  --text-muted:     #64748b;
+  --text-faint:     #4b5563;
+  --accent:         #2563eb;
+}
+
 * {
   box-sizing: border-box;
 }
 
 html {
   font-size: 90%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
+  height: 100%;
 }
 
 body {
   margin: 0;
   min-width: 320px;
+  height: 100%;
   background: var(--bg-page);
   color: var(--text);
   font-family: inherit;
   text-align: start;
   transition: background 0.2s ease, color 0.2s ease;
+  /* Lock the viewport — prevents panning, dragging outside, and iOS rubber-banding */
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
+  position: fixed;
+  width: 100%;
 }
 
 button,
@@ -73,15 +85,13 @@ textarea::placeholder {
   opacity: 0.58;
 }
 
-/* Mobile: ensure the viewport itself doesn't scroll — admin-main scrolls instead */
-@media (max-width: 768px) {
-  html, body {
-    height: 100%;
-    overflow: hidden;
-  }
-  #root {
-    height: 100%;
-  }
+/* Contain the root to the full viewport */
+#root {
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  position: relative;
 }
 
 h2 {

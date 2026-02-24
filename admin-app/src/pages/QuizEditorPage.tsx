@@ -6,14 +6,16 @@ import { auth } from '../lib/firebase'
 import { useDialog } from '../lib/DialogContext'
 import { useToast } from '../lib/ToastContext'
 import { useSubscription } from '../lib/useSubscription'
+import { guardedLaunchGame } from '../lib/gameLaunch'
 import type { ChallengePreset, QuizDoc, QuizMedia, QuizQuestion, QuestionType } from '../types/quiz'
 import { createQuiz, deleteQuiz, findQuizByOwnerAndSlug, getQuizById, updateQuiz } from '../lib/quizRepo'
+import { incrementPlatformStat } from '../lib/adminRepo'
 import placeholderImg from '../assets/QYan_logo_300x164.jpg'
 
 const IS_LOCAL_DEV = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
 const SERVER_BASE = IS_LOCAL_DEV
   ? (import.meta.env.VITE_LOCAL_GAME_URL || 'http://localhost:3001')
-  : (import.meta.env.VITE_API_BASE_URL || 'https://quizengine.onrender.com')
+  : (import.meta.env.VITE_API_BASE_URL || 'https://play.qyan.app')
 
 const SAMPLE_QUESTIONS: QuizQuestion[] = [
   {
@@ -568,6 +570,7 @@ export function QuizEditorPage() {
         showToast({ message: 'تم تحديث الاختبار بنجاح', type: 'success' })
       } else {
         const id = await createQuiz(payload)
+        void incrementPlatformStat('quizCreated')
         setQuizId(id)
         setHasUnsavedChanges(false)
         showStatus({ kind: 'idle' })
@@ -610,6 +613,27 @@ export function QuizEditorPage() {
     } catch {
       showToast({ message: 'تعذر فتح المشاركة', type: 'error' })
     }
+  }
+
+  const launchGameFromEditor = async (quizIdToLaunch: string) => {
+    const gameUrl = `${SERVER_BASE}/?quiz=${quizIdToLaunch}`
+    await guardedLaunchGame({
+      serverBase: SERVER_BASE,
+      gameUrl,
+      onUnavailable: () => {
+        showToast({
+          message: 'Game server is temporarily unavailable. Please try again in a moment.',
+          type: 'error',
+        })
+      },
+      onPopupBlocked: () => {
+        showToast({
+          message: 'Popup was blocked. Please allow popups and try again.',
+          type: 'info',
+        })
+      },
+      onLaunch: () => { void incrementPlatformStat('sessionHosted') },
+    })
   }
 
   const questionTypeOptions: Array<{ value: QuestionType; label: string }> = [
@@ -1188,6 +1212,10 @@ export function QuizEditorPage() {
                   <a
                     href={`${SERVER_BASE}/?quiz=${quizId}`}
                     target="_blank" rel="noopener noreferrer"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      void launchGameFromEditor(quizId)
+                    }}
                     style={{ background: 'var(--bg-surface)', color: '#60a5fa', fontSize: '0.72rem', padding: '3px 12px', borderRadius: '999px', textDecoration: 'none' }}
                   >
                     🔗 رابط اللعبة ↗
@@ -1244,7 +1272,7 @@ export function QuizEditorPage() {
           <div className="quiz-toolbar-group" style={{ display: 'flex', gap: isNarrowScreen ? '0.2rem' : '0.35rem', flexWrap: 'wrap', alignItems: 'center', background: 'var(--bg-surface)', border: '1px solid var(--border-strong)', borderRadius: '10px', padding: isNarrowScreen ? '0.15rem' : '0.25rem' }}>
             <button
               type="button"
-              onClick={() => setAiAction('generate')}
+              onClick={() => { setAiAction('generate'); void incrementPlatformStat('aiGenerateClicks') }}
               style={{
                 background: 'transparent', border: '1px solid transparent', color: 'var(--text)',
                 padding: isNarrowScreen ? '0.32rem 0.5rem' : '0.42rem 0.72rem', borderRadius: '8px', fontSize: isNarrowScreen ? '0.7rem' : '0.8rem', fontWeight: 700,
@@ -1257,7 +1285,7 @@ export function QuizEditorPage() {
 
             <button
               type="button"
-              onClick={() => setAiAction('recheck')}
+              onClick={() => { setAiAction('recheck'); void incrementPlatformStat('aiRecheckClicks') }}
               style={{
                 background: 'transparent', border: '1px solid transparent', color: 'var(--text)',
                 padding: isNarrowScreen ? '0.32rem 0.5rem' : '0.42rem 0.72rem', borderRadius: '8px', fontSize: isNarrowScreen ? '0.7rem' : '0.8rem', fontWeight: 700,

@@ -4,6 +4,7 @@ import { auth } from '../lib/firebase'
 import { useTheme } from '../lib/useTheme'
 import { useToast } from '../lib/ToastContext'
 import { cloneQuiz, listPublicQuizzes } from '../lib/quizRepo'
+import { guardedLaunchGame } from '../lib/gameLaunch'
 import type { QuizDoc, QuizQuestion } from '../types/quiz'
 import placeholderImg from '../assets/QYan_logo_300x164.jpg'
 
@@ -12,7 +13,7 @@ type QuizItem = QuizDoc & { id: string }
 const IS_LOCAL_DEV = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
 const SERVER_BASE = IS_LOCAL_DEV
   ? (import.meta.env.VITE_LOCAL_GAME_URL || 'http://localhost:3001')
-  : (import.meta.env.VITE_API_BASE_URL || 'https://quizengine.onrender.com')
+  : (import.meta.env.VITE_API_BASE_URL || 'https://play.qyan.app')
 
 // â”€â”€ helpers (mirror DashboardPage) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -62,6 +63,26 @@ export function PacksPage() {
     } finally {
       setCloningId(null)
     }
+  }
+
+  async function handleLaunchGame(quizId: string) {
+    const gameUrl = `${SERVER_BASE}/?quiz=${encodeURIComponent(quizId)}&mode=host`
+    await guardedLaunchGame({
+      serverBase: SERVER_BASE,
+      gameUrl,
+      onUnavailable: () => {
+        showToast({
+          message: 'Game server is temporarily unavailable. Please try again in a moment.',
+          type: 'error',
+        })
+      },
+      onPopupBlocked: () => {
+        showToast({
+          message: 'Popup was blocked. Please allow popups and try again.',
+          type: 'info',
+        })
+      },
+    })
   }
 
   const visible = quizzes
@@ -228,7 +249,9 @@ export function PacksPage() {
                   <img
                     src={coverImg || placeholderImg}
                     alt={q.title}
-                    onError={(e) => { (e.currentTarget as HTMLImageElement).onerror = null }}
+                    onError={(e) => { 
+                      ;(e.currentTarget as HTMLImageElement).src = placeholderImg
+                    }}
                     style={{
                       width: '100%', height: '100%',
                       objectFit: coverImg ? 'cover' : 'contain',
@@ -242,7 +265,11 @@ export function PacksPage() {
                   <a
                     href={`${SERVER_BASE}/?quiz=${encodeURIComponent(q.id)}&mode=host`}
                     target="_blank" rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      void handleLaunchGame(q.id)
+                    }}
                     style={{
                       position: 'absolute',
                       top: '50%', left: '50%',
@@ -276,23 +303,30 @@ export function PacksPage() {
                     const initials = (q.ownerId ?? '??').slice(0, 2).toUpperCase()
                     const hue = q.ownerId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360
                     const avBg = `hsl(${hue}, 55%, 40%)`
-                    return photoURL ? (
-                      <img src={photoURL} alt="owner" style={{
-                        position: 'absolute', top: '6px', left: '6px',
-                        width: '28px', height: '28px', borderRadius: '50%',
-                        objectFit: 'cover', border: '2px solid rgba(255,255,255,0.4)',
-                        boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
-                      }} />
-                    ) : (
+                    return (
                       <div style={{
                         position: 'absolute', top: '6px', left: '6px',
                         width: '28px', height: '28px', borderRadius: '50%',
-                        background: avBg, display: 'flex', alignItems: 'center',
-                        justifyContent: 'center', fontSize: '0.6rem', fontWeight: 700, color: '#fff',
+                        background: avBg, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: '0.6rem', fontWeight: 700, color: '#fff',
                         border: '2px solid rgba(255,255,255,0.25)',
                         boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
+                        overflow: 'hidden',
+                        zIndex: 6,
                       }}>
                         {initials}
+                        {photoURL && (
+                          <img 
+                            src={photoURL} 
+                            alt="" 
+                            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+                            style={{
+                              position: 'absolute', inset: 0,
+                              width: '100%', height: '100%',
+                              objectFit: 'cover',
+                            }} 
+                          />
+                        )}
                       </div>
                     )
                   })()}
@@ -301,15 +335,15 @@ export function PacksPage() {
 
 
                 {/* Card body — title + count only */}
-                <div style={{ padding: '0.65rem 0.8rem 0.5rem' }}>
+                <div style={{ padding: '0.65rem 0.8rem 0.5rem', textAlign: 'center' }}>
                   <div style={{
-                    fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-bright)', lineHeight: 1.4,
+                    fontSize: '0.875rem', fontWeight: 400, color: 'var(--text-bright)', lineHeight: 1.4,
                     display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
                     marginBottom: '0.25rem',
                   }}>
                     {q.title}
                   </div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 500 }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-mid)', fontWeight: 500 }}>
                     {q.questions?.length ?? 0} questions
                   </div>
                 </div>

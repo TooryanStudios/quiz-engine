@@ -1,4 +1,5 @@
 import { getPaymentsMode, purchasePack } from '../lib/stripe'
+import { incrementPlatformStat } from '../lib/adminRepo'
 import { useState } from 'react'
 
 const TEST_PRICE_ID = import.meta.env.VITE_STRIPE_TEST_PRICE_ID || 'price_test_placeholder'
@@ -9,6 +10,8 @@ export function BillingPage() {
   const mode = getPaymentsMode()
 
   const handleSubscribe = async () => {
+    void incrementPlatformStat('upgradeClicks')
+    void incrementPlatformStat('checkoutStarted')
     try {
       if (!uid || !packId) {
         alert('UID and Pack ID are required')
