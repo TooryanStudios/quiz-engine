@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
   <title>QYan</title>
-  <link rel="stylesheet" href="/css/style.css?v=10" />
+  <link rel="stylesheet" href="/css/style.css?v=9" />
   <!-- Prevent browser zoom (Ctrl+scroll, Ctrl+±, pinch) -->
   <script>
     document.addEventListener('wheel', function(e){ if(e.ctrlKey){ e.preventDefault(); } }, { passive: false });
@@ -170,68 +170,64 @@
         <button class="btn btn-secondary full-width" id="btn-copy-join-url">📋 Copy Join URL</button>
       </div>
 
-      <div class="host-lobby-body">
-        <div class="host-lobby-main">
-          <div class="host-pin-qr-row">
-            <div class="pin-display">
-              <span class="pin-label">Room PIN</span>
-              <span class="host-quiz-title" id="host-quiz-title" style="display:none"></span>
-              <span class="pin-code" id="host-pin">------</span>
-            </div>
-            <!-- QR Code for players to scan -->
-            <div class="qr-section">
-              <div class="qr-wrapper">
-                <div id="host-qr-canvas"></div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Share URL bar -->
-          <div class="share-url-section" id="share-url-section">
-            <div class="share-toolbar">
-              <p class="share-url-label">Share</p>
-              <button class="share-copy-btn icon-only" id="btn-share-copy" title="Copy link" aria-label="Copy link">
-                <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path d="M6.75 2A1.75 1.75 0 0 0 5 3.75v8.5C5 13.216 5.784 14 6.75 14h7.5A1.75 1.75 0 0 0 16 12.25v-8.5A1.75 1.75 0 0 0 14.25 2h-7.5Zm-.25 1.75c0-.138.112-.25.25-.25h7.5c.138 0 .25.112.25.25v8.5a.25.25 0 0 1-.25.25h-7.5a.25.25 0 0 1-.25-.25v-8.5Z"/><path d="M3.75 6A1.75 1.75 0 0 0 2 7.75v8.5C2 17.216 2.784 18 3.75 18h7.5A1.75 1.75 0 0 0 13 16.25v-.5a.75.75 0 0 0-1.5 0v.5a.25.25 0 0 1-.25.25h-7.5a.25.25 0 0 1-.25-.25v-8.5c0-.138.112-.25.25-.25h.5a.75.75 0 0 0 0-1.5h-.5Z"/></svg>
-              </button>
-              <a id="share-whatsapp" class="share-social-btn share-wa" href="#" target="_blank" rel="noopener">
-                <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-              </a>
-              <a id="share-telegram" class="share-social-btn share-tg" href="#" target="_blank" rel="noopener">
-                <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M11.944 0A12 12 0 000 12a12 12 0 0012 12 12 12 0 0012-12A12 12 0 0012 0a12 12 0 00-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 01.171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
-              </a>
-              <a id="share-twitter" class="share-social-btn share-tw" href="#" target="_blank" rel="noopener">
-                <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.259 5.63L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117L17.083 19.77z"/></svg>
-              </a>
-            </div>
-            <details class="share-url-details">
-              <summary>Show link</summary>
-              <div class="share-url-row">
-                <input type="text" class="share-url-input" id="share-url-input" readonly placeholder="Waiting for room..." />
-              </div>
-            </details>
-          </div>
-
-          <button class="btn btn-success full-width" id="btn-start-game" disabled>
-            🚀 Start Game
-          </button>
-          <p class="hint-text" id="lobby-hint">Need at least 1 player to start</p>
+      <div class="host-pin-qr-row">
+        <div class="pin-display">
+          <span class="pin-label">Room PIN</span>
+          <span class="host-quiz-title" id="host-quiz-title" style="display:none"></span>
+          <span class="pin-code" id="host-pin">------</span>
         </div>
-
-        <div class="player-list-section host-presence-section">
-          <div class="host-stage-controls">
-            <label for="host-stage-variant">Player Animation</label>
-            <select id="host-stage-variant" class="host-stage-select">
-              <option value="auto" selected>Auto (Random)</option>
-              <option value="neonArcade">Neon Arcade</option>
-              <option value="quizArena">Quiz Arena</option>
-              <option value="partyConfetti">Party Confetti</option>
-            </select>
+        <!-- QR Code for players to scan -->
+        <div class="qr-section">
+          <div class="qr-wrapper">
+            <div id="host-qr-canvas"></div>
           </div>
-          <span id="host-player-count" style="display:none">0</span>
-          <ul class="player-list host-player-stage" id="host-player-list"></ul>
-          <p class="hint-text" id="kick-hint" style="display:none">Hover a player card to reveal remove</p>
         </div>
       </div>
+
+      <!-- Share URL bar -->
+      <div class="share-url-section" id="share-url-section">
+        <div class="share-toolbar">
+          <p class="share-url-label">Share</p>
+          <button class="share-copy-btn icon-only" id="btn-share-copy" title="Copy link" aria-label="Copy link">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path d="M6.75 2A1.75 1.75 0 0 0 5 3.75v8.5C5 13.216 5.784 14 6.75 14h7.5A1.75 1.75 0 0 0 16 12.25v-8.5A1.75 1.75 0 0 0 14.25 2h-7.5Zm-.25 1.75c0-.138.112-.25.25-.25h7.5c.138 0 .25.112.25.25v8.5a.25.25 0 0 1-.25.25h-7.5a.25.25 0 0 1-.25-.25v-8.5Z"/><path d="M3.75 6A1.75 1.75 0 0 0 2 7.75v8.5C2 17.216 2.784 18 3.75 18h7.5A1.75 1.75 0 0 0 13 16.25v-.5a.75.75 0 0 0-1.5 0v.5a.25.25 0 0 1-.25.25h-7.5a.25.25 0 0 1-.25-.25v-8.5c0-.138.112-.25.25-.25h.5a.75.75 0 0 0 0-1.5h-.5Z"/></svg>
+          </button>
+          <a id="share-whatsapp" class="share-social-btn share-wa" href="#" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+          </a>
+          <a id="share-telegram" class="share-social-btn share-tg" href="#" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M11.944 0A12 12 0 000 12a12 12 0 0012 12 12 12 0 0012-12A12 12 0 0012 0a12 12 0 00-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 01.171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+          </a>
+          <a id="share-twitter" class="share-social-btn share-tw" href="#" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.259 5.63L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117L17.083 19.77z"/></svg>
+          </a>
+        </div>
+        <details class="share-url-details">
+          <summary>Show link</summary>
+          <div class="share-url-row">
+            <input type="text" class="share-url-input" id="share-url-input" readonly placeholder="Waiting for room..." />
+          </div>
+        </details>
+      </div>
+
+      <div class="player-list-section host-presence-section">
+        <div class="host-stage-controls">
+          <label for="host-stage-variant">Player Animation</label>
+          <select id="host-stage-variant" class="host-stage-select">
+            <option value="auto" selected>Auto (Random)</option>
+            <option value="neonArcade">Neon Arcade</option>
+            <option value="quizArena">Quiz Arena</option>
+            <option value="partyConfetti">Party Confetti</option>
+          </select>
+        </div>
+        <span id="host-player-count" style="display:none">0</span>
+        <ul class="player-list host-player-stage" id="host-player-list"></ul>
+        <p class="hint-text" id="kick-hint" style="display:none">Hover a player card to reveal remove</p>
+      </div>
+
+      <button class="btn btn-success full-width" id="btn-start-game" disabled>
+        🚀 Start Game
+      </button>
+      <p class="hint-text" id="lobby-hint">Need at least 1 player to start</p>
 
     </div>
   </div>
@@ -533,6 +529,6 @@
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
   <!-- Load Socket.io client from the server (auto-served by socket.io) -->
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/js/game.js?v=10"></script>
+  <script src="/js/game.js?v=9"></script>
 </body>
 </html>
