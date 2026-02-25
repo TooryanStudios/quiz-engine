@@ -1888,7 +1888,7 @@ io.on('connection', (socket) => {
   });
 
   // ── HOST: Start the game ─────────────────────
-  socket.on('host:start', async () => {
+  socket.on('host:start', async ({ sessionRandomize, sessionQuestionLimit } = {}) => {
     // Find the room this host owns
     const room = Array.from(rooms.values()).find(
       (r) => r.hostSocketId === socket.id
@@ -1926,9 +1926,19 @@ io.on('connection', (socket) => {
       return;
     }
 
-    room.questions = quizData.randomizeQuestions
+    const doRandomize = (sessionRandomize !== undefined && sessionRandomize !== null)
+      ? sessionRandomize
+      : quizData.randomizeQuestions;
+    room.questions = doRandomize
       ? shuffleArray([...quizData.questions])
       : quizData.questions;
+
+    // Apply session question limit (host can choose a subset of questions)
+    const limitNum = sessionQuestionLimit ? parseInt(sessionQuestionLimit, 10) : NaN;
+    if (!isNaN(limitNum) && limitNum > 0 && limitNum < room.questions.length) {
+      room.questions = room.questions.slice(0, limitNum);
+    }
+
     room.challengePreset = quizData.challengePreset || 'classic';
     room.challengeSettings = quizData.challengeSettings || getPresetSettings('classic');
     room.enableScholarRole = quizData.enableScholarRole === true; // disabled by default

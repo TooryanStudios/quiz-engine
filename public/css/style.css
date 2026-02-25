@@ -558,6 +558,49 @@ html.autohost-launch #view-host-loading.active {
 }
 [data-theme="light"] .burger-divider { background: rgba(0,0,0,0.1); }
 
+/* Burger — question count row */
+.burger-qcount-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: default;
+}
+.burger-qcount-row:hover { background: rgba(255,255,255,0.04); }
+.burger-qcount-right {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.burger-qcount-right input[type="number"] {
+  width: 52px;
+  padding: 3px 5px;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(0,0,0,0.25);
+  color: var(--text);
+  font-size: 0.82rem;
+  text-align: center;
+  -moz-appearance: textfield;
+}
+.burger-qcount-right input[type="number"]::-webkit-outer-spin-button,
+.burger-qcount-right input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.burger-qcount-right input[type="number"]:focus {
+  outline: 2px solid rgba(124,58,237,0.6);
+  border-color: transparent;
+}
+[data-theme="light"] .burger-qcount-right input[type="number"] {
+  border-color: rgba(0,0,0,0.2);
+  background: rgba(0,0,0,0.06);
+}
+#burger-qcount-of-label {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
 .burger-mode-row {
   display: flex;
   gap: 4px;

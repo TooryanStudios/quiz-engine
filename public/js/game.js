@@ -122,6 +122,12 @@ if (quizSlugFromUrl) {
     .then((r) => r.ok ? r.json() : null)
     .then((data) => {
       if (!data) return;
+      // Store total question count for burger menu
+      state.quizQuestionCount = data.questionCount || 0;
+      const qcntLabel = document.getElementById('burger-qcount-of-label');
+      if (qcntLabel) qcntLabel.textContent = '/ ' + state.quizQuestionCount;
+      const qLimitInput = document.getElementById('input-question-limit');
+      if (qLimitInput) qLimitInput.max = state.quizQuestionCount;
       setText(`📋 ${data.title}`);
       // Kick off media preloading for the host lobby
       if (data.mediaAssets && data.mediaAssets.length > 0) {
@@ -2366,6 +2372,14 @@ if (chkHostAsPlayer) {
 }
 
 // Host Start Game
+function getSessionOptions() {
+  const randomize = document.getElementById('chk-randomize-questions')?.checked ?? false;
+  const limitInput = document.getElementById('input-question-limit');
+  const limitVal = limitInput ? parseInt(limitInput.value, 10) : NaN;
+  const questionLimit = (!isNaN(limitVal) && limitVal > 0) ? limitVal : null;
+  return { sessionRandomize: randomize, sessionQuestionLimit: questionLimit };
+}
+
 document.getElementById('btn-start-game').addEventListener('click', () => {
   const btn = document.getElementById('btn-start-game');
   btn.disabled = true;
@@ -2374,7 +2388,7 @@ document.getElementById('btn-start-game').addEventListener('click', () => {
   if (soloPlayBtn) soloPlayBtn.disabled = true;
   enableKeepAwake();
   Sounds.click();
-  socket.emit('host:start');
+  socket.emit('host:start', getSessionOptions());
 });
 
 // Solo Play — auto-join as player, then start once confirmed
@@ -2396,7 +2410,7 @@ if (soloPlayBtn) {
     const onJoined = ({ joined }) => {
       if (joined) {
         enableKeepAwake();
-        socket.emit('host:start');
+        socket.emit('host:start', getSessionOptions());
       } else {
         soloPlayBtn.disabled = false;
         soloPlayBtn.textContent = '🎯 العب بنفسي';

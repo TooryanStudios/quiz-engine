@@ -167,6 +167,23 @@
                 <span class="host-menu-item-desc">Play from this host device in the same room</span>
                 <input type="checkbox" id="chk-host-as-player" />
               </label>
+              <div class="burger-divider"></div>
+              <div class="burger-section-label">Session Options</div>
+              <label class="host-home-menu-toggle" for="chk-randomize-questions">
+                <span class="host-menu-item-title">Randomize Questions</span>
+                <span class="host-menu-item-desc">Shuffle question order each session</span>
+                <input type="checkbox" id="chk-randomize-questions" />
+              </label>
+              <div class="host-home-menu-toggle burger-qcount-row">
+                <div>
+                  <span class="host-menu-item-title">Questions to play</span>
+                  <span class="host-menu-item-desc" style="display:block">Leave blank to play all</span>
+                </div>
+                <div class="burger-qcount-right">
+                  <input type="number" id="input-question-limit" min="1" max="999" value="" placeholder="All" />
+                  <span id="burger-qcount-of-label">/ —</span>
+                </div>
+              </div>
             </div>
           </div>
           <!-- Hidden select keeps game.js API intact -->
