@@ -2467,9 +2467,9 @@ document.getElementById('btn-mute').addEventListener('click', () => {
   document.getElementById('btn-mute').textContent = isMuted() ? '🔇' : '🔊';
 });
 
-// Play Again button
+// Play Again button — go back to the start with the same query params (host re-launches, player sees join screen)
 document.getElementById('btn-play-again').addEventListener('click', () => {
-  location.reload();
+  window.location.href = '/' + window.location.search;
 });
 
 document.getElementById('btn-start-new-session').addEventListener('click', () => {
