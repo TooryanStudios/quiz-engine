@@ -167,7 +167,7 @@ body,
 html { font-size: 16px; }
 
 body {
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-family: 'Vazirmatn', 'Segoe UI', system-ui, -apple-system, sans-serif;
   background: var(--bg);
   color: var(--text);
   margin: 0;
