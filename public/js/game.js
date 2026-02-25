@@ -2550,12 +2550,21 @@ document.getElementById('btn-home-from-closed').addEventListener('click', () => 
 // ─────────────────────────────────────────────
 
 /** HOST: Room created successfully */
-socket.on('room:created', ({ pin, ...modeInfo }) => {
+socket.on('room:created', ({ pin, reclaimed, ...modeInfo }) => {
   state.hostCreatePending = false;
+  state.pin = pin;
+
+  if (reclaimed) {
+    // Mid-game host reconnect — room was preserved with the same PIN.
+    // Do NOT redirect to lobby; just update the PIN display and restore connection.
+    setConnectionStatus('ok', 'Reconnected ✓');
+    document.getElementById('host-pin').textContent = pin;
+    return;
+  }
+
   document.documentElement.classList.remove('autohost-launch');
   if (state.hostPlayerStageSelection === 'auto') state.hostPlayerStageVariant = null;
   state.hostLobbyPlayers = [];
-  state.pin = pin;
   document.getElementById('host-pin').textContent = pin;
   document.getElementById('host-player-count').textContent = '0';
   document.getElementById('host-player-list').innerHTML = '';
@@ -2587,10 +2596,44 @@ socket.on('room:mode', (modeInfo) => {
   applyModeInfo(modeInfo);
 });
 
+// Track whether this is the initial connect or a mid-session reconnect
+let _socketWasConnected = false;
+
 socket.on('connect', () => {
   markDiagEvent('socket:connect');
   pushJoinDebugLog('socket connected');
   setConnectionStatus('ok', 'Server connected');
+
+  if (_socketWasConnected) {
+    // ── Mid-session reconnect ── socket got a new ID; re-attach to the room
+    pushJoinDebugLog('mid-session reconnect detected; re-attaching to room');
+
+    // Player: emit player:rejoin using the saved session
+    const savedSession = localStorage.getItem('quizSession');
+    if (savedSession && !rejoinAttempt) {
+      try {
+        const { pin, playerId } = JSON.parse(savedSession);
+        const normalizedPin = normalizePin(pin);
+        if (normalizedPin && playerId) {
+          rejoinAttempt = true;
+          setConnectionStatus('warn', 'Reconnecting to game…');
+          socket.emit('player:rejoin', { pin: normalizedPin, playerId });
+        }
+      } catch (_) {}
+    }
+
+    // Host: re-emit host:create so the server reclaims the room with the new socket ID
+    // (uses the 20-second grace-period reclaim logic on the server)
+    if (state.role === 'host' && state.pin) {
+      socket.emit('host:create', {
+        quizSlug: quizSlugFromUrl || null,
+        gameMode: gameModeFromUrl || null,
+        isReconnect: true, // tells server to force-reclaim even if old socket still alive
+      });
+    }
+  }
+
+  _socketWasConnected = true;
 });
 
 socket.on('connect_error', () => {
@@ -2711,7 +2754,7 @@ socket.on('room:player_joined', ({ players }) => {
 });
 
 /** PLAYER: Rejoined a game in progress after disconnection */
-socket.on('room:rejoined', ({ pin, nickname, avatar, players, score, streak, roomState, role, questionData, leaderboard }) => {
+socket.on('room:rejoined', ({ pin, nickname, avatar, players, score, streak, roomState, role, questionData, leaderboard, puzzleData }) => {
   try {
     markDiagEvent('room:rejoined');
     rejoinAttempt = false;
@@ -2760,11 +2803,12 @@ socket.on('room:rejoined', ({ pin, nickname, avatar, players, score, streak, roo
         questionIndex: questionData.questionIndex,
         total: questionData.total,
         question: questionData.question,
-        duration: questionData.duration,
+        duration: questionData.timeRemaining, // start client timer at remaining time, not full duration
         players: questionData.players,
       }, false);
-      // Sync the client timer to the server's elapsed time
+      // Sync questionStartTime so any elapsed-time logic is correct
       state.questionStartTime = Date.now() - (questionData.duration - questionData.timeRemaining) * 1000;
+      state.questionDuration  = questionData.duration; // restore correct total for scoring context
       const ansMsg = document.getElementById('player-answered-msg');
       if (questionData.hasAnswered && ansMsg) {
         state.hasAnswered = true;
@@ -2817,6 +2861,26 @@ socket.on('room:rejoined', ({ pin, nickname, avatar, players, score, streak, roo
       
       clearGameSession();
       showView('view-game-over');
+    } else if (roomState === 'puzzle' && puzzleData) {
+      // ── Restore puzzle after mid-game reconnect ──
+      _puzzleIsHost       = false;
+      _puzzleCols         = puzzleData.cols;
+      _puzzleRows         = puzzleData.rows;
+      _puzzleImageUrl     = puzzleData.imageUrl || '';
+      _puzzleMyPieces     = puzzleData.myPieces || [];
+      _puzzleSelected     = null;
+      _puzzleCurrentBoard = puzzleData.board || {};
+      stopClientTimer();
+      if (_puzzleTimerHandle) { clearInterval(_puzzleTimerHandle); _puzzleTimerHandle = null; }
+
+      showView('view-player-puzzle');
+      const prgRj = document.getElementById('pp-progress');
+      if (prgRj) prgRj.textContent = `Q ${(puzzleData.questionIndex || 0) + 1} / ${puzzleData.total || '?'}`;
+      const hintRj = document.getElementById('pp-hint');
+      if (hintRj) hintRj.textContent = puzzleData.question?.text || '';
+      _renderPuzzleBoard('pp-board', puzzleData.board, puzzleData.cols, puzzleData.rows, puzzleData.imageUrl, puzzleData.myPieces, false);
+      _renderMyPieces(puzzleData.myPieces, puzzleData.imageUrl, puzzleData.cols, puzzleData.rows, puzzleData.board);
+      _startPuzzleCountdown(puzzleData.timeRemaining, 'pp-timer');
     } else {
       // Fallback: show the player lobby
       showView('view-player-lobby');

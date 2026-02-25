@@ -1381,6 +1381,7 @@ function startPuzzleRound(room, qIndex) {
     pieceOwnerSocket,
     pieceOwnerPlayer,
     timer: null,
+    startTime: Date.now(),      // for computing timeRemaining on player rejoin
   };
 
   room.questionIndex = qIndex;
@@ -1568,7 +1569,7 @@ function endPuzzleRound(room) {
 io.on('connection', (socket) => {
 
   // ── HOST: Create a new room ──────────────────
-  socket.on('host:create', async ({ quizSlug, gameMode } = {}) => {
+  socket.on('host:create', async ({ quizSlug, gameMode, isReconnect } = {}) => {
     // Enforce single host per quiz — reject if an active room already exists for this slug.
     // Exception: if the previous host socket is gone (page refresh / network drop),
     // clean up the stale room and allow a fresh one.
@@ -1578,7 +1579,13 @@ io.on('connection', (socket) => {
       );
       if (existing) {
         const oldSocket = io.sockets.sockets.get(existing.hostSocketId);
-        const isStale = !oldSocket || existing.state === 'lobby' || existing.state === 'starting';
+        // A room is reclaimable when:
+        //   (a) old socket is gone,
+        //   (b) room is in its host-disconnect grace period,
+        //   (c) game hasn't started yet (lobby/starting), OR
+        //   (d) client signals this is a reconnect (fast reconnect where old socket still lives)
+        const isStale = !oldSocket || existing.hostDisconnected || isReconnect === true
+                     || existing.state === 'lobby' || existing.state === 'starting';
 
         if (isStale) {
           // Clear any pending host-disconnect timer
@@ -1587,7 +1594,12 @@ io.on('connection', (socket) => {
             existing.hostDisconnectTimer = null;
           }
 
-          if (existing.hostDisconnected) {
+          // Force-close the orphaned old socket (fast-reconnect case: both sockets alive)
+          if (oldSocket && oldSocket.id !== socket.id) {
+            oldSocket.disconnect(true);
+          }
+
+          if (existing.hostDisconnected || isReconnect === true) {
             // ── HOST RECONNECT: same quiz, same PIN, room still alive ──
             // Restore the room in-place so all shared links remain valid.
             existing.hostDisconnected = false;
@@ -2049,6 +2061,11 @@ io.on('connection', (socket) => {
     room.questionTimer = null;
     clearTimeout(room.previewTimer);
     room.previewTimer = null;
+    // Clear puzzle timer if ending mid-puzzle
+    if (room.puzzleState?.timer) {
+      clearTimeout(room.puzzleState.timer);
+      room.puzzleState.timer = null;
+    }
     room.paused = false;
     room.pausedTimeRemaining = 0;
     room.state = 'finished';
@@ -2308,7 +2325,8 @@ io.on('connection', (socket) => {
       existingPlayer.disconnectTimer = null;
     }
 
-    // Re-map to the new socket
+    // Re-map to the new socket — capture old IDs first (needed to update puzzle ownership)
+    const oldPlayerId   = existingPlayer.id;   // was set to old socket.id at join/previous-rejoin
     room.players.delete(oldSocketId);
     existingPlayer.id = socket.id;
     existingPlayer.disconnected = false;
@@ -2316,6 +2334,21 @@ io.on('connection', (socket) => {
     socket.join(normalizedPin);
     socket.data.pin = normalizedPin;
     socket.data.isHost = false;
+
+    // If a puzzle is in progress, re-key the ownership maps from old → new socket ID
+    if (room.state === 'puzzle' && room.puzzleState) {
+      const ps = room.puzzleState;
+      if (ps.assignments[oldSocketId]) {
+        ps.assignments[socket.id] = ps.assignments[oldSocketId];
+        delete ps.assignments[oldSocketId];
+      }
+      for (const pi of Object.keys(ps.pieceOwnerSocket)) {
+        if (ps.pieceOwnerSocket[pi] === oldSocketId) ps.pieceOwnerSocket[pi] = socket.id;
+      }
+      for (const pi of Object.keys(ps.pieceOwnerPlayer)) {
+        if (ps.pieceOwnerPlayer[pi] === oldPlayerId) ps.pieceOwnerPlayer[pi] = socket.id;
+      }
+    }
 
     console.log(`[Room ${normalizedPin}] Player reconnected: ${existingPlayer.nickname} (${socket.id})`);
 
@@ -2347,6 +2380,26 @@ io.on('connection', (socket) => {
       });
     } else if (room.state === 'finished') {
       socket.emit('room:rejoined', { ...basePayload, leaderboard: buildLeaderboard(room) });
+    } else if (room.state === 'puzzle' && room.puzzleState) {
+      const ps = room.puzzleState;
+      const elapsed = ps.startTime ? (Date.now() - ps.startTime) / 1000 : 0;
+      const timeRemaining = Math.max(0, ps.duration - elapsed);
+      socket.emit('room:rejoined', {
+        ...basePayload,
+        puzzleData: {
+          questionIndex: room.questionIndex,
+          total: room.questions.length,
+          question: { text: room.questions[room.questionIndex]?.text || '' },
+          imageUrl: ps.imageUrl,
+          cols: ps.cols,
+          rows: ps.rows,
+          myPieces: ps.assignments[socket.id] || [],
+          board: ps.board,
+          duration: ps.duration,
+          timeRemaining,
+          players: getPlayerList(room),
+        },
+      });
     } else {
       socket.emit('room:rejoined', basePayload);
     }
