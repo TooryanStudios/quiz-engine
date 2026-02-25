@@ -589,6 +589,71 @@ async function buildRoomModePayload(room) {
 // ─────────────────────────────────────────────
 // Hybrid data fetching
 // ─────────────────────────────────────────────
+
+// ── Firestore REST API helpers (no Admin SDK / service account needed) ──────
+// Reads a single Firestore document via the public REST API using a client API
+// key.  The Firestore security rules still apply, so only quizzes whose
+// visibility is 'public' (or any other rule that allows unauthenticated reads)
+// will succeed.  Configure via FIREBASE_REST_API_KEY + FIREBASE_REST_PROJECT_ID.
+
+function _firestoreValueToJs(value) {
+  if (!value) return null;
+  if ('stringValue'  in value) return value.stringValue;
+  if ('integerValue' in value) return Number(value.integerValue);
+  if ('doubleValue'  in value) return value.doubleValue;
+  if ('booleanValue' in value) return value.booleanValue;
+  if ('nullValue'    in value) return null;
+  if ('arrayValue'   in value) return (value.arrayValue.values || []).map(_firestoreValueToJs);
+  if ('mapValue'     in value) {
+    const obj = {};
+    for (const k of Object.keys(value.mapValue.fields || {})) {
+      obj[k] = _firestoreValueToJs(value.mapValue.fields[k]);
+    }
+    return obj;
+  }
+  return null;
+}
+
+function _firestoreDocToJs(docData) {
+  const obj = {};
+  for (const k of Object.keys(docData.fields || {})) {
+    obj[k] = _firestoreValueToJs(docData.fields[k]);
+  }
+  return obj;
+}
+
+async function getQuizDataFromRestApi(quizId) {
+  const apiKey    = process.env.FIREBASE_REST_API_KEY;
+  const projectId = process.env.FIREBASE_REST_PROJECT_ID;
+  if (!apiKey || !projectId) return null;
+
+  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/quizzes/${encodeURIComponent(quizId)}?key=${encodeURIComponent(apiKey)}`;
+  try {
+    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!res.ok) {
+      console.warn(`[Quiz REST] HTTP ${res.status} for quiz "${quizId}"`);
+      return null;
+    }
+    const data = _firestoreDocToJs(await res.json());
+    if (Array.isArray(data.questions) && data.questions.length > 0) {
+      console.log(`[Quiz REST] ✓ Loaded "${data.title}" (${data.questions.length} Qs) via Firestore REST`);
+      return {
+        title: data.title || null,
+        questions: data.questions,
+        challengePreset: data.challengePreset || 'classic',
+        challengeSettings: data.challengeSettings || null,
+        randomizeQuestions: data.randomizeQuestions === true,
+      };
+    }
+    console.warn(`[Quiz REST] Document found but no questions array for "${quizId}"`);
+    return null;
+  } catch (err) {
+    console.error('[Quiz REST] Fetch failed:', err.message);
+    return null;
+  }
+}
+// ────────────────────────────────────────────────────────────────────────────
+
 function normalizeQuestionsPayload(data, quizSlug) {
   if (!data) return null;
 
@@ -675,6 +740,14 @@ async function getQuizData(quizSlug) {
     }
   } else {
     console.log('[Quiz] No slug provided, skipping Firestore lookup');
+  }
+
+  // 1c. Firestore REST API fallback — works with just a client API key + project ID.
+  //     Useful when the Admin SDK service account is for a different project.
+  //     Only succeeds for quizzes with visibility=="public" (security rules apply).
+  if (quizSlug) {
+    const restData = await getQuizDataFromRestApi(quizSlug);
+    if (restData) return restData;
   }
 
   // If a specific quiz ID/slug was requested, do NOT fall back to generic HTTP data.
