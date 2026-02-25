@@ -1170,9 +1170,18 @@ function renderHostQuestion(data) {
       QuestionRendererFactory.render(q, true, null);
     }
 
+    const capturedHostQI = data.questionIndex;
     startClientTimer(data.duration,
       safeGet('host-timer-count'),
-      safeGet('host-timer-ring'));
+      safeGet('host-timer-ring'),
+      () => {
+        // ── Host safety net: force end if server didn't send question:end ──
+        setTimeout(() => {
+          if (state.questionIndex === capturedHostQI && !state.isPaused) {
+            socket.emit('host:force_end_question');
+          }
+        }, 3000);
+      });
 
     const layout = safeGet('host-question-layout');
     if (layout) {
@@ -1241,9 +1250,36 @@ function renderPlayerQuestion(data) {
     // Use the new modular renderer system
     QuestionRendererFactory.render(q, false, submitAnswer);
 
+    const capturedQI = state.questionIndex;
     startClientTimer(data.duration,
       safeGet('player-timer-count'),
-      safeGet('player-timer-ring'));
+      safeGet('player-timer-ring'),
+      () => {
+        // ── Time's up — auto-submit if player hasn't answered ──
+        if (!state.hasAnswered) {
+          const answer = QuestionRendererFactory.getAnswer();
+          if (answer) {
+            submitAnswer(answer);
+          } else {
+            // No answer at all — emit timed-out empty answer
+            state.hasAnswered = true;
+            socket.emit('player:answer', {
+              questionIndex: state.questionIndex,
+              answer: { timedOut: true }
+            });
+          }
+        }
+        const ansMsg = safeGet('player-answered-msg');
+        if (ansMsg) ansMsg.textContent = '⏰ انتهى الوقت!';
+        // Host safety net: if question:end doesn't arrive, force it
+        if (state.role === 'host') {
+          setTimeout(() => {
+            if (state.questionIndex === capturedQI && !state.isPaused) {
+              socket.emit('host:force_end_question');
+            }
+          }, 5000);
+        }
+      });
 
     const layout = safeGet('player-question-layout');
     if (layout) {
@@ -2745,10 +2781,36 @@ socket.on('game:resumed', ({ timeRemaining }) => {
   // Restart client timer with remaining seconds
   state.questionStartTime = Date.now() - ((state.questionDuration - timeRemaining) * 1000);
   const isHost = state.role === 'host';
+  const resumedQI = state.questionIndex;
   startClientTimer(
-    state.questionDuration,
+    timeRemaining,
     document.getElementById(isHost ? 'host-timer-count' : 'player-timer-count'),
-    document.getElementById(isHost ? 'host-timer-ring' : 'player-timer-ring')
+    document.getElementById(isHost ? 'host-timer-ring' : 'player-timer-ring'),
+    () => {
+      if (!isHost || state.hostIsPlayer) {
+        if (!state.hasAnswered) {
+          const answer = QuestionRendererFactory.getAnswer();
+          if (answer) {
+            submitAnswer(answer);
+          } else {
+            state.hasAnswered = true;
+            socket.emit('player:answer', {
+              questionIndex: state.questionIndex,
+              answer: { timedOut: true }
+            });
+          }
+        }
+        const ansMsg = document.getElementById('player-answered-msg');
+        if (ansMsg) ansMsg.textContent = ' انتهى الوقت!';
+      }
+      if (state.role === 'host') {
+        setTimeout(() => {
+          if (state.questionIndex === resumedQI && !state.isPaused) {
+            socket.emit('host:force_end_question');
+          }
+        }, isHost ? 3000 : 5000);
+      }
+    }
   );
 });
 

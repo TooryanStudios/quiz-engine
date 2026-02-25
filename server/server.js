@@ -1658,6 +1658,17 @@ io.on('connection', (socket) => {
     endQuestion(room);
   });
 
+  // ── HOST: Force end question (client safety net when server timer missed) ──
+  socket.on('host:force_end_question', () => {
+    const room = findHostRoom(socket.id);
+    if (!room) return;
+    if (room.state !== 'question' && room.state !== 'question-pending') return;
+    console.log(`[Room ${room.pin}] Force end question triggered by host client (timer safety net).`);
+    clearTimeout(room.questionTimer);
+    room.questionTimer = null;
+    endQuestion(room);
+  });
+
   // ── HOST: End game now and show final results ─
   socket.on('host:end', () => {
     const room = findHostRoom(socket.id);
