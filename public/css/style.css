@@ -3484,3 +3484,66 @@ video.question-media {
   .options-grid { gap: 14px; }
   .question-layout { max-width: 860px; }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Picture Puzzle Mode
+═══════════════════════════════════════════════════════════ */
+.puzzle-layout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 12px;
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+.puzzle-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 10px;
+}
+
+.puzzle-hint {
+  font-size: 1rem;
+  font-weight: 600;
+  text-align: center;
+  color: var(--text-mid, #ccc);
+  margin: 0;
+  padding: 0 8px;
+}
+
+/* Slot cells */
+.pp-slot {
+  box-sizing: border-box;
+  transition: border-color 0.15s, transform 0.1s;
+}
+.pp-slot--filled {
+  border-color: rgba(59,130,246,0.6) !important;
+}
+.pp-slot:not(.pp-slot--filled):hover {
+  border-color: rgba(255,255,255,0.35) !important;
+  transform: scale(1.03);
+}
+
+/* Piece tiles in tray */
+.pp-piece {
+  box-sizing: border-box;
+  transition: transform 0.12s, border-color 0.12s;
+}
+.pp-piece:hover {
+  transform: scale(1.06);
+  border-color: rgba(255,255,255,0.5) !important;
+}
+.pp-piece--selected {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.5);
+  transform: scale(1.08);
+}
+
+/* Result board piece borders set inline (correct=green / wrong=red) */

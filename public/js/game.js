@@ -23,7 +23,8 @@ fetch('/api/build-info')
 const socket = io(window.location.origin);
 const queryParams = new URLSearchParams(window.location.search);
 const quizSlugFromUrl = queryParams.get('quiz');
-const modeFromUrl = queryParams.get('mode');
+const modeFromUrl     = queryParams.get('mode');
+const gameModeFromUrl = queryParams.get('gameMode');
 const isAutoHostLaunch = !!(quizSlugFromUrl && modeFromUrl === 'host');
 
 // Question-only mirror mode (for POP-Q debug button)
@@ -687,7 +688,7 @@ function startHostLaunch(quizSlug = null) {
   showView('view-host-loading');
   setConnectionStatus('warn', 'Preparing host room…');
 
-  const doHostCreate = () => socket.emit('host:create', { quizSlug: quizSlug || null });
+  const doHostCreate = () => socket.emit('host:create', { quizSlug: quizSlug || null, gameMode: gameModeFromUrl || null });
   if (socket.connected) {
     doHostCreate();
   } else {
@@ -2912,6 +2913,245 @@ socket.on('answer:received', () => {
 /** BOTH: Question ended — show correct answer */
 socket.on('question:end', (data) => {
   showQuestionResult(data);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Picture Puzzle Mode
+// ─────────────────────────────────────────────────────────────────────────────
+let _puzzleIsHost       = false;
+let _puzzleCols         = 3;
+let _puzzleRows         = 3;
+let _puzzleImageUrl     = '';
+let _puzzleMyPieces     = [];
+let _puzzleSelected     = null; // currently selected piece index (player only)
+let _puzzleTimerHandle  = null;
+let _puzzleCurrentBoard = {};
+
+function _pieceBgStyle(col, rows, row, cols, imageUrl, size) {
+  // CSS background slice trick
+  return [
+    `background-image:url('${imageUrl}')`,
+    `background-size:${cols * size}px ${rows * size}px`,
+    `background-position:-${col * size}px -${row * size}px`,
+    `background-repeat:no-repeat`,
+  ].join(';');
+}
+
+function _renderPuzzleBoard(containerId, board, cols, rows, imageUrl, myPieces, isHost) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const SLOT = 88; // px
+  el.style.display        = 'grid';
+  el.style.gridTemplateColumns = `repeat(${cols}, ${SLOT}px)`;
+  el.style.gridTemplateRows    = `repeat(${rows}, ${SLOT}px)`;
+  el.style.gap            = '4px';
+  el.style.width          = 'fit-content';
+  el.style.margin         = '0 auto';
+  el.innerHTML = '';
+
+  for (let slot = 0; slot < cols * rows; slot++) {
+    const cell   = document.createElement('div');
+    const placed = board[String(slot)];
+    cell.className = 'pp-slot';
+    cell.style.cssText = `width:${SLOT}px;height:${SLOT}px;border-radius:6px;position:relative;cursor:${!isHost ? 'pointer' : 'default'};border:2px solid var(--border,#333);overflow:hidden;`;
+
+    if (placed && placed.pieceIndex !== null) {
+      const c = placed.pieceIndex % cols;
+      const r = Math.floor(placed.pieceIndex / cols);
+      cell.style.cssText += _pieceBgStyle(c, rows, r, cols, imageUrl, SLOT);
+      cell.classList.add('pp-slot--filled');
+      if (placed.nickname) {
+        const lbl = document.createElement('span');
+        lbl.className = 'pp-owner-lbl';
+        lbl.textContent = placed.nickname;
+        lbl.style.cssText = 'position:absolute;bottom:2px;left:0;right:0;text-align:center;font-size:10px;color:#fff;text-shadow:0 1px 3px #000;pointer-events:none;';
+        cell.appendChild(lbl);
+      }
+    } else {
+      cell.style.backgroundColor = 'rgba(255,255,255,0.04)';
+      const numEl = document.createElement('span');
+      numEl.textContent = slot + 1;
+      numEl.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;opacity:0.18;';
+      cell.appendChild(numEl);
+    }
+
+    if (!isHost) {
+      cell.addEventListener('click', () => {
+        if (_puzzleSelected !== null) {
+          const existing = _puzzleCurrentBoard[String(slot)];
+          if (existing && !myPieces.includes(existing.pieceIndex)) return; // occupied by opponent
+          socket.emit('puzzle:place', { pieceIndex: _puzzleSelected, slotIndex: slot });
+          _puzzleSelected = null;
+          document.querySelectorAll('.pp-piece--selected').forEach(p => p.classList.remove('pp-piece--selected'));
+        }
+      });
+    }
+    el.appendChild(cell);
+  }
+}
+
+function _renderMyPieces(myPieces, imageUrl, cols, rows, board) {
+  const tray = document.getElementById('pp-tray');
+  if (!tray) return;
+  const PIECE = 88;
+  tray.innerHTML = '';
+  tray.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:12px;';
+  const placedSet = new Set();
+  if (board) Object.values(board).forEach(p => { if (p) placedSet.add(p.pieceIndex); });
+
+  let unplaced = 0;
+  for (const pi of myPieces) {
+    if (placedSet.has(pi)) continue;
+    unplaced++;
+    const c = pi % cols;
+    const r = Math.floor(pi / cols);
+    const piece = document.createElement('div');
+    piece.className = 'pp-piece';
+    piece.dataset.piece = pi;
+    piece.style.cssText = `width:${PIECE}px;height:${PIECE}px;border-radius:6px;cursor:pointer;border:2px solid var(--border,#333);flex-shrink:0;${_pieceBgStyle(c, rows, r, cols, imageUrl, PIECE)}`;
+    piece.addEventListener('click', () => {
+      if (_puzzleSelected === pi) {
+        _puzzleSelected = null;
+        piece.classList.remove('pp-piece--selected');
+      } else {
+        document.querySelectorAll('.pp-piece--selected').forEach(p => p.classList.remove('pp-piece--selected'));
+        _puzzleSelected = pi;
+        piece.classList.add('pp-piece--selected');
+      }
+    });
+    tray.appendChild(piece);
+  }
+  if (unplaced === 0) {
+    tray.innerHTML = '<p style="opacity:.6;text-align:center;width:100%">✅ All pieces placed!</p>';
+  }
+}
+
+function _startPuzzleCountdown(sec, elId) {
+  if (_puzzleTimerHandle) clearInterval(_puzzleTimerHandle);
+  let remaining = sec;
+  const el = document.getElementById(elId);
+  if (el) el.textContent = remaining;
+  _puzzleTimerHandle = setInterval(() => {
+    remaining--;
+    if (el) el.textContent = Math.max(0, remaining);
+    if (remaining <= 0) { clearInterval(_puzzleTimerHandle); _puzzleTimerHandle = null; }
+  }, 1000);
+}
+
+socket.on('puzzle:init', ({ questionIndex, total, question, imageUrl, cols, rows, myPieces, board, isHost, duration, players, assignments }) => {
+  _puzzleIsHost       = !!isHost;
+  _puzzleCols         = cols;
+  _puzzleRows         = rows;
+  _puzzleImageUrl     = imageUrl || '';
+  _puzzleMyPieces     = myPieces || [];
+  _puzzleSelected     = null;
+  _puzzleCurrentBoard = board || {};
+
+  stopClientTimer();
+  if (_puzzleTimerHandle) { clearInterval(_puzzleTimerHandle); _puzzleTimerHandle = null; }
+
+  if (isHost) {
+    showView('view-host-puzzle');
+    const prg = document.getElementById('host-pp-progress');
+    if (prg) prg.textContent = `Q ${questionIndex + 1} / ${total}`;
+    const hint = document.getElementById('host-pp-hint');
+    if (hint) hint.textContent = question?.text || '';
+    _renderPuzzleBoard('host-pp-board', board, cols, rows, imageUrl, [], true);
+    _startPuzzleCountdown(duration, 'host-pp-timer');
+    // Player chips
+    const chipsEl = document.getElementById('host-pp-players');
+    if (chipsEl && players) {
+      chipsEl.innerHTML = players.map(p =>
+        `<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:rgba(255,255,255,.07);border-radius:20px;font-size:13px;">${escapeHtml(p.avatar)} ${escapeHtml(p.nickname)} <b>${p.score}</b></span>`
+      ).join('');
+    }
+  } else {
+    showView('view-player-puzzle');
+    const prg = document.getElementById('pp-progress');
+    if (prg) prg.textContent = `Q ${questionIndex + 1} / ${total}`;
+    const hint = document.getElementById('pp-hint');
+    if (hint) hint.textContent = question?.text || '';
+    _renderPuzzleBoard('pp-board', board, cols, rows, imageUrl, myPieces, false);
+    _renderMyPieces(myPieces, imageUrl, cols, rows, board);
+    _startPuzzleCountdown(duration, 'pp-timer');
+  }
+});
+
+socket.on('puzzle:board_update', ({ board, players }) => {
+  _puzzleCurrentBoard = board || {};
+  if (_puzzleIsHost) {
+    _renderPuzzleBoard('host-pp-board', board, _puzzleCols, _puzzleRows, _puzzleImageUrl, [], true);
+    const chipsEl = document.getElementById('host-pp-players');
+    if (chipsEl && players) {
+      chipsEl.innerHTML = players.map(p =>
+        `<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:rgba(255,255,255,.07);border-radius:20px;font-size:13px;">${escapeHtml(p.avatar)} ${escapeHtml(p.nickname)} <b>${p.score}</b></span>`
+      ).join('');
+    }
+  } else {
+    _renderPuzzleBoard('pp-board', board, _puzzleCols, _puzzleRows, _puzzleImageUrl, _puzzleMyPieces, false);
+    _renderMyPieces(_puzzleMyPieces, _puzzleImageUrl, _puzzleCols, _puzzleRows, board);
+  }
+});
+
+socket.on('puzzle:resolved', ({ board, deltas, players, imageUrl, cols, rows }) => {
+  if (_puzzleTimerHandle) { clearInterval(_puzzleTimerHandle); _puzzleTimerHandle = null; }
+  _puzzleCurrentBoard = board || {};
+
+  // Show result overlay on the same view
+  const SLOT = 88;
+  const resultEl = document.getElementById(_puzzleIsHost ? 'host-pp-result-board' : 'pp-result-board');
+  if (resultEl) {
+    resultEl.style.display = 'grid';
+    resultEl.style.gridTemplateColumns = `repeat(${cols}, ${SLOT}px)`;
+    resultEl.style.gridTemplateRows    = `repeat(${rows}, ${SLOT}px)`;
+    resultEl.style.gap   = '4px';
+    resultEl.style.width = 'fit-content';
+    resultEl.style.margin = '0 auto';
+    resultEl.innerHTML   = '';
+
+    for (let slot = 0; slot < cols * rows; slot++) {
+      const cell = document.createElement('div');
+      const r    = board[slot];
+      cell.style.cssText = `width:${SLOT}px;height:${SLOT}px;border-radius:6px;position:relative;overflow:hidden;`;
+      if (r && r.pieceIndex !== null) {
+        const cc = r.pieceIndex % cols;
+        const rr = Math.floor(r.pieceIndex / cols);
+        cell.style.cssText += _pieceBgStyle(cc, rows, rr, cols, imageUrl || _puzzleImageUrl, SLOT);
+        cell.style.border  = '3px solid ' + (r.correct ? '#22c55e' : '#ef4444');
+      } else {
+        cell.style.cssText += 'border:3px solid #555;background:rgba(255,255,255,.04);';
+      }
+      resultEl.appendChild(cell);
+    }
+    resultEl.style.display = 'grid';
+
+    // Score list
+    const myId = state.playerId;
+    const scoresEl = document.getElementById(_puzzleIsHost ? 'host-pp-result-scores' : 'pp-result-scores');
+    if (scoresEl && players) {
+      scoresEl.innerHTML = players.map(p => {
+        const d = deltas[p.id] || 0;
+        const mine = p.id === myId;
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 12px;border-radius:10px;${mine ? 'background:rgba(59,130,246,.12);' : ''}">
+          <span>${escapeHtml(p.avatar)} ${escapeHtml(p.nickname)}</span>
+          <span style="font-weight:700;color:${d > 0 ? '#22c55e' : d < 0 ? '#ef4444' : '#aaa'}">${d > 0 ? '+' : ''}${d}</span>
+          <span style="color:var(--text-muted)">${p.score} pts</span>
+        </div>`;
+      }).join('');
+    }
+
+    // Show result panel, hide board/tray
+    const boardEl = document.getElementById(_puzzleIsHost ? 'host-pp-board' : 'pp-board');
+    if (boardEl) boardEl.style.display = 'none';
+    const trayEl = document.getElementById('pp-tray');
+    if (trayEl) trayEl.style.display = 'none';
+    const resultWrap = document.getElementById(_puzzleIsHost ? 'host-pp-result-wrap' : 'pp-result-wrap');
+    if (resultWrap) resultWrap.style.display = 'block';
+  }
+});
+
+socket.on('puzzle:error', ({ message }) => {
+  console.warn('[Puzzle]', message);
 });
 
 /** BOTH: Leaderboard between questions */
