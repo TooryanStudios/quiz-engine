@@ -1880,11 +1880,14 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   display: flex;
   gap: 8px;
   align-items: stretch;
+  position: relative;
 }
 
 .nickname-avatar-row input {
   flex: 1;
   min-width: 0;
+  position: relative;
+  z-index: 1;
 }
 
 .avatar-trigger-inline {
@@ -1894,6 +1897,8 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   width: 52px;
   border-radius: 10px;
   justify-content: center;
+  position: relative;
+  z-index: 3;
 }
 
 .avatar-trigger-btn:hover {

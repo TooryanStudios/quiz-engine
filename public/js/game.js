@@ -598,11 +598,22 @@ document.getElementById('avatar-picker-modal').addEventListener('click', (e) => 
   }
 
   if (joinAvatarBtn) {
-    joinAvatarBtn.addEventListener('click', openJoinPicker);
-    joinAvatarBtn.addEventListener('touchend', (e) => {
+    const onTap = (e) => {
       e.preventDefault();
+      e.stopPropagation();
       openJoinPicker();
-    }, { passive: false });
+    };
+    joinAvatarBtn.addEventListener('click', onTap);
+    joinAvatarBtn.addEventListener('pointerdown', onTap, { passive: false });
+    joinAvatarBtn.addEventListener('touchend', onTap, { passive: false });
+  }
+
+  if (joinAvatarDisplay) {
+    joinAvatarDisplay.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openJoinPicker();
+    });
   }
 }
 
