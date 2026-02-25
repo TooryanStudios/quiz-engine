@@ -783,6 +783,7 @@ function getPlayerList(room) {
       avatar: p.avatar || '🎮',
       score: p.score,
       streak: p.streak,
+      isHost: !!p.isHostPlayer,
     }));
 }
 

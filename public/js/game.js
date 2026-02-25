@@ -172,10 +172,11 @@ function renderHostPlayerStageCard(player, index, variant) {
   const cardVariantClass = variant?.cardClass || '';
   const animationDelay = Math.min(index, 8) * 70;
   const safeName = escapeHtml(player.nickname);
-  return `<li class="player-chip kickable player-stage-card ${cardVariantClass}" data-id="${player.id}" style="animation-delay:${animationDelay}ms">
+  const hostBadge = player.isHost ? '<span class="host-badge">🎬 Host</span>' : '';
+  return `<li class="player-chip kickable player-stage-card ${cardVariantClass}${player.isHost ? ' is-host-player' : ''}" data-id="${player.id}" style="animation-delay:${animationDelay}ms">
             <span class="avatar-circle player-stage-avatar">${player.avatar || '🎮'}</span>
-            <span class="player-stage-name">${safeName}</span>
-            <button class="btn-kick" data-id="${player.id}" title="Remove player" aria-label="Remove ${safeName}">✕</button>
+            <span class="player-stage-name">${safeName}${hostBadge}</span>
+            ${player.isHost ? '' : `<button class="btn-kick" data-id="${player.id}" title="Remove player" aria-label="Remove ${safeName}">✕</button>`}
           </li>`;
 }
 

@@ -228,14 +228,6 @@
         </div>
         <ul class="host-player-stage" id="host-player-list" aria-label="Players joined"></ul>
         <p class="player-waiting-msg" id="player-waiting-msg">Need at least one player to start</p>
-        <div id="host-player-form" class="host-player-form" style="display:none;">
-          <div class="host-player-row">
-            <input type="text" id="host-player-nickname" maxlength="20" placeholder="Your nickname…" class="host-player-input" />
-            <button id="btn-host-join-as-player" class="btn btn-secondary host-player-confirm">Join</button>
-            <button id="btn-host-cancel-join" class="btn host-player-cancel" title="Cancel" aria-label="Cancel">Cancel</button>
-          </div>
-          <p id="host-as-player-status" class="host-player-status"></p>
-        </div>
       </div>
 
       <!-- Share + Start Game row -->
@@ -590,6 +582,6 @@
   <!-- Load Socket.io client from the server (auto-served by socket.io) -->
   <script src="/socket.io/socket.io.js"></script>
   <!-- Main game logic (ES6 module) -->
-  <script type="module" src="/js/game.js?v=73"></script>
+  <script type="module" src="/js/game.js?v=74"></script>
 </body>
 </html>
