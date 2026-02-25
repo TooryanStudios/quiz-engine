@@ -1031,6 +1031,8 @@ function getRoleForPlayer(room, playerId) {
 
 /** Broadcast the current question to all sockets in a room. */
 function sendQuestion(room, opts = {}) {
+  // Guard: don't fire if the game was ended while quiz was loading
+  if (!room || room.state === 'finished') return;
   const countdownExtraMs = opts.countdownExtraMs || 0;
   const q = room.questions[room.questionIndex];
   const duration = q.duration || config.GAME.QUESTION_DURATION_SEC;
@@ -1091,6 +1093,7 @@ function sendQuestion(room, opts = {}) {
   room.currentQuestionPayload = { ...questionPayload };
 
   const dispatchQuestion = () => {
+    if (room.state === 'finished') return; // end-game clicked before question fired
     io.to(room.pin).emit('game:question', {
       questionIndex: room.questionIndex,
       total: room.questions.length,
@@ -1566,18 +1569,33 @@ io.on('connection', (socket) => {
 
   // ── HOST: Create a new room ──────────────────
   socket.on('host:create', async ({ quizSlug, gameMode } = {}) => {
-    // Enforce single host per quiz — reject if an active room already exists for this slug
+    // Enforce single host per quiz — reject if an active room already exists for this slug.
+    // Exception: if the previous host socket is gone (page refresh / network drop),
+    // clean up the stale room and allow a fresh one.
     if (quizSlug) {
       const existing = Array.from(rooms.values()).find(
         (r) => r.quizSlug === quizSlug && r.state !== 'finished'
       );
       if (existing) {
-        socket.emit('room:error', {
-          message: 'هناك جلسة نشطة لهذا الكويز بالفعل. لا يمكن إنشاء جلسة أخرى.',
-          code: 'DUPLICATE_HOST',
-          existingPin: existing.pin,
-        });
-        return;
+        const oldSocket = io.sockets.sockets.get(existing.hostSocketId);
+        const isStale = !oldSocket || existing.state === 'lobby' || existing.state === 'starting';
+
+        if (isStale) {
+          // Old host is gone or game hadn't started yet — clean up the stale room.
+          console.log(`[Room ${existing.pin}] Stale room for quiz "${quizSlug}" replaced by reconnecting host.`);
+          if (existing.questionTimer) clearTimeout(existing.questionTimer);
+          if (existing.previewTimer) clearTimeout(existing.previewTimer);
+          io.socketsLeave(existing.pin);
+          rooms.delete(existing.pin);
+        } else {
+          // Old host is still actively connected — genuine duplicate, reject.
+          socket.emit('room:error', {
+            message: 'هناك جلسة نشطة لهذا الكويز بالفعل. لا يمكن إنشاء جلسة أخرى.',
+            code: 'DUPLICATE_HOST',
+            existingPin: existing.pin,
+          });
+          return;
+        }
       }
     }
 
