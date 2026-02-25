@@ -1371,7 +1371,7 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   transform: scale(0.9);
   transform-origin: top left;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   gap: 6px;
   padding: 8px;
