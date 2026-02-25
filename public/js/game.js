@@ -1,11 +1,11 @@
 // ─────────────────────────────────────────────
 // ES6 Module Imports
 // ─────────────────────────────────────────────
-import { state, updateState, resetQuestionState} from './state/GameState.js?v=115';
-import { Sounds, setMuted, isMuted } from './utils/sounds.js?v=115';
-import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js?v=115';
-import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js?v=115';
-import { QuestionRendererFactory } from './renderers/QuestionRenderer.js?v=115';
+import { state, updateState, resetQuestionState} from './state/GameState.js?v=116';
+import { Sounds, setMuted, isMuted } from './utils/sounds.js?v=116';
+import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js?v=116';
+import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js?v=116';
+import { QuestionRendererFactory } from './renderers/QuestionRenderer.js?v=116';
 
 // Fetch and display server build time on home screen
 fetch('/api/build-info')
@@ -3273,6 +3273,10 @@ function _renderPuzzleBoard(containerId, board, cols, rows, imageUrl, myPieces, 
           }
         });
         // Drag FROM a board slot (pick up your own placed piece)
+        // NOTE: do NOT emit puzzle:place here — the server handles the move
+        // atomically when the drop fires on the destination slot.
+        // Emitting un-place here triggers a board_update mid-drag which
+        // resets draggable='false' and locks the piece.
         cell.addEventListener('dragstart', (e) => {
           const boardEntry = _puzzleCurrentBoard[String(slot)];
           if (boardEntry && _puzzleMyPieces.includes(boardEntry.pieceIndex)) {
@@ -3280,11 +3284,8 @@ function _renderPuzzleBoard(containerId, board, cols, rows, imageUrl, myPieces, 
             _puzzleSelected = pi;
             e.dataTransfer.setData('text/plain', String(pi));
             e.dataTransfer.effectAllowed = 'move';
-            // Canvas ghost — never flashes black regardless of CSS repaint
             const dCanvas = _makePieceDragCanvas(pi);
             e.dataTransfer.setDragImage(dCanvas, dCanvas.width / 2, dCanvas.height / 2);
-            // Un-place from this slot first so the server registers the move
-            socket.emit('puzzle:place', { pieceIndex: pi, slotIndex: slot });
             setTimeout(() => { if (cell.isConnected) cell.style.opacity = '0.35'; }, 0);
           } else {
             e.preventDefault();
@@ -3319,8 +3320,10 @@ function _renderPuzzleBoard(containerId, board, cols, rows, imageUrl, myPieces, 
     const placed      = board[String(slot)];
     const prevPiece   = cell.dataset.pieceIdx;
     const isMySlot    = placed && !isHost && myPieces && myPieces.includes(placed.pieceIndex);
-    // Make slot draggable if it holds the player's own piece
-    if (!isHost) cell.setAttribute('draggable', isMySlot ? 'true' : 'false');
+    // Make ALL non-host slots always draggable so a mid-drag board_update
+    // never strips the attribute and locks an in-progress drag.
+    // The dragstart handler guards against dragging opponent pieces.
+    if (!isHost) cell.setAttribute('draggable', 'true');
 
     if (placed && placed.pieceIndex !== null) {
       // Only update DOM if this slot's content actually changed
@@ -3406,14 +3409,9 @@ function _renderMyPieces(myPieces, imageUrl, cols, rows, board, forceRebuild) {
           piece.classList.add('pp-piece--selected');
         }
       });
-      // HTML5 drag — dim in-place instead of hiding; un-place first if already on board
+      // HTML5 drag — canvas ghost; server handles move atomically on drop
       piece.setAttribute('draggable', 'true');
       piece.addEventListener('dragstart', (e) => {
-        const boardSlotKey = Object.keys(_puzzleCurrentBoard).find(k => _puzzleCurrentBoard[k]?.pieceIndex === pi);
-        if (boardSlotKey !== undefined) {
-          // Un-place from current board slot before dragging to new one
-          socket.emit('puzzle:place', { pieceIndex: pi, slotIndex: parseInt(boardSlotKey, 10) });
-        }
         _puzzleSelected = pi;
         e.dataTransfer.setData('text/plain', String(pi));
         e.dataTransfer.effectAllowed = 'move';
@@ -3430,11 +3428,6 @@ function _renderMyPieces(myPieces, imageUrl, cols, rows, board, forceRebuild) {
       // Touch drag (mobile / tablet)
       piece.addEventListener('touchstart', (e) => {
         const touch = e.touches[0];
-        // If piece is on the board, un-place it before dragging
-        const boardSlotKey = Object.keys(_puzzleCurrentBoard).find(k => _puzzleCurrentBoard[k]?.pieceIndex === pi);
-        if (boardSlotKey !== undefined) {
-          socket.emit('puzzle:place', { pieceIndex: pi, slotIndex: parseInt(boardSlotKey, 10) });
-        }
         _puzzleSelected = pi;
         document.querySelectorAll('.pp-piece--selected').forEach(p => p.classList.remove('pp-piece--selected'));
         piece.classList.add('pp-piece--selected');
