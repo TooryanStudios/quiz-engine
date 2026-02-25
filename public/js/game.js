@@ -1,11 +1,11 @@
 // ─────────────────────────────────────────────
 // ES6 Module Imports
 // ─────────────────────────────────────────────
-import { state, updateState, resetQuestionState} from './state/GameState.js?v=120';
-import { Sounds, setMuted, isMuted } from './utils/sounds.js?v=120';
-import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js?v=120';
-import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js?v=120';
-import { QuestionRendererFactory } from './renderers/QuestionRenderer.js?v=120';
+import { state, updateState, resetQuestionState} from './state/GameState.js?v=121';
+import { Sounds, setMuted, isMuted } from './utils/sounds.js?v=121';
+import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js?v=121';
+import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js?v=121';
+import { QuestionRendererFactory } from './renderers/QuestionRenderer.js?v=121';
 
 // Fetch and display server build time on home screen
 fetch('/api/build-info')
@@ -2880,21 +2880,36 @@ socket.on('room:rejoined', ({ pin, nickname, avatar, players, score, streak, roo
       _puzzleIsHost       = false;
       _puzzleCols         = puzzleData.cols;
       _puzzleRows         = puzzleData.rows;
-      _puzzleImageUrl     = puzzleData.imageUrl || '';
+      const rejoinImageUrl = _resolvePuzzleImageUrl(puzzleData.imageUrl);
+      _puzzleImageUrl     = rejoinImageUrl;
       _puzzleMyPieces     = puzzleData.myPieces || [];
       _puzzleSelected     = null;
       _puzzleCurrentBoard = puzzleData.board || {};
       stopClientTimer();
       if (_puzzleTimerHandle) { clearInterval(_puzzleTimerHandle); _puzzleTimerHandle = null; }
 
-      showView('view-player-puzzle');
-      const prgRj = document.getElementById('pp-progress');
-      if (prgRj) prgRj.textContent = `Q ${(puzzleData.questionIndex || 0) + 1} / ${puzzleData.total || '?'}`;
-      const hintRj = document.getElementById('pp-hint');
-      if (hintRj) hintRj.textContent = puzzleData.question?.text || '';
-      _renderPuzzleBoard('pp-board', puzzleData.board, puzzleData.cols, puzzleData.rows, puzzleData.imageUrl, puzzleData.myPieces, false, true);
-      _renderMyPieces(puzzleData.myPieces, puzzleData.imageUrl, puzzleData.cols, puzzleData.rows, puzzleData.board, true);
-      _startPuzzleCountdown(puzzleData.timeRemaining, 'pp-timer');
+      const renderRejoinedPuzzle = () => {
+        showView('view-player-puzzle');
+        const prgRj = document.getElementById('pp-progress');
+        if (prgRj) prgRj.textContent = `Q ${(puzzleData.questionIndex || 0) + 1} / ${puzzleData.total || '?'}`;
+        const hintRj = document.getElementById('pp-hint');
+        if (hintRj) hintRj.textContent = puzzleData.question?.text || '';
+        _renderPuzzleBoard('pp-board', puzzleData.board, puzzleData.cols, puzzleData.rows, rejoinImageUrl, puzzleData.myPieces, false, true);
+        _renderMyPieces(puzzleData.myPieces, rejoinImageUrl, puzzleData.cols, puzzleData.rows, puzzleData.board, true);
+        _startPuzzleCountdown(puzzleData.timeRemaining, 'pp-timer');
+      };
+
+      if (rejoinImageUrl) {
+        let rendered = false;
+        const once = () => { if (rendered) return; rendered = true; renderRejoinedPuzzle(); };
+        const preloadImg = new Image();
+        preloadImg.onload = () => { _puzzleCachedImg = preloadImg; once(); };
+        preloadImg.onerror = once;
+        preloadImg.src = rejoinImageUrl;
+        setTimeout(once, 4000);
+      } else {
+        renderRejoinedPuzzle();
+      }
     } else {
       // Fallback: show the player lobby
       showView('view-player-lobby');
@@ -3198,6 +3213,13 @@ function _emitPuzzlePlace(pieceIndex, slotIndex) {
   socket.emit('puzzle:place', { pieceIndex, slotIndex });
 }
 
+function _resolvePuzzleImageUrl(nextUrl) {
+  if (nextUrl && String(nextUrl).trim()) return String(nextUrl);
+  if (_puzzleImageUrl && String(_puzzleImageUrl).trim()) return String(_puzzleImageUrl);
+  if (_puzzleCachedImg?.src) return _puzzleCachedImg.src;
+  return '';
+}
+
 function _getPuzzleDropzoneAt(x, y) {
   for (const el of document.elementsFromPoint(x, y)) {
     if (el && el.classList && el.classList.contains('pp-slot') && el.dataset.slot !== undefined) {
@@ -3466,14 +3488,13 @@ function _renderMyPieces(myPieces, imageUrl, cols, rows, board, forceRebuild) {
   for (const pi of myPieces) {
     const pieceEl = tray.querySelector(`[data-piece="${pi}"]`);
     if (!pieceEl) continue;
+    pieceEl.style.opacity = '';
     if (placedSet.has(pi)) {
       pieceEl.classList.add('pp-piece--placed');
       if (_puzzleSelected === pi) _puzzleSelected = null;
     } else {
       unplacedCount++;
       pieceEl.classList.remove('pp-piece--placed');
-      // Restore opacity only if not currently mid-drag
-      if (pieceEl.style.opacity === '0.35') pieceEl.style.opacity = '';
     }
   }
   // "All pieces placed" message
@@ -3502,10 +3523,11 @@ function _startPuzzleCountdown(sec, elId) {
 }
 
 socket.on('puzzle:init', ({ questionIndex, total, question, imageUrl, cols, rows, myPieces, board, isHost, duration, players, assignments }) => {
+  const resolvedImageUrl = _resolvePuzzleImageUrl(imageUrl);
   _puzzleIsHost       = !!isHost;
   _puzzleCols         = cols;
   _puzzleRows         = rows;
-  _puzzleImageUrl     = imageUrl || '';
+  _puzzleImageUrl     = resolvedImageUrl;
   _puzzleMyPieces     = myPieces || [];
   _puzzleSelected     = null;
   _puzzleCurrentBoard = board || {};
@@ -3521,7 +3543,7 @@ socket.on('puzzle:init', ({ questionIndex, total, question, imageUrl, cols, rows
       if (prg) prg.textContent = `Q ${questionIndex + 1} / ${total}`;
       const hint = document.getElementById('host-pp-hint');
       if (hint) hint.textContent = question?.text || '';
-      _renderPuzzleBoard('host-pp-board', board, cols, rows, imageUrl, [], true, true);
+      _renderPuzzleBoard('host-pp-board', board, cols, rows, resolvedImageUrl, [], true, true);
       _startPuzzleCountdown(duration, 'host-pp-timer');
       const chipsEl = document.getElementById('host-pp-players');
       if (chipsEl && players) {
@@ -3535,20 +3557,20 @@ socket.on('puzzle:init', ({ questionIndex, total, question, imageUrl, cols, rows
       if (prg) prg.textContent = `Q ${questionIndex + 1} / ${total}`;
       const hint = document.getElementById('pp-hint');
       if (hint) hint.textContent = question?.text || '';
-      _renderPuzzleBoard('pp-board', board, cols, rows, imageUrl, myPieces, false, true);
-      _renderMyPieces(myPieces, imageUrl, cols, rows, board, true);
+      _renderPuzzleBoard('pp-board', board, cols, rows, resolvedImageUrl, myPieces, false, true);
+      _renderMyPieces(myPieces, resolvedImageUrl, cols, rows, board, true);
       _startPuzzleCountdown(duration, 'pp-timer');
     }
   };
 
-  if (imageUrl) {
+  if (resolvedImageUrl) {
     // Preload image fully before rendering so slots never flash black
     let _rendered = false;
     const _once = () => { if (_rendered) return; _rendered = true; _doPuzzleRender(); };
     const preloadImg = new Image();
     preloadImg.onload = () => { _puzzleCachedImg = preloadImg; _once(); };
     preloadImg.onerror = _once;
-    preloadImg.src = imageUrl;
+    preloadImg.src = resolvedImageUrl;
     // Safety: render anyway after 4 s if image stalls
     setTimeout(_once, 4000);
   } else {
