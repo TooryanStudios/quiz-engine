@@ -1590,10 +1590,10 @@ io.on('connection', (socket) => {
       totalQuestions: room.questions.length,
     });
 
-    // Small delay before first question (let clients animate into game view)
+    // Delay first question to allow countdown animation (3, 2, 1, GO!)
     setTimeout(() => {
       sendQuestion(room);
-    }, 1500);
+    }, 4500);
   });
 
   // ── HOST: Set connection mode (local/global) ─

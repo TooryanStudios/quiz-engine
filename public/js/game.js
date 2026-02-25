@@ -1024,6 +1024,39 @@ function enableKeepAwake() {
   requestScreenWakeLock();
 }
 
+// ─────────────────────────────────────────────
+// Game Start Countdown (3, 2, 1, GO!)
+// ─────────────────────────────────────────────
+function showStartCountdown() {
+  const overlay = document.getElementById('overlay-countdown');
+  const numberEl = document.getElementById('countdown-number');
+  if (!overlay || !numberEl) return;
+
+  overlay.style.display = 'flex';
+  const steps = [
+    { text: '3', cls: '', delay: 0 },
+    { text: '2', cls: '', delay: 1000 },
+    { text: '1', cls: '', delay: 2000 },
+    { text: '!انطلق', cls: 'go', delay: 3000 },
+  ];
+
+  steps.forEach(({ text, cls, delay }) => {
+    setTimeout(() => {
+      numberEl.textContent = text;
+      numberEl.className = 'countdown-number' + (cls ? ' ' + cls : '');
+      // Re-trigger pop animation
+      numberEl.style.animation = 'none';
+      void numberEl.offsetWidth;
+      numberEl.style.animation = '';
+    }, delay);
+  });
+
+  // Hide overlay after GO! (slightly before first question arrives)
+  setTimeout(() => {
+    overlay.style.display = 'none';
+  }, 4200);
+}
+
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
     requestScreenWakeLock();
@@ -2059,6 +2092,9 @@ if (chkHostAsPlayer) {
 
 // Host Start Game
 document.getElementById('btn-start-game').addEventListener('click', () => {
+  const btn = document.getElementById('btn-start-game');
+  btn.disabled = true;
+  btn.textContent = '⏳ جاري التحضير...';
   enableKeepAwake();
   Sounds.click();
   socket.emit('host:start');
@@ -2530,6 +2566,9 @@ socket.on('room:error', ({ message }) => {
   if (state.role === 'host') {
     state.hostCreatePending = false;
     document.documentElement.classList.remove('autohost-launch');
+    // Reset start button if it was in loading state
+    const startBtn = document.getElementById('btn-start-game');
+    if (startBtn) { startBtn.disabled = false; startBtn.textContent = '🚀 ابدأ اللعبة'; }
   }
   const editPanel = document.getElementById('edit-profile-panel');
   if (state.role === 'player' && editPanel && editPanel.classList.contains('open')) {
@@ -2571,6 +2610,9 @@ socket.on('game:start', ({ totalQuestions }) => {
   state.myScore = 0;
   updatePlayerScoreUI();
   Sounds.start();
+
+  // Show countdown overlay (3, 2, 1, GO!)
+  showStartCountdown();
 
   // Preload all question images so they appear instantly during the game
   if (quizSlugFromUrl) {

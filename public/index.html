@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=98" />
+  <link rel="stylesheet" href="/css/style.css?v=99" />
   <!-- Prevent browser zoom (Ctrl+scroll, Ctrl+±, pinch) -->
   <script>
     document.addEventListener('wheel', function(e){ if(e.ctrlKey){ e.preventDefault(); } }, { passive: false });
@@ -609,12 +609,22 @@
   })();
   </script>
 
+  <!-- ═══════════════════════════════════════════
+       OVERLAY: Game Start Countdown
+  ═══════════════════════════════════════════ -->
+  <div id="overlay-countdown" class="countdown-overlay" style="display:none">
+    <div class="countdown-content">
+      <div class="countdown-number" id="countdown-number">3</div>
+      <div class="countdown-label" dir="rtl">استعدّ!</div>
+    </div>
+  </div>
+
   <!-- ─── Scripts ─── -->
   <!-- Confetti for game over celebration (async — non-blocking) -->
   <script async src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
   <!-- Load Socket.io client from the server (auto-served by socket.io) -->
   <script src="/socket.io/socket.io.js"></script>
   <!-- Main game logic (ES6 module) -->
-  <script type="module" src="/js/game.js?v=98"></script>
+  <script type="module" src="/js/game.js?v=99"></script>
 </body>
 </html>
