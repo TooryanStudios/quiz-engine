@@ -2961,6 +2961,7 @@ let _puzzleMyPieces     = [];
 let _puzzleSelected     = null; // currently selected piece index (player only)
 let _puzzleTimerHandle  = null;
 let _puzzleCurrentBoard = {};
+let _ppGhost            = null; // floating ghost element during touch drag
 
 function _pieceBgStyle(col, rows, row, cols, imageUrl, size) {
   // CSS background slice trick
@@ -3011,11 +3012,28 @@ function _renderPuzzleBoard(containerId, board, cols, rows, imageUrl, myPieces, 
     }
 
     if (!isHost) {
+      // Click-to-place (tap on slot after selecting a piece)
       cell.addEventListener('click', () => {
         if (_puzzleSelected !== null) {
           const existing = _puzzleCurrentBoard[String(slot)];
           if (existing && !myPieces.includes(existing.pieceIndex)) return; // occupied by opponent
           socket.emit('puzzle:place', { pieceIndex: _puzzleSelected, slotIndex: slot });
+          _puzzleSelected = null;
+          document.querySelectorAll('.pp-piece--selected').forEach(p => p.classList.remove('pp-piece--selected'));
+        }
+      });
+      // HTML5 drag-and-drop (desktop)
+      cell.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+      });
+      cell.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const pi2 = parseInt(e.dataTransfer.getData('text/plain'), 10);
+        if (!isNaN(pi2)) {
+          const existing = _puzzleCurrentBoard[String(slot)];
+          if (existing && !myPieces.includes(existing.pieceIndex)) return;
+          socket.emit('puzzle:place', { pieceIndex: pi2, slotIndex: slot });
           _puzzleSelected = null;
           document.querySelectorAll('.pp-piece--selected').forEach(p => p.classList.remove('pp-piece--selected'));
         }
@@ -3044,6 +3062,7 @@ function _renderMyPieces(myPieces, imageUrl, cols, rows, board) {
     piece.className = 'pp-piece';
     piece.dataset.piece = pi;
     piece.style.cssText = `width:${PIECE}px;height:${PIECE}px;border-radius:6px;cursor:pointer;border:2px solid var(--border,#333);flex-shrink:0;${_pieceBgStyle(c, rows, r, cols, imageUrl, PIECE)}`;
+    // Click-to-select
     piece.addEventListener('click', () => {
       if (_puzzleSelected === pi) {
         _puzzleSelected = null;
@@ -3054,6 +3073,58 @@ function _renderMyPieces(myPieces, imageUrl, cols, rows, board) {
         piece.classList.add('pp-piece--selected');
       }
     });
+    // HTML5 drag (desktop)
+    piece.setAttribute('draggable', 'true');
+    piece.addEventListener('dragstart', (e) => {
+      _puzzleSelected = pi;
+      e.dataTransfer.setData('text/plain', String(pi));
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    // Touch drag (mobile / tablet)
+    piece.addEventListener('touchstart', (e) => {
+      const touch = e.touches[0];
+      _puzzleSelected = pi;
+      document.querySelectorAll('.pp-piece--selected').forEach(p => p.classList.remove('pp-piece--selected'));
+      piece.classList.add('pp-piece--selected');
+      if (_ppGhost) { _ppGhost.remove(); _ppGhost = null; }
+      _ppGhost = piece.cloneNode(true);
+      _ppGhost.classList.remove('pp-piece--selected');
+      Object.assign(_ppGhost.style, {
+        position: 'fixed',
+        zIndex: '9999',
+        pointerEvents: 'none',
+        opacity: '0.85',
+        transform: 'scale(1.12)',
+        top: (touch.clientY - PIECE / 2) + 'px',
+        left: (touch.clientX - PIECE / 2) + 'px',
+        margin: '0',
+      });
+      document.body.appendChild(_ppGhost);
+      e.preventDefault();
+    }, { passive: false });
+    piece.addEventListener('touchmove', (e) => {
+      if (!_ppGhost) return;
+      const touch = e.touches[0];
+      _ppGhost.style.top  = (touch.clientY - PIECE / 2) + 'px';
+      _ppGhost.style.left = (touch.clientX - PIECE / 2) + 'px';
+      e.preventDefault();
+    }, { passive: false });
+    piece.addEventListener('touchend', (e) => {
+      const touch = e.changedTouches[0];
+      // ghost has pointer-events:none so elementFromPoint sees through it
+      const target = document.elementFromPoint(touch.clientX, touch.clientY);
+      if (_ppGhost) { _ppGhost.remove(); _ppGhost = null; }
+      const slotEl = target && (target.closest ? target.closest('.pp-slot') : null);
+      if (slotEl && slotEl.parentElement) {
+        const slots = Array.from(slotEl.parentElement.querySelectorAll('.pp-slot'));
+        const si = slots.indexOf(slotEl);
+        if (si !== -1) {
+          socket.emit('puzzle:place', { pieceIndex: pi, slotIndex: si });
+          _puzzleSelected = null;
+          document.querySelectorAll('.pp-piece--selected').forEach(p => p.classList.remove('pp-piece--selected'));
+        }
+      }
+    }, { passive: false });
     tray.appendChild(piece);
   }
   if (unplaced === 0) {
