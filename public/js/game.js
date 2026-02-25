@@ -1,11 +1,11 @@
 // ─────────────────────────────────────────────
 // ES6 Module Imports
 // ─────────────────────────────────────────────
-import { state, updateState, resetQuestionState} from './state/GameState.js?v=116';
-import { Sounds, setMuted, isMuted } from './utils/sounds.js?v=116';
-import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js?v=116';
-import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js?v=116';
-import { QuestionRendererFactory } from './renderers/QuestionRenderer.js?v=116';
+import { state, updateState, resetQuestionState} from './state/GameState.js?v=117';
+import { Sounds, setMuted, isMuted } from './utils/sounds.js?v=117';
+import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js?v=117';
+import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js?v=117';
+import { QuestionRendererFactory } from './renderers/QuestionRenderer.js?v=117';
 
 // Fetch and display server build time on home screen
 fetch('/api/build-info')
@@ -3217,6 +3217,28 @@ function _pieceBgStyle(col, rows, row, cols, imageUrl, size) {
   ].join(';');
 }
 
+function _findPuzzlePieceSlot(pieceIndex) {
+  return Object.keys(_puzzleCurrentBoard).find(
+    (key) => _puzzleCurrentBoard[key]?.pieceIndex === pieceIndex,
+  );
+}
+
+function _clearPuzzleSelection() {
+  _puzzleSelected = null;
+  document.querySelectorAll('.pp-piece--selected').forEach((pieceEl) => pieceEl.classList.remove('pp-piece--selected'));
+}
+
+function _selectPuzzlePiece(pieceIndex) {
+  _clearPuzzleSelection();
+  _puzzleSelected = pieceIndex;
+  const trayPiece = document.querySelector(`#pp-tray [data-piece="${pieceIndex}"]`);
+  if (trayPiece) trayPiece.classList.add('pp-piece--selected');
+}
+
+function _emitPuzzlePlace(pieceIndex, slotIndex) {
+  socket.emit('puzzle:place', { pieceIndex, slotIndex });
+}
+
 function _renderPuzzleBoard(containerId, board, cols, rows, imageUrl, myPieces, isHost, forceRebuild) {
   const el = document.getElementById(containerId);
   if (!el) return;
@@ -3260,16 +3282,12 @@ function _renderPuzzleBoard(containerId, board, cols, rows, imageUrl, myPieces, 
           if (_puzzleSelected !== null) {
             // Place selected piece into this slot (opponent's piece blocks)
             if (boardEntry && !_puzzleMyPieces.includes(boardEntry.pieceIndex)) return;
-            socket.emit('puzzle:place', { pieceIndex: _puzzleSelected, slotIndex: slot });
-            _puzzleSelected = null;
-            document.querySelectorAll('.pp-piece--selected').forEach(p => p.classList.remove('pp-piece--selected'));
+            _emitPuzzlePlace(_puzzleSelected, slot);
+            _clearPuzzleSelection();
           } else if (boardEntry && _puzzleMyPieces.includes(boardEntry.pieceIndex)) {
             // Pick up own piece from board slot → un-place it and select it
-            socket.emit('puzzle:place', { pieceIndex: boardEntry.pieceIndex, slotIndex: slot }); // same slot = server un-places
-            _puzzleSelected = boardEntry.pieceIndex;
-            document.querySelectorAll('.pp-piece--selected').forEach(p => p.classList.remove('pp-piece--selected'));
-            const trayPiece = document.querySelector(`#pp-tray [data-piece="${boardEntry.pieceIndex}"]`);
-            if (trayPiece) trayPiece.classList.add('pp-piece--selected');
+            _emitPuzzlePlace(boardEntry.pieceIndex, slot); // same slot = server un-places
+            _selectPuzzlePiece(boardEntry.pieceIndex);
           }
         });
         // Drag FROM a board slot (pick up your own placed piece)
@@ -3281,7 +3299,7 @@ function _renderPuzzleBoard(containerId, board, cols, rows, imageUrl, myPieces, 
           const boardEntry = _puzzleCurrentBoard[String(slot)];
           if (boardEntry && _puzzleMyPieces.includes(boardEntry.pieceIndex)) {
             const pi = boardEntry.pieceIndex;
-            _puzzleSelected = pi;
+            _selectPuzzlePiece(pi);
             e.dataTransfer.setData('text/plain', String(pi));
             e.dataTransfer.effectAllowed = 'move';
             const dCanvas = _makePieceDragCanvas(pi);
@@ -3299,9 +3317,8 @@ function _renderPuzzleBoard(containerId, board, cols, rows, imageUrl, myPieces, 
           if (!isNaN(pi2)) {
             const existing = _puzzleCurrentBoard[String(slot)];
             if (existing && !_puzzleMyPieces.includes(existing.pieceIndex)) return;
-            socket.emit('puzzle:place', { pieceIndex: pi2, slotIndex: slot });
-            _puzzleSelected = null;
-            document.querySelectorAll('.pp-piece--selected').forEach(p => p.classList.remove('pp-piece--selected'));
+            _emitPuzzlePlace(pi2, slot);
+            _clearPuzzleSelection();
           }
         });
       }
@@ -3319,7 +3336,6 @@ function _renderPuzzleBoard(containerId, board, cols, rows, imageUrl, myPieces, 
   el.querySelectorAll('.pp-slot').forEach((cell, slot) => {
     const placed      = board[String(slot)];
     const prevPiece   = cell.dataset.pieceIdx;
-    const isMySlot    = placed && !isHost && myPieces && myPieces.includes(placed.pieceIndex);
     // Make ALL non-host slots always draggable so a mid-drag board_update
     // never strips the attribute and locks an in-progress drag.
     // The dragstart handler guards against dragging opponent pieces.
@@ -3393,26 +3409,21 @@ function _renderMyPieces(myPieces, imageUrl, cols, rows, board, forceRebuild) {
       piece.style.cssText = `width:${PIECE}px;height:${PIECE}px;border-radius:8px;cursor:pointer;border:2px solid var(--border,#444);flex-shrink:0;${_pieceBgStyle(c, rows, r, cols, imageUrl, PIECE)}`;
       // Click-to-select (works for both placed and unplaced pieces)
       piece.addEventListener('click', () => {
-        const boardSlotKey = Object.keys(_puzzleCurrentBoard).find(k => _puzzleCurrentBoard[k]?.pieceIndex === pi);
+        const boardSlotKey = _findPuzzlePieceSlot(pi);
         if (boardSlotKey !== undefined) {
           // Piece is on the board — un-place it then select it
-          socket.emit('puzzle:place', { pieceIndex: pi, slotIndex: parseInt(boardSlotKey, 10) });
-          document.querySelectorAll('.pp-piece--selected').forEach(p => p.classList.remove('pp-piece--selected'));
-          _puzzleSelected = pi;
-          piece.classList.add('pp-piece--selected');
+          _emitPuzzlePlace(pi, parseInt(boardSlotKey, 10));
+          _selectPuzzlePiece(pi);
         } else if (_puzzleSelected === pi) {
-          _puzzleSelected = null;
-          piece.classList.remove('pp-piece--selected');
+          _clearPuzzleSelection();
         } else {
-          document.querySelectorAll('.pp-piece--selected').forEach(p => p.classList.remove('pp-piece--selected'));
-          _puzzleSelected = pi;
-          piece.classList.add('pp-piece--selected');
+          _selectPuzzlePiece(pi);
         }
       });
       // HTML5 drag — canvas ghost; server handles move atomically on drop
       piece.setAttribute('draggable', 'true');
       piece.addEventListener('dragstart', (e) => {
-        _puzzleSelected = pi;
+        _selectPuzzlePiece(pi);
         e.dataTransfer.setData('text/plain', String(pi));
         e.dataTransfer.effectAllowed = 'move';
         // Canvas ghost — eliminates CSS background-image repaint flash entirely
@@ -3428,9 +3439,7 @@ function _renderMyPieces(myPieces, imageUrl, cols, rows, board, forceRebuild) {
       // Touch drag (mobile / tablet)
       piece.addEventListener('touchstart', (e) => {
         const touch = e.touches[0];
-        _puzzleSelected = pi;
-        document.querySelectorAll('.pp-piece--selected').forEach(p => p.classList.remove('pp-piece--selected'));
-        piece.classList.add('pp-piece--selected');
+        _selectPuzzlePiece(pi);
         if (_ppGhost) { _ppGhost.remove(); _ppGhost = null; }
         _ppGhost = piece.cloneNode(true);
         _ppGhost.classList.remove('pp-piece--selected');
@@ -3463,9 +3472,8 @@ function _renderMyPieces(myPieces, imageUrl, cols, rows, board, forceRebuild) {
           const slots = Array.from(slotEl.parentElement.querySelectorAll('.pp-slot'));
           const si = slots.indexOf(slotEl);
           if (si !== -1) {
-            socket.emit('puzzle:place', { pieceIndex: pi, slotIndex: si });
-            _puzzleSelected = null;
-            document.querySelectorAll('.pp-piece--selected').forEach(p => p.classList.remove('pp-piece--selected'));
+            _emitPuzzlePlace(pi, si);
+            _clearPuzzleSelection();
           }
         }
       }, { passive: false });
