@@ -71,3 +71,22 @@ When you are ready for real payments, switch to `PAYMENTS_MODE=stripe` and set S
 npm install
 npm run dev
 ```
+
+## Question Type Plug-in Pattern
+
+Question types are now organized around registries so they can be added/removed with minimal edits.
+
+- **Server registry**: `server/server.js` → `QUESTION_TYPE_HANDLERS`
+	- `buildQuestionPayload(...)`
+	- `evaluateAnswer(...)`
+	- `buildCorrectReveal(...)`
+	- optional `applyPostRound(...)`
+- **Client registry**: `public/js/renderers/QuestionRenderer.js` → `QuestionRendererFactory.register(...)`
+
+### Remove a question type
+
+1. Remove its entry from `QUESTION_TYPE_HANDLERS`.
+2. Remove its `QuestionRendererFactory.register(...)` line (and renderer import if unused).
+3. Remove editor/admin references to that type.
+
+This avoids touching the core game flow (`sendQuestion` / `endQuestion`) for every type deletion.

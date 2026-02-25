@@ -15,36 +15,28 @@ import { BossRenderer } from './BossRenderer.js?v=121';
  */
 export class QuestionRendererFactory {
   static currentRenderer = null;
+  static registry = new Map();
+
+  static register(type, RendererClass) {
+    if (!type || typeof type !== 'string' || typeof RendererClass !== 'function') return;
+    this.registry.set(type, RendererClass);
+  }
+
+  static unregister(type) {
+    if (!type || typeof type !== 'string') return;
+    this.registry.delete(type);
+  }
   
   /**
    * Create a renderer for the given question type
    */
   static create(questionData) {
     const type = questionData.type;
-    
-    switch (type) {
-      case 'single':
-        return new SingleChoiceRenderer(questionData);
-      
-      case 'multi':
-        return new MultiChoiceRenderer(questionData);
-      
-      case 'type':
-        return new TypeSprintRenderer(questionData);
-      
-      case 'match':
-        return new MatchRenderer(questionData);
-      
-      case 'order':
-        return new OrderRenderer(questionData);
-      
-      case 'boss':
-        return new BossRenderer(questionData);
-      
-      default:
-        console.warn(`Unknown question type: ${type}`);
-        return new SingleChoiceRenderer(questionData);
+    const RendererClass = this.registry.get(type) || this.registry.get('single') || SingleChoiceRenderer;
+    if (!this.registry.has(type)) {
+      console.warn(`Unknown question type: ${type}`);
     }
+    return new RendererClass(questionData);
   }
   
   /**
@@ -97,3 +89,10 @@ export class QuestionRendererFactory {
     }
   }
 }
+
+QuestionRendererFactory.register('single', SingleChoiceRenderer);
+QuestionRendererFactory.register('multi', MultiChoiceRenderer);
+QuestionRendererFactory.register('type', TypeSprintRenderer);
+QuestionRendererFactory.register('match', MatchRenderer);
+QuestionRendererFactory.register('order', OrderRenderer);
+QuestionRendererFactory.register('boss', BossRenderer);
