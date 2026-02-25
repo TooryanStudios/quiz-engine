@@ -1248,6 +1248,21 @@ io.on('connection', (socket) => {
 
   // ── HOST: Create a new room ──────────────────
   socket.on('host:create', async ({ quizSlug } = {}) => {
+    // Enforce single host per quiz — reject if an active room already exists for this slug
+    if (quizSlug) {
+      const existing = Array.from(rooms.values()).find(
+        (r) => r.quizSlug === quizSlug && r.state !== 'finished'
+      );
+      if (existing) {
+        socket.emit('room:error', {
+          message: 'هناك جلسة نشطة لهذا الكويز بالفعل. لا يمكن إنشاء جلسة أخرى.',
+          code: 'DUPLICATE_HOST',
+          existingPin: existing.pin,
+        });
+        return;
+      }
+    }
+
     const pin = generatePIN();
     const publicBaseUrl = resolveSocketPublicBaseUrl(socket);
 

@@ -1564,11 +1564,7 @@ document.getElementById('btn-become-player').addEventListener('click', () => {
   showView('view-player-join');
 });
 
-// Player Join — Back button
-document.getElementById('btn-back-from-join').addEventListener('click', () => {
-  Sounds.click();
-  showView('view-home');
-});
+// Player Join — Back button removed (players cannot navigate back to home)
 
 const closeJoinDebugBtn = document.getElementById('btn-close-join-debug');
 if (closeJoinDebugBtn) {
