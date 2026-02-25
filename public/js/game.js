@@ -1,11 +1,11 @@
 // ─────────────────────────────────────────────
 // ES6 Module Imports
 // ─────────────────────────────────────────────
-import { state, updateState, resetQuestionState} from './state/GameState.js';
-import { Sounds, setMuted, isMuted } from './utils/sounds.js?v=111';
-import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js';
-import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js';
-import { QuestionRendererFactory } from './renderers/QuestionRenderer.js';
+import { state, updateState, resetQuestionState} from './state/GameState.js?v=112';
+import { Sounds, setMuted, isMuted } from './utils/sounds.js?v=112';
+import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js?v=112';
+import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js?v=112';
+import { QuestionRendererFactory } from './renderers/QuestionRenderer.js?v=112';
 
 // Fetch and display server build time on home screen
 fetch('/api/build-info')
@@ -3902,4 +3902,4 @@ window._qState = state;
 window._renderHostQuestion = renderHostQuestion;
 window._renderPlayerQuestion = renderPlayerQuestion;
 window._showView = showView;
-console.log('[game.js v54] Debug surface ready: window._qState, window._renderHostQuestion');
+console.log('[game.js v55] Debug surface ready: window._qState, window._renderHostQuestion');
