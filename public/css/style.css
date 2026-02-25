@@ -1342,10 +1342,13 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
 /* Start Game row */
 .start-game-row {
   width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .start-game-row #btn-start-game {
-  width: 100%;
+  flex: 1;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1357,28 +1360,29 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
 }
 
 .share-trigger-btn {
-  width: 30px;
-  height: 30px;
+  width: 44px;
+  height: 44px;
   padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   background: rgba(99, 102, 241, 0.22);
   border: 1px solid rgba(99, 102, 241, 0.4);
-  border-radius: 8px;
+  border-radius: 12px;
   color: var(--text);
   cursor: pointer;
   transition: background 0.15s;
+  flex-shrink: 0;
 }
 .share-trigger-btn:hover { background: rgba(99,102,241,0.35); }
 .share-trigger-btn[aria-expanded="true"] { background: rgba(99,102,241,0.4); }
 
 .share-actions {
   position: absolute;
-  top: 0;
-  left: calc(100% + 6px);
+  bottom: calc(100% + 8px);
+  right: 0;
   transform: scale(0.9);
-  transform-origin: left center;
+  transform-origin: bottom right;
   display: flex;
   flex-direction: row;
   align-items: center;
