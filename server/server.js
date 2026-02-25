@@ -8,6 +8,7 @@ const os = require('os');
 const QRCode = require('qrcode');
 const config = require('../config');
 const { admin, getFirestore } = require('./firebaseAdmin');
+const { createQuestionTypeHandlers } = require('./questionTypes');
 
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
 const stripe = stripeSecretKey ? require('stripe')(stripeSecretKey) : null;
@@ -1071,190 +1072,13 @@ function getRoleForPlayer(room, playerId) {
   return null;
 }
 
-const QUESTION_TYPE_HANDLERS = {
-  single: {
-    buildQuestionPayload: ({ q }) => ({ options: q.options }),
-    evaluateAnswer: ({ q, player, answer, timeTaken, duration }) => {
-      const isCorrect = Boolean(answer && answer.answerIndex === q.correctIndex);
-      if (isCorrect) {
-        player.streak++;
-        player.maxStreak = Math.max(player.maxStreak, player.streak);
-      } else {
-        player.streak = 0;
-      }
-      return {
-        isCorrect,
-        roundScore: calculateScore(timeTaken, isCorrect, player.streak, duration),
-      };
-    },
-    buildCorrectReveal: ({ q }) => ({
-      correctIndex: q.correctIndex,
-      correctOption: q.options[q.correctIndex],
-    }),
-  },
-  multi: {
-    buildQuestionPayload: ({ q }) => ({ options: q.options }),
-    evaluateAnswer: ({ q, player, answer, timeTaken, duration }) => {
-      const submitted = [...(answer?.answerIndices || [])].sort((a, b) => a - b);
-      const correct = [...(q.correctIndices || [])].sort((a, b) => a - b);
-      const isCorrect = submitted.length === correct.length && submitted.every((v, i) => v === correct[i]);
-      if (isCorrect) {
-        player.streak++;
-        player.maxStreak = Math.max(player.maxStreak, player.streak);
-      } else {
-        player.streak = 0;
-      }
-      return {
-        isCorrect,
-        roundScore: calculateScore(timeTaken, isCorrect, player.streak, duration),
-      };
-    },
-    buildCorrectReveal: ({ q }) => ({
-      correctIndices: q.correctIndices,
-      correctOptions: (q.correctIndices || []).map((i) => q.options[i]),
-    }),
-  },
-  type: {
-    buildQuestionPayload: ({ q }) => ({ inputPlaceholder: q.inputPlaceholder || 'Type your answer' }),
-    evaluateAnswer: ({ q, player, answer, timeTaken, duration }) => {
-      const isCorrect = isTypedAnswerCorrect(answer, q.acceptedAnswers);
-      if (isCorrect) {
-        player.streak++;
-        player.maxStreak = Math.max(player.maxStreak, player.streak);
-      } else {
-        player.streak = 0;
-      }
-      return {
-        isCorrect,
-        roundScore: calculateScore(timeTaken, isCorrect, player.streak, duration),
-      };
-    },
-    buildCorrectReveal: ({ q }) => ({ acceptedAnswers: q.acceptedAnswers || [] }),
-  },
-  match: {
-    buildQuestionPayload: ({ room, q }) => {
-      const n = q.pairs.length;
-      const rightOrder = Array.from({ length: n }, (_, i) => i);
-      for (let i = n - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [rightOrder[i], rightOrder[j]] = [rightOrder[j], rightOrder[i]];
-      }
-      room.currentQuestionMeta.rightOrder = rightOrder;
-      return {
-        lefts: q.pairs.map((p) => p.left),
-        rights: rightOrder.map((i) => q.pairs[i].right),
-      };
-    },
-    evaluateAnswer: ({ room, q, player, answer, timeTaken, duration }) => {
-      const submitted = answer?.matches || [];
-      const rightOrder = room.currentQuestionMeta?.rightOrder || [];
-      let correct = 0;
-      for (let i = 0; i < q.pairs.length; i++) {
-        if (submitted[i] !== undefined && rightOrder[submitted[i]] === i) correct++;
-      }
-      const fraction = correct / q.pairs.length;
-      const isCorrect = fraction === 1;
-      if (isCorrect) {
-        player.streak++;
-        player.maxStreak = Math.max(player.maxStreak, player.streak);
-      } else {
-        player.streak = 0;
-      }
-      return {
-        isCorrect,
-        roundScore: calculatePartialScore(timeTaken, fraction, player.streak, duration),
-      };
-    },
-    buildCorrectReveal: ({ q }) => ({ correctPairs: q.pairs }),
-  },
-  order: {
-    buildQuestionPayload: ({ q }) => ({ items: q.items }),
-    evaluateAnswer: ({ q, player, answer, timeTaken, duration }) => {
-      const submitted = answer?.order || [];
-      let correct = 0;
-      q.correctOrder.forEach((itemIdx, pos) => {
-        if (submitted[pos] === itemIdx) correct++;
-      });
-      const fraction = correct / q.items.length;
-      const isCorrect = fraction === 1;
-      if (isCorrect) {
-        player.streak++;
-        player.maxStreak = Math.max(player.maxStreak, player.streak);
-      } else {
-        player.streak = 0;
-      }
-      return {
-        isCorrect,
-        roundScore: calculatePartialScore(timeTaken, fraction, player.streak, duration),
-      };
-    },
-    buildCorrectReveal: ({ q }) => ({
-      items: q.items,
-      correctOrder: q.correctOrder,
-    }),
-  },
-  boss: {
-    buildQuestionPayload: ({ room, q }) => {
-      const bossHp = Math.max(1, Number(q.bossHp) || 100);
-      room.currentQuestionMeta.bossName = q.bossName || 'Tooryan Boss';
-      room.currentQuestionMeta.bossMaxHp = bossHp;
-      room.currentQuestionMeta.bossRemainingHp = bossHp;
-      room.currentQuestionMeta.bossDefeated = false;
-      room.currentQuestionMeta.totalDamage = 0;
-      return {
-        options: q.options,
-        boss: {
-          name: room.currentQuestionMeta.bossName,
-          maxHp: room.currentQuestionMeta.bossMaxHp,
-          remainingHp: room.currentQuestionMeta.bossRemainingHp,
-        },
-      };
-    },
-    evaluateAnswer: ({ room, q, player, answer, timeTaken, duration, challengeSettings }) => {
-      const isCorrect = Boolean(answer && answer.answerIndex === q.correctIndex);
-      if (isCorrect) {
-        player.streak++;
-        player.maxStreak = Math.max(player.maxStreak, player.streak);
-      } else {
-        player.streak = 0;
-      }
-      const roundScore = calculateScore(timeTaken, isCorrect, player.streak, duration);
-      if (isCorrect && room.currentQuestionMeta) {
-        const damage = calculateBossDamage(timeTaken, duration, challengeSettings);
-        room.currentQuestionMeta.totalDamage += damage;
-      }
-      return { isCorrect, roundScore };
-    },
-    applyPostRound: ({ room, roundScores, challengeSettings }) => {
-      if (!room.currentQuestionMeta) return;
-      const remainingHp = Math.max(0, room.currentQuestionMeta.bossMaxHp - room.currentQuestionMeta.totalDamage);
-      room.currentQuestionMeta.bossRemainingHp = remainingHp;
-      room.currentQuestionMeta.bossDefeated = remainingHp <= 0;
-      if (room.currentQuestionMeta.bossDefeated) {
-        const teamBonus = Number(challengeSettings.bossTeamBonus || BOSS_TEAM_BONUS);
-        roundScores.forEach((entry) => {
-          const p = room.players.get(entry.id);
-          if (!p) return;
-          p.score += teamBonus;
-          entry.roundScore += teamBonus;
-          entry.totalScore = p.score;
-        });
-      }
-    },
-    buildCorrectReveal: ({ room, q, challengeSettings }) => ({
-      correctIndex: q.correctIndex,
-      correctOption: q.options[q.correctIndex],
-      boss: {
-        name: room.currentQuestionMeta?.bossName || q.bossName || 'Tooryan Boss',
-        maxHp: room.currentQuestionMeta?.bossMaxHp || Math.max(1, Number(q.bossHp) || 100),
-        remainingHp: room.currentQuestionMeta?.bossRemainingHp || 0,
-        totalDamage: room.currentQuestionMeta?.totalDamage || 0,
-        teamBonus: room.currentQuestionMeta?.bossDefeated ? Number(challengeSettings.bossTeamBonus || BOSS_TEAM_BONUS) : 0,
-        defeated: Boolean(room.currentQuestionMeta?.bossDefeated),
-      },
-    }),
-  },
-};
+const QUESTION_TYPE_HANDLERS = createQuestionTypeHandlers({
+  calculateScore,
+  calculatePartialScore,
+  isTypedAnswerCorrect,
+  calculateBossDamage,
+  BOSS_TEAM_BONUS,
+});
 
 function getQuestionTypeHandler(type) {
   return QUESTION_TYPE_HANDLERS[type] || QUESTION_TYPE_HANDLERS.single;
