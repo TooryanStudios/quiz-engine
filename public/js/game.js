@@ -573,11 +573,13 @@ function openAvatarPicker(currentAvatar, onSelect) {
     background: 'var(--surface, #1e1e2e)',
     border: '1px solid rgba(255,255,255,0.1)',
     borderRadius: '18px',
-    padding: '16px',
-    width: 'min(320px, 88vw)',
+    padding: '14px',
+    width: 'min(340px, 90vw)',
+    boxSizing: 'border-box',
+    overflow: 'hidden',
     display: 'grid',
     gridTemplateColumns: 'repeat(5, 1fr)',
-    gap: '8px',
+    gap: '6px',
   });
 
   AVATARS.forEach((emoji) => {
@@ -586,8 +588,9 @@ function openAvatarPicker(currentAvatar, onSelect) {
     btn.textContent = emoji;
     const isCurrent = emoji === currentAvatar;
     Object.assign(btn.style, {
-      fontSize: '1.8rem',
-      padding: '8px',
+      fontSize: '1.6rem',
+      padding: '0',
+      margin: '0',
       border: isCurrent ? '2px solid #7c3aed' : '2px solid transparent',
       borderRadius: '12px',
       background: isCurrent ? 'rgba(124,58,237,0.15)' : 'rgba(255,255,255,0.04)',
@@ -596,9 +599,12 @@ function openAvatarPicker(currentAvatar, onSelect) {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
+      width: '100%',
       aspectRatio: '1',
+      boxSizing: 'border-box',
       transition: 'none',
       WebkitTapHighlightColor: 'transparent',
+      minWidth: '0',
     });
 
     btn.addEventListener('click', (e) => {
