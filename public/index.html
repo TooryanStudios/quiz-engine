@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=91" />
+  <link rel="stylesheet" href="/css/style.css?v=92" />
   <!-- Prevent browser zoom (Ctrl+scroll, Ctrl+±, pinch) -->
   <script>
     document.addEventListener('wheel', function(e){ if(e.ctrlKey){ e.preventDefault(); } }, { passive: false });
@@ -54,9 +54,7 @@
   ═══════════════════════════════════════════ -->
   <div id="view-host-loading" class="view">
     <div class="card center-card host-loading-card" dir="rtl">
-      <video class="host-loading-video" autoplay loop muted playsinline>
-        <source src="/video/qyan_loading01.mp4" type="video/mp4" />
-      </video>
+      <div class="host-loading-brand"><span class="brand-blue">Q</span><span class="brand-yellow">Y</span><span class="brand-blue">an</span></div>
       <h2>يتم تحضير شي ممتع ..</h2>
     </div>
   </div>
@@ -578,6 +576,6 @@
   <!-- Load Socket.io client from the server (auto-served by socket.io) -->
   <script src="/socket.io/socket.io.js"></script>
   <!-- Main game logic (ES6 module) -->
-  <script type="module" src="/js/game.js?v=91"></script>
+  <script type="module" src="/js/game.js?v=92"></script>
 </body>
 </html>
