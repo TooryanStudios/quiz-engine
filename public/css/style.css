@@ -1561,7 +1561,7 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
 #view-host-lobby #btn-start-game {
   padding: 14px 20px;
   font-size: 1.05rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.5px;
 }
 #view-host-lobby #btn-start-game:not(:disabled):hover {
