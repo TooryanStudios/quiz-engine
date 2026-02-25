@@ -175,6 +175,19 @@ body {
   min-height: 100vh;
 }
 
+/* ── Scroll / pinch lock during active gameplay ── */
+html.gameplay-active,
+html.gameplay-active body {
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+  touch-action: pan-x pan-y;   /* allow individual scroll but block page bounce */
+}
+/* Full touch-action lock on gameplay views themselves */
+.view.active.gameplay-scroll-locked {
+  touch-action: none;
+  overscroll-behavior: none;
+}
+
 input, button, select, textarea {
   font-family: inherit;
 }

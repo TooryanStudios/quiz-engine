@@ -34,6 +34,19 @@ const questionMirror = window.opener || null;
 
 const PIN_MAX_LENGTH = 6;
 
+// Global scroll/pinch blocker — prevents iOS rubber-band and page scroll
+// during all gameplay views. Uses { passive: false } so preventDefault works.
+document.addEventListener('touchmove', (e) => {
+  if (!document.documentElement.classList.contains('gameplay-active')) return;
+  // Allow scrolling inside elements that explicitly need it (e.g. tall leaderboards)
+  let el = e.target;
+  while (el && el !== document.body) {
+    if (el.dataset && el.dataset.allowScroll) return; // opt-out with data-allow-scroll
+    el = el.parentElement;
+  }
+  e.preventDefault();
+}, { passive: false });
+
 function normalizePin(value) {
   if (value === null || value === undefined) return '';
   const chars = String(value).trim();
@@ -653,6 +666,16 @@ function showView(viewId, options = {}) {
 
     if (!options.skipUrlSync) {
       syncUrlForView(viewId, { replace: !!options.replaceHistory });
+    }
+
+    // Lock scroll/pinch during gameplay; release on safe views
+    const SCROLL_FREE_VIEWS = new Set(['view-home', 'view-game-over', 'view-room-closed']);
+    if (SCROLL_FREE_VIEWS.has(viewId)) {
+      document.documentElement.classList.remove('gameplay-active');
+      if (activeView) activeView.classList.remove('gameplay-scroll-locked');
+    } else {
+      document.documentElement.classList.add('gameplay-active');
+      if (activeView) activeView.classList.add('gameplay-scroll-locked');
     }
   } catch (err) {
     console.error('showView failed:', err);
