@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=90" />
+  <link rel="stylesheet" href="/css/style.css?v=91" />
   <!-- Prevent browser zoom (Ctrl+scroll, Ctrl+±, pinch) -->
   <script>
     document.addEventListener('wheel', function(e){ if(e.ctrlKey){ e.preventDefault(); } }, { passive: false });
@@ -202,7 +202,9 @@
         </div>
         <!-- Logo — right side of header -->
         <div class="host-header-logo">
-          <img class="studio-logo" src="/images/QYan_logo_300x164.jpg" alt="QYan logo" />
+          <a href="https://qyan-om.web.app/dashboard" target="_blank" rel="noopener noreferrer">
+            <img class="studio-logo" src="/images/QYan_logo_300x164.jpg" alt="QYan logo" />
+          </a>
         </div>
       </div>
 
@@ -576,6 +578,6 @@
   <!-- Load Socket.io client from the server (auto-served by socket.io) -->
   <script src="/socket.io/socket.io.js"></script>
   <!-- Main game logic (ES6 module) -->
-  <script type="module" src="/js/game.js?v=90"></script>
+  <script type="module" src="/js/game.js?v=91"></script>
 </body>
 </html>
