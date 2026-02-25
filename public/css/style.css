@@ -1342,10 +1342,9 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
    Share URL Bar
 ═══════════════════════════════════════════════════════════ */
 .share-url-section {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
+  position: relative;
+  flex-shrink: 0;
+  width: auto;
 }
 
 .share-trigger-btn {
@@ -1368,19 +1367,28 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
 .share-trigger-btn[aria-expanded="true"] { background: rgba(99,102,241,0.4); }
 
 .share-actions {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) scale(0.9);
+  transform-origin: bottom center;
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 6px;
-  overflow: hidden;
-  max-width: 0;
+  padding: 8px;
+  background: var(--surface-2);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px;
+  box-shadow: 0 -4px 20px rgba(0,0,0,0.35);
   opacity: 0;
   pointer-events: none;
-  transition: max-width 0.28s ease, opacity 0.22s ease;
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
 .share-actions.share-open {
-  max-width: 200px;
   opacity: 1;
   pointer-events: auto;
+  transform: translateX(-50%) scale(1);
 }
 
 .share-icon-btn {

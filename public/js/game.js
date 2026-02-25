@@ -1509,6 +1509,16 @@ document.addEventListener('click', (e) => {
   setShareOpen(false);
 });
 
+// Close share dropup when any share link/button inside is clicked
+if (shareActions) {
+  shareActions.addEventListener('click', (e) => {
+    const link = e.target.closest('.share-social-btn, .share-icon-btn');
+    if (link) {
+      setTimeout(() => setShareOpen(false), 150);
+    }
+  });
+}
+
 const hostMenuHostBtn = document.getElementById('btn-home-menu-host');
 const hostMenuPlayerBtn = document.getElementById('btn-home-menu-player');
 
