@@ -934,13 +934,40 @@ function applyModeInfo(data) {
   const shareInput = document.getElementById('share-url-input');
   if (shareInput && joinUrl) {
     shareInput.value = joinUrl;
-    const msg = encodeURIComponent(`Join my quiz game! 🎮 Click here to play: ${joinUrl}`);
+
+    // Random Arabic share messages — picked fresh on every lobby load
+    const _WA_MSGS = [
+      '🚨 وين أنت؟! الكويز شغّال والكل يلعب الحين! 😱🔥 انضم سريع 👇',
+      '🎮 دعوتك تلعب معي كويز تنافسي — هل تقدر تهزمني؟ 😏💥',
+      '🧠 أذكى شخص في المجموعة يثبت نفسه الحين! 👆 انضم للكويز 👇',
+      '⏳ عندك ثواني تنضم — الكويز ما ينتظر! 🎯🔥',
+      '🎯 يلّا! الكويز بدأ وكلهم ينتظرونك 👀🔥\nانضم الحين قبل ما تتأخر 👇',
+    ];
+    const _TG_MSGS = [
+      '🏆 تحدي الكويز شغّال! من يفوز يفوز — هل جاهز؟ 💪🧠',
+      '🎯 انضم قبل ما تضيّع فرصتك! الكويز بدأ الحين 🚀',
+      '🤔 سؤال: هل أنت أذكى من أصحابك؟ أثبت ذلك 👇🔥',
+      '👀 كلهم داخلين الكويز إلا أنت! شنو تنتظر؟ ⚡',
+      '⚡ تحدّي الكويز شغّال الحين! هل أنت من الأذكياء؟ 🧠💪\nانضم وأثبت نفسك 👇',
+    ];
+    const _TW_MSGS = [
+      '🧠 كويز الحين شغّال وأنت بعد ما دخلت؟! 😅🔥 #كويز #تحدي',
+      '🏆 من يجرؤ يلعب الكويز معي؟ 💪 #مسابقة #تحدي_الذكاء',
+      '⚡ ثانية واحدة تغيّر ترتيبك — انضم الكويز الحين! 🎮 #كويز',
+      '🎯 مش بس كويز — دا تحدي! هل عندك الشجاعة؟ 💥 #تحدي #كويز',
+      '🔥 كويز تنافسي شغّال الحين — هل عندك الجرأة؟ 🧠🏆 #كويز #تحدي #مسابقة',
+    ];
+    const _pick = arr => arr[Math.floor(Math.random() * arr.length)];
+    const _waText = `${_pick(_WA_MSGS)}\n\n${joinUrl}\n\nQYan`;
+    const _tgText = `${_pick(_TG_MSGS)}\n\n${joinUrl}\n\nQYan`;
+    const _twText = `${_pick(_TW_MSGS)}\n\n${joinUrl}\n\nQYan`;
+
     const wa = document.getElementById('share-whatsapp');
     const tg = document.getElementById('share-telegram');
     const tw = document.getElementById('share-twitter');
-    if (wa) wa.href = `https://wa.me/?text=${msg}`;
-    if (tg) tg.href = `https://t.me/share/url?url=${encodeURIComponent(joinUrl)}&text=${encodeURIComponent('Join my quiz game! 🎮')}`;
-    if (tw) tw.href = `https://x.com/intent/tweet?text=${msg}`;
+    if (wa) wa.href = `https://wa.me/?text=${encodeURIComponent(_waText)}`;
+    if (tg) tg.href = `https://t.me/share/url?text=${encodeURIComponent(_tgText)}`;
+    if (tw) tw.href = `https://x.com/intent/tweet?text=${encodeURIComponent(_twText)}`;
   }
 }
 
