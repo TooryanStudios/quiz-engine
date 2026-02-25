@@ -1705,6 +1705,42 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   letter-spacing: 3px;
 }
 
+.pin-code-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-refresh-pin {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(99, 102, 241, 0.18);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  border-radius: 10px;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s, transform 0.3s, opacity 0.2s;
+  flex-shrink: 0;
+}
+.btn-refresh-pin:hover { background: rgba(99,102,241,0.35); }
+.btn-refresh-pin:active { transform: rotate(180deg); }
+.btn-refresh-pin:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.btn-refresh-pin.spin svg {
+  animation: spin-once 0.5s ease;
+}
+@keyframes spin-once {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
 #view-host-lobby .qr-label {
   font-size: 0.68rem;
 }

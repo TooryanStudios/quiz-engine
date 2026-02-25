@@ -1687,6 +1687,15 @@ if (shareActions) {
 const hostMenuHostBtn = document.getElementById('btn-home-menu-host');
 const hostMenuPlayerBtn = document.getElementById('btn-home-menu-player');
 
+// Host Lobby — Refresh PIN button
+const refreshPinBtn = document.getElementById('btn-refresh-pin');
+if (refreshPinBtn) {
+  refreshPinBtn.addEventListener('click', () => {
+    Sounds.click();
+    socket.emit('host:refresh_pin');
+  });
+}
+
 function closeHostHomeMenu() {
   if (hostHomeMenu) hostHomeMenu.style.display = 'none';
 }
@@ -2142,8 +2151,26 @@ socket.on('room:created', ({ pin, ...modeInfo }) => {
   document.getElementById('host-player-count').textContent = '0';
   document.getElementById('host-player-list').innerHTML = '';
 
+  // Enable refresh button for fresh room
+  const refreshBtn = document.getElementById('btn-refresh-pin');
+  if (refreshBtn) refreshBtn.disabled = false;
+
   applyModeInfo(modeInfo);
   showView('view-host-lobby');
+});
+
+/** HOST: PIN refreshed successfully */
+socket.on('room:pin_refreshed', ({ pin, ...modeInfo }) => {
+  state.pin = pin;
+  document.getElementById('host-pin').textContent = pin;
+  applyModeInfo(modeInfo);
+
+  // Animate the button
+  const refreshBtn = document.getElementById('btn-refresh-pin');
+  if (refreshBtn) {
+    refreshBtn.classList.add('spin');
+    setTimeout(() => refreshBtn.classList.remove('spin'), 500);
+  }
 });
 
 /** HOST: Mode updated (local/global) */
@@ -2254,6 +2281,11 @@ socket.on('room:player_joined', ({ players }) => {
       }
       const startBtn = document.getElementById('btn-start-game');
       if (startBtn) startBtn.disabled = players.length === 0;
+
+      // Disable refresh once real players are in
+      const realCount = players.filter(p => !p.isHost).length;
+      const refreshBtn = document.getElementById('btn-refresh-pin');
+      if (refreshBtn) refreshBtn.disabled = realCount > 0;
     } else {
       const listEl = document.getElementById('player-player-list');
       const countEl = document.getElementById('player-player-count');

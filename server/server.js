@@ -1298,6 +1298,36 @@ io.on('connection', (socket) => {
     socket.emit('room:created', { pin, ...modePayload });
   });
 
+  // ── HOST: Refresh PIN (only when no players have joined) ────
+  socket.on('host:refresh_pin', async () => {
+    const room = findHostRoom(socket.id);
+    if (!room) { socket.emit('room:error', { message: 'Room not found.' }); return; }
+    if (room.state !== 'lobby') { socket.emit('room:error', { message: 'Can only refresh PIN in lobby.' }); return; }
+
+    // Count real (non-host) players
+    const realPlayers = Array.from(room.players.values()).filter(p => !p.isHostPlayer);
+    if (realPlayers.length > 0) {
+      socket.emit('room:error', { message: 'لا يمكن تغيير الرمز بعد انضمام لاعبين.', code: 'PLAYERS_PRESENT' });
+      return;
+    }
+
+    const oldPin = room.pin;
+    const newPin = generatePIN();
+
+    // Move room in the Map
+    rooms.delete(oldPin);
+    room.pin = newPin;
+    rooms.set(newPin, room);
+
+    // Move host socket to new channel
+    socket.leave(oldPin);
+    socket.join(newPin);
+
+    console.log(`[Room] PIN refreshed: ${oldPin} -> ${newPin} by host=${socket.id}`);
+    const modePayload = await buildRoomModePayload(room);
+    socket.emit('room:pin_refreshed', { pin: newPin, ...modePayload });
+  });
+
   // ── HOST: Join the game as a player too ───────
   socket.on('host:join_as_player', ({ nickname, avatar }) => {
     const room = Array.from(rooms.values()).find((r) => r.hostSocketId === socket.id);
