@@ -3704,7 +3704,7 @@ video.question-media {
 /* Ghost placeholder for already-placed pieces (kept in tray to prevent layout shift) */
 /* pointer-events kept ON so players can re-pick their placed pieces */
 .pp-piece--placed {
-  opacity: 0.22 !important;
+  opacity: 0.38 !important;
   transform: none !important;
   border-style: dashed !important;
   border-color: rgba(255,255,255,0.25) !important;

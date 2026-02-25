@@ -1,11 +1,11 @@
 // ─────────────────────────────────────────────
 // ES6 Module Imports
 // ─────────────────────────────────────────────
-import { state, updateState, resetQuestionState} from './state/GameState.js?v=114';
-import { Sounds, setMuted, isMuted } from './utils/sounds.js?v=114';
-import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js?v=114';
-import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js?v=114';
-import { QuestionRendererFactory } from './renderers/QuestionRenderer.js?v=114';
+import { state, updateState, resetQuestionState} from './state/GameState.js?v=115';
+import { Sounds, setMuted, isMuted } from './utils/sounds.js?v=115';
+import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js?v=115';
+import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js?v=115';
+import { QuestionRendererFactory } from './renderers/QuestionRenderer.js?v=115';
 
 // Fetch and display server build time on home screen
 fetch('/api/build-info')
@@ -3170,6 +3170,42 @@ let _puzzleSelected     = null; // currently selected piece index (player only)
 let _puzzleTimerHandle  = null;
 let _puzzleCurrentBoard = {};
 let _ppGhost            = null; // floating ghost element during touch drag
+let _puzzleCachedImg    = null; // preloaded Image object used for canvas drag-ghost rendering
+
+/**
+ * Create a small canvas snapshot of the given piece slice.
+ * Using a canvas as the setDragImage source means the drag ghost is
+ * always rendered from already-decoded pixels — no CSS background-image
+ * repaint, so the ghost never flashes black.
+ */
+function _makePieceDragCanvas(pieceIndex) {
+  const SIZE = 88;
+  const c = pieceIndex % _puzzleCols;
+  const r = Math.floor(pieceIndex / _puzzleCols);
+  const canvas = document.createElement('canvas');
+  canvas.width = SIZE; canvas.height = SIZE;
+  const ctx = canvas.getContext('2d');
+  if (_puzzleCachedImg && _puzzleCachedImg.complete && _puzzleCachedImg.naturalWidth > 0) {
+    const iw = _puzzleCachedImg.naturalWidth;
+    const ih = _puzzleCachedImg.naturalHeight;
+    ctx.drawImage(
+      _puzzleCachedImg,
+      c * (iw / _puzzleCols), r * (ih / _puzzleRows),
+      iw / _puzzleCols,       ih / _puzzleRows,
+      0, 0, SIZE, SIZE,
+    );
+  } else {
+    // Fallback: a blue tile with the piece number
+    ctx.fillStyle = '#1e3a5f';
+    ctx.fillRect(0, 0, SIZE, SIZE);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 20px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(pieceIndex + 1), SIZE / 2, SIZE / 2);
+  }
+  return canvas;
+}
 
 function _pieceBgStyle(col, rows, row, cols, imageUrl, size) {
   // CSS background slice trick
@@ -3210,6 +3246,14 @@ function _renderPuzzleBoard(containerId, board, cols, rows, imageUrl, myPieces, 
       cell.dataset.slot = String(slot);
       // No border-radius, no border → seamless image mosaic
       cell.style.cssText = `width:${SLOT}px;height:${SLOT}px;position:relative;box-sizing:border-box;overflow:hidden;cursor:${!isHost ? 'pointer' : 'default'};background-color:rgba(255,255,255,0.04);`;
+      // Pre-warm background-image so CSS paint cache has image decoded BEFORE
+      // a piece is first placed here — eliminates the black-flash on slot fill.
+      if (imageUrl) {
+        cell.style.backgroundImage    = `url('${imageUrl}')`;
+        cell.style.backgroundSize     = `${cols * SLOT}px ${rows * SLOT}px`;
+        cell.style.backgroundRepeat   = 'no-repeat';
+        cell.style.backgroundPosition = '-9999px 0'; // hidden until piece placed
+      }
       if (!isHost) {
         cell.addEventListener('click', () => {
           const boardEntry = _puzzleCurrentBoard[String(slot)];
@@ -3232,10 +3276,16 @@ function _renderPuzzleBoard(containerId, board, cols, rows, imageUrl, myPieces, 
         cell.addEventListener('dragstart', (e) => {
           const boardEntry = _puzzleCurrentBoard[String(slot)];
           if (boardEntry && _puzzleMyPieces.includes(boardEntry.pieceIndex)) {
-            _puzzleSelected = boardEntry.pieceIndex;
-            e.dataTransfer.setData('text/plain', String(boardEntry.pieceIndex));
+            const pi = boardEntry.pieceIndex;
+            _puzzleSelected = pi;
+            e.dataTransfer.setData('text/plain', String(pi));
             e.dataTransfer.effectAllowed = 'move';
-            setTimeout(() => { cell.style.opacity = '0.35'; }, 0);
+            // Canvas ghost — never flashes black regardless of CSS repaint
+            const dCanvas = _makePieceDragCanvas(pi);
+            e.dataTransfer.setDragImage(dCanvas, dCanvas.width / 2, dCanvas.height / 2);
+            // Un-place from this slot first so the server registers the move
+            socket.emit('puzzle:place', { pieceIndex: pi, slotIndex: slot });
+            setTimeout(() => { if (cell.isConnected) cell.style.opacity = '0.35'; }, 0);
           } else {
             e.preventDefault();
           }
@@ -3277,7 +3327,8 @@ function _renderPuzzleBoard(containerId, board, cols, rows, imageUrl, myPieces, 
       if (prevPiece !== String(placed.pieceIndex) || !cell.classList.contains('pp-slot--filled')) {
         const c = placed.pieceIndex % cols;
         const r = Math.floor(placed.pieceIndex / cols);
-        cell.style.backgroundImage    = `url('${imageUrl}')`;
+        // backgroundImage is pre-warmed in the build loop; just update position
+        if (!cell.style.backgroundImage && imageUrl) cell.style.backgroundImage = `url('${imageUrl}')`;
         cell.style.backgroundSize     = `${cols * SLOT}px ${rows * SLOT}px`;
         cell.style.backgroundPosition = `-${c * SLOT}px -${r * SLOT}px`;
         cell.style.backgroundRepeat   = 'no-repeat';
@@ -3304,9 +3355,8 @@ function _renderPuzzleBoard(containerId, board, cols, rows, imageUrl, myPieces, 
       }
     } else if (prevPiece !== undefined || cell.classList.contains('pp-slot--filled')) {
       // Slot was filled, now empty — restore empty state
-      cell.style.backgroundImage    = '';
-      cell.style.backgroundSize     = '';
-      cell.style.backgroundPosition = '';
+      // Keep backgroundImage in CSS cache (pre-warmed); just hide it off-screen
+      cell.style.backgroundPosition = '-9999px 0';
       cell.style.backgroundColor    = 'rgba(255,255,255,0.04)';
       cell.classList.remove('pp-slot--filled');
       cell.classList.add('pp-slot--empty');
@@ -3367,7 +3417,9 @@ function _renderMyPieces(myPieces, imageUrl, cols, rows, board, forceRebuild) {
         _puzzleSelected = pi;
         e.dataTransfer.setData('text/plain', String(pi));
         e.dataTransfer.effectAllowed = 'move';
-        // Delay so browser captures full-opacity ghost image first
+        // Canvas ghost — eliminates CSS background-image repaint flash entirely
+        const dCanvas = _makePieceDragCanvas(pi);
+        e.dataTransfer.setDragImage(dCanvas, dCanvas.width / 2, dCanvas.height / 2);
         setTimeout(() => { piece.style.opacity = '0.35'; }, 0);
       });
       piece.addEventListener('dragend', () => {
@@ -3514,7 +3566,8 @@ socket.on('puzzle:init', ({ questionIndex, total, question, imageUrl, cols, rows
     let _rendered = false;
     const _once = () => { if (_rendered) return; _rendered = true; _doPuzzleRender(); };
     const preloadImg = new Image();
-    preloadImg.onload = preloadImg.onerror = _once;
+    preloadImg.onload = () => { _puzzleCachedImg = preloadImg; _once(); };
+    preloadImg.onerror = _once;
     preloadImg.src = imageUrl;
     // Safety: render anyway after 4 s if image stalls
     setTimeout(_once, 4000);
