@@ -689,6 +689,10 @@ h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-dim); }
 
 .btn-host-ctrl:hover { filter: brightness(1.2); }
 
+.player-host-controls {
+  margin-bottom: 12px;
+}
+
 .btn-skip { background: #7c3aed; }
 .btn-end { background: #b91c1c; }
 

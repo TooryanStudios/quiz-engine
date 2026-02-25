@@ -1251,6 +1251,12 @@ function renderPlayerQuestion(data) {
       void layout.offsetWidth;
       layout.classList.add('animate-in');
     }
+    // Show host controls if host is playing as player (solo mode)
+    const phc = safeGet('player-host-controls');
+    if (phc) {
+      phc.style.display = (state.role === 'host' && state.hostIsPlayer) ? 'flex' : 'none';
+    }
+
     showView('view-player-question');
     if (window.__dbgLog) window.__dbgLog('renderPlayer: DONE (' + q.type + ')');
   } catch (err) {
@@ -2195,6 +2201,24 @@ document.getElementById('btn-end-game').addEventListener('click', () => {
   socket.emit('host:end');
 });
 
+// ── Host-as-player controls (solo mode) ──
+document.getElementById('btn-player-pause-resume').addEventListener('click', () => {
+  if (state.role !== 'host') return;
+  Sounds.click();
+  const btn = document.getElementById('btn-player-pause-resume');
+  if (btn.dataset.paused === 'true') {
+    socket.emit('host:resume');
+  } else {
+    socket.emit('host:pause');
+  }
+});
+
+document.getElementById('btn-player-end-game').addEventListener('click', () => {
+  if (state.role !== 'host') return;
+  Sounds.click();
+  socket.emit('host:end');
+});
+
 // Submit answer (multi / match / order / type)
 document.getElementById('btn-submit-answer').addEventListener('click', () => {
   if (state.hasAnswered || state.isFrozen) return;
@@ -2693,6 +2717,9 @@ socket.on('game:paused', () => {
   Sounds.pause();
   const btn = document.getElementById('btn-pause-resume');
   if (btn) { btn.textContent = '▶�? Resume'; btn.dataset.paused = 'true'; }
+  // Also update player-view pause button (solo mode)
+  const pbtn = document.getElementById('btn-player-pause-resume');
+  if (pbtn) { pbtn.textContent = '▶️ استئناف'; pbtn.dataset.paused = 'true'; }
   const overlay = document.getElementById('overlay-paused');
   const overlayBtn = document.getElementById('btn-overlay-resume');
   if (state.role === 'host') {
@@ -2712,6 +2739,9 @@ socket.on('game:resumed', ({ timeRemaining }) => {
   document.getElementById('btn-overlay-resume').style.display = 'none';
   const btn = document.getElementById('btn-pause-resume');
   if (btn) { btn.textContent = '�?��? Pause'; btn.dataset.paused = 'false'; }
+  // Also update player-view pause button (solo mode)
+  const pbtn2 = document.getElementById('btn-player-pause-resume');
+  if (pbtn2) { pbtn2.textContent = '⏸️ إيقاف'; pbtn2.dataset.paused = 'false'; }
   // Restart client timer with remaining seconds
   state.questionStartTime = Date.now() - ((state.questionDuration - timeRemaining) * 1000);
   const isHost = state.role === 'host';
