@@ -3,12 +3,12 @@
  * Factory that creates and manages question type renderers
  */
 
-import { SingleChoiceRenderer } from './SingleChoiceRenderer.js?v=117';
-import { MultiChoiceRenderer } from './MultiChoiceRenderer.js?v=117';
-import { TypeSprintRenderer } from './TypeSprintRenderer.js?v=117';
-import { MatchRenderer } from './MatchRenderer.js?v=117';
-import { OrderRenderer } from './OrderRenderer.js?v=117';
-import { BossRenderer } from './BossRenderer.js?v=117';
+import { SingleChoiceRenderer } from './SingleChoiceRenderer.js?v=118';
+import { MultiChoiceRenderer } from './MultiChoiceRenderer.js?v=118';
+import { TypeSprintRenderer } from './TypeSprintRenderer.js?v=118';
+import { MatchRenderer } from './MatchRenderer.js?v=118';
+import { OrderRenderer } from './OrderRenderer.js?v=118';
+import { BossRenderer } from './BossRenderer.js?v=118';
 
 /**
  * Question Renderer Factory

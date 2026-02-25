@@ -1,11 +1,11 @@
 // ─────────────────────────────────────────────
 // ES6 Module Imports
 // ─────────────────────────────────────────────
-import { state, updateState, resetQuestionState} from './state/GameState.js?v=117';
-import { Sounds, setMuted, isMuted } from './utils/sounds.js?v=117';
-import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js?v=117';
-import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js?v=117';
-import { QuestionRendererFactory } from './renderers/QuestionRenderer.js?v=117';
+import { state, updateState, resetQuestionState} from './state/GameState.js?v=118';
+import { Sounds, setMuted, isMuted } from './utils/sounds.js?v=118';
+import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js?v=118';
+import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js?v=118';
+import { QuestionRendererFactory } from './renderers/QuestionRenderer.js?v=118';
 
 // Fetch and display server build time on home screen
 fetch('/api/build-info')
@@ -3169,43 +3169,8 @@ let _puzzleMyPieces     = [];
 let _puzzleSelected     = null; // currently selected piece index (player only)
 let _puzzleTimerHandle  = null;
 let _puzzleCurrentBoard = {};
-let _ppGhost            = null; // floating ghost element during touch drag
 let _puzzleCachedImg    = null; // preloaded Image object used for canvas drag-ghost rendering
-
-/**
- * Create a small canvas snapshot of the given piece slice.
- * Using a canvas as the setDragImage source means the drag ghost is
- * always rendered from already-decoded pixels — no CSS background-image
- * repaint, so the ghost never flashes black.
- */
-function _makePieceDragCanvas(pieceIndex) {
-  const SIZE = 88;
-  const c = pieceIndex % _puzzleCols;
-  const r = Math.floor(pieceIndex / _puzzleCols);
-  const canvas = document.createElement('canvas');
-  canvas.width = SIZE; canvas.height = SIZE;
-  const ctx = canvas.getContext('2d');
-  if (_puzzleCachedImg && _puzzleCachedImg.complete && _puzzleCachedImg.naturalWidth > 0) {
-    const iw = _puzzleCachedImg.naturalWidth;
-    const ih = _puzzleCachedImg.naturalHeight;
-    ctx.drawImage(
-      _puzzleCachedImg,
-      c * (iw / _puzzleCols), r * (ih / _puzzleRows),
-      iw / _puzzleCols,       ih / _puzzleRows,
-      0, 0, SIZE, SIZE,
-    );
-  } else {
-    // Fallback: a blue tile with the piece number
-    ctx.fillStyle = '#1e3a5f';
-    ctx.fillRect(0, 0, SIZE, SIZE);
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 20px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(String(pieceIndex + 1), SIZE / 2, SIZE / 2);
-  }
-  return canvas;
-}
+let _puzzleDrag         = null; // matching-style pointer drag state
 
 function _pieceBgStyle(col, rows, row, cols, imageUrl, size) {
   // CSS background slice trick
@@ -3237,6 +3202,112 @@ function _selectPuzzlePiece(pieceIndex) {
 
 function _emitPuzzlePlace(pieceIndex, slotIndex) {
   socket.emit('puzzle:place', { pieceIndex, slotIndex });
+}
+
+function _getPuzzleDropzoneAt(x, y) {
+  for (const el of document.elementsFromPoint(x, y)) {
+    if (el && el.classList && el.classList.contains('pp-slot') && el.dataset.slot !== undefined) {
+      return el;
+    }
+  }
+  return null;
+}
+
+function _canDropPuzzlePiece(pieceIndex, slotIndex) {
+  const existing = _puzzleCurrentBoard[String(slotIndex)];
+  if (!existing) return true;
+  return _puzzleMyPieces.includes(existing.pieceIndex) || existing.pieceIndex === pieceIndex;
+}
+
+function _clearPuzzleDropHover() {
+  document.querySelectorAll('.pp-slot--hover').forEach((el) => el.classList.remove('pp-slot--hover'));
+}
+
+function _makePuzzlePointerGhost(pieceIndex) {
+  const SIZE = 88;
+  const col = pieceIndex % _puzzleCols;
+  const row = Math.floor(pieceIndex / _puzzleCols);
+  const ghost = document.createElement('div');
+  ghost.className = 'pp-piece';
+  ghost.style.cssText = [
+    `position:fixed`,
+    `pointer-events:none`,
+    `z-index:9999`,
+    `width:${SIZE}px`,
+    `height:${SIZE}px`,
+    `border-radius:8px`,
+    `border:2px solid var(--border,#444)`,
+    `opacity:0.92`,
+    `transform:scale(1.08) rotate(-1deg)`,
+    _pieceBgStyle(col, _puzzleRows, row, _puzzleCols, _puzzleImageUrl, SIZE),
+  ].join(';');
+  return ghost;
+}
+
+function _onPuzzlePointerMove(e) {
+  if (!_puzzleDrag) return;
+  _puzzleDrag.ghost.style.left = (e.clientX - _puzzleDrag.offsetX) + 'px';
+  _puzzleDrag.ghost.style.top  = (e.clientY - _puzzleDrag.offsetY) + 'px';
+
+  _clearPuzzleDropHover();
+  const dz = _getPuzzleDropzoneAt(e.clientX, e.clientY);
+  if (!dz) return;
+  const slotIndex = parseInt(dz.dataset.slot, 10);
+  if (!Number.isNaN(slotIndex) && _canDropPuzzlePiece(_puzzleDrag.pieceIndex, slotIndex)) {
+    dz.classList.add('pp-slot--hover');
+  }
+}
+
+function _onPuzzlePointerUp(e) {
+  if (!_puzzleDrag) return;
+
+  document.removeEventListener('pointermove', _onPuzzlePointerMove);
+  document.removeEventListener('pointerup', _onPuzzlePointerUp);
+
+  _puzzleDrag.sourceEl.style.opacity = '';
+  _puzzleDrag.ghost.remove();
+
+  const dz = _getPuzzleDropzoneAt(e.clientX, e.clientY);
+  if (dz) {
+    const slotIndex = parseInt(dz.dataset.slot, 10);
+    if (!Number.isNaN(slotIndex) && _canDropPuzzlePiece(_puzzleDrag.pieceIndex, slotIndex)) {
+      _emitPuzzlePlace(_puzzleDrag.pieceIndex, slotIndex);
+      _clearPuzzleSelection();
+    }
+  }
+
+  _clearPuzzleDropHover();
+  _puzzleDrag = null;
+}
+
+function _startPuzzlePointerDrag(e, pieceIndex, sourceEl) {
+  if (!_puzzleImageUrl) return;
+  e.preventDefault();
+
+  _selectPuzzlePiece(pieceIndex);
+
+  if (_puzzleDrag) {
+    _puzzleDrag.ghost?.remove();
+    document.removeEventListener('pointermove', _onPuzzlePointerMove);
+    document.removeEventListener('pointerup', _onPuzzlePointerUp);
+    _clearPuzzleDropHover();
+  }
+
+  const ghost = _makePuzzlePointerGhost(pieceIndex);
+  document.body.appendChild(ghost);
+  sourceEl.style.opacity = '0.28';
+
+  _puzzleDrag = {
+    pieceIndex,
+    sourceEl,
+    ghost,
+    offsetX: 44,
+    offsetY: 44,
+  };
+
+  _onPuzzlePointerMove(e);
+  document.addEventListener('pointermove', _onPuzzlePointerMove);
+  document.addEventListener('pointerup', _onPuzzlePointerUp, { once: true });
 }
 
 function _renderPuzzleBoard(containerId, board, cols, rows, imageUrl, myPieces, isHost, forceRebuild) {
@@ -3290,36 +3361,10 @@ function _renderPuzzleBoard(containerId, board, cols, rows, imageUrl, myPieces, 
             _selectPuzzlePiece(boardEntry.pieceIndex);
           }
         });
-        // Drag FROM a board slot (pick up your own placed piece)
-        // NOTE: do NOT emit puzzle:place here — the server handles the move
-        // atomically when the drop fires on the destination slot.
-        // Emitting un-place here triggers a board_update mid-drag which
-        // resets draggable='false' and locks the piece.
-        cell.addEventListener('dragstart', (e) => {
+        cell.addEventListener('pointerdown', (e) => {
           const boardEntry = _puzzleCurrentBoard[String(slot)];
-          if (boardEntry && _puzzleMyPieces.includes(boardEntry.pieceIndex)) {
-            const pi = boardEntry.pieceIndex;
-            _selectPuzzlePiece(pi);
-            e.dataTransfer.setData('text/plain', String(pi));
-            e.dataTransfer.effectAllowed = 'move';
-            const dCanvas = _makePieceDragCanvas(pi);
-            e.dataTransfer.setDragImage(dCanvas, dCanvas.width / 2, dCanvas.height / 2);
-            setTimeout(() => { if (cell.isConnected) cell.style.opacity = '0.35'; }, 0);
-          } else {
-            e.preventDefault();
-          }
-        });
-        cell.addEventListener('dragend', () => { cell.style.opacity = ''; });
-        cell.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; });
-        cell.addEventListener('drop', (e) => {
-          e.preventDefault();
-          const pi2 = parseInt(e.dataTransfer.getData('text/plain'), 10);
-          if (!isNaN(pi2)) {
-            const existing = _puzzleCurrentBoard[String(slot)];
-            if (existing && !_puzzleMyPieces.includes(existing.pieceIndex)) return;
-            _emitPuzzlePlace(pi2, slot);
-            _clearPuzzleSelection();
-          }
+          if (!boardEntry || !_puzzleMyPieces.includes(boardEntry.pieceIndex)) return;
+          _startPuzzlePointerDrag(e, boardEntry.pieceIndex, cell);
         });
       }
       // Slot number label (shown only when empty)
@@ -3336,10 +3381,8 @@ function _renderPuzzleBoard(containerId, board, cols, rows, imageUrl, myPieces, 
   el.querySelectorAll('.pp-slot').forEach((cell, slot) => {
     const placed      = board[String(slot)];
     const prevPiece   = cell.dataset.pieceIdx;
-    // Make ALL non-host slots always draggable so a mid-drag board_update
-    // never strips the attribute and locks an in-progress drag.
-    // The dragstart handler guards against dragging opponent pieces.
-    if (!isHost) cell.setAttribute('draggable', 'true');
+    // Keep pointer-based drag/drop only (matching-style); no HTML5 DnD lockups.
+    if (!isHost) cell.setAttribute('draggable', 'false');
 
     if (placed && placed.pieceIndex !== null) {
       // Only update DOM if this slot's content actually changed
@@ -3420,63 +3463,11 @@ function _renderMyPieces(myPieces, imageUrl, cols, rows, board, forceRebuild) {
           _selectPuzzlePiece(pi);
         }
       });
-      // HTML5 drag — canvas ghost; server handles move atomically on drop
-      piece.setAttribute('draggable', 'true');
-      piece.addEventListener('dragstart', (e) => {
-        _selectPuzzlePiece(pi);
-        e.dataTransfer.setData('text/plain', String(pi));
-        e.dataTransfer.effectAllowed = 'move';
-        // Canvas ghost — eliminates CSS background-image repaint flash entirely
-        const dCanvas = _makePieceDragCanvas(pi);
-        e.dataTransfer.setDragImage(dCanvas, dCanvas.width / 2, dCanvas.height / 2);
-        setTimeout(() => { piece.style.opacity = '0.35'; }, 0);
+      // Matching-style pointer drag/drop (works for mouse + touch + pen)
+      piece.setAttribute('draggable', 'false');
+      piece.addEventListener('pointerdown', (e) => {
+        _startPuzzlePointerDrag(e, pi, piece);
       });
-      piece.addEventListener('dragend', () => {
-        // Restore only if not yet placed (board_update will dim it if placed)
-        const isPlaced = Object.values(_puzzleCurrentBoard).some(p => p && p.pieceIndex === pi);
-        if (!isPlaced) piece.style.opacity = '';
-      });
-      // Touch drag (mobile / tablet)
-      piece.addEventListener('touchstart', (e) => {
-        const touch = e.touches[0];
-        _selectPuzzlePiece(pi);
-        if (_ppGhost) { _ppGhost.remove(); _ppGhost = null; }
-        _ppGhost = piece.cloneNode(true);
-        _ppGhost.classList.remove('pp-piece--selected');
-        Object.assign(_ppGhost.style, {
-          position: 'fixed',
-          zIndex: '9999',
-          pointerEvents: 'none',
-          opacity: '0.85',
-          transform: 'scale(1.12)',
-          top:  (touch.clientY - PIECE / 2) + 'px',
-          left: (touch.clientX - PIECE / 2) + 'px',
-          margin: '0',
-        });
-        document.body.appendChild(_ppGhost);
-        e.preventDefault();
-      }, { passive: false });
-      piece.addEventListener('touchmove', (e) => {
-        if (!_ppGhost) return;
-        const touch = e.touches[0];
-        _ppGhost.style.top  = (touch.clientY - PIECE / 2) + 'px';
-        _ppGhost.style.left = (touch.clientX - PIECE / 2) + 'px';
-        e.preventDefault();
-      }, { passive: false });
-      piece.addEventListener('touchend', (e) => {
-        const touch = e.changedTouches[0];
-        const target = document.elementFromPoint(touch.clientX, touch.clientY);
-        if (_ppGhost) { _ppGhost.remove(); _ppGhost = null; }
-        const slotEl = target && (target.closest ? target.closest('.pp-slot') : null);
-        if (slotEl && slotEl.parentElement) {
-          const slots = Array.from(slotEl.parentElement.querySelectorAll('.pp-slot'));
-          const si = slots.indexOf(slotEl);
-          if (si !== -1) {
-            _emitPuzzlePlace(pi, si);
-            _clearPuzzleSelection();
-          }
-        }
-      }, { passive: false });
       tray.appendChild(piece);
     }
   }

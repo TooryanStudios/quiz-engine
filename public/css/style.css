@@ -3686,6 +3686,11 @@ video.question-media {
 .pp-slot.pp-slot--empty:hover {
   background-color: rgba(255,255,255,0.1) !important;
 }
+.pp-slot.pp-slot--hover {
+  background-color: rgba(59,130,246,0.22) !important;
+  outline: 2px solid rgba(59,130,246,0.9);
+  outline-offset: -2px;
+}
 
 /* Piece tiles in player tray */
 .pp-piece {
