@@ -1339,10 +1339,8 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
    Share URL Bar
 ═══════════════════════════════════════════════════════════ */
 .share-url-section {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  z-index: 5;
+  position: relative;
+  display: inline-block;
 }
 
 .share-trigger-btn {
@@ -1380,11 +1378,35 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 50;
 }
 .share-actions.share-open {
   opacity: 1;
   pointer-events: auto;
   transform: scale(1);
+}
+
+/* Copy toast */
+.copy-toast {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-20px);
+  background: rgba(45, 212, 191, 0.95);
+  color: #032b24;
+  padding: 10px 24px;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  z-index: 10000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.copy-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
 .share-icon-btn {
@@ -1544,7 +1566,6 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
 }
 
 #view-host-lobby .pin-display {
-  position: relative;
   padding: 14px 12px;
   gap: 4px;
 }

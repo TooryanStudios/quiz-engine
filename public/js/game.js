@@ -1672,6 +1672,8 @@ document.getElementById('btn-share-copy').addEventListener('click', async () => 
     await navigator.clipboard.writeText(url);
     btn.title = 'Copied!';
     btn.classList.add('copied');
+    // Show toast
+    showCopyToast('تم نسخ الرابط ✅');
     setTimeout(() => {
       btn.title = 'Copy link';
       btn.classList.remove('copied');
@@ -1680,6 +1682,22 @@ document.getElementById('btn-share-copy').addEventListener('click', async () => 
     prompt('Copy this link:', url);
   }
 });
+
+function showCopyToast(msg) {
+  let toast = document.getElementById('copy-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'copy-toast';
+    toast.className = 'copy-toast';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.classList.remove('show');
+  void toast.offsetWidth; // reflow
+  toast.classList.add('show');
+  clearTimeout(toast._tid);
+  toast._tid = setTimeout(() => toast.classList.remove('show'), 2500);
+}
 
 // Host-as-Player toggle
 const chkHostAsPlayer = document.getElementById('chk-host-as-player');
