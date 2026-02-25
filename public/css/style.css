@@ -3688,14 +3688,18 @@ video.question-media {
   transform: scale(1.08);
 }
 /* Ghost placeholder for already-placed pieces (kept in tray to prevent layout shift) */
+/* pointer-events kept ON so players can re-pick their placed pieces */
 .pp-piece--placed {
-  opacity: 0.15 !important;
-  pointer-events: none !important;
-  cursor: default !important;
+  opacity: 0.22 !important;
   transform: none !important;
   border-style: dashed !important;
-  border-color: rgba(255,255,255,0.2) !important;
+  border-color: rgba(255,255,255,0.25) !important;
   box-shadow: none !important;
+  cursor: grab !important;
+}
+.pp-piece--placed:hover {
+  opacity: 0.45 !important;
+  border-color: rgba(255,255,255,0.55) !important;
 }
 
 /* Result board piece borders set inline (correct=green / wrong=red) */

@@ -1,11 +1,11 @@
 // ─────────────────────────────────────────────
 // ES6 Module Imports
 // ─────────────────────────────────────────────
-import { state, updateState, resetQuestionState} from './state/GameState.js?v=112';
-import { Sounds, setMuted, isMuted } from './utils/sounds.js?v=112';
-import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js?v=112';
-import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js?v=112';
-import { QuestionRendererFactory } from './renderers/QuestionRenderer.js?v=112';
+import { state, updateState, resetQuestionState} from './state/GameState.js?v=113';
+import { Sounds, setMuted, isMuted } from './utils/sounds.js?v=113';
+import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js?v=113';
+import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js?v=113';
+import { QuestionRendererFactory } from './renderers/QuestionRenderer.js?v=113';
 
 // Fetch and display server build time on home screen
 fetch('/api/build-info')
@@ -3212,14 +3212,35 @@ function _renderPuzzleBoard(containerId, board, cols, rows, imageUrl, myPieces, 
       cell.style.cssText = `width:${SLOT}px;height:${SLOT}px;position:relative;box-sizing:border-box;overflow:hidden;cursor:${!isHost ? 'pointer' : 'default'};background-color:rgba(255,255,255,0.04);`;
       if (!isHost) {
         cell.addEventListener('click', () => {
+          const boardEntry = _puzzleCurrentBoard[String(slot)];
           if (_puzzleSelected !== null) {
-            const existing = _puzzleCurrentBoard[String(slot)];
-            if (existing && !_puzzleMyPieces.includes(existing.pieceIndex)) return;
+            // Place selected piece into this slot (opponent's piece blocks)
+            if (boardEntry && !_puzzleMyPieces.includes(boardEntry.pieceIndex)) return;
             socket.emit('puzzle:place', { pieceIndex: _puzzleSelected, slotIndex: slot });
             _puzzleSelected = null;
             document.querySelectorAll('.pp-piece--selected').forEach(p => p.classList.remove('pp-piece--selected'));
+          } else if (boardEntry && _puzzleMyPieces.includes(boardEntry.pieceIndex)) {
+            // Pick up own piece from board slot → un-place it and select it
+            socket.emit('puzzle:place', { pieceIndex: boardEntry.pieceIndex, slotIndex: slot }); // same slot = server un-places
+            _puzzleSelected = boardEntry.pieceIndex;
+            document.querySelectorAll('.pp-piece--selected').forEach(p => p.classList.remove('pp-piece--selected'));
+            const trayPiece = document.querySelector(`#pp-tray [data-piece="${boardEntry.pieceIndex}"]`);
+            if (trayPiece) trayPiece.classList.add('pp-piece--selected');
           }
         });
+        // Drag FROM a board slot (pick up your own placed piece)
+        cell.addEventListener('dragstart', (e) => {
+          const boardEntry = _puzzleCurrentBoard[String(slot)];
+          if (boardEntry && _puzzleMyPieces.includes(boardEntry.pieceIndex)) {
+            _puzzleSelected = boardEntry.pieceIndex;
+            e.dataTransfer.setData('text/plain', String(boardEntry.pieceIndex));
+            e.dataTransfer.effectAllowed = 'move';
+            setTimeout(() => { cell.style.opacity = '0.35'; }, 0);
+          } else {
+            e.preventDefault();
+          }
+        });
+        cell.addEventListener('dragend', () => { cell.style.opacity = ''; });
         cell.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; });
         cell.addEventListener('drop', (e) => {
           e.preventDefault();
@@ -3245,8 +3266,11 @@ function _renderPuzzleBoard(containerId, board, cols, rows, imageUrl, myPieces, 
 
   // Patch each cell in-place — no DOM removal ⇒ no flicker
   el.querySelectorAll('.pp-slot').forEach((cell, slot) => {
-    const placed     = board[String(slot)];
-    const prevPiece  = cell.dataset.pieceIdx;
+    const placed      = board[String(slot)];
+    const prevPiece   = cell.dataset.pieceIdx;
+    const isMySlot    = placed && !isHost && myPieces && myPieces.includes(placed.pieceIndex);
+    // Make slot draggable if it holds the player's own piece
+    if (!isHost) cell.setAttribute('draggable', isMySlot ? 'true' : 'false');
 
     if (placed && placed.pieceIndex !== null) {
       // Only update DOM if this slot's content actually changed
@@ -3314,9 +3338,16 @@ function _renderMyPieces(myPieces, imageUrl, cols, rows, board, forceRebuild) {
       piece.className = 'pp-piece';
       piece.dataset.piece = String(pi);
       piece.style.cssText = `width:${PIECE}px;height:${PIECE}px;border-radius:8px;cursor:pointer;border:2px solid var(--border,#444);flex-shrink:0;${_pieceBgStyle(c, rows, r, cols, imageUrl, PIECE)}`;
-      // Click-to-select
+      // Click-to-select (works for both placed and unplaced pieces)
       piece.addEventListener('click', () => {
-        if (_puzzleSelected === pi) {
+        const boardSlotKey = Object.keys(_puzzleCurrentBoard).find(k => _puzzleCurrentBoard[k]?.pieceIndex === pi);
+        if (boardSlotKey !== undefined) {
+          // Piece is on the board — un-place it then select it
+          socket.emit('puzzle:place', { pieceIndex: pi, slotIndex: parseInt(boardSlotKey, 10) });
+          document.querySelectorAll('.pp-piece--selected').forEach(p => p.classList.remove('pp-piece--selected'));
+          _puzzleSelected = pi;
+          piece.classList.add('pp-piece--selected');
+        } else if (_puzzleSelected === pi) {
           _puzzleSelected = null;
           piece.classList.remove('pp-piece--selected');
         } else {
@@ -3325,9 +3356,14 @@ function _renderMyPieces(myPieces, imageUrl, cols, rows, board, forceRebuild) {
           piece.classList.add('pp-piece--selected');
         }
       });
-      // HTML5 drag (desktop) — dim in-place instead of hiding, preventing layout flash
+      // HTML5 drag — dim in-place instead of hiding; un-place first if already on board
       piece.setAttribute('draggable', 'true');
       piece.addEventListener('dragstart', (e) => {
+        const boardSlotKey = Object.keys(_puzzleCurrentBoard).find(k => _puzzleCurrentBoard[k]?.pieceIndex === pi);
+        if (boardSlotKey !== undefined) {
+          // Un-place from current board slot before dragging to new one
+          socket.emit('puzzle:place', { pieceIndex: pi, slotIndex: parseInt(boardSlotKey, 10) });
+        }
         _puzzleSelected = pi;
         e.dataTransfer.setData('text/plain', String(pi));
         e.dataTransfer.effectAllowed = 'move';
@@ -3342,6 +3378,11 @@ function _renderMyPieces(myPieces, imageUrl, cols, rows, board, forceRebuild) {
       // Touch drag (mobile / tablet)
       piece.addEventListener('touchstart', (e) => {
         const touch = e.touches[0];
+        // If piece is on the board, un-place it before dragging
+        const boardSlotKey = Object.keys(_puzzleCurrentBoard).find(k => _puzzleCurrentBoard[k]?.pieceIndex === pi);
+        if (boardSlotKey !== undefined) {
+          socket.emit('puzzle:place', { pieceIndex: pi, slotIndex: parseInt(boardSlotKey, 10) });
+        }
         _puzzleSelected = pi;
         document.querySelectorAll('.pp-piece--selected').forEach(p => p.classList.remove('pp-piece--selected'));
         piece.classList.add('pp-piece--selected');
@@ -3440,30 +3481,45 @@ socket.on('puzzle:init', ({ questionIndex, total, question, imageUrl, cols, rows
   stopClientTimer();
   if (_puzzleTimerHandle) { clearInterval(_puzzleTimerHandle); _puzzleTimerHandle = null; }
 
-  if (isHost) {
-    showView('view-host-puzzle');
-    const prg = document.getElementById('host-pp-progress');
-    if (prg) prg.textContent = `Q ${questionIndex + 1} / ${total}`;
-    const hint = document.getElementById('host-pp-hint');
-    if (hint) hint.textContent = question?.text || '';
-    _renderPuzzleBoard('host-pp-board', board, cols, rows, imageUrl, [], true, true);
-    _startPuzzleCountdown(duration, 'host-pp-timer');
-    // Player chips
-    const chipsEl = document.getElementById('host-pp-players');
-    if (chipsEl && players) {
-      chipsEl.innerHTML = players.map(p =>
-        `<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:rgba(255,255,255,.07);border-radius:20px;font-size:13px;">${escapeHtml(p.avatar)} ${escapeHtml(p.nickname)} <b>${p.score}</b></span>`
-      ).join('');
+  // Preload puzzle image BEFORE showing the view to eliminate the black-flash on first render
+  const _doPuzzleRender = () => {
+    if (isHost) {
+      showView('view-host-puzzle');
+      const prg = document.getElementById('host-pp-progress');
+      if (prg) prg.textContent = `Q ${questionIndex + 1} / ${total}`;
+      const hint = document.getElementById('host-pp-hint');
+      if (hint) hint.textContent = question?.text || '';
+      _renderPuzzleBoard('host-pp-board', board, cols, rows, imageUrl, [], true, true);
+      _startPuzzleCountdown(duration, 'host-pp-timer');
+      const chipsEl = document.getElementById('host-pp-players');
+      if (chipsEl && players) {
+        chipsEl.innerHTML = players.map(p =>
+          `<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:rgba(255,255,255,.07);border-radius:20px;font-size:13px;">${escapeHtml(p.avatar)} ${escapeHtml(p.nickname)} <b>${p.score}</b></span>`
+        ).join('');
+      }
+    } else {
+      showView('view-player-puzzle');
+      const prg = document.getElementById('pp-progress');
+      if (prg) prg.textContent = `Q ${questionIndex + 1} / ${total}`;
+      const hint = document.getElementById('pp-hint');
+      if (hint) hint.textContent = question?.text || '';
+      _renderPuzzleBoard('pp-board', board, cols, rows, imageUrl, myPieces, false, true);
+      _renderMyPieces(myPieces, imageUrl, cols, rows, board, true);
+      _startPuzzleCountdown(duration, 'pp-timer');
     }
+  };
+
+  if (imageUrl) {
+    // Preload image fully before rendering so slots never flash black
+    let _rendered = false;
+    const _once = () => { if (_rendered) return; _rendered = true; _doPuzzleRender(); };
+    const preloadImg = new Image();
+    preloadImg.onload = preloadImg.onerror = _once;
+    preloadImg.src = imageUrl;
+    // Safety: render anyway after 4 s if image stalls
+    setTimeout(_once, 4000);
   } else {
-    showView('view-player-puzzle');
-    const prg = document.getElementById('pp-progress');
-    if (prg) prg.textContent = `Q ${questionIndex + 1} / ${total}`;
-    const hint = document.getElementById('pp-hint');
-    if (hint) hint.textContent = question?.text || '';
-    _renderPuzzleBoard('pp-board', board, cols, rows, imageUrl, myPieces, false, true);
-    _renderMyPieces(myPieces, imageUrl, cols, rows, board, true);
-    _startPuzzleCountdown(duration, 'pp-timer');
+    _doPuzzleRender();
   }
 });
 
@@ -3902,4 +3958,4 @@ window._qState = state;
 window._renderHostQuestion = renderHostQuestion;
 window._renderPlayerQuestion = renderPlayerQuestion;
 window._showView = showView;
-console.log('[game.js v55] Debug surface ready: window._qState, window._renderHostQuestion');
+console.log('[game.js v56] Debug surface ready: window._qState, window._renderHostQuestion');
