@@ -3683,6 +3683,14 @@ video.question-media {
   box-sizing: border-box;
   touch-action: none;
   user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.pp-slot-num,
+.pp-owner-lbl {
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
 }
 /* Empty slot hover hint (player only) */
 .pp-slot.pp-slot--empty:hover {
@@ -3700,6 +3708,8 @@ video.question-media {
   transition: transform 0.12s, border-color 0.12s, opacity 0.15s;
   touch-action: none;
   user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 .pp-piece:not(.pp-piece--placed):hover {
   transform: scale(1.06);

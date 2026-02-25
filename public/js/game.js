@@ -1,11 +1,11 @@
 // ─────────────────────────────────────────────
 // ES6 Module Imports
 // ─────────────────────────────────────────────
-import { state, updateState, resetQuestionState} from './state/GameState.js?v=119';
-import { Sounds, setMuted, isMuted } from './utils/sounds.js?v=119';
-import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js?v=119';
-import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js?v=119';
-import { QuestionRendererFactory } from './renderers/QuestionRenderer.js?v=119';
+import { state, updateState, resetQuestionState} from './state/GameState.js?v=120';
+import { Sounds, setMuted, isMuted } from './utils/sounds.js?v=120';
+import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js?v=120';
+import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js?v=120';
+import { QuestionRendererFactory } from './renderers/QuestionRenderer.js?v=120';
 
 // Fetch and display server build time on home screen
 fetch('/api/build-info')
@@ -3372,7 +3372,7 @@ function _renderPuzzleBoard(containerId, board, cols, rows, imageUrl, myPieces, 
       const numEl = document.createElement('span');
       numEl.className = 'pp-slot-num';
       numEl.textContent = slot + 1;
-      numEl.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;opacity:0.18;pointer-events:none;';
+      numEl.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;opacity:0.18;pointer-events:none;user-select:none;-webkit-user-select:none;';
       cell.appendChild(numEl);
       el.appendChild(cell);
     }
@@ -3408,7 +3408,7 @@ function _renderPuzzleBoard(containerId, board, cols, rows, imageUrl, myPieces, 
           if (!lbl) {
             lbl = document.createElement('span');
             lbl.className  = 'pp-owner-lbl';
-            lbl.style.cssText = 'position:absolute;bottom:2px;left:0;right:0;text-align:center;font-size:10px;color:#fff;text-shadow:0 1px 3px #000;pointer-events:none;';
+            lbl.style.cssText = 'position:absolute;bottom:2px;left:0;right:0;text-align:center;font-size:10px;color:#fff;text-shadow:0 1px 3px #000;pointer-events:none;user-select:none;-webkit-user-select:none;';
             cell.appendChild(lbl);
           }
           lbl.textContent = placed.nickname;
