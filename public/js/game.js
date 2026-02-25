@@ -1103,6 +1103,38 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // ─────────────────────────────────────────────
+// Final Question Dramatic Overlay
+// ─────────────────────────────────────────────
+function showFinalQuestionOverlay() {
+  const overlay = document.getElementById('overlay-final-question');
+  if (!overlay) return;
+  overlay.style.display = 'flex';
+  overlay.style.opacity = '1';
+  overlay.classList.remove('final-q-fade-out');
+
+  // Re-trigger all animations
+  const content = overlay.querySelector('.final-q-content');
+  if (content) {
+    content.style.animation = 'none';
+    void content.offsetWidth;
+    content.style.animation = '';
+  }
+
+  Sounds.start(); // reuse the game-start sound for drama
+}
+
+function dismissFinalQuestionOverlay() {
+  const overlay = document.getElementById('overlay-final-question');
+  if (!overlay || overlay.style.display === 'none') return;
+  overlay.classList.add('final-q-fade-out');
+  setTimeout(() => {
+    overlay.style.display = 'none';
+    overlay.classList.remove('final-q-fade-out');
+    overlay.style.opacity = '';
+  }, 500);
+}
+
+// ─────────────────────────────────────────────
 // Question Rendering — dispatcher
 // ─────────────────────────────────────────────
 function renderQuestion(data, isHost) {
@@ -2755,6 +2787,11 @@ socket.on('game:question_preview', (data) => {
   showScholarPreview(data);
 });
 
+/** BOTH: Final question alert — dramatic overlay before last Q */
+socket.on('game:final_question', () => {
+  showFinalQuestionOverlay();
+});
+
 /** BOTH: New question */
 socket.on('game:question', (data) => {
   try {
@@ -2763,6 +2800,10 @@ socket.on('game:question', (data) => {
     state.isPaused = false;
     const pauseOverlay = document.getElementById('overlay-paused');
     if (pauseOverlay) pauseOverlay.style.display = 'none';
+
+    // Dismiss final-question overlay if still showing
+    dismissFinalQuestionOverlay();
+
     // If host is also playing, show the player (interactive) question view
     console.log('[v54] game:question fired, state.role=' + state.role + ', hostIsPlayer=' + state.hostIsPlayer + ', qi=' + data.questionIndex); if (window.__dbgLog) window.__dbgLog('game:Q role=' + state.role + ' qi=' + data.questionIndex);
     const isHostOnly = state.role === 'host' && !state.hostIsPlayer;

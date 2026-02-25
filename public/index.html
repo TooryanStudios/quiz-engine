@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=106" />
+  <link rel="stylesheet" href="/css/style.css?v=107" />
   <!-- Prevent browser zoom (Ctrl+scroll, Ctrl+±, pinch) -->
   <script>
     document.addEventListener('wheel', function(e){ if(e.ctrlKey){ e.preventDefault(); } }, { passive: false });
@@ -623,12 +623,34 @@
     </div>
   </div>
 
+  <!-- ═══════════════════════════════════════════
+       OVERLAY: Final Question Alert
+  ═══════════════════════════════════════════ -->
+  <div id="overlay-final-question" class="final-q-overlay" style="display:none">
+    <div class="final-q-particles" aria-hidden="true">
+      <span class="final-q-spark"></span>
+      <span class="final-q-spark"></span>
+      <span class="final-q-spark"></span>
+      <span class="final-q-spark"></span>
+      <span class="final-q-spark"></span>
+      <span class="final-q-spark"></span>
+      <span class="final-q-spark"></span>
+      <span class="final-q-spark"></span>
+    </div>
+    <div class="final-q-content">
+      <div class="final-q-icon">⚡</div>
+      <div class="final-q-title" dir="rtl">السؤال الأخير!</div>
+      <div class="final-q-subtitle" dir="rtl">استعدّ… هذه فرصتك الأخيرة!</div>
+      <div class="final-q-bar"></div>
+    </div>
+  </div>
+
   <!-- ─── Scripts ─── -->
   <!-- Confetti for game over celebration (async — non-blocking) -->
   <script async src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
   <!-- Load Socket.io client from the server (auto-served by socket.io) -->
   <script src="/socket.io/socket.io.js"></script>
   <!-- Main game logic (ES6 module) -->
-  <script type="module" src="/js/game.js?v=106"></script>
+  <script type="module" src="/js/game.js?v=107"></script>
 </body>
 </html>

@@ -1632,6 +1632,153 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   pointer-events: none;
 }
 
+/* ═══════════════════════════════════════════
+   Final Question Overlay
+═══════════════════════════════════════════ */
+.final-q-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99998;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, rgba(99, 102, 241, 0.25) 0%, rgba(10, 15, 30, 0.96) 70%);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  overflow: hidden;
+  transition: opacity 0.5s ease;
+}
+
+.final-q-overlay.final-q-fade-out {
+  opacity: 0 !important;
+  pointer-events: none;
+}
+
+/* Floating spark particles */
+.final-q-particles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.final-q-spark {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fbbf24;
+  box-shadow: 0 0 12px 4px rgba(251, 191, 36, 0.6);
+  animation: sparkFloat 2.5s ease-in-out infinite;
+}
+
+.final-q-spark:nth-child(1) { top: 15%; left: 10%; animation-delay: 0s; animation-duration: 2.2s; }
+.final-q-spark:nth-child(2) { top: 25%; left: 85%; animation-delay: 0.3s; animation-duration: 2.8s; background: #f472b6; box-shadow: 0 0 12px 4px rgba(244, 114, 182, 0.6); }
+.final-q-spark:nth-child(3) { top: 60%; left: 15%; animation-delay: 0.6s; animation-duration: 2.4s; background: #34d399; box-shadow: 0 0 12px 4px rgba(52, 211, 153, 0.6); }
+.final-q-spark:nth-child(4) { top: 70%; left: 80%; animation-delay: 0.9s; animation-duration: 2.6s; }
+.final-q-spark:nth-child(5) { top: 40%; left: 50%; animation-delay: 0.15s; animation-duration: 3s; background: #818cf8; box-shadow: 0 0 12px 4px rgba(129, 140, 248, 0.6); }
+.final-q-spark:nth-child(6) { top: 80%; left: 40%; animation-delay: 0.45s; animation-duration: 2.3s; background: #f472b6; box-shadow: 0 0 12px 4px rgba(244, 114, 182, 0.6); }
+.final-q-spark:nth-child(7) { top: 10%; left: 60%; animation-delay: 0.75s; animation-duration: 2.7s; background: #34d399; box-shadow: 0 0 12px 4px rgba(52, 211, 153, 0.6); }
+.final-q-spark:nth-child(8) { top: 50%; left: 25%; animation-delay: 1.05s; animation-duration: 2.1s; }
+
+@keyframes sparkFloat {
+  0%, 100% { transform: translateY(0) scale(1); opacity: 0.4; }
+  50%      { transform: translateY(-30px) scale(1.6); opacity: 1; }
+}
+
+/* Content container */
+.final-q-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  z-index: 1;
+  animation: finalQContentEnter 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes finalQContentEnter {
+  0%   { transform: scale(0.5) translateY(40px); opacity: 0; filter: blur(8px); }
+  60%  { transform: scale(1.05) translateY(-5px); opacity: 1; filter: blur(0); }
+  100% { transform: scale(1) translateY(0); opacity: 1; filter: blur(0); }
+}
+
+/* Lightning icon */
+.final-q-icon {
+  font-size: 5rem;
+  line-height: 1;
+  animation: finalQIconPulse 1.2s ease-in-out infinite;
+  filter: drop-shadow(0 0 20px rgba(251, 191, 36, 0.8));
+}
+
+@keyframes finalQIconPulse {
+  0%, 100% { transform: scale(1) rotate(-5deg); }
+  50%      { transform: scale(1.2) rotate(5deg); }
+}
+
+/* Title text */
+.final-q-title {
+  font-size: 3rem;
+  font-weight: 900;
+  color: #fff;
+  text-align: center;
+  text-shadow:
+    0 0 30px rgba(251, 191, 36, 0.7),
+    0 0 60px rgba(251, 191, 36, 0.3),
+    0 4px 12px rgba(0, 0, 0, 0.5);
+  animation: finalQTitleGlow 2s ease-in-out infinite alternate;
+}
+
+@keyframes finalQTitleGlow {
+  from { text-shadow: 0 0 30px rgba(251, 191, 36, 0.7), 0 0 60px rgba(251, 191, 36, 0.3), 0 4px 12px rgba(0, 0, 0, 0.5); }
+  to   { text-shadow: 0 0 50px rgba(129, 140, 248, 0.8), 0 0 100px rgba(129, 140, 248, 0.4), 0 4px 12px rgba(0, 0, 0, 0.5); }
+}
+
+/* Subtitle */
+.final-q-subtitle {
+  font-size: 1.2rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
+  text-align: center;
+  letter-spacing: 1px;
+  animation: finalQSubFade 1s ease 0.4s both;
+}
+
+@keyframes finalQSubFade {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Animated progress bar */
+.final-q-bar {
+  width: 200px;
+  height: 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.15);
+  margin-top: 8px;
+  overflow: hidden;
+  position: relative;
+}
+
+.final-q-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #fbbf24, #818cf8, #f472b6, #fbbf24);
+  background-size: 300% 100%;
+  animation: finalQBarFill 3.5s linear both, finalQBarShimmer 1.5s linear infinite;
+  transform-origin: left;
+}
+
+@keyframes finalQBarFill {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+@keyframes finalQBarShimmer {
+  from { background-position: 0% 0; }
+  to   { background-position: 300% 0; }
+}
+
 .share-icon-btn {
   flex-shrink: 0;
   width: 34px;

@@ -1237,7 +1237,18 @@ function endQuestion(room) {
       io.to(room.pin).emit('game:leaderboard', { leaderboard, isFinal: false });
       setTimeout(() => {
         room.questionIndex++;
-        sendQuestion(room);
+
+        // If the next question is the LAST one, send a dramatic alert first
+        const isNextLast = room.questionIndex >= room.questions.length - 1;
+        if (isNextLast) {
+          io.to(room.pin).emit('game:final_question');
+          // Delay the actual question to let the animation play
+          setTimeout(() => {
+            sendQuestion(room);
+          }, 4500);
+        } else {
+          sendQuestion(room);
+        }
       }, config.GAME.LEADERBOARD_DURATION_MS);
     }
   }, 2000);
