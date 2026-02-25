@@ -1351,6 +1351,31 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   flex: 1;
 }
 
+/* Solo Play button */
+.btn-solo {
+  width: 100%;
+  padding: 14px 20px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  border: 2px dashed rgba(124, 58, 237, 0.5);
+  border-radius: 14px;
+  background: rgba(124, 58, 237, 0.12);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, transform 0.1s;
+  touch-action: manipulation;
+}
+.btn-solo:hover {
+  background: rgba(124, 58, 237, 0.22);
+  border-color: rgba(124, 58, 237, 0.7);
+}
+.btn-solo:active {
+  transform: scale(0.97);
+}
+.btn-solo.hidden {
+  display: none;
+}
+
 /* ═══════════════════════════════════════════════════════════
    Share URL Bar
 ═══════════════════════════════════════════════════════════ */

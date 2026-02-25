@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=96" />
+  <link rel="stylesheet" href="/css/style.css?v=97" />
   <!-- Prevent browser zoom (Ctrl+scroll, Ctrl+±, pinch) -->
   <script>
     document.addEventListener('wheel', function(e){ if(e.ctrlKey){ e.preventDefault(); } }, { passive: false });
@@ -223,6 +223,11 @@
         <ul class="host-player-stage" id="host-player-list" aria-label="Players joined"></ul>
         <p class="player-waiting-msg" id="player-waiting-msg">يجب انضمام لاعب واحد على الأقل للبدء</p>
       </div>
+
+      <!-- Solo Play -->
+      <button class="btn btn-solo" id="btn-solo-play" dir="rtl">
+        🎯 العب وحدك
+      </button>
 
       <!-- Start Game + Share -->
       <div class="start-game-row">
@@ -610,6 +615,6 @@
   <!-- Load Socket.io client from the server (auto-served by socket.io) -->
   <script src="/socket.io/socket.io.js"></script>
   <!-- Main game logic (ES6 module) -->
-  <script type="module" src="/js/game.js?v=96"></script>
+  <script type="module" src="/js/game.js?v=97"></script>
 </body>
 </html>

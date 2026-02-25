@@ -2034,6 +2034,48 @@ document.getElementById('btn-start-game').addEventListener('click', () => {
   socket.emit('host:start');
 });
 
+// Solo Play — auto-join as player, then start once confirmed
+const soloPlayBtn = document.getElementById('btn-solo-play');
+if (soloPlayBtn) {
+  soloPlayBtn.addEventListener('click', () => {
+    Sounds.click();
+    soloPlayBtn.disabled = true;
+    soloPlayBtn.textContent = '⏳ جاري التحضير...';
+
+    // Generate a solo nickname
+    const soloNick = 'لاعب';
+    const soloAvatar = state.avatar || '🎮';
+
+    // Listen for join confirmation, then auto-start
+    const onJoined = ({ joined }) => {
+      if (joined) {
+        enableKeepAwake();
+        socket.emit('host:start');
+      } else {
+        soloPlayBtn.disabled = false;
+        soloPlayBtn.textContent = '🎯 العب وحدك';
+      }
+      socket.off('host:joined_as_player', onJoined);
+    };
+    socket.on('host:joined_as_player', onJoined);
+
+    socket.emit('host:join_as_player', { nickname: soloNick, avatar: soloAvatar });
+  });
+}
+
+/** Update solo button visibility based on player count */
+function updateSoloButtonVisibility(players) {
+  if (!soloPlayBtn) return;
+  const realCount = players.filter(p => !p.isHost).length;
+  if (realCount > 0) {
+    soloPlayBtn.classList.add('hidden');
+  } else {
+    soloPlayBtn.classList.remove('hidden');
+    soloPlayBtn.disabled = false;
+    soloPlayBtn.textContent = '🎯 العب وحدك';
+  }
+}
+
 document.getElementById('btn-copy-join-url').addEventListener('click', async () => {
   Sounds.click();
   const btn = document.getElementById('btn-copy-join-url');
@@ -2286,6 +2328,9 @@ socket.on('room:player_joined', ({ players }) => {
       const realCount = players.filter(p => !p.isHost).length;
       const refreshBtn = document.getElementById('btn-refresh-pin');
       if (refreshBtn) refreshBtn.disabled = realCount > 0;
+
+      // Show/hide solo button
+      updateSoloButtonVisibility(players);
     } else {
       const listEl = document.getElementById('player-player-list');
       const countEl = document.getElementById('player-player-count');
