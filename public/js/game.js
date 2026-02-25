@@ -550,6 +550,7 @@ function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
 function openAvatarPicker(currentAvatar, onSelect) {
   const modal = document.getElementById('avatar-picker-modal');
   const grid  = document.getElementById('modal-avatar-grid');
+  if (!modal || !grid) return;
 
   grid.innerHTML = '';
   AVATARS.forEach((a) => {
@@ -565,6 +566,7 @@ function openAvatarPicker(currentAvatar, onSelect) {
     grid.appendChild(btn);
   });
 
+  modal.dataset.openedAt = String(Date.now());
   modal.style.display = 'flex';
 }
 
@@ -573,6 +575,8 @@ document.getElementById('btn-close-avatar-picker').addEventListener('click', () 
   document.getElementById('avatar-picker-modal').style.display = 'none';
 });
 document.getElementById('avatar-picker-modal').addEventListener('click', (e) => {
+  const openedAt = Number(e.currentTarget.dataset.openedAt || 0);
+  if (openedAt && Date.now() - openedAt < 320) return;
   if (e.target === e.currentTarget) e.currentTarget.style.display = 'none';
 });
 
@@ -585,6 +589,7 @@ document.getElementById('avatar-picker-modal').addEventListener('click', (e) => 
   if (joinAvatarDisplay) joinAvatarDisplay.textContent = state.avatar || '🎮';
 
   let _pickerOpen = false;
+  let _lastTapAt = 0;
   function openJoinPicker() {
     if (_pickerOpen) return;
     _pickerOpen = true;
@@ -597,15 +602,18 @@ document.getElementById('avatar-picker-modal').addEventListener('click', (e) => 
     setTimeout(() => { _pickerOpen = false; }, 400);
   }
 
+  const onTap = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const now = Date.now();
+    if (now - _lastTapAt < 250) return;
+    _lastTapAt = now;
+    openJoinPicker();
+  };
+
   if (joinAvatarBtn) {
-    const onTap = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      openJoinPicker();
-    };
+    joinAvatarBtn.addEventListener('pointerup', onTap, { passive: false });
     joinAvatarBtn.addEventListener('click', onTap);
-    joinAvatarBtn.addEventListener('pointerdown', onTap, { passive: false });
-    joinAvatarBtn.addEventListener('touchend', onTap, { passive: false });
   }
 
   if (joinAvatarDisplay) {
