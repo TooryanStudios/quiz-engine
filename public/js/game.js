@@ -2312,6 +2312,8 @@ document.getElementById('btn-start-game').addEventListener('click', () => {
   const btn = document.getElementById('btn-start-game');
   btn.disabled = true;
   btn.textContent = '⏳ جاري التحضير...';
+  // Disable solo button to prevent double-click confusion
+  if (soloPlayBtn) soloPlayBtn.disabled = true;
   enableKeepAwake();
   Sounds.click();
   Sounds.start();
@@ -2326,6 +2328,9 @@ if (soloPlayBtn) {
     Sounds.click();
     soloPlayBtn.disabled = true;
     soloPlayBtn.textContent = '⏳ جاري التحضير...';
+    // Disable start game button to prevent double-click confusion
+    const startBtn = document.getElementById('btn-start-game');
+    if (startBtn) startBtn.disabled = true;
 
     // Generate a solo nickname
     const soloNick = 'لاعب';
@@ -2340,7 +2345,10 @@ if (soloPlayBtn) {
         socket.emit('host:start');
       } else {
         soloPlayBtn.disabled = false;
-        soloPlayBtn.textContent = '🎯 العب وحدك';
+        soloPlayBtn.textContent = '🎯 العب بنفسي';
+        // Re-enable start game button on failure
+        const startBtn = document.getElementById('btn-start-game');
+        if (startBtn) startBtn.disabled = false;
       }
       socket.off('host:joined_as_player', onJoined);
     };
@@ -2359,7 +2367,7 @@ function updateSoloButtonVisibility(players) {
   } else {
     soloPlayBtn.classList.remove('hidden');
     soloPlayBtn.disabled = false;
-    soloPlayBtn.textContent = '🎯 العب وحدك';
+    soloPlayBtn.textContent = '🎯 العب بنفسي';
   }
 }
 
