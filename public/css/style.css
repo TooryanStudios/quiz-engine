@@ -1094,6 +1094,26 @@ h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-dim); }
 
 .btn-back:hover { color: var(--text); }
 
+.btn-back-round {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+  touch-action: manipulation;
+}
+.btn-back-round:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: var(--text);
+}
+
 /* ═══════════════════════════════════════════
    Form Fields
 ═══════════════════════════════════════════ */
