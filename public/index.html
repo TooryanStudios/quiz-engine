@@ -476,55 +476,6 @@
   </div>
 
   <!-- ═══════════════════════════════════════════
-       VIEW: Picture Puzzle — Player
-  ═══════════════════════════════════════════ -->
-  <div id="view-player-puzzle" class="view">
-    <div class="puzzle-layout">
-      <div class="puzzle-header">
-        <span class="q-progress" id="pp-progress">Q 1 / 1</span>
-        <div class="timer-ring" style="width:50px;height:50px;">
-          <span class="timer-count" id="pp-timer" style="font-size:1.1rem;">60</span>
-        </div>
-      </div>
-      <p class="puzzle-hint" id="pp-hint">Arrange the pieces</p>
-      <div id="pp-board" style="margin:12px auto;"></div>
-      <div id="pp-tray"></div>
-      <!-- Result overlay (hidden until puzzle:resolved) -->
-      <div id="pp-result-wrap" style="display:none;">
-        <p style="text-align:center;font-weight:700;font-size:1.2rem;margin-bottom:8px;">النتيجة 🧩</p>
-        <div id="pp-result-board" style="margin:0 auto 12px;"></div>
-        <div id="pp-result-scores" style="max-width:360px;margin:0 auto;display:flex;flex-direction:column;gap:4px;"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ═══════════════════════════════════════════
-       VIEW: Picture Puzzle — Host
-  ═══════════════════════════════════════════ -->
-  <div id="view-host-puzzle" class="view">
-    <div class="puzzle-layout">
-      <div class="puzzle-header">
-        <span class="q-progress" id="host-pp-progress">Q 1 / 1</span>
-        <div class="host-controls" style="margin:0;">
-          <button class="btn btn-host-ctrl btn-end" id="btn-pp-end" onclick="socket.emit('host:end')">🛑 End Game</button>
-        </div>
-        <div class="timer-ring" style="width:50px;height:50px;">
-          <span class="timer-count" id="host-pp-timer" style="font-size:1.1rem;">60</span>
-        </div>
-      </div>
-      <p class="puzzle-hint" id="host-pp-hint">Picture Puzzle</p>
-      <div id="host-pp-board" style="margin:12px auto;"></div>
-      <div id="host-pp-players" style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:10px;"></div>
-      <!-- Result overlay -->
-      <div id="host-pp-result-wrap" style="display:none;">
-        <p style="text-align:center;font-weight:700;font-size:1.2rem;margin-bottom:8px;">النتيجة 🧩</p>
-        <div id="host-pp-result-board" style="margin:0 auto 12px;"></div>
-        <div id="host-pp-result-scores" style="max-width:420px;margin:0 auto;display:flex;flex-direction:column;gap:4px;"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ═══════════════════════════════════════════
        VIEW: Question Result (correct answer reveal)
   ═══════════════════════════════════════════ -->
   <div id="view-question-result" class="view">

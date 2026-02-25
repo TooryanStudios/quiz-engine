@@ -151,14 +151,28 @@ app.get('/api/quiz-info/:slug', async (req, res) => {
     const db = getDbSafe();
     if (db) {
       let data = null;
+      let updatedAt = null;
+
+      const getUpdatedAt = (obj) => {
+        const raw = obj?.updatedAt ?? obj?.editedAt ?? obj?.updated_at ?? null;
+        if (!raw) return null;
+        if (typeof raw?.toDate === 'function') return raw.toDate().toISOString();
+        if (typeof raw === 'string') return raw;
+        return null;
+      };
+
       // Try direct doc ID lookup first
       const docSnap = await db.collection('quizzes').doc(slug).get();
       if (docSnap.exists) {
         data = docSnap.data();
+        updatedAt = getUpdatedAt(data);
       } else {
         // Fall back to slug query
         const snap = await db.collection('quizzes').where('slug', '==', slug).limit(1).get();
-        if (!snap.empty) data = snap.docs[0].data();
+        if (!snap.empty) {
+          data = snap.docs[0].data();
+          updatedAt = getUpdatedAt(data);
+        }
       }
       if (data) {
         const questions = data.questions || [];
@@ -173,8 +187,28 @@ app.get('/api/quiz-info/:slug', async (req, res) => {
           title: data.title || slug,
           questionCount: questions.length,
           mediaAssets,
+          updatedAt,
         });
       }
+    }
+
+    // Firestore REST fallback (local dev / project mismatch scenarios)
+    // Uses FIREBASE_REST_API_KEY + FIREBASE_REST_PROJECT_ID env vars.
+    const restData = await getQuizDataFromRestApi(slug);
+    if (restData) {
+      const questions = restData.questions || [];
+      const mediaAssets = [];
+      questions.forEach((q, idx) => {
+        if (q.media && q.media.type && q.media.type !== 'none' && q.media.url) {
+          mediaAssets.push({ index: idx, type: q.media.type, url: q.media.url });
+        }
+      });
+      return res.json({
+        title: restData.title || slug,
+        questionCount: questions.length,
+        mediaAssets,
+        updatedAt: restData.updatedAt || null,
+      });
     }
   } catch (err) {
     console.error('[quiz-info] Error:', err.message);
@@ -602,6 +636,7 @@ function _firestoreValueToJs(value) {
   if ('integerValue' in value) return Number(value.integerValue);
   if ('doubleValue'  in value) return value.doubleValue;
   if ('booleanValue' in value) return value.booleanValue;
+  if ('timestampValue' in value) return value.timestampValue;
   if ('nullValue'    in value) return null;
   if ('arrayValue'   in value) return (value.arrayValue.values || []).map(_firestoreValueToJs);
   if ('mapValue'     in value) {
@@ -645,6 +680,7 @@ async function getQuizDataFromRestApi(quizId) {
         challengePreset: data.challengePreset || 'classic',
         challengeSettings: data.challengeSettings || null,
         randomizeQuestions: data.randomizeQuestions === true,
+        updatedAt: data.updatedAt || null,
       };
     }
     console.warn(`[Quiz REST] Document found but no questions array for "${quizId}"`);
@@ -791,13 +827,21 @@ async function getQuizData(quizSlug) {
 async function refreshQuestions(quizSlug) {
   console.log(`[Quiz] Refreshing questions for slug="${quizSlug}"`);
   const remote = await getQuizData(quizSlug);
-  const questions = remote?.questions || DEFAULT_QUESTIONS;
+  const remoteQuestions = Array.isArray(remote?.questions) ? remote.questions : DEFAULT_QUESTIONS;
+  const questions = remoteQuestions.filter((q) => q?.type !== 'puzzle');
+  if (remoteQuestions.length > 0 && questions.length !== remoteQuestions.length) {
+    console.warn(`[Quiz] Filtered out ${remoteQuestions.length - questions.length} deprecated puzzle question(s).`);
+  }
+  if (questions.length === 0) {
+    console.warn('[Quiz] No supported questions left after filtering; using fallback default questions.');
+  }
+  const finalQuestions = questions.length > 0 ? questions : DEFAULT_QUESTIONS;
   const challengeSettings = resolveChallengeSettings(remote);
   // Also keep global QUESTIONS in sync for legacy callers
-  QUESTIONS = questions;
-  console.log(`[Quiz] Loaded ${questions.length} questions (preset: ${remote?.challengePreset || 'classic'})`);
+  QUESTIONS = finalQuestions;
+  console.log(`[Quiz] Loaded ${finalQuestions.length} questions (preset: ${remote?.challengePreset || 'classic'})`);
   return {
-    questions,
+    questions: finalQuestions,
     challengePreset: remote?.challengePreset || 'classic',
     challengeSettings,
     randomizeQuestions: remote?.randomizeQuestions === true,
@@ -1334,238 +1378,6 @@ function endQuestion(room) {
 }
 
 // ─────────────────────────────────────────────
-// Picture Puzzle Mode
-// ─────────────────────────────────────────────
-const PUZZLE_BASE_SCORE  = 120;
-const PUZZLE_WRONG_PENALTY = 40;
-
-function startPuzzleRound(room, qIndex) {
-  const q = room.questions[qIndex];
-  if (!q || q.type !== 'puzzle') {
-    // Question isn't a puzzle — fall back to normal flow
-    sendQuestion(room);
-    return;
-  }
-
-  const cols     = Math.max(2, Math.min(4, Number(q.gridCols) || 3));
-  const rows     = Math.max(2, Math.min(4, Number(q.gridRows) || 3));
-  const total    = cols * rows;
-  const duration = Math.max(20, Number(q.duration) || 60);
-  const penalty  = q.puzzlePenalty === 'team' ? 'team' : 'individual';
-
-  // Scramble piece order
-  const pieceOrder = Array.from({ length: total }, (_, i) => i);
-  for (let i = total - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [pieceOrder[i], pieceOrder[j]] = [pieceOrder[j], pieceOrder[i]];
-  }
-
-  // Distribute pieces round-robin to players
-  const playerEntries = Array.from(room.players.entries());
-  const assignments       = {}; // socketId  -> pieceIndex[]
-  const pieceOwnerSocket  = {}; // pieceIndex -> socketId
-  const pieceOwnerPlayer  = {}; // pieceIndex -> playerId
-
-  for (const [sid] of playerEntries) assignments[sid] = [];
-  pieceOrder.forEach((pieceIdx, i) => {
-    if (!playerEntries.length) return;
-    const [sid, player] = playerEntries[i % playerEntries.length];
-    assignments[sid].push(pieceIdx);
-    pieceOwnerSocket[pieceIdx] = sid;
-    pieceOwnerPlayer[pieceIdx] = player.id;
-  });
-
-  room.puzzleState = {
-    qIndex, cols, rows, total, duration, penalty,
-    imageUrl: q.imageUrl || '',
-    board: {},                  // slotKey(string) -> { pieceIndex, playerId, socketId, nickname }
-    assignments,
-    pieceOwnerSocket,
-    pieceOwnerPlayer,
-    timer: null,
-    startTime: Date.now(),      // for computing timeRemaining on player rejoin
-  };
-
-  room.questionIndex = qIndex;
-  room.state = 'puzzle';
-  console.log(`[Room ${room.pin}] 🧩 Puzzle Q${qIndex + 1}: ${cols}×${rows}, ${total} pieces, penalty=${penalty}`);
-
-  // Send puzzle:init to each player (only their own pieces)
-  for (const [sid, player] of room.players) {
-    const sock = io.sockets.sockets.get(sid);
-    if (!sock) continue;
-    sock.emit('puzzle:init', {
-      questionIndex: qIndex,
-      total: room.questions.length,
-      question:  { text: q.text },
-      imageUrl:  q.imageUrl || '',
-      cols, rows,
-      myPieces:  assignments[sid] || [],
-      board:     room.puzzleState.board,
-      isHost:    false,
-      duration,
-      players:   getPlayerList(room),
-    });
-  }
-
-  // Send puzzle:init to host (all assignments visible)
-  const hostSock = io.sockets.sockets.get(room.hostSocketId);
-  if (hostSock) {
-    const assignSummary = {};
-    for (const [sid, pieces] of Object.entries(assignments)) {
-      const p = room.players.get(sid);
-      if (p) assignSummary[p.id] = { nickname: p.nickname, avatar: p.avatar || '🎮', pieces };
-    }
-    hostSock.emit('puzzle:init', {
-      questionIndex: qIndex,
-      total: room.questions.length,
-      question:     { text: q.text },
-      imageUrl:     q.imageUrl || '',
-      cols, rows,
-      myPieces:     [],
-      board:        room.puzzleState.board,
-      isHost:       true,
-      duration,
-      players:      getPlayerList(room),
-      assignments:  assignSummary,
-    });
-  }
-
-  // Auto-end when timer expires
-  room.puzzleState.timer = setTimeout(() => endPuzzleRound(room), duration * 1000);
-}
-
-function _handlePuzzlePlace(room, socket, pieceIndex, slotIndex) {
-  const player = room.players.get(socket.id);
-  if (!player) return;
-  const ps = room.puzzleState;
-  if (!ps) return;
-
-  // Ownership check
-  if (ps.pieceOwnerSocket[pieceIndex] !== socket.id) {
-    socket.emit('puzzle:error', { message: 'This piece is not yours.' });
-    return;
-  }
-  if (typeof slotIndex !== 'number' || slotIndex < 0 || slotIndex >= ps.total) return;
-
-  const slotKey = String(slotIndex);
-
-  // Remove the piece from wherever it was previously placed
-  for (const key of Object.keys(ps.board)) {
-    if (ps.board[key] && ps.board[key].pieceIndex === pieceIndex) {
-      if (key === slotKey) {
-        // Tapping the same slot again → un-place
-        delete ps.board[key];
-        broadcastPuzzleBoard(room);
-        return;
-      }
-      delete ps.board[key];
-      break;
-    }
-  }
-
-  // Check target slot isn't occupied by another player's piece
-  const existing = ps.board[slotKey];
-  if (existing && ps.pieceOwnerSocket[existing.pieceIndex] !== socket.id) {
-    socket.emit('puzzle:error', { message: 'That slot is occupied.' });
-    return;
-  }
-
-  ps.board[slotKey] = {
-    pieceIndex,
-    playerId:  player.id,
-    socketId:  socket.id,
-    nickname:  player.nickname,
-  };
-
-  broadcastPuzzleBoard(room);
-
-  // Auto-resolve when every slot is filled
-  if (Object.keys(ps.board).filter(k => ps.board[k]).length >= ps.total) {
-    clearTimeout(ps.timer);
-    endPuzzleRound(room);
-  }
-}
-
-function broadcastPuzzleBoard(room) {
-  if (!room.puzzleState) return;
-  io.to(room.pin).emit('puzzle:board_update', {
-    board:   room.puzzleState.board,
-    players: getPlayerList(room),
-  });
-}
-
-function endPuzzleRound(room) {
-  if (!room.puzzleState) return;
-  clearTimeout(room.puzzleState.timer);
-  room.puzzleState.timer = null;
-
-  const { cols, rows, total, board, penalty } = room.puzzleState;
-
-  // Init deltas for every player
-  const playerDeltas = {};
-  for (const [, player] of room.players) playerDeltas[player.id] = 0;
-
-  // Build result + score
-  const resultBoard = {};
-  for (let slot = 0; slot < total; slot++) {
-    const placed  = board[String(slot)];
-    const correct = placed && placed.pieceIndex === slot;
-    resultBoard[slot] = placed
-      ? { pieceIndex: placed.pieceIndex, correct: !!correct, placedBy: placed.playerId, nickname: placed.nickname }
-      : { pieceIndex: null, correct: false, placedBy: null, nickname: null };
-
-    if (!placed) continue;
-
-    if (correct) {
-      playerDeltas[placed.playerId] = (playerDeltas[placed.playerId] || 0) + PUZZLE_BASE_SCORE;
-    } else if (penalty === 'team') {
-      for (const id of Object.keys(playerDeltas)) {
-        playerDeltas[id] = (playerDeltas[id] || 0) - PUZZLE_WRONG_PENALTY;
-      }
-    } else {
-      playerDeltas[placed.playerId] = (playerDeltas[placed.playerId] || 0) - PUZZLE_WRONG_PENALTY;
-    }
-  }
-
-  // Apply score deltas
-  for (const [, player] of room.players) {
-    player.score = Math.max(0, (player.score || 0) + (playerDeltas[player.id] || 0));
-  }
-
-  io.to(room.pin).emit('puzzle:resolved', {
-    board:    resultBoard,
-    deltas:   playerDeltas,
-    players:  getPlayerList(room),
-    imageUrl: room.puzzleState.imageUrl,
-    cols, rows,
-  });
-
-  console.log(`[Room ${room.pin}] 🧩 Puzzle done. Deltas: ${JSON.stringify(playerDeltas)}`);
-  room.puzzleState = null;
-
-  // Advance
-  const isLast = room.questionIndex >= room.questions.length - 1;
-  if (isLast) {
-    setTimeout(() => {
-      const leaderboard = buildLeaderboard(room);
-      room.state = 'finished';
-      io.to(room.pin).emit('game:over', { leaderboard });
-    }, 5000);
-  } else {
-    setTimeout(() => {
-      room.questionIndex++;
-      const nextQ = room.questions[room.questionIndex];
-      if (nextQ && nextQ.type === 'puzzle') {
-        startPuzzleRound(room, room.questionIndex);
-      } else {
-        sendQuestion(room);
-      }
-    }, 5000);
-  }
-}
-
-// ─────────────────────────────────────────────
 // Socket.io Event Handlers
 // ─────────────────────────────────────────────
 io.on('connection', (socket) => {
@@ -1645,7 +1457,6 @@ io.on('connection', (socket) => {
       mode: activeMode,
       quizSlug: quizSlug || null,
       gameMode: gameMode || null,
-      puzzleState: null,
       questions: DEFAULT_QUESTIONS,
       challengePreset: 'classic',
       challengeSettings: getPresetSettings('classic'),
@@ -1984,13 +1795,7 @@ io.on('connection', (socket) => {
     // Send first question immediately — the clients' countdown overlay
     // gates the reveal so players get the full countdown experience.
     // The server timer is extended by 5s to account for the countdown.
-    const first = room.questions[0];
-    if (first && first.type === 'puzzle') {
-      // Puzzles have their own multi-phase flow; keep the countdown delay
-      setTimeout(() => startPuzzleRound(room, 0), 4500);
-    } else {
-      sendQuestion(room, { countdownExtraMs: 5000 });
-    }
+    sendQuestion(room, { countdownExtraMs: 5000 });
   });
 
   // ── HOST: Set connection mode (local/global) ─
@@ -2073,11 +1878,6 @@ io.on('connection', (socket) => {
     room.questionTimer = null;
     clearTimeout(room.previewTimer);
     room.previewTimer = null;
-    // Clear puzzle timer if ending mid-puzzle
-    if (room.puzzleState?.timer) {
-      clearTimeout(room.puzzleState.timer);
-      room.puzzleState.timer = null;
-    }
     room.paused = false;
     room.pausedTimeRemaining = 0;
     room.state = 'finished';
@@ -2252,16 +2052,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── PUZZLE: Player places or un-places a piece ─────────────────────────
-  socket.on('puzzle:place', ({ pieceIndex, slotIndex }) => {
-    const pin  = socket.data?.pin;
-    const room = pin
-      ? rooms.get(pin)
-      : Array.from(rooms.values()).find((r) => r.players.has(socket.id));
-    if (!room || room.state !== 'puzzle') return;
-    _handlePuzzlePlace(room, socket, pieceIndex, slotIndex);
-  });
-
   socket.on('role:shield', ({ targetId }) => {
     const pin = socket.data.pin;
     if (!pin) return;
@@ -2337,8 +2127,7 @@ io.on('connection', (socket) => {
       existingPlayer.disconnectTimer = null;
     }
 
-    // Re-map to the new socket — capture old IDs first (needed to update puzzle ownership)
-    const oldPlayerId   = existingPlayer.id;   // was set to old socket.id at join/previous-rejoin
+    // Re-map to the new socket
     room.players.delete(oldSocketId);
     existingPlayer.id = socket.id;
     existingPlayer.disconnected = false;
@@ -2346,21 +2135,6 @@ io.on('connection', (socket) => {
     socket.join(normalizedPin);
     socket.data.pin = normalizedPin;
     socket.data.isHost = false;
-
-    // If a puzzle is in progress, re-key the ownership maps from old → new socket ID
-    if (room.state === 'puzzle' && room.puzzleState) {
-      const ps = room.puzzleState;
-      if (ps.assignments[oldSocketId]) {
-        ps.assignments[socket.id] = ps.assignments[oldSocketId];
-        delete ps.assignments[oldSocketId];
-      }
-      for (const pi of Object.keys(ps.pieceOwnerSocket)) {
-        if (ps.pieceOwnerSocket[pi] === oldSocketId) ps.pieceOwnerSocket[pi] = socket.id;
-      }
-      for (const pi of Object.keys(ps.pieceOwnerPlayer)) {
-        if (ps.pieceOwnerPlayer[pi] === oldPlayerId) ps.pieceOwnerPlayer[pi] = socket.id;
-      }
-    }
 
     console.log(`[Room ${normalizedPin}] Player reconnected: ${existingPlayer.nickname} (${socket.id})`);
 
@@ -2392,26 +2166,6 @@ io.on('connection', (socket) => {
       });
     } else if (room.state === 'finished') {
       socket.emit('room:rejoined', { ...basePayload, leaderboard: buildLeaderboard(room) });
-    } else if (room.state === 'puzzle' && room.puzzleState) {
-      const ps = room.puzzleState;
-      const elapsed = ps.startTime ? (Date.now() - ps.startTime) / 1000 : 0;
-      const timeRemaining = Math.max(0, ps.duration - elapsed);
-      socket.emit('room:rejoined', {
-        ...basePayload,
-        puzzleData: {
-          questionIndex: room.questionIndex,
-          total: room.questions.length,
-          question: { text: room.questions[room.questionIndex]?.text || '' },
-          imageUrl: ps.imageUrl,
-          cols: ps.cols,
-          rows: ps.rows,
-          myPieces: ps.assignments[socket.id] || [],
-          board: ps.board,
-          duration: ps.duration,
-          timeRemaining,
-          players: getPlayerList(room),
-        },
-      });
     } else {
       socket.emit('room:rejoined', basePayload);
     }
