@@ -3681,6 +3681,8 @@ video.question-media {
 /* Slot cells — seamless mosaic board: no gaps, no borders, no rounded corners */
 .pp-slot {
   box-sizing: border-box;
+  touch-action: none;
+  user-select: none;
 }
 /* Empty slot hover hint (player only) */
 .pp-slot.pp-slot--empty:hover {
@@ -3696,6 +3698,8 @@ video.question-media {
 .pp-piece {
   box-sizing: border-box;
   transition: transform 0.12s, border-color 0.12s, opacity 0.15s;
+  touch-action: none;
+  user-select: none;
 }
 .pp-piece:not(.pp-piece--placed):hover {
   transform: scale(1.06);

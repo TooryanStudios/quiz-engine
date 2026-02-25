@@ -1,11 +1,11 @@
 // ─────────────────────────────────────────────
 // ES6 Module Imports
 // ─────────────────────────────────────────────
-import { state, updateState, resetQuestionState} from './state/GameState.js?v=118';
-import { Sounds, setMuted, isMuted } from './utils/sounds.js?v=118';
-import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js?v=118';
-import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js?v=118';
-import { QuestionRendererFactory } from './renderers/QuestionRenderer.js?v=118';
+import { state, updateState, resetQuestionState} from './state/GameState.js?v=119';
+import { Sounds, setMuted, isMuted } from './utils/sounds.js?v=119';
+import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js?v=119';
+import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js?v=119';
+import { QuestionRendererFactory } from './renderers/QuestionRenderer.js?v=119';
 
 // Fetch and display server build time on home screen
 fetch('/api/build-info')
@@ -3182,12 +3182,6 @@ function _pieceBgStyle(col, rows, row, cols, imageUrl, size) {
   ].join(';');
 }
 
-function _findPuzzlePieceSlot(pieceIndex) {
-  return Object.keys(_puzzleCurrentBoard).find(
-    (key) => _puzzleCurrentBoard[key]?.pieceIndex === pieceIndex,
-  );
-}
-
 function _clearPuzzleSelection() {
   _puzzleSelected = null;
   document.querySelectorAll('.pp-piece--selected').forEach((pieceEl) => pieceEl.classList.remove('pp-piece--selected'));
@@ -3250,10 +3244,12 @@ function _onPuzzlePointerMove(e) {
   _puzzleDrag.ghost.style.top  = (e.clientY - _puzzleDrag.offsetY) + 'px';
 
   _clearPuzzleDropHover();
+  _puzzleDrag.hoverSlot = null;
   const dz = _getPuzzleDropzoneAt(e.clientX, e.clientY);
   if (!dz) return;
   const slotIndex = parseInt(dz.dataset.slot, 10);
   if (!Number.isNaN(slotIndex) && _canDropPuzzlePiece(_puzzleDrag.pieceIndex, slotIndex)) {
+    _puzzleDrag.hoverSlot = slotIndex;
     dz.classList.add('pp-slot--hover');
   }
 }
@@ -3267,13 +3263,25 @@ function _onPuzzlePointerUp(e) {
   _puzzleDrag.sourceEl.style.opacity = '';
   _puzzleDrag.ghost.remove();
 
-  const dz = _getPuzzleDropzoneAt(e.clientX, e.clientY);
-  if (dz) {
-    const slotIndex = parseInt(dz.dataset.slot, 10);
-    if (!Number.isNaN(slotIndex) && _canDropPuzzlePiece(_puzzleDrag.pieceIndex, slotIndex)) {
-      _emitPuzzlePlace(_puzzleDrag.pieceIndex, slotIndex);
-      _clearPuzzleSelection();
+  if (_puzzleDrag.pointerId !== null && _puzzleDrag.sourceEl?.releasePointerCapture) {
+    try { _puzzleDrag.sourceEl.releasePointerCapture(_puzzleDrag.pointerId); } catch (_) {}
+  }
+
+  // Prefer last valid hovered slot (stable on touch), then fallback to hit-test at pointerup.
+  let targetSlot = _puzzleDrag.hoverSlot;
+  if (targetSlot === null || targetSlot === undefined) {
+    const dz = _getPuzzleDropzoneAt(e.clientX, e.clientY);
+    if (dz) {
+      const slotIndex = parseInt(dz.dataset.slot, 10);
+      if (!Number.isNaN(slotIndex) && _canDropPuzzlePiece(_puzzleDrag.pieceIndex, slotIndex)) {
+        targetSlot = slotIndex;
+      }
     }
+  }
+
+  if (targetSlot !== null && targetSlot !== undefined) {
+    _emitPuzzlePlace(_puzzleDrag.pieceIndex, targetSlot);
+    _clearPuzzleSelection();
   }
 
   _clearPuzzleDropHover();
@@ -3303,7 +3311,13 @@ function _startPuzzlePointerDrag(e, pieceIndex, sourceEl) {
     ghost,
     offsetX: 44,
     offsetY: 44,
+    hoverSlot: null,
+    pointerId: typeof e.pointerId === 'number' ? e.pointerId : null,
   };
+
+  if (_puzzleDrag.pointerId !== null && sourceEl?.setPointerCapture) {
+    try { sourceEl.setPointerCapture(_puzzleDrag.pointerId); } catch (_) {}
+  }
 
   _onPuzzlePointerMove(e);
   document.addEventListener('pointermove', _onPuzzlePointerMove);
@@ -3348,19 +3362,6 @@ function _renderPuzzleBoard(containerId, board, cols, rows, imageUrl, myPieces, 
         cell.style.backgroundPosition = '-9999px 0'; // hidden until piece placed
       }
       if (!isHost) {
-        cell.addEventListener('click', () => {
-          const boardEntry = _puzzleCurrentBoard[String(slot)];
-          if (_puzzleSelected !== null) {
-            // Place selected piece into this slot (opponent's piece blocks)
-            if (boardEntry && !_puzzleMyPieces.includes(boardEntry.pieceIndex)) return;
-            _emitPuzzlePlace(_puzzleSelected, slot);
-            _clearPuzzleSelection();
-          } else if (boardEntry && _puzzleMyPieces.includes(boardEntry.pieceIndex)) {
-            // Pick up own piece from board slot → un-place it and select it
-            _emitPuzzlePlace(boardEntry.pieceIndex, slot); // same slot = server un-places
-            _selectPuzzlePiece(boardEntry.pieceIndex);
-          }
-        });
         cell.addEventListener('pointerdown', (e) => {
           const boardEntry = _puzzleCurrentBoard[String(slot)];
           if (!boardEntry || !_puzzleMyPieces.includes(boardEntry.pieceIndex)) return;
@@ -3450,19 +3451,6 @@ function _renderMyPieces(myPieces, imageUrl, cols, rows, board, forceRebuild) {
       piece.className = 'pp-piece';
       piece.dataset.piece = String(pi);
       piece.style.cssText = `width:${PIECE}px;height:${PIECE}px;border-radius:8px;cursor:pointer;border:2px solid var(--border,#444);flex-shrink:0;${_pieceBgStyle(c, rows, r, cols, imageUrl, PIECE)}`;
-      // Click-to-select (works for both placed and unplaced pieces)
-      piece.addEventListener('click', () => {
-        const boardSlotKey = _findPuzzlePieceSlot(pi);
-        if (boardSlotKey !== undefined) {
-          // Piece is on the board — un-place it then select it
-          _emitPuzzlePlace(pi, parseInt(boardSlotKey, 10));
-          _selectPuzzlePiece(pi);
-        } else if (_puzzleSelected === pi) {
-          _clearPuzzleSelection();
-        } else {
-          _selectPuzzlePiece(pi);
-        }
-      });
       // Matching-style pointer drag/drop (works for mouse + touch + pen)
       piece.setAttribute('draggable', 'false');
       piece.addEventListener('pointerdown', (e) => {
