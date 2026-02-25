@@ -1135,15 +1135,18 @@ function showStartCountdown() {
     }, delay));
   });
 
-  // Mark countdown finished after GO! animation
+  // Mark countdown finished after GO! animation.
+  // Force BOTH flags true so GO always lasts exactly 1 second — no waiting
+  // for questionReady. The question is rendered in the background and will
+  // be visible the moment the overlay fades out.
   _countdownTimers.push(setTimeout(() => {
     state.countdownDone = true;
+    state.questionReady = true;
     revealQuestionIfReady();
   }, 4000));
 
-  // Safety net: force-hide overlay after 8s no matter what.
-  // Prevents the overlay from being permanently stuck if game:question
-  // is delayed (e.g. scholar preview) or never arrives.
+  // Cancel the 8s safety net — it's no longer needed since we force reveal at 4s.
+  // (Safety timer is still set below as a last-resort fallback.)
   _countdownSafetyTimer = setTimeout(() => {
     forceHideCountdownOverlay();
   }, 8000);
@@ -1204,7 +1207,7 @@ function revealQuestionIfReady() {
     overlay.style.display = 'none';
     overlay.classList.remove('countdown-fade-out');
     overlay.style.opacity = '';
-  }, 700);
+  }, 400);
 }
 
 document.addEventListener('visibilitychange', () => {
@@ -1270,11 +1273,13 @@ function renderQuestion(data, isHost) {
 
   // Coordinate with countdown overlay for first question
   if (state.countdownDone === false || state.questionReady === false) {
-    // First question — mark ready and let the countdown reveal handle animation
+    // Question arrived BEFORE countdown ended — pre-render into the hidden view.
+    // The countdown will reveal it when it finishes.
     state.questionReady = true;
     revealQuestionIfReady();
   } else {
-    // Subsequent questions — play entrance animation directly
+    // Either: question arrived AFTER we force-revealed at t=4000ms (rare, slow server)
+    // OR subsequent question — play entrance animation directly.
     const layoutId = isHost ? 'host-question-layout' : 'player-question-layout';
     const layout = document.getElementById(layoutId);
     if (layout) {
