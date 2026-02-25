@@ -7,9 +7,6 @@ import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS,
 import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js';
 import { QuestionRendererFactory } from './renderers/QuestionRenderer.js';
 
-// Expose state for debug hooks (remove when debug-dialog-hook.js is removed)
-window.__gameState = state;
-
 // Fetch and display server build time on home screen
 fetch('/api/build-info')
   .then((r) => r.json())
@@ -548,40 +545,81 @@ function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
 }
 
 // ─────────────────────────────────────────────
-// Avatar Picker Modal
+// Avatar Picker — Inline overlay (bypasses old modal)
 // ─────────────────────────────────────────────
 function openAvatarPicker(currentAvatar, onSelect) {
-  const modal = document.getElementById('avatar-picker-modal');
-  const grid  = document.getElementById('modal-avatar-grid');
-  if (!modal || !grid) return;
+  // Remove any existing picker overlay
+  const old = document.getElementById('avatar-inline-overlay');
+  if (old) old.remove();
 
-  grid.innerHTML = '';
-  AVATARS.forEach((a) => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'avatar-option' + (a === currentAvatar ? ' selected' : '');
-    btn.textContent = a;
-    btn.style.touchAction = 'manipulation';
-    btn.addEventListener('click', () => {
-      onSelect(a);
-      modal.style.display = 'none';
-    });
-    grid.appendChild(btn);
+  // Overlay backdrop
+  const overlay = document.createElement('div');
+  overlay.id = 'avatar-inline-overlay';
+  Object.assign(overlay.style, {
+    position: 'fixed',
+    inset: '0',
+    background: 'rgba(0,0,0,0.7)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: '100000',
+    padding: '16px',
+    backdropFilter: 'blur(4px)',
   });
 
-  modal.dataset.openedAt = String(Date.now());
-  modal.style.display = 'flex';
-}
+  // Compact dialog
+  const dialog = document.createElement('div');
+  Object.assign(dialog.style, {
+    background: 'var(--surface, #1e1e2e)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '18px',
+    padding: '16px',
+    width: 'min(320px, 88vw)',
+    display: 'grid',
+    gridTemplateColumns: 'repeat(5, 1fr)',
+    gap: '8px',
+  });
 
-// Close modal via × button or clicking the backdrop
-document.getElementById('btn-close-avatar-picker').addEventListener('click', () => {
-  document.getElementById('avatar-picker-modal').style.display = 'none';
-});
-document.getElementById('avatar-picker-modal').addEventListener('click', (e) => {
-  const openedAt = Number(e.currentTarget.dataset.openedAt || 0);
-  if (openedAt && Date.now() - openedAt < 320) return;
-  if (e.target === e.currentTarget) e.currentTarget.style.display = 'none';
-});
+  AVATARS.forEach((emoji) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = emoji;
+    const isCurrent = emoji === currentAvatar;
+    Object.assign(btn.style, {
+      fontSize: '1.8rem',
+      padding: '8px',
+      border: isCurrent ? '2px solid #7c3aed' : '2px solid transparent',
+      borderRadius: '12px',
+      background: isCurrent ? 'rgba(124,58,237,0.15)' : 'rgba(255,255,255,0.04)',
+      cursor: 'pointer',
+      touchAction: 'manipulation',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      aspectRatio: '1',
+      transition: 'none',
+      WebkitTapHighlightColor: 'transparent',
+    });
+
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      overlay.remove();
+      onSelect(emoji);
+    });
+
+    dialog.appendChild(btn);
+  });
+
+  overlay.appendChild(dialog);
+
+  // Tap backdrop to close (no selection)
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+
+  document.body.appendChild(overlay);
+}
 
 // Join form — avatar trigger
 {
@@ -591,32 +629,21 @@ document.getElementById('avatar-picker-modal').addEventListener('click', (e) => 
   // Sync initial display with state
   if (joinAvatarDisplay) joinAvatarDisplay.textContent = state.avatar || '🎮';
 
-  let _pickerOpen = false;
-  let _lastTapAt = 0;
   function openJoinPicker() {
-    if (_pickerOpen) return;
-    _pickerOpen = true;
-    openAvatarPicker(state.avatar, (a) => {
-      state.avatar = a;
-      if (joinAvatarDisplay) joinAvatarDisplay.textContent = a;
+    openAvatarPicker(state.avatar, (emoji) => {
+      state.avatar = emoji;
+      if (joinAvatarDisplay) joinAvatarDisplay.textContent = emoji;
       const lbl = document.querySelector('#join-avatar-btn .avatar-trigger-label');
       if (lbl) lbl.textContent = 'Avatar selected ✓';
     });
-    setTimeout(() => { _pickerOpen = false; }, 400);
   }
 
-  const onTap = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const now = Date.now();
-    if (now - _lastTapAt < 250) return;
-    _lastTapAt = now;
-    openJoinPicker();
-  };
-
   if (joinAvatarBtn) {
-    joinAvatarBtn.addEventListener('pointerup', onTap, { passive: false });
-    joinAvatarBtn.addEventListener('click', onTap);
+    joinAvatarBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openJoinPicker();
+    });
   }
 
   if (joinAvatarDisplay) {
@@ -626,17 +653,6 @@ document.getElementById('avatar-picker-modal').addEventListener('click', (e) => 
       openJoinPicker();
     });
   }
-
-  // Listen for avatar picks from the debug dialog hook
-  document.addEventListener('dbg:avatar-selected', (e) => {
-    const emoji = e.detail?.avatar;
-    if (!emoji) return;
-    state.avatar = emoji;
-    if (joinAvatarDisplay) joinAvatarDisplay.textContent = emoji;
-    const lbl = document.querySelector('#join-avatar-btn .avatar-trigger-label');
-    if (lbl) lbl.textContent = 'Avatar selected ✓';
-    console.log('[game.js] Avatar synced from debug hook:', emoji);
-  });
 }
 
 

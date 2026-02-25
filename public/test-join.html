@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Join Test - Minimal</title>
+  <style>
+    body { font-family: monospace; background: #111; color: #0f0; padding: 20px; }
+    .log { white-space: pre-wrap; font-size: 13px; line-height: 1.6; }
+    input { font-size: 16px; padding: 8px; margin: 4px; background: #222; color: #0f0; border: 1px solid #0f0; }
+    button { font-size: 16px; padding: 8px 16px; margin: 4px; background: #0f0; color: #111; border: none; cursor: pointer; font-weight: bold; }
+    .view { display: none; border: 2px solid #0f0; padding: 20px; margin: 10px 0; }
+    .view.active { display: block; }
+  </style>
+</head>
+<body>
+  <h2>🧪 Minimal Join Test (v51)</h2>
+  <div id="log" class="log"></div>
+
+  <div id="view-join" class="view active">
+    <h3>JOIN VIEW</h3>
+    <input id="pin" placeholder="Room PIN" />
+    <input id="nick" placeholder="Nickname" value="TestPlayer" />
+    <button id="btn-join">Join</button>
+  </div>
+
+  <div id="view-lobby" class="view">
+    <h3>✅ LOBBY VIEW — JOIN SUCCEEDED!</h3>
+    <p>PIN: <span id="lobby-pin"></span></p>
+    <p>Players: <span id="lobby-players"></span></p>
+  </div>
+
+  <div id="view-error" class="view">
+    <h3>❌ ERROR</h3>
+    <p id="error-msg"></p>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    var logEl = document.getElementById('log');
+    function log(msg) {
+      var ts = new Date().toLocaleTimeString();
+      logEl.textContent += '[' + ts + '] ' + msg + '\n';
+      console.log('[test] ' + msg);
+    }
+
+    function showView(id) {
+      document.querySelectorAll('.view').forEach(function(v) {
+        v.classList.remove('active');
+      });
+      var el = document.getElementById(id);
+      if (el) {
+        el.classList.add('active');
+        log('View switched to: ' + id);
+      } else {
+        log('ERROR: view ' + id + ' not found!');
+      }
+    }
+
+    log('Page loaded, connecting socket...');
+
+    var socket;
+    try {
+      socket = io(window.location.origin);
+      log('io() called');
+    } catch (e) {
+      log('io() FAILED: ' + e.message);
+    }
+
+    socket.on('connect', function() {
+      log('Socket connected: ' + socket.id);
+    });
+
+    socket.on('connect_error', function(err) {
+      log('Socket connect_error: ' + (err.message || err));
+    });
+
+    socket.on('disconnect', function(reason) {
+      log('Socket disconnected: ' + reason);
+    });
+
+    socket.on('room:joined', function(data) {
+      log('*** room:joined RECEIVED ***');
+      log('Data: ' + JSON.stringify(data));
+      try {
+        document.getElementById('lobby-pin').textContent = data.pin;
+        document.getElementById('lobby-players').textContent = 
+          (data.players || []).map(function(p) { return p.nickname; }).join(', ');
+        showView('view-lobby');
+      } catch (e) {
+        log('room:joined handler error: ' + e.message);
+        showView('view-lobby');
+      }
+    });
+
+    socket.on('room:error', function(data) {
+      log('room:error: ' + data.message);
+      document.getElementById('error-msg').textContent = data.message;
+      showView('view-error');
+    });
+
+    document.getElementById('btn-join').addEventListener('click', function() {
+      var pin = document.getElementById('pin').value.trim();
+      var nick = document.getElementById('nick').value.trim();
+      if (!pin || !nick) {
+        log('Missing PIN or nickname');
+        return;
+      }
+      log('Emitting player:join pin=' + pin + ' nickname=' + nick + ' connected=' + socket.connected);
+      socket.emit('player:join', { 
+        pin: pin, 
+        nickname: nick, 
+        avatar: '🦊', 
+        playerId: 'test-' + Date.now() 
+      });
+      log('Emit sent, waiting for room:joined...');
+    });
+
+    log('Script fully loaded');
+  </script>
+</body>
+</html>
