@@ -266,13 +266,14 @@ html.autohost-launch #view-host-loading.active {
 }
 
 .host-loading-card h2 {
-  font-size: 1.5rem;
-  font-weight: 800;
+  font-size: 1.3rem;
+  font-weight: 300;
+  color: var(--text-dim);
 }
 
-.host-loading-logo {
-  width: 150px;
-  height: 86px;
+.host-loading-video {
+  width: 200px;
+  border-radius: 12px;
 }
 
 /* ═══════════════════════════════════════════

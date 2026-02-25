@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=84" />
+  <link rel="stylesheet" href="/css/style.css?v=85" />
   <!-- Prevent browser zoom (Ctrl+scroll, Ctrl+±, pinch) -->
   <script>
     document.addEventListener('wheel', function(e){ if(e.ctrlKey){ e.preventDefault(); } }, { passive: false });
@@ -53,10 +53,11 @@
        VIEW: Host — Loading (before room is ready)
   ═══════════════════════════════════════════ -->
   <div id="view-host-loading" class="view">
-    <div class="card center-card host-loading-card">
-      <img class="studio-logo host-loading-logo" src="/images/QYan_logo_300x164.jpg" alt="QYan logo" />
-      <h2>Preparing your game</h2>
-      <p class="waiting-text">Loading quiz data and creating room…</p>
+    <div class="card center-card host-loading-card" dir="rtl">
+      <video class="host-loading-video" autoplay loop muted playsinline>
+        <source src="/video/qyan_loading01.mp4" type="video/mp4" />
+      </video>
+      <h2>يتم تحضير شي ممتع ..</h2>
     </div>
   </div>
 
@@ -586,6 +587,6 @@
   <!-- Load Socket.io client from the server (auto-served by socket.io) -->
   <script src="/socket.io/socket.io.js"></script>
   <!-- Main game logic (ES6 module) -->
-  <script type="module" src="/js/game.js?v=84"></script>
+  <script type="module" src="/js/game.js?v=85"></script>
 </body>
 </html>
