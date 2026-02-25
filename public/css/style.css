@@ -1652,14 +1652,15 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   justify-content: center;
   gap: 6px;
   width: 100%;
+  transition: grid-template-columns 0.3s ease;
 }
 
 #view-host-lobby .player-stage-placeholder {
   border-radius: 8px;
   aspect-ratio: 1;
   max-height: 64px;
-  background: rgba(51, 65, 85, 0.45);
-  border: 1px solid rgba(71, 85, 105, 0.5);
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(51, 65, 85, 0.6);
 }
 
 #view-host-lobby .player-stage-overflow {

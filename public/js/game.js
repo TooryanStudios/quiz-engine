@@ -134,7 +134,7 @@ const HOST_PLAYER_STAGE_VARIANTS = {
     cardClass: 'card-party-confetti',
   },
 };
-const HOST_PLAYER_PLACEHOLDER_COUNT = 8;
+const HOST_PLAYER_MAX_SLOTS = 10;
 
 const hostPlayerStageConfig = {
   enabled: true,
@@ -511,16 +511,34 @@ function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
     state.hostLobbyPlayers = [...playersArr];
     const stageVariant = useHostPlayerStageVariant();
     applyHostPlayerStageVariantClass(listEl, stageVariant);
-    const visiblePlayers = playersArr.length > HOST_PLAYER_PLACEHOLDER_COUNT
-      ? playersArr.slice(0, HOST_PLAYER_PLACEHOLDER_COUNT - 1)
-      : playersArr.slice(0, HOST_PLAYER_PLACEHOLDER_COUNT);
-    const overflowCount = Math.max(0, playersArr.length - HOST_PLAYER_PLACEHOLDER_COUNT);
+
+    // Dynamic grid: <5 = 1 row, >=5 = 2 balanced rows
+    const playerCount = playersArr.length;
+    let totalSlots, cols;
+    if (playerCount < 5) {
+      // Single row: show exactly 5 slots
+      totalSlots = 5;
+      cols = 5;
+    } else {
+      // Two rows: pick total that fills evenly
+      totalSlots = Math.min(Math.max(playerCount, 6), HOST_PLAYER_MAX_SLOTS);
+      // Make totalSlots even so rows are balanced
+      if (totalSlots % 2 !== 0) totalSlots++;
+      totalSlots = Math.min(totalSlots, HOST_PLAYER_MAX_SLOTS);
+      cols = Math.ceil(totalSlots / 2);
+    }
+    listEl.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+
+    const visiblePlayers = playersArr.length > totalSlots
+      ? playersArr.slice(0, totalSlots - 1)
+      : playersArr.slice(0, totalSlots);
+    const overflowCount = Math.max(0, playersArr.length - totalSlots);
 
     const stageItems = [];
-    for (let slotIndex = 0; slotIndex < HOST_PLAYER_PLACEHOLDER_COUNT; slotIndex++) {
+    for (let slotIndex = 0; slotIndex < totalSlots; slotIndex++) {
       if (slotIndex < visiblePlayers.length) {
         stageItems.push(renderHostPlayerStageCard(visiblePlayers[slotIndex], slotIndex, stageVariant));
-      } else if (overflowCount > 0 && slotIndex === HOST_PLAYER_PLACEHOLDER_COUNT - 1) {
+      } else if (overflowCount > 0 && slotIndex === totalSlots - 1) {
         stageItems.push(renderHostPlayerOverflowCard(overflowCount));
       } else {
         stageItems.push(renderHostPlayerStagePlaceholder(slotIndex));
