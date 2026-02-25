@@ -1033,6 +1033,16 @@ function showStartCountdown() {
   if (!overlay || !numberEl) return;
 
   overlay.style.display = 'flex';
+  overlay.style.opacity = '1';
+  overlay.classList.remove('countdown-fade-out');
+  state.countdownDone = false;
+  state.questionReady = false;
+
+  // Pre-switch to question view behind the overlay so QR lobby is gone
+  const isHostOnly = state.role === 'host' && !state.hostIsPlayer;
+  const targetView = isHostOnly ? 'view-host-question' : 'view-player-question';
+  showView(targetView);
+
   const steps = [
     { text: '3', cls: '', delay: 0 },
     { text: '2', cls: '', delay: 1000 },
@@ -1051,10 +1061,39 @@ function showStartCountdown() {
     }, delay);
   });
 
-  // Hide overlay after GO! (slightly before first question arrives)
+  // Mark countdown finished after GO! animation
+  setTimeout(() => {
+    state.countdownDone = true;
+    revealQuestionIfReady();
+  }, 4000);
+}
+
+// ── Coordinated reveal: wait for BOTH countdown + question data ──────
+function revealQuestionIfReady() {
+  if (!state.countdownDone || !state.questionReady) return;
+
+  const overlay = document.getElementById('overlay-countdown');
+  if (!overlay || overlay.style.display === 'none') return;
+
+  // Fade out the countdown overlay
+  overlay.classList.add('countdown-fade-out');
+
+  // Trigger the question entrance animation
+  const isHostOnly = state.role === 'host' && !state.hostIsPlayer;
+  const layoutId = isHostOnly ? 'host-question-layout' : 'player-question-layout';
+  const layout = document.getElementById(layoutId);
+  if (layout) {
+    layout.classList.remove('question-enter');
+    void layout.offsetWidth;
+    layout.classList.add('question-enter');
+  }
+
+  // Fully hide overlay after transition ends
   setTimeout(() => {
     overlay.style.display = 'none';
-  }, 4200);
+    overlay.classList.remove('countdown-fade-out');
+    overlay.style.opacity = '';
+  }, 700);
 }
 
 document.addEventListener('visibilitychange', () => {
@@ -1084,6 +1123,22 @@ function renderQuestion(data, isHost) {
     renderHostQuestion(data);
   } else {
     renderPlayerQuestion(data);
+  }
+
+  // Coordinate with countdown overlay for first question
+  if (state.countdownDone === false || state.questionReady === false) {
+    // First question — mark ready and let the countdown reveal handle animation
+    state.questionReady = true;
+    revealQuestionIfReady();
+  } else {
+    // Subsequent questions — play entrance animation directly
+    const layoutId = isHost ? 'host-question-layout' : 'player-question-layout';
+    const layout = document.getElementById(layoutId);
+    if (layout) {
+      layout.classList.remove('question-enter');
+      void layout.offsetWidth;
+      layout.classList.add('question-enter');
+    }
   }
 }
 
@@ -1183,12 +1238,6 @@ function renderHostQuestion(data) {
         }, 3000);
       });
 
-    const layout = safeGet('host-question-layout');
-    if (layout) {
-      layout.classList.remove('animate-in');
-      void layout.offsetWidth;
-      layout.classList.add('animate-in');
-    }
     showView('view-host-question');
     if (window.__dbgLog) window.__dbgLog('renderHost: DONE (' + q.type + ')');
   } catch (err) {
@@ -1281,12 +1330,6 @@ function renderPlayerQuestion(data) {
         }
       });
 
-    const layout = safeGet('player-question-layout');
-    if (layout) {
-      layout.classList.remove('animate-in');
-      void layout.offsetWidth;
-      layout.classList.add('animate-in');
-    }
     // Show host controls if host is playing as player (solo mode)
     const phc = safeGet('player-host-controls');
     if (phc) {
