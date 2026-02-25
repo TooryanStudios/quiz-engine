@@ -363,6 +363,9 @@ const io = new Server(httpServer, {
     origin: config.CORS_ORIGINS,
     methods: ['GET', 'POST'],
   },
+  // Keep WebSocket connections alive and detect dead sockets faster
+  pingInterval: 10000,   // send ping every 10 s
+  pingTimeout: 5000,     // disconnect if no pong within 5 s
 });
 
 // ─────────────────────────────────────────────
@@ -2050,4 +2053,13 @@ httpServer.listen(config.PORT, '0.0.0.0', () => {
   ║  Domain: ${config.DOMAIN}  ║
   ╚══════════════════════════════════════╝
   `);
+
+  // ── Self-ping keepalive ──────────────────────
+  // Prevents Render free-tier from spinning down the server after ~15 min idle.
+  // Pings our own /health endpoint every 10 minutes.
+  const keepAliveUrl = `https://${config.DOMAIN}/health`;
+  setInterval(() => {
+    fetch(keepAliveUrl).catch(() => {});
+    console.log(`[KeepAlive] Pinged ${keepAliveUrl} — ${rooms.size} active room(s)`);
+  }, 10 * 60 * 1000); // every 10 minutes
 });
