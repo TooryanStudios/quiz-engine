@@ -1655,44 +1655,155 @@ document.getElementById('btn-share-copy').addEventListener('click', async () => 
 const chkHostAsPlayer = document.getElementById('chk-host-as-player');
 const hostPlayerForm  = document.getElementById('host-player-form');
 const hostAsPlayerSection = document.getElementById('host-as-player-section');
-if (chkHostAsPlayer) {
-  chkHostAsPlayer.addEventListener('change', () => {
-    if (hostAsPlayerSection) {
-      hostAsPlayerSection.classList.toggle('join-enabled', !!chkHostAsPlayer.checked);
-    }
-    if (hostPlayerForm) {
-      hostPlayerForm.style.display = chkHostAsPlayer.checked ? 'flex' : 'none';
-    }
-    if (!chkHostAsPlayer.checked && state.hostIsPlayer) {
-      // Toggle off — ask server to remove us
-      socket.emit('host:join_as_player', { nickname: '' });
-    }
+
+// ── Host "Join as Player" dialog ──
+let _hostJoinAvatar = state.avatar || '🎮';
+
+function openHostJoinDialog() {
+  const old = document.getElementById('host-join-dialog-overlay');
+  if (old) old.remove();
+
+  _hostJoinAvatar = state.avatar || '🎮';
+
+  const overlay = document.createElement('div');
+  overlay.id = 'host-join-dialog-overlay';
+  Object.assign(overlay.style, {
+    position: 'fixed', inset: '0', background: 'rgba(0,0,0,0.7)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    zIndex: '100000', padding: '16px', backdropFilter: 'blur(4px)',
   });
 
-  if (hostAsPlayerSection) {
-    hostAsPlayerSection.classList.toggle('join-enabled', !!chkHostAsPlayer.checked);
-  }
+  const dialog = document.createElement('div');
+  Object.assign(dialog.style, {
+    background: 'var(--surface, #1e1e2e)', border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '20px', padding: '24px', width: 'min(360px, 90vw)',
+    display: 'flex', flexDirection: 'column', gap: '16px', boxSizing: 'border-box',
+  });
+
+  // Title
+  const title = document.createElement('h3');
+  title.textContent = 'Join as Player';
+  Object.assign(title.style, {
+    margin: '0', fontSize: '1.1rem', fontWeight: '700',
+    color: 'var(--text, #e2e8f0)', textAlign: 'center',
+  });
+  dialog.appendChild(title);
+
+  // Avatar picker row
+  const avatarRow = document.createElement('div');
+  Object.assign(avatarRow.style, {
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px',
+  });
+  const avatarBtn = document.createElement('button');
+  avatarBtn.type = 'button';
+  avatarBtn.textContent = _hostJoinAvatar;
+  Object.assign(avatarBtn.style, {
+    fontSize: '2.2rem', width: '56px', height: '56px', borderRadius: '50%',
+    border: '2px solid rgba(124,58,237,0.5)', background: 'rgba(124,58,237,0.1)',
+    cursor: 'pointer', touchAction: 'manipulation', display: 'flex',
+    alignItems: 'center', justifyContent: 'center',
+  });
+  avatarBtn.addEventListener('click', () => {
+    openAvatarPicker(_hostJoinAvatar, (emoji) => {
+      _hostJoinAvatar = emoji;
+      avatarBtn.textContent = emoji;
+    });
+  });
+  const avatarHint = document.createElement('span');
+  avatarHint.textContent = 'Tap to change avatar';
+  Object.assign(avatarHint.style, { fontSize: '0.8rem', color: 'var(--text-dim, #94a3b8)' });
+  avatarRow.appendChild(avatarBtn);
+  avatarRow.appendChild(avatarHint);
+  dialog.appendChild(avatarRow);
+
+  // Nickname input
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.maxLength = 20;
+  input.placeholder = 'Your nickname…';
+  Object.assign(input.style, {
+    padding: '12px 14px', fontSize: '1rem', borderRadius: '12px',
+    border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.06)',
+    color: 'var(--text, #e2e8f0)', outline: 'none', width: '100%', boxSizing: 'border-box',
+  });
+  dialog.appendChild(input);
+
+  // Error line
+  const errorEl = document.createElement('p');
+  Object.assign(errorEl.style, {
+    margin: '0', fontSize: '0.82rem', color: '#ef4444', textAlign: 'center', minHeight: '1.2em',
+  });
+  dialog.appendChild(errorEl);
+
+  // Buttons row
+  const btns = document.createElement('div');
+  Object.assign(btns.style, { display: 'flex', gap: '10px' });
+
+  const joinBtn = document.createElement('button');
+  joinBtn.textContent = '✅ Join Game';
+  Object.assign(joinBtn.style, {
+    flex: '1', padding: '12px', fontSize: '0.95rem', fontWeight: '700',
+    borderRadius: '12px', border: 'none', background: '#7c3aed', color: '#fff',
+    cursor: 'pointer', touchAction: 'manipulation',
+  });
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  Object.assign(cancelBtn.style, {
+    padding: '12px 18px', fontSize: '0.95rem', fontWeight: '600',
+    borderRadius: '12px', border: '1px solid rgba(255,255,255,0.15)',
+    background: 'transparent', color: 'var(--text-dim, #94a3b8)',
+    cursor: 'pointer', touchAction: 'manipulation',
+  });
+
+  joinBtn.addEventListener('click', () => {
+    const nickname = input.value.trim();
+    if (!nickname) { errorEl.textContent = '⚠️ Please enter a nickname.'; return; }
+    Sounds.click();
+    state.avatar = _hostJoinAvatar;
+    socket.emit('host:join_as_player', { nickname, avatar: _hostJoinAvatar });
+    overlay.remove();
+  });
+
+  cancelBtn.addEventListener('click', () => {
+    overlay.remove();
+    if (chkHostAsPlayer) chkHostAsPlayer.checked = false;
+  });
+
+  // Enter key submits
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); joinBtn.click(); }
+  });
+
+  btns.appendChild(joinBtn);
+  btns.appendChild(cancelBtn);
+  dialog.appendChild(btns);
+
+  overlay.appendChild(dialog);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) { overlay.remove(); if (chkHostAsPlayer) chkHostAsPlayer.checked = false; }
+  });
+  document.body.appendChild(overlay);
+
+  // Auto-focus nickname
+  setTimeout(() => input.focus(), 100);
 }
 
-document.getElementById('btn-host-join-as-player')?.addEventListener('click', () => {
-  const nickname = document.getElementById('host-player-nickname')?.value.trim();
-  if (!nickname) {
-    const st = document.getElementById('host-as-player-status');
-    if (st) st.textContent = '\u26a0\ufe0f Please enter a nickname.';
-    return;
-  }
-  Sounds.click();
-  socket.emit('host:join_as_player', { nickname, avatar: state.avatar });
-});
+function closeHostJoinDialog() {
+  const ov = document.getElementById('host-join-dialog-overlay');
+  if (ov) ov.remove();
+}
 
-document.getElementById('btn-host-cancel-join')?.addEventListener('click', () => {
-  if (chkHostAsPlayer) chkHostAsPlayer.checked = false;
-  if (hostAsPlayerSection) hostAsPlayerSection.classList.remove('join-enabled');
-  if (hostPlayerForm) hostPlayerForm.style.display = 'none';
-  const st = document.getElementById('host-as-player-status');
-  if (st) st.textContent = '';
-  if (state.hostIsPlayer) socket.emit('host:join_as_player', { nickname: '' });
-});
+if (chkHostAsPlayer) {
+  chkHostAsPlayer.addEventListener('change', () => {
+    if (chkHostAsPlayer.checked) {
+      if (!state.hostIsPlayer) openHostJoinDialog();
+    } else {
+      closeHostJoinDialog();
+      if (state.hostIsPlayer) socket.emit('host:join_as_player', { nickname: '' });
+    }
+  });
+}
 
 // Host Start Game
 document.getElementById('btn-start-game').addEventListener('click', () => {
@@ -2067,18 +2178,16 @@ socket.on('room:rejoin_failed', ({ message }) => {
 /** HOST: Server confirmed host joined as player */
 socket.on('host:joined_as_player', ({ joined, nickname, avatar }) => {
   state.hostIsPlayer = !!joined;
+  closeHostJoinDialog();
   const statusEl = document.getElementById('host-as-player-status');
   const chk = document.getElementById('chk-host-as-player');
   const hostAsPlayerBlock = document.getElementById('host-as-player-section');
   if (joined) {
-    if (statusEl) statusEl.textContent = `\u2705 Joined as "${nickname}" — you will play too!`;
+    if (statusEl) statusEl.textContent = `\u2705 Playing as "${nickname}"`;
     if (chk) chk.checked = true;
     if (hostAsPlayerBlock) hostAsPlayerBlock.classList.add('join-enabled');
-    if (hostPlayerForm) hostPlayerForm.style.display = 'flex';
   } else {
     if (statusEl) statusEl.textContent = '';
-    const form = document.getElementById('host-player-form');
-    if (form) form.style.display = 'none';
     if (chk) chk.checked = false;
     if (hostAsPlayerBlock) hostAsPlayerBlock.classList.remove('join-enabled');
   }
