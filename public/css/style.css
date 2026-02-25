@@ -718,6 +718,90 @@ h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-dim); }
 }
 
 /* ═══════════════════════════════════════════
+   Kicked-player Rejoin Request Banner
+═══════════════════════════════════════════ */
+.join-request-banner {
+  background: var(--card-bg, rgba(255,255,255,0.06));
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+.join-request-header {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #fbbf24;
+  margin-bottom: 8px;
+}
+
+.join-request-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.join-request-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  border-radius: 8px;
+  padding: 7px 10px;
+}
+
+.join-request-avatar {
+  font-size: 1.4rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.join-request-name {
+  flex: 1;
+  font-size: 0.88rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-primary, #f3f4f6);
+}
+
+.join-request-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.btn-jr-accept,
+.btn-jr-reject {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 12px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+.btn-jr-accept {
+  background: #22c55e;
+  color: #fff;
+}
+
+.btn-jr-reject {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.btn-jr-accept:hover { opacity: 0.88; transform: scale(1.04); }
+.btn-jr-reject:hover { opacity: 0.88; transform: scale(1.04); }
+
+/* ═══════════════════════════════════════════
    Pause Overlay
 ═══════════════════════════════════════════ */
 .pause-overlay {
@@ -1849,7 +1933,7 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 500;
+  z-index: 9990;
   backdrop-filter: blur(4px);
   animation: fadeIn 0.15s ease;
 }

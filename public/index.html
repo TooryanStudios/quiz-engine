@@ -209,6 +209,12 @@
         </div>
       </div>
 
+      <!-- ── Rejoin requests from previously kicked players ── -->
+      <div id="join-request-banner" class="join-request-banner" style="display:none">
+        <div class="join-request-header">⏳ Rejoin Requests</div>
+        <div id="join-request-list" class="join-request-list"></div>
+      </div>
+
       <!-- ── Player grid (placeholders fill → real cards as players join) ── -->
       <div id="host-as-player-section" class="host-as-player-section">
         <div class="host-as-player-header">
@@ -526,9 +532,12 @@
   ═══════════════════════════════════════════ -->
   <div id="view-room-closed" class="view">
     <div class="card center-card">
-      <h2>🚪 Room Closed</h2>
+      <h2 id="room-closed-title">🚪 Room Closed</h2>
       <p id="room-closed-msg">The host has left the game.</p>
-      <button class="btn btn-primary full-width" id="btn-home-from-closed">
+      <button class="btn btn-primary full-width" id="btn-rejoin-request" style="display:none">
+        Request to Rejoin
+      </button>
+      <button class="btn btn-secondary full-width" id="btn-home-from-closed">
         Back to Home
       </button>
     </div>
@@ -576,6 +585,6 @@
   <!-- Load Socket.io client from the server (auto-served by socket.io) -->
   <script src="/socket.io/socket.io.js"></script>
   <!-- Main game logic (ES6 module) -->
-  <script type="module" src="/js/game.js?v=64"></script>
+  <script type="module" src="/js/game.js?v=66"></script>
 </body>
 </html>

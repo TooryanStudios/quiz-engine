@@ -727,7 +727,9 @@ const rooms = new Map();
  *   pin, hostSocketId, state, mode, questionIndex, questionTimer, questionStartTime,
  *   questionDuration, paused, pausedTimeRemaining,
  *   players: Map<socketId, { id, nickname, score, streak, maxStreak,
- *                            currentAnswer, answerTime }>
+ *                            currentAnswer, answerTime }>,
+ *   kickedPlayers: Set<nicknameLowercase>  — prevents kicked players from auto-rejoining
+ *   pendingJoinRequests: Map<socketId, { socketId, nickname, avatar, pin }>
  * }
  */
 
@@ -1238,6 +1240,8 @@ io.on('connection', (socket) => {
       pin,
       hostSocketId: socket.id,
       players: new Map(),
+      kickedPlayers: new Set(),
+      pendingJoinRequests: new Map(),
       state: 'lobby',
       mode: activeMode,
       quizSlug: quizSlug || null,
@@ -1340,6 +1344,29 @@ io.on('connection', (socket) => {
     );
     if (nameTaken) {
       socket.emit('room:error', { message: 'That nickname is already taken.' });
+      return;
+    }
+
+    // Kicked player trying to rejoin — route to host approval queue
+    if (room.kickedPlayers.has(cleanNickname.toLowerCase())) {
+      room.pendingJoinRequests.set(socket.id, {
+        socketId: socket.id,
+        nickname: cleanNickname,
+        avatar: typeof avatar === 'string' ? avatar.slice(0, 8) : '\uD83C\uDFAE',
+        pin: normalizedPin,
+      });
+      socket.data.pin = normalizedPin;
+      const hostSocket = io.sockets.sockets.get(room.hostSocketId);
+      if (hostSocket) {
+        hostSocket.emit('host:join_request', {
+          socketId: socket.id,
+          nickname: cleanNickname,
+          avatar: typeof avatar === 'string' ? avatar.slice(0, 8) : '\uD83C\uDFAE',
+        });
+      }
+      socket.emit('room:join_pending', {
+        message: 'Your request has been sent. Waiting for the host to approve…',
+      });
       return;
     }
 
@@ -1636,6 +1663,8 @@ io.on('connection', (socket) => {
     const player = room.players.get(playerId);
     if (!player) return;
 
+    // Track kicked nickname so they cannot auto-rejoin
+    room.kickedPlayers.add(player.nickname.toLowerCase());
     room.players.delete(playerId);
 
     const playerSocket = io.sockets.sockets.get(playerId);
@@ -1648,6 +1677,66 @@ io.on('connection', (socket) => {
 
     console.log(`[Room ${room.pin}] Kicked player: ${player.nickname}`);
     io.to(room.pin).emit('room:player_joined', { players: getPlayerList(room) });
+  });
+
+  // ── HOST: Approve a kicked player's rejoin request ───────
+  socket.on('host:approve_join', ({ socketId }) => {
+    const room = findHostRoom(socket.id);
+    if (!room || room.state !== 'lobby') return;
+
+    const pending = room.pendingJoinRequests.get(socketId);
+    if (!pending) return;
+
+    room.pendingJoinRequests.delete(socketId);
+
+    const player = {
+      id: socketId,
+      playerId: null,
+      nickname: pending.nickname,
+      avatar: pending.avatar,
+      score: 0,
+      streak: 0,
+      maxStreak: 0,
+      currentAnswer: null,
+      answerTime: config.GAME.QUESTION_DURATION_SEC,
+      disconnected: false,
+      disconnectTimer: null,
+    };
+    room.players.set(socketId, player);
+
+    const playerSocket = io.sockets.sockets.get(socketId);
+    if (playerSocket) {
+      playerSocket.join(room.pin);
+      playerSocket.emit('room:joined', {
+        pin: room.pin,
+        nickname: player.nickname,
+        avatar: player.avatar,
+        players: getPlayerList(room),
+      });
+    }
+
+    console.log(`[Room ${room.pin}] Approved rejoin for: ${pending.nickname}`);
+    io.to(room.pin).emit('room:player_joined', { players: getPlayerList(room) });
+  });
+
+  // ── HOST: Reject a kicked player's rejoin request ────────
+  socket.on('host:reject_join', ({ socketId }) => {
+    const room = findHostRoom(socket.id);
+    if (!room) return;
+
+    const pending = room.pendingJoinRequests.get(socketId);
+    if (!pending) return;
+
+    room.pendingJoinRequests.delete(socketId);
+
+    const playerSocket = io.sockets.sockets.get(socketId);
+    if (playerSocket) {
+      playerSocket.emit('room:join_rejected', {
+        message: 'The host declined your request to rejoin.',
+      });
+    }
+
+    console.log(`[Room ${room.pin}] Rejected rejoin for: ${pending.nickname}`);
   });
 
   // ── PLAYER: Submit an answer ─────────────────
@@ -1820,6 +1909,8 @@ io.on('connection', (socket) => {
       if (room) {
         const player = room.players.get(socket.id);
         if (room.state === 'lobby' || !player) {
+          // Remove from pending requests if they were a kicked player waiting
+          room.pendingJoinRequests.delete(socket.id);
           // In lobby: remove immediately and notify
           room.players.delete(socket.id);
           io.to(pin).emit('room:player_joined', { players: getPlayerList(room) });
@@ -1865,6 +1956,16 @@ io.on('connection', (socket) => {
         io.to(hostedRoom.pin).emit('room:closed', {
           message: 'The host has disconnected. The game has ended.',
         });
+      }
+
+      // Notify any pending rejoin requests that the room is gone
+      for (const [pendingSocketId] of hostedRoom.pendingJoinRequests) {
+        const pendingSocket = io.sockets.sockets.get(pendingSocketId);
+        if (pendingSocket) {
+          pendingSocket.emit('room:closed', {
+            message: 'The host has disconnected. The game has ended.',
+          });
+        }
       }
 
       // Remove all sockets from the Socket.io room after a short delay

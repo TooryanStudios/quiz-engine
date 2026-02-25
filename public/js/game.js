@@ -557,6 +557,7 @@ function openAvatarPicker(currentAvatar, onSelect) {
     btn.type = 'button';
     btn.className = 'avatar-option' + (a === currentAvatar ? ' selected' : '');
     btn.textContent = a;
+    btn.style.touchAction = 'manipulation';
     btn.addEventListener('click', () => {
       onSelect(a);
       modal.style.display = 'none';
@@ -1889,6 +1890,22 @@ socket.on('room:rejoined', ({ pin, nickname, avatar, players, score, streak, roo
 
     setConnectionStatus('ok', 'Reconnected ✓');
 
+    // Populate edit profile panel (same as room:joined)
+    const editNickElRejoin = document.getElementById('edit-nickname-input');
+    if (editNickElRejoin) editNickElRejoin.value = nickname;
+    const lobbyBtnRejoin = document.getElementById('lobby-avatar-btn');
+    const lobbyDisplayElRejoin = document.getElementById('lobby-avatar-display');
+    if (lobbyDisplayElRejoin) lobbyDisplayElRejoin.textContent = state.avatar;
+    if (lobbyBtnRejoin) {
+      lobbyBtnRejoin.onclick = () => {
+        openAvatarPicker(state.avatar, (a) => {
+          state.avatar = a;
+          if (lobbyDisplayElRejoin) lobbyDisplayElRejoin.textContent = a;
+          socket.emit('player:update_profile', { nickname: state.nickname, avatar: a });
+        });
+      };
+    }
+
     if (roomState === 'lobby') {
       showView('view-player-lobby');
     } else if ((roomState === 'question' || roomState === 'question-pending') && questionData) {
@@ -2314,10 +2331,100 @@ socket.on('room:reset', ({ players, modeInfo }) => {
 
 /** PLAYER: Kicked by host */
 socket.on('room:kicked', ({ message }) => {
+  // Snapshot connection info before clearing session (clearGameSession only wipes localStorage)
+  const savedPin      = state.pin;
+  const savedNickname = state.nickname;
+  const savedAvatar   = state.avatar || '🎮';
+
   clearGameSession();
   stopClientTimer();
-  document.getElementById('room-closed-msg').textContent = message;
+
+  const titleEl   = document.getElementById('room-closed-title');
+  const msgEl     = document.getElementById('room-closed-msg');
+  const rejoinBtn = document.getElementById('btn-rejoin-request');
+
+  if (titleEl)  titleEl.textContent  = '👟 You Were Removed';
+  if (msgEl)    msgEl.textContent    = message;
+
+  if (rejoinBtn && savedPin && savedNickname) {
+    rejoinBtn.textContent = 'Request to Rejoin';
+    rejoinBtn.disabled    = false;
+    rejoinBtn.style.display = '';
+    rejoinBtn.onclick = () => {
+      rejoinBtn.disabled    = true;
+      rejoinBtn.textContent = 'Sending request…';
+      socket.emit('player:join', { pin: savedPin, nickname: savedNickname, avatar: savedAvatar });
+    };
+  }
+
   showView('view-room-closed');
+});
+
+/** PLAYER: Kicked player's rejoin request is pending host approval */
+socket.on('room:join_pending', ({ message }) => {
+  const titleEl   = document.getElementById('room-closed-title');
+  const msgEl     = document.getElementById('room-closed-msg');
+  const rejoinBtn = document.getElementById('btn-rejoin-request');
+
+  if (titleEl)  titleEl.textContent  = '⏳ Waiting for Approval';
+  if (msgEl)    msgEl.textContent    = message;
+  if (rejoinBtn) {
+    rejoinBtn.disabled    = true;
+    rejoinBtn.textContent = 'Request Sent…';
+  }
+  showView('view-room-closed');
+});
+
+/** PLAYER: Host rejected the rejoin request */
+socket.on('room:join_rejected', ({ message }) => {
+  const titleEl   = document.getElementById('room-closed-title');
+  const msgEl     = document.getElementById('room-closed-msg');
+  const rejoinBtn = document.getElementById('btn-rejoin-request');
+
+  if (titleEl)  titleEl.textContent  = '🚫 Request Declined';
+  if (msgEl)    msgEl.textContent    = message;
+  if (rejoinBtn) rejoinBtn.style.display = 'none';
+  showView('view-room-closed');
+});
+
+/** HOST: A kicked player has requested to rejoin */
+socket.on('host:join_request', ({ socketId, nickname, avatar }) => {
+  const banner = document.getElementById('join-request-banner');
+  const list   = document.getElementById('join-request-list');
+  if (!banner || !list) return;
+
+  // Avoid duplicate cards
+  if (list.querySelector(`[data-socket-id="${socketId}"]`)) return;
+
+  const card = document.createElement('div');
+  card.className = 'join-request-card';
+  card.dataset.socketId = socketId;
+
+  const safeAvatar = String(avatar || '🎮').slice(0, 8);
+  const safeName   = String(nickname || '').replace(/</g, '&lt;');
+
+  card.innerHTML = `
+    <span class="join-request-avatar">${safeAvatar}</span>
+    <span class="join-request-name">${safeName}</span>
+    <div class="join-request-actions">
+      <button class="btn-jr-accept">✓ Accept</button>
+      <button class="btn-jr-reject">✗ Reject</button>
+    </div>`;
+
+  card.querySelector('.btn-jr-accept').addEventListener('click', () => {
+    socket.emit('host:approve_join', { socketId });
+    card.remove();
+    if (!list.hasChildNodes()) banner.style.display = 'none';
+  });
+
+  card.querySelector('.btn-jr-reject').addEventListener('click', () => {
+    socket.emit('host:reject_join', { socketId });
+    card.remove();
+    if (!list.hasChildNodes()) banner.style.display = 'none';
+  });
+
+  list.appendChild(card);
+  banner.style.display = '';
 });
 
 /** PLAYER: Host disconnected */
