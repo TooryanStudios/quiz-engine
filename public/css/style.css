@@ -1326,32 +1326,28 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   left: 0;
 }
 
-/* Share + Start Game row */
+/* Start Game row */
 .start-game-row {
-  display: flex;
-  align-items: stretch;
-  gap: 8px;
   width: 100%;
 }
 
 .start-game-row #btn-start-game {
-  flex: 1;
+  width: 100%;
 }
 
 /* ═══════════════════════════════════════════════════════════
    Share URL Bar
 ═══════════════════════════════════════════════════════════ */
 .share-url-section {
-  position: relative;
-  flex-shrink: 0;
-  width: auto;
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 5;
 }
 
 .share-trigger-btn {
-  flex-shrink: 0;
-  width: 34px;
-  height: auto;
-  align-self: stretch;
+  width: 30px;
+  height: 30px;
   padding: 0;
   display: flex;
   align-items: center;
@@ -1368,10 +1364,10 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
 
 .share-actions {
   position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%) scale(0.9);
-  transform-origin: bottom center;
+  top: calc(100% + 6px);
+  left: 0;
+  transform: scale(0.9);
+  transform-origin: top left;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1380,7 +1376,7 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   background: var(--surface-2);
   border: 1px solid rgba(255,255,255,0.12);
   border-radius: 12px;
-  box-shadow: 0 -4px 20px rgba(0,0,0,0.35);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.35);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease, transform 0.2s ease;
@@ -1388,7 +1384,7 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
 .share-actions.share-open {
   opacity: 1;
   pointer-events: auto;
-  transform: translateX(-50%) scale(1);
+  transform: scale(1);
 }
 
 .share-icon-btn {
@@ -1548,6 +1544,7 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
 }
 
 #view-host-lobby .pin-display {
+  position: relative;
   padding: 14px 12px;
   gap: 4px;
 }
