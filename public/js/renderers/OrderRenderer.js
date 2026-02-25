@@ -1,6 +1,10 @@
-/**
+﻿/**
  * OrderRenderer.js
- * Handles drag-to-reorder questions
+ * Handles drag-to-reorder questions with smooth animated swaps.
+ *
+ * Instead of rebuilding the whole list on every move, items are
+ * repositioned in the DOM and animated with CSS transitions so the
+ * user never loses context.
  */
 
 import { BaseRenderer } from './BaseRenderer.js';
@@ -11,199 +15,204 @@ export class OrderRenderer extends BaseRenderer {
   constructor(questionData) {
     super(questionData);
     this.drag = null;
+    this._onMove = this._onDragMove.bind(this);
+    this._onEnd  = this._onDragEnd.bind(this);
   }
-  
-  /**
-   * Render player view (interactive)
-   */
+
+  // -- Public API --
+
   render() {
     const container = safeGet('player-order-container');
     if (!container) return;
-    
-    // Initialize order state
+
     state.orderItemOrder = this.question.items.map((_, i) => i);
-    state.orderItems = this.question.items;
-    
-    // Show order container
+    state.orderItems     = this.question.items;
+
     safeSetDisplay('player-order-container', 'block');
     safeSetDisplay('player-options-grid', 'none');
-    
-    // Build UI
-    this.buildOrderUI();
-    
-    // Show submit button
+
+    this._buildList();
+
     this.setSubmitButtonVisible(true, true);
-    this.setSubmitButtonText('✔ تأكيد الإجابة');
+    this.setSubmitButtonText('\u2714 \u062a\u0623\u0643\u064a\u062f \u0627\u0644\u0625\u062c\u0627\u0628\u0629');
   }
-  
-  /**
-   * Build the order UI
-   */
-  buildOrderUI() {
-    if (state.hasAnswered) return;
-    
+
+  getAnswer() {
+    return { order: state.orderItemOrder };
+  }
+
+  renderHost() {
+    const grid = safeGet('host-options-grid');
+    if (!grid) return;
+    const { escapeHtml } = this.utils;
+    const items = this.question.items || [];
+    grid.innerHTML = '<div class="host-order-preview">' +
+      items.map((item, i) =>
+        '<div class="host-order-item stagger-' + Math.min(i + 1, 4) + '">' +
+          (i + 1) + '. ' + escapeHtml(item) +
+        '</div>'
+      ).join('') +
+    '</div>';
+  }
+
+  cleanup() {
+    this._removeGhost();
+    document.removeEventListener('pointermove', this._onMove);
+    document.removeEventListener('pointerup',   this._onEnd);
+  }
+
+  // -- Build initial list (one-time) --
+
+  _buildList() {
     const list = safeGet('order-list');
     if (!list) return;
-    
+
     const { escapeHtml } = this.utils;
     const items = state.orderItems;
-    
+
     list.innerHTML = state.orderItemOrder.map((itemIdx, pos) =>
-      `<li class="order-item stagger-${Math.min(pos + 1, 4)}" data-pos="${pos}">
-        <span class="order-drag-handle" aria-hidden="true">⠿</span>
-        <span class="order-label" dir="auto">${escapeHtml(items[itemIdx])}</span>
-      </li>`
+      '<li class="order-item" data-idx="' + itemIdx + '" data-pos="' + pos + '">' +
+        '<span class="order-num">' + (pos + 1) + '</span>' +
+        '<span class="order-label" dir="auto">' + escapeHtml(items[itemIdx]) + '</span>' +
+        '<span class="order-drag-handle" aria-hidden="true">\u2800\u283F</span>' +
+      '</li>'
     ).join('');
-    
-    // Attach drag handlers
-    list.querySelectorAll('.order-item').forEach(item => {
-      item.addEventListener('pointerdown', this.onItemPointerDown.bind(this));
+
+    list.querySelectorAll('.order-item').forEach(el => {
+      el.addEventListener('pointerdown', this._onPointerDown.bind(this));
     });
   }
-  
-  /**
-   * Handle item drag start
-   */
-  onItemPointerDown(e) {
+
+  // -- Refresh number badges only (no DOM rebuild) --
+
+  _refreshNumbers() {
+    const list = safeGet('order-list');
+    if (!list) return;
+    list.querySelectorAll('.order-item').forEach((el, i) => {
+      el.dataset.pos = i;
+      const num = el.querySelector('.order-num');
+      if (num) num.textContent = i + 1;
+    });
+  }
+
+  // -- Drag lifecycle --
+
+  _onPointerDown(e) {
     if (!this.canSubmit()) return;
     e.preventDefault();
-    
+
     const item = e.currentTarget;
-    const fromPos = parseInt(item.dataset.pos);
     const rect = item.getBoundingClientRect();
-    
-    // Create ghost element
+    const list = safeGet('order-list');
+
     const ghost = document.createElement('li');
     ghost.id = '__dgh';
     ghost.className = 'order-item order-drag-ghost';
     ghost.innerHTML = item.innerHTML;
-    ghost.style.cssText = `position:fixed;pointer-events:none;z-index:9999;
-      width:${rect.width}px;left:${rect.left}px;top:${rect.top}px;
-      opacity:0.9;transform:rotate(-1.5deg) scale(1.03);`;
+    ghost.style.cssText = 'position:fixed;pointer-events:none;z-index:9999;' +
+      'width:' + rect.width + 'px;left:' + rect.left + 'px;top:' + rect.top + 'px;' +
+      'opacity:0.92;transform:scale(1.04);';
     document.body.appendChild(ghost);
-    
+
     item.classList.add('order-dragging-source');
-    
-    // Insert position indicator
-    const ind = document.createElement('li');
-    ind.id = '__ord_ind';
-    ind.className = 'order-insert-indicator';
-    safeGet('order-list')?.appendChild(ind);
-    
+
     this.drag = {
-      fromPos,
-      sourceEl: item,
-      ghost,
+      el: item,
+      ghost: ghost,
+      list: list,
       offsetX: e.clientX - rect.left,
       offsetY: e.clientY - rect.top,
-      insertAt: fromPos
+      lastSwap: 0
     };
-    
-    document.addEventListener('pointermove', this.onDragMove.bind(this));
-    document.addEventListener('pointerup', this.onDragEnd.bind(this), { once: true });
+
+    document.addEventListener('pointermove', this._onMove);
+    document.addEventListener('pointerup',   this._onEnd, { once: true });
   }
-  
-  /**
-   * Handle drag move
-   */
-  onDragMove(e) {
-    if (!this.drag) return;
-    
-    this.drag.ghost.style.left = (e.clientX - this.drag.offsetX) + 'px';
-    this.drag.ghost.style.top = (e.clientY - this.drag.offsetY) + 'px';
-    
-    // Find insert position
-    const list = safeGet('order-list');
-    const items = list?.querySelectorAll('.order-item:not(.order-dragging-source)');
-    
-    if (!items) return;
-    
-    let insertAt = state.orderItemOrder.length;
-    
-    for (let i = 0; i < items.length; i++) {
-      const rect = items[i].getBoundingClientRect();
+
+  _onDragMove(e) {
+    const d = this.drag;
+    if (!d) return;
+
+    d.ghost.style.left = (e.clientX - d.offsetX) + 'px';
+    d.ghost.style.top  = (e.clientY - d.offsetY) + 'px';
+
+    const now = Date.now();
+    if (now - d.lastSwap < 80) return;
+
+    const siblings = Array.from(
+      d.list.querySelectorAll('.order-item:not(.order-dragging-source)')
+    );
+
+    for (const sib of siblings) {
+      const rect = sib.getBoundingClientRect();
       const midY = rect.top + rect.height / 2;
-      
-      if (e.clientY < midY) {
-        insertAt = parseInt(items[i].dataset.pos);
+
+      const draggedPos = parseInt(d.el.dataset.pos);
+      const sibPos     = parseInt(sib.dataset.pos);
+
+      if (draggedPos < sibPos && e.clientY > midY) {
+        this._animatedSwap(d.el, sib, 'after');
+        d.lastSwap = now;
+        break;
+      }
+      if (draggedPos > sibPos && e.clientY < midY) {
+        this._animatedSwap(d.el, sib, 'before');
+        d.lastSwap = now;
         break;
       }
     }
-    
-    this.drag.insertAt = insertAt;
-    
-    // Update indicator position
-    const indicator = document.getElementById('__ord_ind');
-    if (indicator && items[insertAt]) {
-      const targetRect = items[insertAt].getBoundingClientRect();
-      indicator.style.top = `${targetRect.top}px`;
-    }
   }
-  
-  /**
-   * Handle drag end
-   */
-  onDragEnd() {
-    document.removeEventListener('pointermove', this.onDragMove.bind(this));
-    if (!this.drag) return;
-    
-    // Remove visual elements
-    document.getElementById('__dgh')?.remove();
-    document.getElementById('__ord_ind')?.remove();
-    this.drag.sourceEl.classList.remove('order-dragging-source');
-    
-    // Update order
-    const { fromPos, insertAt } = this.drag;
-    
-    if (fromPos !== insertAt) {
-      const newOrder = [...state.orderItemOrder];
-      const [item] = newOrder.splice(fromPos, 1);
-      const targetIdx = insertAt > fromPos ? insertAt - 1 : insertAt;
-      newOrder.splice(targetIdx, 0, item);
-      state.orderItemOrder = newOrder;
-      
-      this.utils.Sounds.click();
-    }
-    
+
+  _onDragEnd() {
+    document.removeEventListener('pointermove', this._onMove);
+    const d = this.drag;
+    if (!d) return;
+
+    this._removeGhost();
+    d.el.classList.remove('order-dragging-source');
+
+    const list = safeGet('order-list');
+    const newOrder = [];
+    list.querySelectorAll('.order-item').forEach(el => {
+      newOrder.push(parseInt(el.dataset.idx));
+    });
+    state.orderItemOrder = newOrder;
+
+    this._refreshNumbers();
     this.drag = null;
-    this.buildOrderUI();
   }
-  
-  /**
-   * Get answer
-   */
-  getAnswer() {
-    return { order: state.orderItemOrder };
+
+  // -- Animated swap (FLIP technique) --
+
+  _animatedSwap(draggedEl, targetEl, position) {
+    const targetRect = targetEl.getBoundingClientRect();
+
+    if (position === 'after') {
+      targetEl.parentNode.insertBefore(draggedEl, targetEl.nextSibling);
+    } else {
+      targetEl.parentNode.insertBefore(draggedEl, targetEl);
+    }
+
+    const targetRectAfter = targetEl.getBoundingClientRect();
+    const dx = targetRect.left - targetRectAfter.left;
+    const dy = targetRect.top  - targetRectAfter.top;
+
+    if (dx !== 0 || dy !== 0) {
+      targetEl.style.transition = 'none';
+      targetEl.style.transform  = 'translate(' + dx + 'px, ' + dy + 'px)';
+      targetEl.offsetHeight; // force reflow
+      targetEl.style.transition = 'transform 0.18s ease';
+      targetEl.style.transform  = '';
+    }
+
+    this._refreshNumbers();
+    this.utils.Sounds.click();
   }
-  
-  /**
-   * Render host view
-   */
-  renderHost() {
-    const grid = safeGet('host-options-grid');
-    if (!grid) return;
-    
-    const { escapeHtml } = this.utils;
-    const items = this.question.items || [];
-    
-    grid.innerHTML = `
-      <div class="host-order-preview">
-        ${items.map((item, i) => `
-          <div class="host-order-item stagger-${Math.min(i + 1, 4)}">
-            ${i + 1}. ${escapeHtml(item)}
-          </div>
-        `).join('')}
-      </div>
-    `;
-  }
-  
-  /**
-   * Cleanup
-   */
-  cleanup() {
-    document.getElementById('__dgh')?.remove();
-    document.getElementById('__ord_ind')?.remove();
-    document.removeEventListener('pointermove', this.onDragMove.bind(this));
-    document.removeEventListener('pointerup', this.onDragEnd.bind(this));
+
+  // -- Helpers --
+
+  _removeGhost() {
+    const g = document.getElementById('__dgh');
+    if (g) g.remove();
   }
 }
