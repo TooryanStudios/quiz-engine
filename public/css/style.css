@@ -1793,15 +1793,15 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
 }
 
 .btn-refresh-pin {
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   background: rgba(99, 102, 241, 0.18);
   border: 1px solid rgba(99, 102, 241, 0.35);
-  border-radius: 10px;
+  border-radius: 8px;
   color: var(--text);
   cursor: pointer;
   transition: background 0.15s, transform 0.3s, opacity 0.2s;
