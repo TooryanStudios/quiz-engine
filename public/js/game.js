@@ -109,6 +109,175 @@ if (quizSlugFromUrl) {
     .then((data) => {
       if (!data) return;
       setText(`📋 ${data.title}`);
+      // Kick off media preloading for the host lobby
+      if (data.mediaAssets && data.mediaAssets.length > 0) {
+        preloadMediaAssets('host', data.title, data.questionCount, data.mediaAssets);
+      } else {
+        updatePreloadDiag('host', {
+          quiz: data.title || quizSlugFromUrl,
+          questions: String(data.questionCount || 0),
+          mediaTotal: '0 assets',
+          status: 'No media to preload',
+        });
+      }
+    })
+    .catch(() => {});
+}
+
+// ─────────────────────────────────────────────
+// Media Preloader — loads images/videos/audio
+// during lobby so gameplay is instant
+// ─────────────────────────────────────────────
+const _preloadCache = new Map(); // url -> Promise<void>
+
+function updatePreloadDiag(prefix, fields) {
+  const ids = {
+    quiz: `diag-${prefix}-quiz`,
+    questions: `diag-${prefix}-questions`,
+    mediaTotal: `diag-${prefix}-media-total`,
+    loaded: `diag-${prefix}-loaded`,
+    failed: `diag-${prefix}-failed`,
+    status: `diag-${prefix}-status`,
+    bar: `diag-${prefix}-bar`,
+    log: `diag-${prefix}-log`,
+  };
+  for (const [key, value] of Object.entries(fields)) {
+    if (key === 'bar') {
+      const barEl = document.getElementById(ids.bar);
+      if (barEl) barEl.style.width = value + '%';
+      continue;
+    }
+    if (key === 'barClass') {
+      const barEl = document.getElementById(ids.bar);
+      if (barEl) barEl.className = 'preload-diag-bar ' + value;
+      continue;
+    }
+    const el = document.getElementById(ids[key]);
+    if (el) el.textContent = value;
+  }
+}
+
+function addPreloadLog(prefix, text, cls = '') {
+  const logEl = document.getElementById(`diag-${prefix}-log`);
+  if (!logEl) return;
+  const li = document.createElement('li');
+  li.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+  if (cls) li.className = cls;
+  logEl.appendChild(li);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function preloadSingleAsset(asset) {
+  const { type, url } = asset;
+  if (_preloadCache.has(url)) return _preloadCache.get(url);
+
+  const promise = new Promise((resolve, reject) => {
+    const startTime = performance.now();
+    if (type === 'image') {
+      const img = new Image();
+      img.onload = () => resolve({ url, type, ms: Math.round(performance.now() - startTime), size: 0 });
+      img.onerror = () => reject(new Error(`Failed to load image: ${url}`));
+      img.src = url;
+    } else if (type === 'video') {
+      const video = document.createElement('video');
+      video.preload = 'auto';
+      video.muted = true;
+      video.oncanplaythrough = () => resolve({ url, type, ms: Math.round(performance.now() - startTime), size: 0 });
+      video.onerror = () => reject(new Error(`Failed to load video: ${url}`));
+      video.src = url;
+    } else if (type === 'audio') {
+      const audio = new Audio();
+      audio.preload = 'auto';
+      audio.oncanplaythrough = () => resolve({ url, type, ms: Math.round(performance.now() - startTime), size: 0 });
+      audio.onerror = () => reject(new Error(`Failed to load audio: ${url}`));
+      audio.src = url;
+    } else {
+      // Unknown type — try fetching as generic resource
+      fetch(url, { mode: 'no-cors' })
+        .then(() => resolve({ url, type, ms: Math.round(performance.now() - startTime), size: 0 }))
+        .catch(() => reject(new Error(`Failed to fetch: ${url}`)));
+    }
+  });
+  _preloadCache.set(url, promise);
+  return promise;
+}
+
+async function preloadMediaAssets(prefix, quizTitle, questionCount, mediaAssets) {
+  const total = mediaAssets.length;
+  let loaded = 0;
+  let failed = 0;
+  const overallStart = performance.now();
+
+  updatePreloadDiag(prefix, {
+    quiz: quizTitle || '—',
+    questions: String(questionCount || 0),
+    mediaTotal: `${total} asset${total !== 1 ? 's' : ''}`,
+    loaded: `0 / ${total}`,
+    failed: '0',
+    status: 'Preloading…',
+    bar: 0,
+  });
+  addPreloadLog(prefix, `Starting preload of ${total} media asset(s)`, 'info');
+
+  // Load 3 at a time for efficiency
+  const CONCURRENCY = 3;
+  const queue = [...mediaAssets];
+
+  async function processNext() {
+    while (queue.length > 0) {
+      const asset = queue.shift();
+      const shortUrl = asset.url.length > 60 ? asset.url.slice(0, 57) + '…' : asset.url;
+      try {
+        const result = await preloadSingleAsset(asset);
+        loaded++;
+        addPreloadLog(prefix, `✓ Q${asset.index + 1} ${result.type} (${result.ms}ms)`, 'success');
+      } catch (err) {
+        failed++;
+        addPreloadLog(prefix, `✗ Q${asset.index + 1} ${asset.type} — ${err.message}`, 'fail');
+      }
+      const pct = Math.round(((loaded + failed) / total) * 100);
+      updatePreloadDiag(prefix, {
+        loaded: `${loaded} / ${total}`,
+        failed: String(failed),
+        bar: pct,
+        status: `${pct}% (${loaded + failed}/${total})`,
+      });
+    }
+  }
+
+  const workers = [];
+  for (let i = 0; i < Math.min(CONCURRENCY, total); i++) {
+    workers.push(processNext());
+  }
+  await Promise.all(workers);
+
+  const elapsed = Math.round(performance.now() - overallStart);
+  const barClass = failed > 0 ? 'has-errors' : 'complete';
+  updatePreloadDiag(prefix, {
+    status: `Done in ${elapsed}ms — ${loaded} ok, ${failed} failed`,
+    bar: 100,
+    barClass,
+  });
+  addPreloadLog(prefix, `Preload complete: ${loaded}/${total} in ${elapsed}ms`, failed > 0 ? 'fail' : 'success');
+}
+
+// Trigger preload for a player who joins (via quiz slug in the URL or room info)
+function triggerPlayerPreload(quizSlug) {
+  if (!quizSlug) return;
+  fetch(`/api/quiz-info/${encodeURIComponent(quizSlug)}`)
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (!data) return;
+      if (data.mediaAssets && data.mediaAssets.length > 0) {
+        preloadMediaAssets('player', data.title, data.questionCount, data.mediaAssets);
+      } else {
+        updatePreloadDiag('player', {
+          quiz: data.title || quizSlug,
+          questions: String(data.questionCount || 0),
+          mediaTotal: '0 assets',
+          status: 'No media to preload',
+        });
+      }
     })
     .catch(() => {});
 }
@@ -2064,6 +2233,10 @@ socket.on('room:joined', (data) => {
     
     if (window.__dbgLog) window.__dbgLog('room:joined -> showView(view-player-lobby)');
     showView('view-player-lobby');
+
+    // Trigger media preloading for the player
+    const quizSlug = data?.quizSlug;
+    if (quizSlug) triggerPlayerPreload(quizSlug);
   } catch (err) {
     console.error('Error in room:joined:', err);
     pushJoinDebugLog(`room:joined error: ${err?.message || err}`);

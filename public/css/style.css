@@ -1422,6 +1422,119 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   transform: translateX(-50%) translateY(0);
 }
 
+/* ═══════════════════════════════════════════
+   Preload Diagnostic Panel
+═══════════════════════════════════════════ */
+.preload-diag-panel {
+  width: 100%;
+  margin-top: 16px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.6);
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  overflow: hidden;
+}
+
+.preload-diag-toggle {
+  cursor: pointer;
+  padding: 8px 12px;
+  font-weight: 600;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  list-style: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.preload-diag-toggle::-webkit-details-marker { display: none; }
+
+.preload-diag-toggle::before {
+  content: '▸ ';
+}
+
+.preload-diag-panel[open] .preload-diag-toggle::before {
+  content: '▾ ';
+}
+
+.preload-diag-body {
+  padding: 6px 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.preload-diag-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.preload-diag-label {
+  color: rgba(255,255,255,0.4);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.preload-diag-value {
+  font-variant-numeric: tabular-nums;
+  font-family: 'Courier New', monospace;
+  color: var(--text-dim);
+}
+
+.preload-diag-fail {
+  color: #f87171;
+}
+
+.preload-diag-progress {
+  width: 100%;
+  height: 4px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 4px 0;
+}
+
+.preload-diag-bar {
+  height: 100%;
+  background: #3b82f6;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.preload-diag-bar.complete {
+  background: #22c55e;
+}
+
+.preload-diag-bar.has-errors {
+  background: #f59e0b;
+}
+
+.preload-diag-log {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0 0;
+  max-height: 120px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.preload-diag-log li {
+  font-size: 0.65rem;
+  color: rgba(255,255,255,0.35);
+  font-family: 'Courier New', monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.preload-diag-log li.success { color: #4ade80; }
+.preload-diag-log li.fail { color: #f87171; }
+.preload-diag-log li.info { color: #60a5fa; }
+
 .share-icon-btn {
   flex-shrink: 0;
   width: 34px;

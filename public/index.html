@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=92" />
+  <link rel="stylesheet" href="/css/style.css?v=93" />
   <!-- Prevent browser zoom (Ctrl+scroll, Ctrl+±, pinch) -->
   <script>
     document.addEventListener('wheel', function(e){ if(e.ctrlKey){ e.preventDefault(); } }, { passive: false });
@@ -251,6 +251,23 @@
         </button>
       </div>
 
+      <!-- Preload Diagnostic Panel -->
+      <details class="preload-diag-panel" id="host-preload-diag">
+        <summary class="preload-diag-toggle">📊 Diagnostics</summary>
+        <div class="preload-diag-body">
+          <div class="preload-diag-row"><span class="preload-diag-label">Quiz</span><span class="preload-diag-value" id="diag-host-quiz">—</span></div>
+          <div class="preload-diag-row"><span class="preload-diag-label">Questions</span><span class="preload-diag-value" id="diag-host-questions">—</span></div>
+          <div class="preload-diag-row"><span class="preload-diag-label">Media Assets</span><span class="preload-diag-value" id="diag-host-media-total">—</span></div>
+          <div class="preload-diag-progress">
+            <div class="preload-diag-bar" id="diag-host-bar" style="width:0%"></div>
+          </div>
+          <div class="preload-diag-row"><span class="preload-diag-label">Loaded</span><span class="preload-diag-value" id="diag-host-loaded">0 / 0</span></div>
+          <div class="preload-diag-row"><span class="preload-diag-label">Failed</span><span class="preload-diag-value preload-diag-fail" id="diag-host-failed">0</span></div>
+          <div class="preload-diag-row"><span class="preload-diag-label">Status</span><span class="preload-diag-value" id="diag-host-status">Idle</span></div>
+          <ul class="preload-diag-log" id="diag-host-log"></ul>
+        </div>
+      </details>
+
     </div>
   </div>
 
@@ -294,6 +311,23 @@
         <h3>Players in room (<span id="player-player-count">0</span>)</h3>
         <ul class="player-list" id="player-player-list"></ul>
       </div>
+
+      <!-- Preload Diagnostic Panel -->
+      <details class="preload-diag-panel" id="player-preload-diag">
+        <summary class="preload-diag-toggle">📊 Diagnostics</summary>
+        <div class="preload-diag-body">
+          <div class="preload-diag-row"><span class="preload-diag-label">Quiz</span><span class="preload-diag-value" id="diag-player-quiz">—</span></div>
+          <div class="preload-diag-row"><span class="preload-diag-label">Questions</span><span class="preload-diag-value" id="diag-player-questions">—</span></div>
+          <div class="preload-diag-row"><span class="preload-diag-label">Media Assets</span><span class="preload-diag-value" id="diag-player-media-total">—</span></div>
+          <div class="preload-diag-progress">
+            <div class="preload-diag-bar" id="diag-player-bar" style="width:0%"></div>
+          </div>
+          <div class="preload-diag-row"><span class="preload-diag-label">Loaded</span><span class="preload-diag-value" id="diag-player-loaded">0 / 0</span></div>
+          <div class="preload-diag-row"><span class="preload-diag-label">Failed</span><span class="preload-diag-value preload-diag-fail" id="diag-player-failed">0</span></div>
+          <div class="preload-diag-row"><span class="preload-diag-label">Status</span><span class="preload-diag-value" id="diag-player-status">Idle</span></div>
+          <ul class="preload-diag-log" id="diag-player-log"></ul>
+        </div>
+      </details>
     </div>
   </div>
 
@@ -576,6 +610,6 @@
   <!-- Load Socket.io client from the server (auto-served by socket.io) -->
   <script src="/socket.io/socket.io.js"></script>
   <!-- Main game logic (ES6 module) -->
-  <script type="module" src="/js/game.js?v=92"></script>
+  <script type="module" src="/js/game.js?v=93"></script>
 </body>
 </html>

@@ -144,22 +144,36 @@ app.get('/api/quiz-diagnostic/:slug', async (req, res) => {
 });
 
 // Quiz info endpoint — returns title + question count only (lightweight)
+// Also returns media URLs for preloading during lobby
 app.get('/api/quiz-info/:slug', async (req, res) => {
   const slug = req.params.slug;
   try {
     const db = getDbSafe();
     if (db) {
+      let data = null;
       // Try direct doc ID lookup first
       const docSnap = await db.collection('quizzes').doc(slug).get();
       if (docSnap.exists) {
-        const data = docSnap.data();
-        return res.json({ title: data.title || slug, questionCount: (data.questions || []).length });
+        data = docSnap.data();
+      } else {
+        // Fall back to slug query
+        const snap = await db.collection('quizzes').where('slug', '==', slug).limit(1).get();
+        if (!snap.empty) data = snap.docs[0].data();
       }
-      // Fall back to slug query
-      const snap = await db.collection('quizzes').where('slug', '==', slug).limit(1).get();
-      if (!snap.empty) {
-        const data = snap.docs[0].data();
-        return res.json({ title: data.title || slug, questionCount: (data.questions || []).length });
+      if (data) {
+        const questions = data.questions || [];
+        // Collect all media URLs for preloading
+        const mediaAssets = [];
+        questions.forEach((q, idx) => {
+          if (q.media && q.media.type && q.media.type !== 'none' && q.media.url) {
+            mediaAssets.push({ index: idx, type: q.media.type, url: q.media.url });
+          }
+        });
+        return res.json({
+          title: data.title || slug,
+          questionCount: questions.length,
+          mediaAssets,
+        });
       }
     }
   } catch (err) {
@@ -1400,6 +1414,7 @@ io.on('connection', (socket) => {
       nickname: player.nickname,
       avatar: player.avatar,
       players: getPlayerList(room),
+      quizSlug: room.quizSlug || null,
     });
 
     // Notify everyone in the room (including host) about the updated player list
@@ -1713,6 +1728,7 @@ io.on('connection', (socket) => {
         nickname: player.nickname,
         avatar: player.avatar,
         players: getPlayerList(room),
+        quizSlug: room.quizSlug || null,
       });
     }
 
