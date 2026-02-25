@@ -1,11 +1,11 @@
 // ─────────────────────────────────────────────
 // ES6 Module Imports
 // ─────────────────────────────────────────────
-import { state, updateState, resetQuestionState} from './state/GameState.js?v=113';
-import { Sounds, setMuted, isMuted } from './utils/sounds.js?v=113';
-import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js?v=113';
-import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js?v=113';
-import { QuestionRendererFactory } from './renderers/QuestionRenderer.js?v=113';
+import { state, updateState, resetQuestionState} from './state/GameState.js?v=114';
+import { Sounds, setMuted, isMuted } from './utils/sounds.js?v=114';
+import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js?v=114';
+import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js?v=114';
+import { QuestionRendererFactory } from './renderers/QuestionRenderer.js?v=114';
 
 // Fetch and display server build time on home screen
 fetch('/api/build-info')
@@ -2181,7 +2181,7 @@ document.getElementById('btn-mode-global').addEventListener('click', () => {
 });
 
 // Host Lobby — Share copy button
-document.getElementById('btn-share-copy').addEventListener('click', async () => {
+document.getElementById('btn-share-copy')?.addEventListener('click', async () => {
   const url = state.currentJoinUrl;
   if (!url) return;
   Sounds.click();
