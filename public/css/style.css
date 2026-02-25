@@ -3664,25 +3664,21 @@ video.question-media {
   padding: 0 8px;
 }
 
-/* Slot cells */
+/* Slot cells — seamless mosaic board: no gaps, no borders, no rounded corners */
 .pp-slot {
   box-sizing: border-box;
-  transition: border-color 0.15s, transform 0.1s;
 }
-.pp-slot--filled {
-  border-color: rgba(59,130,246,0.6) !important;
-}
-.pp-slot:not(.pp-slot--filled):hover {
-  border-color: rgba(255,255,255,0.35) !important;
-  transform: scale(1.03);
+/* Empty slot hover hint (player only) */
+.pp-slot.pp-slot--empty:hover {
+  background-color: rgba(255,255,255,0.1) !important;
 }
 
-/* Piece tiles in tray */
+/* Piece tiles in player tray */
 .pp-piece {
   box-sizing: border-box;
-  transition: transform 0.12s, border-color 0.12s;
+  transition: transform 0.12s, border-color 0.12s, opacity 0.15s;
 }
-.pp-piece:hover {
+.pp-piece:not(.pp-piece--placed):hover {
   transform: scale(1.06);
   border-color: rgba(255,255,255,0.5) !important;
 }
@@ -3690,6 +3686,16 @@ video.question-media {
   border-color: #3b82f6 !important;
   box-shadow: 0 0 0 3px rgba(59,130,246,0.5);
   transform: scale(1.08);
+}
+/* Ghost placeholder for already-placed pieces (kept in tray to prevent layout shift) */
+.pp-piece--placed {
+  opacity: 0.15 !important;
+  pointer-events: none !important;
+  cursor: default !important;
+  transform: none !important;
+  border-style: dashed !important;
+  border-color: rgba(255,255,255,0.2) !important;
+  box-shadow: none !important;
 }
 
 /* Result board piece borders set inline (correct=green / wrong=red) */

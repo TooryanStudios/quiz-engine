@@ -2892,8 +2892,8 @@ socket.on('room:rejoined', ({ pin, nickname, avatar, players, score, streak, roo
       if (prgRj) prgRj.textContent = `Q ${(puzzleData.questionIndex || 0) + 1} / ${puzzleData.total || '?'}`;
       const hintRj = document.getElementById('pp-hint');
       if (hintRj) hintRj.textContent = puzzleData.question?.text || '';
-      _renderPuzzleBoard('pp-board', puzzleData.board, puzzleData.cols, puzzleData.rows, puzzleData.imageUrl, puzzleData.myPieces, false);
-      _renderMyPieces(puzzleData.myPieces, puzzleData.imageUrl, puzzleData.cols, puzzleData.rows, puzzleData.board);
+      _renderPuzzleBoard('pp-board', puzzleData.board, puzzleData.cols, puzzleData.rows, puzzleData.imageUrl, puzzleData.myPieces, false, true);
+      _renderMyPieces(puzzleData.myPieces, puzzleData.imageUrl, puzzleData.cols, puzzleData.rows, puzzleData.board, true);
       _startPuzzleCountdown(puzzleData.timeRemaining, 'pp-timer');
     } else {
       // Fallback: show the player lobby
@@ -3181,162 +3181,238 @@ function _pieceBgStyle(col, rows, row, cols, imageUrl, size) {
   ].join(';');
 }
 
-function _renderPuzzleBoard(containerId, board, cols, rows, imageUrl, myPieces, isHost) {
+function _renderPuzzleBoard(containerId, board, cols, rows, imageUrl, myPieces, isHost, forceRebuild) {
   const el = document.getElementById(containerId);
   if (!el) return;
-  const SLOT = 88; // px
-  el.style.display        = 'grid';
-  el.style.gridTemplateColumns = `repeat(${cols}, ${SLOT}px)`;
-  el.style.gridTemplateRows    = `repeat(${rows}, ${SLOT}px)`;
-  el.style.gap            = '4px';
-  el.style.width          = 'fit-content';
-  el.style.margin         = '0 auto';
-  el.innerHTML = '';
+  const SLOT = 88;
+  const total = cols * rows;
 
-  for (let slot = 0; slot < cols * rows; slot++) {
-    const cell   = document.createElement('div');
-    const placed = board[String(slot)];
-    cell.className = 'pp-slot';
-    cell.style.cssText = `width:${SLOT}px;height:${SLOT}px;border-radius:6px;position:relative;cursor:${!isHost ? 'pointer' : 'default'};border:2px solid var(--border,#333);overflow:hidden;`;
+  // Rebuild DOM structure only when grid dimensions change or forced (e.g. puzzle:init)
+  const needsBuild = forceRebuild
+    || el.childElementCount !== total
+    || el.dataset.ppCols !== String(cols)
+    || el.dataset.ppRows !== String(rows);
+
+  if (needsBuild) {
+    el.innerHTML = '';
+    el.style.display             = 'grid';
+    el.style.gridTemplateColumns = `repeat(${cols}, ${SLOT}px)`;
+    el.style.gridTemplateRows    = `repeat(${rows}, ${SLOT}px)`;
+    el.style.gap                 = '0';          // seamless mosaic — no gaps
+    el.style.width               = `${cols * SLOT}px`;
+    el.style.margin              = '0 auto';
+    el.dataset.ppCols = String(cols);
+    el.dataset.ppRows = String(rows);
+
+    for (let slot = 0; slot < total; slot++) {
+      const cell = document.createElement('div');
+      cell.className = 'pp-slot pp-slot--empty';
+      cell.dataset.slot = String(slot);
+      // No border-radius, no border → seamless image mosaic
+      cell.style.cssText = `width:${SLOT}px;height:${SLOT}px;position:relative;box-sizing:border-box;overflow:hidden;cursor:${!isHost ? 'pointer' : 'default'};background-color:rgba(255,255,255,0.04);`;
+      if (!isHost) {
+        cell.addEventListener('click', () => {
+          if (_puzzleSelected !== null) {
+            const existing = _puzzleCurrentBoard[String(slot)];
+            if (existing && !_puzzleMyPieces.includes(existing.pieceIndex)) return;
+            socket.emit('puzzle:place', { pieceIndex: _puzzleSelected, slotIndex: slot });
+            _puzzleSelected = null;
+            document.querySelectorAll('.pp-piece--selected').forEach(p => p.classList.remove('pp-piece--selected'));
+          }
+        });
+        cell.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; });
+        cell.addEventListener('drop', (e) => {
+          e.preventDefault();
+          const pi2 = parseInt(e.dataTransfer.getData('text/plain'), 10);
+          if (!isNaN(pi2)) {
+            const existing = _puzzleCurrentBoard[String(slot)];
+            if (existing && !_puzzleMyPieces.includes(existing.pieceIndex)) return;
+            socket.emit('puzzle:place', { pieceIndex: pi2, slotIndex: slot });
+            _puzzleSelected = null;
+            document.querySelectorAll('.pp-piece--selected').forEach(p => p.classList.remove('pp-piece--selected'));
+          }
+        });
+      }
+      // Slot number label (shown only when empty)
+      const numEl = document.createElement('span');
+      numEl.className = 'pp-slot-num';
+      numEl.textContent = slot + 1;
+      numEl.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;opacity:0.18;pointer-events:none;';
+      cell.appendChild(numEl);
+      el.appendChild(cell);
+    }
+  }
+
+  // Patch each cell in-place — no DOM removal ⇒ no flicker
+  el.querySelectorAll('.pp-slot').forEach((cell, slot) => {
+    const placed     = board[String(slot)];
+    const prevPiece  = cell.dataset.pieceIdx;
 
     if (placed && placed.pieceIndex !== null) {
-      const c = placed.pieceIndex % cols;
-      const r = Math.floor(placed.pieceIndex / cols);
-      cell.style.cssText += _pieceBgStyle(c, rows, r, cols, imageUrl, SLOT);
-      cell.classList.add('pp-slot--filled');
-      if (placed.nickname) {
-        const lbl = document.createElement('span');
-        lbl.className = 'pp-owner-lbl';
-        lbl.textContent = placed.nickname;
-        lbl.style.cssText = 'position:absolute;bottom:2px;left:0;right:0;text-align:center;font-size:10px;color:#fff;text-shadow:0 1px 3px #000;pointer-events:none;';
-        cell.appendChild(lbl);
+      // Only update DOM if this slot's content actually changed
+      if (prevPiece !== String(placed.pieceIndex) || !cell.classList.contains('pp-slot--filled')) {
+        const c = placed.pieceIndex % cols;
+        const r = Math.floor(placed.pieceIndex / cols);
+        cell.style.backgroundImage    = `url('${imageUrl}')`;
+        cell.style.backgroundSize     = `${cols * SLOT}px ${rows * SLOT}px`;
+        cell.style.backgroundPosition = `-${c * SLOT}px -${r * SLOT}px`;
+        cell.style.backgroundRepeat   = 'no-repeat';
+        cell.style.backgroundColor    = '';
+        cell.classList.add('pp-slot--filled');
+        cell.classList.remove('pp-slot--empty');
+        cell.dataset.pieceIdx         = String(placed.pieceIndex);
+        // Hide the slot number
+        const numEl = cell.querySelector('.pp-slot-num');
+        if (numEl) numEl.style.display = 'none';
+        // Owner label
+        let lbl = cell.querySelector('.pp-owner-lbl');
+        if (placed.nickname) {
+          if (!lbl) {
+            lbl = document.createElement('span');
+            lbl.className  = 'pp-owner-lbl';
+            lbl.style.cssText = 'position:absolute;bottom:2px;left:0;right:0;text-align:center;font-size:10px;color:#fff;text-shadow:0 1px 3px #000;pointer-events:none;';
+            cell.appendChild(lbl);
+          }
+          lbl.textContent = placed.nickname;
+        } else if (lbl) {
+          lbl.remove();
+        }
       }
-    } else {
-      cell.style.backgroundColor = 'rgba(255,255,255,0.04)';
-      const numEl = document.createElement('span');
-      numEl.textContent = slot + 1;
-      numEl.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;opacity:0.18;';
-      cell.appendChild(numEl);
+    } else if (prevPiece !== undefined || cell.classList.contains('pp-slot--filled')) {
+      // Slot was filled, now empty — restore empty state
+      cell.style.backgroundImage    = '';
+      cell.style.backgroundSize     = '';
+      cell.style.backgroundPosition = '';
+      cell.style.backgroundColor    = 'rgba(255,255,255,0.04)';
+      cell.classList.remove('pp-slot--filled');
+      cell.classList.add('pp-slot--empty');
+      delete cell.dataset.pieceIdx;
+      cell.querySelector('.pp-owner-lbl')?.remove();
+      const numEl = cell.querySelector('.pp-slot-num');
+      if (numEl) numEl.style.display = '';
     }
-
-    if (!isHost) {
-      // Click-to-place (tap on slot after selecting a piece)
-      cell.addEventListener('click', () => {
-        if (_puzzleSelected !== null) {
-          const existing = _puzzleCurrentBoard[String(slot)];
-          if (existing && !myPieces.includes(existing.pieceIndex)) return; // occupied by opponent
-          socket.emit('puzzle:place', { pieceIndex: _puzzleSelected, slotIndex: slot });
-          _puzzleSelected = null;
-          document.querySelectorAll('.pp-piece--selected').forEach(p => p.classList.remove('pp-piece--selected'));
-        }
-      });
-      // HTML5 drag-and-drop (desktop)
-      cell.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-      });
-      cell.addEventListener('drop', (e) => {
-        e.preventDefault();
-        const pi2 = parseInt(e.dataTransfer.getData('text/plain'), 10);
-        if (!isNaN(pi2)) {
-          const existing = _puzzleCurrentBoard[String(slot)];
-          if (existing && !myPieces.includes(existing.pieceIndex)) return;
-          socket.emit('puzzle:place', { pieceIndex: pi2, slotIndex: slot });
-          _puzzleSelected = null;
-          document.querySelectorAll('.pp-piece--selected').forEach(p => p.classList.remove('pp-piece--selected'));
-        }
-      });
-    }
-    el.appendChild(cell);
-  }
+  });
 }
 
-function _renderMyPieces(myPieces, imageUrl, cols, rows, board) {
+function _renderMyPieces(myPieces, imageUrl, cols, rows, board, forceRebuild) {
   const tray = document.getElementById('pp-tray');
   if (!tray) return;
   const PIECE = 88;
-  tray.innerHTML = '';
-  tray.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:12px;';
   const placedSet = new Set();
   if (board) Object.values(board).forEach(p => { if (p) placedSet.add(p.pieceIndex); });
 
-  let unplaced = 0;
-  for (const pi of myPieces) {
-    if (placedSet.has(pi)) continue;
-    unplaced++;
-    const c = pi % cols;
-    const r = Math.floor(pi / cols);
-    const piece = document.createElement('div');
-    piece.className = 'pp-piece';
-    piece.dataset.piece = pi;
-    piece.style.cssText = `width:${PIECE}px;height:${PIECE}px;border-radius:6px;cursor:pointer;border:2px solid var(--border,#333);flex-shrink:0;${_pieceBgStyle(c, rows, r, cols, imageUrl, PIECE)}`;
-    // Click-to-select
-    piece.addEventListener('click', () => {
-      if (_puzzleSelected === pi) {
-        _puzzleSelected = null;
-        piece.classList.remove('pp-piece--selected');
-      } else {
-        document.querySelectorAll('.pp-piece--selected').forEach(p => p.classList.remove('pp-piece--selected'));
-        _puzzleSelected = pi;
-        piece.classList.add('pp-piece--selected');
-      }
-    });
-    // HTML5 drag (desktop)
-    piece.setAttribute('draggable', 'true');
-    piece.addEventListener('dragstart', (e) => {
-      _puzzleSelected = pi;
-      e.dataTransfer.setData('text/plain', String(pi));
-      e.dataTransfer.effectAllowed = 'move';
-    });
-    // Touch drag (mobile / tablet)
-    piece.addEventListener('touchstart', (e) => {
-      const touch = e.touches[0];
-      _puzzleSelected = pi;
-      document.querySelectorAll('.pp-piece--selected').forEach(p => p.classList.remove('pp-piece--selected'));
-      piece.classList.add('pp-piece--selected');
-      if (_ppGhost) { _ppGhost.remove(); _ppGhost = null; }
-      _ppGhost = piece.cloneNode(true);
-      _ppGhost.classList.remove('pp-piece--selected');
-      Object.assign(_ppGhost.style, {
-        position: 'fixed',
-        zIndex: '9999',
-        pointerEvents: 'none',
-        opacity: '0.85',
-        transform: 'scale(1.12)',
-        top: (touch.clientY - PIECE / 2) + 'px',
-        left: (touch.clientX - PIECE / 2) + 'px',
-        margin: '0',
-      });
-      document.body.appendChild(_ppGhost);
-      e.preventDefault();
-    }, { passive: false });
-    piece.addEventListener('touchmove', (e) => {
-      if (!_ppGhost) return;
-      const touch = e.touches[0];
-      _ppGhost.style.top  = (touch.clientY - PIECE / 2) + 'px';
-      _ppGhost.style.left = (touch.clientX - PIECE / 2) + 'px';
-      e.preventDefault();
-    }, { passive: false });
-    piece.addEventListener('touchend', (e) => {
-      const touch = e.changedTouches[0];
-      // ghost has pointer-events:none so elementFromPoint sees through it
-      const target = document.elementFromPoint(touch.clientX, touch.clientY);
-      if (_ppGhost) { _ppGhost.remove(); _ppGhost = null; }
-      const slotEl = target && (target.closest ? target.closest('.pp-slot') : null);
-      if (slotEl && slotEl.parentElement) {
-        const slots = Array.from(slotEl.parentElement.querySelectorAll('.pp-slot'));
-        const si = slots.indexOf(slotEl);
-        if (si !== -1) {
-          socket.emit('puzzle:place', { pieceIndex: pi, slotIndex: si });
+  // Rebuild tile DOM only when piece set changes (e.g. new puzzle round)
+  if (forceRebuild || tray.dataset.ppPieces !== myPieces.join(',')) {
+    tray.innerHTML = '';
+    tray.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:12px;';
+    tray.dataset.ppPieces = myPieces.join(',');
+
+    for (const pi of myPieces) {
+      const c = pi % cols;
+      const r = Math.floor(pi / cols);
+      const piece = document.createElement('div');
+      piece.className = 'pp-piece';
+      piece.dataset.piece = String(pi);
+      piece.style.cssText = `width:${PIECE}px;height:${PIECE}px;border-radius:8px;cursor:pointer;border:2px solid var(--border,#444);flex-shrink:0;${_pieceBgStyle(c, rows, r, cols, imageUrl, PIECE)}`;
+      // Click-to-select
+      piece.addEventListener('click', () => {
+        if (_puzzleSelected === pi) {
           _puzzleSelected = null;
+          piece.classList.remove('pp-piece--selected');
+        } else {
           document.querySelectorAll('.pp-piece--selected').forEach(p => p.classList.remove('pp-piece--selected'));
+          _puzzleSelected = pi;
+          piece.classList.add('pp-piece--selected');
         }
-      }
-    }, { passive: false });
-    tray.appendChild(piece);
+      });
+      // HTML5 drag (desktop) — dim in-place instead of hiding, preventing layout flash
+      piece.setAttribute('draggable', 'true');
+      piece.addEventListener('dragstart', (e) => {
+        _puzzleSelected = pi;
+        e.dataTransfer.setData('text/plain', String(pi));
+        e.dataTransfer.effectAllowed = 'move';
+        // Delay so browser captures full-opacity ghost image first
+        setTimeout(() => { piece.style.opacity = '0.35'; }, 0);
+      });
+      piece.addEventListener('dragend', () => {
+        // Restore only if not yet placed (board_update will dim it if placed)
+        const isPlaced = Object.values(_puzzleCurrentBoard).some(p => p && p.pieceIndex === pi);
+        if (!isPlaced) piece.style.opacity = '';
+      });
+      // Touch drag (mobile / tablet)
+      piece.addEventListener('touchstart', (e) => {
+        const touch = e.touches[0];
+        _puzzleSelected = pi;
+        document.querySelectorAll('.pp-piece--selected').forEach(p => p.classList.remove('pp-piece--selected'));
+        piece.classList.add('pp-piece--selected');
+        if (_ppGhost) { _ppGhost.remove(); _ppGhost = null; }
+        _ppGhost = piece.cloneNode(true);
+        _ppGhost.classList.remove('pp-piece--selected');
+        Object.assign(_ppGhost.style, {
+          position: 'fixed',
+          zIndex: '9999',
+          pointerEvents: 'none',
+          opacity: '0.85',
+          transform: 'scale(1.12)',
+          top:  (touch.clientY - PIECE / 2) + 'px',
+          left: (touch.clientX - PIECE / 2) + 'px',
+          margin: '0',
+        });
+        document.body.appendChild(_ppGhost);
+        e.preventDefault();
+      }, { passive: false });
+      piece.addEventListener('touchmove', (e) => {
+        if (!_ppGhost) return;
+        const touch = e.touches[0];
+        _ppGhost.style.top  = (touch.clientY - PIECE / 2) + 'px';
+        _ppGhost.style.left = (touch.clientX - PIECE / 2) + 'px';
+        e.preventDefault();
+      }, { passive: false });
+      piece.addEventListener('touchend', (e) => {
+        const touch = e.changedTouches[0];
+        const target = document.elementFromPoint(touch.clientX, touch.clientY);
+        if (_ppGhost) { _ppGhost.remove(); _ppGhost = null; }
+        const slotEl = target && (target.closest ? target.closest('.pp-slot') : null);
+        if (slotEl && slotEl.parentElement) {
+          const slots = Array.from(slotEl.parentElement.querySelectorAll('.pp-slot'));
+          const si = slots.indexOf(slotEl);
+          if (si !== -1) {
+            socket.emit('puzzle:place', { pieceIndex: pi, slotIndex: si });
+            _puzzleSelected = null;
+            document.querySelectorAll('.pp-piece--selected').forEach(p => p.classList.remove('pp-piece--selected'));
+          }
+        }
+      }, { passive: false });
+      tray.appendChild(piece);
+    }
   }
-  if (unplaced === 0) {
-    tray.innerHTML = '<p style="opacity:.6;text-align:center;width:100%">✅ All pieces placed!</p>';
+
+  // Update piece visibility in-place — no DOM removal ⇒ no flicker
+  // Placed pieces become translucent ghost placeholders (keep tray layout stable)
+  let unplacedCount = 0;
+  for (const pi of myPieces) {
+    const pieceEl = tray.querySelector(`[data-piece="${pi}"]`);
+    if (!pieceEl) continue;
+    if (placedSet.has(pi)) {
+      pieceEl.classList.add('pp-piece--placed');
+      if (_puzzleSelected === pi) _puzzleSelected = null;
+    } else {
+      unplacedCount++;
+      pieceEl.classList.remove('pp-piece--placed');
+      // Restore opacity only if not currently mid-drag
+      if (pieceEl.style.opacity === '0.35') pieceEl.style.opacity = '';
+    }
+  }
+  // "All pieces placed" message
+  let doneMsg = tray.querySelector('.pp-tray-done');
+  if (unplacedCount === 0 && !doneMsg) {
+    doneMsg = document.createElement('p');
+    doneMsg.className = 'pp-tray-done';
+    doneMsg.style.cssText = 'opacity:.6;text-align:center;width:100%;margin-top:4px;';
+    doneMsg.textContent = '✅ All pieces placed!';
+    tray.appendChild(doneMsg);
+  } else if (unplacedCount > 0 && doneMsg) {
+    doneMsg.remove();
   }
 }
 
@@ -3370,7 +3446,7 @@ socket.on('puzzle:init', ({ questionIndex, total, question, imageUrl, cols, rows
     if (prg) prg.textContent = `Q ${questionIndex + 1} / ${total}`;
     const hint = document.getElementById('host-pp-hint');
     if (hint) hint.textContent = question?.text || '';
-    _renderPuzzleBoard('host-pp-board', board, cols, rows, imageUrl, [], true);
+    _renderPuzzleBoard('host-pp-board', board, cols, rows, imageUrl, [], true, true);
     _startPuzzleCountdown(duration, 'host-pp-timer');
     // Player chips
     const chipsEl = document.getElementById('host-pp-players');
@@ -3385,8 +3461,8 @@ socket.on('puzzle:init', ({ questionIndex, total, question, imageUrl, cols, rows
     if (prg) prg.textContent = `Q ${questionIndex + 1} / ${total}`;
     const hint = document.getElementById('pp-hint');
     if (hint) hint.textContent = question?.text || '';
-    _renderPuzzleBoard('pp-board', board, cols, rows, imageUrl, myPieces, false);
-    _renderMyPieces(myPieces, imageUrl, cols, rows, board);
+    _renderPuzzleBoard('pp-board', board, cols, rows, imageUrl, myPieces, false, true);
+    _renderMyPieces(myPieces, imageUrl, cols, rows, board, true);
     _startPuzzleCountdown(duration, 'pp-timer');
   }
 });
@@ -3415,29 +3491,33 @@ socket.on('puzzle:resolved', ({ board, deltas, players, imageUrl, cols, rows }) 
   const SLOT = 88;
   const resultEl = document.getElementById(_puzzleIsHost ? 'host-pp-result-board' : 'pp-result-board');
   if (resultEl) {
-    resultEl.style.display = 'grid';
+    resultEl.style.display             = 'grid';
     resultEl.style.gridTemplateColumns = `repeat(${cols}, ${SLOT}px)`;
     resultEl.style.gridTemplateRows    = `repeat(${rows}, ${SLOT}px)`;
-    resultEl.style.gap   = '4px';
-    resultEl.style.width = 'fit-content';
-    resultEl.style.margin = '0 auto';
-    resultEl.innerHTML   = '';
+    resultEl.style.gap                 = '0'; // seamless mosaic
+    resultEl.style.width               = `${cols * SLOT}px`;
+    resultEl.style.margin              = '0 auto';
+    resultEl.innerHTML                 = '';
 
     for (let slot = 0; slot < cols * rows; slot++) {
       const cell = document.createElement('div');
       const r    = board[slot];
-      cell.style.cssText = `width:${SLOT}px;height:${SLOT}px;border-radius:6px;position:relative;overflow:hidden;`;
+      // No border-radius — seamless image mosaic
+      cell.style.cssText = `width:${SLOT}px;height:${SLOT}px;position:relative;overflow:hidden;box-sizing:border-box;`;
       if (r && r.pieceIndex !== null) {
         const cc = r.pieceIndex % cols;
         const rr = Math.floor(r.pieceIndex / cols);
         cell.style.cssText += _pieceBgStyle(cc, rows, rr, cols, imageUrl || _puzzleImageUrl, SLOT);
-        cell.style.border  = '3px solid ' + (r.correct ? '#22c55e' : '#ef4444');
+        // Thin inset indicator (correct=green / wrong=red) — use outline to avoid layout shift
+        cell.style.outline = '3px solid ' + (r.correct ? '#22c55e' : '#ef4444');
+        cell.style.outlineOffset = '-3px';
       } else {
-        cell.style.cssText += 'border:3px solid #555;background:rgba(255,255,255,.04);';
+        cell.style.backgroundColor = 'rgba(255,255,255,.04)';
+        cell.style.outline = '2px solid #555';
+        cell.style.outlineOffset = '-2px';
       }
       resultEl.appendChild(cell);
     }
-    resultEl.style.display = 'grid';
 
     // Score list
     const myId = state.playerId;
