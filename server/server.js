@@ -364,8 +364,8 @@ const io = new Server(httpServer, {
     methods: ['GET', 'POST'],
   },
   // Keep WebSocket connections alive and detect dead sockets faster
-  pingInterval: 10000,   // send ping every 10 s
-  pingTimeout: 5000,     // disconnect if no pong within 5 s
+  pingInterval: 25000,   // send ping every 25 s
+  pingTimeout: 20000,    // disconnect if no pong within 20 s (mobile-safe)
 });
 
 // ─────────────────────────────────────────────
@@ -1581,7 +1581,26 @@ io.on('connection', (socket) => {
         const isStale = !oldSocket || existing.state === 'lobby' || existing.state === 'starting';
 
         if (isStale) {
-          // Old host is gone or game hadn't started yet — clean up the stale room.
+          // Clear any pending host-disconnect timer
+          if (existing.hostDisconnectTimer) {
+            clearTimeout(existing.hostDisconnectTimer);
+            existing.hostDisconnectTimer = null;
+          }
+
+          if (existing.hostDisconnected) {
+            // ── HOST RECONNECT: same quiz, same PIN, room still alive ──
+            // Restore the room in-place so all shared links remain valid.
+            existing.hostDisconnected = false;
+            existing.hostSocketId = socket.id;
+            socket.join(existing.pin);
+            socket.data.hostPin = existing.pin;
+            console.log(`[Room ${existing.pin}] Host RECLAIMED room for quiz "${quizSlug}" — same PIN preserved.`);
+            const modePayload = await buildRoomModePayload(existing);
+            socket.emit('room:created', { pin: existing.pin, ...modePayload, reclaimed: true });
+            return;
+          }
+
+          // Old host socket is fully gone (not in grace period) — delete stale room.
           console.log(`[Room ${existing.pin}] Stale room for quiz "${quizSlug}" replaced by reconnecting host.`);
           if (existing.questionTimer) clearTimeout(existing.questionTimer);
           if (existing.previewTimer) clearTimeout(existing.previewTimer);
@@ -2376,40 +2395,47 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // Host disconnected — find and destroy the room
+    // Host disconnected — give a 20-second grace period before destroying the room.
+    // This mirrors the 30s grace players already get, and critically preserves the
+    // room PIN so that shared join links remain valid through brief network drops.
     const hostedRoom = Array.from(rooms.values()).find(
       (r) => r.hostSocketId === socket.id
     );
     if (hostedRoom) {
-      console.log(`[Room ${hostedRoom.pin}] Host disconnected. Closing room.`);
-      if (hostedRoom.questionTimer) clearTimeout(hostedRoom.questionTimer);
-      if (hostedRoom.previewTimer) clearTimeout(hostedRoom.previewTimer);
+      console.log(`[Room ${hostedRoom.pin}] Host disconnected — 20 s grace window started.`);
+      hostedRoom.hostDisconnected = true;
 
-      if (hostedRoom.state && hostedRoom.state !== 'lobby') {
-        hostedRoom.state = 'finished';
-        const leaderboard = buildLeaderboard(hostedRoom);
-        io.to(hostedRoom.pin).emit('game:over', { leaderboard });
-      } else {
-        io.to(hostedRoom.pin).emit('room:closed', {
-          message: 'The host has disconnected. The game has ended.',
-        });
-      }
+      hostedRoom.hostDisconnectTimer = setTimeout(() => {
+        // Only destroy if host never came back
+        if (!hostedRoom.hostDisconnected) return;
+        console.log(`[Room ${hostedRoom.pin}] Host reconnect window expired. Closing room.`);
+        if (hostedRoom.questionTimer) clearTimeout(hostedRoom.questionTimer);
+        if (hostedRoom.previewTimer) clearTimeout(hostedRoom.previewTimer);
 
-      // Notify any pending rejoin requests that the room is gone
-      for (const [pendingSocketId] of hostedRoom.pendingJoinRequests) {
-        const pendingSocket = io.sockets.sockets.get(pendingSocketId);
-        if (pendingSocket) {
-          pendingSocket.emit('room:closed', {
+        if (hostedRoom.state && hostedRoom.state !== 'lobby') {
+          hostedRoom.state = 'finished';
+          const leaderboard = buildLeaderboard(hostedRoom);
+          io.to(hostedRoom.pin).emit('game:over', { leaderboard });
+        } else {
+          io.to(hostedRoom.pin).emit('room:closed', {
             message: 'The host has disconnected. The game has ended.',
           });
         }
-      }
 
-      // Remove all sockets from the Socket.io room after a short delay
-      setTimeout(() => {
-        io.socketsLeave(hostedRoom.pin);
-        rooms.delete(hostedRoom.pin);
-      }, 500);
+        for (const [pendingSocketId] of hostedRoom.pendingJoinRequests) {
+          const pendingSocket = io.sockets.sockets.get(pendingSocketId);
+          if (pendingSocket) {
+            pendingSocket.emit('room:closed', {
+              message: 'The host has disconnected. The game has ended.',
+            });
+          }
+        }
+
+        setTimeout(() => {
+          io.socketsLeave(hostedRoom.pin);
+          rooms.delete(hostedRoom.pin);
+        }, 500);
+      }, 20000); // 20-second grace period
     }
   });
 });
