@@ -1544,8 +1544,9 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   list-style: none;
   padding: 0;
   margin: 4px 0 0;
-  max-height: 120px;
+  max-height: 160px;
   overflow-y: auto;
+  overflow-x: auto;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1556,8 +1557,8 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   color: rgba(255,255,255,0.35);
   font-family: 'Courier New', monospace;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: 0;
+  padding-right: 12px;
 }
 
 .preload-diag-log li.success { color: #4ade80; }

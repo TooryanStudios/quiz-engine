@@ -161,8 +161,27 @@ function addPreloadLog(prefix, text, cls = '') {
   const logEl = document.getElementById(`diag-${prefix}-log`);
   if (!logEl) return;
   const li = document.createElement('li');
-  li.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+  const timestamp = `[${new Date().toLocaleTimeString()}] `;
   if (cls) li.className = cls;
+
+  // Check if text contains a URL — make it clickable
+  const urlMatch = text.match(/(https?:\/\/[^\s]+)/);
+  if (urlMatch) {
+    const url = urlMatch[1];
+    const before = text.slice(0, urlMatch.index);
+    const after = text.slice(urlMatch.index + url.length);
+    li.appendChild(document.createTextNode(timestamp + before));
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = url;
+    a.style.cssText = 'color:inherit;text-decoration:underline;text-underline-offset:2px;';
+    li.appendChild(a);
+    if (after) li.appendChild(document.createTextNode(after));
+  } else {
+    li.textContent = timestamp + text;
+  }
   logEl.appendChild(li);
   logEl.scrollTop = logEl.scrollHeight;
 }
@@ -173,30 +192,41 @@ function preloadSingleAsset(asset) {
 
   const promise = new Promise((resolve, reject) => {
     const startTime = performance.now();
-    if (type === 'image') {
-      const img = new Image();
-      img.onload = () => resolve({ url, type, ms: Math.round(performance.now() - startTime), size: 0 });
-      img.onerror = () => reject(new Error(`Failed to load image: ${url}`));
-      img.src = url;
-    } else if (type === 'video') {
-      const video = document.createElement('video');
-      video.preload = 'auto';
-      video.muted = true;
-      video.oncanplaythrough = () => resolve({ url, type, ms: Math.round(performance.now() - startTime), size: 0 });
-      video.onerror = () => reject(new Error(`Failed to load video: ${url}`));
-      video.src = url;
-    } else if (type === 'audio') {
-      const audio = new Audio();
-      audio.preload = 'auto';
-      audio.oncanplaythrough = () => resolve({ url, type, ms: Math.round(performance.now() - startTime), size: 0 });
-      audio.onerror = () => reject(new Error(`Failed to load audio: ${url}`));
-      audio.src = url;
-    } else {
-      // Unknown type — try fetching as generic resource
-      fetch(url, { mode: 'no-cors' })
-        .then(() => resolve({ url, type, ms: Math.round(performance.now() - startTime), size: 0 }))
-        .catch(() => reject(new Error(`Failed to fetch: ${url}`)));
-    }
+
+    // Use fetch first to get meaningful HTTP error info
+    fetch(url, { mode: 'cors' })
+      .then(res => {
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status} ${res.statusText} — ${url}`);
+        }
+        // For images, also decode via Image to warm the browser cache
+        if (type === 'image') {
+          const img = new Image();
+          img.onload = () => resolve({ url, type, ms: Math.round(performance.now() - startTime), size: 0 });
+          img.onerror = () => resolve({ url, type, ms: Math.round(performance.now() - startTime), size: 0 }); // fetch succeeded so consider ok
+          img.src = url;
+        } else if (type === 'video') {
+          const video = document.createElement('video');
+          video.preload = 'auto';
+          video.muted = true;
+          video.oncanplaythrough = () => resolve({ url, type, ms: Math.round(performance.now() - startTime), size: 0 });
+          video.onerror = () => resolve({ url, type, ms: Math.round(performance.now() - startTime), size: 0 });
+          video.src = url;
+        } else if (type === 'audio') {
+          const audio = new Audio();
+          audio.preload = 'auto';
+          audio.oncanplaythrough = () => resolve({ url, type, ms: Math.round(performance.now() - startTime), size: 0 });
+          audio.onerror = () => resolve({ url, type, ms: Math.round(performance.now() - startTime), size: 0 });
+          audio.src = url;
+        } else {
+          resolve({ url, type, ms: Math.round(performance.now() - startTime), size: 0 });
+        }
+      })
+      .catch(err => {
+        // Network error or CORS — provide the real reason
+        const reason = err.message || 'Network error';
+        reject(new Error(`${reason.includes(url) ? reason : reason + ' — ' + url}`));
+      });
   });
   _preloadCache.set(url, promise);
   return promise;
