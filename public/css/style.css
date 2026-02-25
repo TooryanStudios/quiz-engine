@@ -1702,6 +1702,8 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   align-items: center;
   justify-content: center;
   gap: 4px;
+  user-select: none;
+  -webkit-user-select: none;
   font-size: 0.62rem;
   font-weight: 800;
   box-shadow: 0 4px 10px rgba(6, 78, 59, 0.24);
