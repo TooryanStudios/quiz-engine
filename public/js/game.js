@@ -315,8 +315,8 @@ function pushJoinDebugLog(message) {
 const VIEW_PATH_MAP = {
   'view-home': '/',
   'view-player-join': '/player',
-  'view-host-loading': '/lobby',
-  'view-host-lobby': '/lobby',
+  'view-host-loading': '/start',
+  'view-host-lobby': '/start',
   'view-player-lobby': '/player/lobby',
   'view-host-question': '/question',
   'view-player-question': '/question',
@@ -336,7 +336,7 @@ function getPathForView(viewId) {
 
 function getViewForPath(pathname) {
   const normalizedPath = normalizePathname(pathname);
-  if (normalizedPath === '/looby') return 'view-host-loading';
+  if (normalizedPath === '/lobby') return 'view-host-loading';
   const direct = Object.entries(VIEW_PATH_MAP).find(([, path]) => path === normalizedPath);
   return direct ? direct[0] : null;
 }

@@ -98,6 +98,7 @@ app.use(express.static(path.join(__dirname, '../public')));
 const spaEntryFile = path.join(__dirname, '../public/index.html');
 const clientRoutes = [
   '/player',
+  '/start',
   '/lobby',
   '/player/lobby',
   '/question',
