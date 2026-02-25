@@ -374,6 +374,9 @@ html.autohost-launch #view-host-loading.active {
 
 .anim-preset-anchor {
   position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .anim-preset-menu {
