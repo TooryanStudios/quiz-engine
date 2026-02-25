@@ -1869,6 +1869,8 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   border: 2px solid transparent;
   border-radius: 12px;
   cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(99,102,241,0.18);
   transition: border-color 0.2s, background 0.2s;
   color: var(--text);
   font-size: 1rem;
@@ -1936,6 +1938,7 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   z-index: 9990;
   backdrop-filter: blur(4px);
   animation: fadeIn 0.15s ease;
+  direction: ltr;
 }
 
 /* Dialog box */

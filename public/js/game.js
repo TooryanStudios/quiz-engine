@@ -577,14 +577,34 @@ document.getElementById('avatar-picker-modal').addEventListener('click', (e) => 
 });
 
 // Join form — avatar trigger
-document.getElementById('join-avatar-btn').addEventListener('click', () => {
-  openAvatarPicker(state.avatar, (a) => {
-    state.avatar = a;
-    document.getElementById('join-avatar-display').textContent = a;
-    const lbl = document.querySelector('#join-avatar-btn .avatar-trigger-label');
-    if (lbl) lbl.textContent = 'Avatar selected ✓';
-  });
-});
+{
+  const joinAvatarBtn = document.getElementById('join-avatar-btn');
+  const joinAvatarDisplay = document.getElementById('join-avatar-display');
+
+  // Sync initial display with state
+  if (joinAvatarDisplay) joinAvatarDisplay.textContent = state.avatar || '🎮';
+
+  let _pickerOpen = false;
+  function openJoinPicker() {
+    if (_pickerOpen) return;
+    _pickerOpen = true;
+    openAvatarPicker(state.avatar, (a) => {
+      state.avatar = a;
+      if (joinAvatarDisplay) joinAvatarDisplay.textContent = a;
+      const lbl = document.querySelector('#join-avatar-btn .avatar-trigger-label');
+      if (lbl) lbl.textContent = 'Avatar selected ✓';
+    });
+    setTimeout(() => { _pickerOpen = false; }, 400);
+  }
+
+  if (joinAvatarBtn) {
+    joinAvatarBtn.addEventListener('click', openJoinPicker);
+    joinAvatarBtn.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      openJoinPicker();
+    }, { passive: false });
+  }
+}
 
 
 // ─────────────────────────────────────────────
