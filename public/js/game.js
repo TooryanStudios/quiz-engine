@@ -1034,6 +1034,8 @@ let _countdownSafetyTimer = null;
 function showStartCountdown() {
   const overlay = document.getElementById('overlay-countdown');
   const numberEl = document.getElementById('countdown-number');
+  const labelEl = document.getElementById('countdown-label');
+  const ringFill = document.getElementById('countdown-ring-fill');
   if (!overlay || !numberEl) return;
 
   // Clear any previous countdown timeouts (prevents double-animation on re-entry)
@@ -1044,6 +1046,7 @@ function showStartCountdown() {
   overlay.style.display = 'flex';
   overlay.style.opacity = '1';
   overlay.classList.remove('countdown-fade-out');
+  overlay.className = 'countdown-overlay'; // reset color class
   state.countdownDone = false;
   state.questionReady = false;
 
@@ -1053,21 +1056,55 @@ function showStartCountdown() {
   const targetView = isHostOnly ? 'view-host-question' : 'view-player-question';
   showView(targetView, { skipUrlSync: true });
 
+  if (labelEl) labelEl.textContent = 'استعدّ!';
+  // Reset ring
+  if (ringFill) { ringFill.style.transition = 'none'; ringFill.style.strokeDashoffset = '553'; }
+
   const steps = [
-    { text: '3', cls: '', delay: 0 },
-    { text: '2', cls: '', delay: 1000 },
-    { text: '1', cls: '', delay: 2000 },
-    { text: '!انطلق', cls: 'go', delay: 3000 },
+    { text: '3', colorCls: 'cd-blue',   delay: 0 },
+    { text: '2', colorCls: 'cd-violet', delay: 1000 },
+    { text: '1', colorCls: 'cd-amber',  delay: 2000 },
+    { text: 'يلّا!', colorCls: 'cd-go', delay: 3000 },
   ];
 
-  steps.forEach(({ text, cls, delay }) => {
+  steps.forEach(({ text, colorCls, delay }, i) => {
     _countdownTimers.push(setTimeout(() => {
       numberEl.textContent = text;
-      numberEl.className = 'countdown-number' + (cls ? ' ' + cls : '');
+      numberEl.className = 'countdown-number ' + colorCls;
+      overlay.className = 'countdown-overlay ' + colorCls;
       // Re-trigger pop animation
       numberEl.style.animation = 'none';
       void numberEl.offsetWidth;
       numberEl.style.animation = '';
+
+      // Trigger shockwave
+      const wave = document.getElementById('countdown-shockwave');
+      if (wave) {
+        wave.className = 'countdown-shockwave ' + colorCls;
+        wave.classList.remove('active');
+        void wave.offsetWidth;
+        wave.classList.add('active');
+      }
+
+      // Animate ring fill for this second (except GO step)
+      if (ringFill && i < 3) {
+        const circumference = 553; // 2 * PI * 88
+        const target = circumference - (circumference * (i + 1) / 3);
+        ringFill.style.transition = 'none';
+        ringFill.style.strokeDashoffset = String(circumference - (circumference * i / 3));
+        void ringFill.offsetWidth;
+        ringFill.style.transition = 'stroke-dashoffset 0.9s linear';
+        ringFill.style.strokeDashoffset = String(target);
+      }
+
+      if (colorCls === 'cd-go' && labelEl) {
+        labelEl.textContent = '';
+        // Ring fully filled
+        if (ringFill) {
+          ringFill.style.transition = 'stroke-dashoffset 0.4s ease-out';
+          ringFill.style.strokeDashoffset = '0';
+        }
+      }
     }, delay));
   });
 
@@ -1099,6 +1136,11 @@ function forceHideCountdownOverlay() {
   _countdownTimers.forEach(id => clearTimeout(id));
   _countdownTimers = [];
   if (_countdownSafetyTimer) { clearTimeout(_countdownSafetyTimer); _countdownSafetyTimer = null; }
+  // Start deferred timer if the overlay was force-dismissed
+  if (state._pendingTimerFn) {
+    state._pendingTimerFn();
+    state._pendingTimerFn = null;
+  }
 }
 
 // ── Coordinated reveal: wait for BOTH countdown + question data ──────
@@ -1122,6 +1164,12 @@ function revealQuestionIfReady() {
     layout.classList.remove('question-enter');
     void layout.offsetWidth;
     layout.classList.add('question-enter');
+  }
+
+  // Start the deferred question timer (held back during countdown)
+  if (state._pendingTimerFn) {
+    state._pendingTimerFn();
+    state._pendingTimerFn = null;
   }
 
   // Fully hide overlay after transition ends
@@ -1294,17 +1342,25 @@ function renderHostQuestion(data) {
     }
 
     const capturedHostQI = data.questionIndex;
-    startClientTimer(data.duration,
-      safeGet('host-timer-count'),
-      safeGet('host-timer-ring'),
-      () => {
-        // ── Host safety net: force end if server didn't send question:end ──
-        setTimeout(() => {
-          if (state.questionIndex === capturedHostQI && !state.isPaused) {
-            socket.emit('host:force_end_question');
-          }
-        }, 3000);
-      });
+    const hostTimerFn = () => {
+      startClientTimer(data.duration,
+        safeGet('host-timer-count'),
+        safeGet('host-timer-ring'),
+        () => {
+          // ── Host safety net: force end if server didn't send question:end ──
+          setTimeout(() => {
+            if (state.questionIndex === capturedHostQI && !state.isPaused) {
+              socket.emit('host:force_end_question');
+            }
+          }, 3000);
+        });
+    };
+    // Defer timer until countdown overlay fades (first question)
+    if (state.countdownDone === false) {
+      state._pendingTimerFn = hostTimerFn;
+    } else {
+      hostTimerFn();
+    }
 
     showView('view-host-question');
     if (window.__dbgLog) window.__dbgLog('renderHost: DONE (' + q.type + ')');
@@ -1368,35 +1424,43 @@ function renderPlayerQuestion(data) {
     QuestionRendererFactory.render(q, false, submitAnswer);
 
     const capturedQI = state.questionIndex;
-    startClientTimer(data.duration,
-      safeGet('player-timer-count'),
-      safeGet('player-timer-ring'),
-      () => {
-        // ── Time's up — auto-submit if player hasn't answered ──
-        if (!state.hasAnswered) {
-          const answer = QuestionRendererFactory.getAnswer();
-          if (answer) {
-            submitAnswer(answer);
-          } else {
-            // No answer at all — emit timed-out empty answer
-            state.hasAnswered = true;
-            socket.emit('player:answer', {
-              questionIndex: state.questionIndex,
-              answer: { timedOut: true }
-            });
-          }
-        }
-        const ansMsg = safeGet('player-answered-msg');
-        if (ansMsg) ansMsg.textContent = '⏰ انتهى الوقت!';
-        // Host safety net: if question:end doesn't arrive, force it
-        if (state.role === 'host') {
-          setTimeout(() => {
-            if (state.questionIndex === capturedQI && !state.isPaused) {
-              socket.emit('host:force_end_question');
+    const playerTimerFn = () => {
+      startClientTimer(data.duration,
+        safeGet('player-timer-count'),
+        safeGet('player-timer-ring'),
+        () => {
+          // ── Time's up — auto-submit if player hasn't answered ──
+          if (!state.hasAnswered) {
+            const answer = QuestionRendererFactory.getAnswer();
+            if (answer) {
+              submitAnswer(answer);
+            } else {
+              // No answer at all — emit timed-out empty answer
+              state.hasAnswered = true;
+              socket.emit('player:answer', {
+                questionIndex: state.questionIndex,
+                answer: { timedOut: true }
+              });
             }
-          }, 5000);
-        }
-      });
+          }
+          const ansMsg = safeGet('player-answered-msg');
+          if (ansMsg) ansMsg.textContent = '⏰ انتهى الوقت!';
+          // Host safety net: if question:end doesn't arrive, force it
+          if (state.role === 'host') {
+            setTimeout(() => {
+              if (state.questionIndex === capturedQI && !state.isPaused) {
+                socket.emit('host:force_end_question');
+              }
+            }, 5000);
+          }
+        });
+    };
+    // Defer timer until countdown overlay fades (first question)
+    if (state.countdownDone === false) {
+      state._pendingTimerFn = playerTimerFn;
+    } else {
+      playerTimerFn();
+    }
 
     // Show host controls if host is playing as player (solo mode)
     const phc = safeGet('player-host-controls');
@@ -2250,6 +2314,8 @@ document.getElementById('btn-start-game').addEventListener('click', () => {
   btn.textContent = '⏳ جاري التحضير...';
   enableKeepAwake();
   Sounds.click();
+  Sounds.start();
+  showStartCountdown(); // Show countdown immediately — don't wait for server
   socket.emit('host:start');
 });
 
@@ -2269,6 +2335,8 @@ if (soloPlayBtn) {
     const onJoined = ({ joined }) => {
       if (joined) {
         enableKeepAwake();
+        Sounds.start();
+        showStartCountdown(); // Show countdown immediately
         socket.emit('host:start');
       } else {
         soloPlayBtn.disabled = false;
@@ -2780,10 +2848,13 @@ socket.on('game:start', ({ totalQuestions }) => {
   state.myStreak = 0;
   state.myScore = 0;
   updatePlayerScoreUI();
-  Sounds.start();
 
-  // Show countdown overlay (3, 2, 1, GO!)
-  showStartCountdown();
+  // Show countdown only if not already running (host/solo starts it on click)
+  const cdOverlay = document.getElementById('overlay-countdown');
+  if (!cdOverlay || cdOverlay.style.display === 'none') {
+    Sounds.start();
+    showStartCountdown();
+  }
 
   // Preload all question images so they appear instantly during the game
   if (quizSlugFromUrl) {

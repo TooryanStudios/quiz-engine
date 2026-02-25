@@ -1030,7 +1030,8 @@ function getRoleForPlayer(room, playerId) {
 // ─────────────────────────────────────────────
 
 /** Broadcast the current question to all sockets in a room. */
-function sendQuestion(room) {
+function sendQuestion(room, opts = {}) {
+  const countdownExtraMs = opts.countdownExtraMs || 0;
   const q = room.questions[room.questionIndex];
   const duration = q.duration || config.GAME.QUESTION_DURATION_SEC;
   const challengeSettings = room.challengeSettings || CHALLENGE_PRESETS.classic;
@@ -1107,7 +1108,7 @@ function sendQuestion(room) {
 
     room.questionTimer = setTimeout(() => {
       endQuestion(room);
-    }, duration * 1000);
+    }, (duration * 1000) + countdownExtraMs);
   };
 
   clearTimeout(room.previewTimer);
@@ -1854,6 +1855,8 @@ io.on('connection', (socket) => {
       return;
     }
 
+    room.state = 'starting'; // prevent double-start during async quiz load
+
     console.log(`[Room ${room.pin}] Game started by host ${socket.id}`);
     console.log(`[Room ${room.pin}] Quiz slug provided: "${room.quizSlug}"`);
 
@@ -1909,15 +1912,16 @@ io.on('connection', (socket) => {
       totalQuestions: room.questions.length,
     });
 
-    // Delay first question to allow countdown animation (3, 2, 1, GO!)
-    setTimeout(() => {
-      const first = room.questions[0];
-      if (first && first.type === 'puzzle') {
-        startPuzzleRound(room, 0);
-      } else {
-        sendQuestion(room);
-      }
-    }, 4500);
+    // Send first question immediately — the clients' countdown overlay
+    // gates the reveal so players get the full countdown experience.
+    // The server timer is extended by 5s to account for the countdown.
+    const first = room.questions[0];
+    if (first && first.type === 'puzzle') {
+      // Puzzles have their own multi-phase flow; keep the countdown delay
+      setTimeout(() => startPuzzleRound(room, 0), 4500);
+    } else {
+      sendQuestion(room, { countdownExtraMs: 5000 });
+    }
   });
 
   // ── HOST: Set connection mode (local/global) ─
