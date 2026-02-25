@@ -3,19 +3,14 @@
  * Factory that creates and manages question type renderers
  */
 
-import { SingleChoiceRenderer } from './SingleChoiceRenderer.js?v=121';
-import { MultiChoiceRenderer } from './MultiChoiceRenderer.js?v=121';
-import { TypeSprintRenderer } from './TypeSprintRenderer.js?v=121';
-import { MatchRenderer } from './MatchRenderer.js?v=121';
-import { OrderRenderer } from './OrderRenderer.js?v=121';
-import { BossRenderer } from './BossRenderer.js?v=121';
+import { createRendererRegistry } from './questionTypes/index.js?v=121';
 
 /**
  * Question Renderer Factory
  */
 export class QuestionRendererFactory {
   static currentRenderer = null;
-  static registry = new Map();
+  static registry = createRendererRegistry();
 
   static register(type, RendererClass) {
     if (!type || typeof type !== 'string' || typeof RendererClass !== 'function') return;
@@ -32,7 +27,10 @@ export class QuestionRendererFactory {
    */
   static create(questionData) {
     const type = questionData.type;
-    const RendererClass = this.registry.get(type) || this.registry.get('single') || SingleChoiceRenderer;
+    const RendererClass = this.registry.get(type) || this.registry.get('single');
+    if (!RendererClass) {
+      throw new Error('No renderer registered for question type "single"');
+    }
     if (!this.registry.has(type)) {
       console.warn(`Unknown question type: ${type}`);
     }
@@ -89,10 +87,3 @@ export class QuestionRendererFactory {
     }
   }
 }
-
-QuestionRendererFactory.register('single', SingleChoiceRenderer);
-QuestionRendererFactory.register('multi', MultiChoiceRenderer);
-QuestionRendererFactory.register('type', TypeSprintRenderer);
-QuestionRendererFactory.register('match', MatchRenderer);
-QuestionRendererFactory.register('order', OrderRenderer);
-QuestionRendererFactory.register('boss', BossRenderer);

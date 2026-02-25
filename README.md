@@ -84,13 +84,16 @@ Question types are now organized around registries so they can be added/removed 
 		- optional `applyPostRound(...)`
 - **Server registry**: `server/questionTypes/index.js` → `createQuestionTypeHandlers(...)`
 	- `server/server.js` only imports this once and stays unchanged for normal type add/remove.
-- **Client registry**: `public/js/renderers/QuestionRenderer.js` → `QuestionRendererFactory.register(...)`
+- **Client modules**: `public/js/renderers/questionTypes/*.js` (one module per type)
+- **Client registry**: `public/js/renderers/questionTypes/index.js` → `createRendererRegistry(...)`
+	- `public/js/renderers/QuestionRenderer.js` consumes this registry without per-type imports.
 
 ### Remove a question type
 
 1. Delete `server/questionTypes/<type>.js`.
 2. Remove its line from `server/questionTypes/index.js`.
-3. Remove its `QuestionRendererFactory.register(...)` line (and renderer import if unused).
-4. Remove editor/admin references to that type.
+3. Delete `public/js/renderers/questionTypes/<type>.js`.
+4. Remove its line from `public/js/renderers/questionTypes/index.js`.
+5. Remove editor/admin references to that type.
 
 This avoids touching the core game flow (`sendQuestion` / `endQuestion`) for every type deletion.
