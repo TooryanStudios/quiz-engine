@@ -623,8 +623,10 @@ function _firestoreDocToJs(docData) {
 }
 
 async function getQuizDataFromRestApi(quizId) {
-  const apiKey    = process.env.FIREBASE_REST_API_KEY;
-  const projectId = process.env.FIREBASE_REST_PROJECT_ID;
+  // Default to the qyan-om project (where the admin app saves quizzes).
+  // Override via FIREBASE_REST_API_KEY / FIREBASE_REST_PROJECT_ID env vars.
+  const apiKey    = process.env.FIREBASE_REST_API_KEY    || 'AIzaSyA8INhQrqF6TonYqRNuW_lwx1Qgi1PWBuw';
+  const projectId = process.env.FIREBASE_REST_PROJECT_ID || 'qyan-om';
   if (!apiKey || !projectId) return null;
 
   const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/quizzes/${encodeURIComponent(quizId)}?key=${encodeURIComponent(apiKey)}`;
