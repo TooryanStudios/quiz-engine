@@ -2,7 +2,7 @@
 // ES6 Module Imports
 // ─────────────────────────────────────────────
 import { state, updateState, resetQuestionState} from './state/GameState.js';
-import { Sounds, setMuted, isMuted } from './utils/sounds.js';
+import { Sounds, setMuted, isMuted } from './utils/sounds.js?v=111';
 import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js';
 import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js';
 import { QuestionRendererFactory } from './renderers/QuestionRenderer.js';
@@ -1096,6 +1096,9 @@ function showStartCountdown() {
 
   steps.forEach(({ text, colorCls, delay }, i) => {
     _countdownTimers.push(setTimeout(() => {
+      // Play a beep on each number; triumphant burst on GO
+      if (i < 3) Sounds.countdownBeep(); else Sounds.countdownGo();
+
       numberEl.textContent = text;
       numberEl.className = 'countdown-number ' + colorCls;
       overlay.className = 'countdown-overlay ' + colorCls;
@@ -2348,8 +2351,6 @@ document.getElementById('btn-start-game').addEventListener('click', () => {
   if (soloPlayBtn) soloPlayBtn.disabled = true;
   enableKeepAwake();
   Sounds.click();
-  Sounds.start();
-  showStartCountdown(); // Show countdown immediately — don't wait for server
   socket.emit('host:start');
 });
 
@@ -2372,8 +2373,6 @@ if (soloPlayBtn) {
     const onJoined = ({ joined }) => {
       if (joined) {
         enableKeepAwake();
-        Sounds.start();
-        showStartCountdown(); // Show countdown immediately
         socket.emit('host:start');
       } else {
         soloPlayBtn.disabled = false;
@@ -2889,12 +2888,9 @@ socket.on('game:start', ({ totalQuestions }) => {
   state.myScore = 0;
   updatePlayerScoreUI();
 
-  // Show countdown only if not already running (host/solo starts it on click)
-  const cdOverlay = document.getElementById('overlay-countdown');
-  if (!cdOverlay || cdOverlay.style.display === 'none') {
-    Sounds.start();
-    showStartCountdown();
-  }
+  // Both host and players start the countdown simultaneously on game:start
+  Sounds.start();
+  showStartCountdown();
 
   // Preload all question images so they appear instantly during the game
   if (quizSlugFromUrl) {

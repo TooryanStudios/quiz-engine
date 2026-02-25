@@ -1634,6 +1634,13 @@ io.on('connection', (socket) => {
     console.log(`[Room] Created: PIN=${pin} by host=${socket.id}`);
     const modePayload = await buildRoomModePayload(room);
     socket.emit('room:created', { pin, ...modePayload });
+
+    // Preload quiz data in the background so host:start has near-zero Firestore latency
+    if (quizSlug) {
+      refreshQuestions(quizSlug)
+        .then(data => { if (rooms.has(pin)) room.preloadedQuizData = data; })
+        .catch(() => {});
+    }
   });
 
   // ── HOST: Refresh PIN (only when no players have joined) ────
@@ -1878,8 +1885,9 @@ io.on('connection', (socket) => {
     console.log(`[Room ${room.pin}] Game started by host ${socket.id}`);
     console.log(`[Room ${room.pin}] Quiz slug provided: "${room.quizSlug}"`);
 
-    // Always refresh quiz data from the cloud before starting
-    const quizData = await refreshQuestions(room.quizSlug);
+    // Use preloaded quiz data if available (fetched at room creation), otherwise fetch now
+    const quizData = room.preloadedQuizData || await refreshQuestions(room.quizSlug);
+    room.preloadedQuizData = null; // clear cache after use
 
     // If a specific quiz was requested but couldn't be loaded, abort
     if (room.quizSlug && quizData.questions === DEFAULT_QUESTIONS) {

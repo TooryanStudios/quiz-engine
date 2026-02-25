@@ -71,6 +71,20 @@ export const Sounds = {
     playTone(440, 'sine', 0.1, 0.2);
     playTone(550, 'sine', 0.1, 0.2, 0.1);
   },
+
+  // Punchy beep for each countdown number (3, 2, 1)
+  countdownBeep: () => {
+    playTone(880, 'sine', 0.06, 0.45);
+    playTone(660, 'sine', 0.12, 0.25, 0.05);
+  },
+
+  // Triumphant rising burst for يلّا! (GO)
+  countdownGo: () => {
+    playTone(523, 'sine', 0.07, 0.5);
+    playTone(659, 'sine', 0.07, 0.5, 0.07);
+    playTone(784, 'sine', 0.07, 0.5, 0.14);
+    playTone(1046, 'sine', 0.22, 0.5, 0.21);
+  },
 };
 
 export function setMuted(value) {
