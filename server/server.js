@@ -95,6 +95,25 @@ app.use((req, res, next) => {
 });
 app.use(express.static(path.join(__dirname, '../public')));
 
+const spaEntryFile = path.join(__dirname, '../public/index.html');
+const clientRoutes = [
+  '/player',
+  '/lobby',
+  '/player/lobby',
+  '/question',
+  '/leaderboard',
+  '/game-over',
+  '/room-closed',
+];
+
+app.get(clientRoutes, (_req, res) => {
+  res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  res.set('Content-Type', 'text/html; charset=utf-8');
+  res.sendFile(spaEntryFile);
+});
+
 // Health check endpoint (used by Render.com)
 app.get('/health', (_req, res) => {
   const db = getDbSafe();
@@ -522,7 +541,7 @@ async function buildRoomModePayload(room) {
     mode = 'global';
     room.mode = 'global';
   }
-  const joinUrl = `${getJoinBaseUrl(mode, room)}/?pin=${room.pin}`;
+  const joinUrl = `${getJoinBaseUrl(mode, room)}/player?pin=${room.pin}`;
   let qrSvg = '';
   try {
     qrSvg = await QRCode.toString(joinUrl, {
@@ -725,6 +744,27 @@ function generatePIN() {
       .padStart(len, '0');
   } while (rooms.has(pin));
   return pin;
+}
+
+function normalizePin(value) {
+  if (value === null || value === undefined) return '';
+  const maxLength = Number(config.GAME.PIN_LENGTH) || 6;
+  const raw = String(value).trim();
+  let normalized = '';
+  for (const ch of raw) {
+    const code = ch.charCodeAt(0);
+    if (code >= 48 && code <= 57) {
+      normalized += ch;
+    } else if (code >= 0x0660 && code <= 0x0669) {
+      normalized += String(code - 0x0660);
+    } else if (code >= 0x06F0 && code <= 0x06F9) {
+      normalized += String(code - 0x06F0);
+    } else if (code >= 0xFF10 && code <= 0xFF19) {
+      normalized += String(code - 0xFF10);
+    }
+    if (normalized.length >= maxLength) break;
+  }
+  return normalized;
 }
 
 /** Return a safe player list (array) suitable for broadcasting.
@@ -1269,11 +1309,18 @@ io.on('connection', (socket) => {
 
   // ── PLAYER: Join a room ──────────────────────
   socket.on('player:join', ({ pin, nickname, avatar, playerId }) => {
-    const room = rooms.get(pin);
+    const normalizedPin = normalizePin(pin);
+    const cleanNickname = typeof nickname === 'string' ? nickname.trim() : '';
+    const room = rooms.get(normalizedPin);
+
+    if (!normalizedPin || !cleanNickname) {
+      socket.emit('room:error', { message: 'Please enter a valid room PIN and nickname.' });
+      return;
+    }
 
     // Room not found
     if (!room) {
-      socket.emit('room:error', { message: `No room found with PIN: ${pin}` });
+      socket.emit('room:error', { message: 'No room found with that PIN.' });
       return;
     }
 
@@ -1288,7 +1335,7 @@ io.on('connection', (socket) => {
 
     // Duplicate nickname check
     const nameTaken = Array.from(room.players.values()).some(
-      (p) => p.nickname.toLowerCase() === nickname.toLowerCase()
+      (p) => p.nickname.toLowerCase() === cleanNickname.toLowerCase()
     );
     if (nameTaken) {
       socket.emit('room:error', { message: 'That nickname is already taken.' });
@@ -1299,7 +1346,7 @@ io.on('connection', (socket) => {
     const player = {
       id: socket.id,
       playerId: typeof playerId === 'string' ? playerId.slice(0, 64) : null,
-      nickname: nickname.trim(),
+      nickname: cleanNickname,
       avatar: typeof avatar === 'string' ? avatar.slice(0, 8) : '🎮',
       score: 0,
       streak: 0,
@@ -1310,17 +1357,17 @@ io.on('connection', (socket) => {
       disconnectTimer: null,
     };
     room.players.set(socket.id, player);
-    socket.join(pin);
+    socket.join(normalizedPin);
 
     // Tag the socket with its room PIN for disconnect cleanup
-    socket.data.pin = pin;
+    socket.data.pin = normalizedPin;
     socket.data.isHost = false;
 
-    console.log(`[Room ${pin}] Player joined: ${nickname} (${socket.id})`);
+    console.log(`[Room ${normalizedPin}] Player joined: ${cleanNickname} (${socket.id})`);
 
     // Confirm to the joining player
     socket.emit('room:joined', {
-      pin,
+      pin: normalizedPin,
       nickname: player.nickname,
       avatar: player.avatar,
       players: getPlayerList(room),
@@ -1686,7 +1733,8 @@ io.on('connection', (socket) => {
 
   // ── PLAYER: Rejoin an in-progress game ───────
   socket.on('player:rejoin', ({ pin, playerId }) => {
-    const room = rooms.get(pin);
+    const normalizedPin = normalizePin(pin);
+    const room = rooms.get(normalizedPin);
     if (!room) {
       socket.emit('room:rejoin_failed', { message: 'Game not found. It may have ended.' });
       return;
@@ -1719,14 +1767,14 @@ io.on('connection', (socket) => {
     existingPlayer.id = socket.id;
     existingPlayer.disconnected = false;
     room.players.set(socket.id, existingPlayer);
-    socket.join(pin);
-    socket.data.pin = pin;
+    socket.join(normalizedPin);
+    socket.data.pin = normalizedPin;
     socket.data.isHost = false;
 
-    console.log(`[Room ${pin}] Player reconnected: ${existingPlayer.nickname} (${socket.id})`);
+    console.log(`[Room ${normalizedPin}] Player reconnected: ${existingPlayer.nickname} (${socket.id})`);
 
     const basePayload = {
-      pin,
+      pin: normalizedPin,
       nickname: existingPlayer.nickname,
       avatar: existingPlayer.avatar,
       players: getPlayerList(room),

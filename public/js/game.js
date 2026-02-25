@@ -31,6 +31,28 @@ const questionOnlyMode = queryParams.get('questionOnly'); // 'host' or 'player'
 const isQuestionOnly = !!questionOnlyMode;
 const questionMirror = window.opener || null;
 
+const PIN_MAX_LENGTH = 6;
+
+function normalizePin(value) {
+  if (value === null || value === undefined) return '';
+  const chars = String(value).trim();
+  let normalized = '';
+  for (const ch of chars) {
+    const code = ch.charCodeAt(0);
+    if (code >= 48 && code <= 57) {
+      normalized += ch;
+    } else if (code >= 0x0660 && code <= 0x0669) {
+      normalized += String(code - 0x0660);
+    } else if (code >= 0x06F0 && code <= 0x06F9) {
+      normalized += String(code - 0x06F0);
+    } else if (code >= 0xFF10 && code <= 0xFF19) {
+      normalized += String(code - 0xFF10);
+    }
+    if (normalized.length >= PIN_MAX_LENGTH) break;
+  }
+  return normalized;
+}
+
 // ─────────────────────────────────────────────
 // Session Persistence (reconnect support)
 // ─────────────────────────────────────────────
@@ -249,8 +271,8 @@ function getJoinDebugNodes() {
 function openJoinDebugDialog(pin, nickname) {
   const { modal, log, pin: pinEl, nick: nickEl } = getJoinDebugNodes();
   if (!modal || !log) return;
-  if (pinEl) pinEl.textContent = `PIN: ${pin || '-'}`;
-  if (nickEl) nickEl.textContent = `Nick: ${nickname || '-'}`;
+  if (pinEl) pinEl.textContent = `Room PIN: ${pin || '-'}`;
+  if (nickEl) nickEl.textContent = `Nickname: ${nickname || '-'}`;
   log.textContent = '';
   modal.style.display = 'flex';
   pushJoinDebugLog('Join button clicked');
@@ -262,12 +284,77 @@ function closeJoinDebugDialog() {
   if (modal) modal.style.display = 'none';
 }
 
+function printJoinDebugDialog() {
+  const { modal } = getJoinDebugNodes();
+  if (!modal) return;
+  const wasVisible = window.getComputedStyle(modal).display !== 'none';
+  if (!wasVisible) modal.style.display = 'flex';
+
+  document.body.classList.add('printing-join-debug');
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    document.body.classList.remove('printing-join-debug');
+    if (!wasVisible) modal.style.display = 'none';
+  };
+
+  window.addEventListener('afterprint', cleanup, { once: true });
+  window.print();
+  setTimeout(cleanup, 1200);
+}
+
 function pushJoinDebugLog(message) {
   const { log } = getJoinDebugNodes();
   if (!log) return;
   const stamp = new Date().toLocaleTimeString();
   log.textContent += `[${stamp}] ${message}\n`;
   log.scrollTop = log.scrollHeight;
+}
+
+const VIEW_PATH_MAP = {
+  'view-home': '/',
+  'view-player-join': '/player',
+  'view-host-loading': '/lobby',
+  'view-host-lobby': '/lobby',
+  'view-player-lobby': '/player/lobby',
+  'view-host-question': '/question',
+  'view-player-question': '/question',
+  'view-leaderboard': '/leaderboard',
+  'view-game-over': '/game-over',
+  'view-room-closed': '/room-closed',
+};
+
+function normalizePathname(pathname) {
+  if (!pathname || pathname === '/') return '/';
+  return pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
+}
+
+function getPathForView(viewId) {
+  return VIEW_PATH_MAP[viewId] || null;
+}
+
+function getViewForPath(pathname) {
+  const normalizedPath = normalizePathname(pathname);
+  if (normalizedPath === '/looby') return 'view-host-loading';
+  const direct = Object.entries(VIEW_PATH_MAP).find(([, path]) => path === normalizedPath);
+  return direct ? direct[0] : null;
+}
+
+function syncUrlForView(viewId, { replace = false } = {}) {
+  if (!window.history || typeof window.history.pushState !== 'function') return;
+  const targetPath = getPathForView(viewId);
+  if (!targetPath) return;
+
+  const currentPath = normalizePathname(window.location.pathname);
+  if (currentPath === targetPath) return;
+
+  const nextUrl = `${targetPath}${window.location.search}${window.location.hash}`;
+  if (replace) {
+    window.history.replaceState({ viewId }, '', nextUrl);
+  } else {
+    window.history.pushState({ viewId }, '', nextUrl);
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -299,7 +386,7 @@ function normalizeViewDom() {
   }
 }
 
-function showView(viewId) {
+function showView(viewId, options = {}) {
   try {
     normalizeViewDom();
 
@@ -361,11 +448,35 @@ function showView(viewId) {
         }
       } catch (_e) {}
     }
+
+    if (!options.skipUrlSync) {
+      syncUrlForView(viewId, { replace: !!options.replaceHistory });
+    }
   } catch (err) {
     console.error('showView failed:', err);
     if (window.__dbgLog) window.__dbgLog('showView CRASH: ' + err.message);
   }
 }
+
+window.addEventListener('popstate', () => {
+  const pathView = getViewForPath(window.location.pathname);
+  if (!pathView) return;
+
+  if (pathView === 'view-player-join') {
+    state.role = 'player';
+  }
+
+  if (pathView === 'view-host-loading' || pathView === 'view-host-lobby') {
+    if (!state.hostCreatePending && !state.pin) {
+      startHostLaunch(quizSlugFromUrl || null);
+    } else {
+      showView('view-host-loading', { skipUrlSync: true });
+    }
+    return;
+  }
+
+  showView(pathView, { skipUrlSync: true });
+});
 
 function startHostLaunch(quizSlug = null) {
   if (state.hostCreatePending) return;
@@ -1200,13 +1311,31 @@ if (closeJoinDebugBtn) {
     closeJoinDebugDialog();
   });
 }
+const printJoinDebugBtn = document.getElementById('btn-print-join-debug');
+if (printJoinDebugBtn) {
+  printJoinDebugBtn.addEventListener('click', () => {
+    printJoinDebugDialog();
+  });
+}
+
+const pinInputEl = document.getElementById('input-pin');
+if (pinInputEl) {
+  pinInputEl.addEventListener('input', () => {
+    const normalized = normalizePin(pinInputEl.value);
+    if (pinInputEl.value !== normalized) {
+      pinInputEl.value = normalized;
+    }
+  });
+}
 
 // Player Join — Submit form
 let joinTimeoutId = null;
 document.getElementById('form-join').addEventListener('submit', (e) => {
   e.preventDefault();
   enableKeepAwake();
-  const pin = document.getElementById('input-pin').value.trim();
+  const pinInput = document.getElementById('input-pin');
+  const pin = normalizePin(pinInput ? pinInput.value : '');
+  if (pinInput) pinInput.value = pin;
   const nickname = document.getElementById('input-nickname').value.trim();
   if (window.__dbgLog) window.__dbgLog('join click pin=' + pin + ' nick=' + nickname);
   openJoinDebugDialog(pin, nickname);
@@ -1380,13 +1509,8 @@ if (btnThemeToggle) {
   });
 }
 
-try {
-  applyTheme(localStorage.getItem(THEME_KEY) || 'dark');
-  updateThemeLabel();
-} catch (_) {
-  applyTheme('dark');
-  updateThemeLabel();
-}
+applyTheme('dark');
+updateThemeLabel();
 
 // Animation preset icon menu
 const btnAnimPreset  = document.getElementById('btn-anim-preset');
@@ -2214,7 +2338,9 @@ socket.on('room:closed', ({ message }) => {
 // ─────────────────────────────────────────────
 (function () {
   const params = new URLSearchParams(window.location.search);
-  const pinFromUrl = params.get('pin');
+  const pinFromUrlRaw = params.get('pin');
+  const pinFromUrl = normalizePin(pinFromUrlRaw);
+  const pathView = getViewForPath(window.location.pathname);
   const scanFallbackBanner = document.getElementById('scan-fallback-banner');
 
   // Question-only mode: hide diagnostics/debug UI and wait for mirrored questions
@@ -2251,7 +2377,15 @@ socket.on('room:closed', ({ message }) => {
     state.role = 'player';
     document.getElementById('input-pin').value = pinFromUrl;
     if (scanFallbackBanner) scanFallbackBanner.style.display = 'none';
-    showView('view-player-join');
+    showView('view-player-join', { replaceHistory: true });
+  } else if (pathView === 'view-player-join') {
+    state.role = 'player';
+    if (scanFallbackBanner) scanFallbackBanner.style.display = 'none';
+    showView('view-player-join', { replaceHistory: true });
+  } else if (pathView === 'view-host-loading' || pathView === 'view-host-lobby') {
+    startHostLaunch(quizSlugFromUrl || null);
+  } else if (pathView && pathView !== 'view-home') {
+    showView(pathView, { replaceHistory: true });
   } else if (isAutoHostLaunch) {
     // Clicked Play from admin — go directly to branded loading, then host lobby
     startHostLaunch(quizSlugFromUrl);
@@ -2261,19 +2395,21 @@ socket.on('room:closed', ({ message }) => {
     if (scanFallbackBanner) {
       scanFallbackBanner.style.display = 'none';
     }
-    showView('view-player-join');
+    showView('view-player-join', { replaceHistory: true });
   } else {
     // Check for a saved game session and try to reconnect
     const savedSession = localStorage.getItem('quizSession');
     if (savedSession) {
       try {
         const { pin, playerId: savedPlayerId } = JSON.parse(savedSession);
-        if (pin && savedPlayerId) {
+        const normalizedSavedPin = normalizePin(pin);
+        if (normalizedSavedPin && savedPlayerId) {
           rejoinAttempt = true;
           state.role = 'player';
+          state.pin = normalizedSavedPin;
           setConnectionStatus('warn', 'Reconnecting to game…');
           const attemptRejoin = () => {
-            socket.emit('player:rejoin', { pin, playerId: savedPlayerId });
+            socket.emit('player:rejoin', { pin: normalizedSavedPin, playerId: savedPlayerId });
           };
           if (socket.connected) {
             attemptRejoin();

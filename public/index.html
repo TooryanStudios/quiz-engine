@@ -28,7 +28,7 @@
   <!-- ═══════════════════════════════════════════
        VIEW: Home — Choose Host or Player
   ═══════════════════════════════════════════ -->
-  <div id="view-home" class="view active">
+  <div id="view-home" class="view">
     <img class="home-hero-logo" src="/images/QYan_logo_300x164.jpg" alt="QYan" />
     <div class="card center-card">
       <h1 class="logo">⚡ QYan</h1>
@@ -545,263 +545,28 @@
     </div>
   </div>
 
-  <div id="join-debug-modal" class="join-debug-modal" style="display:none" role="dialog" aria-modal="true" aria-label="Join diagnostics">
-    <div class="join-debug-dialog">
-      <div class="join-debug-header">
-        <strong>Join Diagnose</strong>
-        <button type="button" id="btn-close-join-debug" class="join-debug-close" aria-label="Close diagnostics">&times;</button>
-      </div>
-      <div class="join-debug-meta">
-        <span id="join-debug-pin">PIN: -</span>
-        <span id="join-debug-nick">Nick: -</span>
-      </div>
-      <div id="join-debug-log" class="join-debug-log"></div>
-    </div>
-  </div>
-
   <div class="qyan-attribution" aria-label="QYan attribution">
     <span>© QYan — Prototype build</span>
   </div>
 
-  <!-- ─── Inline debug: runs BEFORE any external script ─── -->
+  <!-- ─── Early path routing: runs synchronously before any external script ─── -->
+  <!-- Activates the correct view immediately based on URL, preventing flash of home screen -->
   <script>
-    (function() {
-      // v58 - Comprehensive UTF-8 encoding fix for Arabic text and emojis
-      var dbg = document.createElement('div');
-      dbg.id = 'inline-dbg';
-      dbg.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#111;color:#0f0;font:bold 10px monospace;padding:4px 8px;pointer-events:auto;opacity:0.95;display:flex;align-items:center;gap:8px;overflow-x:auto;border-bottom:1px solid #0f0;';
-      
-      var status = document.createElement('span');
-      status.id = 'dbg-status';
-      status.textContent = 'v54 boot';
-      dbg.appendChild(status);
-
-      var flags = document.createElement('span');
-      flags.id = 'dbg-flags';
-      flags.style.cssText = 'color:#9f9;font:normal 10px monospace;white-space:nowrap;';
-      flags.textContent = '';
-      dbg.appendChild(flags);
-
-      var btnWrap = document.createElement('div');
-      btnWrap.style.cssText = 'display:flex;gap:4px;';
-      
-      var views = ['view-home', 'view-host-lobby', 'view-host-question', 'view-player-join', 'view-player-lobby', 'view-player-question', 'view-leaderboard', 'view-game-over'];
-      views.forEach(function(vid) {
-        var b = document.createElement('button');
-        b.textContent = vid.replace('view-', '');
-        b.style.cssText = 'background:#222;color:#fff;border:1px solid #444;padding:2px 4px;font-size:9px;cursor:pointer;border-radius:3px;';
-        b.onclick = function() { 
-          // Prefer the app's real view switcher. Fallback keeps it non-destructive.
-          var showFn = window._showView || (typeof showView === 'function' ? showView : null);
-          if (showFn) {
-            showFn(vid);
-            status.textContent = 'VIEW: ' + vid;
-            return;
-          }
-
-          // Fallback: class toggle only (do NOT write display:none inline).
-          document.querySelectorAll('.view').forEach(v => {
-            v.classList.remove('active');
-            v.style.display = '';
-          });
-          var target = document.getElementById(vid);
-          if (target) {
-            target.style.display = '';
-            target.classList.add('active');
-            status.textContent = 'VIEW: ' + vid;
-          }
-        };
-        btnWrap.appendChild(b);
-      });
-      dbg.appendChild(btnWrap);
-
-      //  Separator
-      var sep = document.createElement('span');
-      sep.style.cssText = 'color:#444;padding:0 2px;';
-      sep.textContent = '|';
-      dbg.appendChild(sep);
-
-      //  Fake-Q button: calls renderHostQuestion with test data
-      var fakeBtn = document.createElement('button');
-      fakeBtn.textContent = 'TEST-Q';
-      fakeBtn.style.cssText = 'background:#1a1a3a;color:#88f;border:1px solid #44f;padding:2px 5px;font-size:9px;cursor:pointer;border-radius:3px;';
-      fakeBtn.onclick = function() {
-        var fakeData = {
-          questionIndex: 0, total: 3, duration: 30,
-          question: { type: 'single', text: 'TEST: What is 2+2?', options: ['3','4','5','6'] },
-          players: []
-        };
-        try {
-          if (window._qState) {
-            window._qState.questionStartTime = Date.now();
-            window._qState.questionDuration = 30;
-            window._qState.currentQuestionType = 'single';
-          }
-          var renderFn = window._renderHostQuestion || (typeof renderHostQuestion !== 'undefined' ? renderHostQuestion : null);
-          if (renderFn) {
-            renderFn(fakeData);
-            status.textContent = 'TEST-Q OK - check h-quest view';
-          } else {
-            status.textContent = 'ERR: renderHostQuestion not loaded yet';
-          }
-        } catch(e) {
-          status.textContent = 'CRASH: ' + e.message.substring(0,35);
-          console.error('[v54] fake-Q crash:', e);
-        }
-      };
-      dbg.appendChild(fakeBtn);
-
-      // Open question-only mirror tab (host)
-      var popBtn = document.createElement('button');
-      popBtn.textContent = 'POP-Q';
-      popBtn.style.cssText = 'background:#1f2937;color:#fff;border:1px solid #4b5563;padding:2px 5px;font-size:9px;cursor:pointer;border-radius:3px;';
-      popBtn.title = 'Open a question-only tab (mirrors host questions)';
-      popBtn.onclick = function() {
-        try {
-          var u = new URL(window.location.href);
-          u.searchParams.set('questionOnly', 'host');
-          // Keep existing params (pin/quiz/mode) if present; question-only ignores them.
-          window.open(u.toString(), '_blank', 'noopener');
-        } catch (e) {
-          console.error('[v54] POP-Q failed', e);
-        }
-      };
-      dbg.appendChild(popBtn);
-
-      //  Inspect button: shows active view dimensions
-      var inspBtn = document.createElement('button');
-      inspBtn.textContent = 'INSP';
-      inspBtn.style.cssText = 'background:#2a1a1a;color:#f88;border:1px solid #f44;padding:2px 5px;font-size:9px;cursor:pointer;border-radius:3px;';
-      inspBtn.onclick = function() {
-        var active = document.querySelector('.view.active');
-        if (!active) { status.textContent = 'no active view'; return; }
-        var r = active.getBoundingClientRect();
-        var child = active.firstElementChild;
-        var cr = child ? child.getBoundingClientRect() : null;
-        var cs = window.getComputedStyle(active);
-        var transform = cs.transform;
-        var position = cs.position;
-        var offW = active.offsetWidth, offH = active.offsetHeight;
-
-        // Walk ancestor chain to detect display:none parents or transforms.
-        var chain = [];
-        var p = active;
-        var hiddenAncestor = null;
-        for (var i = 0; p && i < 12; i++) {
-          var pcs = window.getComputedStyle(p);
-          chain.push({
-            node: (p.tagName || '').toLowerCase(),
-            id: p.id || '',
-            cls: (p.className || '').toString().substring(0, 80),
-            display: pcs.display,
-            visibility: pcs.visibility,
-            opacity: pcs.opacity,
-            position: pcs.position,
-            transform: pcs.transform,
-          });
-          if (!hiddenAncestor && (pcs.display === 'none' || pcs.visibility === 'hidden' || pcs.opacity === '0')) {
-            hiddenAncestor = p;
-          }
-          if (p === document.body) break;
-          p = p.parentElement;
-        }
-
-        var modal = document.getElementById('join-debug-modal');
-        var modalShown = !!(modal && window.getComputedStyle(modal).display !== 'none');
-        status.textContent = active.id.replace('view-','') + ' ' + Math.round(r.w||r.width) + 'x' + Math.round(r.h||r.height) +
-          ' disp:' + cs.display +
-          (transform && transform !== 'none' ? ' tr' : '') +
-          (hiddenAncestor ? ' ancHID' : '') +
-          (modalShown ? ' MODAL!' : '') +
-          (cr ? ' ch:'+Math.round(cr.width)+'x'+Math.round(cr.height) : ' no-children');
-        console.log('[v54] INSP:', {
-          activeId: active.id,
-          rect: { w: r.width, h: r.height },
-          offset: { w: offW, h: offH },
-          display: cs.display,
-          visibility: cs.visibility,
-          opacity: cs.opacity,
-          position: position,
-          transform: transform,
-          isConnected: !!active.isConnected,
-          children: active.children.length,
-          innerHTMLLength: active.innerHTML.length,
-          joinDebugModalShown: modalShown,
-          ancestorChain: chain,
-        });
-      };
-      dbg.appendChild(inspBtn);
-
-      // Clear common fullscreen overlays/modals (debug convenience)
-      var clearBtn = document.createElement('button');
-      clearBtn.textContent = 'CLEAR';
-      clearBtn.style.cssText = 'background:#2a2a2a;color:#fff;border:1px solid #666;padding:2px 5px;font-size:9px;cursor:pointer;border-radius:3px;';
-      clearBtn.title = 'Hide overlays/modals that may cover the view';
-      clearBtn.onclick = function() {
-        ['join-debug-modal','avatar-picker-modal','overlay-paused','overlay-frozen'].forEach(function(id){
-          var el = document.getElementById(id);
-          if (el) el.style.display = 'none';
-        });
-        flags.textContent = 'overlays: cleared';
-      };
-      dbg.appendChild(clearBtn);
-
-      document.body.appendChild(dbg);
-
-      window.__dbgLog = function(msg) {
-        status.textContent = msg;
-        console.log('[v54] ' + msg);
-      };
-
-      function _isShown(id) {
-        var el = document.getElementById(id);
-        if (!el) return false;
-        var cs = window.getComputedStyle(el);
-        return cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0';
-      }
-
-      function _updateFlags() {
-        var parts = [];
-        if (_isShown('join-debug-modal')) parts.push('JOIN-MODAL');
-        if (_isShown('avatar-picker-modal')) parts.push('AVATAR-MODAL');
-        if (_isShown('overlay-paused')) parts.push('PAUSED');
-        if (_isShown('overlay-frozen')) parts.push('FROZEN');
-        var active = document.querySelector('.view.active');
-        if (active) {
-          var cs = window.getComputedStyle(active);
-          parts.push(active.id.replace('view-','') + ':' + cs.display);
-        }
-        flags.textContent = parts.length ? ('overlays: ' + parts.join(' ')) : '';
-      }
-
-      setInterval(_updateFlags, 500);
-
-      // Track active .view changes
-      var observer = new MutationObserver(function() {
-        var active = document.querySelector('.view.active');
-        if (active) {
-          window.__dbgLog('view=' + active.id);
-          // Highlight active view
-          document.querySelectorAll('.view').forEach(v => { v.style.border = 'none'; v.style.boxShadow = 'none'; });
-          active.style.border = '3px solid #0f0';
-          active.style.boxShadow = 'inset 0 0 40px rgba(0,255,0,0.1)';
-        }
-      });
-      
-      setTimeout(function() {
-        var viewEls = document.querySelectorAll('.view');
-        for (var i = 0; i < viewEls.length; i++) {
-          observer.observe(viewEls[i], { attributes: true, attributeFilter: ['class'] });
-        }
-        var active = document.querySelector('.view.active');
-        if (active) window.__dbgLog('init view=' + active.id);
-      }, 300);
-
-      window.addEventListener('error', function(e) {
-        window.__dbgLog('FATAL: ' + (e.message || e).substring(0,40));
-        dbg.style.background = '#800';
-      });
-    })();
+  (function () {
+    var p = window.location.pathname.replace(/\/+$/, '') || '/';
+    var map = {
+      '/player':       'view-player-join',
+      '/lobby':        'view-host-lobby',
+      '/player/lobby': 'view-player-lobby',
+      '/question':     'view-host-question',
+      '/leaderboard':  'view-leaderboard',
+      '/game-over':    'view-game-over',
+      '/room-closed':  'view-room-closed'
+    };
+    var id = map[p] || 'view-home';
+    var el = document.getElementById(id);
+    if (el) el.classList.add('active');
+  })();
   </script>
 
   <!-- ─── Scripts ─── -->

@@ -1897,67 +1897,6 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   color: #fca5a5;
 }
 
-.join-debug-modal {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.65);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 11000;
-  backdrop-filter: blur(3px);
-}
-
-.join-debug-dialog {
-  background: var(--surface);
-  border: 1px solid var(--surface-2);
-  border-radius: 16px;
-  width: min(540px, 94vw);
-  max-height: 82vh;
-  display: flex;
-  flex-direction: column;
-  box-shadow: var(--shadow);
-}
-
-.join-debug-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--surface-2);
-}
-
-.join-debug-close {
-  border: 0;
-  background: var(--surface-2);
-  color: var(--text);
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  cursor: pointer;
-  font-size: 20px;
-  line-height: 1;
-}
-
-.join-debug-meta {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 10px 14px;
-  color: var(--text-dim);
-  font-size: 12px;
-  border-bottom: 1px solid var(--surface-2);
-}
-
-.join-debug-log {
-  padding: 12px 14px;
-  overflow: auto;
-  max-height: 56vh;
-  font-size: 12px;
-  line-height: 1.45;
-  white-space: pre-wrap;
-}
-
 /* Grid inside the modal */
 .avatar-grid {
   display: grid;
