@@ -7,6 +7,9 @@ import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS,
 import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js';
 import { QuestionRendererFactory } from './renderers/QuestionRenderer.js';
 
+// Expose state for debug hooks (remove when debug-dialog-hook.js is removed)
+window.__gameState = state;
+
 // Fetch and display server build time on home screen
 fetch('/api/build-info')
   .then((r) => r.json())
@@ -623,6 +626,17 @@ document.getElementById('avatar-picker-modal').addEventListener('click', (e) => 
       openJoinPicker();
     });
   }
+
+  // Listen for avatar picks from the debug dialog hook
+  document.addEventListener('dbg:avatar-selected', (e) => {
+    const emoji = e.detail?.avatar;
+    if (!emoji) return;
+    state.avatar = emoji;
+    if (joinAvatarDisplay) joinAvatarDisplay.textContent = emoji;
+    const lbl = document.querySelector('#join-avatar-btn .avatar-trigger-label');
+    if (lbl) lbl.textContent = 'Avatar selected ✓';
+    console.log('[game.js] Avatar synced from debug hook:', emoji);
+  });
 }
 
 

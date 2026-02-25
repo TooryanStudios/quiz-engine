@@ -1,22 +1,25 @@
 /**
  * 🔧 DEBUG DIALOG HOOK — temporary diagnostic tool
  *
- * Adds a floating "🔍 Debug" button at the bottom-right of the screen.
- * Clicking it opens a test modal that:
- *   1. Proves modals can render at various z-index levels
- *   2. Inspects the avatar-picker-modal's computed styles
- *   3. Tries to force-open the real avatar picker
+ * Adds a floating "� Pick Avatar" button on the join page.
+ * Clicking it opens a self-contained avatar picker inside a debug modal
+ * that bypasses the real avatar-picker-modal entirely.
  *
- * TO REMOVE: Just delete this <script> tag from index.html
- *            and delete this file.
+ * Also intercepts & logs every event on the real avatar button so we can
+ * see exactly what fires (or doesn't) in the console.
+ *
+ * TO REMOVE: Delete the <script> tag from index.html & delete this file.
  */
 (function debugDialogHook() {
   'use strict';
 
-  // ── Floating trigger button ──
+  const AVATARS = ['🦁','🐯','🦊','🐼','🐨','🐸','🦄','🦖','🦜','🕺',
+                   '🤖','👾','🎃','🧙','🦸','🐇','⚡','🔥','🎮','🏆'];
+
+  // ── Floating trigger button (bottom-left) ──
   const triggerBtn = document.createElement('button');
   triggerBtn.id = 'dbg-dialog-trigger';
-  triggerBtn.textContent = '🔍 Debug';
+  triggerBtn.textContent = '👤 Pick Avatar';
   Object.assign(triggerBtn.style, {
     position: 'fixed',
     bottom: '16px',
@@ -25,7 +28,7 @@
     padding: '10px 18px',
     fontSize: '14px',
     fontWeight: '700',
-    background: '#ef4444',
+    background: '#7c3aed',
     color: '#fff',
     border: 'none',
     borderRadius: '12px',
@@ -35,72 +38,24 @@
   });
   document.body.appendChild(triggerBtn);
 
-  // ── Build the test modal ──
-  function buildModal() {
-    // Gather diagnostic info about the real avatar picker
-    const avatarModal = document.getElementById('avatar-picker-modal');
-    const avatarGrid = document.getElementById('modal-avatar-grid');
-    const closeBtn = document.getElementById('btn-close-avatar-picker');
-    const joinAvatarBtn = document.getElementById('join-avatar-btn');
-
-    const diag = {};
-
-    if (avatarModal) {
-      const cs = window.getComputedStyle(avatarModal);
-      diag['avatar-modal EXISTS'] = '✅ yes';
-      diag['inline style.display'] = avatarModal.style.display || '(empty)';
-      diag['computed display'] = cs.display;
-      diag['computed visibility'] = cs.visibility;
-      diag['computed opacity'] = cs.opacity;
-      diag['computed z-index'] = cs.zIndex;
-      diag['computed position'] = cs.position;
-      diag['computed top'] = cs.top;
-      diag['computed left'] = cs.left;
-      diag['computed width'] = cs.width;
-      diag['computed height'] = cs.height;
-      diag['computed pointer-events'] = cs.pointerEvents;
-      diag['offsetParent'] = avatarModal.offsetParent ? avatarModal.offsetParent.tagName + '#' + (avatarModal.offsetParent.id || '') : 'null (hidden)';
-      diag['parent element'] = avatarModal.parentElement ? avatarModal.parentElement.tagName + '#' + (avatarModal.parentElement.id || '') : 'none';
-      diag['has .view class?'] = avatarModal.classList.contains('view') ? '⚠️ YES (BUG!)' : '✅ No';
-      diag['childElementCount'] = avatarModal.childElementCount;
-    } else {
-      diag['avatar-modal EXISTS'] = '❌ NOT FOUND';
-    }
-
-    diag['---'] = '---';
-    diag['avatar-grid EXISTS'] = avatarGrid ? '✅' : '❌';
-    diag['close-btn EXISTS'] = closeBtn ? '✅' : '❌';
-    diag['join-avatar-btn EXISTS'] = joinAvatarBtn ? '✅' : '❌';
-
-    // Check all elements with z-index > 9000
-    diag['--- z-index audit ---'] = '';
-    const all = document.querySelectorAll('*');
-    const highZ = [];
-    all.forEach((el) => {
-      const z = window.getComputedStyle(el).zIndex;
-      if (z !== 'auto' && parseInt(z) > 9000) {
-        const tag = el.tagName.toLowerCase();
-        const id = el.id ? '#' + el.id : '';
-        const cls = el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : '';
-        const vis = window.getComputedStyle(el).display;
-        highZ.push(`${tag}${id}${cls} z:${z} d:${vis}`);
-      }
+  // ── Event logger on real avatar button ──
+  const realBtn = document.getElementById('join-avatar-btn');
+  if (realBtn) {
+    ['pointerdown','pointerup','touchstart','touchend','click','mousedown','mouseup'].forEach((evt) => {
+      realBtn.addEventListener(evt, (e) => {
+        console.log('[dbg-hook] join-avatar-btn event:', evt, 'target:', e.target?.tagName, e.target?.className);
+      }, { capture: true });
     });
-    diag['high z-index (>9000)'] = highZ.length ? highZ.join('\n') : 'none';
-
-    return diag;
   }
 
-  function showDebugModal() {
-    // Remove any existing debug modal
-    const old = document.getElementById('dbg-test-modal');
+  // ── Show the avatar picker dialog ──
+  function showAvatarDialog() {
+    const old = document.getElementById('dbg-avatar-modal');
     if (old) old.remove();
 
-    const diag = buildModal();
-
-    // Create the overlay
+    // Overlay
     const overlay = document.createElement('div');
-    overlay.id = 'dbg-test-modal';
+    overlay.id = 'dbg-avatar-modal';
     Object.assign(overlay.style, {
       position: 'fixed',
       inset: '0',
@@ -113,177 +68,172 @@
       backdropFilter: 'blur(6px)',
     });
 
+    // Dialog box
     const dialog = document.createElement('div');
     Object.assign(dialog.style, {
       background: '#1e1e2e',
       border: '2px solid #7c3aed',
-      borderRadius: '16px',
+      borderRadius: '20px',
       padding: '20px',
-      width: 'min(480px, 94vw)',
-      maxHeight: '85vh',
+      width: 'min(400px, 92vw)',
+      maxHeight: '80vh',
       overflowY: 'auto',
       color: '#e2e8f0',
-      fontFamily: 'monospace',
-      fontSize: '13px',
-      lineHeight: '1.5',
     });
 
     // Header
     const header = document.createElement('div');
-    header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;';
-    header.innerHTML = `<span style="font-size:16px;font-weight:800;color:#a78bfa;">🔍 Dialog Debug Panel</span>`;
+    header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
+    const title = document.createElement('span');
+    title.textContent = '👤 Choose Your Avatar';
+    title.style.cssText = 'font-size:18px;font-weight:800;color:#a78bfa;';
     const closeBtn = document.createElement('button');
     closeBtn.textContent = '✕';
     Object.assign(closeBtn.style, {
-      background: '#ef4444',
-      border: 'none',
-      color: '#fff',
-      fontSize: '16px',
-      width: '32px',
-      height: '32px',
-      borderRadius: '8px',
-      cursor: 'pointer',
+      background: '#ef4444', border: 'none', color: '#fff', fontSize: '16px',
+      width: '32px', height: '32px', borderRadius: '8px', cursor: 'pointer',
     });
     closeBtn.onclick = () => overlay.remove();
+    header.appendChild(title);
     header.appendChild(closeBtn);
     dialog.appendChild(header);
 
-    // Diagnostic data rows
-    Object.entries(diag).forEach(([key, val]) => {
-      if (key.startsWith('---')) {
-        const hr = document.createElement('hr');
-        hr.style.cssText = 'border:none;border-top:1px dashed #444;margin:8px 0;';
-        dialog.appendChild(hr);
-        return;
-      }
-      const row = document.createElement('div');
-      row.style.cssText = 'display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px dotted #333;';
-      const k = document.createElement('span');
-      k.style.cssText = 'color:#94a3b8;flex-shrink:0;';
-      k.textContent = key;
-      const v = document.createElement('span');
-      v.style.cssText = 'color:#fbbf24;text-align:right;word-break:break-all;white-space:pre-wrap;';
-      v.textContent = String(val);
-      row.appendChild(k);
-      row.appendChild(v);
-      dialog.appendChild(row);
-    });
+    // Current selection indicator
+    const currentDisplay = document.getElementById('join-avatar-display');
+    const currentAvatar = currentDisplay ? currentDisplay.textContent : '🎮';
+    const selectionLabel = document.createElement('div');
+    selectionLabel.style.cssText = 'text-align:center;font-size:13px;color:#94a3b8;margin-bottom:12px;';
+    selectionLabel.innerHTML = 'Current: <span id="dbg-current-avatar" style="font-size:28px;vertical-align:middle;">' + currentAvatar + '</span>';
+    dialog.appendChild(selectionLabel);
 
-    // Action buttons
-    const actions = document.createElement('div');
-    actions.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;margin-top:16px;';
+    // Avatar grid
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:repeat(5,1fr);gap:10px;';
 
-    // Button 1: Force-show avatar modal
-    const btnForceShow = document.createElement('button');
-    btnForceShow.textContent = '🟢 Force-Show Avatar Modal';
-    Object.assign(btnForceShow.style, {
-      padding: '8px 14px', fontSize: '13px', fontWeight: '700',
-      background: '#22c55e', color: '#fff', border: 'none', borderRadius: '8px',
-      cursor: 'pointer', touchAction: 'manipulation',
-    });
-    btnForceShow.onclick = () => {
-      overlay.remove();
-      const m = document.getElementById('avatar-picker-modal');
-      if (m) {
-        // Force it visible with every possible override
-        m.style.cssText = 'display:flex !important; position:fixed; inset:0; z-index:100000; background:rgba(0,0,0,0.8); align-items:center; justify-content:center; visibility:visible; opacity:1; pointer-events:auto;';
-        // Also populate grid if empty
-        const grid = document.getElementById('modal-avatar-grid');
-        if (grid && grid.children.length === 0) {
-          const AVATARS = ['🦁','🐯','🦊','🐼','🐨','🐸','🦄','🦖','🦜','🕺','🤖','👾','🎃','🧙','🦸','🐇','⚡','🔥','🎮','🏆'];
-          AVATARS.forEach((a) => {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'avatar-option';
-            btn.textContent = a;
-            btn.style.cssText = 'font-size:2rem;padding:8px;border:2px solid transparent;border-radius:12px;background:rgba(255,255,255,0.05);cursor:pointer;';
-            btn.onclick = () => { alert('Selected: ' + a); m.style.display = 'none'; };
-            grid.appendChild(btn);
-          });
-        }
-      } else {
-        alert('avatar-picker-modal element NOT found in DOM!');
-      }
-    };
-
-    // Button 2: Create a pure test modal (no existing DOM dependency)
-    const btnPureTest = document.createElement('button');
-    btnPureTest.textContent = '🟡 Pure Test Modal (z:100k)';
-    Object.assign(btnPureTest.style, {
-      padding: '8px 14px', fontSize: '13px', fontWeight: '700',
-      background: '#eab308', color: '#000', border: 'none', borderRadius: '8px',
-      cursor: 'pointer', touchAction: 'manipulation',
-    });
-    btnPureTest.onclick = () => {
-      overlay.remove();
-      const testOv = document.createElement('div');
-      Object.assign(testOv.style, {
-        position: 'fixed', inset: '0', background: 'rgba(0,0,0,0.8)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        zIndex: '100000',
+    AVATARS.forEach((emoji) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = emoji;
+      const isSelected = emoji === currentAvatar;
+      Object.assign(btn.style, {
+        fontSize: '2rem',
+        padding: '10px',
+        border: isSelected ? '3px solid #7c3aed' : '2px solid rgba(255,255,255,0.1)',
+        borderRadius: '14px',
+        background: isSelected ? 'rgba(124,58,237,0.2)' : 'rgba(255,255,255,0.04)',
+        cursor: 'pointer',
+        transition: 'all 0.15s',
+        touchAction: 'manipulation',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        aspectRatio: '1',
       });
-      testOv.innerHTML = `
-        <div style="background:#1e293b;padding:30px;border-radius:16px;border:2px solid #facc15;text-align:center;">
-          <h2 style="color:#facc15;margin:0 0 12px;">✅ Pure Test Modal Works!</h2>
-          <p style="color:#e2e8f0;margin:0 0 16px;">This modal was created from scratch at z-index:100000.<br>If you can see this, the z-index overlay system works fine.</p>
-          <button style="padding:10px 24px;font-size:14px;font-weight:700;background:#7c3aed;color:#fff;border:none;border-radius:8px;cursor:pointer;" onclick="this.closest('div[style]').parentElement.remove()">Close</button>
-        </div>`;
-      document.body.appendChild(testOv);
-    };
 
-    // Button 3: Check if avatar modal is being hidden by showView
-    const btnCheckView = document.createElement('button');
-    btnCheckView.textContent = '🔵 Check .view Conflicts';
-    Object.assign(btnCheckView.style, {
-      padding: '8px 14px', fontSize: '13px', fontWeight: '700',
-      background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '8px',
-      cursor: 'pointer', touchAction: 'manipulation',
+      btn.onclick = () => {
+        // Update the game state directly
+        // game.js uses a module-scoped `state` — we can't touch it,
+        // but we CAN update the DOM display + hidden input / attribute
+        const joinDisplay = document.getElementById('join-avatar-display');
+        if (joinDisplay) joinDisplay.textContent = emoji;
+
+        const joinLabel = document.querySelector('#join-avatar-btn .avatar-trigger-label');
+        if (joinLabel) joinLabel.textContent = 'Avatar selected ✓';
+
+        // Also update the current indicator
+        const cur = document.getElementById('dbg-current-avatar');
+        if (cur) cur.textContent = emoji;
+
+        // Highlight selected, un-highlight rest
+        grid.querySelectorAll('button').forEach((b) => {
+          b.style.border = '2px solid rgba(255,255,255,0.1)';
+          b.style.background = 'rgba(255,255,255,0.04)';
+        });
+        btn.style.border = '3px solid #7c3aed';
+        btn.style.background = 'rgba(124,58,237,0.2)';
+
+        // Dispatch a custom event so game.js can pick it up
+        document.dispatchEvent(new CustomEvent('dbg:avatar-selected', { detail: { avatar: emoji } }));
+
+        // Brief flash feedback
+        btn.style.transform = 'scale(1.15)';
+        setTimeout(() => { btn.style.transform = 'scale(1)'; }, 150);
+      };
+
+      grid.appendChild(btn);
     });
-    btnCheckView.onclick = () => {
-      const m = document.getElementById('avatar-picker-modal');
-      const results = [];
-      if (m) {
-        results.push('Modal tag: ' + m.tagName);
-        results.push('Modal classList: ' + [...m.classList].join(', '));
-        results.push('Has .view? ' + m.classList.contains('view'));
-        results.push('Parent: ' + (m.parentElement ? m.parentElement.tagName + '#' + m.parentElement.id : 'none'));
-        // Check if any ancestor has display:none or overflow:hidden
-        let el = m.parentElement;
-        while (el && el !== document.body) {
-          const cs = window.getComputedStyle(el);
-          if (cs.display === 'none') results.push('⚠️ HIDDEN ancestor: ' + el.tagName + '#' + el.id + ' display:none');
-          if (cs.overflow === 'hidden') results.push('⚠️ overflow:hidden on: ' + el.tagName + '#' + el.id);
-          if (cs.visibility === 'hidden') results.push('⚠️ visibility:hidden on: ' + el.tagName + '#' + el.id);
-          el = el.parentElement;
-        }
-        // Check if modal is inside a .view
-        const viewAncestor = m.closest('.view');
-        if (viewAncestor) {
-          results.push('⚠️ INSIDE a .view: #' + viewAncestor.id + ' — active? ' + viewAncestor.classList.contains('active'));
-          results.push('   This means showView() resets its inline styles!');
-        } else {
-          results.push('✅ Not inside any .view');
-        }
-      } else {
-        results.push('❌ avatar-picker-modal NOT in DOM');
-      }
-      alert(results.join('\n'));
-    };
 
-    actions.appendChild(btnForceShow);
-    actions.appendChild(btnPureTest);
-    actions.appendChild(btnCheckView);
-    dialog.appendChild(actions);
+    dialog.appendChild(grid);
+
+    // Diagnostic info section (collapsed)
+    const details = document.createElement('details');
+    details.style.cssText = 'margin-top:16px;border-top:1px dashed #333;padding-top:12px;';
+    const summary = document.createElement('summary');
+    summary.textContent = '🔍 Diagnostic Info';
+    summary.style.cssText = 'cursor:pointer;color:#94a3b8;font-size:12px;font-weight:600;';
+    details.appendChild(summary);
+
+    const diagInfo = document.createElement('pre');
+    diagInfo.style.cssText = 'font-size:11px;color:#fbbf24;white-space:pre-wrap;margin-top:8px;line-height:1.4;';
+    const avatarModal = document.getElementById('avatar-picker-modal');
+    const lines = [];
+    if (avatarModal) {
+      const cs = window.getComputedStyle(avatarModal);
+      lines.push('avatar-picker-modal: EXISTS');
+      lines.push('  inline display: ' + (avatarModal.style.display || '(empty)'));
+      lines.push('  computed display: ' + cs.display);
+      lines.push('  computed z-index: ' + cs.zIndex);
+      lines.push('  computed position: ' + cs.position);
+      lines.push('  computed visibility: ' + cs.visibility);
+      lines.push('  computed opacity: ' + cs.opacity);
+      lines.push('  parent: ' + avatarModal.parentElement?.tagName + '#' + (avatarModal.parentElement?.id || ''));
+      const viewAncestor = avatarModal.closest('.view');
+      if (viewAncestor) {
+        lines.push('  ⚠️ INSIDE .view#' + viewAncestor.id + ' active=' + viewAncestor.classList.contains('active'));
+      } else {
+        lines.push('  ✅ Not inside any .view');
+      }
+    } else {
+      lines.push('avatar-picker-modal: ❌ NOT FOUND');
+    }
+    diagInfo.textContent = lines.join('\n');
+    details.appendChild(diagInfo);
+    dialog.appendChild(details);
+
+    // "Done" button
+    const doneBtn = document.createElement('button');
+    doneBtn.textContent = '✅ Done';
+    Object.assign(doneBtn.style, {
+      display: 'block', width: '100%', marginTop: '16px', padding: '12px',
+      fontSize: '15px', fontWeight: '700', background: '#22c55e', color: '#fff',
+      border: 'none', borderRadius: '12px', cursor: 'pointer', touchAction: 'manipulation',
+    });
+    doneBtn.onclick = () => overlay.remove();
+    dialog.appendChild(doneBtn);
 
     overlay.appendChild(dialog);
+
     // Close on backdrop click
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) overlay.remove();
     });
+
     document.body.appendChild(overlay);
   }
 
-  triggerBtn.addEventListener('click', showDebugModal);
+  triggerBtn.addEventListener('click', showAvatarDialog);
 
-  console.log('[debug-dialog-hook] 🔍 Debug button injected. Click the red button at bottom-left.');
+  // Listen for avatar picks from this debug dialog and sync with game.js state
+  document.addEventListener('dbg:avatar-selected', (e) => {
+    const emoji = e.detail?.avatar;
+    if (!emoji) return;
+    // Try to reach the module state — game.js exposes state on window for debug
+    if (window.__gameState) {
+      window.__gameState.avatar = emoji;
+      console.log('[dbg-hook] Synced avatar to __gameState:', emoji);
+    }
+    console.log('[dbg-hook] Avatar selected:', emoji);
+  });
+
+  console.log('[debug-dialog-hook] 👤 Avatar picker button injected at bottom-left.');
 })();
