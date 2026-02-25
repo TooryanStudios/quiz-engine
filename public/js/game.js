@@ -1028,10 +1028,18 @@ function enableKeepAwake() {
 // ─────────────────────────────────────────────
 // Game Start Countdown (3, 2, 1, GO!)
 // ─────────────────────────────────────────────
+let _countdownTimers = [];   // track setTimeout IDs so we can cancel on re-entry
+let _countdownSafetyTimer = null;
+
 function showStartCountdown() {
   const overlay = document.getElementById('overlay-countdown');
   const numberEl = document.getElementById('countdown-number');
   if (!overlay || !numberEl) return;
+
+  // Clear any previous countdown timeouts (prevents double-animation on re-entry)
+  _countdownTimers.forEach(id => clearTimeout(id));
+  _countdownTimers = [];
+  if (_countdownSafetyTimer) { clearTimeout(_countdownSafetyTimer); _countdownSafetyTimer = null; }
 
   overlay.style.display = 'flex';
   overlay.style.opacity = '1';
@@ -1039,10 +1047,11 @@ function showStartCountdown() {
   state.countdownDone = false;
   state.questionReady = false;
 
-  // Pre-switch to question view behind the overlay so QR lobby is gone
+  // Pre-switch to question view behind the overlay so QR lobby is gone.
+  // skipUrlSync avoids polluting browser history during the countdown.
   const isHostOnly = state.role === 'host' && !state.hostIsPlayer;
   const targetView = isHostOnly ? 'view-host-question' : 'view-player-question';
-  showView(targetView);
+  showView(targetView, { skipUrlSync: true });
 
   const steps = [
     { text: '3', cls: '', delay: 0 },
@@ -1052,21 +1061,44 @@ function showStartCountdown() {
   ];
 
   steps.forEach(({ text, cls, delay }) => {
-    setTimeout(() => {
+    _countdownTimers.push(setTimeout(() => {
       numberEl.textContent = text;
       numberEl.className = 'countdown-number' + (cls ? ' ' + cls : '');
       // Re-trigger pop animation
       numberEl.style.animation = 'none';
       void numberEl.offsetWidth;
       numberEl.style.animation = '';
-    }, delay);
+    }, delay));
   });
 
   // Mark countdown finished after GO! animation
-  setTimeout(() => {
+  _countdownTimers.push(setTimeout(() => {
     state.countdownDone = true;
     revealQuestionIfReady();
-  }, 4000);
+  }, 4000));
+
+  // Safety net: force-hide overlay after 8s no matter what.
+  // Prevents the overlay from being permanently stuck if game:question
+  // is delayed (e.g. scholar preview) or never arrives.
+  _countdownSafetyTimer = setTimeout(() => {
+    forceHideCountdownOverlay();
+  }, 8000);
+}
+
+/** Immediately hide the countdown overlay (safety net / cleanup). */
+function forceHideCountdownOverlay() {
+  const overlay = document.getElementById('overlay-countdown');
+  if (overlay && overlay.style.display !== 'none') {
+    overlay.style.display = 'none';
+    overlay.classList.remove('countdown-fade-out');
+    overlay.style.opacity = '';
+  }
+  // Ensure flags allow the question to proceed even if timing was off
+  state.countdownDone = true;
+  state.questionReady = true;
+  _countdownTimers.forEach(id => clearTimeout(id));
+  _countdownTimers = [];
+  if (_countdownSafetyTimer) { clearTimeout(_countdownSafetyTimer); _countdownSafetyTimer = null; }
 }
 
 // ── Coordinated reveal: wait for BOTH countdown + question data ──────
@@ -1075,6 +1107,9 @@ function revealQuestionIfReady() {
 
   const overlay = document.getElementById('overlay-countdown');
   if (!overlay || overlay.style.display === 'none') return;
+
+  // Cancel the safety timer — normal reveal succeeded
+  if (_countdownSafetyTimer) { clearTimeout(_countdownSafetyTimer); _countdownSafetyTimer = null; }
 
   // Fade out the countdown overlay
   overlay.classList.add('countdown-fade-out');
