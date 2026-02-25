@@ -61,38 +61,38 @@
        VIEW: Player — Join Room Form
   ═══════════════════════════════════════════ -->
   <div id="view-player-join" class="view">
-    <div class="card center-card">
-      <button class="btn-back" id="btn-back-from-join">← Back</button>
+    <div class="card center-card" dir="rtl">
+      <button class="btn-back" id="btn-back-from-join" style="align-self:flex-start;">رجوع →</button>
       <img class="studio-logo" src="/images/QYan_logo_300x164.jpg" alt="QYan logo" style="margin-bottom:0.1rem;" />
       <span style="font-size:0.75rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);opacity:0.7;margin-bottom:0.5rem;">QYan 2026</span>
       <h2 dir="rtl">🔥 لحظات ممتعة في انتظارك!!</h2>
       <p id="join-quiz-title-banner" style="display:none; font-size:1rem; font-weight:600; color:#60a5fa; margin:0 0 0.75rem; text-align:center;"></p>
       <div id="scan-fallback-banner" class="scan-fallback" style="display:none">
-        <strong>Having trouble after scanning?</strong>
-        <span>Use the Room PIN shown on the host screen and join manually.</span>
+        <strong>هل واجهت مشكلة بعد مسح الرمز؟</strong>
+        <span>استخدم رمز الغرفة الظاهر على شاشة المضيف وانضم يدوياً.</span>
       </div>
       <form id="form-join">
         <div class="field">
-          <label for="input-pin">Room PIN</label>
+          <label for="input-pin">رمز الغرفة</label>
           <input
             id="input-pin"
             type="text"
             inputmode="numeric"
             pattern="[0-9]*"
             maxlength="6"
-            placeholder="e.g. 482910"
+            placeholder="مثال: 482910"
             autocomplete="off"
             required
           />
         </div>
         <div class="field">
-          <label for="input-nickname">Your Nickname</label>
+          <label for="input-nickname">اسمك في اللعبة</label>
           <div class="nickname-avatar-row">
             <input
               id="input-nickname"
               type="text"
               maxlength="20"
-              placeholder="e.g. SuperQuizzer"
+              placeholder="مثال: بطل المسابقة"
               autocomplete="off"
               required
             />
@@ -102,7 +102,7 @@
           </div>
         </div>
         <p class="error-msg" id="join-error"></p>
-        <button type="submit" class="btn btn-primary full-width">Join Game</button>
+        <button type="submit" class="btn btn-primary full-width">انضم للعبة</button>
       </form>
     </div>
   </div>
