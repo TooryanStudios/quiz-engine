@@ -72,6 +72,12 @@ npm install
 npm run dev
 ```
 
+Registry smoke check:
+
+```
+npm run verify:question-types
+```
+
 ## Question Type Plug-in Pattern
 
 Question types are now organized around registries so they can be added/removed with minimal edits.
