@@ -64,4 +64,16 @@ export class SingleChoiceRenderer extends BaseRenderer {
       </div>`
     ).join('');
   }
+
+  onAnswerSubmitted(answerData) {
+    const grid = safeGet('player-options-grid');
+    if (!grid) return;
+
+    const selectedIndex = Number(answerData?.answerIndex);
+    grid.querySelectorAll('.option-btn').forEach((btn, i) => {
+      btn.disabled = true;
+      if (i === selectedIndex) btn.classList.add('selected');
+      else btn.classList.add('dimmed');
+    });
+  }
 }

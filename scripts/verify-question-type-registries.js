@@ -4,7 +4,9 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const EXPECTED_TYPES = ['single', 'multi', 'type', 'match', 'order', 'boss'];
+const CANONICAL_TYPES = ['single', 'multi', 'type', 'match', 'order', 'boss'];
+const ALIAS_TYPES = ['match_plus', 'order_plus'];
+const SERVER_EXPECTED_TYPES = [...CANONICAL_TYPES, ...ALIAS_TYPES];
 
 function readText(relativePath) {
   const absolutePath = path.join(ROOT, relativePath);
@@ -17,18 +19,12 @@ function listFiles(relativeDir) {
 }
 
 function parseServerRegistryTypes() {
-  const source = readText(path.join('server', 'questionTypes', 'index.js'));
-  const objectMatch = source.match(/return\s*\{([\s\S]*?)\};/);
-  if (!objectMatch) return [];
-
-  const block = objectMatch[1];
-  const keys = [];
-  const keyRegex = /\b([a-z][a-z0-9_]*)\s*:/gi;
-  let match;
-  while ((match = keyRegex.exec(block)) !== null) {
-    keys.push(match[1]);
-  }
-  return Array.from(new Set(keys));
+  const { createQuestionTypeHandlers } = require(path.join(ROOT, 'server', 'questionTypes'));
+  const handlers = createQuestionTypeHandlers({
+    calculateScore: () => 0,
+    normalizeTypedAnswer: (value) => value,
+  });
+  return Object.keys(handlers);
 }
 
 function parseClientModuleTypes() {
@@ -47,13 +43,19 @@ function parseClientModuleTypes() {
 
 function parseClientIndexReferences() {
   const source = readText(path.join('public', 'js', 'renderers', 'questionTypes', 'index.js'));
-  const refs = [];
-  const refRegex = /create([A-Za-z0-9_]+)RendererEntry\s*\(/g;
-  let match;
-  while ((match = refRegex.exec(source)) !== null) {
-    refs.push(match[1].toLowerCase());
+  const refs = new Set();
+
+  if (/singleQuestionTypeModule/.test(source)) {
+    refs.add('single');
   }
-  return Array.from(new Set(refs));
+
+  const legacyRegex = /createLegacyModule\(\s*['"]([a-z0-9_]+)['"]/g;
+  let match;
+  while ((match = legacyRegex.exec(source)) !== null) {
+    refs.add(match[1]);
+  }
+
+  return Array.from(refs);
 }
 
 function getMissing(expected, actual) {
@@ -85,13 +87,14 @@ function main() {
   const serverTypes = parseServerRegistryTypes();
   const clientTypes = parseClientModuleTypes();
   const clientIndexRefs = parseClientIndexReferences();
+  const serverCanonical = serverTypes.filter((type) => !ALIAS_TYPES.includes(type));
 
   const checks = [
-    assertNoDiff('expected vs server registry', EXPECTED_TYPES, serverTypes),
-    assertNoDiff('expected vs client modules', EXPECTED_TYPES, clientTypes),
-    assertNoDiff('expected vs client index refs', EXPECTED_TYPES, clientIndexRefs),
-    assertNoDiff('server registry vs client modules', serverTypes, clientTypes),
-    assertNoDiff('server registry vs client index refs', serverTypes, clientIndexRefs),
+    assertNoDiff('expected vs server registry', SERVER_EXPECTED_TYPES, serverTypes),
+    assertNoDiff('expected vs client modules', CANONICAL_TYPES, clientTypes),
+    assertNoDiff('expected vs client index refs', CANONICAL_TYPES, clientIndexRefs),
+    assertNoDiff('server canonical vs client modules', serverCanonical, clientTypes),
+    assertNoDiff('server canonical vs client index refs', serverCanonical, clientIndexRefs),
   ];
 
   if (checks.every(Boolean)) {

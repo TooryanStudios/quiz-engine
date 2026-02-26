@@ -76,6 +76,17 @@ export class QuestionRendererFactory {
     
     return null;
   }
+
+  /**
+   * Notify current renderer that answer was submitted so it can
+   * apply type-specific post-submit UX (disable inputs, highlight, etc).
+   */
+  static onAnswerSubmitted(answerData) {
+    if (!this.currentRenderer) return;
+    if (typeof this.currentRenderer.onAnswerSubmitted === 'function') {
+      this.currentRenderer.onAnswerSubmitted(answerData);
+    }
+  }
   
   /**
    * Cleanup current renderer

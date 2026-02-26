@@ -6,7 +6,10 @@
   "scripts": {
     "start": "node server/server.js",
     "dev": "nodemon server/server.js",
-    "verify:question-types": "node scripts/verify-question-type-registries.js"
+    "verify:game-modes": "node scripts/verify-game-mode-runtimes.js",
+    "verify:question-types": "node scripts/verify-question-type-registries.js",
+    "verify:question-architecture": "node scripts/verify-question-type-architecture.js",
+    "verify:question-system": "npm run verify:question-types && npm run verify:question-architecture && npm run verify:game-modes"
   },
   "engines": {
     "node": ">=18.0.0"

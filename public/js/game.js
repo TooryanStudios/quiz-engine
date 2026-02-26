@@ -6,6 +6,7 @@ import { Sounds, setMuted, isMuted } from './utils/sounds.js?v=121';
 import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js?v=121';
 import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js?v=121';
 import { QuestionRendererFactory } from './renderers/QuestionRenderer.js?v=121';
+import { resolveGameModeRuntime } from './gameModes/runtime/index.js?v=121';
 
 // Fetch and display server build time on home screen
 fetch('/api/build-info')
@@ -25,7 +26,39 @@ const queryParams = new URLSearchParams(window.location.search);
 const quizSlugFromUrl = queryParams.get('quiz');
 const modeFromUrl     = queryParams.get('mode');
 const gameModeFromUrl = queryParams.get('gameMode');
+const hostUidFromUrl  = queryParams.get('hostUid');
+const hostTokenFromUrl = queryParams.get('hostToken');
 const isAutoHostLaunch = !!(quizSlugFromUrl && modeFromUrl === 'host');
+
+const resolvedGameModeRuntime = resolveGameModeRuntime(gameModeFromUrl);
+
+function getGameModeRuntime() {
+  const runtimeOverride = window.__QYAN_GAME_MODE_RUNTIME;
+  if (runtimeOverride && typeof runtimeOverride === 'object') {
+    return runtimeOverride;
+  }
+  return resolvedGameModeRuntime;
+}
+
+function callGameModeHook(hookName, payload = {}) {
+  const runtime = getGameModeRuntime();
+  if (!runtime) return undefined;
+  const hook = runtime[hookName];
+  if (typeof hook !== 'function') return undefined;
+  try {
+    return hook(payload);
+  } catch (error) {
+    console.error(`[game-mode-hook:${hookName}] failed`, error);
+    return undefined;
+  }
+}
+
+function getHostAuthPayload() {
+  return {
+    hostUid: hostUidFromUrl || null,
+    hostToken: hostTokenFromUrl || null,
+  };
+}
 
 // Question-only mirror mode (for POP-Q debug button)
 const questionOnlyMode = queryParams.get('questionOnly'); // 'host' or 'player'
@@ -722,7 +755,11 @@ function startHostLaunch(quizSlug = null) {
   showView('view-host-loading');
   setConnectionStatus('warn', 'Preparing host room…');
 
-  const doHostCreate = () => socket.emit('host:create', { quizSlug: quizSlug || null, gameMode: gameModeFromUrl || null });
+  const doHostCreate = () => socket.emit('host:create', {
+    quizSlug: quizSlug || null,
+    gameMode: gameModeFromUrl || null,
+    ...getHostAuthPayload(),
+  });
   if (socket.connected) {
     doHostCreate();
   } else {
@@ -1563,24 +1600,7 @@ function submitAnswer(answer) {
 
   socket.emit('player:answer', { questionIndex: state.questionIndex, answer });
 
-  const type = state.currentQuestionType;
-
-  if (type === 'single' || type === 'boss') {
-    const grid = document.getElementById('player-options-grid');
-    grid.querySelectorAll('.option-btn').forEach((btn, i) => {
-      btn.disabled = true;
-      if (i === answer.answerIndex) btn.classList.add('selected');
-      else                          btn.classList.add('dimmed');
-    });
-  } else if (type === 'type') {
-    const input = document.getElementById('player-type-input');
-    input.disabled = true;
-  } else {
-    // multi / match / order — disable the submit button
-    const btn = document.getElementById('btn-submit-answer');
-    btn.disabled    = true;
-    btn.textContent = '✔ تم الإرسال!';
-  }
+  QuestionRendererFactory.onAnswerSubmitted(answer);
 
   document.getElementById('player-answered-msg').textContent =
     '✅ تم إرسال إجابتك! انتظر الآخرين…';
@@ -1606,7 +1626,56 @@ function showQuestionResult(data) {
 
   const type = data.questionType;
 
-  if (type === 'single') {
+  if (type === 'boss' || data.boss) {
+    labelEl.textContent  = '⚔�? Boss Battle Result';
+    answerEl.textContent = `${data.correctOption || ''}`;
+
+    if (data.boss) {
+      bossStatusText = data.boss.defeated
+        ? `💥 ${data.boss.name} defeated!`
+        : `🛡�? ${data.boss.name} survived with ${data.boss.remainingHp}/${data.boss.maxHp} HP`;
+      resultMsg.textContent = `${bossStatusText} • Team Damage: ${data.boss.totalDamage}`;
+      resultMsg.className = `result-score-msg ${data.boss.defeated ? 'correct' : 'incorrect'}`;
+    }
+  } else if (Array.isArray(data.correctPairs)) {
+    labelEl.textContent        = '✅ التطابق الصحيح';
+    answerEl.style.display     = 'none';
+    pairsEl.style.display      = 'block';
+    pairsEl.innerHTML = (data.correctPairs || []).map(p =>
+      `<li class="result-pair">
+        <span dir="auto">${escapeHtml(p.left)}</span>
+        <span class="pair-arrow">→</span>
+        <span dir="auto">${escapeHtml(p.right)}</span>
+      </li>`
+    ).join('');
+  } else if (Array.isArray(data.correctOrder) && Array.isArray(data.items)) {
+    labelEl.textContent    = '✅ الترتيب الصحيح';
+    answerEl.style.display = 'none';
+    pairsEl.style.display  = 'block';
+    pairsEl.innerHTML = (data.correctOrder || []).map((itemIdx, pos) =>
+      `<li class="result-pair">
+        <span class="result-order-rank">${pos + 1}</span>
+        <span dir="auto">${escapeHtml((data.items || [])[itemIdx] || '')}</span>
+      </li>`
+    ).join('');
+  } else if (Array.isArray(data.acceptedAnswers)) {
+    labelEl.textContent  = '✅ الإجابات المقبولة';
+    answerEl.textContent = (data.acceptedAnswers || []).join('، ');
+  } else if (Array.isArray(data.correctIndices)) {
+    labelEl.textContent  = '✅ الإجابات الصحيحة';
+    answerEl.textContent = (data.correctOptions || []).join('، ');
+
+    const grid = document.getElementById('player-options-grid');
+    grid.querySelectorAll('.option-btn').forEach((btn, i) => {
+      btn.disabled = true;
+      btn.classList.remove('multi-selected');
+      if ((data.correctIndices || []).includes(i)) {
+        btn.classList.add('reveal-correct');
+      } else {
+        btn.classList.add('reveal-wrong');
+      }
+    });
+  } else {
     labelEl.textContent   = '✅ الإجابة الصحيحة';
     answerEl.textContent  = data.correctOption;
 
@@ -1624,58 +1693,6 @@ function showQuestionResult(data) {
       }
     });
 
-  } else if (type === 'type') {
-    labelEl.textContent  = '✅ الإجابات المقبولة';
-    answerEl.textContent = (data.acceptedAnswers || []).join('، ');
-
-  } else if (type === 'multi') {
-    labelEl.textContent  = '✅ الإجابات الصحيحة';
-    answerEl.textContent = (data.correctOptions || []).join('، ');
-
-    const grid = document.getElementById('player-options-grid');
-    grid.querySelectorAll('.option-btn').forEach((btn, i) => {
-      btn.disabled = true;
-      btn.classList.remove('multi-selected');
-      if ((data.correctIndices || []).includes(i)) {
-        btn.classList.add('reveal-correct');
-      } else {
-        btn.classList.add('reveal-wrong');
-      }
-    });
-
-  } else if (type === 'match') {
-    labelEl.textContent        = '✅ التطابق الصحيح';
-    answerEl.style.display     = 'none';
-    pairsEl.style.display      = 'block';
-    pairsEl.innerHTML = (data.correctPairs || []).map(p =>
-      `<li class="result-pair">
-        <span dir="auto">${escapeHtml(p.left)}</span>
-        <span class="pair-arrow">→</span>
-        <span dir="auto">${escapeHtml(p.right)}</span>
-      </li>`
-    ).join('');
-
-  } else if (type === 'order') {
-    labelEl.textContent    = '✅ الترتيب الصحيح';
-    answerEl.style.display = 'none';
-    pairsEl.style.display  = 'block';
-    pairsEl.innerHTML = (data.correctOrder || []).map((itemIdx, pos) =>
-      `<li class="result-pair">
-        <span class="result-order-rank">${pos + 1}</span>
-        <span dir="auto">${escapeHtml((data.items || [])[itemIdx] || '')}</span>
-      </li>`
-    ).join('');
-  } else if (type === 'boss') {
-    labelEl.textContent  = '⚔�? Boss Battle Result';
-    answerEl.textContent = `${data.correctOption || ''}`;
-
-    if (data.boss) {
-      bossStatusText = data.boss.defeated
-        ? `💥 ${data.boss.name} defeated!`
-        : `🛡�? ${data.boss.name} survived with ${data.boss.remainingHp}/${data.boss.maxHp} HP`;
-      resultMsg.textContent = `${bossStatusText} • Team Damage: ${data.boss.totalDamage}`;
-      resultMsg.className = `result-score-msg ${data.boss.defeated ? 'correct' : 'incorrect'}`;
-    }
   }
 
   // Score / streak message for player
@@ -2393,7 +2410,7 @@ document.getElementById('btn-start-game').addEventListener('click', () => {
   if (soloPlayBtn) soloPlayBtn.disabled = true;
   enableKeepAwake();
   Sounds.click();
-  socket.emit('host:start', getSessionOptions());
+  socket.emit('host:start', { ...getSessionOptions(), ...getHostAuthPayload() });
 });
 
 // Solo Play — auto-join as player, then start once confirmed
@@ -2415,7 +2432,7 @@ if (soloPlayBtn) {
     const onJoined = ({ joined }) => {
       if (joined) {
         enableKeepAwake();
-        socket.emit('host:start', getSessionOptions());
+        socket.emit('host:start', { ...getSessionOptions(), ...getHostAuthPayload() });
       } else {
         soloPlayBtn.disabled = false;
         soloPlayBtn.textContent = '🎯 العب بنفسي';
@@ -2647,6 +2664,7 @@ socket.on('connect', () => {
       socket.emit('host:create', {
         quizSlug: quizSlugFromUrl || null,
         gameMode: gameModeFromUrl || null,
+        ...getHostAuthPayload(),
         isReconnect: true, // tells server to force-reclaim even if old socket still alive
       });
     }
@@ -2967,6 +2985,14 @@ socket.on('room:profile_updated', ({ nickname, avatar }) => {
 
 /** BOTH: Game is starting */
 socket.on('game:start', ({ totalQuestions }) => {
+  const handledByMode = callGameModeHook('onGameStart', {
+    totalQuestions,
+    state,
+    socket,
+    showView,
+  });
+  if (handledByMode === true) return;
+
   markDiagEvent('game:start');
   pushJoinDebugLog(`game:start totalQuestions=${totalQuestions}`);
   state.totalQuestions = totalQuestions;
@@ -3024,6 +3050,15 @@ socket.on('game:final_question', () => {
 /** BOTH: New question */
 socket.on('game:question', (data) => {
   try {
+    const handledByMode = callGameModeHook('onGameQuestion', {
+      data,
+      state,
+      socket,
+      renderQuestion,
+      showView,
+    });
+    if (handledByMode === true) return;
+
     markDiagEvent('game:question');
     pushJoinDebugLog(`game:question index=${data?.questionIndex} type=${data?.question?.type}`);
     state.isPaused = false;
@@ -3140,17 +3175,43 @@ socket.on('answer:received', () => {
 
 /** BOTH: Question ended — show correct answer */
 socket.on('question:end', (data) => {
+  const handledByMode = callGameModeHook('onQuestionEnd', {
+    data,
+    state,
+    socket,
+    showQuestionResult,
+    showView,
+  });
+  if (handledByMode === true) return;
+
   showQuestionResult(data);
 });
 
 /** BOTH: Leaderboard between questions */
 socket.on('game:leaderboard', (data) => {
+  const handledByMode = callGameModeHook('onLeaderboard', {
+    data,
+    state,
+    socket,
+    showLeaderboard,
+    showView,
+  });
+  if (handledByMode === true) return;
+
   // Server already waits 2s after question:end before sending this — no extra delay needed
   showLeaderboard(data, false);
 });
 
 /** BOTH: Game over — Podium Ceremony */
 socket.on('game:over', (data) => {
+  const handledByMode = callGameModeHook('onGameOver', {
+    data,
+    state,
+    socket,
+    showView,
+  });
+  if (handledByMode === true) return;
+
   clearGameSession();
   clearScholarPreviewInterval();
   stopClientTimer();

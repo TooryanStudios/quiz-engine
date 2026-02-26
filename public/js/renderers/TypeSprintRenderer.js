@@ -70,4 +70,12 @@ export class TypeSprintRenderer extends BaseRenderer {
       input.oninput = null;
     }
   }
+
+  onAnswerSubmitted() {
+    const input = safeGet('player-type-input');
+    if (input) {
+      input.disabled = true;
+    }
+    super.onAnswerSubmitted();
+  }
 }

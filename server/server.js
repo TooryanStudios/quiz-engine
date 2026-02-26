@@ -9,6 +9,7 @@ const QRCode = require('qrcode');
 const config = require('../config');
 const { admin, getFirestore } = require('./firebaseAdmin');
 const { createQuestionTypeHandlers } = require('./questionTypes');
+const { createGameModeRuntime } = require('./gameModes/runtime');
 
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
 const stripe = stripeSecretKey ? require('stripe')(stripeSecretKey) : null;
@@ -55,6 +56,126 @@ async function revokePackEntitlement(userId, packId) {
   );
 
   return true;
+}
+
+function normalizePriceTier(value) {
+  if (value === 'starter' || value === 'pro') return value;
+  return 'free';
+}
+
+function isPremiumPriceTier(value) {
+  const tier = normalizePriceTier(value);
+  return tier === 'starter' || tier === 'pro';
+}
+
+async function getQuizAccessMetadata(quizSlug) {
+  if (!quizSlug) return { priceTier: 'free', ownerId: null, title: null };
+
+  const db = getDbSafe();
+  if (db) {
+    try {
+      const docSnap = await db.collection('quizzes').doc(quizSlug).get();
+      if (docSnap.exists) {
+        const data = docSnap.data() || {};
+        return {
+          priceTier: normalizePriceTier(data.priceTier),
+          ownerId: typeof data.ownerId === 'string' ? data.ownerId : null,
+          title: typeof data.title === 'string' ? data.title : null,
+        };
+      }
+    } catch (_) {
+      // Fall back to slug query
+    }
+
+    try {
+      const snap = await db.collection('quizzes').where('slug', '==', quizSlug).limit(1).get();
+      if (!snap.empty) {
+        const data = snap.docs[0].data() || {};
+        return {
+          priceTier: normalizePriceTier(data.priceTier),
+          ownerId: typeof data.ownerId === 'string' ? data.ownerId : null,
+          title: typeof data.title === 'string' ? data.title : null,
+        };
+      }
+    } catch (_) {
+      // Fall through to REST fallback
+    }
+  }
+
+  const restData = await getQuizDataFromRestApi(quizSlug);
+  if (restData) {
+    return {
+      priceTier: normalizePriceTier(restData.priceTier),
+      ownerId: typeof restData.ownerId === 'string' ? restData.ownerId : null,
+      title: typeof restData.title === 'string' ? restData.title : null,
+    };
+  }
+
+  return { priceTier: 'free', ownerId: null, title: null };
+}
+
+async function hasActiveEntitlement(userId) {
+  if (!userId) return false;
+  const db = getDbSafe();
+  if (!db) return false;
+
+  try {
+    const snap = await db.collection('entitlements').doc(userId).get();
+    if (!snap.exists) return false;
+    const data = snap.data() || {};
+    const hasPlan = typeof data.plan === 'string' && data.plan.trim() !== '';
+    const hasPacks = Array.isArray(data.activePackIds) && data.activePackIds.length > 0;
+    return hasPlan || hasPacks;
+  } catch (_err) {
+    return false;
+  }
+}
+
+async function verifyHostPremiumLaunchAccess({ quizSlug, hostUid, hostToken }) {
+  const accessMeta = await getQuizAccessMetadata(quizSlug);
+  if (!isPremiumPriceTier(accessMeta.priceTier)) {
+    return { allowed: true, accessMeta };
+  }
+
+  if (!hostUid || !hostToken) {
+    return {
+      allowed: false,
+      code: 'SUBSCRIPTION_REQUIRED',
+      message: 'This quiz requires an active subscription.',
+      accessMeta,
+    };
+  }
+
+  try {
+    const decoded = await admin.auth().verifyIdToken(hostToken);
+    if (decoded.uid !== hostUid) {
+      return {
+        allowed: false,
+        code: 'AUTH_REQUIRED',
+        message: 'Authentication mismatch. Please relaunch from your dashboard.',
+        accessMeta,
+      };
+    }
+  } catch (_err) {
+    return {
+      allowed: false,
+      code: 'AUTH_REQUIRED',
+      message: 'Authentication expired. Please relaunch from your dashboard.',
+      accessMeta,
+    };
+  }
+
+  const subscribed = await hasActiveEntitlement(hostUid);
+  if (!subscribed) {
+    return {
+      allowed: false,
+      code: 'SUBSCRIPTION_REQUIRED',
+      message: 'This quiz requires an active subscription.',
+      accessMeta,
+    };
+  }
+
+  return { allowed: true, accessMeta };
 }
 
 // Recorded once at process startup — shown on the home screen
@@ -677,6 +798,8 @@ async function getQuizDataFromRestApi(quizId) {
       console.log(`[Quiz REST] ✓ Loaded "${data.title}" (${data.questions.length} Qs) via Firestore REST`);
       return {
         title: data.title || null,
+        ownerId: data.ownerId || null,
+        priceTier: normalizePriceTier(data.priceTier),
         questions: data.questions,
         challengePreset: data.challengePreset || 'classic',
         challengeSettings: data.challengeSettings || null,
@@ -1084,6 +1207,20 @@ function getQuestionTypeHandler(type) {
   return QUESTION_TYPE_HANDLERS[type] || QUESTION_TYPE_HANDLERS.single;
 }
 
+function callRoomGameModeHook(room, hookName, payload = {}) {
+  if (!room || !hookName) return undefined;
+  const runtime = room.gameModeRuntime;
+  if (!runtime || typeof runtime !== 'object') return undefined;
+  const hook = runtime[hookName];
+  if (typeof hook !== 'function') return undefined;
+  try {
+    return hook(payload);
+  } catch (error) {
+    console.error(`[Room ${room.pin}] gameMode hook "${hookName}" failed:`, error?.message || error);
+    return undefined;
+  }
+}
+
 // ─────────────────────────────────────────────
 // Game Flow
 // ─────────────────────────────────────────────
@@ -1119,24 +1256,41 @@ function sendQuestion(room, opts = {}) {
 
   const dispatchQuestion = () => {
     if (room.state === 'finished') return; // end-game clicked before question fired
-    io.to(room.pin).emit('game:question', {
-      questionIndex: room.questionIndex,
-      total: room.questions.length,
-      question: questionPayload,
+    const playersPayload = getPlayerList(room);
+
+    const dispatchDefault = () => {
+      io.to(room.pin).emit('game:question', {
+        questionIndex: room.questionIndex,
+        total: room.questions.length,
+        question: questionPayload,
+        duration,
+        players: playersPayload,
+      });
+
+      room.questionStartTime = Date.now();
+      room.questionDuration  = duration;
+      room.state  = 'question';
+      room.paused = false;
+      room.pausedTimeRemaining = 0;
+      room.answerOpenAt = Date.now();
+
+      room.questionTimer = setTimeout(() => {
+        endQuestion(room);
+      }, (duration * 1000) + countdownExtraMs);
+    };
+
+    const handledByMode = callRoomGameModeHook(room, 'onQuestionDispatch', {
+      room,
+      io,
+      questionPayload,
+      players: playersPayload,
       duration,
-      players: getPlayerList(room),
+      countdownExtraMs,
+      dispatchDefault,
     });
 
-    room.questionStartTime = Date.now();
-    room.questionDuration  = duration;
-    room.state  = 'question';
-    room.paused = false;
-    room.pausedTimeRemaining = 0;
-    room.answerOpenAt = Date.now();
-
-    room.questionTimer = setTimeout(() => {
-      endQuestion(room);
-    }, (duration * 1000) + countdownExtraMs);
+    if (handledByMode === true) return;
+    dispatchDefault();
   };
 
   clearTimeout(room.previewTimer);
@@ -1232,35 +1386,60 @@ function endQuestion(room) {
   const correctReveal = { questionType: q.type, roundScores };
   Object.assign(correctReveal, typeHandler.buildCorrectReveal({ room, q, challengeSettings }));
 
-  io.to(room.pin).emit('question:end', correctReveal);
+  const dispatchDefault = () => {
+    io.to(room.pin).emit('question:end', correctReveal);
 
-  // ── Advance to leaderboard / next question ────────────────────────────
-  setTimeout(() => {
-    const leaderboard     = roundScores;
-    const isLastQuestion  = room.questionIndex >= room.questions.length - 1;
+    // ── Advance to leaderboard / next question ────────────────────────────
+    setTimeout(() => {
+      const leaderboard     = roundScores;
+      const isLastQuestion  = room.questionIndex >= room.questions.length - 1;
 
-    if (isLastQuestion) {
-      room.state = 'finished';
-      io.to(room.pin).emit('game:over', { leaderboard });
-    } else {
-      io.to(room.pin).emit('game:leaderboard', { leaderboard, isFinal: false });
-      setTimeout(() => {
-        room.questionIndex++;
+      if (isLastQuestion) {
+        room.state = 'finished';
+        const emitDefaultGameOver = () => {
+          io.to(room.pin).emit('game:over', { leaderboard });
+        };
+        const handledGameOver = callRoomGameModeHook(room, 'onGameOver', {
+          room,
+          io,
+          leaderboard,
+          endedByHost: false,
+          dispatchDefault: emitDefaultGameOver,
+        });
+        if (handledGameOver === true) return;
+        emitDefaultGameOver();
+      } else {
+        io.to(room.pin).emit('game:leaderboard', { leaderboard, isFinal: false });
+        setTimeout(() => {
+          room.questionIndex++;
 
-        // If the next question is the LAST one, send a dramatic alert first
-        const isNextLast = room.questionIndex >= room.questions.length - 1;
-        if (isNextLast) {
-          io.to(room.pin).emit('game:final_question');
-          // Delay the actual question to let the animation play
-          setTimeout(() => {
+          // If the next question is the LAST one, send a dramatic alert first
+          const isNextLast = room.questionIndex >= room.questions.length - 1;
+          if (isNextLast) {
+            io.to(room.pin).emit('game:final_question');
+            // Delay the actual question to let the animation play
+            setTimeout(() => {
+              sendQuestion(room);
+            }, 4500);
+          } else {
             sendQuestion(room);
-          }, 4500);
-        } else {
-          sendQuestion(room);
-        }
-      }, config.GAME.LEADERBOARD_DURATION_MS);
-    }
-  }, 2000);
+          }
+        }, config.GAME.LEADERBOARD_DURATION_MS);
+      }
+    }, 2000);
+  };
+
+  const handledByMode = callRoomGameModeHook(room, 'onQuestionEnd', {
+    room,
+    io,
+    q,
+    roundScores,
+    correctReveal,
+    dispatchDefault,
+  });
+
+  if (handledByMode === true) return;
+  dispatchDefault();
 }
 
 // ─────────────────────────────────────────────
@@ -1356,6 +1535,7 @@ io.on('connection', (socket) => {
       answerOpenAt: 0,
       roles: null,
       publicBaseUrl,
+      gameModeRuntime: createGameModeRuntime(gameMode || null),
     };
 
     rooms.set(pin, room);
@@ -1587,7 +1767,7 @@ io.on('connection', (socket) => {
   });
 
   // ── HOST: Start the game ─────────────────────
-  socket.on('host:start', async ({ sessionRandomize, sessionQuestionLimit } = {}) => {
+  socket.on('host:start', async ({ sessionRandomize, sessionQuestionLimit, hostUid, hostToken } = {}) => {
     // Find the room this host owns
     const room = Array.from(rooms.values()).find(
       (r) => r.hostSocketId === socket.id
@@ -1611,6 +1791,22 @@ io.on('connection', (socket) => {
     }
 
     room.state = 'starting'; // prevent double-start during async quiz load
+
+    const access = await verifyHostPremiumLaunchAccess({
+      quizSlug: room.quizSlug,
+      hostUid,
+      hostToken,
+    });
+
+    if (!access.allowed) {
+      room.state = 'lobby';
+      socket.emit('room:error', {
+        message: access.message,
+        code: access.code,
+        priceTier: access.accessMeta?.priceTier || null,
+      });
+      return;
+    }
 
     console.log(`[Room ${room.pin}] Game started by host ${socket.id}`);
     console.log(`[Room ${room.pin}] Quiz slug provided: "${room.quizSlug}"`);
@@ -1673,15 +1869,30 @@ io.on('connection', (socket) => {
       }).catch(err => console.error(`[Metadata Error] Failed to log session: ${err.message}`));
     }
 
-    // Broadcast game start to everyone in the room
-    io.to(room.pin).emit('game:start', {
-      totalQuestions: room.questions.length,
+    const dispatchDefault = () => {
+      // Broadcast game start to everyone in the room
+      io.to(room.pin).emit('game:start', {
+        totalQuestions: room.questions.length,
+      });
+
+      // Send first question immediately — the clients' countdown overlay
+      // gates the reveal so players get the full countdown experience.
+      // The server timer is extended by 5s to account for the countdown.
+      sendQuestion(room, { countdownExtraMs: 5000 });
+    };
+
+    const handledByMode = callRoomGameModeHook(room, 'onGameStart', {
+      room,
+      io,
+      socket,
+      quizData,
+      sessionRandomize,
+      sessionQuestionLimit,
+      dispatchDefault,
     });
 
-    // Send first question immediately — the clients' countdown overlay
-    // gates the reveal so players get the full countdown experience.
-    // The server timer is extended by 5s to account for the countdown.
-    sendQuestion(room, { countdownExtraMs: 5000 });
+    if (handledByMode === true) return;
+    dispatchDefault();
   });
 
   // ── HOST: Set connection mode (local/global) ─
@@ -1770,7 +1981,21 @@ io.on('connection', (socket) => {
 
     const leaderboard = buildLeaderboard(room);
     console.log(`[Room ${room.pin}] Ended by host ${socket.id}.`);
-    io.to(room.pin).emit('game:over', { leaderboard, endedByHost: true });
+    const dispatchDefault = () => {
+      io.to(room.pin).emit('game:over', { leaderboard, endedByHost: true });
+    };
+
+    const handledByMode = callRoomGameModeHook(room, 'onGameOver', {
+      room,
+      io,
+      socket,
+      leaderboard,
+      endedByHost: true,
+      dispatchDefault,
+    });
+
+    if (handledByMode === true) return;
+    dispatchDefault();
   });
 
   // ── HOST: Start a new session in same room ───

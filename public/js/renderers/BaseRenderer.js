@@ -51,6 +51,18 @@ export class BaseRenderer {
       this.submitCallback(answerData);
     }
   }
+
+  /**
+   * Lifecycle hook invoked by runtime after an answer is submitted.
+   * Subclasses can override to apply type-specific UI locking/feedback
+   * without requiring edits in the main game runtime.
+   */
+  onAnswerSubmitted() {
+    const btn = this.getSubmitButton();
+    if (!btn) return;
+    btn.disabled = true;
+    btn.textContent = '✔ تم الإرسال!';
+  }
   
   /**
    * Check if user can submit (not already answered, not frozen)
