@@ -2133,6 +2133,44 @@ io.on('connection', (socket) => {
     io.to(room.pin).emit('room:mode', payload);
   });
 
+  // ── HOST: Sync room state (authoritative recovery path) ─
+  socket.on('host:sync_state', () => {
+    const room = findHostRoom(socket.id);
+    if (!room) {
+      socket.emit('host:state_sync', { ok: false, code: 'ROOM_NOT_FOUND', message: 'Room not found.' });
+      return;
+    }
+
+    const payload = {
+      ok: true,
+      pin: room.pin,
+      roomState: room.state,
+      hostIsPlayer: !!room.hostIsPlayer,
+      players: getPlayerList(room),
+      questionData: null,
+      leaderboard: null,
+    };
+
+    if ((room.state === 'question' || room.state === 'question-pending') && room.currentQuestionPayload) {
+      const elapsed = Math.max(0, (Date.now() - Number(room.questionStartTime || 0)) / 1000);
+      const duration = Number(room.questionDuration || config.GAME.QUESTION_DURATION_SEC);
+      payload.questionData = {
+        questionIndex: Number(room.questionIndex || 0),
+        total: Array.isArray(room.questions) ? room.questions.length : 0,
+        question: room.currentQuestionPayload,
+        duration,
+        timeRemaining: Math.max(1, Math.ceil(duration - elapsed)),
+        players: getPlayerList(room),
+      };
+    }
+
+    if (room.state === 'leaderboard' || room.state === 'finished') {
+      payload.leaderboard = buildLeaderboard(room);
+    }
+
+    socket.emit('host:state_sync', payload);
+  });
+
   // ── HOST: Pause the game ─────────────────────
   socket.on('host:pause', () => {
     const room = findHostRoom(socket.id);

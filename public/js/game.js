@@ -3259,6 +3259,12 @@ socket.on('room:error', ({ message, code }) => {
   if (joinBtn) { joinBtn.disabled = false; joinBtn.textContent = 'Join Game'; }
 
   if (state.role === 'host') {
+    if (code === 'GAME_ALREADY_STARTED' || code === 'HOST_START_FAILED') {
+      pushJoinDebugLog(`host error ${code}; requesting host:sync_state`);
+      socket.emit('host:sync_state');
+      return;
+    }
+
     setHostRoomHealth('error', '⚠️ Room issue', message || 'Server reported a room error');
     state.hostCreateRetryCount = 0;
     state.hostCreatePending = false;
@@ -3290,6 +3296,56 @@ socket.on('room:error', ({ message, code }) => {
   } else {
     alert(`Server error: ${message}`);
   }
+});
+
+/** HOST: Authoritative room state sync (recovery after mismatch/errors) */
+socket.on('host:state_sync', (payload = {}) => {
+  if (state.role !== 'host') return;
+
+  if (!payload.ok) {
+    setHostRoomHealth('error', '⚠️ Sync failed', payload.message || 'Could not sync room state');
+    return;
+  }
+
+  const roomState = payload.roomState || 'lobby';
+  state.pin = payload.pin || state.pin;
+  state.hostIsPlayer = !!payload.hostIsPlayer;
+  updateInGameRoomPin(state.pin);
+
+  const hostPinEl = document.getElementById('host-pin');
+  if (hostPinEl && state.pin) hostPinEl.textContent = state.pin;
+
+  const players = Array.isArray(payload.players) ? payload.players : [];
+  const listEl = document.getElementById('host-player-list');
+  const countEl = document.getElementById('host-player-count');
+  if (listEl && countEl) {
+    renderPlayerList(players, listEl, countEl, true);
+  }
+
+  const startBtn = document.getElementById('btn-start-game');
+  if (startBtn) {
+    startBtn.disabled = roomState !== 'lobby' || players.length === 0;
+    startBtn.textContent = '🚀 ابدأ اللعبة';
+  }
+
+  if (roomState === 'lobby') {
+    setHostRoomHealth('ok', '✅ Room live', 'Synced with server (lobby)');
+    showView('view-host-lobby');
+    return;
+  }
+
+  if ((roomState === 'question' || roomState === 'question-pending') && payload.questionData) {
+    setHostRoomHealth('warn', '♻️ Synced to active game', 'Recovered in-game state from server');
+    renderQuestion(payload.questionData, state.role === 'host' && !state.hostIsPlayer);
+    return;
+  }
+
+  if (roomState === 'finished') {
+    setHostRoomHealth('warn', 'ℹ️ Game already finished', 'Room is no longer in lobby');
+    return;
+  }
+
+  setHostRoomHealth('warn', 'ℹ️ Synced state', `Server state: ${roomState}`);
 });
 
 /** PLAYER: Server confirmed profile update */
