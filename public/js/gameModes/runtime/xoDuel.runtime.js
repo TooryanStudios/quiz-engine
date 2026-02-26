@@ -29,6 +29,20 @@ function renderXoBoardHTML(board, interactive, activeSymbol) {
   return `<div style="display:grid;grid-template-columns:repeat(3,minmax(76px,1fr));gap:0.55rem;max-width:330px;margin:0.35rem auto 0;">${cells}</div>`;
 }
 
+function buildTurnNote(xo = {}) {
+  const players = Array.isArray(xo.players) ? xo.players : [];
+  const activePlayerId = xo.activePlayerId || null;
+  const activeNickname = xo.activeNickname || '...';
+  const activeSymbol = xo.activeSymbol || 'X';
+
+  const playersLine = players
+    .map((player) => `${player.id === activePlayerId ? '👉 ' : ''}${player.symbol}: ${player.nickname} (${player.score || 0})`)
+    .join(' • ');
+
+  const turnLine = `🎯 الدور الآن: ${activeNickname} (${activeSymbol})`;
+  return playersLine ? `${turnLine} • ${playersLine}` : turnLine;
+}
+
 function applyXoHeader({ state, data }) {
   const hostModeBadge = document.getElementById('host-q-difficulty');
   if (hostModeBadge) hostModeBadge.textContent = 'X O DUEL';
@@ -70,10 +84,16 @@ function applyXoHeader({ state, data }) {
 
 function renderSpectatorBoard({ data }) {
   const board = Array.isArray(data?.question?.xo?.board) ? data.question.xo.board : Array(9).fill(null);
+  const xo = data?.question?.xo || {};
   const activeSymbol = data?.question?.xo?.activeSymbol || 'X';
   const hostGrid = document.getElementById('host-options-grid');
   if (hostGrid) {
     hostGrid.innerHTML = renderXoBoardHTML(board, false, activeSymbol);
+  }
+
+  const hostAnswerCounter = document.getElementById('host-answer-counter');
+  if (hostAnswerCounter) {
+    hostAnswerCounter.textContent = buildTurnNote(xo);
   }
 }
 
@@ -91,18 +111,15 @@ function renderPlayerBoard({ data, socket, state }) {
 
   playerGrid.innerHTML = renderXoBoardHTML(board, isYourTurn, activeSymbol);
 
-  const scoreLine = (xo.players || [])
-    .map((player) => `${player.symbol}: ${player.nickname} (${player.score || 0})`)
-    .join('  •  ');
-
   const answerMsg = document.getElementById('player-answered-msg');
+  const turnNote = buildTurnNote(xo);
   if (answerMsg) {
     if (!challenger) {
-      answerMsg.textContent = `👀 أنت متفرج. الدور الحالي: ${activeNickname} (${activeSymbol}) • ${scoreLine}`;
+      answerMsg.textContent = `👀 أنت متفرج • ${turnNote}`;
     } else if (isYourTurn) {
-      answerMsg.textContent = `⭕ دورك الآن (${challenger.symbol || activeSymbol}) • ${scoreLine}`;
+      answerMsg.textContent = `⭕ دورك الآن (${challenger.symbol || activeSymbol}) • ${turnNote}`;
     } else {
-      answerMsg.textContent = `⌛ انتظر ${activeNickname} (${activeSymbol}) • ${scoreLine}`;
+      answerMsg.textContent = `⌛ انتظر ${activeNickname} (${activeSymbol}) • ${turnNote}`;
     }
   }
 
