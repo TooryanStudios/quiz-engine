@@ -227,6 +227,29 @@ function createXoDuelRuntime() {
     });
   }
 
+  function syncSocketWithCurrentQuestion(room, socket) {
+    if (!room?.currentQuestionPayload || !socket) return;
+    const isRoundResult = room.currentQuestionPayload?.xo?.phase === 'round-result';
+    const duration = isRoundResult
+      ? Math.ceil((room.currentQuestionPayload?.xo?.nextRoundInMs || room.xo?.roundResultDelayMs || ROUND_RESULT_DELAY_MS) / 1000)
+      : 600;
+
+    socket.emit('game:question', {
+      questionIndex: 0,
+      total: 1,
+      duration,
+      question: room.currentQuestionPayload,
+      players: getConnectedPlayers(room).map((player) => ({
+        id: player.id,
+        nickname: player.nickname,
+        avatar: player.avatar || '🎮',
+        score: player.score || 0,
+        streak: player.streak || 0,
+        isHost: !!player.isHostPlayer,
+      })),
+    });
+  }
+
   function emitXoGameOver(room, io, reason) {
     clearRoundTransitionTimer(room);
     room.state = 'finished';
@@ -403,6 +426,18 @@ function createXoDuelRuntime() {
           message: 'ليس دورك الآن في X O Duel.',
           code: 'XO_DUEL_NOT_YOUR_TURN',
         });
+        syncSocketWithCurrentQuestion(room, socket);
+        return true;
+      }
+
+      const expectedTurnSequence = Number(room.xo.turnSequence || 0);
+      const answerTurnSequence = Number(answer?.turnSequence);
+      if (Number.isInteger(answerTurnSequence) && answerTurnSequence !== expectedTurnSequence) {
+        socket.emit('room:error', {
+          message: 'تحديث الدور تغيّر. يرجى الانتظار لحظة.',
+          code: 'XO_DUEL_STALE_TURN',
+        });
+        syncSocketWithCurrentQuestion(room, socket);
         return true;
       }
 
@@ -420,6 +455,7 @@ function createXoDuelRuntime() {
           message: 'هذه الخانة مستخدمة بالفعل.',
           code: 'XO_DUEL_CELL_TAKEN',
         });
+        syncSocketWithCurrentQuestion(room, socket);
         return true;
       }
 

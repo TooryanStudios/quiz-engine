@@ -6,7 +6,7 @@ function svgX(size = '2rem') {
   return `<svg viewBox="0 0 44 44" width="${size}" height="${size}" fill="none" style="display:block;filter:drop-shadow(0 0 8px rgba(59,130,246,0.65))"><line x1="9" y1="9" x2="35" y2="35" stroke="#3b82f6" stroke-width="7" stroke-linecap="round"/><line x1="35" y1="9" x2="9" y2="35" stroke="#3b82f6" stroke-width="7" stroke-linecap="round"/></svg>`;
 }
 function svgO(size = '2rem') {
-  return `<svg viewBox="0 0 44 44" width="${size}" height="${size}" fill="none" style="display:block;filter:drop-shadow(0 0 8px rgba(249,115,22,0.65))"><circle cx="22" cy="22" r="13" stroke="#f97316" stroke-width="7"/></svg>`;
+  return `<svg viewBox="0 0 44 44" width="${size}" height="${size}" fill="none" style="display:block;filter:drop-shadow(0 0 8px rgba(168,85,247,0.55))"><rect x="9" y="9" width="26" height="26" rx="8" stroke="#a855f7" stroke-width="6"/><rect x="15.5" y="15.5" width="13" height="13" rx="4" stroke="#c084fc" stroke-width="2.2" opacity="0.9"/></svg>`;
 }
 function svgSymbol(symbol, size = '2rem') {
   return symbol === 'O' ? svgO(size) : svgX(size);
@@ -56,6 +56,8 @@ let lastTurnOverlayKey = '';
 let lastLoseShakeKey = '';
 let lastResultSoundKey = '';
 let lastWinOverlayKey = '';
+let lastRoundStartSoundKey = '';
+let lastVersusOverlayKey = '';
 
 function buildTurnLines(xo = {}) {
   const players = Array.isArray(xo.players) ? xo.players : [];
@@ -131,11 +133,10 @@ function ensureOutcomeStyles() {
       50% { box-shadow: 0 0 22px 6px rgba(244,63,94,0.25); }
     }
     @keyframes xo-turn-pop {
-      0% { transform: translateY(15px) scale(0.9); opacity: 0; }
-      15% { transform: translateY(0) scale(1.06); opacity: 1; }
-      20% { transform: translateY(0) scale(1); opacity: 1; }
-      85% { transform: translateY(0) scale(1); opacity: 1; }
-      100% { transform: translateY(-10px) scale(0.95); opacity: 0; }
+      0% { transform: translateY(18px) scale(0.92); opacity: 0; filter: blur(7px); }
+      24% { transform: translateY(0) scale(1.02); opacity: 1; filter: blur(0); }
+      74% { transform: translateY(0) scale(1); opacity: 1; filter: blur(0); }
+      100% { transform: translateY(-8px) scale(0.98); opacity: 0; filter: blur(5px); }
     }
     @keyframes xo-win-pop {
       0% { transform: scale(0.6) rotate(-8deg); opacity: 0; filter: blur(8px); }
@@ -144,11 +145,15 @@ function ensureOutcomeStyles() {
       85% { transform: scale(1) rotate(0); opacity: 1; }
       100% { transform: scale(1.2); opacity: 0; filter: blur(12px); }
     }
-    @keyframes xo-bounce-funny {
-      0%, 100% { transform: scale(1) translateY(0); }
-      30% { transform: scale(1.15, 0.9) translateY(0); }
-      50% { transform: scale(0.9, 1.15) translateY(-8px); }
-      70% { transform: scale(1.05, 0.95) translateY(0); }
+    @keyframes xo-versus-pop {
+      0% { transform: translateY(20px) scale(0.88); opacity: 0; filter: blur(10px); }
+      20% { transform: translateY(0) scale(1.02); opacity: 1; filter: blur(0); }
+      80% { transform: translateY(0) scale(1); opacity: 1; filter: blur(0); }
+      100% { transform: translateY(-8px) scale(0.97); opacity: 0; filter: blur(6px); }
+    }
+    @keyframes xo-focus-pulse {
+      0%, 100% { transform: translateY(0) scale(1); }
+      50% { transform: translateY(-2px) scale(1.03); }
     }
     @keyframes xo-pulse-blue {
       0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0); border-color: rgba(59,130,246,0.3); }
@@ -195,17 +200,20 @@ function ensureOutcomeStyles() {
       opacity: 1;
     }
     .xo-turn-overlay .xo-turn-text {
-      background: rgba(15,23,42,0.74);
-      border: 2px solid rgba(34,211,238,0.55);
-      border-radius: 18px;
-      color: #e2e8f0;
-      font-size: clamp(1.5rem, 5vw, 2.4rem);
+      background: linear-gradient(135deg, rgba(15,23,42,0.86), rgba(30,41,59,0.82));
+      border: 1px solid rgba(56,189,248,0.45);
+      border-radius: 16px;
+      color: #f8fafc;
+      font-size: clamp(1.25rem, 4.2vw, 2rem);
       font-weight: 900;
-      padding: 0.75rem 1.25rem;
+      padding: 0.8rem 1.3rem;
+      min-width: min(92vw, 360px);
       text-align: center;
-      letter-spacing: 0.02em;
-      text-shadow: 0 0 12px rgba(34,211,238,0.22);
-      animation: xo-turn-pop 1.35s ease-out both;
+      letter-spacing: 0.015em;
+      box-shadow: 0 12px 30px rgba(2,6,23,0.45), inset 0 1px 0 rgba(148,163,184,0.18);
+      text-shadow: 0 0 8px rgba(56,189,248,0.2);
+      backdrop-filter: blur(4px);
+      animation: xo-turn-pop 1.75s cubic-bezier(0.22, 1, 0.36, 1) both;
     }
     .xo-challenger-badge {
       position: absolute;
@@ -256,7 +264,7 @@ function ensureOutcomeStyles() {
       justify-content: center;
       width: 1.2rem;
       height: 1.2rem;
-      border-radius: 999px;
+      border-radius: 8px;
       background: rgba(15,23,42,0.45);
       font-size: 0.78rem;
     }
@@ -277,7 +285,7 @@ function ensureOutcomeStyles() {
     .xo-role-avatar {
       width: 4rem;
       height: 4rem;
-      border-radius: 50%;
+      border-radius: 16px;
       background: rgba(15,23,42,0.65);
       border: 3px solid rgba(255,255,255,0.12);
       display: flex;
@@ -288,7 +296,7 @@ function ensureOutcomeStyles() {
       transition: all 0.3s;
     }
     .xo-role-avatar.is-active {
-      animation: xo-bounce-funny 1.2s ease-in-out infinite;
+      animation: xo-focus-pulse 1.2s ease-in-out infinite;
     }
     .xo-role-avatar.symbol-X.is-active { border-color: #3b82f6; box-shadow: 0 0 20px rgba(59,130,246,0.3); }
     .xo-role-avatar.symbol-O.is-active { border-color: #f97316; box-shadow: 0 0 20px rgba(249,115,22,0.3); }
@@ -344,7 +352,7 @@ function ensureTurnOverlay() {
   return overlay;
 }
 
-function showWinnerOverlay(text, sub) {
+function showWinnerOverlay(text, sub, durationMs = 4200) {
   const overlay = ensureTurnOverlay();
   const textEl = overlay.querySelector('.xo-turn-text');
   if (textEl) {
@@ -353,10 +361,34 @@ function showWinnerOverlay(text, sub) {
     textEl.style.textShadow = '0 0 15px rgba(16,185,129,0.35)';
     textEl.style.animation = 'none';
     void textEl.offsetWidth; 
-    textEl.style.animation = 'xo-win-pop 2.5s ease-out both';
+    textEl.style.animation = `xo-win-pop ${Math.max(2.8, durationMs / 1000)}s ease-out both`;
   }
   overlay.classList.add('is-showing');
-  setTimeout(() => overlay.classList.remove('is-showing'), 2600);
+  setTimeout(() => overlay.classList.remove('is-showing'), Math.max(3200, durationMs));
+}
+
+function showVersusOverlay({ playerA, playerB, subtitle = '', durationMs = 3600 }) {
+  const overlay = ensureTurnOverlay();
+  const textEl = overlay.querySelector('.xo-turn-text');
+  if (!textEl) return;
+
+  textEl.innerHTML = `
+    <div style="font-size:0.64em;opacity:0.84;margin-bottom:0.3rem;font-weight:700;letter-spacing:0.06em;">⚔️ المواجهة القادمة</div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:0.55rem;font-size:1.18em;font-weight:900;line-height:1.2;">
+      <span style="color:#38bdf8;max-width:40vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${playerA || 'Player A'}</span>
+      <span style="opacity:0.75;font-size:0.88em;">VS</span>
+      <span style="color:#f59e0b;max-width:40vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${playerB || 'Player B'}</span>
+    </div>
+    ${subtitle ? `<div style="font-size:0.64em;opacity:0.78;margin-top:0.34rem;">${subtitle}</div>` : ''}
+  `;
+  textEl.style.borderColor = 'rgba(245,158,11,0.72)';
+  textEl.style.textShadow = '0 0 14px rgba(245,158,11,0.3)';
+  textEl.style.animation = 'none';
+  void textEl.offsetWidth;
+  textEl.style.animation = `xo-versus-pop ${Math.max(2.8, durationMs / 1000)}s cubic-bezier(0.22, 1, 0.36, 1) both`;
+
+  overlay.classList.add('is-showing');
+  setTimeout(() => overlay.classList.remove('is-showing'), Math.max(2600, durationMs));
 }
 
 function maybeShowTurnOverlay(xo, socketId, isYourTurn) {
@@ -370,8 +402,9 @@ function maybeShowTurnOverlay(xo, socketId, isYourTurn) {
   const overlay = ensureTurnOverlay();
   const text = overlay.querySelector('.xo-turn-text');
   if (text) {
-    text.textContent = '🔥 دورك الآن!';
-    Sounds.start(); // Rise of tones for "Your Turn"
+    text.textContent = '🎯 دورك الآن';
+    if (typeof Sounds.xoTurn === 'function') Sounds.xoTurn();
+    else Sounds.start();
   }
 
   overlay.classList.remove('is-showing');
@@ -389,7 +422,7 @@ function maybeShowTurnOverlay(xo, socketId, isYourTurn) {
 
   setTimeout(() => {
     overlay.classList.remove('is-showing');
-  }, 1500);
+  }, 1900);
 }
 
 function updateChallengerBadge({ isYourTurn, challenger, activeNickname }) {
@@ -477,6 +510,7 @@ function renderPlayerBoard({ data, socket, state }) {
   const activePlayerId = xo.activePlayerId;
   const activeNickname = xo.activeNickname || 'Player';
   const activeSymbol = xo.activeSymbol || 'X';
+  const turnSequence = Number(xo.turnSequence || 0);
   const challenger = (xo.players || []).find((player) => player?.id === socket.id) || null;
   const isYourTurn = !!challenger && !!activePlayerId && activePlayerId === socket.id;
   const turnInputKey = `${xo.round || 0}:${xo.turnSequence || 0}:${activePlayerId || ''}:${socket?.id || ''}`;
@@ -498,7 +532,11 @@ function renderPlayerBoard({ data, socket, state }) {
     } else {
       ensureOutcomeStyles();
       const mySymbol = challenger?.symbol || activeSymbol;
-      const bannerText = isYourTurn ? '🔥 دورك الآن!' : `دور ${activeNickname}`;
+      const bannerText = !challenger
+        ? `🎥 مواجهة جارية: ${activeNickname}`
+        : isYourTurn
+          ? '🔥 دورك الآن!'
+          : `دور ${activeNickname}`;
       titleEl.innerHTML = `
         <div style="display:flex;flex-direction:column;align-items:center;">
           <div class="xo-role-avatar symbol-${mySymbol} ${isYourTurn ? 'is-active' : ''}">
@@ -529,7 +567,7 @@ function renderPlayerBoard({ data, socket, state }) {
       state.hasAnswered = true;
       socket.emit('player:answer', {
         questionIndex: data.questionIndex,
-        answer: { cellIndex },
+        answer: { cellIndex, turnSequence },
       });
     });
   });
@@ -542,6 +580,8 @@ function renderRoundResultPhase({ data, state, socket, isHostOnly }) {
   const loserId = xo.loserId || xo.result?.loserId || null;
   const isDraw = !!(xo.draw || xo.result?.draw);
   const nextRoundSec = Math.max(1, Math.round(Number(xo.nextRoundInMs || 3000) / 1000));
+  const nextRoundInMs = Math.max(1500, Number(xo.nextRoundInMs || 3000));
+  const resultOverlayMs = Math.min(6200, Math.max(3600, nextRoundInMs + 1400));
 
   if (isHostOnly) {
     const hostGrid = document.getElementById('host-options-grid');
@@ -573,7 +613,7 @@ function renderRoundResultPhase({ data, state, socket, isHostOnly }) {
   }
 
   const answerMsg = document.getElementById('player-answered-msg');
-  const isWinner = !!winnerId && socket.id === winnerId;
+  const isWinner = !!winnerId && String(socket.id) === String(winnerId);
   const isLoser = !!loserId && socket.id === loserId;
 
   // Prevent duplicate sounds on every update of this phase
@@ -591,34 +631,43 @@ function renderRoundResultPhase({ data, state, socket, isHostOnly }) {
   if (isDraw) {
     title = '🤝 تعـادل!';
     subtitle = `استعد للجولة القادمة خلال ${nextRoundSec} ثوانٍ`;
-    if (playSfx) Sounds.resume();
+    if (playSfx) {
+      if (typeof Sounds.xoRoundStart === 'function') Sounds.xoRoundStart();
+      else Sounds.resume();
+    }
     if (shouldShowOverlay) {
       lastWinOverlayKey = winOverlayKey;
-      showWinnerOverlay(title, 'لا يوجد خاسر هذه المرة');
+      showWinnerOverlay(title, 'لا يوجد خاسر هذه المرة', resultOverlayMs);
     }
   } else if (isWinner) {
-    title = '🏆 فـوز ساحـق!';
-    subtitle = `أحسنت! استعد للجولة التالية خلال ${nextRoundSec} ثوانٍ`;
+    title = '🎉 أنت الفائز!';
+    subtitle = `أحسنت! فزت على ${(xo.result?.loserNickname || 'خصمك')} • الجولة التالية خلال ${nextRoundSec} ثوانٍ`;
     kind = 'win';
-    if (playSfx) Sounds.fanfare();
+    if (playSfx) {
+      if (typeof Sounds.xoWin === 'function') Sounds.xoWin();
+      else Sounds.fanfare();
+    }
     if (shouldShowOverlay) {
       lastWinOverlayKey = winOverlayKey;
-      showWinnerOverlay(title, 'لقد هزمت خصمك باقتدار');
+      showWinnerOverlay(title, `الفائز: ${xo.result?.winnerNickname || 'أنت'}`, resultOverlayMs);
     }
   } else if (isLoser) {
     title = '💥 خسـارة';
-    subtitle = `ستعود في الجولة القادمة خلال ${nextRoundSec} ثوانٍ`;
+    subtitle = `الفائز: ${(xo.result?.winnerNickname || 'الخصم')} • ستعود خلال ${nextRoundSec} ثوانٍ`;
     kind = 'lose';
 
     const shakeKey = `${xo.round || 0}:${winnerId || ''}:${loserId || ''}:${socket.id}`;
     if (shakeKey !== lastLoseShakeKey) {
       lastLoseShakeKey = shakeKey;
-      if (playSfx) Sounds.wrong();
+      if (playSfx) {
+        if (typeof Sounds.xoLose === 'function') Sounds.xoLose();
+        else Sounds.wrong();
+      }
       triggerScreenShake({ axis: 'both', distancePx: 11, durationMs: 520 });
     }
     if (shouldShowOverlay) {
       lastWinOverlayKey = winOverlayKey;
-      showWinnerOverlay(title, 'حظاً أوفر في المرة القادمة');
+      showWinnerOverlay(title, `الفائز: ${xo.result?.winnerNickname || 'الخصم'}`, resultOverlayMs);
     }
   } else {
     title = '👀 نتيجـة الجولة';
@@ -626,7 +675,7 @@ function renderRoundResultPhase({ data, state, socket, isHostOnly }) {
     subtitle = `الفائز (${winnerName}) يكمل اللعب ضد خصم جديد بعد ${nextRoundSec} ثوانٍ`;
     if (shouldShowOverlay) {
       lastWinOverlayKey = winOverlayKey;
-      showWinnerOverlay(title, `فاز ${winnerName} في هذه الجولة`);
+      showWinnerOverlay(title, `فاز ${winnerName} في هذه الجولة`, resultOverlayMs);
     }
   }
 
@@ -638,6 +687,9 @@ function renderRoundResultPhase({ data, state, socket, isHostOnly }) {
     title,
     subtitle,
   });
+
+  state.__xoLastResultWinnerId = winnerId || null;
+  state.__xoLastResultWinnerName = xo.result?.winnerNickname || null;
 }
 
 export const xoDuelRuntime = {
@@ -650,9 +702,38 @@ export const xoDuelRuntime = {
     showView(isHostOnly ? 'view-host-question' : 'view-player-question');
 
     const xo = data?.question?.xo || {};
+    const duelPlayers = Array.isArray(xo.players) ? xo.players : [];
+    const waitingPlayers = Array.isArray(xo.waitingPlayers) ? xo.waitingPlayers : [];
+
+    if (xo.phase !== 'round-result') {
+      const roundStartKey = `${xo.round || 0}:${xo.turnSequence || 0}:${xo.activePlayerId || ''}`;
+      if (roundStartKey !== lastRoundStartSoundKey) {
+        lastRoundStartSoundKey = roundStartKey;
+        if (typeof Sounds.xoRoundStart === 'function') Sounds.xoRoundStart();
+      }
+    }
+
     if (xo.phase === 'round-result') {
       renderRoundResultPhase({ data, state, socket, isHostOnly });
       return true;
+    }
+
+    const duelPairKey = `${xo.round || 0}:${duelPlayers.map((p) => p?.id || '').join('|')}`;
+    const hasRotationPool = waitingPlayers.length > 0;
+    const winnerStillPlaying = !!state.__xoLastResultWinnerId
+      && duelPlayers.some((player) => String(player?.id) === String(state.__xoLastResultWinnerId));
+    if (hasRotationPool && winnerStillPlaying && duelPlayers.length === 2 && duelPairKey !== lastVersusOverlayKey) {
+      lastVersusOverlayKey = duelPairKey;
+      const playerA = duelPlayers[0]?.nickname || 'Player A';
+      const playerB = duelPlayers[1]?.nickname || 'Player B';
+      showVersusOverlay({
+        playerA,
+        playerB,
+        subtitle: 'الفائز يتحدى منافساً جديداً',
+        durationMs: 3800,
+      });
+      if (typeof Sounds.xoVersus === 'function') Sounds.xoVersus();
+      else if (typeof Sounds.xoRoundStart === 'function') Sounds.xoRoundStart();
     }
 
     clearOutcomeBanner();

@@ -85,6 +85,37 @@ export const Sounds = {
     playTone(784, 'sine', 0.07, 0.5, 0.14);
     playTone(1046, 'sine', 0.22, 0.5, 0.21);
   },
+
+  xoRoundStart: () => {
+    playTone(392, 'triangle', 0.08, 0.2);
+    playTone(494, 'triangle', 0.1, 0.22, 0.09);
+    playTone(587, 'triangle', 0.12, 0.2, 0.18);
+  },
+
+  xoTurn: () => {
+    playTone(740, 'sine', 0.08, 0.24);
+    playTone(988, 'triangle', 0.12, 0.22, 0.08);
+  },
+
+  xoWin: () => {
+    playTone(523, 'sine', 0.12, 0.34);
+    playTone(659, 'sine', 0.12, 0.34, 0.1);
+    playTone(784, 'sine', 0.14, 0.34, 0.2);
+    playTone(1046, 'triangle', 0.24, 0.36, 0.32);
+  },
+
+  xoLose: () => {
+    playTone(294, 'sawtooth', 0.13, 0.3);
+    playTone(247, 'sawtooth', 0.14, 0.28, 0.12);
+    playTone(196, 'sawtooth', 0.2, 0.24, 0.24);
+  },
+
+  xoVersus: () => {
+    playTone(392, 'triangle', 0.08, 0.24);
+    playTone(494, 'triangle', 0.1, 0.24, 0.09);
+    playTone(659, 'triangle', 0.1, 0.24, 0.18);
+    playTone(784, 'sine', 0.2, 0.26, 0.28);
+  },
 };
 
 export function setMuted(value) {
