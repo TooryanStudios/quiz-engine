@@ -1984,11 +1984,18 @@ io.on('connection', (socket) => {
     // (room.hostIsPlayer=true means host socket is in room.players)
 
     if (room.state !== 'lobby') {
-      socket.emit('room:error', { message: 'Game already started.' });
-      return;
+      if (room.state === 'starting' && !room.questionTimer && room.questionIndex === 0) {
+        console.warn(`[Room ${room.pin}] Recovering stale "starting" state back to lobby before host:start.`);
+        room.state = 'lobby';
+      } else {
+        socket.emit('room:error', { message: 'Game already started.', code: 'GAME_ALREADY_STARTED' });
+        return;
+      }
     }
 
     room.state = 'starting'; // prevent double-start during async quiz load
+
+    try {
 
     const access = await verifyHostPremiumLaunchAccess({
       quizSlug: room.quizSlug,
@@ -2016,6 +2023,7 @@ io.on('connection', (socket) => {
 
     // If a specific quiz was requested but couldn't be loaded, abort
     if (room.quizSlug && quizData.questions === DEFAULT_QUESTIONS) {
+      room.state = 'lobby';
       socket.emit('room:error', { message: `Could not load quiz "${room.quizSlug}" from the database. Check that the quiz ID is correct and Firestore is connected.` });
       return;
     }
@@ -2092,6 +2100,14 @@ io.on('connection', (socket) => {
 
     if (handledByMode === true) return;
     dispatchDefault();
+    } catch (error) {
+      room.state = 'lobby';
+      console.error(`[Room ${room.pin}] host:start failed:`, error?.message || error);
+      socket.emit('room:error', {
+        message: 'Failed to start game. Please try again.',
+        code: 'HOST_START_FAILED',
+      });
+    }
   });
 
   // ── HOST: Set connection mode (local/global) ─
