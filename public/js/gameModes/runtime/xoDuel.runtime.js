@@ -34,7 +34,7 @@ function renderXoBoardHTML(board, interactive, activeSymbol, options = {}) {
   return `<div style="display:grid;grid-template-columns:repeat(3,minmax(76px,1fr));gap:0.55rem;max-width:330px;margin:0.35rem auto 0;">${cells}</div>`;
 }
 
-function buildTurnNote(xo = {}) {
+function buildTurnLines(xo = {}) {
   const players = Array.isArray(xo.players) ? xo.players : [];
   const activePlayerId = xo.activePlayerId || null;
   const activeNickname = xo.activeNickname || '...';
@@ -45,7 +45,15 @@ function buildTurnNote(xo = {}) {
     .join(' • ');
 
   const turnLine = `🎯 الدور الآن: ${activeNickname} (${activeSymbol})`;
-  return playersLine ? `${turnLine} • ${playersLine}` : turnLine;
+  return { turnLine, playersLine };
+}
+
+function setCompactTwoLineNote(el, line1, line2) {
+  if (!el) return;
+  el.style.whiteSpace = 'pre-line';
+  el.style.lineHeight = '1.25';
+  el.style.fontSize = '0.92rem';
+  el.textContent = line2 ? `${line1}\n${line2}` : line1;
 }
 
 function ensureOutcomeStyles() {
@@ -164,7 +172,8 @@ function renderSpectatorBoard({ data }) {
 
   const hostAnswerCounter = document.getElementById('host-answer-counter');
   if (hostAnswerCounter) {
-    hostAnswerCounter.textContent = buildTurnNote(xo);
+    const { turnLine, playersLine } = buildTurnLines(xo);
+    setCompactTwoLineNote(hostAnswerCounter, turnLine, playersLine);
   }
 }
 
@@ -183,14 +192,14 @@ function renderPlayerBoard({ data, socket, state }) {
   playerGrid.innerHTML = renderXoBoardHTML(board, isYourTurn, activeSymbol, { winningLine: xo.winningLine });
 
   const answerMsg = document.getElementById('player-answered-msg');
-  const turnNote = buildTurnNote(xo);
+  const { turnLine, playersLine } = buildTurnLines(xo);
   if (answerMsg) {
     if (!challenger) {
-      answerMsg.textContent = `👀 أنت متفرج • ${turnNote}`;
+      setCompactTwoLineNote(answerMsg, `👀 أنت متفرج • ${turnLine}`, playersLine);
     } else if (isYourTurn) {
-      answerMsg.textContent = `⭕ دورك الآن (${challenger.symbol || activeSymbol}) • ${turnNote}`;
+      setCompactTwoLineNote(answerMsg, `⭕ دورك الآن (${challenger.symbol || activeSymbol}) • ${turnLine}`, playersLine);
     } else {
-      answerMsg.textContent = `⌛ انتظر ${activeNickname} (${activeSymbol}) • ${turnNote}`;
+      setCompactTwoLineNote(answerMsg, `⌛ انتظر ${activeNickname} (${activeSymbol}) • ${turnLine}`, playersLine);
     }
   }
 
@@ -267,7 +276,8 @@ function renderRoundResultPhase({ data, state, socket, isHostOnly }) {
   }
 
   if (answerMsg) {
-    answerMsg.textContent = `${title} • ${buildTurnNote(xo)}`;
+    const { playersLine } = buildTurnLines(xo);
+    setCompactTwoLineNote(answerMsg, title, playersLine || subtitle);
   }
 
   showOutcomeBanner({
