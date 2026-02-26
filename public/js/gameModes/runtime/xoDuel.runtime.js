@@ -1,15 +1,31 @@
 import { triggerScreenShake } from '../../utils/effects.js?v=121';
 
+// ── SVG symbol helpers ──────────────────────────────────────────────────────
+function svgX(size = '2rem') {
+  return `<svg viewBox="0 0 44 44" width="${size}" height="${size}" fill="none" style="display:block;filter:drop-shadow(0 0 8px rgba(59,130,246,0.65))"><line x1="9" y1="9" x2="35" y2="35" stroke="#3b82f6" stroke-width="7" stroke-linecap="round"/><line x1="35" y1="9" x2="9" y2="35" stroke="#3b82f6" stroke-width="7" stroke-linecap="round"/></svg>`;
+}
+function svgO(size = '2rem') {
+  return `<svg viewBox="0 0 44 44" width="${size}" height="${size}" fill="none" style="display:block;filter:drop-shadow(0 0 8px rgba(236,72,153,0.65))"><circle cx="22" cy="22" r="13" stroke="#ec4899" stroke-width="7"/></svg>`;
+}
+function svgSymbol(symbol, size = '2rem') {
+  return symbol === 'O' ? svgO(size) : svgX(size);
+}
+
 function renderXoBoardHTML(board, interactive, activeSymbol, options = {}) {
   const winningLine = Array.isArray(options.winningLine) ? new Set(options.winningLine) : null;
   const cells = board.map((cell, index) => {
-    const value = cell || '·';
     const disabled = !interactive || !!cell;
     const isWinningCell = !!winningLine && winningLine.has(index);
-    const bg = cell === 'X' ? 'rgba(59, 130, 246, 0.2)' : cell === 'O' ? 'rgba(236, 72, 153, 0.2)' : 'rgba(15, 23, 42, 0.4)';
+    const bg = cell === 'X' ? 'rgba(59,130,246,0.18)' : cell === 'O' ? 'rgba(236,72,153,0.18)' : 'rgba(15,23,42,0.4)';
     const border = isWinningCell
       ? '#22d3ee'
-      : (cell === 'X' ? '#3b82f6' : cell === 'O' ? '#ec4899' : 'var(--border-strong)');
+      : (cell === 'X' ? '#3b82f6' : cell === 'O' ? '#ec4899' : 'rgba(100,116,139,0.38)');
+    const glow = isWinningCell ? '0 0 0 2px rgba(34,211,238,0.35),0 0 20px rgba(34,211,238,0.28)' : 'none';
+    const innerContent = cell === 'X'
+      ? svgX('1.85rem')
+      : cell === 'O'
+        ? svgO('1.85rem')
+        : `<span style="width:6px;height:6px;border-radius:50%;background:rgba(148,163,184,0.2);display:block;"></span>`;
     return `
       <button
         type="button"
@@ -21,15 +37,14 @@ function renderXoBoardHTML(board, interactive, activeSymbol, options = {}) {
           border-radius:12px;
           border:2px solid ${border};
           background:${bg};
-          color:${cell === 'O' ? '#f9a8d4' : '#bfdbfe'};
-          font-size:2rem;
-          font-weight:900;
-          box-shadow:${isWinningCell ? '0 0 0 2px rgba(34,211,238,0.35), 0 0 18px rgba(34,211,238,0.25)' : 'none'};
+          display:flex;align-items:center;justify-content:center;
+          box-shadow:${glow};
           cursor:${disabled ? 'not-allowed' : 'pointer'};
-          opacity:${disabled ? 0.85 : 1};
+          opacity:${cell ? 1 : disabled ? 0.45 : 1};
+          transition:background 0.15s,border-color 0.15s,transform 0.12s;
         "
-        title="${disabled ? 'غير متاح' : `اختر الخانة (${activeSymbol})`}"
-      >${value}</button>
+        title="${disabled ? '' : `اختر (${activeSymbol})`}"
+      >${innerContent}</button>
     `;
   }).join('');
 
@@ -71,8 +86,8 @@ function buildRoleLegendHTML(xo = {}, activePlayerId = null) {
     const border = player.symbol === 'X' ? 'rgba(59,130,246,0.62)' : 'rgba(236,72,153,0.62)';
     return `
       <div class="xo-role-pill ${isActive ? 'is-active' : ''}" style="background:${tint};border-color:${border}">
-        <span class="xo-role-symbol">${player.symbol}</span>
-        <span class="xo-role-name">${player.nickname}</span>
+        <span class="xo-role-symbol">${svgSymbol(player.symbol, '0.9rem')}</span>
+        <span class="xo-role-name">${player.nickname}${player.score ? ` · ${player.score}` : ''}</span>
       </div>
     `;
   }).join('');
@@ -213,6 +228,14 @@ function ensureOutcomeStyles() {
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    .xo-cell:not([disabled]):hover {
+      transform: scale(1.07);
+      border-color: rgba(34,211,238,0.6) !important;
+      background: rgba(34,211,238,0.08) !important;
+    }
+    .xo-cell:not([disabled]):active {
+      transform: scale(0.95);
+    }
   `;
   document.head.appendChild(style);
 }
@@ -314,9 +337,9 @@ function applyXoHeader({ state, data }) {
 
   const hostText = document.getElementById('host-question-text');
   const playerText = document.getElementById('player-question-text');
-  const title = data?.question?.text || 'X O Duel';
-  if (hostText) hostText.textContent = title;
-  if (playerText) playerText.textContent = title;
+  if (hostText) hostText.textContent = 'X O Duel';
+  // Player title is replaced with the player's own symbol SVG inside renderPlayerBoard
+  if (playerText) { playerText.innerHTML = ''; playerText.style.lineHeight = '1'; }
 
   const total = Number(data?.total || 1);
   const qIndex = Number(data?.questionIndex || 0);
@@ -382,20 +405,29 @@ function renderPlayerBoard({ data, socket, state }) {
 
   playerGrid.innerHTML = `${renderXoBoardHTML(board, isYourTurn, activeSymbol, { winningLine: xo.winningLine })}${buildRoleLegendHTML(xo, activePlayerId || null)}`;
 
-  const answerMsg = document.getElementById('player-answered-msg');
-  const { turnLine, playersLine } = buildTurnLines(xo);
-  maybeShowTurnOverlay(xo, socket?.id, isYourTurn);
-  updateChallengerBadge({ isYourTurn, challenger, activeNickname });
-
-  if (answerMsg) {
-    if (!challenger) {
-      setCompactTwoLineNote(answerMsg, `👀 أنت متفرج • ${turnLine}`, playersLine);
-    } else if (isYourTurn) {
-      setCompactTwoLineNote(answerMsg, `🔥 دورك الآن (${challenger.symbol || activeSymbol}) • ${turnLine}`, playersLine);
+  // Replace the question title with this player's own symbol SVG
+  const titleEl = document.getElementById('player-question-text');
+  if (titleEl) {
+    const mySymbol = challenger?.symbol || null;
+    if (mySymbol) {
+      titleEl.innerHTML = svgSymbol(mySymbol, '2.6rem');
+      titleEl.style.display = 'flex';
+      titleEl.style.justifyContent = 'center';
+      titleEl.style.alignItems = 'center';
     } else {
-      setCompactTwoLineNote(answerMsg, `⌛ انتظر ${activeNickname} (${activeSymbol}) • ${turnLine}`, playersLine);
+      // Spectator: show both symbols side by side
+      titleEl.innerHTML = `<span style="display:inline-flex;gap:0.5rem;align-items:center;">${svgX('1.75rem')}${svgO('1.75rem')}</span>`;
+      titleEl.style.display = 'flex';
+      titleEl.style.justifyContent = 'center';
     }
   }
+
+  // Hide bottom status text — role legend + turn popup carry this info
+  const answerMsg = document.getElementById('player-answered-msg');
+  if (answerMsg) { answerMsg.style.display = 'none'; answerMsg.textContent = ''; }
+
+  maybeShowTurnOverlay(xo, socket?.id, isYourTurn);
+  updateChallengerBadge({ isYourTurn, challenger, activeNickname });
 
   playerGrid.querySelectorAll('[data-xo-cell]').forEach((cellButton) => {
     cellButton.addEventListener('click', () => {
@@ -478,10 +510,7 @@ function renderRoundResultPhase({ data, state, socket, isHostOnly }) {
     subtitle = `Winner keeps playing against a random challenger in ${nextRoundSec}s`;
   }
 
-  if (answerMsg) {
-    const { playersLine } = buildTurnLines(xo);
-    setCompactTwoLineNote(answerMsg, title, playersLine || subtitle);
-  }
+  if (answerMsg) { answerMsg.style.display = 'none'; answerMsg.textContent = ''; }
 
   showOutcomeBanner({
     layoutId: 'player-question-layout',
