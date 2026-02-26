@@ -5,6 +5,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 const QRCode = require('qrcode');
 const config = require('../config');
 const { admin, getFirestore } = require('./firebaseAdmin');
@@ -131,41 +132,85 @@ async function hasActiveEntitlement(userId) {
   }
 }
 
-async function verifyHostPremiumLaunchAccess({ quizSlug, hostUid, hostToken }) {
+const HOST_LAUNCH_CODE_TTL_MS = 5 * 60 * 1000;
+const hostLaunchCodes = new Map();
+
+function issueHostLaunchCode(uid) {
+  if (!uid || typeof uid !== 'string') return null;
+  const launchCode = crypto.randomBytes(18).toString('base64url');
+  const expiresAt = Date.now() + HOST_LAUNCH_CODE_TTL_MS;
+  hostLaunchCodes.set(launchCode, { uid, expiresAt });
+  return launchCode;
+}
+
+function consumeHostLaunchCode(launchCode) {
+  if (!launchCode || typeof launchCode !== 'string') return null;
+  const record = hostLaunchCodes.get(launchCode);
+  hostLaunchCodes.delete(launchCode);
+  if (!record) return null;
+  if (Date.now() > record.expiresAt) return null;
+  return record.uid;
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [code, record] of hostLaunchCodes.entries()) {
+    if (!record || now > record.expiresAt) {
+      hostLaunchCodes.delete(code);
+    }
+  }
+}, 60 * 1000).unref?.();
+
+async function verifyHostPremiumLaunchAccess({ quizSlug, hostUid, hostToken, hostLaunchCode }) {
   const accessMeta = await getQuizAccessMetadata(quizSlug);
   if (!isPremiumPriceTier(accessMeta.priceTier)) {
     return { allowed: true, accessMeta };
   }
 
-  if (!hostUid || !hostToken) {
-    return {
-      allowed: false,
-      code: 'SUBSCRIPTION_REQUIRED',
-      message: 'This quiz requires an active subscription.',
-      accessMeta,
-    };
-  }
+  let verifiedUid = null;
 
-  try {
-    const decoded = await admin.auth().verifyIdToken(hostToken);
-    if (decoded.uid !== hostUid) {
+  if (hostLaunchCode) {
+    verifiedUid = consumeHostLaunchCode(hostLaunchCode);
+    if (!verifiedUid) {
       return {
         allowed: false,
         code: 'AUTH_REQUIRED',
-        message: 'Authentication mismatch. Please relaunch from your dashboard.',
+        message: 'Launch code expired. Please relaunch from your dashboard.',
         accessMeta,
       };
     }
-  } catch (_err) {
-    return {
-      allowed: false,
-      code: 'AUTH_REQUIRED',
-      message: 'Authentication expired. Please relaunch from your dashboard.',
-      accessMeta,
-    };
+  } else {
+    if (!hostUid || !hostToken) {
+      return {
+        allowed: false,
+        code: 'SUBSCRIPTION_REQUIRED',
+        message: 'This quiz requires an active subscription.',
+        accessMeta,
+      };
+    }
+
+    try {
+      const decoded = await admin.auth().verifyIdToken(hostToken);
+      if (decoded.uid !== hostUid) {
+        return {
+          allowed: false,
+          code: 'AUTH_REQUIRED',
+          message: 'Authentication mismatch. Please relaunch from your dashboard.',
+          accessMeta,
+        };
+      }
+      verifiedUid = decoded.uid;
+    } catch (_err) {
+      return {
+        allowed: false,
+        code: 'AUTH_REQUIRED',
+        message: 'Authentication expired. Please relaunch from your dashboard.',
+        accessMeta,
+      };
+    }
   }
 
-  const subscribed = await hasActiveEntitlement(hostUid);
+  const subscribed = await hasActiveEntitlement(verifiedUid);
   if (!subscribed) {
     return {
       allowed: false,
@@ -430,6 +475,48 @@ app.post('/api/stripe/webhook', async (req, res) => {
 });
 
 app.use(express.json());
+
+app.options('/api/host-launch-code', (req, res) => {
+  const origin = req.headers.origin;
+  if (origin && config.CORS_ORIGINS.includes(origin)) {
+    res.set('Access-Control-Allow-Origin', origin);
+    res.set('Vary', 'Origin');
+  }
+  res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.sendStatus(204);
+});
+
+app.post('/api/host-launch-code', async (req, res) => {
+  const origin = req.headers.origin;
+  if (origin && config.CORS_ORIGINS.includes(origin)) {
+    res.set('Access-Control-Allow-Origin', origin);
+    res.set('Vary', 'Origin');
+  }
+
+  const authHeader = req.headers.authorization || '';
+  const match = /^Bearer\s+(.+)$/i.exec(String(authHeader));
+  const idToken = match?.[1] || null;
+
+  if (!idToken) {
+    return res.status(401).json({ message: 'Missing Bearer token.' });
+  }
+
+  try {
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    const launchCode = issueHostLaunchCode(decoded.uid);
+    if (!launchCode) {
+      return res.status(500).json({ message: 'Failed to issue launch code.' });
+    }
+
+    return res.json({
+      launchCode,
+      expiresInSec: Math.floor(HOST_LAUNCH_CODE_TTL_MS / 1000),
+    });
+  } catch (_err) {
+    return res.status(401).json({ message: 'Invalid or expired token.' });
+  }
+});
 
 // Mock purchase endpoint for PoC mode (no real charge)
 app.post('/api/payments/mock-purchase', async (req, res) => {
@@ -1775,7 +1862,7 @@ io.on('connection', (socket) => {
   });
 
   // ── HOST: Start the game ─────────────────────
-  socket.on('host:start', async ({ sessionRandomize, sessionQuestionLimit, hostUid, hostToken } = {}) => {
+  socket.on('host:start', async ({ sessionRandomize, sessionQuestionLimit, hostUid, hostToken, hostLaunchCode } = {}) => {
     // Find the room this host owns
     const room = Array.from(rooms.values()).find(
       (r) => r.hostSocketId === socket.id
@@ -1804,6 +1891,7 @@ io.on('connection', (socket) => {
       quizSlug: room.quizSlug,
       hostUid,
       hostToken,
+      hostLaunchCode,
     });
 
     if (!access.allowed) {

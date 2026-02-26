@@ -28,6 +28,7 @@ const modeFromUrl     = queryParams.get('mode');
 const gameModeFromUrl = queryParams.get('gameMode');
 const hostUidFromUrl  = queryParams.get('hostUid');
 const hostTokenFromUrl = queryParams.get('hostToken');
+const hostLaunchCodeFromUrl = queryParams.get('hostLaunchCode');
 const isAutoHostLaunch = !!(quizSlugFromUrl && modeFromUrl === 'host');
 
 const resolvedGameModeRuntime = resolveGameModeRuntime(gameModeFromUrl);
@@ -82,6 +83,7 @@ function callFallbackGameModeHook(hookName, payload = {}) {
 
 function getHostAuthPayload() {
   return {
+    hostLaunchCode: hostLaunchCodeFromUrl || null,
     hostUid: hostUidFromUrl || null,
     hostToken: hostTokenFromUrl || null,
   };
