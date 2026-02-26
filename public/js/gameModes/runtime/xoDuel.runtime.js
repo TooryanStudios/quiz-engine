@@ -48,7 +48,8 @@ function renderXoBoardHTML(board, interactive, activeSymbol, options = {}) {
     `;
   }).join('');
 
-  return `<div style="display:grid;grid-template-columns:repeat(3,minmax(76px,1fr));gap:0.55rem;max-width:330px;margin:0.35rem auto 0;">${cells}</div>`;
+  const boardWrapClass = `xo-board-wrap${interactive && activeSymbol ? ` is-${activeSymbol}-turn` : ''}`;
+  return `<div class="${boardWrapClass}"><div style="display:grid;grid-template-columns:repeat(3,minmax(76px,1fr));gap:0.55rem;max-width:330px;margin:0.35rem auto 0;">${cells}</div></div>`;
 }
 
 let lastTurnOverlayKey = '';
@@ -85,7 +86,7 @@ function buildRoleLegendHTML(xo = {}, activePlayerId = null) {
     const tint = player.symbol === 'X' ? 'rgba(59,130,246,0.16)' : 'rgba(236,72,153,0.16)';
     const border = player.symbol === 'X' ? 'rgba(59,130,246,0.62)' : 'rgba(236,72,153,0.62)';
     return `
-      <div class="xo-role-pill ${isActive ? 'is-active' : ''}" style="background:${tint};border-color:${border}">
+      <div class="xo-role-pill ${isActive ? 'is-active' : ''} symbol-${player.symbol}" style="background:${tint};border-color:${border}">
         <span class="xo-role-symbol">${svgSymbol(player.symbol, '0.9rem')}</span>
         <span class="xo-role-name">${player.nickname}${player.score ? ` · ${player.score}` : ''}</span>
       </div>
@@ -236,6 +237,58 @@ function ensureOutcomeStyles() {
     .xo-cell:not([disabled]):active {
       transform: scale(0.95);
     }
+    /* ── Persistent turn pulse animations ────────────────────────── */
+    @keyframes xo-pulse-blue {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0); border-color: rgba(59,130,246,0.45); }
+      50% { box-shadow: 0 0 0 5px rgba(59,130,246,0.18), 0 0 22px rgba(59,130,246,0.22); border-color: rgba(59,130,246,0.95); }
+    }
+    @keyframes xo-pulse-pink {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(236,72,153,0); border-color: rgba(236,72,153,0.45); }
+      50% { box-shadow: 0 0 0 5px rgba(236,72,153,0.18), 0 0 22px rgba(236,72,153,0.22); border-color: rgba(236,72,153,0.95); }
+    }
+    @keyframes xo-board-glow-blue {
+      0%, 100% { box-shadow: none; }
+      50% { box-shadow: 0 0 0 3px rgba(59,130,246,0.22), 0 0 32px rgba(59,130,246,0.14); }
+    }
+    @keyframes xo-board-glow-pink {
+      0%, 100% { box-shadow: none; }
+      50% { box-shadow: 0 0 0 3px rgba(236,72,153,0.22), 0 0 32px rgba(236,72,153,0.14); }
+    }
+    @keyframes xo-tb-in {
+      from { opacity: 0; transform: translateY(6px) scale(0.97); }
+      to   { opacity: 1; transform: translateY(0)   scale(1);    }
+    }
+    /* Board wrap glow */
+    .xo-board-wrap { border-radius: 14px; }
+    .xo-board-wrap.is-X-turn { animation: xo-board-glow-blue 1.8s ease-in-out infinite; }
+    .xo-board-wrap.is-O-turn { animation: xo-board-glow-pink 1.8s ease-in-out infinite; }
+    /* Active role pill pulse */
+    .xo-role-pill.is-active.symbol-X { animation: xo-pulse-blue 1.6s ease-in-out infinite; }
+    .xo-role-pill.is-active.symbol-O { animation: xo-pulse-pink 1.6s ease-in-out infinite; }
+    /* Persistent turn banner */
+    .xo-turn-banner {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      max-width: 330px;
+      margin: 0.55rem auto 0;
+      border-radius: 14px;
+      border: 2px solid rgba(148,163,184,0.2);
+      background: rgba(15,23,42,0.55);
+      padding: 0.58rem 0.9rem;
+      animation: xo-tb-in 0.32s ease-out both;
+      backdrop-filter: blur(4px);
+    }
+    .xo-turn-banner.is-yours { background: rgba(15,23,42,0.78); }
+    .xo-turn-banner.is-yours.symbol-X { animation: xo-tb-in 0.32s ease-out both, xo-pulse-blue 1.7s ease-in-out infinite; }
+    .xo-turn-banner.is-yours.symbol-O { animation: xo-tb-in 0.32s ease-out both, xo-pulse-pink 1.7s ease-in-out infinite; }
+    .xo-turn-banner.is-host.symbol-X  { animation: xo-tb-in 0.32s ease-out both, xo-pulse-blue 2s  ease-in-out infinite; opacity: 0.88; }
+    .xo-turn-banner.is-host.symbol-O  { animation: xo-tb-in 0.32s ease-out both, xo-pulse-pink 2s  ease-in-out infinite; opacity: 0.88; }
+    .xo-turn-banner.is-theirs { opacity: 0.52; }
+    .xo-tb-symbol { flex-shrink:0; display:flex; align-items:center; justify-content:center; width:2.4rem; height:2.4rem; }
+    .xo-tb-text   { display:flex; flex-direction:column; gap:0.08rem; min-width:0; }
+    .xo-tb-main   { font-size:1rem; font-weight:900; color:#e2e8f0; line-height:1.25; }
+    .xo-tb-sub    { font-size:0.72rem; color:rgba(148,163,184,0.75); font-weight:500; }
   `;
   document.head.appendChild(style);
 }
@@ -369,6 +422,39 @@ function applyXoHeader({ state, data }) {
   if (submitBtn) submitBtn.style.display = 'none';
 }
 
+function renderTurnBanner(containerId, opts = {}) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  ensureOutcomeStyles();
+  const { isYours = false, isSpectator = false, activeSymbol = 'X', activeNickname = '', mySymbol = null } = opts;
+  const symbol = isYours ? (mySymbol || activeSymbol) : activeSymbol;
+  const mainText = isYours
+    ? 'دورك الآن!'
+    : isSpectator
+      ? `${activeNickname} يلعب`
+      : `دور ${activeNickname}`;
+  const subText = isYours
+    ? '⬇️ اختر خانة'
+    : isSpectator
+      ? 'المباراة جارية'
+      : '⌛ انتظر...';
+  const stateClass = isYours
+    ? `is-yours symbol-${symbol}`
+    : isSpectator
+      ? `is-host symbol-${symbol}`
+      : `is-theirs symbol-${symbol}`;
+  const banner = document.createElement('div');
+  banner.className = `xo-turn-banner ${stateClass}`;
+  banner.innerHTML = `
+    <div class="xo-tb-symbol">${svgSymbol(symbol, '1.9rem')}</div>
+    <div class="xo-tb-text">
+      <span class="xo-tb-main">${mainText}</span>
+      <span class="xo-tb-sub">${subText}</span>
+    </div>
+  `;
+  container.appendChild(banner);
+}
+
 function renderSpectatorBoard({ data }) {
   const board = Array.isArray(data?.question?.xo?.board) ? data.question.xo.board : Array(9).fill(null);
   const xo = data?.question?.xo || {};
@@ -379,10 +465,14 @@ function renderSpectatorBoard({ data }) {
   }
 
   const hostAnswerCounter = document.getElementById('host-answer-counter');
-  if (hostAnswerCounter) {
-    const { turnLine, playersLine } = buildTurnLines(xo);
-    setCompactTwoLineNote(hostAnswerCounter, turnLine, playersLine);
-  }
+  if (hostAnswerCounter) hostAnswerCounter.textContent = '';
+
+  // Persistent animated turn banner for host
+  renderTurnBanner('host-options-grid', {
+    isSpectator: true,
+    activeSymbol: xo.activeSymbol || 'X',
+    activeNickname: xo.activeNickname || 'Player',
+  });
 }
 
 function renderPlayerBoard({ data, socket, state }) {
@@ -422,9 +512,18 @@ function renderPlayerBoard({ data, socket, state }) {
     }
   }
 
-  // Hide bottom status text — role legend + turn popup carry this info
+  // Hide bottom status text
   const answerMsg = document.getElementById('player-answered-msg');
   if (answerMsg) { answerMsg.style.display = 'none'; answerMsg.textContent = ''; }
+
+  // Persistent animated turn banner — stays until this player clicks
+  renderTurnBanner('player-options-grid', {
+    isYours: isYourTurn,
+    isSpectator: !challenger,
+    activeSymbol,
+    activeNickname,
+    mySymbol: challenger?.symbol || null,
+  });
 
   maybeShowTurnOverlay(xo, socket?.id, isYourTurn);
   updateChallengerBadge({ isYourTurn, challenger, activeNickname });
