@@ -629,12 +629,6 @@ const io = new Server(httpServer, {
     origin: config.CORS_ORIGINS,
     methods: ['GET', 'POST'],
   },
-  transports: ['websocket', 'polling'],
-  allowUpgrades: true,
-  connectionStateRecovery: {
-    maxDisconnectionDuration: 120000,
-    skipMiddlewares: true,
-  },
   // Keep WebSocket connections alive and detect dead sockets faster
   pingInterval: 25000,   // send ping every 25 s
   pingTimeout: 20000,    // disconnect if no pong within 20 s (mobile-safe)
@@ -1830,7 +1824,7 @@ io.on('connection', (socket) => {
 
     // Room not found
     if (!room) {
-      socket.emit('room:error', { message: 'No room found with that PIN.', code: 'PIN_NOT_FOUND' });
+      socket.emit('room:error', { message: 'No room found with that PIN.' });
       return;
     }
 
