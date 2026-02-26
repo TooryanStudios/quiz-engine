@@ -71,6 +71,47 @@ function createCreatorStudioRuntime() {
         ? clamp(Number(question.duration), 15, 120)
         : DEFAULT_CREATE_DURATION_SEC;
 
+      const explicitTask = question?.creatorTask === 'draw' || question?.creatorTask === 'arrange'
+        ? question.creatorTask
+        : null;
+
+      const explicitElements = Array.isArray(question?.creatorElements)
+        ? Array.from(new Set(question.creatorElements
+            .map((value) => String(value ?? '').trim())
+            .filter(Boolean)
+            .slice(0, 10)))
+        : [];
+
+      if (explicitTask === 'draw') {
+        prompts.push({
+          id: `p-${index + 1}`,
+          kind: 'draw',
+          text: text || 'Draw something creative.',
+          elements: [],
+          createDurationSec: duration,
+        });
+        return;
+      }
+
+      if (explicitTask === 'arrange') {
+        const elements = explicitElements.length >= 2
+          ? explicitElements
+          : (Array.isArray(question?.items)
+              ? question.items.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 7)
+              : []);
+
+        if (elements.length >= 2) {
+          prompts.push({
+            id: `p-${index + 1}`,
+            kind: 'arrange',
+            text: text || 'Arrange the elements creatively.',
+            elements,
+            createDurationSec: duration,
+          });
+          return;
+        }
+      }
+
       if (question?.type === 'order' || question?.type === 'order_plus') {
         const elements = Array.isArray(question?.items)
           ? question.items.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 7)
