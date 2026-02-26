@@ -247,8 +247,8 @@ function ensureTurnOverlay() {
   return overlay;
 }
 
-function maybeShowTurnOverlay(xo, socketId, isYourTurn, challenger, activeNickname) {
-  if (!socketId || !challenger) return;
+function maybeShowTurnOverlay(xo, socketId, isYourTurn, challenger) {
+  if (!socketId || !challenger || !isYourTurn) return;
   const turnSequence = Number(xo?.turnSequence || 0);
   if (!turnSequence) return;
   const board = Array.isArray(xo?.board) ? xo.board : [];
@@ -259,11 +259,7 @@ function maybeShowTurnOverlay(xo, socketId, isYourTurn, challenger, activeNickna
 
   const overlay = ensureTurnOverlay();
   const text = overlay.querySelector('.xo-turn-text');
-  if (text) {
-    text.textContent = isYourTurn
-      ? '🔥 دورك الآن!'
-      : `⏳ دور ${activeNickname || 'خصمك'} الآن`;
-  }
+  if (text) text.textContent = '🔥 دورك الآن!';
 
   overlay.classList.remove('is-showing');
   void overlay.offsetWidth;
@@ -372,7 +368,7 @@ function renderPlayerBoard({ data, socket, state }) {
 
   const answerMsg = document.getElementById('player-answered-msg');
   const { turnLine, playersLine } = buildTurnLines(xo);
-  maybeShowTurnOverlay(xo, socket?.id, isYourTurn, challenger, activeNickname);
+  maybeShowTurnOverlay(xo, socket?.id, isYourTurn, challenger);
   updateChallengerBadge({ isYourTurn, challenger, activeNickname });
 
   if (answerMsg) {
