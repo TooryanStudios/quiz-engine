@@ -2735,9 +2735,14 @@ document.getElementById('btn-mute').addEventListener('click', () => {
   document.getElementById('btn-mute').textContent = isMuted() ? '🔇' : '🔊';
 });
 
-// Play Again button — go back to the start with the same query params (host re-launches, player sees join screen)
+// Play Again button — restart the session in the same room
 document.getElementById('btn-play-again').addEventListener('click', () => {
-  window.location.href = '/' + window.location.search;
+  if (state.role === 'host') {
+    Sounds.click();
+    socket.emit('host:new-session');
+  } else {
+    window.location.href = '/' + window.location.search;
+  }
 });
 
 document.getElementById('btn-start-new-session').addEventListener('click', () => {

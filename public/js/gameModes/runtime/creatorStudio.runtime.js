@@ -71,14 +71,15 @@ function ensureStyles() {
     }
     .cs-canvas {
       width: 100%;
-      height: min(58vw, 290px);
-      min-height: 230px;
+      aspect-ratio: 4 / 3;
+      max-height: 60vh;
       background: rgba(15,23,42,0.84);
       border: 1px dashed rgba(56,189,248,0.45);
       border-radius: 12px;
       touch-action: none;
       display: block;
       cursor: crosshair;
+      object-fit: contain;
     }
     .cs-actions {
       display: flex;
@@ -132,8 +133,8 @@ function ensureStyles() {
     .cs-arrange-board {
       position: relative;
       width: 100%;
-      height: min(58vw, 300px);
-      min-height: 240px;
+      aspect-ratio: 4 / 3;
+      max-height: 60vh;
       border: 1px dashed rgba(34,211,238,0.45);
       border-radius: 12px;
       background: linear-gradient(165deg, rgba(15,23,42,0.9), rgba(2,6,23,0.86));
@@ -436,8 +437,8 @@ function renderSubmissionPreview(previewEl, submission) {
   if (!canvas) return;
 
   const rect = canvas.getBoundingClientRect();
-  canvas.width = Math.max(320, Math.floor(rect.width || 320));
-  canvas.height = Math.max(230, Math.floor(rect.height || 230));
+  canvas.width = rect.width || 320;
+  canvas.height = rect.height || 240;
   drawStrokeSet(canvas, submission.strokes || []);
 }
 
@@ -473,6 +474,16 @@ function ensureSocketHooks(socket, state) {
     const status = document.getElementById('cs-create-status');
     if (status) status.textContent = '✅ Submission saved. Waiting for rating phase…';
   });
+
+  socket.on('creator:sync_creation', (payload) => {
+    if (payload?.creation?.strokes) {
+      state.__creatorDrawStrokes = payload.creation.strokes;
+      const canvas = document.getElementById('cs-preview-canvas');
+      if (canvas) {
+        drawStrokeSet(canvas, state.__creatorDrawStrokes);
+      }
+    }
+  });
 }
 
 function renderCreatePhase({ container, data, state, socket, studio, isCreator, players }) {
@@ -504,11 +515,21 @@ function renderCreatePhase({ container, data, state, socket, studio, isCreator, 
           <div class="cs-sub">المهمة: ${promptText}</div>
         </div>
         <div class="cs-stage">
-          <div class="cs-status">بانتظار إرسال الإبداع (أو انتهاء الوقت)…</div>
+          ${kind === 'draw' ? '<canvas id="cs-preview-canvas" class="cs-canvas" style="cursor:default;"></canvas>' : '<div class="cs-status">بانتظار إرسال الإبداع (أو انتهاء الوقت)…</div>'}
         </div>
         ${renderScoreboardHTML(studio?.scoreboard)}
       </div>
     `;
+    
+    if (kind === 'draw') {
+      const canvas = container.querySelector('#cs-preview-canvas');
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width || 320;
+        canvas.height = rect.height || 240;
+        drawStrokeSet(canvas, state.__creatorDrawStrokes || []);
+      }
+    }
     return;
   }
 
@@ -636,8 +657,8 @@ function renderCreatePhase({ container, data, state, socket, studio, isCreator, 
   if (!canvas) return;
 
   const rect = canvas.getBoundingClientRect();
-  canvas.width = Math.max(320, Math.floor(rect.width || 320));
-  canvas.height = Math.max(230, Math.floor(rect.height || 230));
+  canvas.width = rect.width || 320;
+  canvas.height = rect.height || 240;
   drawStrokeSet(canvas, state.__creatorDrawStrokes || []);
 
   const ctx = canvas.getContext('2d');
@@ -667,11 +688,26 @@ function renderCreatePhase({ container, data, state, socket, studio, isCreator, 
     drawStrokeSet(canvas, strokes);
   };
 
+  const syncDrawing = () => {
+    if (state.__creatorSubmitted) return;
+    socket.emit('player:answer', {
+      questionIndex: data.questionIndex,
+      answer: {
+        action: 'sync_creation',
+        creation: {
+          kind: 'draw',
+          strokes: Array.isArray(state.__creatorDrawStrokes) ? state.__creatorDrawStrokes : [],
+        },
+      },
+    });
+  };
+
   const onPointerUp = (event) => {
     if (event.pointerId !== drawState.pointerId) return;
     drawState.active = false;
     drawState.pointerId = null;
     try { canvas.releasePointerCapture(event.pointerId); } catch (_) {}
+    syncDrawing();
   };
 
   canvas.addEventListener('pointerdown', (event) => {
@@ -693,6 +729,7 @@ function renderCreatePhase({ container, data, state, socket, studio, isCreator, 
     clearBtn.addEventListener('click', () => {
       state.__creatorDrawStrokes = [];
       drawStrokeSet(canvas, []);
+      syncDrawing();
       Sounds.click();
     });
   }
@@ -804,7 +841,7 @@ function renderResultPhase({ container, studio, players, currentSocketId }) {
 export const creatorStudioRuntime = {
   id: 'creator-studio',
 
-  onGameQuestion({ data, state, socket, showView }) {
+  onGameQuestion({ data, state, socket, showView, renderQuestion }) {
     ensureStyles();
     ensureSocketHooks(socket, state);
 
@@ -812,6 +849,11 @@ export const creatorStudioRuntime = {
     if (!studio) return false;
 
     const isHostOnly = state.role === 'host' && !state.hostIsPlayer;
+    
+    if (typeof renderQuestion === 'function') {
+      renderQuestion(data, isHostOnly);
+    }
+    
     showView(isHostOnly ? 'view-host-question' : 'view-player-question');
 
     const hostModeBadge = document.getElementById('host-q-difficulty');

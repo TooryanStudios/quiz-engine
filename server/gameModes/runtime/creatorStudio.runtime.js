@@ -445,6 +445,16 @@ function createCreatorStudioRuntime() {
         return true;
       }
 
+      if (answer?.action === 'sync_creation') {
+        if (studio.phase !== 'create') return true;
+        if (!player || player.id !== studio.creatorId) return true;
+
+        socket.to(room.pin).emit('creator:sync_creation', {
+          creation: normalizeDrawSubmission(answer?.creation || {})
+        });
+        return true;
+      }
+
       if (answer?.action === 'rate') {
         if (studio.phase !== 'rating') return true;
         if (!player || player.id === studio.creatorId) return true;
