@@ -53,6 +53,33 @@ function callGameModeHook(hookName, payload = {}) {
   }
 }
 
+function inferGameModeIdFromQuestion(question) {
+  if (!question || typeof question !== 'object') return null;
+
+  if (question.type === 'xo_duel' || question.xo) return 'xo-duel';
+  if (question.relay) return 'puzzle-relay';
+
+  return null;
+}
+
+function callFallbackGameModeHook(hookName, payload = {}) {
+  const inferredModeId = inferGameModeIdFromQuestion(payload?.data?.question);
+  if (!inferredModeId) return undefined;
+
+  const runtime = resolveGameModeRuntime(inferredModeId);
+  if (!runtime || typeof runtime !== 'object') return undefined;
+
+  const hook = runtime[hookName];
+  if (typeof hook !== 'function') return undefined;
+
+  try {
+    return hook(payload);
+  } catch (error) {
+    console.error(`[game-mode-fallback-hook:${hookName}] failed`, error);
+    return undefined;
+  }
+}
+
 function getHostAuthPayload() {
   return {
     hostUid: hostUidFromUrl || null,
@@ -3050,13 +3077,24 @@ socket.on('game:final_question', () => {
 /** BOTH: New question */
 socket.on('game:question', (data) => {
   try {
-    const handledByMode = callGameModeHook('onGameQuestion', {
+    let handledByMode = callGameModeHook('onGameQuestion', {
       data,
       state,
       socket,
       renderQuestion,
       showView,
     });
+
+    if (handledByMode !== true) {
+      handledByMode = callFallbackGameModeHook('onGameQuestion', {
+        data,
+        state,
+        socket,
+        renderQuestion,
+        showView,
+      });
+    }
+
     if (handledByMode === true) return;
 
     markDiagEvent('game:question');
