@@ -2646,15 +2646,9 @@ io.on('connection', (socket) => {
         if (hostedRoom.questionTimer) clearTimeout(hostedRoom.questionTimer);
         if (hostedRoom.previewTimer) clearTimeout(hostedRoom.previewTimer);
 
-        if (hostedRoom.state && hostedRoom.state !== 'lobby') {
-          hostedRoom.state = 'finished';
-          const leaderboard = buildLeaderboard(hostedRoom);
-          io.to(hostedRoom.pin).emit('game:over', { leaderboard });
-        } else {
-          io.to(hostedRoom.pin).emit('room:closed', {
-            message: 'The host has disconnected. The game has ended.',
-          });
-        }
+        io.to(hostedRoom.pin).emit('room:closed', {
+          message: 'The host has disconnected. The game has ended.',
+        });
 
         for (const [pendingSocketId] of hostedRoom.pendingJoinRequests) {
           const pendingSocket = io.sockets.sockets.get(pendingSocketId);
