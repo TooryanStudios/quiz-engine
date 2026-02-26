@@ -247,9 +247,10 @@ function ensureTurnOverlay() {
   return overlay;
 }
 
-function maybeShowYourTurnOverlay(xo, socketId, isYourTurn) {
-  if (!isYourTurn || !socketId) return;
+function maybeShowTurnOverlay(xo, socketId, isYourTurn, challenger, activeNickname) {
+  if (!socketId || !challenger) return;
   const turnSequence = Number(xo?.turnSequence || 0);
+  if (!turnSequence) return;
   const board = Array.isArray(xo?.board) ? xo.board : [];
   const boardFilled = board.filter(Boolean).length;
   const key = `${xo.round || 0}:${turnSequence || 'na'}:${xo.activePlayerId || ''}:${boardFilled}:${socketId}`;
@@ -258,7 +259,11 @@ function maybeShowYourTurnOverlay(xo, socketId, isYourTurn) {
 
   const overlay = ensureTurnOverlay();
   const text = overlay.querySelector('.xo-turn-text');
-  if (text) text.textContent = '🔥 دورك الآن!';
+  if (text) {
+    text.textContent = isYourTurn
+      ? '🔥 دورك الآن!'
+      : `⏳ دور ${activeNickname || 'خصمك'} الآن`;
+  }
 
   overlay.classList.remove('is-showing');
   void overlay.offsetWidth;
@@ -367,7 +372,7 @@ function renderPlayerBoard({ data, socket, state }) {
 
   const answerMsg = document.getElementById('player-answered-msg');
   const { turnLine, playersLine } = buildTurnLines(xo);
-  maybeShowYourTurnOverlay(xo, socket?.id, isYourTurn);
+  maybeShowTurnOverlay(xo, socket?.id, isYourTurn, challenger, activeNickname);
   updateChallengerBadge({ isYourTurn, challenger, activeNickname });
 
   if (answerMsg) {
