@@ -16,6 +16,11 @@ export const puzzleRelayRuntime = {
 
     renderQuestion(data, isHostOnly);
 
+    const hostModeBadge = document.getElementById('host-q-difficulty');
+    if (hostModeBadge) hostModeBadge.textContent = 'PUZZLE RELAY';
+    const playerModeBadge = document.getElementById('player-q-difficulty');
+    if (playerModeBadge) playerModeBadge.textContent = 'PUZZLE RELAY';
+
     if (state.role !== 'player') return true;
 
     const relay = data?.question?.relay || {};
