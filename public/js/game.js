@@ -97,6 +97,7 @@ const isQuestionOnly = !!questionOnlyMode;
 const questionMirror = window.opener || null;
 
 const PIN_MAX_LENGTH = 6;
+const HOST_RECONNECT_GRACE_MS = 60000;
 
 // Global scroll/pinch blocker — prevents iOS rubber-band and page scroll
 // during all gameplay views. Uses { passive: false } so preventDefault works.
@@ -1188,6 +1189,53 @@ function setConnectionStatus(kind, message) {
 
   el.textContent = message;
   updateDiagnose({ socket: `${kind}: ${message}` });
+}
+
+let hostReconnectCountdownTimer = null;
+let hostReconnectDeadline = 0;
+
+function setHostRoomHealth(kind, label, detail = '') {
+  const root = document.getElementById('host-room-health');
+  if (!root) return;
+
+  root.classList.remove('is-ok', 'is-warn', 'is-error');
+  if (kind === 'ok') root.classList.add('is-ok');
+  else if (kind === 'error') root.classList.add('is-error');
+  else root.classList.add('is-warn');
+
+  const labelEl = document.getElementById('host-room-health-label');
+  const detailEl = document.getElementById('host-room-health-detail');
+  if (labelEl) labelEl.textContent = label;
+  if (detailEl) detailEl.textContent = detail;
+}
+
+function stopHostReconnectCountdown() {
+  if (hostReconnectCountdownTimer) {
+    clearInterval(hostReconnectCountdownTimer);
+    hostReconnectCountdownTimer = null;
+  }
+  hostReconnectDeadline = 0;
+}
+
+function startHostReconnectCountdown() {
+  if (state.role !== 'host' || !state.pin) return;
+
+  stopHostReconnectCountdown();
+  hostReconnectDeadline = Date.now() + HOST_RECONNECT_GRACE_MS;
+
+  const tick = () => {
+    const remainingMs = hostReconnectDeadline - Date.now();
+    if (remainingMs <= 0) {
+      stopHostReconnectCountdown();
+      setHostRoomHealth('error', '❌ Room may close', 'Reconnect grace expired. Recreate room if needed.');
+      return;
+    }
+    const remainingSec = Math.ceil(remainingMs / 1000);
+    setHostRoomHealth('warn', '⚠️ Reconnecting…', `Room PIN reserved for ${remainingSec}s`);
+  };
+
+  tick();
+  hostReconnectCountdownTimer = setInterval(tick, 250);
 }
 
 setConnectionStatus('warn', 'Connecting to server…');
@@ -2723,6 +2771,8 @@ socket.on('room:created', ({ pin, reclaimed, ...modeInfo }) => {
     // If we're on the generic loading screen, move to the lobby.
     // If we're in-game, stay on the current view but update the PIN.
     setConnectionStatus('ok', 'Reconnected ✓');
+    stopHostReconnectCountdown();
+    setHostRoomHealth('ok', '✅ Room live', 'Recovered with same PIN');
     const hostPinEl = document.getElementById('host-pin');
     if (hostPinEl) hostPinEl.textContent = pin;
     applyModeInfo(modeInfo);
@@ -2740,6 +2790,8 @@ socket.on('room:created', ({ pin, reclaimed, ...modeInfo }) => {
   state.hostLobbyPlayers = [];
   const hostPinEl = document.getElementById('host-pin');
   if (hostPinEl) hostPinEl.textContent = pin;
+  stopHostReconnectCountdown();
+  setHostRoomHealth('ok', '✅ Room live', 'PIN active and ready for players');
   document.getElementById('host-player-count').textContent = '0';
   document.getElementById('host-player-list').innerHTML = '';
 
@@ -2756,6 +2808,7 @@ socket.on('room:pin_refreshed', ({ pin, ...modeInfo }) => {
   state.pin = pin;
   updateInGameRoomPin(pin);
   document.getElementById('host-pin').textContent = pin;
+  setHostRoomHealth('ok', '🔄 PIN refreshed', 'Room is healthy with the new PIN');
   applyModeInfo(modeInfo);
 
   // Animate the button
@@ -2800,6 +2853,8 @@ socket.on('connect', () => {
     // Host: re-emit host:create so the server reclaims the room with the new socket ID
     // (uses the 20-second grace-period reclaim logic on the server)
     if (state.role === 'host' && state.pin) {
+      stopHostReconnectCountdown();
+      setHostRoomHealth('warn', '♻️ Syncing room…', 'Reclaiming room with current PIN');
       socket.emit('host:create', {
         quizSlug: quizSlugFromUrl || null,
         gameMode: gameModeFromUrl || null,
@@ -2821,6 +2876,9 @@ socket.on('disconnect', () => {
   markDiagEvent('socket:disconnect');
   pushJoinDebugLog('socket disconnected; reconnecting');
   setConnectionStatus('warn', 'Connection lost. Reconnecting…');
+  if (state.role === 'host' && state.pin) {
+    startHostReconnectCountdown();
+  }
 });
 
 /** PLAYER: Successfully joined the room */
@@ -3113,6 +3171,7 @@ socket.on('room:error', ({ message, code }) => {
   if (joinBtn) { joinBtn.disabled = false; joinBtn.textContent = 'Join Game'; }
 
   if (state.role === 'host') {
+    setHostRoomHealth('error', '⚠️ Room issue', message || 'Server reported a room error');
     state.hostCreateRetryCount = 0;
     state.hostCreatePending = false;
     document.documentElement.classList.remove('autohost-launch');

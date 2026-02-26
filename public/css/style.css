@@ -2100,6 +2100,59 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   gap: 4px;
 }
 
+#view-host-lobby .host-room-health {
+  margin-top: 6px;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  align-self: center;
+  text-align: center;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.12);
+  min-width: 170px;
+}
+
+#view-host-lobby .host-room-health-label {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #fcd34d;
+}
+
+#view-host-lobby .host-room-health-detail {
+  font-size: 0.66rem;
+  color: var(--text-dim);
+}
+
+#view-host-lobby .host-room-health.is-ok {
+  border-color: rgba(16, 185, 129, 0.45);
+  background: rgba(16, 185, 129, 0.12);
+}
+
+#view-host-lobby .host-room-health.is-ok .host-room-health-label {
+  color: #86efac;
+}
+
+#view-host-lobby .host-room-health.is-warn {
+  border-color: rgba(251, 191, 36, 0.45);
+  background: rgba(251, 191, 36, 0.14);
+}
+
+#view-host-lobby .host-room-health.is-warn .host-room-health-label {
+  color: #fcd34d;
+}
+
+#view-host-lobby .host-room-health.is-error {
+  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.12);
+}
+
+#view-host-lobby .host-room-health.is-error .host-room-health-label {
+  color: #fca5a5;
+}
+
 #view-host-lobby .pin-code {
   font-size: 1.95rem;
   letter-spacing: 3px;
@@ -2428,6 +2481,11 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
 
   #view-host-lobby .host-player-stage {
     grid-template-columns: repeat(4, 1fr);
+  }
+
+  #view-host-lobby .host-room-health {
+    min-width: 0;
+    width: 100%;
   }
 }
 
