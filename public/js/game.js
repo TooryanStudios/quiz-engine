@@ -1531,6 +1531,7 @@ function renderHostQuestion(data) {
     }
     
     hideConnectionChip();
+    updateInGameRoomPin();
     const q = data.question;
     const hProg = safeGet('host-q-progress');
     const hText = safeGet('host-question-text');
@@ -1597,6 +1598,7 @@ function renderPlayerQuestion(data) {
     }
     
     hideConnectionChip();
+    updateInGameRoomPin();
     markDiagEvent('render:player_question');
     const q = data.question;
     const qProg = safeGet('player-q-progress');
@@ -1930,6 +1932,14 @@ function updateDifficultyDisplay() {
   
   const playerQDiff = document.getElementById('player-q-difficulty');
   if (playerQDiff) playerQDiff.textContent = tag;
+}
+
+function updateInGameRoomPin(pinValue = state.pin) {
+  const displayPin = pinValue ? String(pinValue) : '------';
+  const hostBadge = document.getElementById('host-q-room-pin');
+  if (hostBadge) hostBadge.textContent = `PIN: ${displayPin}`;
+  const playerBadge = document.getElementById('player-q-room-pin');
+  if (playerBadge) playerBadge.textContent = `PIN: ${displayPin}`;
 }
 
 function setFrozenState(active, message) {
@@ -2705,6 +2715,7 @@ socket.on('room:created', ({ pin, reclaimed, ...modeInfo }) => {
   state.hostCreateRetryCount = 0;
   state.hostCreatePending = false;
   state.pin = pin;
+  updateInGameRoomPin(pin);
 
   if (reclaimed) {
     // Mid-game host reconnect — room was preserved with the same PIN.
@@ -2742,6 +2753,7 @@ socket.on('room:created', ({ pin, reclaimed, ...modeInfo }) => {
 /** HOST: PIN refreshed successfully */
 socket.on('room:pin_refreshed', ({ pin, ...modeInfo }) => {
   state.pin = pin;
+  updateInGameRoomPin(pin);
   document.getElementById('host-pin').textContent = pin;
   applyModeInfo(modeInfo);
 
@@ -2840,6 +2852,7 @@ socket.on('room:joined', (data) => {
     
     const pinEl = document.getElementById('player-room-pin');
     if (pinEl) pinEl.textContent = pin;
+    updateInGameRoomPin(pin);
 
     // Save session for potential reconnect
     saveGameSession(pin, nickname, avatar || '🎮');
@@ -2928,6 +2941,7 @@ socket.on('room:rejoined', ({ pin, nickname, avatar, players, score, streak, roo
     state.myScore = score || 0;
     state.myStreak = streak || 0;
     updatePlayerScoreUI();
+    updateInGameRoomPin(pin);
 
     if (role === 'scholar') state.myRole = 'scholar';
     else if (role === 'shield') state.myRole = 'shield';
@@ -3558,10 +3572,34 @@ socket.on('room:join_rejected', ({ message }) => {
   showView('view-room-closed');
 });
 
-/** HOST: A kicked player has requested to rejoin */
+/** HOST: A player requested to join (rejoin or late join) */
 socket.on('host:join_request', ({ socketId, nickname, avatar }) => {
-  const banner = document.getElementById('join-request-banner');
-  const list   = document.getElementById('join-request-list');
+  function resolveJoinRequestPanel() {
+    const lobbyBanner = document.getElementById('join-request-banner');
+    const lobbyList = document.getElementById('join-request-list');
+    const hostLobbyView = document.getElementById('view-host-lobby');
+    const hostLobbyVisible = !!(hostLobbyView && hostLobbyView.classList.contains('view-active'));
+
+    if (lobbyBanner && lobbyList && hostLobbyVisible) {
+      return { banner: lobbyBanner, list: lobbyList };
+    }
+
+    let liveBanner = document.getElementById('join-request-live-banner');
+    let liveList = document.getElementById('join-request-live-list');
+
+    if (!liveBanner || !liveList) {
+      liveBanner = document.createElement('div');
+      liveBanner.id = 'join-request-live-banner';
+      liveBanner.style.cssText = 'position:fixed;top:10px;right:10px;z-index:10020;display:none;max-width:min(92vw,360px);background:rgba(15,23,42,0.96);border:1px solid rgba(148,163,184,0.35);border-radius:12px;padding:10px;box-shadow:0 12px 30px rgba(0,0,0,0.35);';
+      liveBanner.innerHTML = '<div style="font-weight:800;font-size:0.82rem;margin-bottom:6px;">⏳ Join Requests</div><div id="join-request-live-list" style="display:flex;flex-direction:column;gap:6px;"></div>';
+      document.body.appendChild(liveBanner);
+      liveList = liveBanner.querySelector('#join-request-live-list');
+    }
+
+    return { banner: liveBanner, list: liveList };
+  }
+
+  const { banner, list } = resolveJoinRequestPanel();
   if (!banner || !list) return;
 
   // Avoid duplicate cards
@@ -3570,16 +3608,17 @@ socket.on('host:join_request', ({ socketId, nickname, avatar }) => {
   const card = document.createElement('div');
   card.className = 'join-request-card';
   card.dataset.socketId = socketId;
+  card.style.cssText = 'display:flex;align-items:center;gap:8px;background:rgba(30,41,59,0.72);border:1px solid rgba(148,163,184,0.28);border-radius:10px;padding:7px;';
 
   const safeAvatar = String(avatar || '🎮').slice(0, 8);
   const safeName   = String(nickname || '').replace(/</g, '&lt;');
 
   card.innerHTML = `
-    <span class="join-request-avatar">${safeAvatar}</span>
-    <span class="join-request-name">${safeName}</span>
-    <div class="join-request-actions">
-      <button class="btn-jr-accept">✓ Accept</button>
-      <button class="btn-jr-reject">✗ Reject</button>
+    <span class="join-request-avatar" style="font-size:1.1rem;">${safeAvatar}</span>
+    <span class="join-request-name" style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${safeName}</span>
+    <div class="join-request-actions" style="display:flex;gap:5px;">
+      <button class="btn-jr-accept" style="border:1px solid rgba(34,197,94,0.45);background:rgba(34,197,94,0.15);color:#86efac;border-radius:8px;padding:5px 8px;cursor:pointer;">✓ Accept</button>
+      <button class="btn-jr-reject" style="border:1px solid rgba(239,68,68,0.45);background:rgba(239,68,68,0.15);color:#fca5a5;border-radius:8px;padding:5px 8px;cursor:pointer;">✗ Reject</button>
     </div>`;
 
   card.querySelector('.btn-jr-accept').addEventListener('click', () => {

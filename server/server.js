@@ -1762,11 +1762,36 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // *** Late Joiner Handling ***
-    // If the game has already started, reject the player.
-    if (room.state !== 'lobby') {
+    const joinAvatar = typeof avatar === 'string' ? avatar.slice(0, 8) : '🎮';
+
+    function queueJoinRequest(message) {
+      room.pendingJoinRequests.set(socket.id, {
+        socketId: socket.id,
+        playerId: typeof playerId === 'string' ? playerId.slice(0, 64) : null,
+        nickname: cleanNickname,
+        avatar: joinAvatar,
+        pin: normalizedPin,
+      });
+      socket.data.pin = normalizedPin;
+
+      const hostSocket = io.sockets.sockets.get(room.hostSocketId);
+      if (hostSocket) {
+        hostSocket.emit('host:join_request', {
+          socketId: socket.id,
+          nickname: cleanNickname,
+          avatar: joinAvatar,
+        });
+      }
+
+      socket.emit('room:join_pending', {
+        message,
+      });
+    }
+
+    // Finished rooms do not accept new players.
+    if (room.state === 'finished') {
       socket.emit('room:error', {
-        message: 'Game already in progress. Please wait for the next round.',
+        message: 'This game session has ended. Please wait for a new session.',
       });
       return;
     }
@@ -1782,24 +1807,13 @@ io.on('connection', (socket) => {
 
     // Kicked player trying to rejoin — route to host approval queue
     if (room.kickedPlayers.has(cleanNickname.toLowerCase())) {
-      room.pendingJoinRequests.set(socket.id, {
-        socketId: socket.id,
-        nickname: cleanNickname,
-        avatar: typeof avatar === 'string' ? avatar.slice(0, 8) : '\uD83C\uDFAE',
-        pin: normalizedPin,
-      });
-      socket.data.pin = normalizedPin;
-      const hostSocket = io.sockets.sockets.get(room.hostSocketId);
-      if (hostSocket) {
-        hostSocket.emit('host:join_request', {
-          socketId: socket.id,
-          nickname: cleanNickname,
-          avatar: typeof avatar === 'string' ? avatar.slice(0, 8) : '\uD83C\uDFAE',
-        });
-      }
-      socket.emit('room:join_pending', {
-        message: 'Your request has been sent. Waiting for the host to approve…',
-      });
+      queueJoinRequest('Your request has been sent. Waiting for the host to approve…');
+      return;
+    }
+
+    // Late join while game is active — host approval required
+    if (room.state !== 'lobby') {
+      queueJoinRequest('Game is active. Waiting for host approval to join now…');
       return;
     }
 
@@ -1808,7 +1822,7 @@ io.on('connection', (socket) => {
       id: socket.id,
       playerId: typeof playerId === 'string' ? playerId.slice(0, 64) : null,
       nickname: cleanNickname,
-      avatar: typeof avatar === 'string' ? avatar.slice(0, 8) : '🎮',
+      avatar: joinAvatar,
       score: 0,
       streak: 0,
       maxStreak: 0,
@@ -2186,7 +2200,7 @@ io.on('connection', (socket) => {
   // ── HOST: Approve a kicked player's rejoin request ───────
   socket.on('host:approve_join', ({ socketId }) => {
     const room = findHostRoom(socket.id);
-    if (!room || room.state !== 'lobby') return;
+    if (!room || room.state === 'finished') return;
 
     const pending = room.pendingJoinRequests.get(socketId);
     if (!pending) return;
@@ -2195,7 +2209,7 @@ io.on('connection', (socket) => {
 
     const player = {
       id: socketId,
-      playerId: null,
+      playerId: pending.playerId || null,
       nickname: pending.nickname,
       avatar: pending.avatar,
       score: 0,
@@ -2211,13 +2225,48 @@ io.on('connection', (socket) => {
     const playerSocket = io.sockets.sockets.get(socketId);
     if (playerSocket) {
       playerSocket.join(room.pin);
-      playerSocket.emit('room:joined', {
+      playerSocket.data.pin = room.pin;
+      playerSocket.data.isHost = false;
+
+      const basePayload = {
         pin: room.pin,
         nickname: player.nickname,
         avatar: player.avatar,
         players: getPlayerList(room),
-        quizSlug: room.quizSlug || null,
-      });
+        score: Number(player.score || 0),
+        streak: Number(player.streak || 0),
+        roomState: room.state,
+        role: getRoleForPlayer(room, playerSocket.id),
+      };
+
+      if (room.state === 'lobby') {
+        playerSocket.emit('room:joined', {
+          pin: room.pin,
+          nickname: player.nickname,
+          avatar: player.avatar,
+          players: getPlayerList(room),
+          quizSlug: room.quizSlug || null,
+        });
+      } else if ((room.state === 'question' || room.state === 'question-pending') && room.currentQuestionPayload) {
+        const elapsed = (Date.now() - room.questionStartTime) / 1000;
+        const timeRemaining = Math.max(1, room.questionDuration - elapsed);
+        playerSocket.emit('room:rejoined', {
+          ...basePayload,
+          questionData: {
+            questionIndex: room.questionIndex,
+            total: room.questions.length,
+            question: room.currentQuestionPayload,
+            duration: room.questionDuration,
+            timeRemaining,
+            players: getPlayerList(room),
+            hasAnswered: player.currentAnswer !== null,
+          },
+        });
+      } else if (room.state === 'finished') {
+        playerSocket.emit('room:rejoined', { ...basePayload, leaderboard: buildLeaderboard(room) });
+      } else {
+        playerSocket.emit('room:rejoined', basePayload);
+      }
     }
 
     console.log(`[Room ${room.pin}] Approved rejoin for: ${pending.nickname}`);
