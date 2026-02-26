@@ -58,6 +58,25 @@ function setCompactTwoLineNote(el, line1, line2) {
   el.textContent = line2 ? `${line1}\n${line2}` : line1;
 }
 
+function buildRoleLegendHTML(xo = {}, activePlayerId = null) {
+  const players = Array.isArray(xo.players) ? xo.players : [];
+  if (!players.length) return '';
+
+  const items = players.map((player) => {
+    const isActive = player.id === activePlayerId;
+    const tint = player.symbol === 'X' ? 'rgba(59,130,246,0.16)' : 'rgba(236,72,153,0.16)';
+    const border = player.symbol === 'X' ? 'rgba(59,130,246,0.62)' : 'rgba(236,72,153,0.62)';
+    return `
+      <div class="xo-role-pill ${isActive ? 'is-active' : ''}" style="background:${tint};border-color:${border}">
+        <span class="xo-role-symbol">${player.symbol}</span>
+        <span class="xo-role-name">${player.nickname}</span>
+      </div>
+    `;
+  }).join('');
+
+  return `<div class="xo-role-legend">${items}</div>`;
+}
+
 function ensureOutcomeStyles() {
   if (document.getElementById('xo-outcome-styles')) return;
   const style = document.createElement('style');
@@ -151,6 +170,46 @@ function ensureOutcomeStyles() {
     .xo-challenger-badge.is-visible {
       display: inline-flex;
     }
+    .xo-role-legend {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.45rem;
+      max-width: 330px;
+      margin: 0.45rem auto 0;
+    }
+    .xo-role-pill {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.38rem;
+      border-radius: 999px;
+      border: 1px solid rgba(148,163,184,0.3);
+      padding: 0.28rem 0.56rem;
+      color: #dbeafe;
+      font-size: 0.8rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+    .xo-role-pill.is-active {
+      box-shadow: 0 0 0 2px rgba(34,211,238,0.22);
+      transform: translateY(-1px);
+    }
+    .xo-role-symbol {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.2rem;
+      height: 1.2rem;
+      border-radius: 999px;
+      background: rgba(15,23,42,0.45);
+      font-size: 0.78rem;
+    }
+    .xo-role-name {
+      max-width: 140px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
   `;
   document.head.appendChild(style);
 }
@@ -191,9 +250,9 @@ function ensureTurnOverlay() {
 function maybeShowYourTurnOverlay(xo, socketId, isYourTurn) {
   if (!isYourTurn || !socketId) return;
   const turnSequence = Number(xo?.turnSequence || 0);
-  if (!turnSequence) return;
-
-  const key = `${xo.round || 0}:${turnSequence}:${xo.activePlayerId || ''}:${socketId}`;
+  const board = Array.isArray(xo?.board) ? xo.board : [];
+  const boardFilled = board.filter(Boolean).length;
+  const key = `${xo.round || 0}:${turnSequence || 'na'}:${xo.activePlayerId || ''}:${boardFilled}:${socketId}`;
   if (key === lastTurnOverlayKey) return;
   lastTurnOverlayKey = key;
 
@@ -282,7 +341,7 @@ function renderSpectatorBoard({ data }) {
   const activeSymbol = data?.question?.xo?.activeSymbol || 'X';
   const hostGrid = document.getElementById('host-options-grid');
   if (hostGrid) {
-    hostGrid.innerHTML = renderXoBoardHTML(board, false, activeSymbol, { winningLine: xo.winningLine });
+    hostGrid.innerHTML = `${renderXoBoardHTML(board, false, activeSymbol, { winningLine: xo.winningLine })}${buildRoleLegendHTML(xo, xo.activePlayerId || null)}`;
   }
 
   const hostAnswerCounter = document.getElementById('host-answer-counter');
@@ -304,7 +363,7 @@ function renderPlayerBoard({ data, socket, state }) {
   const playerGrid = document.getElementById('player-options-grid');
   if (!playerGrid) return;
 
-  playerGrid.innerHTML = renderXoBoardHTML(board, isYourTurn, activeSymbol, { winningLine: xo.winningLine });
+  playerGrid.innerHTML = `${renderXoBoardHTML(board, isYourTurn, activeSymbol, { winningLine: xo.winningLine })}${buildRoleLegendHTML(xo, activePlayerId || null)}`;
 
   const answerMsg = document.getElementById('player-answered-msg');
   const { turnLine, playersLine } = buildTurnLines(xo);
@@ -345,7 +404,7 @@ function renderRoundResultPhase({ data, state, socket, isHostOnly }) {
   if (isHostOnly) {
     const hostGrid = document.getElementById('host-options-grid');
     if (hostGrid) {
-      hostGrid.innerHTML = renderXoBoardHTML(board, false, xo.activeSymbol || 'X', { winningLine: xo.winningLine || xo.result?.winningLine });
+      hostGrid.innerHTML = `${renderXoBoardHTML(board, false, xo.activeSymbol || 'X', { winningLine: xo.winningLine || xo.result?.winningLine })}${buildRoleLegendHTML(xo, winnerId || null)}`;
     }
     const hostAnswerCounter = document.getElementById('host-answer-counter');
     if (hostAnswerCounter) {
@@ -368,7 +427,7 @@ function renderRoundResultPhase({ data, state, socket, isHostOnly }) {
 
   const playerGrid = document.getElementById('player-options-grid');
   if (playerGrid) {
-    playerGrid.innerHTML = renderXoBoardHTML(board, false, xo.activeSymbol || 'X', { winningLine: xo.winningLine || xo.result?.winningLine });
+    playerGrid.innerHTML = `${renderXoBoardHTML(board, false, xo.activeSymbol || 'X', { winningLine: xo.winningLine || xo.result?.winningLine })}${buildRoleLegendHTML(xo, winnerId || null)}`;
   }
 
   const answerMsg = document.getElementById('player-answered-msg');
