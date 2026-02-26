@@ -21,7 +21,14 @@ fetch('/api/build-info')
 // Socket.io connection
 // The server serves socket.io client at /socket.io/socket.io.js
 // ─────────────────────────────────────────────
-const socket = io(window.location.origin);
+const socket = io(window.location.origin, {
+  transports: ['websocket', 'polling'],
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 600,
+  reconnectionDelayMax: 5000,
+  timeout: 20000,
+});
 const queryParams = new URLSearchParams(window.location.search);
 const quizSlugFromUrl = queryParams.get('quiz');
 const modeFromUrl     = queryParams.get('mode');
@@ -2922,6 +2929,29 @@ socket.on('connect_error', () => {
   markDiagEvent('socket:connect_error');
   pushJoinDebugLog('socket connect_error');
   setConnectionStatus('error', 'Cannot reach server. Check LAN / local mode IP.');
+});
+
+socket.io.on('reconnect_attempt', (attempt) => {
+  markDiagEvent(`socket:reconnect_attempt_${attempt}`);
+  pushJoinDebugLog(`socket reconnect attempt #${attempt}`);
+  setConnectionStatus('warn', `Reconnecting… (${attempt})`);
+});
+
+socket.io.on('reconnect', (attempt) => {
+  markDiagEvent(`socket:reconnect_ok_${attempt}`);
+  pushJoinDebugLog(`socket reconnected on attempt #${attempt}`);
+  setConnectionStatus('ok', 'Server connected');
+});
+
+socket.io.on('reconnect_error', (error) => {
+  const msg = error?.message || 'unknown reconnect error';
+  pushJoinDebugLog(`socket reconnect_error: ${msg}`);
+});
+
+socket.io.on('reconnect_failed', () => {
+  markDiagEvent('socket:reconnect_failed');
+  pushJoinDebugLog('socket reconnect failed (will keep trying)');
+  setConnectionStatus('error', 'Reconnection is unstable. Retrying…');
 });
 
 socket.on('disconnect', () => {
