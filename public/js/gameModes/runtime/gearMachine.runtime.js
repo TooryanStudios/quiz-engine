@@ -37,22 +37,31 @@ function ensureStyles() {
       -webkit-user-select: none;
     }
     .gear-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 0.6rem;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+      gap: 0;
       margin-bottom: 0.8rem;
+      padding: 0.45rem 0.2rem;
+      min-height: 250px;
     }
-    .gear-card {
-      border: 1px solid rgba(148,163,184,0.3);
-      border-radius: 14px;
-      padding: 0.55rem;
-      background: rgba(2,6,23,0.36);
+    .gear-node {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 0.45rem;
+      gap: 0.35rem;
+      margin: -10px;
+      z-index: 1;
       user-select: none;
       -webkit-user-select: none;
+    }
+    .gear-node.large { margin: -8px; }
+    .gear-angle {
+      font-size: 0.78rem;
+      opacity: 0.86;
+      font-weight: 700;
+      line-height: 1;
     }
     .gear-wheel {
       display: inline-flex;
@@ -71,8 +80,8 @@ function ensureStyles() {
       user-select: none;
     }
     .gear-wheel:active { cursor: grabbing; }
-    .gear-wheel.large { width: 86px; height: 86px; }
-    .gear-wheel.small { width: 64px; height: 64px; }
+    .gear-wheel.large { width: 124px; height: 124px; }
+    .gear-wheel.small { width: 102px; height: 102px; }
     .gear-wheel .core {
       width: 28%;
       height: 28%;
@@ -82,19 +91,19 @@ function ensureStyles() {
     }
     .gear-wheel .marker {
       position: absolute;
-      top: 8px;
+      top: 10px;
       left: 50%;
-      width: 10px;
-      height: 10px;
+      width: 12px;
+      height: 12px;
       border-radius: 999px;
       transform: translateX(-50%);
       background: #f59e0b;
       box-shadow: 0 0 0 1px rgba(254,240,138,0.95), 0 0 12px rgba(245,158,11,0.65);
     }
     .gear-wheel.small .marker {
-      width: 8px;
-      height: 8px;
-      top: 6px;
+      width: 10px;
+      height: 10px;
+      top: 8px;
     }
     .gear-wheel.spinning {
       animation: gear-spin-from 1.8s linear infinite;
@@ -102,27 +111,6 @@ function ensureStyles() {
     @keyframes gear-spin-from {
       from { transform: rotate(var(--start-angle, 0deg)); }
       to { transform: rotate(calc(var(--start-angle, 0deg) + 360deg)); }
-    }
-    .gear-controls {
-      display: flex;
-      gap: 0.4rem;
-    }
-    .gear-btn {
-      border: 1px solid rgba(148,163,184,0.45);
-      border-radius: 999px;
-      background: rgba(30,41,59,0.78);
-      color: #e2e8f0;
-      padding: 0.24rem 0.6rem;
-      font-size: 0.82rem;
-      font-weight: 800;
-      cursor: pointer;
-      user-select: none;
-      -webkit-user-select: none;
-      -webkit-touch-callout: none;
-    }
-    .gear-btn:disabled {
-      opacity: 0.45;
-      cursor: not-allowed;
     }
     .gear-machine-actions {
       display: flex;
@@ -153,6 +141,15 @@ function ensureStyles() {
       opacity: 0.92;
       line-height: 1.35;
       min-height: 1.2rem;
+    }
+    @media (max-width: 640px) {
+      .gear-grid {
+        min-height: 220px;
+      }
+      .gear-node { margin: -12px; }
+      .gear-node.large { margin: -10px; }
+      .gear-wheel.large { width: 114px; height: 114px; }
+      .gear-wheel.small { width: 92px; height: 92px; }
     }
   `;
 
@@ -219,7 +216,7 @@ function renderSpectatorView({ data }) {
       <div class="gear-machine-title">⚙️ Gear Machine</div>
       <div class="gear-grid">
         ${gears.map((gear) => `
-          <div class="gear-card">
+          <div class="gear-node ${gear.size || 'small'}">
             <div class="gear-wheel ${gear.size || 'small'}" style="transform:rotate(0deg)"><span class="marker"></span><span class="core"></span></div>
             <div style="font-size:0.76rem;opacity:0.85;">Gear ${gear.id}</div>
           </div>
@@ -258,13 +255,9 @@ function renderPlayerView({ data, state, socket }) {
       <div class="gear-machine-title">⚙️ رتّب التروس ثم شغّل الآلة</div>
       <div class="gear-grid">
         ${gears.map((gear, index) => `
-          <div class="gear-card" data-gear-card="${index}">
+          <div class="gear-node ${gear.size || 'small'}" data-gear-node="${index}">
             <div class="gear-wheel ${gear.size || 'small'}" data-gear-wheel="${index}" style="transform:rotate(${Number(angles[index] || 0)}deg)"><span class="marker"></span><span class="core"></span></div>
-            <div class="gear-controls">
-              <button type="button" class="gear-btn" data-gear-rot-left="${index}">↺</button>
-              <button type="button" class="gear-btn" data-gear-rot-right="${index}">↻</button>
-            </div>
-            <div style="font-size:0.74rem;opacity:0.82;">زاوية: <span data-gear-angle="${index}">${formatAngle(angles[index] || 0)}</span></div>
+            <div class="gear-angle">${formatAngle(angles[index] || 0)}</div>
           </div>
         `).join('')}
       </div>
@@ -278,41 +271,15 @@ function renderPlayerView({ data, state, socket }) {
   `;
 
   gears.forEach((gear, index) => {
-    const step = Number(gear.step || 30);
-    const leftBtn = playerGrid.querySelector(`[data-gear-rot-left="${index}"]`);
-    const rightBtn = playerGrid.querySelector(`[data-gear-rot-right="${index}"]`);
     const wheelEl = playerGrid.querySelector(`[data-gear-wheel="${index}"]`);
-    const angleLabel = playerGrid.querySelector(`[data-gear-angle="${index}"]`);
+    const nodeEl = playerGrid.querySelector(`[data-gear-node="${index}"]`);
+    const angleLabel = nodeEl ? nodeEl.querySelector('.gear-angle') : null;
 
     const refreshAngle = () => {
       const rawAngle = Number(state.__gearAngles[index] || 0);
       if (wheelEl) wheelEl.style.transform = `rotate(${rawAngle}deg)`;
       if (angleLabel) angleLabel.textContent = formatAngle(rawAngle);
     };
-
-    if (leftBtn) {
-      leftBtn.addEventListener('mousedown', (event) => event.preventDefault());
-      leftBtn.addEventListener('touchstart', (event) => event.preventDefault(), { passive: false });
-      leftBtn.addEventListener('click', () => {
-        if (machine.phase === 'finished') return;
-        state.__gearAngles[index] = Number(state.__gearAngles[index] || 0) - step;
-        if (typeof Sounds.gearTick === 'function') Sounds.gearTick();
-        else Sounds.click();
-        refreshAngle();
-      });
-    }
-
-    if (rightBtn) {
-      rightBtn.addEventListener('mousedown', (event) => event.preventDefault());
-      rightBtn.addEventListener('touchstart', (event) => event.preventDefault(), { passive: false });
-      rightBtn.addEventListener('click', () => {
-        if (machine.phase === 'finished') return;
-        state.__gearAngles[index] = Number(state.__gearAngles[index] || 0) + step;
-        if (typeof Sounds.gearTick === 'function') Sounds.gearTick();
-        else Sounds.click();
-        refreshAngle();
-      });
-    }
 
     if (wheelEl) {
       const dragState = {
@@ -379,10 +346,9 @@ function renderPlayerView({ data, state, socket }) {
 
   const runBtn = document.getElementById('gear-run-btn');
   if (runBtn) {
-    runBtn.addEventListener('mousedown', (event) => event.preventDefault());
-    runBtn.addEventListener('touchstart', (event) => event.preventDefault(), { passive: false });
-    runBtn.addEventListener('click', () => {
+    runBtn.addEventListener('pointerup', () => {
       if (machine.phase === 'finished') return;
+      if (runBtn.disabled) return;
       runBtn.disabled = true;
       document.querySelectorAll('.gear-wheel').forEach((el, idx) => {
         const currentAngle = Number(state.__gearAngles?.[idx] || 0);
