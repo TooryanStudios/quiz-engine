@@ -250,13 +250,11 @@ function ensureTurnOverlay() {
   return overlay;
 }
 
-function maybeShowTurnOverlay(xo, socketId, isYourTurn, challenger) {
-  if (!socketId || !challenger || !isYourTurn) return;
+function maybeShowTurnOverlay(xo, socketId, isYourTurn) {
+  if (!socketId || !isYourTurn) return;
   const turnSequence = Number(xo?.turnSequence || 0);
   if (!turnSequence) return;
-  const board = Array.isArray(xo?.board) ? xo.board : [];
-  const boardFilled = board.filter(Boolean).length;
-  const key = `${xo.round || 0}:${turnSequence || 'na'}:${xo.activePlayerId || ''}:${boardFilled}:${socketId}`;
+  const key = `${xo.round || 0}:${turnSequence}:${xo.activePlayerId || ''}:${socketId}`;
   if (key === lastTurnOverlayKey) return;
   lastTurnOverlayKey = key;
 
@@ -265,12 +263,21 @@ function maybeShowTurnOverlay(xo, socketId, isYourTurn, challenger) {
   if (text) text.textContent = '🔥 دورك الآن!';
 
   overlay.classList.remove('is-showing');
-  void overlay.offsetWidth;
+
+  // Force animation restart on the child element (not just the parent).
+  // animation-fill-mode:both keeps it frozen at opacity:0 after first play —
+  // clearing inline animation and triggering a reflow on the text node itself is required.
+  if (text) {
+    text.style.animation = 'none';
+    void text.offsetWidth; // reflow on the animated element
+    text.style.animation = '';
+  }
+
   overlay.classList.add('is-showing');
 
   setTimeout(() => {
     overlay.classList.remove('is-showing');
-  }, 1400);
+  }, 1500);
 }
 
 function updateChallengerBadge({ isYourTurn, challenger, activeNickname }) {
@@ -363,6 +370,12 @@ function renderPlayerBoard({ data, socket, state }) {
   const activeSymbol = xo.activeSymbol || 'X';
   const challenger = (xo.players || []).find((player) => player?.id === socket.id) || null;
   const isYourTurn = !!challenger && !!activePlayerId && activePlayerId === socket.id;
+  const turnInputKey = `${xo.round || 0}:${xo.turnSequence || 0}:${activePlayerId || ''}:${socket?.id || ''}`;
+
+  if (isYourTurn && state.__xoTurnInputKey !== turnInputKey) {
+    state.__xoTurnInputKey = turnInputKey;
+    state.hasAnswered = false;
+  }
 
   const playerGrid = document.getElementById('player-options-grid');
   if (!playerGrid) return;
@@ -371,14 +384,14 @@ function renderPlayerBoard({ data, socket, state }) {
 
   const answerMsg = document.getElementById('player-answered-msg');
   const { turnLine, playersLine } = buildTurnLines(xo);
-  maybeShowTurnOverlay(xo, socket?.id, isYourTurn, challenger);
+  maybeShowTurnOverlay(xo, socket?.id, isYourTurn);
   updateChallengerBadge({ isYourTurn, challenger, activeNickname });
 
   if (answerMsg) {
     if (!challenger) {
       setCompactTwoLineNote(answerMsg, `👀 أنت متفرج • ${turnLine}`, playersLine);
     } else if (isYourTurn) {
-      setCompactTwoLineNote(answerMsg, `⭕ دورك الآن (${challenger.symbol || activeSymbol}) • ${turnLine}`, playersLine);
+      setCompactTwoLineNote(answerMsg, `🔥 دورك الآن (${challenger.symbol || activeSymbol}) • ${turnLine}`, playersLine);
     } else {
       setCompactTwoLineNote(answerMsg, `⌛ انتظر ${activeNickname} (${activeSymbol}) • ${turnLine}`, playersLine);
     }
@@ -389,6 +402,7 @@ function renderPlayerBoard({ data, socket, state }) {
       if (!isYourTurn || state.hasAnswered) return;
       const cellIndex = Number(cellButton.getAttribute('data-xo-cell'));
       if (!Number.isInteger(cellIndex)) return;
+      state.hasAnswered = true;
       socket.emit('player:answer', {
         questionIndex: data.questionIndex,
         answer: { cellIndex },
