@@ -12,6 +12,18 @@ import {
   type QuestionTypeAccessTier,
   type QuestionTypeId,
 } from '../config/questionTypes'
+import {
+  DEFAULT_ENABLED_MINI_GAME_IDS,
+  normalizeEnabledMiniGameIds,
+  normalizeMiniGameAccessById,
+  normalizeMiniGameArabicNames,
+  normalizeMiniGameEnglishNames,
+  MINI_GAME_DEFAULT_ACCESS_BY_ID,
+  MINI_GAME_DEFAULT_ARABIC_NAMES,
+  MINI_GAME_DEFAULT_ENGLISH_NAMES,
+  type MiniGameAccessTier,
+  type MiniGameId,
+} from '../config/miniGames'
 
 export interface GameSession {
   id: string
@@ -39,6 +51,15 @@ export interface QuestionTypeSettings {
   enabledQuestionTypeIds: QuestionTypeId[]
   titlesByType: Record<QuestionTypeId, string>
   accessByType: Record<QuestionTypeId, QuestionTypeAccessTier>
+  updatedAt?: any
+  updatedBy?: string
+}
+
+export interface MiniGameSettings {
+  enabledMiniGameIds: MiniGameId[]
+  englishNamesById: Record<MiniGameId, string>
+  arabicNamesById: Record<MiniGameId, string>
+  accessById: Record<MiniGameId, MiniGameAccessTier>
   updatedAt?: any
   updatedBy?: string
 }
@@ -81,6 +102,7 @@ const quizzesCol  = collection(db, 'quizzes')
 const usersCol    = collection(db, 'users')
 const statsDoc    = doc(db, 'platform_stats', 'global')
 const questionTypeSettingsDoc = doc(db, 'platform_settings', 'question_types')
+const miniGameSettingsDoc = doc(db, 'platform_settings', 'mini_games')
 
 // ── Sessions ─────────────────────────────────────────────────────────────────
 
@@ -234,6 +256,51 @@ export async function updateQuestionTypeSettings(
     enabledQuestionTypeIds: normalized,
     titlesByType: normalizedTitles,
     accessByType: normalizedAccess,
+    updatedAt: serverTimestamp(),
+    ...(updatedBy ? { updatedBy } : {}),
+  }, { merge: true })
+}
+
+// ── Mini game settings (master-admin controlled) ────────────────────────────
+
+export function subscribeMiniGameSettings(onData: (settings: MiniGameSettings) => void) {
+  return onSnapshot(miniGameSettingsDoc, (snap) => {
+    const data = snap.data() || {}
+    onData({
+      enabledMiniGameIds: normalizeEnabledMiniGameIds(data.enabledMiniGameIds),
+      englishNamesById: normalizeMiniGameEnglishNames(data.englishNamesById),
+      arabicNamesById: normalizeMiniGameArabicNames(data.arabicNamesById),
+      accessById: normalizeMiniGameAccessById(data.accessById),
+      updatedAt: data.updatedAt,
+      updatedBy: data.updatedBy,
+    })
+  }, () => {
+    onData({
+      enabledMiniGameIds: [...DEFAULT_ENABLED_MINI_GAME_IDS],
+      englishNamesById: { ...MINI_GAME_DEFAULT_ENGLISH_NAMES },
+      arabicNamesById: { ...MINI_GAME_DEFAULT_ARABIC_NAMES },
+      accessById: { ...MINI_GAME_DEFAULT_ACCESS_BY_ID },
+    })
+  })
+}
+
+export async function updateMiniGameSettings(
+  enabledMiniGameIds: unknown,
+  englishNamesById: unknown,
+  arabicNamesById: unknown,
+  accessById: unknown,
+  updatedBy?: string,
+) {
+  const normalizedEnabled = normalizeEnabledMiniGameIds(enabledMiniGameIds)
+  const normalizedEnglish = normalizeMiniGameEnglishNames(englishNamesById)
+  const normalizedArabic = normalizeMiniGameArabicNames(arabicNamesById)
+  const normalizedAccess = normalizeMiniGameAccessById(accessById)
+
+  await setDoc(miniGameSettingsDoc, {
+    enabledMiniGameIds: normalizedEnabled,
+    englishNamesById: normalizedEnglish,
+    arabicNamesById: normalizedArabic,
+    accessById: normalizedAccess,
     updatedAt: serverTimestamp(),
     ...(updatedBy ? { updatedBy } : {}),
   }, { merge: true })

@@ -12,6 +12,7 @@ import { useQuizzesData }   from './master/hooks/useQuizzesData'
 import { useUsersData }     from './master/hooks/useUsersData'
 import { usePlatformStats } from './master/hooks/usePlatformStats'
 import { useQuestionTypeSettings } from './master/hooks/useQuestionTypeSettings'
+import { useMiniGameSettings } from './master/hooks/useMiniGameSettings'
 
 // ── Tab components ────────────────────────────────────────────────────────────
 import { OverviewTab }    from './master/OverviewTab'
@@ -21,6 +22,7 @@ import { EngagementTab }  from './master/EngagementTab'
 import { CreatorsTab }    from './master/CreatorsTab'
 import { UsersTab }       from './master/UsersTab'
 import { QuestionTypesTab } from './master/QuestionTypesTab'
+import { MiniGamesTab } from './master/MiniGamesTab'
 
 const BASE = import.meta.env.VITE_MASTER_PATH as string ?? '/admin-portal'
 
@@ -30,6 +32,7 @@ const TABS: { id: MasterTab; label: string; path: string }[] = [
   { id: 'quizzes',    label: '📋 Content',    path: 'content' },
   { id: 'engagement', label: '📊 Engagement', path: 'engagement' },
   { id: 'questionTypes', label: '🧩 Question Types', path: 'question-types' },
+  { id: 'miniGames', label: '🎮 Mini Games', path: 'mini-games' },
   { id: 'creators',   label: '👤 Creators',   path: 'creators' },
   { id: 'users',      label: '👥 Users',      path: 'users' },
 ]
@@ -57,6 +60,7 @@ export function MasterAdminPage() {
   const usersData    = useUsersData()
   const platformStats = usePlatformStats()
   const questionTypeSettings = useQuestionTypeSettings()
+  const miniGameSettings = useMiniGameSettings()
 
   // Derived aggregates for Overview
   const totalPlays   = quizzesData.quizzes.reduce((s, q) => s + (q.totalPlays   || 0), 0)
@@ -110,6 +114,16 @@ export function MasterAdminPage() {
             accessByType={questionTypeSettings.accessByType}
             updatedAt={questionTypeSettings.updatedAt}
             onSave={(nextEnabled, nextTitlesByType, nextAccessByType) => questionTypeSettings.save(nextEnabled, nextTitlesByType, nextAccessByType, auth.currentUser?.uid)}
+          />
+        )}
+        {activeTab === 'miniGames' && (
+          <MiniGamesTab
+            enabledMiniGameIds={miniGameSettings.enabledMiniGameIds}
+            englishNamesById={miniGameSettings.englishNamesById}
+            arabicNamesById={miniGameSettings.arabicNamesById}
+            accessById={miniGameSettings.accessById}
+            updatedAt={miniGameSettings.updatedAt}
+            onSave={(nextEnabled, nextEnglishNamesById, nextArabicNamesById, nextAccessById) => miniGameSettings.save(nextEnabled, nextEnglishNamesById, nextArabicNamesById, nextAccessById, auth.currentUser?.uid)}
           />
         )}
         {activeTab === 'creators'   && <CreatorsTab   creators={creators} users={usersData.users} />}

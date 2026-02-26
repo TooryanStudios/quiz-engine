@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from 'react'
+﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { storage } from '../lib/firebase'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -20,14 +20,23 @@ import {
   type QuestionTypeId,
 } from '../config/questionTypes'
 import {
+  DEFAULT_ENABLED_MINI_GAME_IDS,
+  MINI_GAME_DEFINITIONS,
+  MINI_GAME_DEFAULT_ACCESS_BY_ID,
+  MINI_GAME_DEFAULT_ARABIC_NAMES,
+  MINI_GAME_DEFAULT_ENGLISH_NAMES,
+  MINI_GAME_IDS,
+  type MiniGameAccessTier,
+  type MiniGameId,
+} from '../config/miniGames'
+import {
   coerceQuestionToSchemaType,
   getQuestionTypeEditorMeta,
   getQuestionTypeTimerPolicy,
   sanitizeQuestionBySchema,
 } from '../config/questionTypeSchemas'
 import { createQuiz, deleteQuiz, findQuizByOwnerAndSlug, getQuizById, updateQuiz } from '../lib/quizRepo'
-import { subscribeQuestionTypeSettings } from '../lib/adminRepo'
-import { incrementPlatformStat } from '../lib/adminRepo'
+import { incrementPlatformStat, subscribeMiniGameSettings, subscribeQuestionTypeSettings } from '../lib/adminRepo'
 import placeholderImg from '../assets/QYan_logo_300x164.jpg'
 
 const IS_LOCAL_DEV = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
@@ -80,110 +89,16 @@ const SAMPLE_QUESTIONS: QuizQuestion[] = [
   },
 ]
 
-const GAME_MODE_OPTIONS = [
-  {
-    id: '',
-    name: 'Classic Quiz (no game mode)',
-    description: 'وضع الاختبار التقليدي بدون ميكانيك إضافي.',
-    howToPlay: 'ابدأ اللعبة وسيجيب جميع اللاعبين على كل سؤال بالطريقة المعتادة.',
-  },
-  {
-    id: 'clue-chain',
-    name: 'Clue Chain',
-    description: 'تسلسل أسئلة يعتمد على جمع الأدلة خطوة بخطوة.',
-    howToPlay: 'كل إجابة صحيحة تقرّب الفريق من فك السلسلة كاملة.',
-  },
-  {
-    id: 'mystery-room-quiz',
-    name: 'Mystery Room Quiz',
-    description: 'تحدي لغز غرفة غامضة مع تقدّم مرحلي.',
-    howToPlay: 'جاوبوا الأسئلة بالترتيب لفتح عناصر الغرفة والوصول للحل النهائي.',
-  },
-  {
-    id: 'build-the-story',
-    name: 'Build-the-Story Challenge',
-    description: 'تجميع قصة تدريجيًا عبر الإجابات.',
-    howToPlay: 'كل سؤال يضيف جزءًا للقصة. الهدف بناء تسلسل منطقي كامل.',
-  },
-  {
-    id: 'map-quest-trivia',
-    name: 'Map Quest Trivia',
-    description: 'رحلة نقاط على خريطة مبنية على الدقة والسرعة.',
-    howToPlay: 'الإجابات الصحيحة تحرّك الفريق إلى نقاط متقدمة على المسار.',
-  },
-  {
-    id: 'debate-duel-quiz',
-    name: 'Debate Duel Quiz',
-    description: 'مواجهة تعتمد على الاختيار ثم الدفاع عن الإجابة.',
-    howToPlay: 'بعد الإجابة، قدّم الحجة الأسرع والأقوى لكسب النقاط الإضافية.',
-  },
-  {
-    id: 'puzzle-relay',
-    name: 'Puzzle Relay',
-    description: 'تتابع أدوار: لاعب واحد يجيب في كل سؤال ثم ينتقل الدور.',
-    howToPlay: 'انضمّ بلاعبين على الأقل. في كل سؤال يظهر اللاعب النشط فقط ويقوم بالإجابة ثم ينتقل الدور للسؤال التالي.',
-  },
-  {
-    id: 'xo-duel',
-    name: 'X O Duel',
-    description: 'مبارزة X/O بين لاعبين داخل جلسة اللعب.',
-    howToPlay: 'انضمّ بلاعبين على الأقل (يمكن أن يكون المضيف أحدهما). اختروا الخلايا بالتناوب حتى الفوز أو التعادل.',
-  },
-  {
-    id: 'gear-machine',
-    name: 'Gear Machine',
-    description: 'لفّ التروس الكبيرة والصغيرة حتى تصبح الآلة جاهزة.',
-    howToPlay: 'كل لاعب يضبط زوايا التروس ثم يضغط تشغيل الآلة. أول لاعب يطابق الترتيب الصحيح يفوز فورًا.',
-  },
-  {
-    id: 'creator-studio',
-    name: 'Creator Studio',
-    description: 'اختيار صانع عشوائيًا: يرسم أو يرتّب عناصر، ثم الجمهور يقيّم من 10.',
-    howToPlay: 'في كل جولة يتم اختيار لاعب كصانع. إذا كان السؤال من نوع type يرسم الفكرة، وإذا كان order يرتّب العناصر إبداعيًا. بعد ذلك جميع الآخرين يقيّمون من 1 إلى 10.',
-  },
-  {
-    id: 'runtime-example',
-    name: 'Runtime Example',
-    description: 'وضع تجريبي لإثبات نظام الإضافات البرمجي.',
-    howToPlay: 'استخدمه لاختبار الهوكس وسلوكيات الوضع المخصص أثناء التطوير.',
-  },
-  {
-    id: 'time-pressure-heist',
-    name: 'Time-Pressure Heist',
-    description: 'سباق ضد الوقت مع ضغط متزايد.',
-    howToPlay: 'الإجابات السريعة والدقيقة ضرورية لتجاوز كل مرحلة قبل انتهاء الوقت.',
-  },
-  {
-    id: 'memory-grid-battle',
-    name: 'Memory Grid Battle',
-    description: 'تحدي ذاكرة بصري ضمن شبكة متغيرة.',
-    howToPlay: 'احفظ نمط الشبكة ثم أجب بدقة لاستمرار التقدم.',
-  },
-  {
-    id: 'reverse-quiz',
-    name: 'Reverse Quiz',
-    description: 'قلب منطق السؤال والإجابة لرفع الصعوبة.',
-    howToPlay: 'اقرأ المطلوب بدقة لأن منطق الاختيار معكوس في هذا الوضع.',
-  },
-  {
-    id: 'fact-or-fiction-lab',
-    name: 'Fact or Fiction Lab',
-    description: 'تمييز الحقائق من المعلومات المضللة.',
-    howToPlay: 'حدّد هل العبارة حقيقة أم خيال مع الانتباه للتفاصيل الصغيرة.',
-  },
-  {
-    id: 'creative-constraint-quiz',
-    name: 'Creative Constraint Quiz',
-    description: 'حلول ضمن قيود إبداعية محددة.',
-    howToPlay: 'فكّر خارج الصندوق لكن التزم بالقيد المطلوب في كل جولة.',
-  },
-  {
-    id: 'alliance-betrayal-mode',
-    name: 'Alliance & Betrayal Mode',
-    description: 'تحالفات مؤقتة ومفاجآت تنافسية.',
-    howToPlay: 'نسّق مع فريقك مؤقتًا ثم اختر لحظة الحسم المناسبة لكسب الصدارة.',
-  },
-] as const
+const CLASSIC_GAME_MODE = {
+  id: '',
+  icon: '📘',
+  englishName: 'Classic Quiz',
+  arabicName: 'اختبار كلاسيكي',
+  description: 'وضع الاختبار التقليدي بدون ميني جيم.',
+  howToPlay: 'يتم لعب الأسئلة بالشكل المعتاد.',
+  access: 'free' as const,
+  enabled: true,
+}
 
 const starterQuestion: QuizQuestion = {
   type: 'single',
@@ -290,6 +205,7 @@ export function QuizEditorPage() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [tempAllDuration, setTempAllDuration] = useState(20)
   const [saveAfterMetadata, setSaveAfterMetadata] = useState(false)
+  const [showMiniGamePicker, setShowMiniGamePicker] = useState(false)
 
   // AI Feature States
   const [aiAction, setAiAction] = useState<'generate' | 'recheck' | null>(null)
@@ -298,6 +214,10 @@ export function QuizEditorPage() {
   const [isNarrowScreen, setIsNarrowScreen] = useState(window.innerWidth < 768)
   const [enabledQuestionTypeIds, setEnabledQuestionTypeIds] = useState<QuestionType[]>([...DEFAULT_ENABLED_QUESTION_TYPE_IDS])
   const [questionTypeAccessByType, setQuestionTypeAccessByType] = useState<Record<QuestionTypeId, QuestionTypeAccessTier>>({ ...QUESTION_TYPE_DEFAULT_ACCESS_BY_TYPE })
+  const [enabledMiniGameIds, setEnabledMiniGameIds] = useState<MiniGameId[]>([...DEFAULT_ENABLED_MINI_GAME_IDS])
+  const [miniGameEnglishNamesById, setMiniGameEnglishNamesById] = useState<Record<MiniGameId, string>>({ ...MINI_GAME_DEFAULT_ENGLISH_NAMES })
+  const [miniGameArabicNamesById, setMiniGameArabicNamesById] = useState<Record<MiniGameId, string>>({ ...MINI_GAME_DEFAULT_ARABIC_NAMES })
+  const [miniGameAccessById, setMiniGameAccessById] = useState<Record<MiniGameId, MiniGameAccessTier>>({ ...MINI_GAME_DEFAULT_ACCESS_BY_ID })
   
   type StatusState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'success'; msg: string } | { kind: 'error'; msg: string } | { kind: 'info'; msg: string }
   const [status, setStatus] = useState<StatusState>({ kind: 'idle' })
@@ -338,6 +258,25 @@ export function QuizEditorPage() {
       setQuestionTypeAccessByType(settings.accessByType)
     })
   }, [])
+
+  useEffect(() => {
+    return subscribeMiniGameSettings((settings) => {
+      setEnabledMiniGameIds(settings.enabledMiniGameIds)
+      setMiniGameEnglishNamesById(settings.englishNamesById)
+      setMiniGameArabicNamesById(settings.arabicNamesById)
+      setMiniGameAccessById(settings.accessById)
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!gameModeId) return
+    if (enabledMiniGameIds.includes(gameModeId as MiniGameId)) return
+    setGameModeId('')
+    if (tempGameModeId === gameModeId) {
+      setTempGameModeId('')
+    }
+    showToast({ message: 'تم تعطيل الميني جيم المختار من إعدادات المنصة، وتم الرجوع إلى الوضع الكلاسيكي.', type: 'info' })
+  }, [enabledMiniGameIds, gameModeId, tempGameModeId, showToast])
 
   useEffect(() => {
     if (enabledQuestionTypeIds.length === 0) return
@@ -386,6 +325,7 @@ export function QuizEditorPage() {
     setTempRandomizeQuestions(randomizeQuestions)
     setTempCoverImage(coverImage)
     setTempAllDuration(questions.find((q) => Number.isFinite(q.duration) && (q.duration ?? 0) > 0)?.duration ?? 20)
+    setShowMiniGamePicker(false)
     setShowMetadataDialog(true)
   }
 
@@ -438,6 +378,7 @@ export function QuizEditorPage() {
       setEnableScholarRole(tempEnableScholarRole)
       setRandomizeQuestions(tempRandomizeQuestions)
       setCoverImage(tempCoverImage)
+      setShowMiniGamePicker(false)
       setShowMetadataDialog(false)
       if (saveAfterMetadata) {
         setSaveAfterMetadata(false)
@@ -486,7 +427,25 @@ export function QuizEditorPage() {
 
   const shareSlug = tempSlug || ensureScopedSlug(titleToSlug(tempTitle) || 'quiz', ownerId)
   const shareUrl = `${SERVER_BASE}/player?quiz=${shareSlug}`
-  const selectedGameModeMeta = GAME_MODE_OPTIONS.find((mode) => mode.id === tempGameModeId) || GAME_MODE_OPTIONS[0]
+  const miniGameCards = useMemo(() => {
+    return MINI_GAME_IDS.map((id) => {
+      const definition = MINI_GAME_DEFINITIONS[id]
+      return {
+        id,
+        icon: definition.icon,
+        englishName: miniGameEnglishNamesById[id] ?? definition.defaultEnglishName,
+        arabicName: miniGameArabicNamesById[id] ?? definition.defaultArabicName,
+        description: definition.description,
+        howToPlay: definition.howToPlay,
+        access: miniGameAccessById[id] ?? 'free',
+        enabled: enabledMiniGameIds.includes(id),
+      }
+    })
+  }, [enabledMiniGameIds, miniGameAccessById, miniGameArabicNamesById, miniGameEnglishNamesById])
+
+  const selectedGameModeMeta = tempGameModeId
+    ? miniGameCards.find((mode) => mode.id === tempGameModeId)
+    : CLASSIC_GAME_MODE
 
   const replaceQuestion = (index: number, next: QuizQuestion) => {
     setHasUnsavedChanges(true)
@@ -646,8 +605,8 @@ export function QuizEditorPage() {
       }
     }
 
-    // If all questions deleted and quiz already exists → offer to delete the whole record
-    if (questions.length === 0 && quizId) {
+    // If all questions deleted in classic mode and quiz already exists → offer to delete the whole record
+    if (questions.length === 0 && quizId && !gameModeId) {
       showDialog({
         title: 'Delete Quiz?',
         message: 'There are no questions left. Do you want to permanently delete this quiz?',
@@ -667,9 +626,9 @@ export function QuizEditorPage() {
       return
     }
 
-    // If no questions and no existing record, nothing to save
-    if (questions.length === 0) {
-      showToast({ message: 'Add at least one question before saving.', type: 'info' })
+    // Classic mode requires questions, mini-game mode can run without question set.
+    if (questions.length === 0 && !gameModeId) {
+      showToast({ message: 'Add at least one question before saving classic mode, or choose a mini game.', type: 'info' })
       return
     }
     try {
@@ -999,40 +958,129 @@ export function QuizEditorPage() {
 
               <div>
                 <label style={{ fontSize: '0.9em', color: 'var(--text-mid)', display: 'block', marginBottom: '0.5rem', fontWeight: 600 }}>
-                  🎮 وضع اللعبة
+                  🎮 الميني جيم
                 </label>
-                <select
-                  value={tempGameModeId}
-                  onChange={(e) => setTempGameModeId(e.target.value)}
+                <button
+                  type="button"
+                  onClick={() => setShowMiniGamePicker(true)}
                   style={{
                     width: '100%',
                     padding: '0.75rem',
                     borderRadius: '8px',
                     border: '1px solid var(--border-strong)',
-                    backgroundColor: 'var(--bg-surface)',
+                    background: 'var(--bg-surface)',
                     color: 'var(--text)',
                     boxSizing: 'border-box',
                     fontSize: '1em',
+                    textAlign: 'start',
+                    cursor: 'pointer',
                   }}
                 >
-                  {GAME_MODE_OPTIONS.map((opt) => (
-                    <option key={opt.id || 'classic'} value={opt.id}>{opt.name}</option>
-                  ))}
-                </select>
+                  {selectedGameModeMeta
+                    ? `${selectedGameModeMeta.icon} ${selectedGameModeMeta.englishName} / ${selectedGameModeMeta.arabicName}`
+                    : '📘 Classic Quiz / اختبار كلاسيكي'}
+                </button>
                 <p style={{ marginTop: '0.4rem', fontSize: '0.78em', color: 'var(--text-mid)' }}>
-                  عند الاختيار، سيتم تشغيل هذا الاختبار باستخدام منطق وضع اللعبة المحدد.
+                  يتم اختيار الميني جيم عبر بطاقات (اسم إنجليزي + اسم عربي + أيقونة + شرح).
                 </p>
                 <div style={{ marginTop: '0.55rem', padding: '0.65rem 0.75rem', borderRadius: '10px', border: '1px solid var(--border-strong)', background: 'var(--bg-deep)' }}>
                   <p style={{ margin: 0, color: 'var(--text)', fontWeight: 700, fontSize: '0.83rem' }}>
-                    🧭 {selectedGameModeMeta.name}
+                    {selectedGameModeMeta?.icon || '📘'} {selectedGameModeMeta?.englishName || CLASSIC_GAME_MODE.englishName} · {selectedGameModeMeta?.arabicName || CLASSIC_GAME_MODE.arabicName}
                   </p>
                   <p style={{ margin: '0.25rem 0 0', color: 'var(--text-mid)', fontSize: '0.78rem' }}>
-                    {selectedGameModeMeta.description}
+                    {selectedGameModeMeta?.description || CLASSIC_GAME_MODE.description}
                   </p>
                   <p style={{ margin: '0.28rem 0 0', color: 'var(--text)', fontSize: '0.78rem' }}>
-                    <strong>طريقة اللعب:</strong> {selectedGameModeMeta.howToPlay}
+                    <strong>طريقة اللعب:</strong> {selectedGameModeMeta?.howToPlay || CLASSIC_GAME_MODE.howToPlay}
+                  </p>
+                  <p style={{ margin: '0.28rem 0 0', color: 'var(--text-mid)', fontSize: '0.75rem' }}>
+                    الوصول: {(selectedGameModeMeta?.access || 'free') === 'premium' ? '🔒 Premium' : '🆓 Free'}
                   </p>
                 </div>
+
+                {showMiniGamePicker && (
+                  <div
+                    style={{
+                      position: 'fixed',
+                      inset: 0,
+                      background: 'rgba(2, 6, 23, 0.7)',
+                      backdropFilter: 'blur(5px)',
+                      zIndex: 12000,
+                      display: 'flex',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      padding: '1rem',
+                    }}
+                    onClick={() => setShowMiniGamePicker(false)}
+                  >
+                    <div
+                      style={{
+                        width: 'min(980px, 96vw)',
+                        maxHeight: '86vh',
+                        overflowY: 'auto',
+                        background: 'linear-gradient(180deg, var(--bg-deep) 0%, var(--bg-surface) 100%)',
+                        border: '1px solid var(--border)',
+                        borderRadius: '14px',
+                        padding: '1rem',
+                        boxShadow: '0 24px 80px rgba(2, 6, 23, 0.55)',
+                      }}
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.8rem' }}>
+                        <h3 style={{ margin: 0, color: 'var(--text-bright)' }}>🎮 اختيار الميني جيم</h3>
+                        <button
+                          type="button"
+                          onClick={() => setShowMiniGamePicker(false)}
+                          style={{ border: '1px solid var(--border-strong)', borderRadius: '8px', background: 'var(--bg-surface)', color: 'var(--text)', padding: '0.35rem 0.6rem', cursor: 'pointer' }}
+                        >
+                          إغلاق
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.7rem' }}>
+                        {[CLASSIC_GAME_MODE, ...miniGameCards.filter((game) => game.enabled)].map((game) => {
+                          const selected = tempGameModeId === game.id
+                          const premiumLocked = game.access === 'premium' && !isSubscribed
+                          return (
+                            <button
+                              key={game.id || 'classic'}
+                              type="button"
+                              onClick={() => {
+                                if (premiumLocked) {
+                                  openUpgradeDialog('This mini game is premium. Please upgrade your account to select it.')
+                                  return
+                                }
+                                setTempGameModeId(game.id)
+                                setShowMiniGamePicker(false)
+                              }}
+                              style={{
+                                textAlign: 'start',
+                                border: selected ? '1px solid var(--text-bright)' : '1px solid var(--border-strong)',
+                                borderRadius: '12px',
+                                background: selected ? 'rgba(59,130,246,0.14)' : 'var(--bg-surface)',
+                                padding: '0.75rem',
+                                cursor: premiumLocked ? 'not-allowed' : 'pointer',
+                                opacity: premiumLocked ? 0.68 : 1,
+                              }}
+                            >
+                              <p style={{ margin: 0, color: 'var(--text)', fontWeight: 800, fontSize: '0.9rem' }}>
+                                {game.icon} {game.englishName}
+                              </p>
+                              <p style={{ margin: '0.2rem 0 0', color: 'var(--text-muted)', fontSize: '0.82rem' }}>{game.arabicName}</p>
+                              <p style={{ margin: '0.35rem 0 0', color: 'var(--text-mid)', fontSize: '0.78rem' }}>{game.description}</p>
+                              <p style={{ margin: '0.35rem 0 0', color: 'var(--text)', fontSize: '0.76rem' }}>
+                                <strong>طريقة اللعب:</strong> {game.howToPlay}
+                              </p>
+                              <p style={{ margin: '0.35rem 0 0', color: premiumLocked ? '#fda4af' : 'var(--text-muted)', fontSize: '0.74rem', fontWeight: 700 }}>
+                                {game.access === 'premium' ? '🔒 Premium' : '🆓 Free'}
+                              </p>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.7rem' }}>
