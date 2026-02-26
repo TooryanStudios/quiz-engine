@@ -8,11 +8,18 @@ npm-debug.log*
 # Firebase service account key
 quizengine-e7818-firebase-adminsdk-fbsvc-fd72a24bae.json
 *-firebase-adminsdk-*.json
-admin-app/*
-!admin-app/functions/
-admin-app/functions/*
-!admin-app/functions/package.json
-!admin-app/functions/package-lock.json
+
+# admin-app: keep source tracked, ignore generated/dependency artifacts only
+admin-app/node_modules/
+admin-app/dist/
+admin-app/.firebase/
+admin-app/.env
+admin-app/.env.*
+admin-app/*.log
+admin-app/functions/node_modules/
+admin-app/functions/lib/
+admin-app/functions/.env
+admin-app/functions/.env.*
 
 functions/lib/
 functions/node_modules/

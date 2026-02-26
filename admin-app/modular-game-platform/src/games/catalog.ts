@@ -1,0 +1,88 @@
+import type { GameRegistryEntry } from '../core/types';
+
+export const gameCatalog: GameRegistryEntry[] = [
+    {
+        id: 'clue-chain',
+        name: 'Clue Chain',
+        description: 'Sequential clue solving with progressive team unlocks.',
+        enabledByDefault: true,
+        loader: () => import('./game-01'),
+    },
+    {
+        id: 'mystery-room-quiz',
+        name: 'Mystery Room Quiz',
+        description: 'Escape-room style puzzle rounds with hidden clues.',
+        enabledByDefault: true,
+        loader: () => import('./game-02'),
+    },
+    {
+        id: 'build-the-story',
+        name: 'Build-the-Story Challenge',
+        description: 'Collaborative narrative assembly from quiz fragments.',
+        enabledByDefault: true,
+        loader: () => import('./build-the-story'),
+    },
+    {
+        id: 'map-quest-trivia',
+        name: 'Map Quest Trivia',
+        description: 'Checkpoint-based trivia journey with strategic routing.',
+        enabledByDefault: true,
+        loader: () => import('./map-quest-trivia'),
+    },
+    {
+        id: 'debate-duel-quiz',
+        name: 'Debate Duel Quiz',
+        description: 'Answer + defend format with persuasion scoring.',
+        enabledByDefault: true,
+        loader: () => import('./debate-duel-quiz'),
+    },
+    {
+        id: 'puzzle-relay',
+        name: 'Puzzle Relay',
+        description: 'Role-based relay where each teammate solves one stage.',
+        enabledByDefault: true,
+        loader: () => import('./puzzle-relay'),
+    },
+    {
+        id: 'time-pressure-heist',
+        name: 'Time-Pressure Heist',
+        description: 'Timed vault mission with escalating challenge pressure.',
+        enabledByDefault: true,
+        loader: () => import('./time-pressure-heist'),
+    },
+    {
+        id: 'memory-grid-battle',
+        name: 'Memory Grid Battle',
+        description: 'Visual memory rounds using shared grid reconstruction.',
+        enabledByDefault: true,
+        loader: () => import('./memory-grid-battle'),
+    },
+    {
+        id: 'reverse-quiz',
+        name: 'Reverse Quiz',
+        description: 'Given the answer, players collaborate to infer the question.',
+        enabledByDefault: true,
+        loader: () => import('./reverse-quiz'),
+    },
+    {
+        id: 'fact-or-fiction-lab',
+        name: 'Fact or Fiction Lab',
+        description: 'Evidence-based claim validation with confidence scoring.',
+        enabledByDefault: true,
+        loader: () => import('./fact-or-fiction-lab'),
+    },
+    {
+        id: 'creative-constraint-quiz',
+        name: 'Creative Constraint Quiz',
+        description: 'Puzzle rounds with dynamic speaking and action constraints.',
+        enabledByDefault: true,
+        loader: () => import('./creative-constraint-quiz'),
+    },
+    {
+        id: 'alliance-betrayal-mode',
+        name: 'Alliance & Betrayal Mode',
+        description: 'Temporary alliances and strategic endgame competition.',
+        enabledByDefault: true,
+        loader: () => import('./alliance-betrayal-mode'),
+    },
+];
