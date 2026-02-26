@@ -1824,7 +1824,7 @@ io.on('connection', (socket) => {
 
     // Room not found
     if (!room) {
-      socket.emit('room:error', { message: 'No room found with that PIN.' });
+      socket.emit('room:error', { message: 'No room found with that PIN.', code: 'PIN_NOT_FOUND' });
       return;
     }
 

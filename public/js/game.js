@@ -2127,6 +2127,64 @@ if (pinInputEl) {
 
 // Player Join — Submit form
 let joinTimeoutId = null;
+const MAX_JOIN_RECOVERY_ATTEMPTS = 2;
+let pendingJoinAttempt = null;
+
+function scheduleJoinTimeout(joinBtn) {
+  clearTimeout(joinTimeoutId);
+  joinTimeoutId = setTimeout(() => {
+    if (window.__dbgLog) window.__dbgLog('join TIMEOUT 10s');
+    pushJoinDebugLog('⚠�? TIMEOUT: No room:joined received after 10 seconds');
+    showError('join-error', '⚠�? Timeout joining room. Check your connection and try again.');
+    setConnectionStatus('error', 'Join timeout');
+    if (joinBtn) { joinBtn.disabled = false; joinBtn.textContent = 'Join Game'; }
+  }, 10000);
+}
+
+function emitPlayerJoinAttempt({ pin, nickname, avatar, playerId }, joinBtn) {
+  pushJoinDebugLog(`emit player:join pin=${pin} nickname=${nickname} connected=${socket.connected}`);
+  setConnectionStatus('warn', 'Joining room…');
+  scheduleJoinTimeout(joinBtn);
+  socket.emit('player:join', { pin, nickname, avatar, playerId });
+}
+
+function retryJoinAfterReconnect(joinBtn) {
+  if (!pendingJoinAttempt) return false;
+  if (pendingJoinAttempt.retries >= MAX_JOIN_RECOVERY_ATTEMPTS) return false;
+
+  pendingJoinAttempt.retries += 1;
+  const attemptNumber = pendingJoinAttempt.retries;
+  const payload = {
+    pin: pendingJoinAttempt.pin,
+    nickname: pendingJoinAttempt.nickname,
+    avatar: pendingJoinAttempt.avatar,
+    playerId: pendingJoinAttempt.playerId,
+  };
+
+  pushJoinDebugLog(`PIN not found — retry ${attemptNumber}/${MAX_JOIN_RECOVERY_ATTEMPTS} with socket reconnect`);
+  setConnectionStatus('warn', `Retrying join (${attemptNumber}/${MAX_JOIN_RECOVERY_ATTEMPTS})…`);
+  if (joinBtn) {
+    joinBtn.disabled = true;
+    joinBtn.textContent = 'Retrying…';
+  }
+
+  try {
+    socket.disconnect();
+  } catch (_err) {}
+
+  setTimeout(() => {
+    const doJoin = () => {
+      socket.off('connect', doJoin);
+      emitPlayerJoinAttempt(payload, joinBtn);
+    };
+
+    socket.once('connect', doJoin);
+    socket.connect();
+  }, 300 + (attemptNumber * 250));
+
+  return true;
+}
+
 document.getElementById('form-join').addEventListener('submit', (e) => {
   e.preventDefault();
   enableKeepAwake();
@@ -2145,25 +2203,19 @@ document.getElementById('form-join').addEventListener('submit', (e) => {
   Sounds.click();
   state.pin = pin;
   state.nickname = nickname;
+  pendingJoinAttempt = {
+    pin,
+    nickname,
+    avatar: state.avatar,
+    playerId: myPlayerId,
+    retries: 0,
+  };
 
   // Visual feedback: disable join button and show joining state
   const joinBtn = e.target.querySelector('button[type="submit"]');
   if (joinBtn) { joinBtn.disabled = true; joinBtn.textContent = 'Joining…'; }
 
-  pushJoinDebugLog(`emit player:join pin=${pin} nickname=${nickname} connected=${socket.connected}`);
-  setConnectionStatus('warn', 'Joining room…');
-
-  // Timeout failsafe: if no response in 10 seconds, show error
-  clearTimeout(joinTimeoutId);
-  joinTimeoutId = setTimeout(() => {
-    if (window.__dbgLog) window.__dbgLog('join TIMEOUT 10s');
-    pushJoinDebugLog('⚠�? TIMEOUT: No room:joined received after 10 seconds');
-    showError('join-error', '⚠�? Timeout joining room. Check your connection and try again.');
-    setConnectionStatus('error', 'Join timeout');
-    if (joinBtn) { joinBtn.disabled = false; joinBtn.textContent = 'Join Game'; }
-  }, 10000);
-
-  socket.emit('player:join', { pin, nickname, avatar: state.avatar, playerId: myPlayerId });
+  emitPlayerJoinAttempt({ pin, nickname, avatar: state.avatar, playerId: myPlayerId }, joinBtn);
 });
 
 // Player Lobby — Edit Profile toggle
@@ -2885,6 +2937,7 @@ socket.on('disconnect', () => {
 socket.on('room:joined', (data) => {
   // Clear join timeout
   clearTimeout(joinTimeoutId);
+  pendingJoinAttempt = null;
   if (window.__dbgLog) window.__dbgLog('room:joined received');
 
   // Re-enable join button in case user re-submits later
@@ -3166,8 +3219,13 @@ socket.on('room:error', ({ message, code }) => {
   pushJoinDebugLog(`room:error ${message}${code ? ` (code: ${code})` : ''}`);
   if (window.__dbgLog) window.__dbgLog('room:error: ' + message);
 
-  // Re-enable join button
   const joinBtn = document.querySelector('#form-join button[type="submit"]');
+
+  if (state.role === 'player' && code === 'PIN_NOT_FOUND' && retryJoinAfterReconnect(joinBtn)) {
+    return;
+  }
+
+  // Re-enable join button
   if (joinBtn) { joinBtn.disabled = false; joinBtn.textContent = 'Join Game'; }
 
   if (state.role === 'host') {
