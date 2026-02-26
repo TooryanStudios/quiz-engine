@@ -2975,13 +2975,36 @@ socket.on('room:rejoined', ({ pin, nickname, avatar, players, score, streak, roo
     if (roomState === 'lobby') {
       showView('view-player-lobby');
     } else if ((roomState === 'question' || roomState === 'question-pending') && questionData) {
-      renderQuestion({
+      const resumedQuestionPayload = {
         questionIndex: questionData.questionIndex,
         total: questionData.total,
         question: questionData.question,
         duration: questionData.timeRemaining, // start client timer at remaining time, not full duration
         players: questionData.players,
-      }, false);
+      };
+
+      let handledByMode = callGameModeHook('onGameQuestion', {
+        data: resumedQuestionPayload,
+        state,
+        socket,
+        renderQuestion,
+        showView,
+      });
+
+      if (handledByMode !== true) {
+        handledByMode = callFallbackGameModeHook('onGameQuestion', {
+          data: resumedQuestionPayload,
+          state,
+          socket,
+          renderQuestion,
+          showView,
+        });
+      }
+
+      if (handledByMode !== true) {
+        renderQuestion(resumedQuestionPayload, false);
+      }
+
       // Sync questionStartTime so any elapsed-time logic is correct
       state.questionStartTime = Date.now() - (questionData.duration - questionData.timeRemaining) * 1000;
       state.questionDuration  = questionData.duration; // restore correct total for scoring context
