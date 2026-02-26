@@ -1,3 +1,5 @@
+import { triggerScreenShake } from '../../utils/effects.js?v=121';
+
 function renderXoBoardHTML(board, interactive, activeSymbol, options = {}) {
   const winningLine = Array.isArray(options.winningLine) ? new Set(options.winningLine) : null;
   const cells = board.map((cell, index) => {
@@ -35,6 +37,7 @@ function renderXoBoardHTML(board, interactive, activeSymbol, options = {}) {
 }
 
 let lastTurnOverlayKey = '';
+let lastLoseShakeKey = '';
 
 function buildTurnLines(xo = {}) {
   const players = Array.isArray(xo.players) ? xo.players : [];
@@ -450,6 +453,12 @@ function renderRoundResultPhase({ data, state, socket, isHostOnly }) {
     title = '💥 You Lost';
     subtitle = `You sit out this round, then rejoin next round • ${nextRoundSec}s`;
     kind = 'lose';
+
+    const shakeKey = `${xo.round || 0}:${winnerId || ''}:${loserId || ''}:${socket.id}`;
+    if (shakeKey !== lastLoseShakeKey) {
+      lastLoseShakeKey = shakeKey;
+      triggerScreenShake({ axis: 'both', distancePx: 11, durationMs: 520 });
+    }
   } else {
     title = '👀 Spectating Round Result';
     subtitle = `Winner keeps playing against a random challenger in ${nextRoundSec}s`;
