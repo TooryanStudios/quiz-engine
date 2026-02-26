@@ -5,6 +5,11 @@ function normalizeAngle(value) {
   return ((Math.round(n) % 360) + 360) % 360;
 }
 
+function formatAngle(value) {
+  const n = Number(value || 0);
+  return `${Math.round(n)}°`;
+}
+
 function ensureStyles() {
   if (document.getElementById('gear-machine-styles')) return;
 
@@ -46,12 +51,19 @@ function ensureStyles() {
       display: inline-flex;
       align-items: center;
       justify-content: center;
+      position: relative;
       border-radius: 999px;
       border: 4px solid rgba(148,163,184,0.5);
-      box-shadow: inset 0 0 0 2px rgba(2,6,23,0.42), 0 0 0 1px rgba(148,163,184,0.3);
+      box-shadow: inset 0 0 0 2px rgba(2,6,23,0.42), 0 0 0 1px rgba(148,163,184,0.3), 0 12px 26px rgba(2,6,23,0.35);
       transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
-      background: radial-gradient(circle at 35% 35%, rgba(148,163,184,0.25), rgba(15,23,42,0.65));
+      background:
+        radial-gradient(circle at 28% 24%, rgba(148,163,184,0.42), rgba(71,85,105,0.08) 36%, rgba(2,6,23,0.6) 100%),
+        conic-gradient(from 0deg, rgba(30,41,59,0.9), rgba(51,65,85,0.88), rgba(30,41,59,0.92));
+      cursor: grab;
+      touch-action: none;
+      user-select: none;
     }
+    .gear-wheel:active { cursor: grabbing; }
     .gear-wheel.large { width: 86px; height: 86px; }
     .gear-wheel.small { width: 64px; height: 64px; }
     .gear-wheel .core {
@@ -60,6 +72,22 @@ function ensureStyles() {
       border-radius: 999px;
       background: rgba(2,6,23,0.7);
       border: 2px solid rgba(148,163,184,0.65);
+    }
+    .gear-wheel .marker {
+      position: absolute;
+      top: 8px;
+      left: 50%;
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      transform: translateX(-50%);
+      background: #f59e0b;
+      box-shadow: 0 0 0 1px rgba(254,240,138,0.95), 0 0 12px rgba(245,158,11,0.65);
+    }
+    .gear-wheel.small .marker {
+      width: 8px;
+      height: 8px;
+      top: 6px;
     }
     .gear-wheel.spinning {
       animation: gear-spin 0.9s linear infinite;
@@ -119,6 +147,12 @@ function ensureStyles() {
 }
 
 function hideDefaultQuestionWidgets() {
+  const playerGrid = document.getElementById('player-options-grid');
+  if (playerGrid) playerGrid.style.display = 'grid';
+
+  const hostGrid = document.getElementById('host-options-grid');
+  if (hostGrid) hostGrid.style.display = 'grid';
+
   ['player-type-container', 'player-match-container', 'player-order-container', 'player-boss-panel'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
@@ -167,7 +201,7 @@ function renderSpectatorView({ data }) {
       <div class="gear-grid">
         ${gears.map((gear) => `
           <div class="gear-card">
-            <div class="gear-wheel ${gear.size || 'small'}" style="transform:rotate(${normalizeAngle(gear.targetAngle || 0)}deg)"><span class="core"></span></div>
+            <div class="gear-wheel ${gear.size || 'small'}" style="transform:rotate(${normalizeAngle(gear.targetAngle || 0)}deg)"><span class="marker"></span><span class="core"></span></div>
             <div style="font-size:0.76rem;opacity:0.85;">Gear ${gear.id}</div>
           </div>
         `).join('')}
@@ -180,9 +214,14 @@ function renderSpectatorView({ data }) {
 function renderPlayerView({ data, state, socket }) {
   const playerGrid = document.getElementById('player-options-grid');
   if (!playerGrid) return;
+  playerGrid.style.display = 'grid';
 
   const machine = data?.question?.gearMachine || {};
   const gears = Array.isArray(machine.gears) ? machine.gears : [];
+  if (!gears.length) {
+    playerGrid.innerHTML = '<div class="gear-machine-wrap"><div class="gear-machine-status">⚠️ لم يتم تحميل بيانات التروس. حدّث الصفحة أو أعد بدء الجولة.</div></div>';
+    return;
+  }
   const machineKey = `${machine.startedAt || 0}:${gears.length}`;
 
   if (state.__gearMachineKey !== machineKey) {
@@ -199,12 +238,12 @@ function renderPlayerView({ data, state, socket }) {
       <div class="gear-grid">
         ${gears.map((gear, index) => `
           <div class="gear-card" data-gear-card="${index}">
-            <div class="gear-wheel ${gear.size || 'small'}" data-gear-wheel="${index}" style="transform:rotate(${normalizeAngle(angles[index] || 0)}deg)"><span class="core"></span></div>
+            <div class="gear-wheel ${gear.size || 'small'}" data-gear-wheel="${index}" style="transform:rotate(${Number(angles[index] || 0)}deg)"><span class="marker"></span><span class="core"></span></div>
             <div class="gear-controls">
               <button type="button" class="gear-btn" data-gear-rot-left="${index}">↺</button>
               <button type="button" class="gear-btn" data-gear-rot-right="${index}">↻</button>
             </div>
-            <div style="font-size:0.74rem;opacity:0.82;">زاوية: <span data-gear-angle="${index}">${normalizeAngle(angles[index] || 0)}°</span></div>
+            <div style="font-size:0.74rem;opacity:0.82;">زاوية: <span data-gear-angle="${index}">${formatAngle(angles[index] || 0)}</span></div>
           </div>
         `).join('')}
       </div>
@@ -225,16 +264,15 @@ function renderPlayerView({ data, state, socket }) {
     const angleLabel = playerGrid.querySelector(`[data-gear-angle="${index}"]`);
 
     const refreshAngle = () => {
-      const normalized = normalizeAngle(state.__gearAngles[index] || 0);
-      state.__gearAngles[index] = normalized;
-      if (wheelEl) wheelEl.style.transform = `rotate(${normalized}deg)`;
-      if (angleLabel) angleLabel.textContent = `${normalized}°`;
+      const rawAngle = Number(state.__gearAngles[index] || 0);
+      if (wheelEl) wheelEl.style.transform = `rotate(${rawAngle}deg)`;
+      if (angleLabel) angleLabel.textContent = formatAngle(rawAngle);
     };
 
     if (leftBtn) {
       leftBtn.addEventListener('click', () => {
         if (machine.phase === 'finished') return;
-        state.__gearAngles[index] = normalizeAngle((state.__gearAngles[index] || 0) - step);
+        state.__gearAngles[index] = Number(state.__gearAngles[index] || 0) - step;
         Sounds.click();
         refreshAngle();
       });
@@ -243,9 +281,62 @@ function renderPlayerView({ data, state, socket }) {
     if (rightBtn) {
       rightBtn.addEventListener('click', () => {
         if (machine.phase === 'finished') return;
-        state.__gearAngles[index] = normalizeAngle((state.__gearAngles[index] || 0) + step);
+        state.__gearAngles[index] = Number(state.__gearAngles[index] || 0) + step;
         Sounds.click();
         refreshAngle();
+      });
+    }
+
+    if (wheelEl) {
+      const dragState = {
+        active: false,
+        pointerId: null,
+        lastDeg: 0,
+      };
+
+      const pointerDeg = (event) => {
+        const rect = wheelEl.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const dx = event.clientX - cx;
+        const dy = event.clientY - cy;
+        return Math.atan2(dy, dx) * (180 / Math.PI);
+      };
+
+      const onPointerMove = (event) => {
+        if (!dragState.active || event.pointerId !== dragState.pointerId) return;
+        if (machine.phase === 'finished') return;
+
+        const currentDeg = pointerDeg(event);
+        let delta = currentDeg - dragState.lastDeg;
+        if (delta > 180) delta -= 360;
+        if (delta < -180) delta += 360;
+
+        dragState.lastDeg = currentDeg;
+        state.__gearAngles[index] = Number(state.__gearAngles[index] || 0) + delta;
+        refreshAngle();
+      };
+
+      const onPointerStop = (event) => {
+        if (event.pointerId !== dragState.pointerId) return;
+        dragState.active = false;
+        dragState.pointerId = null;
+        try { wheelEl.releasePointerCapture(event.pointerId); } catch (_) {}
+      };
+
+      wheelEl.addEventListener('pointerdown', (event) => {
+        if (machine.phase === 'finished') return;
+        dragState.active = true;
+        dragState.pointerId = event.pointerId;
+        dragState.lastDeg = pointerDeg(event);
+        try { wheelEl.setPointerCapture(event.pointerId); } catch (_) {}
+      });
+      wheelEl.addEventListener('pointermove', onPointerMove);
+      wheelEl.addEventListener('pointerup', onPointerStop);
+      wheelEl.addEventListener('pointercancel', onPointerStop);
+      wheelEl.addEventListener('lostpointercapture', () => {
+        dragState.active = false;
+        dragState.pointerId = null;
       });
     }
   });
@@ -261,7 +352,7 @@ function renderPlayerView({ data, state, socket }) {
         questionIndex: data.questionIndex,
         answer: {
           action: 'test',
-          angles: [...state.__gearAngles],
+          angles: [...state.__gearAngles].map((angle) => normalizeAngle(angle)),
         },
       });
     });
