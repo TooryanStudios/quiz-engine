@@ -2,6 +2,7 @@
 
 const { createPuzzleRelayRuntime } = require('./puzzleRelay.runtime');
 const { createRuntimeExampleRuntime } = require('./runtimeExample.runtime');
+const { createXoDuelRuntime } = require('./xoDuel.runtime');
 
 const EMPTY_RUNTIME = Object.freeze({});
 
@@ -15,13 +16,14 @@ function createGameModeRuntime(modeId) {
   if (!normalizedModeId) return EMPTY_RUNTIME;
 
   if (normalizedModeId === 'puzzle-relay') return createPuzzleRelayRuntime();
+  if (normalizedModeId === 'xo-duel') return createXoDuelRuntime();
   if (normalizedModeId === 'runtime-example') return createRuntimeExampleRuntime();
 
   return EMPTY_RUNTIME;
 }
 
 function listRegisteredGameModes() {
-  return ['puzzle-relay', 'runtime-example'];
+  return ['puzzle-relay', 'xo-duel', 'runtime-example'];
 }
 
 module.exports = {
