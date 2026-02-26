@@ -60,6 +60,7 @@ function inferGameModeIdFromQuestion(question) {
   if (question.type === 'xo_duel' || question.xo) return 'xo-duel';
   if (question.relay) return 'puzzle-relay';
   if (question.type === 'gear_machine' || question.gearMachine) return 'gear-machine';
+  if (question.type === 'creator_studio' || question.creatorStudio) return 'creator-studio';
 
   return null;
 }

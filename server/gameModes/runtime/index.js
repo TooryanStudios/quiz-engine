@@ -4,6 +4,7 @@ const { createPuzzleRelayRuntime } = require('./puzzleRelay.runtime');
 const { createRuntimeExampleRuntime } = require('./runtimeExample.runtime');
 const { createXoDuelRuntime } = require('./xoDuel.runtime');
 const { createGearMachineRuntime } = require('./gearMachine.runtime');
+const { createCreatorStudioRuntime } = require('./creatorStudio.runtime');
 
 const EMPTY_RUNTIME = Object.freeze({});
 
@@ -19,13 +20,14 @@ function createGameModeRuntime(modeId) {
   if (normalizedModeId === 'puzzle-relay') return createPuzzleRelayRuntime();
   if (normalizedModeId === 'xo-duel') return createXoDuelRuntime();
   if (normalizedModeId === 'gear-machine') return createGearMachineRuntime();
+  if (normalizedModeId === 'creator-studio') return createCreatorStudioRuntime();
   if (normalizedModeId === 'runtime-example') return createRuntimeExampleRuntime();
 
   return EMPTY_RUNTIME;
 }
 
 function listRegisteredGameModes() {
-  return ['puzzle-relay', 'xo-duel', 'gear-machine', 'runtime-example'];
+  return ['puzzle-relay', 'xo-duel', 'gear-machine', 'creator-studio', 'runtime-example'];
 }
 
 module.exports = {
