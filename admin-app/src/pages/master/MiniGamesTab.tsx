@@ -8,12 +8,14 @@ import {
   MINI_GAME_IDS,
   type MiniGameId,
 } from '../../config/miniGames'
+import type { QuizDoc } from '../../types/quiz'
 
 interface Props {
   enabledMiniGameIds: MiniGameId[]
   englishNamesById: Record<MiniGameId, string>
   arabicNamesById: Record<MiniGameId, string>
   accessById: Record<MiniGameId, MiniGameAccessTier>
+  quizzes: Array<QuizDoc & { id: string }>
   updatedAt?: { toDate(): Date }
   onSave: (
     nextEnabled: MiniGameId[],
@@ -28,7 +30,7 @@ function formatUpdatedAt(value?: { toDate(): Date }) {
   return value.toDate().toLocaleString()
 }
 
-export function MiniGamesTab({ enabledMiniGameIds, englishNamesById, arabicNamesById, accessById, updatedAt, onSave }: Props) {
+export function MiniGamesTab({ enabledMiniGameIds, englishNamesById, arabicNamesById, accessById, quizzes, updatedAt, onSave }: Props) {
   const [selected, setSelected] = useState<MiniGameId[]>(enabledMiniGameIds)
   const [englishNames, setEnglishNames] = useState<Record<MiniGameId, string>>(englishNamesById)
   const [arabicNames, setArabicNames] = useState<Record<MiniGameId, string>>(arabicNamesById)
@@ -56,6 +58,32 @@ export function MiniGamesTab({ enabledMiniGameIds, englishNamesById, arabicNames
   const hasAccessChanges = MINI_GAME_IDS.some((id) => (accessTiers[id] ?? 'free') !== (accessById[id] ?? 'free'))
 
   const hasChanges = hasSelectionChanges || hasEnglishChanges || hasArabicChanges || hasAccessChanges
+
+  const analyticsRows = useMemo(() => {
+    const byGame = MINI_GAME_IDS.map((id) => {
+      const related = quizzes.filter((quiz) => (quiz.gameModeId ?? '') === id)
+      const quizCount = related.length
+      const totalPlays = related.reduce((sum, quiz) => sum + (quiz.totalPlays || 0), 0)
+      const totalPlayers = related.reduce((sum, quiz) => sum + (quiz.totalPlayers || 0), 0)
+      return {
+        id,
+        quizCount,
+        totalPlays,
+        totalPlayers,
+      }
+    })
+
+    const totalMiniGameQuizzes = byGame.reduce((sum, item) => sum + item.quizCount, 0)
+    const totalMiniGamePlays = byGame.reduce((sum, item) => sum + item.totalPlays, 0)
+    const totalMiniGamePlayers = byGame.reduce((sum, item) => sum + item.totalPlayers, 0)
+
+    return {
+      byGame,
+      totalMiniGameQuizzes,
+      totalMiniGamePlays,
+      totalMiniGamePlayers,
+    }
+  }, [quizzes])
 
   const toggle = (id: MiniGameId) => {
     setSelected((prev) => {
@@ -115,6 +143,27 @@ export function MiniGamesTab({ enabledMiniGameIds, englishNamesById, arabicNames
   return (
     <section style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
       <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '12px', padding: '1rem' }}>
+        <h3 style={{ margin: 0, color: 'var(--text-bright)' }}>Mini Game Analytics</h3>
+        <p style={{ margin: '0.45rem 0 0.7rem', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+          Usage summary across all quizzes linked to mini games.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.55rem' }}>
+          <div style={{ border: '1px solid var(--border)', borderRadius: '10px', padding: '0.65rem', background: 'var(--bg)' }}>
+            <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.72rem' }}>Mini-game quizzes</p>
+            <p style={{ margin: '0.2rem 0 0', color: 'var(--text-bright)', fontWeight: 800, fontSize: '1.05rem' }}>{analyticsRows.totalMiniGameQuizzes.toLocaleString()}</p>
+          </div>
+          <div style={{ border: '1px solid var(--border)', borderRadius: '10px', padding: '0.65rem', background: 'var(--bg)' }}>
+            <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.72rem' }}>Total plays</p>
+            <p style={{ margin: '0.2rem 0 0', color: 'var(--text-bright)', fontWeight: 800, fontSize: '1.05rem' }}>{analyticsRows.totalMiniGamePlays.toLocaleString()}</p>
+          </div>
+          <div style={{ border: '1px solid var(--border)', borderRadius: '10px', padding: '0.65rem', background: 'var(--bg)' }}>
+            <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.72rem' }}>Total players</p>
+            <p style={{ margin: '0.2rem 0 0', color: 'var(--text-bright)', fontWeight: 800, fontSize: '1.05rem' }}>{analyticsRows.totalMiniGamePlayers.toLocaleString()}</p>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '12px', padding: '1rem' }}>
         <h3 style={{ margin: 0, color: 'var(--text-bright)' }}>Mini Games Controls</h3>
         <p style={{ margin: '0.45rem 0 0', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
           Manage mini games globally: enable/disable, rename in English and Arabic, and set free/premium access.
@@ -150,6 +199,23 @@ export function MiniGamesTab({ enabledMiniGameIds, englishNamesById, arabicNames
               </label>
 
               <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.78rem' }}>{definition.description}</p>
+
+              {(() => {
+                const analytics = analyticsRows.byGame.find((item) => item.id === id)
+                return (
+                  <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: '999px', padding: '0.15rem 0.5rem' }}>
+                      🧾 Quizzes: {(analytics?.quizCount ?? 0).toLocaleString()}
+                    </span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: '999px', padding: '0.15rem 0.5rem' }}>
+                      ▶️ Plays: {(analytics?.totalPlays ?? 0).toLocaleString()}
+                    </span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: '999px', padding: '0.15rem 0.5rem' }}>
+                      👥 Players: {(analytics?.totalPlayers ?? 0).toLocaleString()}
+                    </span>
+                  </div>
+                )
+              })()}
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', width: '100%' }}>
                 <input

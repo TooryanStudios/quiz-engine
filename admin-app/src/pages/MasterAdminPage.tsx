@@ -122,6 +122,7 @@ export function MasterAdminPage() {
             englishNamesById={miniGameSettings.englishNamesById}
             arabicNamesById={miniGameSettings.arabicNamesById}
             accessById={miniGameSettings.accessById}
+            quizzes={quizzesData.quizzes}
             updatedAt={miniGameSettings.updatedAt}
             onSave={(nextEnabled, nextEnglishNamesById, nextArabicNamesById, nextAccessById) => miniGameSettings.save(nextEnabled, nextEnglishNamesById, nextArabicNamesById, nextAccessById, auth.currentUser?.uid)}
           />
