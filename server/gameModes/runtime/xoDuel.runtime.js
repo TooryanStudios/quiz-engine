@@ -28,6 +28,11 @@ function createXoDuelRuntime() {
     return items[Math.floor(Math.random() * items.length)] || null;
   }
 
+  function pickRandomTurnIndex(playersLength) {
+    if (!Number.isInteger(playersLength) || playersLength <= 1) return 0;
+    return Math.random() < 0.5 ? 0 : 1;
+  }
+
   function clearRoundTransitionTimer(room) {
     if (room?.xo?.transitionTimer) {
       clearTimeout(room.xo.transitionTimer);
@@ -108,7 +113,8 @@ function createXoDuelRuntime() {
         p1 ? { id: p1.id, nickname: p1.nickname, symbol: 'X', score: 0 } : null,
         p2 ? { id: p2.id, nickname: p2.nickname, symbol: 'O', score: 0 } : null,
       ].filter(Boolean),
-      activeTurnIndex: 0,
+      activeTurnIndex: pickRandomTurnIndex(2),
+      turnSequence: 1,
       round: 1,
       maxRounds: 999,
       finished: false,
@@ -185,6 +191,7 @@ function createXoDuelRuntime() {
         board: [...room.xo.board],
         players: payloadPlayers,
         waitingPlayers,
+        turnSequence: Number(room.xo.turnSequence || 1),
         activePlayerId: activePlayer?.id || null,
         activeNickname: activePlayer?.nickname || null,
         activeSymbol: activePlayer?.symbol || null,
@@ -297,7 +304,8 @@ function createXoDuelRuntime() {
     room.xo.duelPlayerIds = nextDuelIds;
     decrementCooldowns(room);
     room.xo.board = Array(9).fill(null);
-    room.xo.activeTurnIndex = 0;
+    room.xo.activeTurnIndex = pickRandomTurnIndex(2);
+    room.xo.turnSequence = 1;
     room.xo.winnerId = null;
     room.xo.loserId = null;
     room.xo.draw = false;
@@ -447,6 +455,7 @@ function createXoDuelRuntime() {
       }
 
       room.xo.activeTurnIndex = room.xo.activeTurnIndex === 0 ? 1 : 0;
+      room.xo.turnSequence = Number(room.xo.turnSequence || 1) + 1;
       emitXoQuestion(room, io, 'play');
       return true;
     },

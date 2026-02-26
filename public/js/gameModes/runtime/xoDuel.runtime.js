@@ -34,6 +34,8 @@ function renderXoBoardHTML(board, interactive, activeSymbol, options = {}) {
   return `<div style="display:grid;grid-template-columns:repeat(3,minmax(76px,1fr));gap:0.55rem;max-width:330px;margin:0.35rem auto 0;">${cells}</div>`;
 }
 
+let lastTurnOverlayKey = '';
+
 function buildTurnLines(xo = {}) {
   const players = Array.isArray(xo.players) ? xo.players : [];
   const activePlayerId = xo.activePlayerId || null;
@@ -74,6 +76,12 @@ function ensureOutcomeStyles() {
       0%, 100% { box-shadow: 0 0 0 0 rgba(244,63,94,0.0); }
       50% { box-shadow: 0 0 22px 6px rgba(244,63,94,0.25); }
     }
+    @keyframes xo-turn-pop {
+      0% { transform: translateY(18px) scale(0.92); opacity: 0; }
+      25% { transform: translateY(0) scale(1.02); opacity: 1; }
+      70% { transform: translateY(0) scale(1); opacity: 1; }
+      100% { transform: translateY(-8px) scale(0.98); opacity: 0; }
+    }
     .xo-round-banner {
       margin: 0.65rem auto 0;
       max-width: 420px;
@@ -97,6 +105,52 @@ function ensureOutcomeStyles() {
     }
     .xo-round-banner.is-win { border-color: rgba(16,185,129,0.45); animation: xo-pop 0.4s ease-out both, xo-glow-win 1.35s ease-in-out infinite; }
     .xo-round-banner.is-lose { border-color: rgba(244,63,94,0.45); animation: xo-pop 0.4s ease-out both, xo-glow-lose 1.35s ease-in-out infinite; }
+    .xo-turn-overlay {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      z-index: 1200;
+      opacity: 0;
+    }
+    .xo-turn-overlay.is-showing {
+      opacity: 1;
+    }
+    .xo-turn-overlay .xo-turn-text {
+      background: rgba(15,23,42,0.74);
+      border: 2px solid rgba(34,211,238,0.55);
+      border-radius: 18px;
+      color: #e2e8f0;
+      font-size: clamp(1.5rem, 5vw, 2.4rem);
+      font-weight: 900;
+      padding: 0.75rem 1.25rem;
+      text-align: center;
+      letter-spacing: 0.02em;
+      text-shadow: 0 0 12px rgba(34,211,238,0.22);
+      animation: xo-turn-pop 1.35s ease-out both;
+    }
+    .xo-challenger-badge {
+      position: absolute;
+      top: 0.6rem;
+      right: 0.75rem;
+      z-index: 20;
+      border-radius: 999px;
+      border: 1px solid rgba(34,211,238,0.45);
+      background: rgba(15,23,42,0.74);
+      color: #e2e8f0;
+      font-size: 0.78rem;
+      font-weight: 800;
+      padding: 0.28rem 0.58rem;
+      display: none;
+      align-items: center;
+      gap: 0.28rem;
+      box-shadow: 0 6px 14px rgba(2, 6, 23, 0.26);
+    }
+    .xo-challenger-badge.is-visible {
+      display: inline-flex;
+    }
   `;
   document.head.appendChild(style);
 }
@@ -119,6 +173,67 @@ function showOutcomeBanner({ layoutId, kind, title, subtitle }) {
     <div class="xo-round-sub">${subtitle}</div>
   `;
   layout.appendChild(banner);
+}
+
+function ensureTurnOverlay() {
+  ensureOutcomeStyles();
+  let overlay = document.getElementById('xo-turn-overlay');
+  if (overlay) return overlay;
+
+  overlay = document.createElement('div');
+  overlay.id = 'xo-turn-overlay';
+  overlay.className = 'xo-turn-overlay';
+  overlay.innerHTML = '<div class="xo-turn-text">🔥 YOUR TURN</div>';
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+function maybeShowYourTurnOverlay(xo, socketId, isYourTurn) {
+  if (!isYourTurn || !socketId) return;
+  const turnSequence = Number(xo?.turnSequence || 0);
+  if (!turnSequence) return;
+
+  const key = `${xo.round || 0}:${turnSequence}:${xo.activePlayerId || ''}:${socketId}`;
+  if (key === lastTurnOverlayKey) return;
+  lastTurnOverlayKey = key;
+
+  const overlay = ensureTurnOverlay();
+  const text = overlay.querySelector('.xo-turn-text');
+  if (text) text.textContent = '🔥 دورك الآن!';
+
+  overlay.classList.remove('is-showing');
+  void overlay.offsetWidth;
+  overlay.classList.add('is-showing');
+
+  setTimeout(() => {
+    overlay.classList.remove('is-showing');
+  }, 1400);
+}
+
+function updateChallengerBadge({ isYourTurn, challenger, activeNickname }) {
+  const layout = document.getElementById('player-question-layout');
+  if (!layout) return;
+
+  if (!layout.style.position) layout.style.position = 'relative';
+
+  let badge = document.getElementById('xo-challenger-badge');
+  if (!badge) {
+    badge = document.createElement('div');
+    badge.id = 'xo-challenger-badge';
+    badge.className = 'xo-challenger-badge';
+    layout.appendChild(badge);
+  }
+
+  if (!isYourTurn && activeNickname) {
+    const label = challenger
+      ? `${activeNickname} turn`
+      : `Challenger: ${activeNickname}`;
+    badge.innerHTML = `⚔️ <span>${label}</span>`;
+    badge.classList.add('is-visible');
+    return;
+  }
+
+  badge.classList.remove('is-visible');
 }
 
 function applyXoHeader({ state, data }) {
@@ -193,6 +308,9 @@ function renderPlayerBoard({ data, socket, state }) {
 
   const answerMsg = document.getElementById('player-answered-msg');
   const { turnLine, playersLine } = buildTurnLines(xo);
+  maybeShowYourTurnOverlay(xo, socket?.id, isYourTurn);
+  updateChallengerBadge({ isYourTurn, challenger, activeNickname });
+
   if (answerMsg) {
     if (!challenger) {
       setCompactTwoLineNote(answerMsg, `👀 أنت متفرج • ${turnLine}`, playersLine);
@@ -245,6 +363,8 @@ function renderRoundResultPhase({ data, state, socket, isHostOnly }) {
     });
     return;
   }
+
+  updateChallengerBadge({ isYourTurn: false, challenger: null, activeNickname: '' });
 
   const playerGrid = document.getElementById('player-options-grid');
   if (playerGrid) {
