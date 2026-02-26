@@ -814,7 +814,6 @@ function startHostLaunch(quizSlug = null) {
     socket.emit('host:create', {
       quizSlug: quizSlug || null,
       gameMode: gameModeFromUrl || null,
-      ...getHostAuthPayload(),
       isReconnect: !!isRetry,
     });
     scheduleHostCreateTimeout();
@@ -888,7 +887,21 @@ function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
       });
     });
     if (kickHint) kickHint.style.display = playersArr.length > 0 ? 'block' : 'none';
-    if (waitingEl) waitingEl.style.display = playersArr.length > 0 ? 'none' : 'block';
+    if (waitingEl) {
+      if (playersArr.length === 0) {
+        waitingEl.style.display = 'block';
+        waitingEl.style.color = 'var(--text-dim)';
+        waitingEl.style.fontWeight = '400';
+        waitingEl.textContent = 'يجب انضمام لاعب واحد على الأقل للبدء';
+      } else if (gameModeFromUrl === 'xo-duel' && playersArr.length < 2) {
+        waitingEl.style.display = 'block';
+        waitingEl.style.color = '#f87171';
+        waitingEl.style.fontWeight = '700';
+        waitingEl.textContent = 'X O Duel يحتاج لاعبين متصلين على الأقل لبدء التحدي.';
+      } else {
+        waitingEl.style.display = 'none';
+      }
+    }
   } else {
     listEl.innerHTML = playersArr
       .map((p) => `<li class="player-chip"><span class="avatar-circle">${p.avatar || '🎮'}</span>${escapeHtml(p.nickname)}</li>`)
@@ -2658,16 +2671,25 @@ socket.on('room:created', ({ pin, reclaimed, ...modeInfo }) => {
 
   if (reclaimed) {
     // Mid-game host reconnect — room was preserved with the same PIN.
-    // Do NOT redirect to lobby; just update the PIN display and restore connection.
+    // If we're on the generic loading screen, move to the lobby.
+    // If we're in-game, stay on the current view but update the PIN.
     setConnectionStatus('ok', 'Reconnected ✓');
-    document.getElementById('host-pin').textContent = pin;
+    const hostPinEl = document.getElementById('host-pin');
+    if (hostPinEl) hostPinEl.textContent = pin;
+    
+    // Safety check: if host was stuck in the "Preparing..." screen, they must see the lobby.
+    const currentView = document.querySelector('.view-active');
+    if (!currentView || currentView.id === 'view-host-launch') {
+      showView('view-host-lobby');
+    }
     return;
   }
 
   document.documentElement.classList.remove('autohost-launch');
   if (state.hostPlayerStageSelection === 'auto') state.hostPlayerStageVariant = null;
   state.hostLobbyPlayers = [];
-  document.getElementById('host-pin').textContent = pin;
+  const hostPinEl = document.getElementById('host-pin');
+  if (hostPinEl) hostPinEl.textContent = pin;
   document.getElementById('host-player-count').textContent = '0';
   document.getElementById('host-player-list').innerHTML = '';
 
@@ -2730,7 +2752,6 @@ socket.on('connect', () => {
       socket.emit('host:create', {
         quizSlug: quizSlugFromUrl || null,
         gameMode: gameModeFromUrl || null,
-        ...getHostAuthPayload(),
         isReconnect: true, // tells server to force-reclaim even if old socket still alive
       });
     }
@@ -3002,13 +3023,13 @@ socket.on('host:joined_as_player', ({ joined, nickname, avatar }) => {
 });
 
 /** BOTH: Error from server */
-socket.on('room:error', ({ message }) => {
+socket.on('room:error', ({ message, code }) => {
   clearTimeout(joinTimeoutId);
   if (state.hostCreateTimeoutId) {
     clearTimeout(state.hostCreateTimeoutId);
     state.hostCreateTimeoutId = null;
   }
-  pushJoinDebugLog(`room:error ${message}`);
+  pushJoinDebugLog(`room:error ${message}${code ? ` (code: ${code})` : ''}`);
   if (window.__dbgLog) window.__dbgLog('room:error: ' + message);
 
   // Re-enable join button
@@ -3021,7 +3042,21 @@ socket.on('room:error', ({ message }) => {
     document.documentElement.classList.remove('autohost-launch');
     // Reset start button if it was in loading state
     const startBtn = document.getElementById('btn-start-game');
-    if (startBtn) { startBtn.disabled = false; startBtn.textContent = '🚀 ابدأ اللعبة'; }
+    if (startBtn) {
+      startBtn.disabled = false;
+      startBtn.textContent = '🚀 ابدأ اللعبة';
+    }
+
+    if (code === 'XO_DUEL_NOT_ENOUGH_PLAYERS') {
+      const waitingEl = document.getElementById('player-waiting-msg');
+      if (waitingEl) {
+        waitingEl.style.display = 'block';
+        waitingEl.style.color = '#f87171';
+        waitingEl.style.fontWeight = '700';
+        waitingEl.textContent = message;
+      }
+      return;
+    }
   }
   const editPanel = document.getElementById('edit-profile-panel');
   if (state.role === 'player' && editPanel && editPanel.classList.contains('open')) {

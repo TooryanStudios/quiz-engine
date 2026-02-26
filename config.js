@@ -12,6 +12,7 @@ module.exports = {
   // CORS: allow connections from these origins
   CORS_ORIGINS: [
     'https://play.qyan.app',
+    'https://qyan-om.web.app',
     'https://quizengine.onrender.com',
     'https://tailorjoin.khuyoot.app',
     'http://localhost:3001',

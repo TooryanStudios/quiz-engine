@@ -191,6 +191,7 @@ function createXoDuelRuntime() {
         board: [...room.xo.board],
         players: payloadPlayers,
         waitingPlayers,
+        needsPlayers: !!room.xo.needsPlayers,
         turnSequence: Number(room.xo.turnSequence || 1),
         activePlayerId: activePlayer?.id || null,
         activeNickname: activePlayer?.nickname || null,
@@ -343,19 +344,19 @@ function createXoDuelRuntime() {
     id: 'xo-duel',
 
     onGameStart({ room, io, socket }) {
-      const duelPlayers = getDuelPlayers(room);
-      if (duelPlayers.length < 2) {
-        room.state = 'lobby';
+      const connected = getConnectedPlayers(room);
+      if (connected.length < 2) {
         socket.emit('room:error', {
-          message: 'X O Duel يحتاج لاعبين متصلين على الأقل. يمكن للمضيف الانضمام كلاعب.',
-          code: 'XO_DUEL_NEEDS_TWO_PLAYERS',
+          message: 'X O Duel يحتاج لاعبين متصلين على الأقل لبدء التحدي.',
+          code: 'XO_DUEL_NOT_ENOUGH_PLAYERS',
         });
-        return true;
+        return false;
       }
 
       room.xo = createInitialDuelState(room);
       ensureScoreboard(room);
       hydrateDuelPlayers(room);
+
       room.questionIndex = 0;
       room.questions = [{ type: 'xo_duel', text: 'X O Duel' }];
       room.questionDuration = 600;

@@ -1,11 +1,12 @@
 import { triggerScreenShake } from '../../utils/effects.js?v=121';
+import { Sounds } from '../../utils/sounds.js?v=121';
 
 // ── SVG symbol helpers ──────────────────────────────────────────────────────
 function svgX(size = '2rem') {
   return `<svg viewBox="0 0 44 44" width="${size}" height="${size}" fill="none" style="display:block;filter:drop-shadow(0 0 8px rgba(59,130,246,0.65))"><line x1="9" y1="9" x2="35" y2="35" stroke="#3b82f6" stroke-width="7" stroke-linecap="round"/><line x1="35" y1="9" x2="9" y2="35" stroke="#3b82f6" stroke-width="7" stroke-linecap="round"/></svg>`;
 }
 function svgO(size = '2rem') {
-  return `<svg viewBox="0 0 44 44" width="${size}" height="${size}" fill="none" style="display:block;filter:drop-shadow(0 0 8px rgba(236,72,153,0.65))"><circle cx="22" cy="22" r="13" stroke="#ec4899" stroke-width="7"/></svg>`;
+  return `<svg viewBox="0 0 44 44" width="${size}" height="${size}" fill="none" style="display:block;filter:drop-shadow(0 0 8px rgba(249,115,22,0.65))"><circle cx="22" cy="22" r="13" stroke="#f97316" stroke-width="7"/></svg>`;
 }
 function svgSymbol(symbol, size = '2rem') {
   return symbol === 'O' ? svgO(size) : svgX(size);
@@ -16,10 +17,10 @@ function renderXoBoardHTML(board, interactive, activeSymbol, options = {}) {
   const cells = board.map((cell, index) => {
     const disabled = !interactive || !!cell;
     const isWinningCell = !!winningLine && winningLine.has(index);
-    const bg = cell === 'X' ? 'rgba(59,130,246,0.18)' : cell === 'O' ? 'rgba(236,72,153,0.18)' : 'rgba(15,23,42,0.4)';
+    const bg = cell === 'X' ? 'rgba(59,130,246,0.18)' : cell === 'O' ? 'rgba(249,115,22,0.18)' : 'rgba(15,23,42,0.4)';
     const border = isWinningCell
       ? '#22d3ee'
-      : (cell === 'X' ? '#3b82f6' : cell === 'O' ? '#ec4899' : 'rgba(100,116,139,0.38)');
+      : (cell === 'X' ? '#3b82f6' : cell === 'O' ? '#f97316' : 'rgba(100,116,139,0.38)');
     const glow = isWinningCell ? '0 0 0 2px rgba(34,211,238,0.35),0 0 20px rgba(34,211,238,0.28)' : 'none';
     const innerContent = cell === 'X'
       ? svgX('1.85rem')
@@ -48,12 +49,13 @@ function renderXoBoardHTML(board, interactive, activeSymbol, options = {}) {
     `;
   }).join('');
 
-  const boardWrapClass = `xo-board-wrap${interactive && activeSymbol ? ` is-${activeSymbol}-turn` : ''}`;
-  return `<div class="${boardWrapClass}"><div style="display:grid;grid-template-columns:repeat(3,minmax(76px,1fr));gap:0.55rem;max-width:330px;margin:0.35rem auto 0;">${cells}</div></div>`;
+  return `<div class="xo-board-wrap"><div style="display:grid;grid-template-columns:repeat(3,minmax(76px,1fr));gap:0.55rem;max-width:330px;margin:0.35rem auto 0;">${cells}</div></div>`;
 }
 
 let lastTurnOverlayKey = '';
 let lastLoseShakeKey = '';
+let lastResultSoundKey = '';
+let lastWinOverlayKey = '';
 
 function buildTurnLines(xo = {}) {
   const players = Array.isArray(xo.players) ? xo.players : [];
@@ -77,18 +79,32 @@ function setCompactTwoLineNote(el, line1, line2) {
   el.textContent = line2 ? `${line1}\n${line2}` : line1;
 }
 
-function buildRoleLegendHTML(xo = {}, activePlayerId = null) {
+function buildRoleLegendHTML(xo = {}, activePlayerId = null, currentSocketId = null) {
   const players = Array.isArray(xo.players) ? xo.players : [];
+
+  if (xo.needsPlayers) {
+    return `
+      <div style="font-size:0.82rem; color:#f87171; text-align:center; padding:1rem; background:rgba(239, 68, 68, 0.08); border:1px dashed rgba(248, 113, 113, 0.4); border-radius:14px; margin:1.2rem auto; max-width:300px; font-weight:700; line-height:1.4;">
+        ⚠️ X O Duel يحتاج لاعبين متصلين على الأقل.
+        <div style="font-size:0.75rem; opacity:0.8; margin-top:0.3rem; font-weight:500;">يمكن للمضيف الانضمام كلاعب لبدء التحدي.</div>
+      </div>
+    `;
+  }
+
   if (!players.length) return '';
 
   const items = players.map((player) => {
     const isActive = player.id === activePlayerId;
-    const tint = player.symbol === 'X' ? 'rgba(59,130,246,0.16)' : 'rgba(236,72,153,0.16)';
-    const border = player.symbol === 'X' ? 'rgba(59,130,246,0.62)' : 'rgba(236,72,153,0.62)';
+    // Pulse only if it's the other player's turn (from current viewer perspective)
+    const shouldPulse = isActive && (player.id !== currentSocketId);
+    
+    const tint = player.symbol === 'X' ? 'rgba(59,130,246,0.16)' : 'rgba(249,115,22,0.16)';
+    const border = player.symbol === 'X' ? 'rgba(59,130,246,0.62)' : 'rgba(249,115,22,0.62)';
+    const scoreVal = Number(player.score || 0);
     return `
-      <div class="xo-role-pill ${isActive ? 'is-active' : ''} symbol-${player.symbol}" style="background:${tint};border-color:${border}">
+      <div class="xo-role-pill ${isActive ? 'is-active' : ''} ${shouldPulse ? `is-pulsing symbol-${player.symbol}` : ''}" style="background:${tint};border-color:${border}">
         <span class="xo-role-symbol">${svgSymbol(player.symbol, '0.9rem')}</span>
-        <span class="xo-role-name">${player.nickname}${player.score ? ` · ${player.score}` : ''}</span>
+        <span class="xo-role-name">${player.nickname} · ${scoreVal}</span>
       </div>
     `;
   }).join('');
@@ -115,10 +131,32 @@ function ensureOutcomeStyles() {
       50% { box-shadow: 0 0 22px 6px rgba(244,63,94,0.25); }
     }
     @keyframes xo-turn-pop {
-      0% { transform: translateY(18px) scale(0.92); opacity: 0; }
-      25% { transform: translateY(0) scale(1.02); opacity: 1; }
-      70% { transform: translateY(0) scale(1); opacity: 1; }
-      100% { transform: translateY(-8px) scale(0.98); opacity: 0; }
+      0% { transform: translateY(15px) scale(0.9); opacity: 0; }
+      15% { transform: translateY(0) scale(1.06); opacity: 1; }
+      20% { transform: translateY(0) scale(1); opacity: 1; }
+      85% { transform: translateY(0) scale(1); opacity: 1; }
+      100% { transform: translateY(-10px) scale(0.95); opacity: 0; }
+    }
+    @keyframes xo-win-pop {
+      0% { transform: scale(0.6) rotate(-8deg); opacity: 0; filter: blur(8px); }
+      25% { transform: scale(1.1) rotate(3deg); opacity: 1; filter: blur(0); }
+      35% { transform: scale(1) rotate(0); }
+      85% { transform: scale(1) rotate(0); opacity: 1; }
+      100% { transform: scale(1.2); opacity: 0; filter: blur(12px); }
+    }
+    @keyframes xo-bounce-funny {
+      0%, 100% { transform: scale(1) translateY(0); }
+      30% { transform: scale(1.15, 0.9) translateY(0); }
+      50% { transform: scale(0.9, 1.15) translateY(-8px); }
+      70% { transform: scale(1.05, 0.95) translateY(0); }
+    }
+    @keyframes xo-pulse-blue {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0); border-color: rgba(59,130,246,0.3); }
+      50% { box-shadow: 0 0 16px rgba(59,130,246,0.25); border-color: rgba(59,130,246,0.95); }
+    }
+    @keyframes xo-pulse-orange {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(249,115,22,0); border-color: rgba(249,115,22,0.3); }
+      50% { box-shadow: 0 0 16px rgba(249,115,22,0.25); border-color: rgba(249,115,22,0.95); }
     }
     .xo-round-banner {
       margin: 0.65rem auto 0;
@@ -208,11 +246,10 @@ function ensureOutcomeStyles() {
       font-size: 0.8rem;
       font-weight: 800;
       line-height: 1;
+      transition: all 0.2s;
     }
-    .xo-role-pill.is-active {
-      box-shadow: 0 0 0 2px rgba(34,211,238,0.22);
-      transform: translateY(-1px);
-    }
+    .xo-role-pill.is-active.is-pulsing.symbol-X { animation: xo-pulse-blue 1.8s ease-in-out infinite; }
+    .xo-role-pill.is-active.is-pulsing.symbol-O { animation: xo-pulse-orange 1.8s ease-in-out infinite; }
     .xo-role-symbol {
       display: inline-flex;
       align-items: center;
@@ -237,58 +274,39 @@ function ensureOutcomeStyles() {
     .xo-cell:not([disabled]):active {
       transform: scale(0.95);
     }
-    /* ── Persistent turn pulse animations ────────────────────────── */
-    @keyframes xo-pulse-blue {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0); border-color: rgba(59,130,246,0.45); }
-      50% { box-shadow: 0 0 0 5px rgba(59,130,246,0.18), 0 0 22px rgba(59,130,246,0.22); border-color: rgba(59,130,246,0.95); }
-    }
-    @keyframes xo-pulse-pink {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(236,72,153,0); border-color: rgba(236,72,153,0.45); }
-      50% { box-shadow: 0 0 0 5px rgba(236,72,153,0.18), 0 0 22px rgba(236,72,153,0.22); border-color: rgba(236,72,153,0.95); }
-    }
-    @keyframes xo-board-glow-blue {
-      0%, 100% { box-shadow: none; }
-      50% { box-shadow: 0 0 0 3px rgba(59,130,246,0.22), 0 0 32px rgba(59,130,246,0.14); }
-    }
-    @keyframes xo-board-glow-pink {
-      0%, 100% { box-shadow: none; }
-      50% { box-shadow: 0 0 0 3px rgba(236,72,153,0.22), 0 0 32px rgba(236,72,153,0.14); }
-    }
-    @keyframes xo-tb-in {
-      from { opacity: 0; transform: translateY(6px) scale(0.97); }
-      to   { opacity: 1; transform: translateY(0)   scale(1);    }
-    }
-    /* Board wrap glow */
-    .xo-board-wrap { border-radius: 14px; }
-    .xo-board-wrap.is-X-turn { animation: xo-board-glow-blue 1.8s ease-in-out infinite; }
-    .xo-board-wrap.is-O-turn { animation: xo-board-glow-pink 1.8s ease-in-out infinite; }
-    /* Active role pill pulse */
-    .xo-role-pill.is-active.symbol-X { animation: xo-pulse-blue 1.6s ease-in-out infinite; }
-    .xo-role-pill.is-active.symbol-O { animation: xo-pulse-pink 1.6s ease-in-out infinite; }
-    /* Persistent turn banner */
-    .xo-turn-banner {
+    .xo-role-avatar {
+      width: 4rem;
+      height: 4rem;
+      border-radius: 50%;
+      background: rgba(15,23,42,0.65);
+      border: 3px solid rgba(255,255,255,0.12);
       display: flex;
       align-items: center;
-      gap: 0.65rem;
-      max-width: 330px;
-      margin: 0.55rem auto 0;
-      border-radius: 14px;
-      border: 2px solid rgba(148,163,184,0.2);
-      background: rgba(15,23,42,0.55);
-      padding: 0.58rem 0.9rem;
-      animation: xo-tb-in 0.32s ease-out both;
-      backdrop-filter: blur(4px);
+      justify-content: center;
+      margin: 0 auto;
+      backdrop-filter: blur(8px);
+      transition: all 0.3s;
     }
-    .xo-turn-banner.is-yours { background: rgba(15,23,42,0.78); }
-    .xo-turn-banner.is-yours.symbol-X { animation: xo-tb-in 0.32s ease-out both, xo-pulse-blue 1.7s ease-in-out infinite; }
-    .xo-turn-banner.is-yours.symbol-O { animation: xo-tb-in 0.32s ease-out both, xo-pulse-pink 1.7s ease-in-out infinite; }
-    .xo-turn-banner.is-host.symbol-X  { animation: xo-tb-in 0.32s ease-out both, xo-pulse-blue 2s  ease-in-out infinite; opacity: 0.88; }
-    .xo-turn-banner.is-host.symbol-O  { animation: xo-tb-in 0.32s ease-out both, xo-pulse-pink 2s  ease-in-out infinite; opacity: 0.88; }
-    .xo-turn-banner.is-theirs { opacity: 0.52; }
-    .xo-tb-symbol { flex-shrink:0; display:flex; align-items:center; justify-content:center; width:2.4rem; height:2.4rem; }
-    .xo-tb-text   { display:flex; flex-direction:column; gap:0.08rem; min-width:0; }
-    .xo-tb-main   { font-size:1rem; font-weight:900; color:#e2e8f0; line-height:1.25; }
-    .xo-tb-sub    { font-size:0.72rem; color:rgba(148,163,184,0.75); font-weight:500; }
+    .xo-role-avatar.is-active {
+      animation: xo-bounce-funny 1.2s ease-in-out infinite;
+    }
+    .xo-role-avatar.symbol-X.is-active { border-color: #3b82f6; box-shadow: 0 0 20px rgba(59,130,246,0.3); }
+    .xo-role-avatar.symbol-O.is-active { border-color: #f97316; box-shadow: 0 0 20px rgba(249,115,22,0.3); }
+
+    .xo-mini-turn-banner {
+      font-size: 0.95rem;
+      font-weight: 900;
+      color: #e2e8f0;
+      text-align: center;
+      margin-top: 0.5rem;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+      opacity: 0.8;
+    }
+    .xo-mini-turn-banner.is-active {
+      color: #22d3ee;
+      opacity: 1;
+      animation: xo-pop 0.3s ease-out both;
+    }
   `;
   document.head.appendChild(style);
 }
@@ -326,6 +344,21 @@ function ensureTurnOverlay() {
   return overlay;
 }
 
+function showWinnerOverlay(text, sub) {
+  const overlay = ensureTurnOverlay();
+  const textEl = overlay.querySelector('.xo-turn-text');
+  if (textEl) {
+    textEl.innerHTML = `<div style="font-size:0.7em;opacity:0.85;margin-bottom:0.25rem;font-weight:700;">${sub}</div><div style="font-size:1.1em;border-top:1px solid rgba(255,255,255,0.15);padding-top:0.25rem;">${text}</div>`;
+    textEl.style.borderColor = '#10b981';
+    textEl.style.textShadow = '0 0 15px rgba(16,185,129,0.35)';
+    textEl.style.animation = 'none';
+    void textEl.offsetWidth; 
+    textEl.style.animation = 'xo-win-pop 2.5s ease-out both';
+  }
+  overlay.classList.add('is-showing');
+  setTimeout(() => overlay.classList.remove('is-showing'), 2600);
+}
+
 function maybeShowTurnOverlay(xo, socketId, isYourTurn) {
   if (!socketId || !isYourTurn) return;
   const turnSequence = Number(xo?.turnSequence || 0);
@@ -336,7 +369,10 @@ function maybeShowTurnOverlay(xo, socketId, isYourTurn) {
 
   const overlay = ensureTurnOverlay();
   const text = overlay.querySelector('.xo-turn-text');
-  if (text) text.textContent = '🔥 دورك الآن!';
+  if (text) {
+    text.textContent = '🔥 دورك الآن!';
+    Sounds.start(); // Rise of tones for "Your Turn"
+  }
 
   overlay.classList.remove('is-showing');
 
@@ -422,57 +458,17 @@ function applyXoHeader({ state, data }) {
   if (submitBtn) submitBtn.style.display = 'none';
 }
 
-function renderTurnBanner(containerId, opts = {}) {
-  const container = document.getElementById(containerId);
-  if (!container) return;
-  ensureOutcomeStyles();
-  const { isYours = false, isSpectator = false, activeSymbol = 'X', activeNickname = '', mySymbol = null } = opts;
-  const symbol = isYours ? (mySymbol || activeSymbol) : activeSymbol;
-  const mainText = isYours
-    ? 'دورك الآن!'
-    : isSpectator
-      ? `${activeNickname} يلعب`
-      : `دور ${activeNickname}`;
-  const subText = isYours
-    ? '⬇️ اختر خانة'
-    : isSpectator
-      ? 'المباراة جارية'
-      : '⌛ انتظر...';
-  const stateClass = isYours
-    ? `is-yours symbol-${symbol}`
-    : isSpectator
-      ? `is-host symbol-${symbol}`
-      : `is-theirs symbol-${symbol}`;
-  const banner = document.createElement('div');
-  banner.className = `xo-turn-banner ${stateClass}`;
-  banner.innerHTML = `
-    <div class="xo-tb-symbol">${svgSymbol(symbol, '1.9rem')}</div>
-    <div class="xo-tb-text">
-      <span class="xo-tb-main">${mainText}</span>
-      <span class="xo-tb-sub">${subText}</span>
-    </div>
-  `;
-  container.appendChild(banner);
-}
-
 function renderSpectatorBoard({ data }) {
   const board = Array.isArray(data?.question?.xo?.board) ? data.question.xo.board : Array(9).fill(null);
   const xo = data?.question?.xo || {};
   const activeSymbol = data?.question?.xo?.activeSymbol || 'X';
   const hostGrid = document.getElementById('host-options-grid');
   if (hostGrid) {
-    hostGrid.innerHTML = `${renderXoBoardHTML(board, false, activeSymbol, { winningLine: xo.winningLine })}${buildRoleLegendHTML(xo, xo.activePlayerId || null)}`;
+    hostGrid.innerHTML = `${renderXoBoardHTML(board, false, activeSymbol, { winningLine: xo.winningLine })}${buildRoleLegendHTML(xo, xo.activePlayerId || null, null)}`;
   }
 
   const hostAnswerCounter = document.getElementById('host-answer-counter');
   if (hostAnswerCounter) hostAnswerCounter.textContent = '';
-
-  // Persistent animated turn banner for host
-  renderTurnBanner('host-options-grid', {
-    isSpectator: true,
-    activeSymbol: xo.activeSymbol || 'X',
-    activeNickname: xo.activeNickname || 'Player',
-  });
 }
 
 function renderPlayerBoard({ data, socket, state }) {
@@ -493,37 +489,32 @@ function renderPlayerBoard({ data, socket, state }) {
   const playerGrid = document.getElementById('player-options-grid');
   if (!playerGrid) return;
 
-  playerGrid.innerHTML = `${renderXoBoardHTML(board, isYourTurn, activeSymbol, { winningLine: xo.winningLine })}${buildRoleLegendHTML(xo, activePlayerId || null)}`;
+  playerGrid.innerHTML = `${renderXoBoardHTML(board, isYourTurn, activeSymbol, { winningLine: xo.winningLine })}${buildRoleLegendHTML(xo, activePlayerId || null, socket?.id)}`;
 
-  // Replace the question title with this player's own symbol SVG
   const titleEl = document.getElementById('player-question-text');
   if (titleEl) {
-    const mySymbol = challenger?.symbol || null;
-    if (mySymbol) {
-      titleEl.innerHTML = svgSymbol(mySymbol, '2.6rem');
-      titleEl.style.display = 'flex';
-      titleEl.style.justifyContent = 'center';
-      titleEl.style.alignItems = 'center';
+    if (xo.needsPlayers) {
+      titleEl.style.display = 'none';
     } else {
-      // Spectator: show both symbols side by side
-      titleEl.innerHTML = `<span style="display:inline-flex;gap:0.5rem;align-items:center;">${svgX('1.75rem')}${svgO('1.75rem')}</span>`;
-      titleEl.style.display = 'flex';
-      titleEl.style.justifyContent = 'center';
+      ensureOutcomeStyles();
+      const mySymbol = challenger?.symbol || activeSymbol;
+      const bannerText = isYourTurn ? '🔥 دورك الآن!' : `دور ${activeNickname}`;
+      titleEl.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;">
+          <div class="xo-role-avatar symbol-${mySymbol} ${isYourTurn ? 'is-active' : ''}">
+            ${svgSymbol(mySymbol, '2.8rem')}
+          </div>
+          <div class="xo-mini-turn-banner ${isYourTurn ? 'is-active' : ''}">
+            ${bannerText}
+          </div>
+        </div>
+      `;
+      titleEl.style.display = 'block';
     }
   }
 
-  // Hide bottom status text
   const answerMsg = document.getElementById('player-answered-msg');
   if (answerMsg) { answerMsg.style.display = 'none'; answerMsg.textContent = ''; }
-
-  // Persistent animated turn banner — stays until this player clicks
-  renderTurnBanner('player-options-grid', {
-    isYours: isYourTurn,
-    isSpectator: !challenger,
-    activeSymbol,
-    activeNickname,
-    mySymbol: challenger?.symbol || null,
-  });
 
   maybeShowTurnOverlay(xo, socket?.id, isYourTurn);
   updateChallengerBadge({ isYourTurn, challenger, activeNickname });
@@ -533,6 +524,8 @@ function renderPlayerBoard({ data, socket, state }) {
       if (!isYourTurn || state.hasAnswered) return;
       const cellIndex = Number(cellButton.getAttribute('data-xo-cell'));
       if (!Number.isInteger(cellIndex)) return;
+      
+      Sounds.click(); // Sound when clicking a box
       state.hasAnswered = true;
       socket.emit('player:answer', {
         questionIndex: data.questionIndex,
@@ -583,30 +576,58 @@ function renderRoundResultPhase({ data, state, socket, isHostOnly }) {
   const isWinner = !!winnerId && socket.id === winnerId;
   const isLoser = !!loserId && socket.id === loserId;
 
-  let title = '🎮 New Round Incoming';
-  let subtitle = `Next duel starts in ${nextRoundSec}s`;
+  // Prevent duplicate sounds on every update of this phase
+  const resSoundKey = `${xo.round || 0}:${winnerId || 'n'}:${loserId || 'n'}:${isWinner ? 'w' : isLoser ? 'l' : isDraw ? 'd' : 's'}:${socket.id}`;
+  const playSfx = resSoundKey !== lastResultSoundKey;
+  if (playSfx) lastResultSoundKey = resSoundKey;
+
+  const winOverlayKey = `${xo.round || 0}:${winnerId || ''}:${loserId || ''}:${isDraw ? 'draw' : ''}`;
+  const shouldShowOverlay = (winOverlayKey !== lastWinOverlayKey);
+
+  let title = '🏁 انتهت الجولة';
+  let subtitle = `الجولة القادمة ستبدأ خلال ${nextRoundSec} ثوانٍ`;
   let kind = 'neutral';
 
   if (isDraw) {
-    title = '🤝 Draw!';
-    subtitle = `No one lost this round • Restarting in ${nextRoundSec}s`;
+    title = '🤝 تعـادل!';
+    subtitle = `استعد للجولة القادمة خلال ${nextRoundSec} ثوانٍ`;
+    if (playSfx) Sounds.resume();
+    if (shouldShowOverlay) {
+      lastWinOverlayKey = winOverlayKey;
+      showWinnerOverlay(title, 'لا يوجد خاسر هذه المرة');
+    }
   } else if (isWinner) {
-    title = '🏆 You Win!';
-    subtitle = `Great move! Get ready for your next challenger in ${nextRoundSec}s`;
+    title = '🏆 فـوز ساحـق!';
+    subtitle = `أحسنت! استعد للجولة التالية خلال ${nextRoundSec} ثوانٍ`;
     kind = 'win';
+    if (playSfx) Sounds.fanfare();
+    if (shouldShowOverlay) {
+      lastWinOverlayKey = winOverlayKey;
+      showWinnerOverlay(title, 'لقد هزمت خصمك باقتدار');
+    }
   } else if (isLoser) {
-    title = '💥 You Lost';
-    subtitle = `You sit out this round, then rejoin next round • ${nextRoundSec}s`;
+    title = '💥 خسـارة';
+    subtitle = `ستعود في الجولة القادمة خلال ${nextRoundSec} ثوانٍ`;
     kind = 'lose';
 
     const shakeKey = `${xo.round || 0}:${winnerId || ''}:${loserId || ''}:${socket.id}`;
     if (shakeKey !== lastLoseShakeKey) {
       lastLoseShakeKey = shakeKey;
+      if (playSfx) Sounds.wrong();
       triggerScreenShake({ axis: 'both', distancePx: 11, durationMs: 520 });
     }
+    if (shouldShowOverlay) {
+      lastWinOverlayKey = winOverlayKey;
+      showWinnerOverlay(title, 'حظاً أوفر في المرة القادمة');
+    }
   } else {
-    title = '👀 Spectating Round Result';
-    subtitle = `Winner keeps playing against a random challenger in ${nextRoundSec}s`;
+    title = '👀 نتيجـة الجولة';
+    const winnerName = xo.result?.winnerNickname || 'Player';
+    subtitle = `الفائز (${winnerName}) يكمل اللعب ضد خصم جديد بعد ${nextRoundSec} ثوانٍ`;
+    if (shouldShowOverlay) {
+      lastWinOverlayKey = winOverlayKey;
+      showWinnerOverlay(title, `فاز ${winnerName} في هذه الجولة`);
+    }
   }
 
   if (answerMsg) { answerMsg.style.display = 'none'; answerMsg.textContent = ''; }
