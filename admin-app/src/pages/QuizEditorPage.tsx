@@ -1015,19 +1015,19 @@ export function QuizEditorPage() {
                   >
                     <div
                       style={{
-                        width: 'min(980px, 96vw)',
-                        maxHeight: '86vh',
+                        width: 'min(860px, 94vw)',
+                        maxHeight: '78vh',
                         overflowY: 'auto',
                         background: 'linear-gradient(180deg, var(--bg-deep) 0%, var(--bg-surface) 100%)',
                         border: '1px solid var(--border)',
                         borderRadius: '14px',
-                        padding: '1rem',
+                        padding: '0.85rem',
                         boxShadow: '0 24px 80px rgba(2, 6, 23, 0.55)',
                       }}
                       onClick={(event) => event.stopPropagation()}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.8rem' }}>
-                        <h3 style={{ margin: 0, color: 'var(--text-bright)' }}>🎮 اختيار الميني جيم</h3>
+                        <h3 style={{ margin: 0, color: 'var(--text-bright)', fontSize: '1rem' }}>🎮 اختيار الميني جيم</h3>
                         <button
                           type="button"
                           onClick={() => setShowMiniGamePicker(false)}
@@ -1037,7 +1037,7 @@ export function QuizEditorPage() {
                         </button>
                       </div>
 
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.7rem' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '0.55rem' }}>
                         {[CLASSIC_GAME_MODE, ...miniGameCards.filter((game) => game.enabled)].map((game) => {
                           const selected = tempGameModeId === game.id
                           const premiumLocked = game.access === 'premium' && !isSubscribed
@@ -1058,20 +1058,20 @@ export function QuizEditorPage() {
                                 border: selected ? '1px solid var(--text-bright)' : '1px solid var(--border-strong)',
                                 borderRadius: '12px',
                                 background: selected ? 'rgba(59,130,246,0.14)' : 'var(--bg-surface)',
-                                padding: '0.75rem',
+                                padding: '0.6rem',
                                 cursor: premiumLocked ? 'not-allowed' : 'pointer',
                                 opacity: premiumLocked ? 0.68 : 1,
                               }}
                             >
-                              <p style={{ margin: 0, color: 'var(--text)', fontWeight: 800, fontSize: '0.9rem' }}>
+                              <p style={{ margin: 0, color: 'var(--text)', fontWeight: 800, fontSize: '0.84rem' }}>
                                 {game.icon} {game.englishName}
                               </p>
-                              <p style={{ margin: '0.2rem 0 0', color: 'var(--text-muted)', fontSize: '0.82rem' }}>{game.arabicName}</p>
-                              <p style={{ margin: '0.35rem 0 0', color: 'var(--text-mid)', fontSize: '0.78rem' }}>{game.description}</p>
-                              <p style={{ margin: '0.35rem 0 0', color: 'var(--text)', fontSize: '0.76rem' }}>
+                              <p style={{ margin: '0.15rem 0 0', color: 'var(--text-muted)', fontSize: '0.74rem' }}>{game.arabicName}</p>
+                              <p style={{ margin: '0.25rem 0 0', color: 'var(--text-mid)', fontSize: '0.72rem', lineHeight: 1.3, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{game.description}</p>
+                              <p style={{ margin: '0.25rem 0 0', color: 'var(--text)', fontSize: '0.71rem', lineHeight: 1.3, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                                 <strong>طريقة اللعب:</strong> {game.howToPlay}
                               </p>
-                              <p style={{ margin: '0.35rem 0 0', color: premiumLocked ? '#fda4af' : 'var(--text-muted)', fontSize: '0.74rem', fontWeight: 700 }}>
+                              <p style={{ margin: '0.25rem 0 0', color: premiumLocked ? '#fda4af' : 'var(--text-muted)', fontSize: '0.7rem', fontWeight: 700 }}>
                                 {game.access === 'premium' ? '🔒 Premium' : '🆓 Free'}
                               </p>
                             </button>
