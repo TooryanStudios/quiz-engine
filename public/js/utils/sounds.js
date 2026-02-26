@@ -116,6 +116,17 @@ export const Sounds = {
     playTone(659, 'triangle', 0.1, 0.24, 0.18);
     playTone(784, 'sine', 0.2, 0.26, 0.28);
   },
+
+  gearTick: () => {
+    playTone(320, 'square', 0.03, 0.11);
+    playTone(220, 'triangle', 0.04, 0.07, 0.015);
+  },
+
+  gearSpinStart: () => {
+    playTone(180, 'sawtooth', 0.1, 0.16);
+    playTone(230, 'sawtooth', 0.12, 0.15, 0.08);
+    playTone(300, 'triangle', 0.16, 0.14, 0.16);
+  },
 };
 
 export function setMuted(value) {

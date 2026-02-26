@@ -17,19 +17,24 @@ function ensureStyles() {
   style.id = 'gear-machine-styles';
   style.textContent = `
     .gear-machine-wrap {
-      max-width: 560px;
+      width: min(100%, 640px);
       margin: 0.45rem auto 0;
       padding: 0.85rem 0.9rem;
       border-radius: 16px;
       border: 1px solid rgba(148,163,184,0.35);
       background: rgba(15,23,42,0.72);
       color: #e2e8f0;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
     }
     .gear-machine-title {
       text-align: center;
       font-weight: 900;
       font-size: 1.05rem;
       margin-bottom: 0.6rem;
+      user-select: none;
+      -webkit-user-select: none;
     }
     .gear-grid {
       display: grid;
@@ -46,6 +51,8 @@ function ensureStyles() {
       flex-direction: column;
       align-items: center;
       gap: 0.45rem;
+      user-select: none;
+      -webkit-user-select: none;
     }
     .gear-wheel {
       display: inline-flex;
@@ -90,11 +97,11 @@ function ensureStyles() {
       top: 6px;
     }
     .gear-wheel.spinning {
-      animation: gear-spin 0.9s linear infinite;
+      animation: gear-spin-from 1.8s linear infinite;
     }
-    @keyframes gear-spin {
-      from { transform: rotate(0deg); }
-      to { transform: rotate(360deg); }
+    @keyframes gear-spin-from {
+      from { transform: rotate(var(--start-angle, 0deg)); }
+      to { transform: rotate(calc(var(--start-angle, 0deg) + 360deg)); }
     }
     .gear-controls {
       display: flex;
@@ -109,6 +116,9 @@ function ensureStyles() {
       font-size: 0.82rem;
       font-weight: 800;
       cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
     }
     .gear-btn:disabled {
       opacity: 0.45;
@@ -128,6 +138,9 @@ function ensureStyles() {
       padding: 0.55rem 1.15rem;
       cursor: pointer;
       box-shadow: 0 10px 22px rgba(34,197,94,0.24);
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
     }
     .gear-run-btn:disabled {
       opacity: 0.5;
@@ -148,10 +161,16 @@ function ensureStyles() {
 
 function hideDefaultQuestionWidgets() {
   const playerGrid = document.getElementById('player-options-grid');
-  if (playerGrid) playerGrid.style.display = 'grid';
+  if (playerGrid) {
+    playerGrid.style.display = 'block';
+    playerGrid.style.width = '100%';
+  }
 
   const hostGrid = document.getElementById('host-options-grid');
-  if (hostGrid) hostGrid.style.display = 'grid';
+  if (hostGrid) {
+    hostGrid.style.display = 'block';
+    hostGrid.style.width = '100%';
+  }
 
   ['player-type-container', 'player-match-container', 'player-order-container', 'player-boss-panel'].forEach((id) => {
     const el = document.getElementById(id);
@@ -214,7 +233,8 @@ function renderSpectatorView({ data }) {
 function renderPlayerView({ data, state, socket }) {
   const playerGrid = document.getElementById('player-options-grid');
   if (!playerGrid) return;
-  playerGrid.style.display = 'grid';
+  playerGrid.style.display = 'block';
+  playerGrid.style.width = '100%';
 
   const machine = data?.question?.gearMachine || {};
   const gears = Array.isArray(machine.gears) ? machine.gears : [];
@@ -231,6 +251,7 @@ function renderPlayerView({ data, state, socket }) {
 
   const angles = Array.isArray(state.__gearAngles) ? state.__gearAngles : gears.map(() => 0);
   state.__gearAngles = angles;
+  if (!state.__gearLastTickAt) state.__gearLastTickAt = 0;
 
   playerGrid.innerHTML = `
     <div class="gear-machine-wrap">
@@ -270,19 +291,25 @@ function renderPlayerView({ data, state, socket }) {
     };
 
     if (leftBtn) {
+      leftBtn.addEventListener('mousedown', (event) => event.preventDefault());
+      leftBtn.addEventListener('touchstart', (event) => event.preventDefault(), { passive: false });
       leftBtn.addEventListener('click', () => {
         if (machine.phase === 'finished') return;
         state.__gearAngles[index] = Number(state.__gearAngles[index] || 0) - step;
-        Sounds.click();
+        if (typeof Sounds.gearTick === 'function') Sounds.gearTick();
+        else Sounds.click();
         refreshAngle();
       });
     }
 
     if (rightBtn) {
+      rightBtn.addEventListener('mousedown', (event) => event.preventDefault());
+      rightBtn.addEventListener('touchstart', (event) => event.preventDefault(), { passive: false });
       rightBtn.addEventListener('click', () => {
         if (machine.phase === 'finished') return;
         state.__gearAngles[index] = Number(state.__gearAngles[index] || 0) + step;
-        Sounds.click();
+        if (typeof Sounds.gearTick === 'function') Sounds.gearTick();
+        else Sounds.click();
         refreshAngle();
       });
     }
@@ -315,6 +342,12 @@ function renderPlayerView({ data, state, socket }) {
         dragState.lastDeg = currentDeg;
         state.__gearAngles[index] = Number(state.__gearAngles[index] || 0) + delta;
         refreshAngle();
+
+        const now = Date.now();
+        if (Math.abs(delta) >= 0.8 && now - Number(state.__gearLastTickAt || 0) > 45) {
+          state.__gearLastTickAt = now;
+          if (typeof Sounds.gearTick === 'function') Sounds.gearTick();
+        }
       };
 
       const onPointerStop = (event) => {
@@ -326,11 +359,14 @@ function renderPlayerView({ data, state, socket }) {
 
       wheelEl.addEventListener('pointerdown', (event) => {
         if (machine.phase === 'finished') return;
+        event.preventDefault();
         dragState.active = true;
         dragState.pointerId = event.pointerId;
         dragState.lastDeg = pointerDeg(event);
         try { wheelEl.setPointerCapture(event.pointerId); } catch (_) {}
       });
+      wheelEl.addEventListener('mousedown', (event) => event.preventDefault());
+      wheelEl.addEventListener('touchstart', (event) => event.preventDefault(), { passive: false });
       wheelEl.addEventListener('pointermove', onPointerMove);
       wheelEl.addEventListener('pointerup', onPointerStop);
       wheelEl.addEventListener('pointercancel', onPointerStop);
@@ -343,11 +379,18 @@ function renderPlayerView({ data, state, socket }) {
 
   const runBtn = document.getElementById('gear-run-btn');
   if (runBtn) {
+    runBtn.addEventListener('mousedown', (event) => event.preventDefault());
+    runBtn.addEventListener('touchstart', (event) => event.preventDefault(), { passive: false });
     runBtn.addEventListener('click', () => {
       if (machine.phase === 'finished') return;
       runBtn.disabled = true;
-      document.querySelectorAll('.gear-wheel').forEach((el) => el.classList.add('spinning'));
-      Sounds.start();
+      document.querySelectorAll('.gear-wheel').forEach((el, idx) => {
+        const currentAngle = Number(state.__gearAngles?.[idx] || 0);
+        el.style.setProperty('--start-angle', `${currentAngle}deg`);
+        el.classList.add('spinning');
+      });
+      if (typeof Sounds.gearSpinStart === 'function') Sounds.gearSpinStart();
+      else Sounds.start();
       socket.emit('player:answer', {
         questionIndex: data.questionIndex,
         answer: {
