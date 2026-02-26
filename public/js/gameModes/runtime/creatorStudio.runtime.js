@@ -278,7 +278,7 @@ function showTurnOverlay(message) {
   }
 
   const msg = document.getElementById('cs-turn-overlay-msg');
-  if (msg) msg.textContent = String(message || 'Creator Studio');
+  if (msg) msg.textContent = String(message || 'استوديو المبدع');
 
   overlay.classList.remove('is-showing');
   void overlay.offsetWidth;
@@ -308,27 +308,27 @@ function getResultFlavor(avg) {
     return {
       className: 'is-epic',
       burst: ['🔥', '🏆', '✨', '🚀'],
-      text: 'Masterpiece vibes! الجمهور طار من الحماس 🔥',
+      text: 'تحفة فنية! الجمهور اشتعل حماسًا 🔥',
     };
   }
   if (avg >= 6.5) {
     return {
       className: '',
       burst: ['👏', '🌟', '🎉', '💫'],
-      text: 'Great round! شغل جميل جدًا 👏',
+      text: 'جولة ممتازة! شغل رهيب 👏',
     };
   }
   if (avg >= 4) {
     return {
       className: 'is-funny',
       burst: ['😅', '🎭', '🤣', '✨'],
-      text: 'Funny chaos mode! فيه روح إبداعية مرحة 😄',
+      text: 'فوضى ممتعة! روح إبداعية مرحة جدًا 😄',
     };
   }
   return {
     className: 'is-funny',
     burst: ['🤣', '🌀', '🎪', '🙌'],
-    text: 'Meme energy unlocked! الجولة كانت كوميدية جدًا 😂',
+    text: 'طاقة ميمز مفعّلة! الجولة كوميدية جدًا 😂',
   };
 }
 
@@ -415,7 +415,7 @@ function drawStrokeSet(canvas, strokes) {
 function renderSubmissionPreview(previewEl, submission) {
   if (!previewEl) return;
   if (!submission || typeof submission !== 'object') {
-    previewEl.innerHTML = '<div class="cs-status">No submission captured.</div>';
+    previewEl.innerHTML = '<div class="cs-status">لا يوجد إبداع محفوظ في هذه الجولة.</div>';
     return;
   }
 
@@ -466,7 +466,7 @@ function ensureSocketHooks(socket, state) {
     const rated = Number(payload.ratedCount || 0);
     const total = Number(payload.eligibleRaters || 0);
     const avg = Number(payload.averageRating || 0);
-    status.textContent = `Ratings: ${rated}/${total} • Avg ${avg.toFixed(2)}`;
+    status.textContent = `التقييمات: ${rated}/${total} • المتوسط ${avg.toFixed(2)}`;
   });
 
   socket.on('creator:submission_saved', () => {
@@ -491,7 +491,7 @@ function renderCreatePhase({ container, data, state, socket, studio, isCreator, 
       : [];
   }
 
-  const promptText = String(studio?.prompt?.text || 'Create something');
+  const promptText = String(studio?.prompt?.text || 'ابتكر شيئًا مميزًا');
   const creatorName = studio?.creatorNickname || 'Creator';
   const kind = studio?.prompt?.kind || 'draw';
 
@@ -500,11 +500,11 @@ function renderCreatePhase({ container, data, state, socket, studio, isCreator, 
       <div class="cs-wrap">
         ${renderTurnLegendHTML(players, studio?.creatorId, socket.id)}
         <div class="cs-head">
-          <div class="cs-title">🎨 ${creatorName} is creating now</div>
-          <div class="cs-sub">Prompt: ${promptText}</div>
+          <div class="cs-title">🎨 الآن دور ${creatorName}</div>
+          <div class="cs-sub">المهمة: ${promptText}</div>
         </div>
         <div class="cs-stage">
-          <div class="cs-status">Waiting for the creator to submit (or timer to end)…</div>
+          <div class="cs-status">بانتظار إرسال الإبداع (أو انتهاء الوقت)…</div>
         </div>
         ${renderScoreboardHTML(studio?.scoreboard)}
       </div>
@@ -517,16 +517,16 @@ function renderCreatePhase({ container, data, state, socket, studio, isCreator, 
       <div class="cs-wrap">
         ${renderTurnLegendHTML(players, studio?.creatorId, socket.id)}
         <div class="cs-head">
-          <div class="cs-title">🧩 Arrange Creator Mode</div>
-          <div class="cs-sub">Prompt: ${promptText}</div>
+          <div class="cs-title">🧩 وضع ترتيب العناصر</div>
+          <div class="cs-sub">المهمة: ${promptText}</div>
         </div>
         <div class="cs-stage">
           <div id="cs-arrange-board" class="cs-arrange-board"></div>
           <div class="cs-actions">
-            <button type="button" id="cs-reset-arrange" class="cs-btn">↺ Reset</button>
-            <button type="button" id="cs-submit-create" class="cs-btn primary" ${state.__creatorSubmitted ? 'disabled' : ''}>✅ Submit</button>
+            <button type="button" id="cs-reset-arrange" class="cs-btn">↺ إعادة ضبط</button>
+            <button type="button" id="cs-submit-create" class="cs-btn primary" ${state.__creatorSubmitted ? 'disabled' : ''}>✅ إرسال</button>
           </div>
-          <div id="cs-create-status" class="cs-status">Move elements to make the nicest composition.</div>
+          <div id="cs-create-status" class="cs-status">حرّك العناصر لصنع أفضل تكوين بصري.</div>
         </div>
       </div>
     `;
@@ -618,16 +618,16 @@ function renderCreatePhase({ container, data, state, socket, studio, isCreator, 
     <div class="cs-wrap">
       ${renderTurnLegendHTML(players, studio?.creatorId, socket.id)}
       <div class="cs-head">
-        <div class="cs-title">🖌️ Draw Creator Mode</div>
-        <div class="cs-sub">Prompt: ${promptText}</div>
+        <div class="cs-title">🖌️ وضع الرسم الإبداعي</div>
+        <div class="cs-sub">المهمة: ${promptText}</div>
       </div>
       <div class="cs-stage">
         <canvas id="cs-draw-canvas" class="cs-canvas"></canvas>
         <div class="cs-actions">
-          <button type="button" id="cs-clear-draw" class="cs-btn">🧽 Clear</button>
-          <button type="button" id="cs-submit-create" class="cs-btn primary" ${state.__creatorSubmitted ? 'disabled' : ''}>✅ Submit</button>
+          <button type="button" id="cs-clear-draw" class="cs-btn">🧽 مسح</button>
+          <button type="button" id="cs-submit-create" class="cs-btn primary" ${state.__creatorSubmitted ? 'disabled' : ''}>✅ إرسال</button>
         </div>
-        <div id="cs-create-status" class="cs-status">Draw your idea clearly. Audience will rate from 1 to 10.</div>
+        <div id="cs-create-status" class="cs-status">ارسم فكرتك بوضوح. الجمهور سيقيّم من 1 إلى 10.</div>
       </div>
     </div>
   `;
@@ -725,8 +725,8 @@ function renderRatingPhase({ container, data, state, socket, studio, isCreator, 
     <div class="cs-wrap">
       ${renderTurnLegendHTML(players, studio?.creatorId, socket.id)}
       <div class="cs-head">
-        <div class="cs-title">⭐ Rate ${creatorName}</div>
-        <div class="cs-sub">Give a fair score from 1 to 10</div>
+        <div class="cs-title">⭐ قيّم ${creatorName}</div>
+        <div class="cs-sub">امنح تقييمًا عادلًا من 1 إلى 10</div>
       </div>
       <div class="cs-stage">
         <div id="cs-submission-preview"></div>
@@ -735,7 +735,7 @@ function renderRatingPhase({ container, data, state, socket, studio, isCreator, 
             ${Array.from({ length: 10 }, (_, i) => i + 1).map((n) => `<button class="cs-rate-btn" data-rate="${n}" ${state.__creatorRatingSubmitted ? 'disabled' : ''}>${n}</button>`).join('')}
           </div>
         `}
-        <div id="cs-rating-status" class="cs-status">Ratings: ${Number(studio.ratedCount || 0)}/${Number(studio.eligibleRaters || 0)} • Avg ${(Number(studio.averageRating || 0)).toFixed(2)}</div>
+        <div id="cs-rating-status" class="cs-status">التقييمات: ${Number(studio.ratedCount || 0)}/${Number(studio.eligibleRaters || 0)} • المتوسط ${(Number(studio.averageRating || 0)).toFixed(2)}</div>
       </div>
       ${renderScoreboardHTML(studio?.scoreboard)}
     </div>
@@ -746,7 +746,7 @@ function renderRatingPhase({ container, data, state, socket, studio, isCreator, 
 
   if (isCreator) {
     const status = container.querySelector('#cs-rating-status');
-    if (status) status.textContent = 'Audience is rating your creation…';
+    if (status) status.textContent = 'الجمهور يقيّم إبداعك الآن…';
     return;
   }
 
@@ -767,7 +767,7 @@ function renderRatingPhase({ container, data, state, socket, studio, isCreator, 
         },
       });
       const status = container.querySelector('#cs-rating-status');
-      if (status) status.textContent = `✅ Your rating (${rating}) has been submitted.`;
+      if (status) status.textContent = `✅ تم إرسال تقييمك (${rating}) بنجاح.`;
     });
   });
 }
@@ -781,8 +781,8 @@ function renderResultPhase({ container, studio, players, currentSocketId }) {
     <div class="cs-wrap">
       ${renderTurnLegendHTML(players, studio?.creatorId, currentSocketId)}
       <div class="cs-head">
-        <div class="cs-title">🏁 Round Result</div>
-        <div class="cs-sub">${creatorName} • Average Rating: <strong>${avg.toFixed(2)}</strong>/10</div>
+        <div class="cs-title">🏁 نتيجة الجولة</div>
+        <div class="cs-sub">${creatorName} • متوسط التقييم: <strong>${avg.toFixed(2)}</strong>/10</div>
       </div>
       <div class="cs-stage">
         <div class="cs-result-card ${flavor.className}">
@@ -791,7 +791,7 @@ function renderResultPhase({ container, studio, players, currentSocketId }) {
           <div class="cs-result-funny">${flavor.text}</div>
         </div>
         <div id="cs-submission-preview"></div>
-        <div class="cs-status">Top ratings: ${Array.isArray(studio?.ratings) && studio.ratings.length ? studio.ratings.map((r) => `${r.nickname} ${r.rating}`).join(' • ') : 'No ratings this round.'}</div>
+        <div class="cs-status">أفضل التقييمات: ${Array.isArray(studio?.ratings) && studio.ratings.length ? studio.ratings.map((r) => `${r.nickname} ${r.rating}`).join(' • ') : 'لا توجد تقييمات في هذه الجولة.'}</div>
       </div>
       ${renderScoreboardHTML(studio?.scoreboard)}
     </div>
@@ -815,14 +815,14 @@ export const creatorStudioRuntime = {
     showView(isHostOnly ? 'view-host-question' : 'view-player-question');
 
     const hostModeBadge = document.getElementById('host-q-difficulty');
-    if (hostModeBadge) hostModeBadge.textContent = 'CREATOR STUDIO';
+    if (hostModeBadge) hostModeBadge.textContent = 'استوديو المبدع';
     const playerModeBadge = document.getElementById('player-q-difficulty');
-    if (playerModeBadge) playerModeBadge.textContent = 'CREATOR STUDIO';
+    if (playerModeBadge) playerModeBadge.textContent = 'استوديو المبدع';
 
     const hostText = document.getElementById('host-question-text');
-    if (hostText) hostText.textContent = 'Creator Studio';
+    if (hostText) hostText.textContent = 'استوديو المبدع';
     const playerText = document.getElementById('player-question-text');
-    if (playerText) playerText.textContent = 'Creator Studio';
+    if (playerText) playerText.textContent = 'استوديو المبدع';
 
     hideDefaultQuestionWidgets();
 
