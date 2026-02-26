@@ -220,7 +220,7 @@ function renderSpectatorView({ data }) {
       <div class="gear-grid">
         ${gears.map((gear) => `
           <div class="gear-card">
-            <div class="gear-wheel ${gear.size || 'small'}" style="transform:rotate(${normalizeAngle(gear.targetAngle || 0)}deg)"><span class="marker"></span><span class="core"></span></div>
+            <div class="gear-wheel ${gear.size || 'small'}" style="transform:rotate(0deg)"><span class="marker"></span><span class="core"></span></div>
             <div style="font-size:0.76rem;opacity:0.85;">Gear ${gear.id}</div>
           </div>
         `).join('')}
@@ -273,7 +273,7 @@ function renderPlayerView({ data, state, socket }) {
       </div>
       <div id="gear-machine-status" class="gear-machine-status">${machine.phase === 'finished'
         ? (machine.winnerId === socket.id ? '🏆 أنت الفائز!' : `🏁 الفائز: ${machine.winnerNickname || 'Player'}`)
-        : 'لفّ التروس (صغير/كبير) ثم اضغط تشغيل للتحقق.'}</div>
+        : 'لفّ التروس ثم اضغط تشغيل — أول لاعب يرسل ترتيب صحيح يفوز.'}</div>
     </div>
   `;
 

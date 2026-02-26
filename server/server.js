@@ -292,6 +292,29 @@ app.get('/health', (_req, res) => {
 // Build info endpoint — returns server start time for the home screen version badge
 app.get('/api/build-info', (_req, res) => res.json({ buildTime: BUILD_TIME }));
 
+// QR SVG endpoint — used as a resilient fallback when realtime payload misses qrSvg
+app.get('/api/qr-svg', async (req, res) => {
+  const rawUrl = typeof req.query.url === 'string' ? req.query.url : '';
+  const joinUrl = rawUrl.trim();
+  if (!joinUrl) {
+    res.status(400).type('text/plain; charset=utf-8').send('Missing url query parameter');
+    return;
+  }
+
+  try {
+    const qrSvg = await QRCode.toString(joinUrl, {
+      type: 'svg',
+      margin: 1,
+      width: 200,
+    });
+    res.set('Cache-Control', 'no-store');
+    res.type('image/svg+xml; charset=utf-8').send(qrSvg);
+  } catch (error) {
+    console.warn('[QR] /api/qr-svg failed', error?.message || error);
+    res.status(500).type('text/plain; charset=utf-8').send('Unable to generate QR');
+  }
+});
+
 // Diagnostic endpoint — test quiz loading
 app.get('/api/quiz-diagnostic/:slug', async (req, res) => {
   const slug = req.params.slug;

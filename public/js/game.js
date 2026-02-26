@@ -1076,7 +1076,7 @@ function applyModeInfo(data) {
       : (localIp ? `http://${localIp} (pending room)` : '—');
   }
   state.currentJoinUrl = joinUrl || '';
-  if (qrWrap) qrWrap.innerHTML = qrSvg || '';
+  renderHostQrCode({ joinUrl, qrSvg, qrWrap });
 
   // Populate share URL bar
   const shareInput = document.getElementById('share-url-input');
@@ -1117,6 +1117,40 @@ function applyModeInfo(data) {
     if (tg) tg.href = `https://t.me/share/url?text=${encodeURIComponent(_tgText)}`;
     if (tw) tw.href = `https://x.com/intent/tweet?text=${encodeURIComponent(_twText)}`;
   }
+}
+
+let hostQrRenderRequestId = 0;
+function renderHostQrCode({ joinUrl, qrSvg, qrWrap }) {
+  if (!qrWrap) return;
+
+  const looksLikeSvg = typeof qrSvg === 'string' && qrSvg.includes('<svg');
+  if (looksLikeSvg) {
+    qrWrap.innerHTML = qrSvg;
+    return;
+  }
+
+  if (!joinUrl) {
+    qrWrap.innerHTML = '';
+    return;
+  }
+
+  const currentRequestId = ++hostQrRenderRequestId;
+  qrWrap.innerHTML = '<div style="font-size:0.78rem;opacity:0.75;padding:0.35rem 0.4rem;">Generating QR…</div>';
+
+  fetch(`/api/qr-svg?url=${encodeURIComponent(joinUrl)}`)
+    .then((response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.text();
+    })
+    .then((svg) => {
+      if (currentRequestId !== hostQrRenderRequestId) return;
+      if (typeof svg !== 'string' || !svg.includes('<svg')) throw new Error('invalid SVG');
+      qrWrap.innerHTML = svg;
+    })
+    .catch(() => {
+      if (currentRequestId !== hostQrRenderRequestId) return;
+      qrWrap.innerHTML = '<div style="font-size:0.78rem;opacity:0.75;padding:0.35rem 0.4rem;text-align:center;">QR unavailable الآن — شارك PIN يدويًا.</div>';
+    });
 }
 
 function setConnectionStatus(kind, message) {
@@ -2679,10 +2713,11 @@ socket.on('room:created', ({ pin, reclaimed, ...modeInfo }) => {
     setConnectionStatus('ok', 'Reconnected ✓');
     const hostPinEl = document.getElementById('host-pin');
     if (hostPinEl) hostPinEl.textContent = pin;
+    applyModeInfo(modeInfo);
     
     // Safety check: if host was stuck in the "Preparing..." screen, they must see the lobby.
     const currentView = document.querySelector('.view-active');
-    if (!currentView || currentView.id === 'view-host-launch') {
+    if (!currentView || currentView.id === 'view-host-loading' || currentView.id === 'view-host-launch') {
       showView('view-host-lobby');
     }
     return;

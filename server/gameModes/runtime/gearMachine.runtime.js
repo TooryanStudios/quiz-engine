@@ -13,13 +13,25 @@ function createGearMachineRuntime() {
     return normalized;
   }
 
+  function pickRandomTargetAngle(step) {
+    const normalizedStep = Number(step) > 0 ? Number(step) : 30;
+    const slots = Math.max(1, Math.floor(360 / normalizedStep));
+    const slotIndex = Math.floor(Math.random() * slots);
+    return normalizeAngle(slotIndex * normalizedStep);
+  }
+
   function createGearTemplate() {
-    return [
-      { id: 'g1', size: 'large', targetAngle: 120, step: 30 },
-      { id: 'g2', size: 'small', targetAngle: 210, step: 30 },
-      { id: 'g3', size: 'large', targetAngle: 300, step: 30 },
-      { id: 'g4', size: 'small', targetAngle: 60, step: 30 },
+    const template = [
+      { id: 'g1', size: 'large', step: 30 },
+      { id: 'g2', size: 'small', step: 30 },
+      { id: 'g3', size: 'large', step: 30 },
+      { id: 'g4', size: 'small', step: 30 },
     ];
+
+    return template.map((gear) => ({
+      ...gear,
+      targetAngle: pickRandomTargetAngle(gear.step),
+    }));
   }
 
   function initializeMachine(room) {
@@ -41,7 +53,6 @@ function createGearMachineRuntime() {
       gears: machine.gears.map((gear) => ({
         id: gear.id,
         size: gear.size,
-        targetAngle: gear.targetAngle,
         step: gear.step,
       })),
       winnerId: machine.winnerId,
