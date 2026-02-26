@@ -2144,23 +2144,40 @@ io.on('connection', (socket) => {
     if (player.currentAnswer !== null) return;
 
     const timeTakenSec = (Date.now() - room.questionStartTime) / 1000;
-    player.currentAnswer = answer;
-    player.answerTime    = timeTakenSec;
 
-    socket.emit('answer:received', { answer });
+    const dispatchDefault = () => {
+      player.currentAnswer = answer;
+      player.answerTime    = timeTakenSec;
 
-    // Notify host with live counter (only connected players count)
-    const connectedPlayers = Array.from(room.players.values()).filter(p => !p.disconnected);
-    const answeredCount = connectedPlayers.filter(p => p.currentAnswer !== null).length;
-    const hostSocket = io.sockets.sockets.get(room.hostSocketId);
-    if (hostSocket) {
-      hostSocket.emit('question:answer_update', { answered: answeredCount, total: connectedPlayers.length });
-    }
+      socket.emit('answer:received', { answer });
 
-    // Auto-end when every connected player has answered
-    if (connectedPlayers.length > 0 && answeredCount === connectedPlayers.length) {
-      endQuestion(room);
-    }
+      // Notify host with live counter (only connected players count)
+      const connectedPlayers = Array.from(room.players.values()).filter(p => !p.disconnected);
+      const answeredCount = connectedPlayers.filter(p => p.currentAnswer !== null).length;
+      const hostSocket = io.sockets.sockets.get(room.hostSocketId);
+      if (hostSocket) {
+        hostSocket.emit('question:answer_update', { answered: answeredCount, total: connectedPlayers.length });
+      }
+
+      // Auto-end when every connected player has answered
+      if (connectedPlayers.length > 0 && answeredCount === connectedPlayers.length) {
+        endQuestion(room);
+      }
+    };
+
+    const handledByMode = callRoomGameModeHook(room, 'onPlayerAnswer', {
+      room,
+      io,
+      socket,
+      player,
+      questionIndex,
+      answer,
+      timeTakenSec,
+      dispatchDefault,
+    });
+
+    if (handledByMode === true) return;
+    dispatchDefault();
   });
 
   socket.on('role:shield', ({ targetId }) => {
