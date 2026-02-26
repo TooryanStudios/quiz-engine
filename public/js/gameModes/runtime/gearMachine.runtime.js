@@ -151,6 +151,31 @@ function ensureStyles() {
       .gear-wheel.large { width: 114px; height: 114px; }
       .gear-wheel.small { width: 92px; height: 92px; }
     }
+    @media (max-width: 420px) {
+      .gear-machine-wrap {
+        padding: 0.72rem 0.62rem;
+      }
+      .gear-grid {
+        min-height: 200px;
+        padding: 0.35rem 0;
+      }
+      .gear-node { margin: -14px; }
+      .gear-node.large { margin: -11px; }
+      .gear-wheel.large { width: 104px; height: 104px; }
+      .gear-wheel.small { width: 84px; height: 84px; }
+      .gear-angle { font-size: 0.74rem; }
+      .gear-run-btn { padding: 0.5rem 1rem; }
+    }
+    @media (max-width: 360px) {
+      .gear-grid {
+        min-height: 184px;
+      }
+      .gear-node { margin: -16px; }
+      .gear-node.large { margin: -13px; }
+      .gear-wheel.large { width: 96px; height: 96px; }
+      .gear-wheel.small { width: 78px; height: 78px; }
+      .gear-angle { font-size: 0.7rem; }
+    }
   `;
 
   document.head.appendChild(style);
