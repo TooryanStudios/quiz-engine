@@ -23,6 +23,35 @@ function ensureStyles() {
       text-align: center;
       margin-bottom: 0.55rem;
     }
+    .cs-turn-legend {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.4rem;
+      margin-bottom: 0.55rem;
+    }
+    .cs-turn-pill {
+      border-radius: 999px;
+      border: 1px solid rgba(148,163,184,0.3);
+      background: rgba(30,41,59,0.45);
+      color: #cbd5e1;
+      padding: 0.3rem 0.55rem;
+      font-size: 0.77rem;
+      font-weight: 800;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-align: center;
+    }
+    .cs-turn-pill.is-active {
+      border-color: rgba(34,197,94,0.48);
+      background: rgba(34,197,94,0.18);
+      color: #bbf7d0;
+      animation: cs-active-pulse 1.5s ease-in-out infinite;
+    }
+    .cs-turn-pill.is-me {
+      border-color: rgba(56,189,248,0.52);
+      color: #bae6fd;
+    }
     .cs-title {
       font-size: 1.02rem;
       font-weight: 900;
@@ -143,10 +172,196 @@ function ensureStyles() {
       border-radius: 10px;
       background: rgba(30,41,59,0.45);
       padding: 0.36rem 0.5rem;
+      animation: cs-pop-in 0.38s ease both;
+    }
+    .cs-result-card {
+      border: 1px solid rgba(56,189,248,0.35);
+      border-radius: 14px;
+      background: linear-gradient(165deg, rgba(15,23,42,0.82), rgba(30,41,59,0.78));
+      padding: 0.62rem 0.7rem;
+      text-align: center;
+      animation: cs-pop-in 0.45s ease-out both;
+    }
+    .cs-result-score {
+      font-size: 1.35rem;
+      font-weight: 900;
+      letter-spacing: 0.03em;
+      margin: 0.2rem 0 0.35rem;
+      color: #f8fafc;
+      text-shadow: 0 0 14px rgba(56,189,248,0.3);
+    }
+    .cs-result-funny {
+      font-size: 0.84rem;
+      font-weight: 800;
+      line-height: 1.35;
+      color: #e2e8f0;
+    }
+    .cs-result-burst {
+      display: flex;
+      justify-content: center;
+      gap: 0.32rem;
+      margin-bottom: 0.22rem;
+      font-size: 1rem;
+    }
+    .cs-result-burst span {
+      display: inline-block;
+      animation: cs-bounce-funny 1.1s ease-in-out infinite;
+    }
+    .cs-result-burst span:nth-child(2) { animation-delay: 0.12s; }
+    .cs-result-burst span:nth-child(3) { animation-delay: 0.24s; }
+    .cs-result-burst span:nth-child(4) { animation-delay: 0.36s; }
+    .cs-result-card.is-epic {
+      border-color: rgba(34,197,94,0.45);
+      box-shadow: 0 0 18px rgba(34,197,94,0.25);
+    }
+    .cs-result-card.is-funny {
+      border-color: rgba(244,114,182,0.48);
+      box-shadow: 0 0 18px rgba(244,114,182,0.22);
+    }
+    .cs-turn-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 1200;
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+    }
+    .cs-turn-overlay.is-showing { opacity: 1; }
+    .cs-turn-overlay-msg {
+      border-radius: 16px;
+      border: 1px solid rgba(56,189,248,0.45);
+      background: linear-gradient(135deg, rgba(15,23,42,0.88), rgba(30,41,59,0.84));
+      color: #f8fafc;
+      font-size: clamp(1.1rem, 3.8vw, 1.85rem);
+      font-weight: 900;
+      letter-spacing: 0.015em;
+      text-align: center;
+      min-width: min(92vw, 380px);
+      padding: 0.8rem 1.2rem;
+      box-shadow: 0 12px 28px rgba(2,6,23,0.45);
+      animation: cs-turn-pop 1.65s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+    @keyframes cs-active-pulse {
+      0%, 100% { transform: translateY(0); box-shadow: 0 0 0 rgba(34,197,94,0); }
+      50% { transform: translateY(-1px); box-shadow: 0 0 16px rgba(34,197,94,0.22); }
+    }
+    @keyframes cs-pop-in {
+      0% { transform: translateY(10px) scale(0.96); opacity: 0; }
+      100% { transform: translateY(0) scale(1); opacity: 1; }
+    }
+    @keyframes cs-bounce-funny {
+      0%, 100% { transform: translateY(0) rotate(0deg); }
+      40% { transform: translateY(-5px) rotate(-8deg); }
+      70% { transform: translateY(-2px) rotate(6deg); }
+    }
+    @keyframes cs-turn-pop {
+      0% { transform: translateY(16px) scale(0.93); opacity: 0; filter: blur(8px); }
+      24% { transform: translateY(0) scale(1.02); opacity: 1; filter: blur(0); }
+      74% { transform: translateY(0) scale(1); opacity: 1; filter: blur(0); }
+      100% { transform: translateY(-8px) scale(0.98); opacity: 0; filter: blur(6px); }
     }
   `;
 
   document.head.appendChild(style);
+}
+
+function showTurnOverlay(message) {
+  let overlay = document.getElementById('cs-turn-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'cs-turn-overlay';
+    overlay.className = 'cs-turn-overlay';
+    overlay.innerHTML = '<div class="cs-turn-overlay-msg" id="cs-turn-overlay-msg"></div>';
+    document.body.appendChild(overlay);
+  }
+
+  const msg = document.getElementById('cs-turn-overlay-msg');
+  if (msg) msg.textContent = String(message || 'Creator Studio');
+
+  overlay.classList.remove('is-showing');
+  void overlay.offsetWidth;
+  overlay.classList.add('is-showing');
+
+  window.setTimeout(() => {
+    overlay.classList.remove('is-showing');
+  }, 1650);
+}
+
+function renderTurnLegendHTML(players, activePlayerId, currentSocketId) {
+  const entries = Array.isArray(players) ? players : [];
+  if (!entries.length) return '';
+  return `
+    <div class="cs-turn-legend">
+      ${entries.map((player) => {
+        const isActive = player.id === activePlayerId;
+        const isMe = player.id === currentSocketId;
+        return `<div class="cs-turn-pill ${isActive ? 'is-active' : ''} ${isMe ? 'is-me' : ''}">${isActive ? '🎯 ' : ''}${String(player.nickname || 'Player')}</div>`;
+      }).join('')}
+    </div>
+  `;
+}
+
+function getResultFlavor(avg) {
+  if (avg >= 8.5) {
+    return {
+      className: 'is-epic',
+      burst: ['🔥', '🏆', '✨', '🚀'],
+      text: 'Masterpiece vibes! الجمهور طار من الحماس 🔥',
+    };
+  }
+  if (avg >= 6.5) {
+    return {
+      className: '',
+      burst: ['👏', '🌟', '🎉', '💫'],
+      text: 'Great round! شغل جميل جدًا 👏',
+    };
+  }
+  if (avg >= 4) {
+    return {
+      className: 'is-funny',
+      burst: ['😅', '🎭', '🤣', '✨'],
+      text: 'Funny chaos mode! فيه روح إبداعية مرحة 😄',
+    };
+  }
+  return {
+    className: 'is-funny',
+    burst: ['🤣', '🌀', '🎪', '🙌'],
+    text: 'Meme energy unlocked! الجولة كانت كوميدية جدًا 😂',
+  };
+}
+
+function handlePhaseTransitionFX({ studio, state, isCreator }) {
+  const phase = String(studio?.phase || 'create');
+  const creatorId = studio?.creatorId || 'none';
+  const phaseKey = `${studio?.round || 0}:${phase}:${creatorId}`;
+  if (state.__creatorPhaseFxKey === phaseKey) return;
+  state.__creatorPhaseFxKey = phaseKey;
+
+  if (phase === 'create') {
+    if (isCreator) {
+      showTurnOverlay('🎯 دورك الآن! ابدأ الإبداع');
+      if (typeof Sounds.xoTurn === 'function') Sounds.xoTurn();
+      else if (typeof Sounds.start === 'function') Sounds.start();
+    } else {
+      showTurnOverlay(`🎨 ${studio?.creatorNickname || 'Creator'} يلعب الآن`);
+      if (typeof Sounds.xoRoundStart === 'function') Sounds.xoRoundStart();
+    }
+    return;
+  }
+
+  if (phase === 'rating') {
+    showTurnOverlay(isCreator ? '⭐ الجمهور يقيم عملك الآن' : '⭐ دورك للتقييم الآن');
+    if (typeof Sounds.tick === 'function') Sounds.tick();
+    return;
+  }
+
+  const avg = Number(studio?.averageRating || 0);
+  showTurnOverlay('🏁 نتيجة الجولة وصلت!');
+  if (avg >= 7 && typeof Sounds.fanfare === 'function') Sounds.fanfare();
+  else if (avg >= 5 && typeof Sounds.correct === 'function') Sounds.correct();
+  else if (typeof Sounds.wrong === 'function') Sounds.wrong();
 }
 
 function hideDefaultQuestionWidgets() {
@@ -260,7 +475,7 @@ function ensureSocketHooks(socket, state) {
   });
 }
 
-function renderCreatePhase({ container, data, state, socket, studio, isCreator }) {
+function renderCreatePhase({ container, data, state, socket, studio, isCreator, players }) {
   const roundKey = `${studio.round}:${studio.creatorId || 'none'}`;
   if (state.__creatorRoundKey !== roundKey) {
     state.__creatorRoundKey = roundKey;
@@ -283,6 +498,7 @@ function renderCreatePhase({ container, data, state, socket, studio, isCreator }
   if (!isCreator) {
     container.innerHTML = `
       <div class="cs-wrap">
+        ${renderTurnLegendHTML(players, studio?.creatorId, socket.id)}
         <div class="cs-head">
           <div class="cs-title">🎨 ${creatorName} is creating now</div>
           <div class="cs-sub">Prompt: ${promptText}</div>
@@ -299,6 +515,7 @@ function renderCreatePhase({ container, data, state, socket, studio, isCreator }
   if (kind === 'arrange') {
     container.innerHTML = `
       <div class="cs-wrap">
+        ${renderTurnLegendHTML(players, studio?.creatorId, socket.id)}
         <div class="cs-head">
           <div class="cs-title">🧩 Arrange Creator Mode</div>
           <div class="cs-sub">Prompt: ${promptText}</div>
@@ -399,6 +616,7 @@ function renderCreatePhase({ container, data, state, socket, studio, isCreator }
 
   container.innerHTML = `
     <div class="cs-wrap">
+      ${renderTurnLegendHTML(players, studio?.creatorId, socket.id)}
       <div class="cs-head">
         <div class="cs-title">🖌️ Draw Creator Mode</div>
         <div class="cs-sub">Prompt: ${promptText}</div>
@@ -500,11 +718,12 @@ function renderCreatePhase({ container, data, state, socket, studio, isCreator }
   }
 }
 
-function renderRatingPhase({ container, data, state, socket, studio, isCreator }) {
+function renderRatingPhase({ container, data, state, socket, studio, isCreator, players }) {
   const creatorName = studio?.creatorNickname || 'Creator';
 
   container.innerHTML = `
     <div class="cs-wrap">
+      ${renderTurnLegendHTML(players, studio?.creatorId, socket.id)}
       <div class="cs-head">
         <div class="cs-title">⭐ Rate ${creatorName}</div>
         <div class="cs-sub">Give a fair score from 1 to 10</div>
@@ -553,17 +772,24 @@ function renderRatingPhase({ container, data, state, socket, studio, isCreator }
   });
 }
 
-function renderResultPhase({ container, studio }) {
+function renderResultPhase({ container, studio, players, currentSocketId }) {
   const avg = Number(studio?.averageRating || 0);
   const creatorName = studio?.creatorNickname || 'Creator';
+  const flavor = getResultFlavor(avg);
 
   container.innerHTML = `
     <div class="cs-wrap">
+      ${renderTurnLegendHTML(players, studio?.creatorId, currentSocketId)}
       <div class="cs-head">
         <div class="cs-title">🏁 Round Result</div>
         <div class="cs-sub">${creatorName} • Average Rating: <strong>${avg.toFixed(2)}</strong>/10</div>
       </div>
       <div class="cs-stage">
+        <div class="cs-result-card ${flavor.className}">
+          <div class="cs-result-burst">${flavor.burst.map((emoji) => `<span>${emoji}</span>`).join('')}</div>
+          <div class="cs-result-score">${avg.toFixed(2)} / 10</div>
+          <div class="cs-result-funny">${flavor.text}</div>
+        </div>
         <div id="cs-submission-preview"></div>
         <div class="cs-status">Top ratings: ${Array.isArray(studio?.ratings) && studio.ratings.length ? studio.ratings.map((r) => `${r.nickname} ${r.rating}`).join(' • ') : 'No ratings this round.'}</div>
       </div>
@@ -604,18 +830,21 @@ export const creatorStudioRuntime = {
     if (!container) return true;
 
     const isCreator = socket.id === studio.creatorId;
+    const players = Array.isArray(data?.players) ? data.players : [];
+
+    handlePhaseTransitionFX({ studio, state, isCreator });
 
     if (studio.phase === 'create') {
-      renderCreatePhase({ container, data, state, socket, studio, isCreator });
+      renderCreatePhase({ container, data, state, socket, studio, isCreator, players });
       return true;
     }
 
     if (studio.phase === 'rating') {
-      renderRatingPhase({ container, data, state, socket, studio, isCreator });
+      renderRatingPhase({ container, data, state, socket, studio, isCreator, players });
       return true;
     }
 
-    renderResultPhase({ container, studio });
+    renderResultPhase({ container, studio, players, currentSocketId: socket.id });
     return true;
   },
 
