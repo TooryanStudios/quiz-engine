@@ -779,18 +779,52 @@ function startHostLaunch(quizSlug = null) {
   enableKeepAwake();
   state.role = 'host';
   state.hostCreatePending = true;
+  state.hostCreateRetryCount = 0;
   showView('view-host-loading');
   setConnectionStatus('warn', 'Preparing host room…');
 
-  const doHostCreate = () => socket.emit('host:create', {
-    quizSlug: quizSlug || null,
-    gameMode: gameModeFromUrl || null,
-    ...getHostAuthPayload(),
-  });
+  const clearHostCreateTimeout = () => {
+    if (state.hostCreateTimeoutId) {
+      clearTimeout(state.hostCreateTimeoutId);
+      state.hostCreateTimeoutId = null;
+    }
+  };
+
+  const scheduleHostCreateTimeout = () => {
+    clearHostCreateTimeout();
+    state.hostCreateTimeoutId = setTimeout(() => {
+      if (!state.hostCreatePending) return;
+
+      if ((state.hostCreateRetryCount || 0) < 1) {
+        state.hostCreateRetryCount = (state.hostCreateRetryCount || 0) + 1;
+        setConnectionStatus('warn', 'Preparing host room… retrying');
+        doHostCreate(true);
+        return;
+      }
+
+      state.hostCreatePending = false;
+      document.documentElement.classList.remove('autohost-launch');
+      setConnectionStatus('error', 'Host room creation timed out');
+      alert('تعذر إنشاء الغرفة الآن. حاول مرة أخرى.');
+      showView('view-home');
+    }, 12000);
+  };
+
+  const doHostCreate = (isRetry = false) => {
+    socket.emit('host:create', {
+      quizSlug: quizSlug || null,
+      gameMode: gameModeFromUrl || null,
+      ...getHostAuthPayload(),
+      isReconnect: !!isRetry,
+    });
+    scheduleHostCreateTimeout();
+  };
+
   if (socket.connected) {
     doHostCreate();
   } else {
     socket.once('connect', doHostCreate);
+    scheduleHostCreateTimeout();
   }
 }
 
@@ -2614,6 +2648,11 @@ document.getElementById('btn-home-from-closed').addEventListener('click', () => 
 
 /** HOST: Room created successfully */
 socket.on('room:created', ({ pin, reclaimed, ...modeInfo }) => {
+  if (state.hostCreateTimeoutId) {
+    clearTimeout(state.hostCreateTimeoutId);
+    state.hostCreateTimeoutId = null;
+  }
+  state.hostCreateRetryCount = 0;
   state.hostCreatePending = false;
   state.pin = pin;
 
@@ -2965,6 +3004,10 @@ socket.on('host:joined_as_player', ({ joined, nickname, avatar }) => {
 /** BOTH: Error from server */
 socket.on('room:error', ({ message }) => {
   clearTimeout(joinTimeoutId);
+  if (state.hostCreateTimeoutId) {
+    clearTimeout(state.hostCreateTimeoutId);
+    state.hostCreateTimeoutId = null;
+  }
   pushJoinDebugLog(`room:error ${message}`);
   if (window.__dbgLog) window.__dbgLog('room:error: ' + message);
 
@@ -2973,6 +3016,7 @@ socket.on('room:error', ({ message }) => {
   if (joinBtn) { joinBtn.disabled = false; joinBtn.textContent = 'Join Game'; }
 
   if (state.role === 'host') {
+    state.hostCreateRetryCount = 0;
     state.hostCreatePending = false;
     document.documentElement.classList.remove('autohost-launch');
     // Reset start button if it was in loading state

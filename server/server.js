@@ -1449,6 +1449,7 @@ io.on('connection', (socket) => {
 
   // ── HOST: Create a new room ──────────────────
   socket.on('host:create', async ({ quizSlug, gameMode, isReconnect } = {}) => {
+    try {
     // Enforce single host per quiz — reject if an active room already exists for this slug.
     // Exception: if the previous host socket is gone (page refresh / network drop),
     // clean up the stale room and allow a fresh one.
@@ -1550,6 +1551,13 @@ io.on('connection', (socket) => {
       refreshQuestions(quizSlug)
         .then(data => { if (rooms.has(pin)) room.preloadedQuizData = data; })
         .catch(() => {});
+    }
+    } catch (error) {
+      console.error('[host:create] failed:', error?.message || error);
+      socket.emit('room:error', {
+        message: 'تعذر إنشاء الغرفة حالياً. يرجى المحاولة مرة أخرى.',
+        code: 'HOST_CREATE_FAILED',
+      });
     }
   });
 
