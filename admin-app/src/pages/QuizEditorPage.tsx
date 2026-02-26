@@ -108,6 +108,13 @@ const starterQuestion: QuizQuestion = {
   duration: 20,
 }
 
+const creatorStudioStarterQuestion: QuizQuestion = {
+  type: 'type',
+  text: '',
+  duration: 30,
+  creatorTask: 'draw',
+}
+
 function normalizeQuestionType(value: unknown): QuestionType {
   if (typeof value !== 'string') return 'single'
   return normalizeEnabledQuestionTypeIds([value])[0] || 'single'
@@ -130,19 +137,19 @@ function sanitizeQuestions(questions: QuizQuestion[] | undefined | null): QuizQu
   return questions.map((question) => sanitizeQuestion(question))
 }
 
+function coerceQuestionToCreatorStudioDraw(question: QuizQuestion): QuizQuestion {
+  const { creatorElements: _creatorElements, ...rest } = question
+  return {
+    ...rest,
+    creatorTask: 'draw',
+  }
+}
+
 function parseNumberList(input: string, max: number) {
   return input
     .split(',')
     .map((v) => Number(v.trim()))
     .filter((v) => Number.isInteger(v) && v >= 0 && v < max)
-}
-
-function parseTextList(input: string) {
-  return Array.from(new Set(input
-    .split(',')
-    .map((v) => v.trim())
-    .filter(Boolean)
-    .slice(0, 10)))
 }
 
 function titleToSlug(t: string): string {
@@ -297,6 +304,11 @@ export function QuizEditorPage() {
       return next
     })
   }, [enabledQuestionTypeIds, fallbackQuestionType, showToast])
+
+  useEffect(() => {
+    if (gameModeId !== 'creator-studio') return
+    setQuestions((prev) => prev.map((question) => coerceQuestionToCreatorStudioDraw(question)))
+  }, [gameModeId])
 
   const moveQuestion = (from: number, to: number) => {
     if (from === to) return
@@ -459,7 +471,10 @@ export function QuizEditorPage() {
 
   const addQuestion = () => {
     setHasUnsavedChanges(true)
-    setQuestions((prev) => [...prev, { ...starterQuestion }])
+    const nextQuestion = gameModeId === 'creator-studio'
+      ? { ...creatorStudioStarterQuestion }
+      : { ...starterQuestion }
+    setQuestions((prev) => [...prev, nextQuestion])
     setCollapsedQuestions((prev) => [...prev, false])
   }
 
@@ -626,6 +641,16 @@ export function QuizEditorPage() {
       return
     }
 
+    const hasCreatorStudioPrompt = questions.some((question) => {
+      if (question.creatorTask !== 'draw') return false
+      return typeof question.text === 'string' && question.text.trim().length > 0
+    })
+
+    if (gameModeId === 'creator-studio' && !hasCreatorStudioPrompt) {
+      showToast({ message: 'Creator Studio يحتاج سؤال رسم واحد على الأقل بنص واضح قبل الحفظ.', type: 'info' })
+      return
+    }
+
     // Classic mode requires questions, mini-game mode can run without question set.
     if (questions.length === 0 && !gameModeId) {
       showToast({ message: 'Add at least one question before saving classic mode, or choose a mini game.', type: 'info' })
@@ -654,7 +679,11 @@ export function QuizEditorPage() {
       randomizeQuestions,
       coverImage,
       tags: ['animals'],
-      questions: sanitizeQuestions(questions),
+      questions: sanitizeQuestions(
+        gameModeId === 'creator-studio'
+          ? questions.map((question) => coerceQuestionToCreatorStudioDraw(question))
+          : questions,
+      ),
     }
 
     showStatus({ kind: 'saving' })
@@ -1659,6 +1688,7 @@ export function QuizEditorPage() {
       {questions.map((q, index) => (
         (() => {
           const editorMeta = getQuestionTypeEditorMeta(q.type)
+          const isCreatorStudioMode = gameModeId === 'creator-studio'
           const isMultiSelectOptions = editorMeta.answerMode === 'options' && editorMeta.selectionMode === 'multi'
           const optionMin = editorMeta.optionsMin ?? 2
           return (
@@ -1754,7 +1784,7 @@ export function QuizEditorPage() {
             </div>
             
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-              {!collapsedQuestions[index] && (
+              {!collapsedQuestions[index] && !isCreatorStudioMode && (
                 <>
                   <select
                     value={q.type}
@@ -1916,46 +1946,15 @@ export function QuizEditorPage() {
               <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600 }}>
                 إعدادات Creator Studio
               </label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.8rem' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                  <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 600 }}>نوع الإبداع في هذه الجولة</label>
-                  <select
-                    value={q.creatorTask || ((q.type === 'order' || q.type === 'order_plus') ? 'arrange' : 'draw')}
-                    onChange={(e) => updateQuestion(index, { creatorTask: e.target.value as 'draw' | 'arrange' })}
-                    style={{
-                      padding: '0.7rem 0.95rem',
-                      borderRadius: '10px',
-                      border: '1.5px solid var(--border-strong)',
-                      backgroundColor: 'var(--bg-deep)',
-                      color: 'var(--text)',
-                      fontSize: '0.9rem',
-                      outline: 'none',
-                    }}
-                  >
-                    <option value="draw">🖌️ Draw</option>
-                    <option value="arrange">🧩 Arrange Elements</option>
-                  </select>
-                </div>
-
-                {(q.creatorTask || ((q.type === 'order' || q.type === 'order_plus') ? 'arrange' : 'draw')) === 'arrange' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                    <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 600 }}>عناصر الترتيب (مفصولة بفاصلة)</label>
-                    <input
-                      value={(q.creatorElements || q.items || []).join(', ')}
-                      onChange={(e) => updateQuestion(index, { creatorElements: parseTextList(e.target.value) })}
-                      placeholder="زهرة, شجرة, بيت, شمس"
-                      style={{
-                        padding: '0.7rem 0.95rem',
-                        borderRadius: '10px',
-                        border: '1.5px solid var(--border-strong)',
-                        backgroundColor: 'var(--bg-deep)',
-                        color: 'var(--text)',
-                        fontSize: '0.9rem',
-                        outline: 'none',
-                      }}
-                    />
-                  </div>
-                )}
+              <div style={{
+                padding: '0.75rem 0.9rem',
+                borderRadius: '10px',
+                border: '1px solid var(--border-strong)',
+                backgroundColor: 'var(--bg-deep)',
+                color: 'var(--text-mid)',
+                fontSize: '0.88rem',
+              }}>
+                هذا الوضع يدعم جولات الرسم فقط. يتم تشغيل النص المكتوب في السؤال كـ prompt رسم مباشر.
               </div>
               <p style={{ marginTop: '0.45rem', marginBottom: 0, fontSize: '0.76rem', color: 'var(--text-mid)' }}>
                 هذه الإعدادات خاصة بوضع Creator Studio وتُستخدم مباشرة في تشغيل الجولة.
@@ -1964,7 +1963,7 @@ export function QuizEditorPage() {
           )}
 
           {/* Options section for single/multi/boss */}
-          {editorMeta.answerMode === 'options' && (
+          {!isCreatorStudioMode && editorMeta.answerMode === 'options' && (
             <div style={{ marginBottom: '1.2rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.6rem' }}>
                 <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600 }}>{editorMeta.optionsSectionLabel}</label>
@@ -2122,7 +2121,7 @@ export function QuizEditorPage() {
             </div>
           )}
 
-          {editorMeta.answerMode === 'text' && (
+          {!isCreatorStudioMode && editorMeta.answerMode === 'text' && (
             <div style={{ marginTop: '0.5rem', marginBottom: '1rem' }}>
               <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600 }}>{editorMeta.textSettingsLabel}</label>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
@@ -2168,7 +2167,7 @@ export function QuizEditorPage() {
             </div>
           )}
 
-          {editorMeta.hasBossSettings && (
+          {!isCreatorStudioMode && editorMeta.hasBossSettings && (
             <div style={{ marginTop: '0.5rem', marginBottom: '1rem' }}>
               <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600 }}>{editorMeta.bossSettingsLabel}</label>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
@@ -2211,7 +2210,7 @@ export function QuizEditorPage() {
             </div>
           )}
 
-          {editorMeta.answerMode === 'pairs' && (
+          {!isCreatorStudioMode && editorMeta.answerMode === 'pairs' && (
             <div style={{ marginTop: '0.5rem', marginBottom: '1rem' }}>
               <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600 }}>{editorMeta.pairsSectionLabel}</label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
@@ -2260,7 +2259,7 @@ export function QuizEditorPage() {
             </div>
           )}
 
-          {editorMeta.answerMode === 'ordering' && (
+          {!isCreatorStudioMode && editorMeta.answerMode === 'ordering' && (
             <div style={{ marginTop: '0.5rem', marginBottom: '1rem' }}>
               <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600 }}>{editorMeta.orderingSectionLabel}</label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginBottom: '1.2rem' }}>
