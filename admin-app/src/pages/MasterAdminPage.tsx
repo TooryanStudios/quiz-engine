@@ -13,6 +13,7 @@ import { useUsersData }     from './master/hooks/useUsersData'
 import { usePlatformStats } from './master/hooks/usePlatformStats'
 import { useQuestionTypeSettings } from './master/hooks/useQuestionTypeSettings'
 import { useMiniGameSettings } from './master/hooks/useMiniGameSettings'
+import { useThemeEditorSettings } from './master/hooks/useThemeEditorSettings'
 
 // ── Tab components ────────────────────────────────────────────────────────────
 import { OverviewTab }    from './master/OverviewTab'
@@ -23,6 +24,7 @@ import { CreatorsTab }    from './master/CreatorsTab'
 import { UsersTab }       from './master/UsersTab'
 import { QuestionTypesTab } from './master/QuestionTypesTab'
 import { MiniGamesTab } from './master/MiniGamesTab'
+import { ThemeEditorTab } from './master/ThemeEditorTab'
 
 const BASE = import.meta.env.VITE_MASTER_PATH as string ?? '/admin-portal'
 
@@ -33,6 +35,7 @@ const TABS: { id: MasterTab; label: string; path: string }[] = [
   { id: 'engagement', label: '📊 Engagement', path: 'engagement' },
   { id: 'questionTypes', label: '🧩 Question Types', path: 'question-types' },
   { id: 'miniGames', label: '🎮 Mini Games', path: 'mini-games' },
+  { id: 'themeEditor', label: '🎨 Theme Editor', path: 'themes' },
   { id: 'creators',   label: '👤 Creators',   path: 'creators' },
   { id: 'users',      label: '👥 Users',      path: 'users' },
 ]
@@ -61,6 +64,7 @@ export function MasterAdminPage() {
   const platformStats = usePlatformStats()
   const questionTypeSettings = useQuestionTypeSettings()
   const miniGameSettings = useMiniGameSettings()
+  const themeEditorSettings = useThemeEditorSettings()
 
   // Derived aggregates for Overview
   const totalPlays   = quizzesData.quizzes.reduce((s, q) => s + (q.totalPlays   || 0), 0)
@@ -125,6 +129,13 @@ export function MasterAdminPage() {
             quizzes={quizzesData.quizzes}
             updatedAt={miniGameSettings.updatedAt}
             onSave={(nextEnabled, nextEnglishNamesById, nextArabicNamesById, nextAccessById) => miniGameSettings.save(nextEnabled, nextEnglishNamesById, nextArabicNamesById, nextAccessById, auth.currentUser?.uid)}
+          />
+        )}
+        {activeTab === 'themeEditor' && (
+          <ThemeEditorTab
+            themes={themeEditorSettings.themes}
+            updatedAt={themeEditorSettings.updatedAt}
+            onSave={(nextThemes) => themeEditorSettings.save(nextThemes, auth.currentUser?.uid)}
           />
         )}
         {activeTab === 'creators'   && <CreatorsTab   creators={creators} users={usersData.users} />}

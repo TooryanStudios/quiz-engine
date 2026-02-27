@@ -2215,44 +2215,102 @@ export function QuizEditorPage() {
               <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600 }}>{editorMeta.pairsSectionLabel}</label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
                 {(q.pairs || []).map((pair, pairIndex) => (
-                  <div key={pairIndex} style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '0.8rem', alignItems: 'center', background: 'var(--bg-deep)', padding: '0.4rem 0.8rem', borderRadius: '12px', border: '1.5px solid var(--border-strong)' }}>
-                    <input
-                      value={pair.left}
-                      onChange={(e) => {
-                        const next = [...(q.pairs || [])]
-                        next[pairIndex] = { ...next[pairIndex], left: e.target.value }
-                        updateQuestion(index, { pairs: next })
-                      }}
-                      placeholder="العنصر الأيمن"
-                      style={{
-                        padding: '0.5rem 0.2rem',
-                        background: 'transparent',
-                        border: 'none',
-                        color: 'var(--text)',
-                        fontSize: '0.9rem',
-                        outline: 'none',
-                        textAlign: 'center'
-                      }}
-                    />
-                    <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'var(--border-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 'bold' }}>⇄</div>
-                    <input
-                      value={pair.right}
-                      onChange={(e) => {
-                        const next = [...(q.pairs || [])]
-                        next[pairIndex] = { ...next[pairIndex], right: e.target.value }
-                        updateQuestion(index, { pairs: next })
-                      }}
-                      placeholder="العنصر المقابل"
-                      style={{
-                        padding: '0.5rem 0.2rem',
-                        background: 'transparent',
-                        border: 'none',
-                        color: 'var(--text)',
-                        fontSize: '0.9rem',
-                        outline: 'none',
-                        textAlign: 'center'
-                      }}
-                    />
+                  <div key={pairIndex} style={{ display: 'grid', gridTemplateColumns: q.type === 'match_plus' ? '1fr auto 1fr' : '1fr auto 1fr', gap: '0.8rem', alignItems: 'center', background: 'var(--bg-deep)', padding: '0.4rem 0.8rem', borderRadius: '12px', border: '1.5px solid var(--border-strong)' }}>
+                    {q.type === 'match_plus' ? (
+                      <>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                          <div style={{ height: '72px', borderRadius: '10px', border: '1px solid var(--border-strong)', overflow: 'hidden', background: 'var(--bg)' }}>
+                            {pair.left ? (
+                              <img src={pair.left} alt={`left ${pairIndex + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                            ) : null}
+                          </div>
+                          <input
+                            value={pair.left}
+                            onChange={(e) => {
+                              const next = [...(q.pairs || [])]
+                              next[pairIndex] = { ...next[pairIndex], left: e.target.value }
+                              updateQuestion(index, { pairs: next })
+                            }}
+                            placeholder="رابط الصورة اليسرى"
+                            style={{
+                              padding: '0.5rem 0.55rem',
+                              borderRadius: '8px',
+                              border: '1px solid var(--border-strong)',
+                              background: 'var(--bg-surface)',
+                              color: 'var(--text)',
+                              fontSize: '0.82rem',
+                              outline: 'none',
+                            }}
+                          />
+                        </div>
+                        <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'var(--border-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 'bold' }}>⇄</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                          <div style={{ height: '72px', borderRadius: '10px', border: '1px solid var(--border-strong)', overflow: 'hidden', background: 'var(--bg)' }}>
+                            {pair.right ? (
+                              <img src={pair.right} alt={`right ${pairIndex + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                            ) : null}
+                          </div>
+                          <input
+                            value={pair.right}
+                            onChange={(e) => {
+                              const next = [...(q.pairs || [])]
+                              next[pairIndex] = { ...next[pairIndex], right: e.target.value }
+                              updateQuestion(index, { pairs: next })
+                            }}
+                            placeholder="رابط الصورة اليمنى"
+                            style={{
+                              padding: '0.5rem 0.55rem',
+                              borderRadius: '8px',
+                              border: '1px solid var(--border-strong)',
+                              background: 'var(--bg-surface)',
+                              color: 'var(--text)',
+                              fontSize: '0.82rem',
+                              outline: 'none',
+                            }}
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <input
+                          value={pair.left}
+                          onChange={(e) => {
+                            const next = [...(q.pairs || [])]
+                            next[pairIndex] = { ...next[pairIndex], left: e.target.value }
+                            updateQuestion(index, { pairs: next })
+                          }}
+                          placeholder="العنصر الأيمن"
+                          style={{
+                            padding: '0.5rem 0.2rem',
+                            background: 'transparent',
+                            border: 'none',
+                            color: 'var(--text)',
+                            fontSize: '0.9rem',
+                            outline: 'none',
+                            textAlign: 'center'
+                          }}
+                        />
+                        <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'var(--border-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 'bold' }}>⇄</div>
+                        <input
+                          value={pair.right}
+                          onChange={(e) => {
+                            const next = [...(q.pairs || [])]
+                            next[pairIndex] = { ...next[pairIndex], right: e.target.value }
+                            updateQuestion(index, { pairs: next })
+                          }}
+                          placeholder="العنصر المقابل"
+                          style={{
+                            padding: '0.5rem 0.2rem',
+                            background: 'transparent',
+                            border: 'none',
+                            color: 'var(--text)',
+                            fontSize: '0.9rem',
+                            outline: 'none',
+                            textAlign: 'center'
+                          }}
+                        />
+                      </>
+                    )}
                   </div>
                 ))}
               </div>

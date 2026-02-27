@@ -86,15 +86,15 @@ export const QUESTION_TYPE_SCHEMAS: Record<QuestionTypeId, QuestionTypeSchema> =
   match_plus: {
     preview: { label: 'مطابقة بلس', color: '#0e7490', icon: '🧠🔗' },
     timerPolicy: { kind: 'fixed', defaultDuration: 35, allowedDurations: [...DEFAULT_TIMER_OPTIONS] },
-    editor: { answerMode: 'pairs', pairsSectionLabel: 'أزواج المطابقة' },
+    editor: { answerMode: 'pairs', pairsSectionLabel: 'أزواج المطابقة (صور)' },
     createDefaultQuestion: () => ({
       type: 'match_plus',
       text: 'سؤال مطابقة بلس',
       pairs: [
-        { left: 'A', right: '1' },
-        { left: 'B', right: '2' },
-        { left: 'C', right: '3' },
-        { left: 'D', right: '4' },
+        { left: '/images/QYan_logo_300x164.jpg', right: '/images/QYan_logo_300x164.jpg' },
+        { left: '/images/QYan_logo_300x164.jpg', right: '/images/QYan_logo_300x164.jpg' },
+        { left: '/images/QYan_logo_300x164.jpg', right: '/images/QYan_logo_300x164.jpg' },
+        { left: '/images/QYan_logo_300x164.jpg', right: '/images/QYan_logo_300x164.jpg' },
       ],
       duration: 35,
     }),

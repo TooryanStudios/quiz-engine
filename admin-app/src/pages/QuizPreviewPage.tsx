@@ -233,9 +233,23 @@ function QuestionCard({ q, idx, tk }: { q: QuizQuestion; idx: number; tk: Tokens
                 borderRadius: '8px', padding: '0.45rem 0.8rem',
                 fontSize: '0.85rem',
               }}>
-                <span style={{ color: '#93c5fd', fontWeight: 600, minWidth: '90px' }}>{p.left}</span>
-                <span style={{ color: tk.matchArrow }}>←→</span>
-                <span style={{ color: '#86efac', fontWeight: 600 }}>{p.right}</span>
+                {q.type === 'match_plus' ? (
+                  <>
+                    <div style={{ width: '92px', height: '60px', borderRadius: '8px', overflow: 'hidden', border: `1px solid ${tk.rowBorder}`, background: 'rgba(2,6,23,0.35)' }}>
+                      {p.left ? <img src={p.left} alt={`left ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} /> : null}
+                    </div>
+                    <span style={{ color: tk.matchArrow }}>←→</span>
+                    <div style={{ width: '92px', height: '60px', borderRadius: '8px', overflow: 'hidden', border: `1px solid ${tk.rowBorder}`, background: 'rgba(2,6,23,0.35)' }}>
+                      {p.right ? <img src={p.right} alt={`right ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} /> : null}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <span style={{ color: '#93c5fd', fontWeight: 600, minWidth: '90px' }}>{p.left}</span>
+                    <span style={{ color: tk.matchArrow }}>←→</span>
+                    <span style={{ color: '#86efac', fontWeight: 600 }}>{p.right}</span>
+                  </>
+                )}
               </div>
             ))}
           </div>

@@ -5,6 +5,7 @@ export function buildHostGameUrl(params: {
   launchCode?: string
   hostUid?: string
   hostToken?: string
+  hostName?: string
 }): string {
   const query = new URLSearchParams({
     quiz: params.quizId,
@@ -25,6 +26,10 @@ export function buildHostGameUrl(params: {
 
   if (params.hostToken) {
     query.set('hostToken', params.hostToken)
+  }
+
+  if (params.hostName) {
+    query.set('hostName', params.hostName)
   }
 
   return `${params.serverBase}/start?${query.toString()}`

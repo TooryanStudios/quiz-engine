@@ -64,6 +64,29 @@ export interface MiniGameSettings {
   updatedBy?: string
 }
 
+export interface ThemePaletteTokens {
+  bg: string
+  surface: string
+  surface2: string
+  accent: string
+  text: string
+  textDim: string
+  success: string
+}
+
+export interface ThemePackRecord {
+  id: string
+  name: string
+  enabled: boolean
+  tokens: ThemePaletteTokens
+}
+
+export interface ThemeEditorSettings {
+  themes: ThemePackRecord[]
+  updatedAt?: any
+  updatedBy?: string
+}
+
 export interface AuthUserRecord {
   uid: string
   email: string | null
@@ -103,6 +126,7 @@ const usersCol    = collection(db, 'users')
 const statsDoc    = doc(db, 'platform_stats', 'global')
 const questionTypeSettingsDoc = doc(db, 'platform_settings', 'question_types')
 const miniGameSettingsDoc = doc(db, 'platform_settings', 'mini_games')
+const themeSettingsDoc = doc(db, 'platform_settings', 'themes')
 
 // ── Sessions ─────────────────────────────────────────────────────────────────
 
@@ -301,6 +325,115 @@ export async function updateMiniGameSettings(
     englishNamesById: normalizedEnglish,
     arabicNamesById: normalizedArabic,
     accessById: normalizedAccess,
+    updatedAt: serverTimestamp(),
+    ...(updatedBy ? { updatedBy } : {}),
+  }, { merge: true })
+}
+
+// ── Theme editor settings (master-admin controlled) ────────────────────────
+
+const DEFAULT_THEME_TOKENS: ThemePaletteTokens = {
+  bg: '#1a1a2e',
+  surface: '#16213e',
+  surface2: '#0f3460',
+  accent: '#e94560',
+  text: '#eaeaea',
+  textDim: '#8892a4',
+  success: '#2dd4bf',
+}
+
+const DEFAULT_THEME_SETTINGS: ThemeEditorSettings = {
+  themes: [
+    {
+      id: 'dark',
+      name: 'Default Dark',
+      enabled: true,
+      tokens: { ...DEFAULT_THEME_TOKENS },
+    },
+    {
+      id: 'light',
+      name: 'Default Light',
+      enabled: true,
+      tokens: {
+        bg: '#f1f5f9',
+        surface: '#ffffff',
+        surface2: '#e2e8f0',
+        accent: '#e94560',
+        text: '#0f172a',
+        textDim: '#475569',
+        success: '#0d9488',
+      },
+    },
+  ],
+}
+
+function normalizeHex(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') return fallback
+  const trimmed = value.trim()
+  return /^#[0-9a-fA-F]{6}$/.test(trimmed) ? trimmed : fallback
+}
+
+function normalizeThemeTokens(raw: unknown): ThemePaletteTokens {
+  const source = raw && typeof raw === 'object' ? raw as Partial<ThemePaletteTokens> : {}
+  return {
+    bg: normalizeHex(source.bg, DEFAULT_THEME_TOKENS.bg),
+    surface: normalizeHex(source.surface, DEFAULT_THEME_TOKENS.surface),
+    surface2: normalizeHex(source.surface2, DEFAULT_THEME_TOKENS.surface2),
+    accent: normalizeHex(source.accent, DEFAULT_THEME_TOKENS.accent),
+    text: normalizeHex(source.text, DEFAULT_THEME_TOKENS.text),
+    textDim: normalizeHex(source.textDim, DEFAULT_THEME_TOKENS.textDim),
+    success: normalizeHex(source.success, DEFAULT_THEME_TOKENS.success),
+  }
+}
+
+function sanitizeThemeId(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') return fallback
+  const id = value.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-')
+  return id || fallback
+}
+
+function normalizeThemePacks(raw: unknown): ThemePackRecord[] {
+  const input = Array.isArray(raw) ? raw : DEFAULT_THEME_SETTINGS.themes
+  const seen = new Set<string>()
+  const normalized: ThemePackRecord[] = []
+
+  input.forEach((item, index) => {
+    if (!item || typeof item !== 'object') return
+    const source = item as Partial<ThemePackRecord>
+    const id = sanitizeThemeId(source.id, `theme-${index + 1}`)
+    if (!id || seen.has(id)) return
+    seen.add(id)
+
+    normalized.push({
+      id,
+      name: typeof source.name === 'string' && source.name.trim() ? source.name.trim() : id,
+      enabled: source.enabled !== false,
+      tokens: normalizeThemeTokens(source.tokens),
+    })
+  })
+
+  if (!normalized.length) return [...DEFAULT_THEME_SETTINGS.themes]
+  if (!normalized.some((t) => t.enabled)) normalized[0] = { ...normalized[0], enabled: true }
+  return normalized
+}
+
+export function subscribeThemeEditorSettings(onData: (settings: ThemeEditorSettings) => void) {
+  return onSnapshot(themeSettingsDoc, (snap) => {
+    const data = snap.data() || {}
+    onData({
+      themes: normalizeThemePacks(data.themes),
+      updatedAt: data.updatedAt,
+      updatedBy: data.updatedBy,
+    })
+  }, () => {
+    onData({ ...DEFAULT_THEME_SETTINGS })
+  })
+}
+
+export async function updateThemeEditorSettings(themes: unknown, updatedBy?: string) {
+  const normalizedThemes = normalizeThemePacks(themes)
+  await setDoc(themeSettingsDoc, {
+    themes: normalizedThemes,
     updatedAt: serverTimestamp(),
     ...(updatedBy ? { updatedBy } : {}),
   }, { merge: true })

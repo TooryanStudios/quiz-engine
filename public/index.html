@@ -152,6 +152,12 @@
                 </span>
                 <span class="host-menu-item-title" id="theme-toggle-label">Switch to Light</span>
               </button>
+              <div class="host-home-menu-toggle burger-theme-picker-row">
+                <span class="host-menu-item-title">Theme Pack</span>
+                <span class="host-menu-item-desc">Choose from file-based themes</span>
+                <select id="host-theme-select" class="host-theme-select" aria-label="Select theme"></select>
+                <button type="button" id="btn-theme-refresh" class="host-theme-refresh-btn" aria-label="Refresh themes" title="Refresh themes">↻</button>
+              </div>
               <div class="burger-divider"></div>
 
               <!-- Room / session actions -->
@@ -250,6 +256,9 @@
         <button class="btn btn-success" id="btn-start-game" disabled>
           🚀 ابدأ اللعبة
         </button>
+        <button class="btn btn-secondary" id="btn-switch-game" type="button" title="Switch game">
+          🧩 اختر لعبة
+        </button>
         <div class="share-url-section" id="share-url-section">
           <input type="text" id="share-url-input" readonly style="display:none" />
           <button class="share-trigger-btn" id="btn-share-menu" title="Share invite link" aria-label="Share" aria-expanded="false">
@@ -293,6 +302,25 @@
           <ul class="preload-diag-log" id="diag-host-log"></ul>
         </div>
       </details>
+
+      <div id="switch-game-dialog" class="switch-game-dialog" style="display:none" aria-hidden="true">
+        <div class="switch-game-panel" role="dialog" aria-modal="true" aria-label="Choose game or quiz">
+          <div class="switch-game-header">
+            <h3>🎮 اختر لعبة أو كويز</h3>
+            <button type="button" id="btn-close-switch-game" class="switch-game-close" aria-label="Close">✕</button>
+          </div>
+          <p class="switch-game-sub">Public Games + Your Games. Click any thumbnail to switch immediately.</p>
+          <div id="switch-game-status" class="switch-game-status">Loading…</div>
+          <div class="switch-game-section">
+            <div class="switch-game-section-title">🌐 Public Games</div>
+            <div id="switch-public-list" class="switch-game-grid"></div>
+          </div>
+          <div class="switch-game-section">
+            <div class="switch-game-section-title">👤 Your Games</div>
+            <div id="switch-mine-list" class="switch-game-grid"></div>
+          </div>
+        </div>
+      </div>
 
     </div>
   </div>
@@ -572,12 +600,12 @@
           <summary class="podium-details-summary">📋 Full Leaderboard</summary>
           <ol class="leaderboard-list" id="final-leaderboard-list"></ol>
         </details>
-        <div class="podium-actions">
-          <button class="btn btn-success full-width" id="btn-start-new-session" style="display:none">
-            🔄 Start New Session
+        <div class="podium-actions" style="display: flex; gap: 10px; justify-content: center;">
+          <button class="btn btn-secondary" id="btn-start-new-session" style="display:none; flex: 1; font-weight: normal;">
+            🏠 العودة للوحة التحكم
           </button>
-          <button class="btn btn-primary full-width" id="btn-play-again">
-            🔁 Play Again
+          <button class="btn btn-primary" id="btn-play-again" style="flex: 1; font-weight: normal;">
+            🔁 العب مرة أخرى
           </button>
         </div>
       </div>

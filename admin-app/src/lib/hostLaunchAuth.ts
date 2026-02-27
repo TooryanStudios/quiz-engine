@@ -9,11 +9,14 @@ type HostLaunchAuthResult = {
   launchCode?: string
   hostUid?: string
   hostToken?: string
+  hostName?: string
 }
 
 export async function getHostLaunchAuthParams(params: HostLaunchAuthParams): Promise<HostLaunchAuthResult> {
   const { serverBase, currentUser } = params
   if (!currentUser) return {}
+
+  const hostName = currentUser.displayName || undefined
 
   let hostToken: string | undefined
   try {
@@ -23,7 +26,7 @@ export async function getHostLaunchAuthParams(params: HostLaunchAuthParams): Pro
   }
 
   if (!hostToken) {
-    return { hostUid: currentUser.uid }
+    return { hostUid: currentUser.uid, hostName }
   }
 
   try {
@@ -39,7 +42,7 @@ export async function getHostLaunchAuthParams(params: HostLaunchAuthParams): Pro
     if (response.ok) {
       const data = await response.json() as { launchCode?: string }
       if (data?.launchCode && typeof data.launchCode === 'string') {
-        return { launchCode: data.launchCode }
+        return { launchCode: data.launchCode, hostName }
       }
     }
   } catch {
@@ -49,5 +52,6 @@ export async function getHostLaunchAuthParams(params: HostLaunchAuthParams): Pro
   return {
     hostUid: currentUser.uid,
     hostToken,
+    hostName,
   }
 }

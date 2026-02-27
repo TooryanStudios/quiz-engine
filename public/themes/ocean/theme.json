@@ -1,0 +1,19 @@
+{
+  "id": "ocean",
+  "name": "Ocean Night",
+  "baseTheme": "dark",
+  "tokens": {
+    "--bg": "#071423",
+    "--surface": "#0a1f33",
+    "--surface-2": "#12324e",
+    "--accent": "#22d3ee",
+    "--text": "#dbeafe",
+    "--text-dim": "#7dd3fc",
+    "--success": "#34d399",
+    "--app-bg-image": "url('/themes/ocean/assets/noise.svg')",
+    "--app-bg-size": "280px 280px",
+    "--app-bg-position": "center center",
+    "--app-bg-repeat": "repeat"
+  },
+  "cssFile": "/themes/ocean/theme.css"
+}

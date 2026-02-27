@@ -29,6 +29,7 @@ const gameModeFromUrl = queryParams.get('gameMode');
 const hostUidFromUrl  = queryParams.get('hostUid');
 const hostTokenFromUrl = queryParams.get('hostToken');
 const hostLaunchCodeFromUrl = queryParams.get('hostLaunchCode');
+const hostNameFromUrl = queryParams.get('hostName');
 const isAutoHostLaunch = !!(quizSlugFromUrl && modeFromUrl === 'host');
 
 const resolvedGameModeRuntime = resolveGameModeRuntime(gameModeFromUrl);
@@ -98,6 +99,7 @@ const questionMirror = window.opener || null;
 
 const PIN_MAX_LENGTH = 6;
 const HOST_RECONNECT_GRACE_MS = 60000;
+let soloAutoStarting = false;
 
 // Global scroll/pinch blocker — prevents iOS rubber-band and page scroll
 // during all gameplay views. Uses { passive: false } so preventDefault works.
@@ -628,13 +630,24 @@ function getPathForView(viewId) {
 function getViewForPath(pathname) {
   const normalizedPath = normalizePathname(pathname);
   if (normalizedPath === '/lobby') return 'view-host-loading';
+  if (normalizedPath === '/play') {
+    return (state.role === 'host' && !state.hostIsPlayer)
+      ? 'view-host-question'
+      : 'view-player-question';
+  }
   const direct = Object.entries(VIEW_PATH_MAP).find(([, path]) => path === normalizedPath);
   return direct ? direct[0] : null;
 }
 
 function syncUrlForView(viewId, { replace = false } = {}) {
   if (!window.history || typeof window.history.pushState !== 'function') return;
-  const targetPath = getPathForView(viewId);
+  const transientViews = new Set([
+    'view-host-question',
+    'view-player-question',
+    'view-leaderboard',
+    'view-game-over',
+  ]);
+  const targetPath = transientViews.has(viewId) ? '/play' : getPathForView(viewId);
   if (!targetPath) return;
 
   const currentPath = normalizePathname(window.location.pathname);
@@ -745,7 +758,7 @@ function showView(viewId, options = {}) {
     }
 
     // Lock scroll/pinch during gameplay; release on safe views
-    const SCROLL_FREE_VIEWS = new Set(['view-home', 'view-game-over', 'view-room-closed']);
+    const SCROLL_FREE_VIEWS = new Set(['view-home', 'view-host-lobby', 'view-game-over', 'view-room-closed']);
     if (SCROLL_FREE_VIEWS.has(viewId)) {
       document.documentElement.classList.remove('gameplay-active');
       if (activeView) activeView.classList.remove('gameplay-scroll-locked');
@@ -848,34 +861,26 @@ function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
     const stageVariant = useHostPlayerStageVariant();
     applyHostPlayerStageVariantClass(listEl, stageVariant);
 
-    // Dynamic grid: <5 = 1 row, >=5 = 2 balanced rows
+    // Dynamic grid: show actual players + 1 placeholder
     const playerCount = playersArr.length;
-    let totalSlots, cols;
-    if (playerCount < 5) {
-      // Single row: show exactly 5 slots
-      totalSlots = 5;
-      cols = 5;
-    } else {
-      // Two rows: pick total that fills evenly
-      totalSlots = Math.min(Math.max(playerCount, 6), HOST_PLAYER_MAX_SLOTS);
-      // Make totalSlots even so rows are balanced
-      if (totalSlots % 2 !== 0) totalSlots++;
-      totalSlots = Math.min(totalSlots, HOST_PLAYER_MAX_SLOTS);
-      cols = Math.ceil(totalSlots / 2);
-    }
-    listEl.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-
-    const visiblePlayers = playersArr.length > totalSlots
-      ? playersArr.slice(0, totalSlots - 1)
-      : playersArr.slice(0, totalSlots);
-    const overflowCount = Math.max(0, playersArr.length - totalSlots);
+    let totalSlots = playerCount + 1;
+    
+    // We want to show them in a flex container that wraps, or a grid that auto-fills.
+    // Let's use flex wrap for better centering of a single item.
+    listEl.style.display = 'flex';
+    listEl.style.flexWrap = 'wrap';
+    listEl.style.justifyContent = 'center';
+    listEl.style.gap = '10px';
+    listEl.style.maxHeight = '200px'; // Add max height for scrolling
+    listEl.style.overflowY = 'auto'; // Enable vertical scrolling
+    listEl.style.padding = '5px';
+    
+    // Custom scrollbar styling is handled in CSS
 
     const stageItems = [];
     for (let slotIndex = 0; slotIndex < totalSlots; slotIndex++) {
-      if (slotIndex < visiblePlayers.length) {
-        stageItems.push(renderHostPlayerStageCard(visiblePlayers[slotIndex], slotIndex, stageVariant));
-      } else if (overflowCount > 0 && slotIndex === totalSlots - 1) {
-        stageItems.push(renderHostPlayerOverflowCard(overflowCount));
+      if (slotIndex < playerCount) {
+        stageItems.push(renderHostPlayerStageCard(playersArr[slotIndex], slotIndex, stageVariant));
       } else {
         stageItems.push(renderHostPlayerStagePlaceholder(slotIndex));
       }
@@ -897,7 +902,16 @@ function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
         waitingEl.style.display = 'block';
         waitingEl.style.color = 'var(--text-dim)';
         waitingEl.style.fontWeight = '400';
-        waitingEl.textContent = 'يجب انضمام لاعب واحد على الأقل للبدء';
+        waitingEl.innerHTML = 'من الجيد وجود لاعب واحد على الأقل للبدء <br> <span style="font-size: 0.9em; opacity: 0.8;">أو <a href="#" id="inline-solo-play" style="color: #3b82f6; text-decoration: underline; cursor: pointer;">العب بنفسك</a></span>';
+        
+        const inlineSoloBtn = document.getElementById('inline-solo-play');
+        if (inlineSoloBtn) {
+          inlineSoloBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const soloBtn = document.getElementById('btn-solo-play');
+            if (soloBtn) soloBtn.click();
+          });
+        }
       } else if (gameModeFromUrl === 'xo-duel' && playersArr.length < 2) {
         waitingEl.style.display = 'block';
         waitingEl.style.color = '#f87171';
@@ -1775,6 +1789,27 @@ function showQuestionResult(data) {
   stopClientTimer();
   document.getElementById('overlay-paused').style.display = 'none';
 
+  const isLikelyImageSource = (value) => {
+    if (typeof value !== 'string') return false;
+    const v = value.trim().toLowerCase();
+    if (!v) return false;
+    if (v.startsWith('data:image/')) return true;
+    if (v.startsWith('blob:')) return true;
+    if (v.startsWith('/')) return true;
+    if (v.startsWith('http://') || v.startsWith('https://')) {
+      return /(\.png|\.jpe?g|\.gif|\.webp|\.bmp|\.svg)(\?.*)?$/.test(v);
+    }
+    return false;
+  };
+
+  const renderResultValue = (value) => {
+    const raw = String(value ?? '');
+    if (isLikelyImageSource(raw)) {
+      return `<img class="result-pair-media" src="${escapeHtml(raw)}" alt="pair item" />`;
+    }
+    return `<span dir="auto">${escapeHtml(raw)}</span>`;
+  };
+
   const labelEl    = document.getElementById('result-correct-label');
   const answerEl   = document.getElementById('result-correct-answer');
   const pairsEl    = document.getElementById('result-pairs-list');
@@ -1805,9 +1840,9 @@ function showQuestionResult(data) {
     pairsEl.style.display      = 'block';
     pairsEl.innerHTML = (data.correctPairs || []).map(p =>
       `<li class="result-pair">
-        <span dir="auto">${escapeHtml(p.left)}</span>
+        ${renderResultValue(p.left)}
         <span class="pair-arrow">→</span>
-        <span dir="auto">${escapeHtml(p.right)}</span>
+        ${renderResultValue(p.right)}
       </li>`
     ).join('');
   } else if (Array.isArray(data.correctOrder) && Array.isArray(data.items)) {
@@ -2296,37 +2331,216 @@ document.addEventListener('click', (e) => {
   closeHostHomeMenu();
 });
 
-// Theme toggle
+// Theme system (file-based manifest + theme files)
 const THEME_KEY = 'qyanTheme';
+const THEME_MANIFEST_PATH = '/themes/themes.manifest.json';
 const btnThemeToggle = document.getElementById('btn-theme-toggle');
 const iconMoon = document.getElementById('icon-theme-moon');
 const iconSun  = document.getElementById('icon-theme-sun');
+const hostThemeSelect = document.getElementById('host-theme-select');
+const btnThemeRefresh = document.getElementById('btn-theme-refresh');
+const themeQueryFromUrl = queryParams.get('theme');
+let themeManifestCache = null;
+let activeThemeId = null;
+let activeThemeVarKeys = [];
 
-function applyTheme(theme) {
-  document.documentElement.setAttribute('data-theme', theme);
-  const isLight = theme === 'light';
-  if (iconMoon) iconMoon.style.display = isLight ? 'none' : '';
-  if (iconSun)  iconSun.style.display  = isLight ? '' : 'none';
-  try { localStorage.setItem(THEME_KEY, theme); } catch (_) {}
+function ensureThemeCssLink() {
+  let link = document.getElementById('qyan-runtime-theme-css');
+  if (link) return link;
+  link = document.createElement('link');
+  link.id = 'qyan-runtime-theme-css';
+  link.rel = 'stylesheet';
+  link.href = '';
+  document.head.appendChild(link);
+  return link;
 }
 
-// Theme label update
+function setThemeIconsByBase(baseTheme) {
+  const isLight = baseTheme === 'light';
+  if (iconMoon) iconMoon.style.display = isLight ? 'none' : '';
+  if (iconSun)  iconSun.style.display  = isLight ? '' : 'none';
+}
+
 function updateThemeLabel() {
   const isLight = document.documentElement.getAttribute('data-theme') === 'light';
   const lbl = document.getElementById('theme-toggle-label');
   if (lbl) lbl.textContent = isLight ? 'Switch to Dark' : 'Switch to Light';
 }
 
+function clearThemeVariables() {
+  if (!activeThemeVarKeys.length) return;
+  activeThemeVarKeys.forEach((name) => {
+    document.documentElement.style.removeProperty(name);
+  });
+  activeThemeVarKeys = [];
+}
+
+function applyThemePayload(themePayload, themeIdFromManifest = null) {
+  const root = document.documentElement;
+  const themeId = themeIdFromManifest || themePayload?.id || 'dark';
+  const baseTheme = themePayload?.baseTheme === 'light' ? 'light' : 'dark';
+  const tokens = (themePayload && typeof themePayload.tokens === 'object' && themePayload.tokens)
+    ? themePayload.tokens
+    : {};
+
+  clearThemeVariables();
+  Object.entries(tokens).forEach(([varName, value]) => {
+    if (typeof varName !== 'string' || !varName.startsWith('--')) return;
+    if (value === null || value === undefined) return;
+    root.style.setProperty(varName, String(value));
+    activeThemeVarKeys.push(varName);
+  });
+
+  root.setAttribute('data-theme', baseTheme);
+  root.setAttribute('data-theme-id', themeId);
+  setThemeIconsByBase(baseTheme);
+  updateThemeLabel();
+
+  const cssLink = ensureThemeCssLink();
+  if (themePayload?.cssFile && typeof themePayload.cssFile === 'string') {
+    cssLink.href = themePayload.cssFile;
+  } else {
+    cssLink.href = '';
+  }
+
+  activeThemeId = themeId;
+  if (hostThemeSelect && hostThemeSelect.value !== themeId) {
+    hostThemeSelect.value = themeId;
+  }
+  try { localStorage.setItem(THEME_KEY, themeId); } catch (_) {}
+}
+
+async function loadThemeManifest() {
+  if (themeManifestCache) return themeManifestCache;
+  const response = await fetch(THEME_MANIFEST_PATH, { cache: 'no-store' });
+  if (!response.ok) throw new Error(`Theme manifest load failed: ${response.status}`);
+  const manifest = await response.json();
+  if (!manifest || !Array.isArray(manifest.themes)) {
+    throw new Error('Theme manifest is invalid');
+  }
+  themeManifestCache = manifest;
+  return manifest;
+}
+
+function findThemeEntry(manifest, themeId) {
+  return manifest.themes.find((t) => t && t.id === themeId) || null;
+}
+
+async function hydrateThemeSelect() {
+  if (!hostThemeSelect) return;
+  try {
+    const manifest = await loadThemeManifest();
+    const options = Array.isArray(manifest.themes) ? manifest.themes : [];
+    hostThemeSelect.innerHTML = options
+      .map((theme) => `<option value="${escapeHtml(theme.id)}">${escapeHtml(theme.name || theme.id)}</option>`)
+      .join('');
+
+    const selectedId = activeThemeId || manifest.defaultThemeId || 'dark';
+    hostThemeSelect.value = selectedId;
+    hostThemeSelect.disabled = options.length === 0;
+  } catch (error) {
+    hostThemeSelect.innerHTML = '<option value="dark">Default Dark</option>';
+    hostThemeSelect.value = 'dark';
+    hostThemeSelect.disabled = true;
+    console.error('[theme] failed to hydrate theme picker', error);
+  }
+}
+
+async function refreshThemeList() {
+  themeManifestCache = null;
+  await hydrateThemeSelect();
+}
+
+async function loadThemeById(themeId, { silent = false } = {}) {
+  try {
+    const manifest = await loadThemeManifest();
+    const defaultId = manifest.defaultThemeId || 'dark';
+    const resolvedId = themeId || defaultId;
+    let entry = findThemeEntry(manifest, resolvedId);
+    if (!entry) entry = findThemeEntry(manifest, defaultId);
+    if (!entry || !entry.file) throw new Error('No valid theme entry found');
+
+    const response = await fetch(entry.file, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`Theme file load failed: ${response.status}`);
+    const payload = await response.json();
+    applyThemePayload(payload, entry.id);
+    return entry.id;
+  } catch (error) {
+    if (!silent) console.error('[theme] failed to load theme', themeId, error);
+    if (themeId !== 'dark') {
+      try {
+        return await loadThemeById('dark', { silent: true });
+      } catch (_fallbackError) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        document.documentElement.setAttribute('data-theme-id', 'dark');
+        setThemeIconsByBase('dark');
+        updateThemeLabel();
+      }
+    }
+    return 'dark';
+  }
+}
+
+async function toggleThemeBase() {
+  const manifest = await loadThemeManifest();
+  const currentEntry = findThemeEntry(manifest, activeThemeId);
+  const currentBase = (currentEntry?.baseTheme === 'light' || document.documentElement.getAttribute('data-theme') === 'light')
+    ? 'light'
+    : 'dark';
+  const targetBase = currentBase === 'light' ? 'dark' : 'light';
+  const targetEntry = manifest.themes.find((t) => (t?.id === targetBase) || (t?.baseTheme === targetBase));
+  const targetId = targetEntry?.id || targetBase;
+  await loadThemeById(targetId);
+}
+
 if (btnThemeToggle) {
   btnThemeToggle.addEventListener('click', () => {
-    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
-    applyTheme(isLight ? 'dark' : 'light');
-    updateThemeLabel();
+    toggleThemeBase().catch((error) => console.error('[theme] toggle failed', error));
   });
 }
 
-applyTheme('dark');
-updateThemeLabel();
+if (hostThemeSelect) {
+  hostThemeSelect.addEventListener('change', () => {
+    const nextTheme = hostThemeSelect.value || 'dark';
+    loadThemeById(nextTheme).catch((error) => {
+      console.error('[theme] select failed', error);
+    });
+  });
+}
+
+if (btnThemeRefresh) {
+  btnThemeRefresh.addEventListener('click', async () => {
+    const previousText = btnThemeRefresh.textContent;
+    btnThemeRefresh.disabled = true;
+    btnThemeRefresh.textContent = '…';
+    try {
+      await refreshThemeList();
+      if (hostThemeSelect && hostThemeSelect.value) {
+        await loadThemeById(hostThemeSelect.value, { silent: true });
+      }
+    } catch (error) {
+      console.error('[theme] refresh failed', error);
+    } finally {
+      btnThemeRefresh.textContent = previousText;
+      btnThemeRefresh.disabled = false;
+    }
+  });
+}
+
+window.setGameTheme = (themeId) => loadThemeById(themeId);
+window.getGameThemes = async () => {
+  const manifest = await loadThemeManifest();
+  return manifest.themes || [];
+};
+
+(async () => {
+  const storedTheme = (() => {
+    try { return localStorage.getItem(THEME_KEY); } catch (_) { return null; }
+  })();
+  const initialThemeId = themeQueryFromUrl || storedTheme || 'dark';
+  await loadThemeById(initialThemeId);
+  await hydrateThemeSelect();
+})();
 
 // Animation preset icon menu
 const btnAnimPreset  = document.getElementById('btn-anim-preset');
@@ -2409,6 +2623,113 @@ function showCopyToast(msg) {
   toast._tid = setTimeout(() => toast.classList.remove('show'), 2500);
 }
 
+// Host Lobby — Switch game/quiz without going back to dashboard
+const switchGameBtn = document.getElementById('btn-switch-game');
+const switchGameDialog = document.getElementById('switch-game-dialog');
+const switchGameCloseBtn = document.getElementById('btn-close-switch-game');
+const switchGameStatus = document.getElementById('switch-game-status');
+const switchPublicList = document.getElementById('switch-public-list');
+const switchMineList = document.getElementById('switch-mine-list');
+
+function closeSwitchGameDialog() {
+  if (!switchGameDialog) return;
+  switchGameDialog.style.display = 'none';
+  switchGameDialog.setAttribute('aria-hidden', 'true');
+}
+
+function buildSwitchHostUrl(item) {
+  const url = new URL(window.location.href);
+  const params = new URLSearchParams(url.search);
+  params.set('mode', 'host');
+  params.set('quiz', item.slug);
+  if (item.gameModeId) params.set('gameMode', item.gameModeId);
+  else params.delete('gameMode');
+  return `${window.location.origin}/start?${params.toString()}`;
+}
+
+function renderSwitchCard(item, category) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'switch-game-card';
+  btn.innerHTML = `
+    <img class="switch-game-thumb" src="${escapeHtml(item.coverImage || '')}" alt="" onerror="this.removeAttribute('src');" />
+    <div class="switch-game-body">
+      <div class="switch-game-title">${escapeHtml(item.title || item.slug)}</div>
+      <div class="switch-game-meta">${category} · ${escapeHtml(item.slug || '')}</div>
+    </div>
+  `;
+  btn.addEventListener('click', () => {
+    if (switchGameStatus) switchGameStatus.textContent = 'Switching game…';
+    window.location.href = buildSwitchHostUrl(item);
+  });
+  return btn;
+}
+
+function renderSwitchSection(container, items, categoryLabel) {
+  if (!container) return;
+  container.innerHTML = '';
+  if (!Array.isArray(items) || !items.length) {
+    const empty = document.createElement('div');
+    empty.className = 'switch-game-meta';
+    empty.textContent = 'No games found.';
+    container.appendChild(empty);
+    return;
+  }
+  items.forEach((item) => {
+    if (!item || !item.slug) return;
+    container.appendChild(renderSwitchCard(item, categoryLabel));
+  });
+}
+
+async function loadSwitchGameCatalog() {
+  if (!switchGameStatus) return;
+  switchGameStatus.textContent = 'Loading available games…';
+
+  const params = new URLSearchParams();
+  if (hostUidFromUrl) params.set('hostUid', hostUidFromUrl);
+  if (hostTokenFromUrl) params.set('hostToken', hostTokenFromUrl);
+  if (hostLaunchCodeFromUrl) params.set('hostLaunchCode', hostLaunchCodeFromUrl);
+  params.set('limit', '30');
+
+  try {
+    const res = await fetch(`/api/lobby-quiz-catalog?${params.toString()}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    renderSwitchSection(switchPublicList, data.publicGames || [], 'Public');
+    renderSwitchSection(switchMineList, data.myGames || [], 'Mine');
+    const pub = Array.isArray(data.publicGames) ? data.publicGames.length : 0;
+    const mine = Array.isArray(data.myGames) ? data.myGames.length : 0;
+    switchGameStatus.textContent = `Loaded ${pub} public and ${mine} personal games.`;
+  } catch (error) {
+    console.error('[switch-game] catalog failed', error);
+    if (switchPublicList) switchPublicList.innerHTML = '';
+    if (switchMineList) switchMineList.innerHTML = '';
+    switchGameStatus.textContent = 'Failed to load games. Try again.';
+  }
+}
+
+if (switchGameBtn && switchGameDialog) {
+  switchGameBtn.addEventListener('click', () => {
+    Sounds.click();
+    switchGameDialog.style.display = 'flex';
+    switchGameDialog.setAttribute('aria-hidden', 'false');
+    void loadSwitchGameCatalog();
+  });
+}
+
+if (switchGameCloseBtn) {
+  switchGameCloseBtn.addEventListener('click', () => {
+    Sounds.click();
+    closeSwitchGameDialog();
+  });
+}
+
+if (switchGameDialog) {
+  switchGameDialog.addEventListener('click', (event) => {
+    if (event.target === switchGameDialog) closeSwitchGameDialog();
+  });
+}
+
 // Host-as-Player toggle
 const chkHostAsPlayer = document.getElementById('chk-host-as-player');
 const hostPlayerForm  = document.getElementById('host-player-form');
@@ -2479,6 +2800,7 @@ function openHostJoinDialog() {
   input.type = 'text';
   input.maxLength = 20;
   input.placeholder = 'Your nickname…';
+  input.value = hostNameFromUrl || '';
   Object.assign(input.style, {
     padding: '12px 14px', fontSize: '1rem', borderRadius: '12px',
     border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.06)',
@@ -2573,6 +2895,7 @@ function getSessionOptions() {
 }
 
 document.getElementById('btn-start-game').addEventListener('click', () => {
+  soloAutoStarting = false;
   const btn = document.getElementById('btn-start-game');
   btn.disabled = true;
   btn.textContent = '⏳ جاري التحضير...';
@@ -2587,6 +2910,7 @@ document.getElementById('btn-start-game').addEventListener('click', () => {
 const soloPlayBtn = document.getElementById('btn-solo-play');
 if (soloPlayBtn) {
   soloPlayBtn.addEventListener('click', () => {
+    soloAutoStarting = true;
     Sounds.click();
     soloPlayBtn.disabled = true;
     soloPlayBtn.textContent = '⏳ جاري التحضير...';
@@ -2595,7 +2919,7 @@ if (soloPlayBtn) {
     if (startBtn) startBtn.disabled = true;
 
     // Generate a solo nickname
-    const soloNick = 'لاعب';
+    const soloNick = hostNameFromUrl || 'المضيف';
     const soloAvatar = state.avatar || '🎮';
 
     // Listen for join confirmation, then auto-start
@@ -2604,6 +2928,7 @@ if (soloPlayBtn) {
         enableKeepAwake();
         socket.emit('host:start', { ...getSessionOptions(), ...getHostAuthPayload() });
       } else {
+        soloAutoStarting = false;
         soloPlayBtn.disabled = false;
         soloPlayBtn.textContent = '🎯 العب بنفسي';
         // Re-enable start game button on failure
@@ -2748,7 +3073,8 @@ document.getElementById('btn-play-again').addEventListener('click', () => {
 document.getElementById('btn-start-new-session').addEventListener('click', () => {
   if (state.role !== 'host') return;
   Sounds.click();
-  socket.emit('host:new-session');
+  // Go back to dashboard/home
+  window.location.href = 'https://qyan-om.web.app/dashboard';
 });
 
 // Back to Home from Room Closed
@@ -2971,7 +3297,7 @@ socket.on('room:player_joined', ({ players }) => {
         renderPlayerList(players, listEl, countEl, true);
       }
       const startBtn = document.getElementById('btn-start-game');
-      if (startBtn) startBtn.disabled = players.length === 0;
+      if (startBtn) startBtn.disabled = soloAutoStarting || players.length === 0;
 
       // Disable refresh once real players are in
       const realCount = players.filter(p => !p.isHost).length;
@@ -3176,6 +3502,7 @@ socket.on('room:error', ({ message, code }) => {
   if (joinBtn) { joinBtn.disabled = false; joinBtn.textContent = 'Join Game'; }
 
   if (state.role === 'host') {
+    soloAutoStarting = false;
     if (code === 'GAME_ALREADY_STARTED' || code === 'HOST_START_FAILED') {
       pushJoinDebugLog(`host error ${code}; requesting host:sync_state`);
       socket.emit('host:sync_state');
@@ -3241,7 +3568,7 @@ socket.on('host:state_sync', (payload = {}) => {
 
   const startBtn = document.getElementById('btn-start-game');
   if (startBtn) {
-    startBtn.disabled = roomState !== 'lobby' || players.length === 0;
+    startBtn.disabled = soloAutoStarting || roomState !== 'lobby' || players.length === 0;
     startBtn.textContent = '🚀 ابدأ اللعبة';
   }
 
@@ -3296,6 +3623,7 @@ socket.on('game:start', ({ totalQuestions }) => {
   if (handledByMode === true) return;
 
   markDiagEvent('game:start');
+  soloAutoStarting = false;
   pushJoinDebugLog(`game:start totalQuestions=${totalQuestions}`);
   state.totalQuestions = totalQuestions;
   state.myStreak = 0;
@@ -3583,19 +3911,19 @@ socket.on('game:over', (data) => {
   Sounds.fanfare();
 
   // ── Sequential reveal: 3rd → 2nd → 1st ──
-  const REVEAL_INTERVAL = 1700;
+  const REVEAL_INTERVAL = 50;
 
   // 3rd place (right pillar, shortest)
   setTimeout(() => {
     const el = document.getElementById('podium-slot-3');
     if (el && lb[2]) el.classList.add('podium-revealed');
-  }, 600);
+  }, 0);
 
   // 2nd place (left pillar, medium)
   setTimeout(() => {
     const el = document.getElementById('podium-slot-2');
     if (el && lb[1]) el.classList.add('podium-revealed');
-  }, 600 + REVEAL_INTERVAL);
+  }, REVEAL_INTERVAL);
 
   // 1st place (center pillar, tallest) — full celebration
   setTimeout(() => {
@@ -3608,15 +3936,15 @@ socket.on('game:over', (data) => {
       setTimeout(() => confetti({ particleCount: 90, angle: 125, spread: 60, origin: { x: 1 } }), 650);
       setTimeout(() => confetti({ particleCount: 60, spread: 120, origin: { y: 0.3 }, colors: ['#facc15','#fb923c','#34d399'] }), 1100);
     }
-  }, 600 + REVEAL_INTERVAL * 2);
+  }, REVEAL_INTERVAL * 2);
 
   // Full results fade in after the ceremony
   setTimeout(() => {
     fullResults.classList.add('podium-results-visible');
-  }, 600 + REVEAL_INTERVAL * 2 + 1400);
+  }, REVEAL_INTERVAL * 2 + 100);
 });
 
-socket.on('room:reset', ({ players, modeInfo }) => {
+socket.on('room:reset', ({ players, modeInfo, hostIsPlayer }) => {
   clearScholarPreviewInterval();
   stopClientTimer();
   setFrozenState(false);
@@ -3625,18 +3953,22 @@ socket.on('room:reset', ({ players, modeInfo }) => {
   state.totalQuestions = 0;
   state.myStreak = 0;
   state.myScore = 0;
-  state.hostIsPlayer = false;
+  soloAutoStarting = false;
+  state.hostIsPlayer = !!hostIsPlayer;
   updatePlayerScoreUI();
   document.getElementById('overlay-paused').style.display = 'none';
   // Reset the host-as-player UI for the fresh session
   const chkReset = document.getElementById('chk-host-as-player');
-  if (chkReset) chkReset.checked = false;
+  if (chkReset) chkReset.checked = state.hostIsPlayer;
   const formReset = document.getElementById('host-player-form');
-  if (formReset) formReset.style.display = 'none';
+  if (formReset) formReset.style.display = state.hostIsPlayer ? 'flex' : 'none';
   const hostAsPlayerBlockReset = document.getElementById('host-as-player-section');
-  if (hostAsPlayerBlockReset) hostAsPlayerBlockReset.classList.remove('join-enabled');
+  if (hostAsPlayerBlockReset) {
+    if (state.hostIsPlayer) hostAsPlayerBlockReset.classList.add('join-enabled');
+    else hostAsPlayerBlockReset.classList.remove('join-enabled');
+  }
   const statusReset = document.getElementById('host-as-player-status');
-  if (statusReset) statusReset.textContent = '';
+  if (statusReset) statusReset.textContent = state.hostIsPlayer ? '✅ Joined' : '';
 
   if (state.role === 'host') {
     if (modeInfo) applyModeInfo(modeInfo);
@@ -3646,7 +3978,7 @@ socket.on('room:reset', ({ players, modeInfo }) => {
       renderPlayerList(players || [], listEl, countEl, true);
     }
     const startBtn = document.getElementById('btn-start-game');
-    if (startBtn) startBtn.disabled = !(players && players.length > 0);
+    if (startBtn) startBtn.disabled = soloAutoStarting || !(players && players.length > 0);
     showView('view-host-lobby');
   } else {
     const listEl = document.getElementById('player-player-list');

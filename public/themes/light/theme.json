@@ -1,0 +1,14 @@
+{
+  "id": "light",
+  "name": "Default Light",
+  "baseTheme": "light",
+  "tokens": {
+    "--bg": "#f1f5f9",
+    "--surface": "#ffffff",
+    "--surface-2": "#e2e8f0",
+    "--accent": "#e94560",
+    "--text": "#0f172a",
+    "--text-dim": "#475569",
+    "--success": "#0d9488"
+  }
+}

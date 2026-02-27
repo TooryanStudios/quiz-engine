@@ -152,6 +152,14 @@ function consumeHostLaunchCode(launchCode) {
   return record.uid;
 }
 
+function peekHostLaunchCode(launchCode) {
+  if (!launchCode || typeof launchCode !== 'string') return null;
+  const record = hostLaunchCodes.get(launchCode);
+  if (!record) return null;
+  if (Date.now() > record.expiresAt) return null;
+  return record.uid;
+}
+
 setInterval(() => {
   const now = Date.now();
   for (const [code, record] of hostLaunchCodes.entries()) {
@@ -453,6 +461,74 @@ app.get('/api/quiz-preview/:slug', async (req, res) => {
       duration: q.duration || config.GAME.QUESTION_DURATION_SEC,
     }))
   });
+});
+
+// Lobby catalog endpoint — returns public games and host-owned quizzes for quick switching
+app.get('/api/lobby-quiz-catalog', async (req, res) => {
+  const limitRaw = Number(req.query.limit || 24);
+  const limitValue = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.floor(limitRaw), 6), 60) : 24;
+  const hostUid = typeof req.query.hostUid === 'string' ? req.query.hostUid : null;
+  const hostToken = typeof req.query.hostToken === 'string' ? req.query.hostToken : null;
+  const hostLaunchCode = typeof req.query.hostLaunchCode === 'string' ? req.query.hostLaunchCode : null;
+
+  const db = getDbSafe();
+  if (!db) {
+    return res.json({ publicGames: [], myGames: [], totalPublic: 0, totalMine: 0 });
+  }
+
+  let verifiedUid = null;
+  if (hostUid && hostToken) {
+    try {
+      const decoded = await admin.auth().verifyIdToken(hostToken);
+      if (decoded.uid === hostUid) verifiedUid = decoded.uid;
+    } catch (_err) {
+      verifiedUid = null;
+    }
+  }
+  if (!verifiedUid && hostLaunchCode) {
+    verifiedUid = peekHostLaunchCode(hostLaunchCode);
+  }
+
+  const mapQuizCard = (docSnap) => {
+    const data = docSnap.data() || {};
+    const slug = (typeof data.slug === 'string' && data.slug.trim()) ? data.slug.trim() : docSnap.id;
+    const title = (typeof data.title === 'string' && data.title.trim()) ? data.title.trim() : slug;
+    const coverImage = typeof data.coverImage === 'string' ? data.coverImage : '';
+    const gameModeId = typeof data.gameModeId === 'string' ? data.gameModeId : null;
+    const visibility = data.visibility === 'private' ? 'private' : 'public';
+    const ownerId = typeof data.ownerId === 'string' ? data.ownerId : null;
+    return { slug, title, coverImage, gameModeId, visibility, ownerId };
+  };
+
+  try {
+    const publicSnap = await db
+      .collection('quizzes')
+      .where('visibility', '==', 'public')
+      .limit(limitValue)
+      .get();
+
+    let mySnap = null;
+    if (verifiedUid) {
+      mySnap = await db
+        .collection('quizzes')
+        .where('ownerId', '==', verifiedUid)
+        .limit(limitValue)
+        .get();
+    }
+
+    const publicGames = publicSnap.docs.map(mapQuizCard);
+    const myGames = mySnap ? mySnap.docs.map(mapQuizCard) : [];
+
+    return res.json({
+      publicGames,
+      myGames,
+      totalPublic: publicGames.length,
+      totalMine: myGames.length,
+    });
+  } catch (error) {
+    console.error('[lobby-quiz-catalog] failed', error?.message || error);
+    return res.status(500).json({ error: 'Failed to load quiz catalog' });
+  }
 });
 
 // Stripe checkout session (subscription)
@@ -2270,12 +2346,12 @@ io.on('connection', (socket) => {
     room.challengePreset = 'classic';
     room.challengeSettings = getPresetSettings('classic');
 
-    // Remove the host-player entry so they can choose fresh for the next session
-    if (room.hostIsPlayer) {
-      room.players.delete(socket.id);
-      room.hostIsPlayer = false;
-      socket.data.pin = null;
-    }
+    // Keep the host-player entry if they joined as a player
+    // if (room.hostIsPlayer) {
+    //   room.players.delete(socket.id);
+    //   room.hostIsPlayer = false;
+    //   socket.data.pin = null;
+    // }
 
     room.players.forEach((player) => {
       player.score = 0;
@@ -2290,6 +2366,7 @@ io.on('connection', (socket) => {
     io.to(room.pin).emit('room:reset', {
       players: getPlayerList(room),
       modeInfo,
+      hostIsPlayer: room.hostIsPlayer,
     });
   });
 

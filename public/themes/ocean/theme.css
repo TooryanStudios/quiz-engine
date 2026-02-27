@@ -1,0 +1,9 @@
+html[data-theme-id="ocean"] .card {
+  border-color: rgba(34, 211, 238, 0.35);
+  box-shadow: 0 12px 30px rgba(2, 6, 23, 0.45), 0 0 0 1px rgba(34, 211, 238, 0.08) inset;
+}
+
+html[data-theme-id="ocean"] .btn-primary,
+html[data-theme-id="ocean"] .btn-success {
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.25) inset;
+}

@@ -12,6 +12,36 @@ export class MatchRenderer extends BaseRenderer {
     super(questionData);
     this.drag = null;
   }
+
+  isLikelyImageSource(value) {
+    if (typeof value !== 'string') return false;
+    const v = value.trim().toLowerCase();
+    if (!v) return false;
+    if (v.startsWith('data:image/')) return true;
+    if (v.startsWith('blob:')) return true;
+    if (v.startsWith('/')) return true;
+    if (v.startsWith('http://') || v.startsWith('https://')) {
+      return /(\.png|\.jpe?g|\.gif|\.webp|\.bmp|\.svg)(\?.*)?$/.test(v);
+    }
+    return false;
+  }
+
+  escapeAttr(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  renderMatchContent(value, className = 'match-chip-media') {
+    const { escapeHtml } = this.utils;
+    const text = String(value ?? '');
+    if (this.isLikelyImageSource(text)) {
+      return `<img class="${className}" src="${this.escapeAttr(text)}" alt="match item" loading="lazy" />`;
+    }
+    return `<span class="match-chip-text" dir="auto">${escapeHtml(text)}</span>`;
+  }
   
   /**
    * Render player view (interactive)
@@ -21,9 +51,11 @@ export class MatchRenderer extends BaseRenderer {
     if (!container) return;
     
     // Initialize match state
-    state.matchConnections = new Array(this.question.lefts.length).fill(-1);
-    state.matchLefts = this.question.lefts;
-    state.matchRights = this.question.rights;
+    const lefts = Array.isArray(this.question.lefts) ? this.question.lefts : [];
+    const rights = Array.isArray(this.question.rights) ? this.question.rights : [];
+    state.matchConnections = new Array(lefts.length).fill(-1);
+    state.matchLefts = lefts;
+    state.matchRights = rights;
     
     // Show match container
     safeSetDisplay('player-match-container', 'block');
@@ -46,7 +78,7 @@ export class MatchRenderer extends BaseRenderer {
     const container = safeGet('player-match-container');
     if (!container) return;
     
-    const { escapeHtml, OPTION_COLORS } = this.utils;
+    const { OPTION_COLORS } = this.utils;
     const lefts = state.matchLefts;
     const rights = state.matchRights;
     const placed = new Set(state.matchConnections.filter(v => v !== -1));
@@ -60,13 +92,13 @@ export class MatchRenderer extends BaseRenderer {
             const col = OPTION_COLORS[i % OPTION_COLORS.length];
             
             return `<div class="match-dnd-row">
-              <div class="match-dnd-label">${escapeHtml(l)}</div>
+              <div class="match-dnd-label">${this.renderMatchContent(l, 'match-left-media')}</div>
               <div class="match-dropzone ${filled ? 'match-dz-filled ' + col : 'match-dz-empty'}" 
                    data-dropzone="${i}">
                 ${filled
                   ? `<span class="match-chip in-slot ${col}" 
                            data-chip-idx="${ri}" 
-                           data-in-slot="${i}">${escapeHtml(rights[ri])}</span>`
+                           data-in-slot="${i}">${this.renderMatchContent(rights[ri])}</span>`
                   : `<span class="match-drop-hint">drop here</span>`
                 }
               </div>
@@ -79,7 +111,7 @@ export class MatchRenderer extends BaseRenderer {
             if (placed.has(i)) return '';
             return `<span class="match-chip in-pool opt-violet" 
                          data-chip-idx="${i}" 
-                         data-in-slot="-1">${escapeHtml(r)}</span>`;
+                         data-in-slot="-1">${this.renderMatchContent(r)}</span>`;
           }).join('')}
         </div>
       </div>
@@ -106,10 +138,10 @@ export class MatchRenderer extends BaseRenderer {
     const rect = chip.getBoundingClientRect();
     
     // Create ghost element
-    const ghost = document.createElement('span');
+    const ghost = document.createElement('div');
     ghost.id = '__dgh';
     ghost.className = 'match-chip match-drag-ghost';
-    ghost.textContent = chip.textContent;
+    ghost.innerHTML = chip.innerHTML;
     ghost.style.cssText = `position:fixed;pointer-events:none;z-index:9999;
       width:${rect.width}px;left:${rect.left}px;top:${rect.top}px;
       opacity:0.9;transform:scale(1.1) rotate(-2deg);`;
@@ -213,7 +245,7 @@ export class MatchRenderer extends BaseRenderer {
    * Get answer
    */
   getAnswer() {
-    return { pairs: state.matchConnections };
+    return { matches: state.matchConnections, pairs: state.matchConnections };
   }
   
   /**
@@ -222,15 +254,14 @@ export class MatchRenderer extends BaseRenderer {
   renderHost() {
     const grid = safeGet('host-options-grid');
     if (!grid) return;
-    
-    const { escapeHtml } = this.utils;
+
     const lefts = this.question.lefts || [];
     
     grid.innerHTML = `
       <div class="host-pairs-preview">
         ${lefts.map((l, i) => `
           <div class="host-pair-row stagger-${Math.min(i + 1, 4)}">
-            <span class="host-pair-side">${escapeHtml(l)}</span>
+            <span class="host-pair-side">${this.renderMatchContent(l, 'host-pair-media')}</span>
             <span class="host-pair-arrow">⟷</span>
             <span class="host-pair-side host-pair-right">?</span>
           </div>

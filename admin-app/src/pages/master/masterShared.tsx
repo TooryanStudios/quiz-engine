@@ -2,7 +2,7 @@
 // Shared helpers & primitives used across all Master Admin tab components
 // ---------------------------------------------------------------------------
 
-export type MasterTab = 'overview' | 'sessions' | 'quizzes' | 'engagement' | 'creators' | 'users' | 'questionTypes' | 'miniGames'
+export type MasterTab = 'overview' | 'sessions' | 'quizzes' | 'engagement' | 'creators' | 'users' | 'questionTypes' | 'miniGames' | 'themeEditor'
 
 // ── Styles ──────────────────────────────────────────────────────────────────
 
