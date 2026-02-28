@@ -987,6 +987,8 @@ async function getQuizDataFromRestApi(quizId) {
         ownerId: data.ownerId || null,
         priceTier: normalizePriceTier(data.priceTier),
         questions: data.questions,
+        gameModeId: typeof data.gameModeId === 'string' ? data.gameModeId : null,
+        miniGameConfig: (data.miniGameConfig && typeof data.miniGameConfig === 'object') ? data.miniGameConfig : {},
         challengePreset: data.challengePreset || 'classic',
         challengeSettings: data.challengeSettings || null,
         randomizeQuestions: data.randomizeQuestions === true,
@@ -1051,6 +1053,8 @@ async function getQuizData(quizSlug) {
               return {
                 title: data.title || null,
                 questions: data.questions,
+                gameModeId: typeof data.gameModeId === 'string' ? data.gameModeId : null,
+                miniGameConfig: (data.miniGameConfig && typeof data.miniGameConfig === 'object') ? data.miniGameConfig : {},
                 challengePreset: data.challengePreset || 'classic',
                 challengeSettings: data.challengeSettings || null,
               };
@@ -1071,6 +1075,8 @@ async function getQuizData(quizSlug) {
             return {
               title: data.title || null,
               questions: data.questions,
+              gameModeId: typeof data.gameModeId === 'string' ? data.gameModeId : null,
+              miniGameConfig: (data.miniGameConfig && typeof data.miniGameConfig === 'object') ? data.miniGameConfig : {},
               challengePreset: data.challengePreset || 'classic',
               challengeSettings: data.challengeSettings || null,
             };
@@ -1125,6 +1131,8 @@ async function getQuizData(quizSlug) {
     console.log(`[Quiz] ✓ Loaded ${questions.length} questions from HTTP endpoint`);
     return {
       questions,
+      gameModeId: null,
+      miniGameConfig: {},
       challengePreset: 'classic',
       challengeSettings: null,
     };
@@ -1152,6 +1160,8 @@ async function refreshQuestions(quizSlug) {
   console.log(`[Quiz] Loaded ${finalQuestions.length} questions (preset: ${remote?.challengePreset || 'classic'})`);
   return {
     questions: finalQuestions,
+    gameModeId: typeof remote?.gameModeId === 'string' ? remote.gameModeId : null,
+    miniGameConfig: (remote?.miniGameConfig && typeof remote.miniGameConfig === 'object') ? remote.miniGameConfig : {},
     challengePreset: remote?.challengePreset || 'classic',
     challengeSettings,
     randomizeQuestions: remote?.randomizeQuestions === true,
@@ -1774,6 +1784,8 @@ io.on('connection', (socket) => {
       mode: activeMode,
       quizSlug: quizSlug || null,
       gameMode: gameMode || null,
+      miniGameConfig: {},
+      matchPlusMode: null,
       questions: DEFAULT_QUESTIONS,
       challengePreset: 'classic',
       challengeSettings: getPresetSettings('classic'),
@@ -2119,6 +2131,10 @@ io.on('connection', (socket) => {
 
     room.challengePreset = quizData.challengePreset || 'classic';
     room.challengeSettings = quizData.challengeSettings || getPresetSettings('classic');
+    room.miniGameConfig = (quizData.miniGameConfig && typeof quizData.miniGameConfig === 'object') ? quizData.miniGameConfig : {};
+    room.matchPlusMode = typeof room.miniGameConfig.defaultMatchPlusMode === 'string'
+      ? room.miniGameConfig.defaultMatchPlusMode
+      : null;
     room.enableScholarRole = quizData.enableScholarRole === true; // disabled by default
     console.log(`[Room ${room.pin}] Loaded ${room.questions.length} questions from quiz data`);
 
