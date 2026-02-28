@@ -3998,3 +3998,43 @@ video.question-media {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background-color: rgba(148, 163, 184, 0.3); border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background-color: rgba(148, 163, 184, 0.5); }
+
+/* ═══════════════════════════════════════════
+   Match Plus Arena - Image Sizing
+═══════════════════════════════════════════ */
+.match-chip-media,
+.match-left-media,
+.host-pair-media {
+  max-width: 120px;
+  max-height: 120px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
+  border-radius: 8px;
+}
+
+.match-puzzle-chip-tile,
+.match-puzzle-slot-tile {
+  display: inline-block;
+  width: 80px;
+  height: 80px;
+  border-radius: 8px;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+@media (max-width: 768px) {
+  .match-chip-media,
+  .match-left-media,
+  .host-pair-media {
+    max-width: 80px;
+    max-height: 80px;
+  }
+  
+  .match-puzzle-chip-tile,
+  .match-puzzle-slot-tile {
+    width: 60px;
+    height: 60px;
+  }
+}
