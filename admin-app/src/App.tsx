@@ -524,6 +524,8 @@ function App() {
               <Route path="/dashboard" element={<RequireAuth user={user}><DashboardPage /></RequireAuth>} />
               <Route path="/editor" element={<RequireAuth user={user}><QuizEditorPage /></RequireAuth>} />
               <Route path="/editor/:id" element={<RequireAuth user={user}><QuizEditorPage /></RequireAuth>} />
+              <Route path="/mini-game-editor" element={<RequireAuth user={user}><QuizEditorPage /></RequireAuth>} />
+              <Route path="/mini-game-editor/:id" element={<RequireAuth user={user}><QuizEditorPage /></RequireAuth>} />
               <Route path="/game-modes" element={<RequireAdmin user={user}><GameModesPage /></RequireAdmin>} />
               <Route path="/preview/:id" element={<RequireAuth user={user}><QuizPreviewPage /></RequireAuth>} />
               <Route path="/packs" element={<RequireAuth user={user}><PacksPage /></RequireAuth>} />

@@ -15,6 +15,11 @@ import { useDialog } from '../lib/DialogContext'
 
 type QuizItem = QuizDoc & { id: string }
 
+function getEditorPath(item: QuizItem): string {
+  const isMiniGame = item.contentType === 'mini-game' || (!!item.gameModeId && (!item.questions || item.questions.length === 0))
+  return isMiniGame ? `/mini-game-editor/${item.id}` : `/editor/${item.id}`
+}
+
 const IS_LOCAL_DEV = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
 const SERVER_BASE = IS_LOCAL_DEV
   ? (import.meta.env.VITE_LOCAL_GAME_URL || 'http://localhost:3001')
@@ -210,6 +215,7 @@ export function DashboardPage() {
           </h2>
           <p style={{ margin: '0.25rem 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>{dateStr}</p>
         </div>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
         <Link to="/editor" style={{ textDecoration: 'none' }}>
           <button style={{
             display: 'flex', alignItems: 'center', gap: '0.5rem',
@@ -221,6 +227,18 @@ export function DashboardPage() {
             <span>＋</span> New Quiz
           </button>
         </Link>
+        <Link to="/mini-game-editor" style={{ textDecoration: 'none' }}>
+          <button style={{
+            display: 'flex', alignItems: 'center', gap: '0.5rem',
+            padding: '0.65rem 1.3rem', borderRadius: '10px',
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border-strong)', color: 'var(--text)', fontSize: '0.9rem', fontWeight: 600,
+            cursor: 'pointer', whiteSpace: 'nowrap',
+          }}>
+            <span>🎮</span> New Mini Game
+          </button>
+        </Link>
+        </div>
       </div>
 
       {/* ── Stats row ── */}
@@ -268,6 +286,7 @@ export function DashboardPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
             {([
               { icon: '＋', label: 'New Quiz', to: '/editor', primary: true },
+              { icon: '🎮', label: 'New Mini Game', to: '/mini-game-editor', primary: false },
               { icon: '✏️', label: 'Quiz Editor', to: '/editor', primary: false },
               { icon: '📦', label: 'Packs Library', to: '/packs', primary: false },
               { icon: '💳', label: 'Billing', to: '/billing', primary: false },
@@ -350,7 +369,7 @@ export function DashboardPage() {
                       <Link to={`/preview/${q.id}`} title="Preview" style={{ textDecoration: 'none' }}>
                         <button style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-dim)', padding: '4px 8px', borderRadius: '6px', fontSize: '0.7rem', cursor: 'pointer' }}>👁️</button>
                       </Link>
-                      <Link to={`/editor/${q.id}`} title="Edit" style={{ textDecoration: 'none' }}>
+                      <Link to={getEditorPath(q)} title="Edit" style={{ textDecoration: 'none' }}>
                         <button style={{ background: '#2563eb', border: 'none', color: '#fff', padding: '4px 8px', borderRadius: '6px', fontSize: '0.7rem', cursor: 'pointer' }}>✏️</button>
                       </Link>
                     </div>
@@ -658,7 +677,7 @@ export function DashboardPage() {
                       onMouseLeave={(e) => Object.assign(e.currentTarget.style, { background: dark ? '#1e293b' : '#f1f5f9', color: dark ? '#94a3b8' : '#475569' })}
                     >معاينة</button>
                   </Link>
-                  <Link to={`/editor/${q.id}`} style={{ textDecoration: 'none', flex: 1 }}>
+                  <Link to={getEditorPath(q)} style={{ textDecoration: 'none', flex: 1 }}>
                     <button style={aBtnPrimary}
                       onMouseEnter={(e) => Object.assign(e.currentTarget.style, { background: '#1d4ed8', color: '#fff', borderColor: '#2563eb' })}
                     onMouseLeave={(e) => Object.assign(e.currentTarget.style, { background: dark ? '#1e3a5f' : '#dbeafe', color: dark ? '#93c5fd' : '#1d4ed8', borderColor: dark ? '#1e4a7a' : '#bfdbfe' })}
