@@ -3,7 +3,7 @@
  * Factory that creates and manages question type renderers
  */
 
-import { createRendererRegistry } from './questionTypes/index.js?v=122';
+import { createRendererRegistry } from './questionTypes/index.js?v=124';
 
 /**
  * Question Renderer Factory

@@ -136,6 +136,12 @@ export class MatchRenderer extends BaseRenderer {
     const isMatchPlus = this.isImageMatchMode();
     const mode = this.getMatchPlusMode();
     const isPuzzleMode = mode === 'image-puzzle';
+
+    if (isPuzzleMode) {
+      this.buildSimplePuzzleUI(lefts, rights);
+      return;
+    }
+
     const forceLeftImage = isMatchPlus && (mode === 'image-text' || mode === 'image-image');
     const forceRightImage = isMatchPlus && mode === 'image-image';
     const placed = new Set(state.matchConnections.filter(v => v !== -1));
@@ -188,6 +194,59 @@ export class MatchRenderer extends BaseRenderer {
       chip.addEventListener('pointerdown', this.onChipPointerDown.bind(this));
     });
     
+    this.checkMatchComplete();
+  }
+
+  buildSimplePuzzleUI(lefts, rights) {
+    const container = safeGet('player-match-container');
+    if (!container) return;
+
+    const placed = new Set(state.matchConnections.filter(v => v !== -1));
+
+    container.innerHTML = `
+      <div class="simple-puzzle-wrap">
+        <div class="simple-puzzle-board">
+          ${lefts.map((leftValue, slotIndex) => {
+            const pieceIndex = state.matchConnections[slotIndex];
+            const filled = pieceIndex !== -1;
+            const placedContent = filled
+              ? this.renderPuzzleTile(rights[pieceIndex], 'simple-puzzle-piece-media', false)
+              : '';
+            const targetContent = this.renderPuzzleTile(leftValue, 'simple-puzzle-target-media', true);
+
+            return `<div class="simple-puzzle-cell">
+              <div class="match-dropzone simple-puzzle-dropzone ${filled ? 'match-dz-filled simple-puzzle-dropzone-filled' : 'match-dz-empty'}"
+                   data-dropzone="${slotIndex}">
+                <span class="simple-puzzle-target">${targetContent}</span>
+                ${filled
+                  ? `<span class="match-chip simple-puzzle-piece in-slot"
+                           data-chip-idx="${pieceIndex}"
+                           data-in-slot="${slotIndex}">${placedContent}</span>`
+                  : `<span class="simple-puzzle-hint">ضع القطعة هنا</span>`
+                }
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+
+        <div class="simple-puzzle-pool">
+          <span class="simple-puzzle-title">اسحب القطع إلى أماكنها الصحيحة</span>
+          <div class="simple-puzzle-pool-grid">
+            ${rights.map((value, pieceIndex) => {
+              if (placed.has(pieceIndex)) return '';
+              return `<span class="match-chip simple-puzzle-piece in-pool"
+                           data-chip-idx="${pieceIndex}"
+                           data-in-slot="-1">${this.renderPuzzleTile(value, 'simple-puzzle-piece-media', false)}</span>`;
+            }).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+
+    container.querySelectorAll('.match-chip').forEach(chip => {
+      chip.addEventListener('pointerdown', this.onChipPointerDown.bind(this));
+    });
+
     this.checkMatchComplete();
   }
   
@@ -325,6 +384,18 @@ export class MatchRenderer extends BaseRenderer {
     const mode = this.getMatchPlusMode();
     const isPuzzleMode = mode === 'image-puzzle';
     const forceLeftImage = this.isImageMatchMode() && (mode === 'image-text' || mode === 'image-image');
+
+    if (isPuzzleMode) {
+      grid.innerHTML = `
+        <div class="simple-puzzle-host-wrap">
+          <div class="simple-puzzle-host-title">صورة مجزأة: رتّب القطع حسب مكانها</div>
+          <div class="simple-puzzle-host-grid">
+            ${lefts.map(l => `<span class="simple-puzzle-host-tile">${this.renderPuzzleTile(l, 'simple-puzzle-host-media', true)}</span>`).join('')}
+          </div>
+        </div>
+      `;
+      return;
+    }
     
     grid.innerHTML = `
       <div class="host-pairs-preview">
