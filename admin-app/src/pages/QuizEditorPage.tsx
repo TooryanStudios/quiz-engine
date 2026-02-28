@@ -37,6 +37,7 @@ import {
 } from '../config/questionTypeSchemas'
 import { createQuiz, deleteQuiz, findQuizByOwnerAndSlug, getQuizById, updateQuiz } from '../lib/quizRepo'
 import { incrementPlatformStat, subscribeMiniGameSettings, subscribeQuestionTypeSettings } from '../lib/adminRepo'
+import { ImageCropDialog } from '../components/ImageCropDialog'
 import placeholderImg from '../assets/QYan_logo_300x164.jpg'
 
 const IS_LOCAL_DEV = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
@@ -205,6 +206,9 @@ export function QuizEditorPage() {
   const [tempAllDuration, setTempAllDuration] = useState(20)
   const [saveAfterMetadata, setSaveAfterMetadata] = useState(false)
   const [showMiniGamePicker, setShowMiniGamePicker] = useState(false)
+  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null)
+  const [showCropDialog, setShowCropDialog] = useState(false)
+  const [uploadingMiniGameImage, setUploadingMiniGameImage] = useState(false)
 
   // AI Feature States
   const [aiAction, setAiAction] = useState<'generate' | 'recheck' | null>(null)
@@ -268,6 +272,47 @@ export function QuizEditorPage() {
     }
     input.click()
   }
+
+  const closeCropDialog = () => {
+    if (cropImageSrc?.startsWith('blob:')) {
+      URL.revokeObjectURL(cropImageSrc)
+    }
+    setCropImageSrc(null)
+    setShowCropDialog(false)
+  }
+
+  const pickMiniGamePuzzleImage = () => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'image/*'
+    input.onchange = (event) => {
+      const file = (event.target as HTMLInputElement).files?.[0]
+      if (!file) return
+      const localUrl = URL.createObjectURL(file)
+      setCropImageSrc(localUrl)
+      setShowCropDialog(true)
+    }
+    input.click()
+  }
+
+  const handleMiniGamePuzzleCropConfirm = async (blob: Blob) => {
+    setUploadingMiniGameImage(true)
+    try {
+      const path = `mini-games/match-plus-arena/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
+      const storageRef = ref(storage, path)
+      await uploadBytes(storageRef, blob, { contentType: 'image/jpeg' })
+      const url = await getDownloadURL(storageRef)
+      updateMiniGameConfig({ defaultPuzzleImage: url })
+      showToast({ message: '✅ تم رفع صورة البازل المربعة بنجاح', type: 'success' })
+      closeCropDialog()
+    } catch (error) {
+      console.error('Mini game puzzle image upload failed', error)
+      showToast({ message: '❌ فشل رفع صورة البازل', type: 'error' })
+    } finally {
+      setUploadingMiniGameImage(false)
+    }
+  }
+
   const [loading, setLoading] = useState(!!routeId)
   const isMiniGameContent = location.pathname.startsWith('/mini-game-editor')
 
@@ -1841,6 +1886,38 @@ export function QuizEditorPage() {
                       placeholder="https://..."
                       style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', color: 'var(--text)' }}
                     />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.55rem', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        onClick={pickMiniGamePuzzleImage}
+                        disabled={uploadingMiniGameImage}
+                        style={{
+                          border: '1px solid var(--border-strong)',
+                          borderRadius: '8px',
+                          background: 'var(--bg-surface)',
+                          color: 'var(--text)',
+                          padding: '0.42rem 0.7rem',
+                          cursor: uploadingMiniGameImage ? 'not-allowed' : 'pointer',
+                          opacity: uploadingMiniGameImage ? 0.65 : 1,
+                          fontWeight: 700,
+                          fontSize: '0.78rem',
+                        }}
+                      >
+                        {uploadingMiniGameImage ? '⏳ Uploading...' : '🖼️ Upload & Crop'}
+                      </button>
+                      <span style={{ color: 'var(--text-mid)', fontSize: '0.76rem' }}>
+                        مربع فقط 1:1 — بقية النِسَب غير مسموحة لهذا الجيم.
+                      </span>
+                    </div>
+                    {String(miniGameConfig.defaultPuzzleImage || '').trim() && (
+                      <div style={{ marginTop: '0.55rem', width: '120px', aspectRatio: '1 / 1', borderRadius: '10px', overflow: 'hidden', border: '1px solid var(--border-strong)', background: 'var(--bg-deep)' }}>
+                        <img
+                          src={String(miniGameConfig.defaultPuzzleImage || '')}
+                          alt="Puzzle preview"
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -3057,6 +3134,15 @@ export function QuizEditorPage() {
           </div>
         </div>
       )}
+
+      <ImageCropDialog
+        isOpen={showCropDialog}
+        imageSrc={cropImageSrc}
+        title="Crop Puzzle Image"
+        ratioPresets={[{ id: 'square', label: 'Square 1:1', ratio: 1 }]}
+        onClose={closeCropDialog}
+        onConfirm={handleMiniGamePuzzleCropConfirm}
+      />
 
       {/* ── AI Features Dialog (Premium Placeholder) ── */}
       {aiAction && (
