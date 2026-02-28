@@ -49,8 +49,18 @@ function transformLegacyQuestionToMatchPlus(questionPayload, room) {
   const options = Array.isArray(questionPayload.options) ? questionPayload.options : [];
 
   let pairs = [];
+  const isPuzzleMode = configuredMode === 'image-puzzle';
 
-  if (options.length >= 2) {
+  if (isPuzzleMode) {
+    // For image-puzzle mode: left = piece index (1-based), right = label text
+    const labels = options.length >= 2
+      ? options.slice(0, 9).map((opt, i) => (typeof opt === 'string' && opt.trim() ? opt.trim() : `${i + 1}`))
+      : ['1', '2', '3', '4'];
+    pairs = labels.map((label, index) => ({
+      left: String(index + 1),
+      right: label,
+    }));
+  } else if (options.length >= 2) {
     pairs = options.slice(0, 6).map((option, index) => {
       const fallback = `Item ${index + 1}`;
       const pair = toPairStrings(option, fallback, fallback);

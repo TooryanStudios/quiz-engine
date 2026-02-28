@@ -3,9 +3,9 @@
 const MATCH_PLUS_MODES = ['emoji-emoji', 'emoji-text', 'image-text', 'image-image', 'image-puzzle'];
 
 function normalizeMatchPlusMode(value) {
-  if (typeof value !== 'string') return 'image-image';
+  if (typeof value !== 'string') return 'image-puzzle';
   const normalized = value.trim().toLowerCase();
-  return MATCH_PLUS_MODES.includes(normalized) ? normalized : 'image-image';
+  return MATCH_PLUS_MODES.includes(normalized) ? normalized : 'image-puzzle';
 }
 
 function normalizeMatchPlusGridSize(value) {

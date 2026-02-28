@@ -32,11 +32,11 @@ export class MatchRenderer extends BaseRenderer {
 
   getMatchPlusMode() {
     if (!this.isImageMatchMode()) return 'classic';
-    const mode = String(this.question?.matchPlusMode || 'image-image').trim().toLowerCase();
+    const mode = String(this.question?.matchPlusMode || 'image-puzzle').trim().toLowerCase();
     if (mode === 'emoji-emoji' || mode === 'emoji-text' || mode === 'image-text' || mode === 'image-image' || mode === 'image-puzzle') {
       return mode;
     }
-    return 'image-image';
+    return 'image-puzzle';
   }
 
   getPuzzleGridSize() {
