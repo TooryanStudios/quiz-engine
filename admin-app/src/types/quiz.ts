@@ -21,6 +21,9 @@ export interface QuizMedia {
 export interface QuizQuestion {
   type: QuestionType
   text: string
+  matchPlusMode?: 'emoji-emoji' | 'emoji-text' | 'image-text' | 'image-image' | 'image-puzzle'
+  matchPlusImage?: string
+  matchPlusGridSize?: number
   creatorTask?: 'draw' | 'arrange'
   creatorElements?: string[]
   media?: QuizMedia

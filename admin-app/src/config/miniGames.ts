@@ -14,6 +14,7 @@ export const MINI_GAME_IDS = [
   'fact-or-fiction-lab',
   'creative-constraint-quiz',
   'alliance-betrayal-mode',
+  'match-plus-arena',
 ] as const
 
 export type MiniGameId = typeof MINI_GAME_IDS[number]
@@ -148,6 +149,14 @@ export const MINI_GAME_DEFINITIONS: Record<MiniGameId, MiniGameDefinition> = {
     defaultArabicName: 'وضع التحالف والخيانة',
     description: 'تحالفات مؤقتة ومفاجآت تنافسية.',
     howToPlay: 'نسق مع فريقك مؤقتا ثم اختر لحظة الحسم المناسبة.',
+  },
+  'match-plus-arena': {
+    id: 'match-plus-arena',
+    icon: '🧩',
+    defaultEnglishName: 'Match Plus Arena',
+    defaultArabicName: 'ساحة المطابقة بلس',
+    description: 'ميني جيم مطابقة متعدد الأنماط (إيموجي/نص/صور/ألغاز).',
+    howToPlay: 'اختر نمط الجولة ثم اسحب العناصر للمطابقة الصحيحة بأسرع وقت.',
   },
 }
 

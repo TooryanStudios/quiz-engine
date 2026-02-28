@@ -1790,7 +1790,16 @@ function showQuestionResult(data) {
   document.getElementById('overlay-paused').style.display = 'none';
 
   const type = data.questionType;
-  const forcePairImages = type === 'match_plus';
+  const matchPlusMode = (() => {
+    const raw = typeof data?.matchPlusMode === 'string' ? data.matchPlusMode.trim().toLowerCase() : '';
+    if (raw === 'emoji-emoji' || raw === 'emoji-text' || raw === 'image-text' || raw === 'image-image' || raw === 'image-puzzle') {
+      return raw;
+    }
+    return null;
+  })();
+  const forcePairImages = matchPlusMode === 'image-text' || matchPlusMode === 'image-image';
+  const forceRightImages = matchPlusMode === 'image-image';
+  const isPuzzleMode = matchPlusMode === 'image-puzzle';
 
   const isLikelyImageSource = (value) => {
     if (typeof value !== 'string') return false;
@@ -1805,12 +1814,33 @@ function showQuestionResult(data) {
     return false;
   };
 
-  const renderResultValue = (value) => {
+  const renderPuzzleResultValue = (value) => {
+    const image = typeof data?.matchPlusImage === 'string' ? data.matchPlusImage.trim() : '';
+    const parsedGrid = Number(data?.matchPlusGridSize);
+    const grid = Number.isInteger(parsedGrid) ? Math.max(2, Math.min(4, parsedGrid)) : 3;
+    const parsedPiece = Number.parseInt(String(value || ''), 10);
+
+    if (!image || !Number.isInteger(parsedPiece) || parsedPiece < 1) {
+      return `<span class="result-pair-empty" dir="auto">🧩 قطعة</span>`;
+    }
+
+    const pieceIndex = parsedPiece - 1;
+    const row = Math.floor(pieceIndex / grid);
+    const col = pieceIndex % grid;
+    const bgX = grid > 1 ? (col / (grid - 1)) * 100 : 0;
+    const bgY = grid > 1 ? (row / (grid - 1)) * 100 : 0;
+
+    return `<span class="result-pair-media" style="background-image:url('${escapeHtml(image)}');background-size:${grid * 100}% ${grid * 100}%;background-position:${bgX}% ${bgY}%;background-repeat:no-repeat;display:inline-block;"></span>`;
+  };
+
+  const renderResultValue = (value, side = 'left') => {
+    if (isPuzzleMode) return renderPuzzleResultValue(value);
     const raw = String(value ?? '');
-    if ((forcePairImages || isLikelyImageSource(raw)) && raw) {
+    const sideForcesImage = side === 'right' ? forceRightImages : forcePairImages;
+    if ((sideForcesImage || isLikelyImageSource(raw)) && raw) {
       return `<img class="result-pair-media" src="${escapeHtml(raw)}" alt="pair item" />`;
     }
-    if (forcePairImages) return `<span class="result-pair-empty" dir="auto">🖼️ أضف صورة</span>`;
+    if (sideForcesImage) return `<span class="result-pair-empty" dir="auto">🖼️ أضف صورة</span>`;
     return `<span dir="auto">${escapeHtml(raw)}</span>`;
   };
 
@@ -1842,9 +1872,9 @@ function showQuestionResult(data) {
     pairsEl.style.display      = 'block';
     pairsEl.innerHTML = (data.correctPairs || []).map(p =>
       `<li class="result-pair">
-        ${renderResultValue(p.left)}
+        ${renderResultValue(p.left, 'left')}
         <span class="pair-arrow">→</span>
-        ${renderResultValue(p.right)}
+        ${renderResultValue(p.right, 'right')}
       </li>`
     ).join('');
   } else if (Array.isArray(data.correctOrder) && Array.isArray(data.items)) {

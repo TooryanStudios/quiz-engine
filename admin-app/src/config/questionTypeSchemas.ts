@@ -38,6 +38,30 @@ type QuestionTypeSchema = {
   createDefaultQuestion: () => QuizQuestion
 }
 
+type MatchPlusMode = 'emoji-emoji' | 'emoji-text' | 'image-text' | 'image-image' | 'image-puzzle'
+
+const MATCH_PLUS_MODES: MatchPlusMode[] = ['emoji-emoji', 'emoji-text', 'image-text', 'image-image', 'image-puzzle']
+
+function normalizeMatchPlusMode(value: unknown): MatchPlusMode {
+  if (typeof value !== 'string') return 'image-image'
+  const normalized = value.trim().toLowerCase() as MatchPlusMode
+  return MATCH_PLUS_MODES.includes(normalized) ? normalized : 'image-image'
+}
+
+function normalizeMatchPlusGridSize(value: unknown): number {
+  const next = Number(value)
+  if (!Number.isInteger(next)) return 3
+  return Math.min(4, Math.max(2, next))
+}
+
+function buildPuzzlePairs(gridSize: number): Array<{ left: string; right: string }> {
+  const count = gridSize * gridSize
+  return Array.from({ length: count }, (_, index) => {
+    const pieceNo = String(index + 1)
+    return { left: pieceNo, right: pieceNo }
+  })
+}
+
 export const QUESTION_TYPE_SCHEMAS: Record<QuestionTypeId, QuestionTypeSchema> = {
   single: {
     preview: { label: 'اختيار واحد', color: '#2563eb', icon: '🔘' },
@@ -90,6 +114,8 @@ export const QUESTION_TYPE_SCHEMAS: Record<QuestionTypeId, QuestionTypeSchema> =
     createDefaultQuestion: () => ({
       type: 'match_plus',
       text: 'سؤال مطابقة بلس',
+      matchPlusMode: 'image-image',
+      matchPlusGridSize: 3,
       pairs: [
         { left: '/images/QYan_logo_300x164.jpg', right: '/images/QYan_logo_300x164.jpg' },
         { left: '/images/QYan_logo_300x164.jpg', right: '/images/QYan_logo_300x164.jpg' },
@@ -193,6 +219,25 @@ export function coerceQuestionToSchemaType(existing: QuizQuestion, type: Questio
   }
 
   if (editor.answerMode === 'pairs') {
+    if (type === 'match_plus') {
+      const mode = normalizeMatchPlusMode(existing.matchPlusMode)
+      const gridSize = normalizeMatchPlusGridSize(existing.matchPlusGridSize)
+      const fallbackPairs = getQuestionTypeDefaultQuestion('match_plus').pairs || []
+      const pairs = mode === 'image-puzzle'
+        ? buildPuzzlePairs(gridSize)
+        : (existing.pairs && existing.pairs.length > 0 ? existing.pairs : fallbackPairs)
+      return applyCreatorStudioFields({
+        ...base,
+        text: existing.text || base.text,
+        media: existing.media,
+        duration,
+        matchPlusMode: mode,
+        matchPlusImage: existing.matchPlusImage || '',
+        matchPlusGridSize: gridSize,
+        pairs,
+      }, existing)
+    }
+
     return applyCreatorStudioFields({
       ...base,
       text: existing.text || base.text,
@@ -297,6 +342,26 @@ export function sanitizeQuestionBySchema(question: QuizQuestion): QuizQuestion {
   }
 
   if (editor.answerMode === 'pairs') {
+    if (question.type === 'match_plus') {
+      const mode = normalizeMatchPlusMode((normalized as QuizQuestion).matchPlusMode)
+      const gridSize = normalizeMatchPlusGridSize((normalized as QuizQuestion).matchPlusGridSize)
+      const fallbackPairs = getQuestionTypeDefaultQuestion('match_plus').pairs || []
+      const filtered = (normalized.pairs || fallbackPairs)
+        .filter((pair) => pair && (pair.left?.trim() || pair.right?.trim()))
+      const pairs = mode === 'image-puzzle'
+        ? buildPuzzlePairs(gridSize)
+        : (filtered.length > 0 ? filtered : fallbackPairs)
+
+      return applyCreatorStudioFields({
+        ...normalized,
+        duration,
+        matchPlusMode: mode,
+        matchPlusImage: (normalized as QuizQuestion).matchPlusImage || '',
+        matchPlusGridSize: gridSize,
+        pairs,
+      })
+    }
+
     const fallbackPairs = getQuestionTypeDefaultQuestion(question.type).pairs || []
     const pairs = (normalized.pairs || fallbackPairs)
       .filter((pair) => pair && (pair.left?.trim() || pair.right?.trim()))

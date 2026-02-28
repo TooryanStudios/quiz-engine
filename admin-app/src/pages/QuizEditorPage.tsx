@@ -204,6 +204,7 @@ export function QuizEditorPage() {
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const [uploadingIndex, setUploadingIndex] = useState<number | null>(null)
+  const [uploadingPairImageKey, setUploadingPairImageKey] = useState<string | null>(null)
   const [coverImage, setCoverImage] = useState<string>('')
   const [tempCoverImage, setTempCoverImage] = useState<string>('')
   const [coverPreviewChecking, setCoverPreviewChecking] = useState(false)
@@ -238,6 +239,43 @@ export function QuizEditorPage() {
     } else if (s.kind === 'info') {
       showToast({ message: s.msg, type: 'info' })
     }
+  }
+
+  const uploadMatchPairImage = async (questionIndex: number, pairIndex: number, side: 'left' | 'right') => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'image/*'
+    input.onchange = async (event) => {
+      const file = (event.target as HTMLInputElement).files?.[0]
+      if (!file) return
+
+      const key = `${questionIndex}:${pairIndex}:${side}`
+      setUploadingPairImageKey(key)
+      try {
+        const ext = file.name.split('.').pop() || 'jpg'
+        const path = `quiz-match-plus/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+        const storageRef = ref(storage, path)
+        await uploadBytes(storageRef, file)
+        const url = await getDownloadURL(storageRef)
+
+        const targetQuestion = questions[questionIndex]
+        if (!targetQuestion || !Array.isArray(targetQuestion.pairs)) return
+
+        const nextPairs = [...targetQuestion.pairs]
+        nextPairs[pairIndex] = {
+          ...nextPairs[pairIndex],
+          [side]: url,
+        }
+        updateQuestion(questionIndex, { pairs: nextPairs })
+        showToast({ message: '✅ تم رفع الصورة بنجاح', type: 'success' })
+      } catch (error) {
+        console.error('Pair image upload failed', error)
+        showToast({ message: '❌ فشل رفع الصورة', type: 'error' })
+      } finally {
+        setUploadingPairImageKey(null)
+      }
+    }
+    input.click()
   }
   const [loading, setLoading] = useState(!!routeId)
 
@@ -2213,48 +2251,146 @@ export function QuizEditorPage() {
           {!isCreatorStudioMode && editorMeta.answerMode === 'pairs' && (
             <div style={{ marginTop: '0.5rem', marginBottom: '1rem' }}>
               <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600 }}>{editorMeta.pairsSectionLabel}</label>
+              {q.type === 'match_plus' && (
+                <div style={{ marginBottom: '0.75rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.65rem' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 700 }}>النمط</span>
+                    <select
+                      value={q.matchPlusMode || 'image-image'}
+                      onChange={(e) => updateQuestion(index, { matchPlusMode: e.target.value as QuizQuestion['matchPlusMode'] })}
+                      style={{
+                        padding: '0.5rem 0.6rem',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-strong)',
+                        background: 'var(--bg-surface)',
+                        color: 'var(--text)',
+                        fontSize: '0.82rem',
+                        outline: 'none',
+                      }}
+                    >
+                      <option value="emoji-emoji">Emoji → Emoji</option>
+                      <option value="emoji-text">Emoji → Text</option>
+                      <option value="image-text">Image → Text</option>
+                      <option value="image-image">Image → Image</option>
+                      <option value="image-puzzle">Image Puzzle</option>
+                    </select>
+                  </div>
+
+                  {(q.matchPlusMode || 'image-image') === 'image-puzzle' && (
+                    <>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                        <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 700 }}>صورة البازل</span>
+                        <input
+                          value={q.matchPlusImage || ''}
+                          onChange={(e) => updateQuestion(index, { matchPlusImage: e.target.value })}
+                          placeholder="رابط الصورة الكاملة"
+                          style={{
+                            padding: '0.5rem 0.6rem',
+                            borderRadius: '8px',
+                            border: '1px solid var(--border-strong)',
+                            background: 'var(--bg-surface)',
+                            color: 'var(--text)',
+                            fontSize: '0.82rem',
+                            outline: 'none',
+                          }}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                        <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 700 }}>حجم الشبكة</span>
+                        <select
+                          value={String(q.matchPlusGridSize || 3)}
+                          onChange={(e) => updateQuestion(index, { matchPlusGridSize: Number(e.target.value) })}
+                          style={{
+                            padding: '0.5rem 0.6rem',
+                            borderRadius: '8px',
+                            border: '1px solid var(--border-strong)',
+                            background: 'var(--bg-surface)',
+                            color: 'var(--text)',
+                            fontSize: '0.82rem',
+                            outline: 'none',
+                          }}
+                        >
+                          <option value="2">2 × 2</option>
+                          <option value="3">3 × 3</option>
+                          <option value="4">4 × 4</option>
+                        </select>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
                 {(q.pairs || []).map((pair, pairIndex) => {
                   const leftValue = String(pair.left || '').trim()
                   const rightValue = String(pair.right || '').trim()
+                  const matchMode = (q.matchPlusMode || 'image-image') as string
+                  const isPuzzleMode = matchMode === 'image-puzzle'
+                  const leftIsImage = matchMode === 'image-text' || matchMode === 'image-image'
+                  const rightIsImage = matchMode === 'image-image'
                   const looksLikeImageRef = (value: string) => (
                     value.startsWith('/') ||
                     value.startsWith('data:image/') ||
                     value.startsWith('blob:') ||
                     /^https?:\/\/.+/i.test(value)
                   )
-                  const leftInvalid = leftValue.length > 0 && !looksLikeImageRef(leftValue)
-                  const rightInvalid = rightValue.length > 0 && !looksLikeImageRef(rightValue)
+                  const leftInvalid = leftIsImage && leftValue.length > 0 && !looksLikeImageRef(leftValue)
+                  const rightInvalid = rightIsImage && rightValue.length > 0 && !looksLikeImageRef(rightValue)
 
                   return (
                   <div key={pairIndex} style={{ display: 'grid', gridTemplateColumns: q.type === 'match_plus' ? '1fr auto 1fr' : '1fr auto 1fr', gap: '0.8rem', alignItems: 'center', background: 'var(--bg-deep)', padding: '0.4rem 0.8rem', borderRadius: '12px', border: '1.5px solid var(--border-strong)' }}>
                     {q.type === 'match_plus' ? (
                       <>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-                          <div style={{ height: '72px', borderRadius: '10px', border: '1px solid var(--border-strong)', overflow: 'hidden', background: 'var(--bg)' }}>
-                            {leftValue ? (
-                              <img src={pair.left} alt={`left ${pairIndex + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                            ) : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 700 }}>🖼️ أضف صورة</div>}
+                          {leftIsImage && !isPuzzleMode && (
+                            <div style={{ height: '72px', borderRadius: '10px', border: '1px solid var(--border-strong)', overflow: 'hidden', background: 'var(--bg)' }}>
+                              {leftValue ? (
+                                <img src={pair.left} alt={`left ${pairIndex + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                              ) : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 700 }}>🖼️ أضف صورة</div>}
+                            </div>
+                          )}
+                          <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+                            <input
+                              value={pair.left}
+                              onChange={(e) => {
+                                const next = [...(q.pairs || [])]
+                                next[pairIndex] = { ...next[pairIndex], left: e.target.value }
+                                updateQuestion(index, { pairs: next })
+                              }}
+                              placeholder={isPuzzleMode ? 'رقم القطعة' : (leftIsImage ? 'رابط الصورة اليسرى' : (matchMode === 'emoji-emoji' || matchMode === 'emoji-text' ? 'Emoji يسار' : 'نص يسار'))}
+                              disabled={isPuzzleMode}
+                              style={{
+                                flex: 1,
+                                padding: '0.5rem 0.55rem',
+                                borderRadius: '8px',
+                                border: '1px solid var(--border-strong)',
+                                background: 'var(--bg-surface)',
+                                color: 'var(--text)',
+                                fontSize: '0.82rem',
+                                outline: 'none',
+                              }}
+                            />
+                            {leftIsImage && !isPuzzleMode && (
+                              <button
+                                type="button"
+                                onClick={() => uploadMatchPairImage(index, pairIndex, 'left')}
+                                disabled={uploadingPairImageKey === `${index}:${pairIndex}:left`}
+                                style={{
+                                  borderRadius: '8px',
+                                  border: '1px solid var(--border-strong)',
+                                  background: uploadingPairImageKey === `${index}:${pairIndex}:left` ? 'rgba(59,130,246,0.16)' : 'var(--bg-surface)',
+                                  color: 'var(--text)',
+                                  fontSize: '0.78rem',
+                                  fontWeight: 700,
+                                  padding: '0 0.55rem',
+                                  cursor: uploadingPairImageKey === `${index}:${pairIndex}:left` ? 'not-allowed' : 'pointer',
+                                  minWidth: '54px',
+                                }}
+                              >
+                                {uploadingPairImageKey === `${index}:${pairIndex}:left` ? '⏳' : '📁 رفع'}
+                              </button>
+                            )}
                           </div>
-                          <input
-                            value={pair.left}
-                            onChange={(e) => {
-                              const next = [...(q.pairs || [])]
-                              next[pairIndex] = { ...next[pairIndex], left: e.target.value }
-                              updateQuestion(index, { pairs: next })
-                            }}
-                            placeholder="رابط الصورة اليسرى"
-                            style={{
-                              padding: '0.5rem 0.55rem',
-                              borderRadius: '8px',
-                              border: '1px solid var(--border-strong)',
-                              background: 'var(--bg-surface)',
-                              color: 'var(--text)',
-                              fontSize: '0.82rem',
-                              outline: 'none',
-                            }}
-                          />
-                          {!leftValue && (
+                          {!isPuzzleMode && leftIsImage && !leftValue && (
                             <span style={{ fontSize: '0.72rem', color: '#f59e0b', fontWeight: 600 }}>الصورة اليسرى مطلوبة</span>
                           )}
                           {leftInvalid && (
@@ -2263,30 +2399,56 @@ export function QuizEditorPage() {
                         </div>
                         <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'var(--border-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 'bold' }}>⇄</div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-                          <div style={{ height: '72px', borderRadius: '10px', border: '1px solid var(--border-strong)', overflow: 'hidden', background: 'var(--bg)' }}>
-                            {rightValue ? (
-                              <img src={pair.right} alt={`right ${pairIndex + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                            ) : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 700 }}>🖼️ أضف صورة</div>}
+                          {rightIsImage && !isPuzzleMode && (
+                            <div style={{ height: '72px', borderRadius: '10px', border: '1px solid var(--border-strong)', overflow: 'hidden', background: 'var(--bg)' }}>
+                              {rightValue ? (
+                                <img src={pair.right} alt={`right ${pairIndex + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                              ) : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 700 }}>🖼️ أضف صورة</div>}
+                            </div>
+                          )}
+                          <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+                            <input
+                              value={pair.right}
+                              onChange={(e) => {
+                                const next = [...(q.pairs || [])]
+                                next[pairIndex] = { ...next[pairIndex], right: e.target.value }
+                                updateQuestion(index, { pairs: next })
+                              }}
+                              placeholder={isPuzzleMode ? 'مكان القطعة' : (rightIsImage ? 'رابط الصورة اليمنى' : (matchMode === 'emoji-emoji' ? 'Emoji يمين' : 'نص يمين'))}
+                              disabled={isPuzzleMode}
+                              style={{
+                                flex: 1,
+                                padding: '0.5rem 0.55rem',
+                                borderRadius: '8px',
+                                border: '1px solid var(--border-strong)',
+                                background: 'var(--bg-surface)',
+                                color: 'var(--text)',
+                                fontSize: '0.82rem',
+                                outline: 'none',
+                              }}
+                            />
+                            {rightIsImage && !isPuzzleMode && (
+                              <button
+                                type="button"
+                                onClick={() => uploadMatchPairImage(index, pairIndex, 'right')}
+                                disabled={uploadingPairImageKey === `${index}:${pairIndex}:right`}
+                                style={{
+                                  borderRadius: '8px',
+                                  border: '1px solid var(--border-strong)',
+                                  background: uploadingPairImageKey === `${index}:${pairIndex}:right` ? 'rgba(59,130,246,0.16)' : 'var(--bg-surface)',
+                                  color: 'var(--text)',
+                                  fontSize: '0.78rem',
+                                  fontWeight: 700,
+                                  padding: '0 0.55rem',
+                                  cursor: uploadingPairImageKey === `${index}:${pairIndex}:right` ? 'not-allowed' : 'pointer',
+                                  minWidth: '54px',
+                                }}
+                              >
+                                {uploadingPairImageKey === `${index}:${pairIndex}:right` ? '⏳' : '📁 رفع'}
+                              </button>
+                            )}
                           </div>
-                          <input
-                            value={pair.right}
-                            onChange={(e) => {
-                              const next = [...(q.pairs || [])]
-                              next[pairIndex] = { ...next[pairIndex], right: e.target.value }
-                              updateQuestion(index, { pairs: next })
-                            }}
-                            placeholder="رابط الصورة اليمنى"
-                            style={{
-                              padding: '0.5rem 0.55rem',
-                              borderRadius: '8px',
-                              border: '1px solid var(--border-strong)',
-                              background: 'var(--bg-surface)',
-                              color: 'var(--text)',
-                              fontSize: '0.82rem',
-                              outline: 'none',
-                            }}
-                          />
-                          {!rightValue && (
+                          {!isPuzzleMode && rightIsImage && !rightValue && (
                             <span style={{ fontSize: '0.72rem', color: '#f59e0b', fontWeight: 600 }}>الصورة اليمنى مطلوبة</span>
                           )}
                           {rightInvalid && (

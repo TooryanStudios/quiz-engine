@@ -3,6 +3,7 @@ import { runtimeExampleRuntime } from './runtimeExample.runtime.js?v=121';
 import { xoDuelRuntime } from './xoDuel.runtime.js?v=121';
 import { gearMachineRuntime } from './gearMachine.runtime.js?v=121';
 import { creatorStudioRuntime } from './creatorStudio.runtime.js?v=121';
+import { matchPlusArenaRuntime } from './matchPlusArena.runtime.js?v=121';
 
 const EMPTY_RUNTIME = Object.freeze({});
 
@@ -11,6 +12,7 @@ const MODE_RUNTIME_REGISTRY = {
   'xo-duel': xoDuelRuntime,
   'gear-machine': gearMachineRuntime,
   'creator-studio': creatorStudioRuntime,
+  'match-plus-arena': matchPlusArenaRuntime,
   'runtime-example': runtimeExampleRuntime,
 };
 

@@ -30,6 +30,50 @@ export class MatchRenderer extends BaseRenderer {
     return this.question?.type === 'match_plus';
   }
 
+  getMatchPlusMode() {
+    if (!this.isImageMatchMode()) return 'classic';
+    const mode = String(this.question?.matchPlusMode || 'image-image').trim().toLowerCase();
+    if (mode === 'emoji-emoji' || mode === 'emoji-text' || mode === 'image-text' || mode === 'image-image' || mode === 'image-puzzle') {
+      return mode;
+    }
+    return 'image-image';
+  }
+
+  getPuzzleGridSize() {
+    const next = Number(this.question?.matchPlusGridSize);
+    if (!Number.isInteger(next)) return 3;
+    return Math.min(4, Math.max(2, next));
+  }
+
+  getPuzzleImageUrl() {
+    const raw = this.question?.matchPlusImage;
+    return typeof raw === 'string' ? raw.trim() : '';
+  }
+
+  getPieceIndex(value) {
+    const parsed = Number.parseInt(String(value || ''), 10);
+    if (!Number.isInteger(parsed) || parsed < 1) return null;
+    return parsed - 1;
+  }
+
+  renderPuzzleTile(value, className = 'match-chip-media', forSlot = false) {
+    const image = this.getPuzzleImageUrl();
+    const grid = this.getPuzzleGridSize();
+    const pieceIndex = this.getPieceIndex(value);
+
+    if (!image || pieceIndex === null) {
+      return `<span class="match-empty-tile" dir="auto">🧩 <small>قطعة</small></span>`;
+    }
+
+    const row = Math.floor(pieceIndex / grid);
+    const col = pieceIndex % grid;
+    const bgX = grid > 1 ? (col / (grid - 1)) * 100 : 0;
+    const bgY = grid > 1 ? (row / (grid - 1)) * 100 : 0;
+
+    return `<span class="${className} ${forSlot ? 'match-puzzle-slot-tile' : 'match-puzzle-chip-tile'}"
+      style="background-image:url('${this.escapeAttr(image)}');background-size:${grid * 100}% ${grid * 100}%;background-position:${bgX}% ${bgY}%;"></span>`;
+  }
+
   escapeAttr(value) {
     return String(value ?? '')
       .replace(/&/g, '&amp;')
@@ -89,7 +133,11 @@ export class MatchRenderer extends BaseRenderer {
     const { OPTION_COLORS } = this.utils;
     const lefts = state.matchLefts;
     const rights = state.matchRights;
-    const imageMode = this.isImageMatchMode();
+    const isMatchPlus = this.isImageMatchMode();
+    const mode = this.getMatchPlusMode();
+    const isPuzzleMode = mode === 'image-puzzle';
+    const forceLeftImage = isMatchPlus && (mode === 'image-text' || mode === 'image-image');
+    const forceRightImage = isMatchPlus && mode === 'image-image';
     const placed = new Set(state.matchConnections.filter(v => v !== -1));
     
     container.innerHTML = `
@@ -99,15 +147,21 @@ export class MatchRenderer extends BaseRenderer {
             const ri = state.matchConnections[i];
             const filled = ri !== -1;
             const col = OPTION_COLORS[i % OPTION_COLORS.length];
+            const leftContent = isPuzzleMode
+              ? this.renderPuzzleTile(l, 'match-left-media', true)
+              : this.renderMatchContent(l, 'match-left-media', forceLeftImage);
+            const rightContent = isPuzzleMode
+              ? this.renderPuzzleTile(rights[ri], 'match-chip-media', false)
+              : this.renderMatchContent(rights[ri], 'match-chip-media', forceRightImage);
             
             return `<div class="match-dnd-row">
-              <div class="match-dnd-label">${this.renderMatchContent(l, 'match-left-media', imageMode)}</div>
+              <div class="match-dnd-label">${leftContent}</div>
               <div class="match-dropzone ${filled ? 'match-dz-filled ' + col : 'match-dz-empty'}" 
                    data-dropzone="${i}">
                 ${filled
                   ? `<span class="match-chip in-slot ${col}" 
                            data-chip-idx="${ri}" 
-                           data-in-slot="${i}">${this.renderMatchContent(rights[ri], 'match-chip-media', imageMode)}</span>`
+                           data-in-slot="${i}">${rightContent}</span>`
                   : `<span class="match-drop-hint">drop here</span>`
                 }
               </div>
@@ -118,9 +172,12 @@ export class MatchRenderer extends BaseRenderer {
           <span class="match-pool-label">Drag to match</span>
           ${rights.map((r, i) => {
             if (placed.has(i)) return '';
+            const poolContent = isPuzzleMode
+              ? this.renderPuzzleTile(r, 'match-chip-media', false)
+              : this.renderMatchContent(r, 'match-chip-media', forceRightImage);
             return `<span class="match-chip in-pool opt-violet" 
                          data-chip-idx="${i}" 
-                         data-in-slot="-1">${this.renderMatchContent(r, 'match-chip-media', imageMode)}</span>`;
+                         data-in-slot="-1">${poolContent}</span>`;
           }).join('')}
         </div>
       </div>
@@ -265,13 +322,15 @@ export class MatchRenderer extends BaseRenderer {
     if (!grid) return;
 
     const lefts = this.question.lefts || [];
-    const imageMode = this.isImageMatchMode();
+    const mode = this.getMatchPlusMode();
+    const isPuzzleMode = mode === 'image-puzzle';
+    const forceLeftImage = this.isImageMatchMode() && (mode === 'image-text' || mode === 'image-image');
     
     grid.innerHTML = `
       <div class="host-pairs-preview">
         ${lefts.map((l, i) => `
           <div class="host-pair-row stagger-${Math.min(i + 1, 4)}">
-            <span class="host-pair-side">${this.renderMatchContent(l, 'host-pair-media', imageMode)}</span>
+            <span class="host-pair-side">${isPuzzleMode ? this.renderPuzzleTile(l, 'host-pair-media', true) : this.renderMatchContent(l, 'host-pair-media', forceLeftImage)}</span>
             <span class="host-pair-arrow">⟷</span>
             <span class="host-pair-side host-pair-right">?</span>
           </div>
