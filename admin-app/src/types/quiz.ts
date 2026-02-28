@@ -44,11 +44,13 @@ export interface QuizDoc {
   id?: string
   ownerId: string
   originalOwnerId?: string // Link to the original creator if cloned
+  contentType?: 'quiz' | 'mini-game'
   title: string
   slug: string
   description?: string
   visibility: 'public' | 'private'
   gameModeId?: string
+  miniGameConfig?: Record<string, unknown>
   priceTier?: 'free' | 'starter' | 'pro'
   challengePreset?: ChallengePreset
   challengeSettings?: ChallengeSettings

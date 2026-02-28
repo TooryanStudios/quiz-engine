@@ -183,14 +183,18 @@ export function QuizEditorPage() {
   const saveQuizRef = useRef<() => Promise<void>>(() => Promise.resolve())
 
   const [quizId, setQuizId] = useState<string | null>(routeId ?? null)
+  const [contentType, setContentType] = useState<'quiz' | 'mini-game'>('quiz')
   const [title, setTitle] = useState('')
   const [slug, setSlug] = useState('')
   const [visibility, setVisibility] = useState<'public' | 'private'>('public')
   const [gameModeId, setGameModeId] = useState<string>('')
+  const [miniGameConfig, setMiniGameConfig] = useState<Record<string, unknown>>({})
   const [challengePreset, setChallengePreset] = useState<ChallengePreset>('classic')
   const [enableScholarRole, setEnableScholarRole] = useState(false)
   const [questions, setQuestions] = useState<QuizQuestion[]>([])
   const [showMetadataDialog, setShowMetadataDialog] = useState(false)
+  const [showContentTypeDialog, setShowContentTypeDialog] = useState(!routeId)
+  const [tempContentType, setTempContentType] = useState<'quiz' | 'mini-game'>('quiz')
   const [tempTitle, setTempTitle] = useState('')
   const [tempSlug, setTempSlug] = useState('')
   const [tempVisibility, setTempVisibility] = useState<'public' | 'private'>('public')
@@ -365,11 +369,13 @@ export function QuizEditorPage() {
     })
   }
 
-  const openMetadataDialog = () => {
+  const openMetadataDialog = (forcedContentType?: 'quiz' | 'mini-game') => {
+    const nextContentType = forcedContentType ?? contentType
+    setTempContentType(nextContentType)
     setTempTitle(title)
     setTempSlug(ensureScopedSlug(slug, ownerId))
     setTempVisibility(visibility)
-    setTempGameModeId(gameModeId)
+    setTempGameModeId(nextContentType === 'quiz' ? '' : gameModeId)
     setTempChallenge(challengePreset)
     setTempEnableScholarRole(enableScholarRole)
     setTempRandomizeQuestions(randomizeQuestions)
@@ -422,8 +428,9 @@ export function QuizEditorPage() {
       setTitle(nextTitle)
       setSlug(nextSlug)
       setTempSlug(nextSlug)
+      setContentType(tempContentType)
       setVisibility(tempVisibility)
-      setGameModeId(tempGameModeId)
+      setGameModeId(tempContentType === 'mini-game' ? tempGameModeId : '')
       setChallengePreset(tempChallenge)
       setEnableScholarRole(tempEnableScholarRole)
       setRandomizeQuestions(tempRandomizeQuestions)
@@ -443,20 +450,28 @@ export function QuizEditorPage() {
 
   useEffect(() => {
     if (!routeId) {
+      setContentType('quiz')
       setTitle('New Quiz')
       setSlug(ensureScopedSlug('new-quiz', ownerId))
+      setMiniGameConfig({})
       setTempTitle('New Quiz')
       setTempSlug(ensureScopedSlug('new-quiz', ownerId))
+      setShowContentTypeDialog(true)
       setCollapsedQuestions([])
       return
     }
+    setShowContentTypeDialog(false)
     getQuizById(routeId)
       .then((data) => {
         if (!data) { showStatus({ kind: 'error', msg: 'لم يُعثر على الاختبار.' }); return }
+        const inferredContentType: 'quiz' | 'mini-game' = data.contentType
+          ?? ((data.gameModeId && (!Array.isArray(data.questions) || data.questions.length === 0)) ? 'mini-game' : 'quiz')
+        setContentType(inferredContentType)
         setTitle(data.title)
         setSlug(data.slug)
         setVisibility(data.visibility)
         setGameModeId(data.gameModeId ?? '')
+        setMiniGameConfig((data.miniGameConfig && typeof data.miniGameConfig === 'object') ? data.miniGameConfig as Record<string, unknown> : {})
         setChallengePreset(data.challengePreset || 'classic')
         setEnableScholarRole(data.enableScholarRole ?? false)
         setRandomizeQuestions(data.randomizeQuestions ?? false)
@@ -497,6 +512,23 @@ export function QuizEditorPage() {
     ? miniGameCards.find((mode) => mode.id === tempGameModeId)
     : CLASSIC_GAME_MODE
 
+  const isMiniGameContent = contentType === 'mini-game'
+
+  const updateMiniGameConfig = (patch: Record<string, unknown>) => {
+    setHasUnsavedChanges(true)
+    setMiniGameConfig((prev) => ({ ...prev, ...patch }))
+  }
+
+  useEffect(() => {
+    if (!isMiniGameContent && gameModeId) {
+      setGameModeId('')
+    }
+    if (isMiniGameContent && questions.length > 0) {
+      setQuestions([])
+      setCollapsedQuestions([])
+    }
+  }, [isMiniGameContent, gameModeId, questions.length])
+
   const replaceQuestion = (index: number, next: QuizQuestion) => {
     setHasUnsavedChanges(true)
     setQuestions((prev) => prev.map((q, i) => (i === index ? next : q)))
@@ -508,6 +540,10 @@ export function QuizEditorPage() {
   }
 
   const addQuestion = () => {
+    if (isMiniGameContent) {
+      showToast({ message: 'هذا المحتوى ميني جيم. أضف إعدادات اللعبة بدل الأسئلة.', type: 'info' })
+      return
+    }
     setHasUnsavedChanges(true)
     const nextQuestion = gameModeId === 'creator-studio'
       ? { ...creatorStudioStarterQuestion }
@@ -658,8 +694,8 @@ export function QuizEditorPage() {
       }
     }
 
-    // If all questions deleted in classic mode and quiz already exists → offer to delete the whole record
-    if (questions.length === 0 && quizId && !gameModeId) {
+    // If all questions deleted in quiz mode and quiz already exists → offer to delete the whole record
+    if (questions.length === 0 && quizId && !isMiniGameContent) {
       showDialog({
         title: 'Delete Quiz?',
         message: 'There are no questions left. Do you want to permanently delete this quiz?',
@@ -684,13 +720,18 @@ export function QuizEditorPage() {
       return typeof question.text === 'string' && question.text.trim().length > 0
     })
 
-    if (gameModeId === 'creator-studio' && !hasCreatorStudioPrompt) {
+    if (!isMiniGameContent && gameModeId === 'creator-studio' && !hasCreatorStudioPrompt) {
       showToast({ message: 'Creator Studio يحتاج سؤال رسم واحد على الأقل بنص واضح قبل الحفظ.', type: 'info' })
       return
     }
 
-    // Classic mode requires questions, mini-game mode can run without question set.
-    if (questions.length === 0 && !gameModeId) {
+    if (isMiniGameContent && !gameModeId) {
+      showToast({ message: 'اختر ميني جيم قبل الحفظ.', type: 'info' })
+      openMetadataDialog()
+      return
+    }
+
+    if (questions.length === 0 && !isMiniGameContent) {
       showToast({ message: 'Add at least one question before saving classic mode, or choose a mini game.', type: 'info' })
       return
     }
@@ -707,17 +748,21 @@ export function QuizEditorPage() {
     }
     const payload: QuizDoc = {
       ownerId,
+      contentType,
       title,
       slug,
       visibility,
       priceTier: requiresSubscription ? 'starter' : 'free',
-      gameModeId: gameModeId || undefined,
+      gameModeId: isMiniGameContent ? (gameModeId || undefined) : undefined,
+      miniGameConfig: isMiniGameContent ? miniGameConfig : undefined,
       challengePreset,
       enableScholarRole,
       randomizeQuestions,
       coverImage,
       tags: ['animals'],
-      questions: sanitizeQuestions(
+      questions: isMiniGameContent
+        ? []
+        : sanitizeQuestions(
         gameModeId === 'creator-studio'
           ? questions.map((question) => coerceQuestionToCreatorStudioDraw(question))
           : questions,
@@ -828,6 +873,82 @@ export function QuizEditorPage() {
 
   return (
     <>
+      {showContentTypeDialog && !quizId && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(2, 6, 23, 0.72)',
+            backdropFilter: 'blur(6px)',
+            zIndex: 12050,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: '1rem',
+          }}
+        >
+          <div
+            style={{
+              width: 'min(760px, 94vw)',
+              background: 'linear-gradient(180deg, var(--bg-deep) 0%, var(--bg-surface) 100%)',
+              border: '1px solid var(--border)',
+              borderRadius: '14px',
+              padding: '1rem',
+              boxShadow: '0 24px 80px rgba(2, 6, 23, 0.55)',
+            }}
+          >
+            <h3 style={{ margin: 0, color: 'var(--text-bright)', fontSize: '1.08rem' }}>What do you want to create?</h3>
+            <p style={{ margin: '0.35rem 0 0.95rem', color: 'var(--text-mid)', fontSize: '0.85rem' }}>
+              Quizzes use question editor. Mini-games use dedicated game configuration UI.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '0.65rem' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setContentType('quiz')
+                  setTempContentType('quiz')
+                  setGameModeId('')
+                  setShowContentTypeDialog(false)
+                  openMetadataDialog('quiz')
+                }}
+                style={{
+                  textAlign: 'start',
+                  border: '1px solid var(--border-strong)',
+                  borderRadius: '12px',
+                  background: 'var(--bg-surface)',
+                  padding: '0.8rem',
+                  cursor: 'pointer',
+                }}
+              >
+                <p style={{ margin: 0, color: 'var(--text)', fontWeight: 800, fontSize: '0.9rem' }}>🧠 Create Quiz</p>
+                <p style={{ margin: '0.2rem 0 0', color: 'var(--text-mid)', fontSize: '0.78rem' }}>Normal editor with questions, options, answers, and order.</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setContentType('mini-game')
+                  setTempContentType('mini-game')
+                  setShowContentTypeDialog(false)
+                  openMetadataDialog('mini-game')
+                }}
+                style={{
+                  textAlign: 'start',
+                  border: '1px solid var(--border-strong)',
+                  borderRadius: '12px',
+                  background: 'var(--bg-surface)',
+                  padding: '0.8rem',
+                  cursor: 'pointer',
+                }}
+              >
+                <p style={{ margin: 0, color: 'var(--text)', fontWeight: 800, fontSize: '0.9rem' }}>🎮 Create Mini Game</p>
+                <p style={{ margin: '0.2rem 0 0', color: 'var(--text-mid)', fontSize: '0.78rem' }}>Dedicated configuration per game, without quiz question list.</p>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Metadata Dialog */}
       {showMetadataDialog && (
         <div
@@ -980,6 +1101,33 @@ export function QuizEditorPage() {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div>
+                  <label style={{ fontSize: '0.9em', color: 'var(--text-mid)', display: 'block', marginBottom: '0.5rem', fontWeight: 600 }}>نوع المحتوى</label>
+                  <select
+                    value={tempContentType}
+                    onChange={(e) => {
+                      const nextType = e.target.value as 'quiz' | 'mini-game'
+                      setTempContentType(nextType)
+                      if (nextType === 'quiz') {
+                        setTempGameModeId('')
+                      }
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-strong)',
+                      backgroundColor: 'var(--bg-surface)',
+                      color: 'var(--text)',
+                      boxSizing: 'border-box',
+                      fontSize: '1em',
+                    }}
+                  >
+                    <option value="quiz">🧠 Quiz (أسئلة)</option>
+                    <option value="mini-game">🎮 Mini Game (إعدادات لعبة)</option>
+                  </select>
+                </div>
+
+                <div>
                   <label style={{ fontSize: '0.9em', color: 'var(--text-mid)', display: 'block', marginBottom: '0.5rem', fontWeight: 600 }}>الخصوصية</label>
                   <select
                     value={tempVisibility}
@@ -1023,6 +1171,7 @@ export function QuizEditorPage() {
                 </div>
               </div>
 
+              {tempContentType === 'mini-game' && (
               <div>
                 <label style={{ fontSize: '0.9em', color: 'var(--text-mid)', display: 'block', marginBottom: '0.5rem', fontWeight: 600 }}>
                   🎮 الميني جيم
@@ -1149,6 +1298,16 @@ export function QuizEditorPage() {
                   </div>
                 )}
               </div>
+              )}
+
+              {tempContentType === 'quiz' && (
+                <div style={{ marginTop: '-0.25rem', padding: '0.65rem 0.75rem', borderRadius: '10px', border: '1px solid var(--border-strong)', background: 'var(--bg-deep)' }}>
+                  <p style={{ margin: 0, color: 'var(--text)', fontWeight: 700, fontSize: '0.83rem' }}>🧠 وضع Quiz مفعل</p>
+                  <p style={{ margin: '0.25rem 0 0', color: 'var(--text-mid)', fontSize: '0.78rem' }}>
+                    سيظهر محرر الأسئلة العادي. إعدادات الميني جيم غير مطلوبة في هذا الوضع.
+                  </p>
+                </div>
+              )}
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.7rem' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', cursor: 'pointer', userSelect: 'none', background: 'var(--bg-surface)', padding: '0.75rem 0.85rem', borderRadius: '10px', border: '1px solid var(--border-strong)' }}>
@@ -1428,7 +1587,7 @@ export function QuizEditorPage() {
               </h1>
               <button
                 type="button"
-                onClick={openMetadataDialog}
+                onClick={() => openMetadataDialog()}
                 title="تعديل اسم الاختبار"
                 style={{
                   width: isNarrowScreen ? '26px' : '30px',
@@ -1506,7 +1665,7 @@ export function QuizEditorPage() {
               </select>
             </div>
             <span style={{ background: 'var(--bg-surface)', color: 'var(--text-dim)', fontSize: isNarrowScreen ? '0.6rem' : '0.72rem', padding: isNarrowScreen ? '2px 8px' : '3px 12px', borderRadius: '999px' }}>
-              📝 {questions.length} سؤال
+              {isMiniGameContent ? `🎮 ${miniGameCards.find((game) => game.id === gameModeId)?.englishName || 'Mini Game'}` : `📝 ${questions.length} سؤال`}
             </span>
 
             {!isNarrowScreen && (
@@ -1551,7 +1710,7 @@ export function QuizEditorPage() {
           <div className="quiz-toolbar-group" style={{ display: 'flex', gap: isNarrowScreen ? '0.2rem' : '0.35rem', flexWrap: 'wrap', alignItems: 'center', background: 'var(--bg-surface)', border: '1px solid var(--border-strong)', borderRadius: '10px', padding: isNarrowScreen ? '0.15rem' : '0.25rem' }}>
             <button
               type="button"
-              onClick={openMetadataDialog}
+              onClick={() => openMetadataDialog()}
               style={{
                 background: 'transparent', border: '1px solid transparent', color: 'var(--text)',
                 padding: isNarrowScreen ? '0.32rem 0.5rem' : '0.42rem 0.72rem', borderRadius: '8px', fontSize: isNarrowScreen ? '0.7rem' : '0.8rem', fontWeight: 700,
@@ -1562,18 +1721,20 @@ export function QuizEditorPage() {
               title="إعدادات الاختبار"
             >{isNarrowScreen ? '⚙️' : '⚙️ إعدادات'}</button>
 
-            <button
-              type="button"
-              onClick={addQuestion}
-              style={{
-                background: 'var(--text-bright)', border: '1px solid var(--text-bright)', color: '#fff',
-                padding: isNarrowScreen ? '0.32rem 0.55rem' : '0.42rem 0.78rem', borderRadius: '8px', fontSize: isNarrowScreen ? '0.7rem' : '0.8rem', fontWeight: 700,
-                cursor: 'pointer', transition: 'all 0.16s ease', whiteSpace: 'nowrap',
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)' }}
-              onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)' }}
-              title="إضافة سؤال جديد"
-            >{isNarrowScreen ? '➕' : '➕ إضافة سؤال'}</button>
+            {!isMiniGameContent && (
+              <button
+                type="button"
+                onClick={addQuestion}
+                style={{
+                  background: 'var(--text-bright)', border: '1px solid var(--text-bright)', color: '#fff',
+                  padding: isNarrowScreen ? '0.32rem 0.55rem' : '0.42rem 0.78rem', borderRadius: '8px', fontSize: isNarrowScreen ? '0.7rem' : '0.8rem', fontWeight: 700,
+                  cursor: 'pointer', transition: 'all 0.16s ease', whiteSpace: 'nowrap',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)' }}
+                title="إضافة سؤال جديد"
+              >{isNarrowScreen ? '➕' : '➕ إضافة سؤال'}</button>
+            )}
           </div>
 
           {/* Group 2: AI Functions */}
@@ -1723,7 +1884,134 @@ export function QuizEditorPage() {
         </div>
       </div>
 
-      {questions.map((q, index) => (
+      {isMiniGameContent ? (
+        <section
+          className="panel"
+          style={{
+            backgroundColor: 'var(--bg-deep)',
+            border: '1px solid #4b5563',
+            borderLeft: '6px solid #7c3aed',
+            padding: '1.2rem',
+            borderRadius: '14px',
+            marginBottom: '0.75rem',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-strong)' }}>
+            <h3 style={{ margin: 0, color: 'var(--text-bright)', fontSize: '1rem' }}>🎮 Mini Game Configuration</h3>
+            <button
+              type="button"
+              onClick={() => openMetadataDialog('mini-game')}
+              style={{
+                border: '1px solid var(--border-strong)',
+                borderRadius: '8px',
+                background: 'var(--bg-surface)',
+                color: 'var(--text)',
+                padding: '0.35rem 0.6rem',
+                cursor: 'pointer',
+                fontWeight: 700,
+              }}
+            >
+              ⚙️ Change Mini Game
+            </button>
+          </div>
+
+          {!gameModeId ? (
+            <div style={{ padding: '0.8rem', borderRadius: '10px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)' }}>
+              <p style={{ margin: 0, color: 'var(--text)', fontWeight: 700 }}>No mini game selected yet.</p>
+              <p style={{ margin: '0.3rem 0 0', color: 'var(--text-mid)', fontSize: '0.85rem' }}>Open settings and pick a mini game to enable dedicated configuration.</p>
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gap: '0.75rem' }}>
+              <div style={{ padding: '0.7rem 0.8rem', borderRadius: '10px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)' }}>
+                <p style={{ margin: 0, color: 'var(--text)', fontWeight: 700 }}>
+                  {(miniGameCards.find((game) => game.id === gameModeId)?.icon || '🎮')} {(miniGameCards.find((game) => game.id === gameModeId)?.englishName || gameModeId)}
+                </p>
+                <p style={{ margin: '0.25rem 0 0', color: 'var(--text-mid)', fontSize: '0.82rem' }}>
+                  {(miniGameCards.find((game) => game.id === gameModeId)?.description) || 'Dedicated settings for this mini game.'}
+                </p>
+              </div>
+
+              {gameModeId === 'match-plus-arena' && (
+                <div style={{ display: 'grid', gap: '0.65rem', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
+                  <div>
+                    <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>Default Mode</label>
+                    <select
+                      value={String(miniGameConfig.defaultMatchPlusMode || 'image-image')}
+                      onChange={(e) => updateMiniGameConfig({ defaultMatchPlusMode: e.target.value })}
+                      style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', color: 'var(--text)' }}
+                    >
+                      <option value="emoji-emoji">emoji-emoji</option>
+                      <option value="emoji-text">emoji-text</option>
+                      <option value="image-text">image-text</option>
+                      <option value="image-image">image-image</option>
+                      <option value="image-puzzle">image-puzzle</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>Default Puzzle Grid</label>
+                    <select
+                      value={String(miniGameConfig.defaultPuzzleGridSize || 3)}
+                      onChange={(e) => updateMiniGameConfig({ defaultPuzzleGridSize: Number(e.target.value) })}
+                      style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', color: 'var(--text)' }}
+                    >
+                      <option value="2">2 × 2</option>
+                      <option value="3">3 × 3</option>
+                      <option value="4">4 × 4</option>
+                    </select>
+                  </div>
+
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>Default Puzzle Image URL</label>
+                    <input
+                      value={String(miniGameConfig.defaultPuzzleImage || '')}
+                      onChange={(e) => updateMiniGameConfig({ defaultPuzzleImage: e.target.value })}
+                      placeholder="https://..."
+                      style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', color: 'var(--text)' }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {gameModeId === 'xo-duel' && (
+                <div style={{ display: 'grid', gap: '0.65rem', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
+                  <div>
+                    <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>Board Size</label>
+                    <input type="number" min={3} max={8} value={Number(miniGameConfig.boardSize || 3)} onChange={(e) => updateMiniGameConfig({ boardSize: Number(e.target.value) })} style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', color: 'var(--text)' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>Win Length</label>
+                    <input type="number" min={3} max={5} value={Number(miniGameConfig.winLength || 3)} onChange={(e) => updateMiniGameConfig({ winLength: Number(e.target.value) })} style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', color: 'var(--text)' }} />
+                  </div>
+                </div>
+              )}
+
+              {gameModeId === 'gear-machine' && (
+                <div style={{ display: 'grid', gap: '0.65rem', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
+                  <div>
+                    <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>Gears Count</label>
+                    <input type="number" min={3} max={12} value={Number(miniGameConfig.gearsCount || 5)} onChange={(e) => updateMiniGameConfig({ gearsCount: Number(e.target.value) })} style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', color: 'var(--text)' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>Max Turns</label>
+                    <input type="number" min={3} max={40} value={Number(miniGameConfig.maxTurns || 12)} onChange={(e) => updateMiniGameConfig({ maxTurns: Number(e.target.value) })} style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', color: 'var(--text)' }} />
+                  </div>
+                </div>
+              )}
+
+              {gameModeId !== 'match-plus-arena' && gameModeId !== 'xo-duel' && gameModeId !== 'gear-machine' && (
+                <div style={{ padding: '0.7rem 0.8rem', borderRadius: '10px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)' }}>
+                  <p style={{ margin: 0, color: 'var(--text)', fontWeight: 700 }}>Dedicated UI ready</p>
+                  <p style={{ margin: '0.25rem 0 0', color: 'var(--text-mid)', fontSize: '0.82rem' }}>
+                    This mini game has its own config surface. Add specific controls here as product rules evolve.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      ) : questions.map((q, index) => (
         (() => {
           const editorMeta = getQuestionTypeEditorMeta(q.type)
           const isCreatorStudioMode = gameModeId === 'creator-studio'
@@ -2751,7 +3039,7 @@ export function QuizEditorPage() {
         })()
       ))}
 
-      {(!quizId && questions.length === 0) ? (
+      {!isMiniGameContent && (!quizId && questions.length === 0) ? (
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
