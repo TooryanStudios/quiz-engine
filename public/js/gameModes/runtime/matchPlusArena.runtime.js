@@ -7,6 +7,30 @@ const MATCH_PLUS_MODES = [
 ];
 
 const FALLBACK_PUZZLE_IMAGE = '/images/QYan_logo_300x164.jpg';
+const MATCH_PLUS_ARENA_BUILD_MARKER = 'Match+ Build: 2026-02-28 • cac26a5 • v122';
+
+function ensureBuildMarker() {
+  if (typeof document === 'undefined') return;
+  let badge = document.getElementById('match-plus-build-marker');
+  if (!badge) {
+    badge = document.createElement('div');
+    badge.id = 'match-plus-build-marker';
+    badge.style.position = 'fixed';
+    badge.style.right = '10px';
+    badge.style.bottom = '10px';
+    badge.style.zIndex = '9999';
+    badge.style.padding = '6px 10px';
+    badge.style.borderRadius = '8px';
+    badge.style.background = 'rgba(3, 7, 18, 0.78)';
+    badge.style.color = '#dbeafe';
+    badge.style.fontSize = '12px';
+    badge.style.fontWeight = '700';
+    badge.style.letterSpacing = '0.2px';
+    badge.style.pointerEvents = 'none';
+    document.body.appendChild(badge);
+  }
+  badge.textContent = MATCH_PLUS_ARENA_BUILD_MARKER;
+}
 
 function normalizeMode(value) {
   if (!value || typeof value !== 'string') return 'image-puzzle';
@@ -80,6 +104,7 @@ export const matchPlusArenaRuntime = {
   id: 'match-plus-arena',
 
   onGameStart({ state }) {
+    ensureBuildMarker();
     if (state?.role !== 'player') return false;
     const msgEl = document.getElementById('player-answered-msg');
     if (msgEl) msgEl.textContent = '🧩 Match Plus Arena ready';
@@ -87,6 +112,7 @@ export const matchPlusArenaRuntime = {
   },
 
   onGameQuestion({ data, state, renderQuestion }) {
+    ensureBuildMarker();
     // Normalize question to puzzle mode before rendering (works even with old server)
     if (data?.question) {
       normalizePuzzleQuestion(data.question);

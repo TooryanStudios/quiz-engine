@@ -6,7 +6,7 @@ import { Sounds, setMuted, isMuted } from './utils/sounds.js?v=122';
 import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js?v=122';
 import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js?v=122';
 import { QuestionRendererFactory } from './renderers/QuestionRenderer.js?v=122';
-import { resolveGameModeRuntime } from './gameModes/runtime/index.js?v=122';
+import { resolveGameModeRuntime } from './gameModes/runtime/index.js?v=123';
 
 // Fetch and display server build time on home screen
 fetch('/api/build-info')
