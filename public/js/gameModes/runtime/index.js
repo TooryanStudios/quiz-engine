@@ -1,9 +1,9 @@
-import { puzzleRelayRuntime } from './puzzleRelay.runtime.js?v=121';
-import { runtimeExampleRuntime } from './runtimeExample.runtime.js?v=121';
-import { xoDuelRuntime } from './xoDuel.runtime.js?v=121';
-import { gearMachineRuntime } from './gearMachine.runtime.js?v=121';
-import { creatorStudioRuntime } from './creatorStudio.runtime.js?v=121';
-import { matchPlusArenaRuntime } from './matchPlusArena.runtime.js?v=121';
+import { puzzleRelayRuntime } from './puzzleRelay.runtime.js?v=122';
+import { runtimeExampleRuntime } from './runtimeExample.runtime.js?v=122';
+import { xoDuelRuntime } from './xoDuel.runtime.js?v=122';
+import { gearMachineRuntime } from './gearMachine.runtime.js?v=122';
+import { creatorStudioRuntime } from './creatorStudio.runtime.js?v=122';
+import { matchPlusArenaRuntime } from './matchPlusArena.runtime.js?v=122';
 
 const EMPTY_RUNTIME = Object.freeze({});
 

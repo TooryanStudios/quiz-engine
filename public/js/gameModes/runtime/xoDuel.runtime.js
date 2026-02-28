@@ -1,5 +1,5 @@
-import { triggerScreenShake } from '../../utils/effects.js?v=121';
-import { Sounds } from '../../utils/sounds.js?v=121';
+import { triggerScreenShake } from '../../utils/effects.js?v=122';
+import { Sounds } from '../../utils/sounds.js?v=122';
 
 // ── SVG symbol helpers ──────────────────────────────────────────────────────
 function svgX(size = '2rem') {

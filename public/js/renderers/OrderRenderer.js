@@ -1,4 +1,4 @@
-﻿/**
+/**
  * OrderRenderer.js
  * Handles drag-to-reorder questions with smooth animated swaps.
  *

@@ -1,4 +1,4 @@
-import { TypeSprintRenderer } from '../TypeSprintRenderer.js?v=121';
+import { TypeSprintRenderer } from '../TypeSprintRenderer.js?v=122';
 
 export function createTypeRendererEntry() {
   return { type: 'type', RendererClass: TypeSprintRenderer };

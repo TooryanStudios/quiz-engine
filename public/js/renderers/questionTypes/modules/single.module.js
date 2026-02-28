@@ -1,4 +1,4 @@
-import { createSingleRendererEntry } from '../single.js?v=121';
+import { createSingleRendererEntry } from '../single.js?v=122';
 
 export const singleQuestionTypeModule = {
   id: 'single',

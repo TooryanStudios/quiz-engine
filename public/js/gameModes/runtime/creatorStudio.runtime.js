@@ -1,4 +1,4 @@
-import { Sounds } from '../../utils/sounds.js?v=121';
+import { Sounds } from '../../utils/sounds.js?v=122';
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));

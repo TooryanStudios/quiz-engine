@@ -1,4 +1,4 @@
-﻿/**
+/**
  * timer.js
  * Client-side timer visualization
  */

@@ -1,9 +1,9 @@
-import { singleQuestionTypeModule } from './modules/single.module.js?v=121';
-import { createMultiRendererEntry } from './multi.js?v=121';
-import { createTypeRendererEntry } from './type.js?v=121';
-import { createMatchRendererEntry } from './match.js?v=121';
-import { createOrderRendererEntry } from './order.js?v=121';
-import { createBossRendererEntry } from './boss.js?v=121';
+import { singleQuestionTypeModule } from './modules/single.module.js?v=122';
+import { createMultiRendererEntry } from './multi.js?v=122';
+import { createTypeRendererEntry } from './type.js?v=122';
+import { createMatchRendererEntry } from './match.js?v=122';
+import { createOrderRendererEntry } from './order.js?v=122';
+import { createBossRendererEntry } from './boss.js?v=122';
 
 function createLegacyModule(id, createRendererEntry, options) {
   return {

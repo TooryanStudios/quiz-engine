@@ -1,12 +1,12 @@
 // ─────────────────────────────────────────────
 // ES6 Module Imports
 // ─────────────────────────────────────────────
-import { state, updateState, resetQuestionState} from './state/GameState.js?v=121';
-import { Sounds, setMuted, isMuted } from './utils/sounds.js?v=121';
-import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js?v=121';
-import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js?v=121';
-import { QuestionRendererFactory } from './renderers/QuestionRenderer.js?v=121';
-import { resolveGameModeRuntime } from './gameModes/runtime/index.js?v=121';
+import { state, updateState, resetQuestionState} from './state/GameState.js?v=122';
+import { Sounds, setMuted, isMuted } from './utils/sounds.js?v=122';
+import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js?v=122';
+import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js?v=122';
+import { QuestionRendererFactory } from './renderers/QuestionRenderer.js?v=122';
+import { resolveGameModeRuntime } from './gameModes/runtime/index.js?v=122';
 
 // Fetch and display server build time on home screen
 fetch('/api/build-info')

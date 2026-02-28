@@ -1,4 +1,4 @@
-import { Sounds } from '../../utils/sounds.js?v=121';
+import { Sounds } from '../../utils/sounds.js?v=122';
 
 function normalizeAngle(value) {
   const n = Number(value || 0);
