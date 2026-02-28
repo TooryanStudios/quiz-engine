@@ -1789,6 +1789,9 @@ function showQuestionResult(data) {
   stopClientTimer();
   document.getElementById('overlay-paused').style.display = 'none';
 
+  const type = data.questionType;
+  const forcePairImages = type === 'match_plus';
+
   const isLikelyImageSource = (value) => {
     if (typeof value !== 'string') return false;
     const v = value.trim().toLowerCase();
@@ -1804,9 +1807,10 @@ function showQuestionResult(data) {
 
   const renderResultValue = (value) => {
     const raw = String(value ?? '');
-    if (isLikelyImageSource(raw)) {
+    if ((forcePairImages || isLikelyImageSource(raw)) && raw) {
       return `<img class="result-pair-media" src="${escapeHtml(raw)}" alt="pair item" />`;
     }
+    if (forcePairImages) return `<span class="result-pair-empty" dir="auto">🖼️ أضف صورة</span>`;
     return `<span dir="auto">${escapeHtml(raw)}</span>`;
   };
 
@@ -1820,8 +1824,6 @@ function showQuestionResult(data) {
   // Reset
   pairsEl.style.display  = 'none';
   answerEl.style.display = '';
-
-  const type = data.questionType;
 
   if (type === 'boss' || data.boss) {
     labelEl.textContent  = '⚔�? Boss Battle Result';

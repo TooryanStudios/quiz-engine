@@ -26,6 +26,10 @@ export class MatchRenderer extends BaseRenderer {
     return false;
   }
 
+  isImageMatchMode() {
+    return this.question?.type === 'match_plus';
+  }
+
   escapeAttr(value) {
     return String(value ?? '')
       .replace(/&/g, '&amp;')
@@ -34,11 +38,15 @@ export class MatchRenderer extends BaseRenderer {
       .replace(/>/g, '&gt;');
   }
 
-  renderMatchContent(value, className = 'match-chip-media') {
+  renderMatchContent(value, className = 'match-chip-media', forceImage = false) {
     const { escapeHtml } = this.utils;
     const text = String(value ?? '');
-    if (this.isLikelyImageSource(text)) {
+    const shouldRenderImage = forceImage || this.isLikelyImageSource(text);
+    if (shouldRenderImage && text) {
       return `<img class="${className}" src="${this.escapeAttr(text)}" alt="match item" loading="lazy" />`;
+    }
+    if (forceImage) {
+      return `<span class="match-empty-tile" dir="auto">🖼️ <small>أضف صورة</small></span>`;
     }
     return `<span class="match-chip-text" dir="auto">${escapeHtml(text)}</span>`;
   }
@@ -81,6 +89,7 @@ export class MatchRenderer extends BaseRenderer {
     const { OPTION_COLORS } = this.utils;
     const lefts = state.matchLefts;
     const rights = state.matchRights;
+    const imageMode = this.isImageMatchMode();
     const placed = new Set(state.matchConnections.filter(v => v !== -1));
     
     container.innerHTML = `
@@ -92,13 +101,13 @@ export class MatchRenderer extends BaseRenderer {
             const col = OPTION_COLORS[i % OPTION_COLORS.length];
             
             return `<div class="match-dnd-row">
-              <div class="match-dnd-label">${this.renderMatchContent(l, 'match-left-media')}</div>
+              <div class="match-dnd-label">${this.renderMatchContent(l, 'match-left-media', imageMode)}</div>
               <div class="match-dropzone ${filled ? 'match-dz-filled ' + col : 'match-dz-empty'}" 
                    data-dropzone="${i}">
                 ${filled
                   ? `<span class="match-chip in-slot ${col}" 
                            data-chip-idx="${ri}" 
-                           data-in-slot="${i}">${this.renderMatchContent(rights[ri])}</span>`
+                           data-in-slot="${i}">${this.renderMatchContent(rights[ri], 'match-chip-media', imageMode)}</span>`
                   : `<span class="match-drop-hint">drop here</span>`
                 }
               </div>
@@ -111,7 +120,7 @@ export class MatchRenderer extends BaseRenderer {
             if (placed.has(i)) return '';
             return `<span class="match-chip in-pool opt-violet" 
                          data-chip-idx="${i}" 
-                         data-in-slot="-1">${this.renderMatchContent(r)}</span>`;
+                         data-in-slot="-1">${this.renderMatchContent(r, 'match-chip-media', imageMode)}</span>`;
           }).join('')}
         </div>
       </div>
@@ -256,12 +265,13 @@ export class MatchRenderer extends BaseRenderer {
     if (!grid) return;
 
     const lefts = this.question.lefts || [];
+    const imageMode = this.isImageMatchMode();
     
     grid.innerHTML = `
       <div class="host-pairs-preview">
         ${lefts.map((l, i) => `
           <div class="host-pair-row stagger-${Math.min(i + 1, 4)}">
-            <span class="host-pair-side">${this.renderMatchContent(l, 'host-pair-media')}</span>
+            <span class="host-pair-side">${this.renderMatchContent(l, 'host-pair-media', imageMode)}</span>
             <span class="host-pair-arrow">⟷</span>
             <span class="host-pair-side host-pair-right">?</span>
           </div>

@@ -2214,15 +2214,27 @@ export function QuizEditorPage() {
             <div style={{ marginTop: '0.5rem', marginBottom: '1rem' }}>
               <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600 }}>{editorMeta.pairsSectionLabel}</label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                {(q.pairs || []).map((pair, pairIndex) => (
+                {(q.pairs || []).map((pair, pairIndex) => {
+                  const leftValue = String(pair.left || '').trim()
+                  const rightValue = String(pair.right || '').trim()
+                  const looksLikeImageRef = (value: string) => (
+                    value.startsWith('/') ||
+                    value.startsWith('data:image/') ||
+                    value.startsWith('blob:') ||
+                    /^https?:\/\/.+/i.test(value)
+                  )
+                  const leftInvalid = leftValue.length > 0 && !looksLikeImageRef(leftValue)
+                  const rightInvalid = rightValue.length > 0 && !looksLikeImageRef(rightValue)
+
+                  return (
                   <div key={pairIndex} style={{ display: 'grid', gridTemplateColumns: q.type === 'match_plus' ? '1fr auto 1fr' : '1fr auto 1fr', gap: '0.8rem', alignItems: 'center', background: 'var(--bg-deep)', padding: '0.4rem 0.8rem', borderRadius: '12px', border: '1.5px solid var(--border-strong)' }}>
                     {q.type === 'match_plus' ? (
                       <>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
                           <div style={{ height: '72px', borderRadius: '10px', border: '1px solid var(--border-strong)', overflow: 'hidden', background: 'var(--bg)' }}>
-                            {pair.left ? (
+                            {leftValue ? (
                               <img src={pair.left} alt={`left ${pairIndex + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                            ) : null}
+                            ) : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 700 }}>🖼️ أضف صورة</div>}
                           </div>
                           <input
                             value={pair.left}
@@ -2242,13 +2254,19 @@ export function QuizEditorPage() {
                               outline: 'none',
                             }}
                           />
+                          {!leftValue && (
+                            <span style={{ fontSize: '0.72rem', color: '#f59e0b', fontWeight: 600 }}>الصورة اليسرى مطلوبة</span>
+                          )}
+                          {leftInvalid && (
+                            <span style={{ fontSize: '0.72rem', color: '#f87171', fontWeight: 600 }}>الرابط غير صالح كصورة</span>
+                          )}
                         </div>
                         <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'var(--border-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 'bold' }}>⇄</div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
                           <div style={{ height: '72px', borderRadius: '10px', border: '1px solid var(--border-strong)', overflow: 'hidden', background: 'var(--bg)' }}>
-                            {pair.right ? (
+                            {rightValue ? (
                               <img src={pair.right} alt={`right ${pairIndex + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                            ) : null}
+                            ) : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 700 }}>🖼️ أضف صورة</div>}
                           </div>
                           <input
                             value={pair.right}
@@ -2268,6 +2286,12 @@ export function QuizEditorPage() {
                               outline: 'none',
                             }}
                           />
+                          {!rightValue && (
+                            <span style={{ fontSize: '0.72rem', color: '#f59e0b', fontWeight: 600 }}>الصورة اليمنى مطلوبة</span>
+                          )}
+                          {rightInvalid && (
+                            <span style={{ fontSize: '0.72rem', color: '#f87171', fontWeight: 600 }}>الرابط غير صالح كصورة</span>
+                          )}
                         </div>
                       </>
                     ) : (
@@ -2312,7 +2336,7 @@ export function QuizEditorPage() {
                       </>
                     )}
                   </div>
-                ))}
+                )})}
               </div>
             </div>
           )}
