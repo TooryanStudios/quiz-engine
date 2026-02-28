@@ -9,9 +9,9 @@ const MATCH_PLUS_MODES = Object.freeze([
 ]);
 
 function normalizeMode(value) {
-  if (!value || typeof value !== 'string') return 'image-image';
+  if (!value || typeof value !== 'string') return 'image-puzzle';
   const normalized = value.trim().toLowerCase();
-  return MATCH_PLUS_MODES.includes(normalized) ? normalized : 'image-image';
+  return MATCH_PLUS_MODES.includes(normalized) ? normalized : 'image-puzzle';
 }
 
 function normalizeText(value, fallback) {
@@ -34,7 +34,9 @@ function transformLegacyQuestionToMatchPlus(questionPayload, room) {
   const safeGrid = Number.isInteger(configuredGrid) ? Math.max(2, Math.min(4, configuredGrid)) : 3;
   const configuredImage = typeof room?.miniGameConfig?.defaultPuzzleImage === 'string' && room.miniGameConfig.defaultPuzzleImage.trim()
     ? room.miniGameConfig.defaultPuzzleImage.trim()
-    : (typeof questionPayload.matchPlusImage === 'string' ? questionPayload.matchPlusImage : '');
+    : (typeof questionPayload.matchPlusImage === 'string' && questionPayload.matchPlusImage.trim()
+      ? questionPayload.matchPlusImage.trim()
+      : '/images/QYan_logo_300x164.jpg');
 
   if (questionPayload.type === 'match_plus') {
     questionPayload.matchPlusMode = configuredMode;

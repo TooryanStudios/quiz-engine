@@ -2134,7 +2134,7 @@ io.on('connection', (socket) => {
     room.miniGameConfig = (quizData.miniGameConfig && typeof quizData.miniGameConfig === 'object') ? quizData.miniGameConfig : {};
     room.matchPlusMode = typeof room.miniGameConfig.defaultMatchPlusMode === 'string'
       ? room.miniGameConfig.defaultMatchPlusMode
-      : null;
+      : 'image-puzzle';
     room.enableScholarRole = quizData.enableScholarRole === true; // disabled by default
     console.log(`[Room ${room.pin}] Loaded ${room.questions.length} questions from quiz data`);
 

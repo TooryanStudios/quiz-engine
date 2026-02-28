@@ -7,9 +7,9 @@ const MATCH_PLUS_MODES = [
 ];
 
 function normalizeMode(value) {
-  if (!value || typeof value !== 'string') return 'image-image';
+  if (!value || typeof value !== 'string') return 'image-puzzle';
   const normalized = value.trim().toLowerCase();
-  return MATCH_PLUS_MODES.includes(normalized) ? normalized : 'image-image';
+  return MATCH_PLUS_MODES.includes(normalized) ? normalized : 'image-puzzle';
 }
 
 function modeLabel(mode) {
