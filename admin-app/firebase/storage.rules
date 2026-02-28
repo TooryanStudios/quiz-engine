@@ -13,5 +13,19 @@ service firebase.storage {
       allow write: if request.auth != null
                    && request.resource.size < 20 * 1024 * 1024; // 20 MB limit
     }
+
+    // match-plus pair and puzzle image uploads
+    match /quiz-match-plus/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null
+                   && request.resource.size < 20 * 1024 * 1024; // 20 MB limit
+    }
+
+    // mini-game assets (e.g. match-plus-arena default puzzle image)
+    match /mini-games/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null
+                   && request.resource.size < 20 * 1024 * 1024; // 20 MB limit
+    }
   }
 }
