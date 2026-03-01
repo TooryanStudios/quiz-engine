@@ -496,6 +496,11 @@ export function QuizEditorPage() {
     getQuizById(routeId)
       .then((data) => {
         if (!data) { showStatus({ kind: 'error', msg: 'لم يُعثر على الاختبار.' }); return }
+        // Auto-redirect: if this quiz has a gameModeId but we're on /editor/:id, switch to /mini-game-editor/:id
+        if (!isMiniGameContent && data.gameModeId) {
+          navigate(`/mini-game-editor/${routeId}`, { replace: true })
+          return
+        }
         setTitle(data.title)
         setSlug(data.slug)
         setVisibility(data.visibility)
