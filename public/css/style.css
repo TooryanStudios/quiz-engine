@@ -4230,8 +4230,9 @@ video.question-media {
 /* Simple Image Puzzle (Match Plus Arena) */
 .simple-puzzle-wrap {
   --spt: 90px; /* tile size */
+  --sgap: 3px; /* grid line width */
   display: grid;
-  grid-template-columns: calc(var(--spt) * 3) 1fr;
+  grid-template-columns: calc(var(--spt) * 3 + var(--sgap) * 2) 1fr;
   gap: 20px;
   align-items: start;
   width: 100%;
@@ -4244,7 +4245,10 @@ video.question-media {
   display: grid;
   grid-template-columns: repeat(3, var(--spt));
   grid-template-rows: repeat(3, var(--spt));
-  gap: 0;
+  gap: var(--sgap);
+  background: rgba(255, 255, 255, 0.18);
+  padding: var(--sgap);
+  box-sizing: content-box;
 }
 
 .simple-puzzle-cell {
@@ -4252,6 +4256,7 @@ video.question-media {
   height: var(--spt);
   overflow: hidden;
   position: relative;
+  background: rgba(10, 14, 36, 0.95);
 }
 
 /* Drop zone fills the cell exactly */
@@ -4334,7 +4339,10 @@ video.question-media {
 .simple-puzzle-pool-grid {
   display: grid;
   grid-template-columns: repeat(3, var(--spt));
-  gap: 4px;
+  gap: var(--sgap);
+  background: rgba(255, 255, 255, 0.18);
+  padding: var(--sgap);
+  box-sizing: content-box;
 }
 
 /* Pool chip – explicit block size so background-image renders */

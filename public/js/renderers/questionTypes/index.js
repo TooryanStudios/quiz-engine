@@ -1,7 +1,7 @@
 import { singleQuestionTypeModule } from './modules/single.module.js?v=122';
 import { createMultiRendererEntry } from './multi.js?v=122';
 import { createTypeRendererEntry } from './type.js?v=122';
-import { createMatchRendererEntry } from './match.js?v=127';
+import { createMatchRendererEntry } from './match.js?v=128';
 import { createOrderRendererEntry } from './order.js?v=122';
 import { createBossRendererEntry } from './boss.js?v=122';
 
