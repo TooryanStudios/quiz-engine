@@ -4229,83 +4229,82 @@ video.question-media {
 
 /* Simple Image Puzzle (Match Plus Arena) */
 .simple-puzzle-wrap {
-  --simple-puzzle-tile-size: 86px;
+  --spt: 90px; /* tile size */
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr);
-  gap: 16px;
+  grid-template-columns: calc(var(--spt) * 3) 1fr;
+  gap: 20px;
   align-items: start;
   width: 100%;
   max-width: 760px;
   margin: 0 auto;
 }
 
+/* ── Board (slots) ── */
 .simple-puzzle-board {
   display: grid;
-  grid-template-columns: repeat(3, var(--simple-puzzle-tile-size));
+  grid-template-columns: repeat(3, var(--spt));
+  grid-template-rows: repeat(3, var(--spt));
   gap: 0;
 }
 
 .simple-puzzle-cell {
-  width: var(--simple-puzzle-tile-size);
-  height: var(--simple-puzzle-tile-size);
-}
-
-.simple-puzzle-dropzone {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  border: 0;
-  border-radius: 0;
+  width: var(--spt);
+  height: var(--spt);
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.03);
+  position: relative;
 }
 
-.simple-puzzle-target {
+/* Drop zone fills the cell exactly */
+.simple-puzzle-dropzone {
   position: absolute;
   inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.25;
-  filter: saturate(0.8);
-  pointer-events: none;
+  background: rgba(255, 255, 255, 0.04);
+  border: 2px dashed rgba(255,255,255,0.15);
 }
 
-.simple-puzzle-target-media,
-.simple-puzzle-piece-media {
-  width: 100%;
-  height: 100%;
-  max-width: none;
-  max-height: none;
-  border-radius: 0;
+.simple-puzzle-dropzone.match-dz-filled {
+  border: 0;
+}
+
+.simple-puzzle-dropzone.match-dz-hover {
+  border-color: rgba(70,234,221,0.7);
+  background: rgba(70,234,221,0.06);
+}
+
+/* Ghost target: hidden – not needed for sliced puzzle */
+.simple-puzzle-target { display: none; }
+
+/* Placed piece fills the drop zone */
+.simple-puzzle-dropzone .match-chip {
   display: block;
-}
-
-.simple-puzzle-piece {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  border-radius: 0;
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
   overflow: hidden;
-  border: 0;
-  background: rgba(7, 10, 26, 0.78);
+  border: 0 !important;
+  border-radius: 0 !important;
   box-shadow: none;
+  background: transparent;
+  cursor: grab;
 }
 
-.simple-puzzle-dropzone .simple-puzzle-piece {
-  border: 0;
-  border-radius: 0;
+/* ── Piece media (background-image tile spans) ── */
+.simple-puzzle-target-media,
+.simple-puzzle-piece-media,
+/* override old match-puzzle tile fixed sizes in simple puzzle context */
+.simple-puzzle-wrap .match-puzzle-chip-tile,
+.simple-puzzle-wrap .match-puzzle-slot-tile {
+  display: block !important;
+  width: var(--spt) !important;
+  height: var(--spt) !important;
+  max-width: none !important;
+  max-height: none !important;
+  border-radius: 0 !important;
+  flex-shrink: 0;
 }
 
-.simple-puzzle-hint {
-  font-size: 0.78rem;
-  color: var(--text-dim);
-  text-align: center;
-  padding: 4px;
-}
-
+/* ── Pool (draggable pieces) ── */
 .simple-puzzle-pool {
   display: flex;
   flex-direction: column;
@@ -4322,14 +4321,26 @@ video.question-media {
 
 .simple-puzzle-pool-grid {
   display: grid;
-  grid-template-columns: repeat(3, var(--simple-puzzle-tile-size));
-  gap: 10px;
+  grid-template-columns: repeat(3, var(--spt));
+  gap: 4px;
 }
 
-.simple-puzzle-dropzone-filled {
-  border: 0;
+/* Pool chip – explicit block size so background-image renders */
+.simple-puzzle-pool-grid > .match-chip {
+  display: block;
+  width: var(--spt);
+  height: var(--spt);
+  overflow: hidden;
+  position: relative;
+  cursor: grab;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none;
+  padding: 0;
+  background: rgba(255,255,255,0.04);
 }
 
+/* ── Host preview ── */
 .simple-puzzle-host-wrap {
   max-width: 520px;
   margin: 0 auto;
@@ -4346,35 +4357,28 @@ video.question-media {
 
 .simple-puzzle-host-grid {
   display: grid;
-  grid-template-columns: repeat(3, var(--simple-puzzle-tile-size));
+  grid-template-columns: repeat(3, var(--spt));
+  grid-template-rows: repeat(3, var(--spt));
   gap: 0;
 }
 
 .simple-puzzle-host-tile {
-  width: var(--simple-puzzle-tile-size);
-  height: var(--simple-puzzle-tile-size);
+  width: var(--spt);
+  height: var(--spt);
   overflow: hidden;
-  border-radius: 0;
-  border: 0;
 }
 
 .simple-puzzle-host-media {
-  width: 100%;
-  height: 100%;
+  display: block;
+  width: var(--spt);
+  height: var(--spt);
   max-width: none;
   max-height: none;
-  border-radius: 0;
 }
 
 @media (max-width: 700px) {
   .simple-puzzle-wrap {
-    --simple-puzzle-tile-size: 72px;
+    --spt: 80px;
     grid-template-columns: 1fr;
-  }
-
-  .simple-puzzle-board,
-  .simple-puzzle-pool-grid,
-  .simple-puzzle-host-grid {
-    grid-template-columns: repeat(3, var(--simple-puzzle-tile-size));
   }
 }
