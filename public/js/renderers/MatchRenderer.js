@@ -204,9 +204,10 @@ export class MatchRenderer extends BaseRenderer {
     const placed = new Set(state.matchConnections.filter(v => v !== -1));
     const grid = this.getPuzzleGridSize();
     const boardPx = `calc(var(--spt) * ${grid})`;
+    const isComplete = state.matchConnections.every((v) => v !== -1);
 
     container.innerHTML = `
-      <div class="simple-puzzle-wrap" style="grid-template-columns: ${boardPx} 1fr;">
+      <div class="simple-puzzle-wrap ${isComplete ? 'puzzle-complete' : ''}" style="grid-template-columns: ${boardPx} 1fr;">
         <div class="simple-puzzle-board" style="grid-template-columns: repeat(${grid}, var(--spt)); grid-template-rows: repeat(${grid}, var(--spt));">
           ${lefts.map((leftValue, slotIndex) => {
             const pieceIndex = state.matchConnections[slotIndex];
@@ -232,7 +233,6 @@ export class MatchRenderer extends BaseRenderer {
         </div>
 
         <div class="simple-puzzle-pool">
-          <span class="simple-puzzle-title">اسحب القطع إلى أماكنها الصحيحة</span>
           <div class="simple-puzzle-pool-grid" style="grid-template-columns: repeat(${grid}, var(--spt));">
             ${rights.map((value, pieceIndex) => {
               if (placed.has(pieceIndex)) return `<span class="simple-puzzle-piece-empty"></span>`;

@@ -1491,7 +1491,7 @@ function sendQuestion(room, opts = {}) {
   if (!room || room.state === 'finished') return;
   const countdownExtraMs = opts.countdownExtraMs || 0;
   const q = room.questions[room.questionIndex];
-  const duration = q.duration || config.GAME.QUESTION_DURATION_SEC;
+  const baseDuration = q.duration || config.GAME.QUESTION_DURATION_SEC;
   const challengeSettings = room.challengeSettings || CHALLENGE_PRESETS.classic;
   const typeHandler = getQuestionTypeHandler(q.type);
   room.currentQuestionMeta = {
@@ -1511,6 +1511,12 @@ function sendQuestion(room, opts = {}) {
   }
   Object.assign(questionPayload, typeHandler.buildQuestionPayload({ room, q, challengeSettings }));
 
+  const resolveEffectiveDuration = () => {
+    const candidate = Number(questionPayload.duration ?? q.duration ?? baseDuration);
+    if (!Number.isFinite(candidate)) return config.GAME.QUESTION_DURATION_SEC;
+    return Math.max(1, Math.floor(candidate));
+  };
+
   // Store client-safe payload so reconnecting players can receive the current question
   room.currentQuestionPayload = { ...questionPayload };
 
@@ -1519,16 +1525,17 @@ function sendQuestion(room, opts = {}) {
     const playersPayload = getPlayerList(room);
 
     const dispatchDefault = () => {
+      const effectiveDuration = resolveEffectiveDuration();
       io.to(room.pin).emit('game:question', {
         questionIndex: room.questionIndex,
         total: room.questions.length,
         question: questionPayload,
-        duration,
+        duration: effectiveDuration,
         players: playersPayload,
       });
 
       room.questionStartTime = Date.now();
-      room.questionDuration  = duration;
+      room.questionDuration  = effectiveDuration;
       room.state  = 'question';
       room.paused = false;
       room.pausedTimeRemaining = 0;
@@ -1536,7 +1543,7 @@ function sendQuestion(room, opts = {}) {
 
       room.questionTimer = setTimeout(() => {
         endQuestion(room);
-      }, (duration * 1000) + countdownExtraMs);
+      }, (effectiveDuration * 1000) + countdownExtraMs);
     };
 
     const handledByMode = callRoomGameModeHook(room, 'onQuestionDispatch', {
@@ -1544,7 +1551,7 @@ function sendQuestion(room, opts = {}) {
       io,
       questionPayload,
       players: playersPayload,
-      duration,
+      duration: resolveEffectiveDuration(),
       countdownExtraMs,
       dispatchDefault,
     });
@@ -1566,7 +1573,7 @@ function sendQuestion(room, opts = {}) {
       total: room.questions.length,
       question: questionPayload,
       previewSeconds: Math.floor((challengeSettings.rolePreviewMs || ROLE_PREVIEW_MS) / 1000),
-      duration,
+      duration: resolveEffectiveDuration(),
     });
     room.previewTimer = setTimeout(() => {
       if (room.state !== 'question-pending') return;
