@@ -304,6 +304,7 @@ app.get('/api/build-info', (_req, res) => res.json({ buildTime: BUILD_TIME }));
 // Debug endpoint — inspect quiz miniGameConfig from Firestore
 app.get('/api/debug-quiz/:id', async (req, res) => {
   try {
+    const db = getDbSafe();
     if (!db) return res.status(503).json({ error: 'Firestore not available' });
     const docRef = db.collection('quizzes').doc(req.params.id);
     const snap = await docRef.get();
@@ -324,6 +325,7 @@ app.get('/api/debug-quiz/:id', async (req, res) => {
 // Debug endpoint — list all quizzes with miniGameConfig status
 app.get('/api/debug-quizzes', async (_req, res) => {
   try {
+    const db = getDbSafe();
     if (!db) return res.status(503).json({ error: 'Firestore not available' });
     const snap = await db.collection('quizzes').get();
     const quizzes = [];
