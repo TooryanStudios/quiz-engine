@@ -321,6 +321,29 @@ app.get('/api/debug-quiz/:id', async (req, res) => {
   }
 });
 
+// Debug endpoint — list all quizzes with miniGameConfig status
+app.get('/api/debug-quizzes', async (_req, res) => {
+  try {
+    if (!db) return res.status(503).json({ error: 'Firestore not available' });
+    const snap = await db.collection('quizzes').get();
+    const quizzes = [];
+    snap.forEach(doc => {
+      const d = doc.data();
+      quizzes.push({
+        id: doc.id,
+        title: d.title || '(no title)',
+        slug: d.slug || null,
+        gameModeId: d.gameModeId || null,
+        hasMiniGameConfig: !!(d.miniGameConfig && Object.keys(d.miniGameConfig).length > 0),
+        miniGameConfig: d.miniGameConfig || null,
+      });
+    });
+    res.json({ total: quizzes.length, quizzes });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // QR SVG endpoint — used as a resilient fallback when realtime payload misses qrSvg
 app.get('/api/qr-svg', async (req, res) => {
   const rawUrl = typeof req.query.url === 'string' ? req.query.url : '';
