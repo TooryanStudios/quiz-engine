@@ -237,8 +237,6 @@ export class MatchRenderer extends BaseRenderer {
         </div>
 
         <div class="simple-puzzle-pool">
-          <span class="simple-puzzle-title" dir="auto">${escapeHtml(instructionText)}</span>
-          <button class="puzzle-hint-btn" type="button" title="اضغط مع الإبقاء لمشاهدة الصورة الكاملة">👁 تلميح</button>
           <div class="simple-puzzle-pool-grid" style="grid-template-columns: repeat(${grid}, var(--spt));">
             ${rights.map((value, pieceIndex) => {
               if (placed.has(pieceIndex)) return `<span class="simple-puzzle-piece-empty"></span>`;
@@ -247,6 +245,8 @@ export class MatchRenderer extends BaseRenderer {
                            data-in-slot="-1">${this.renderPuzzleTile(value, 'simple-puzzle-piece-media', false)}</span>`;
             }).join('')}
           </div>
+          <span class="simple-puzzle-title" dir="auto">${escapeHtml(instructionText)}</span>
+          <button class="puzzle-hint-btn" type="button" title="اضغط مع الإبقاء لمشاهدة الصورة الكاملة">👁 تلميح</button>
         </div>
       </div>
     `;
