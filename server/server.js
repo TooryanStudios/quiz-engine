@@ -1504,9 +1504,14 @@ function sendQuestion(room, opts = {}) {
     ? Math.floor(gameDuration)
     : null;
 
-  // HARD-OVERRIDE: If it's a puzzle/match, force it to 60s if the current duration is the default 20s or shorter
-  if (isLikelyMatchPlusArena && (!forcedDuration || forcedDuration <= 20)) {
-    forcedDuration = 60;
+  // Use the admin's duration if set; only fallback to 60 if absolutely nothing else is provided for a match-plus game
+  if (isLikelyMatchPlusArena && !forcedDuration) {
+    // Check if the individual question has a duration that isn't the 20s default
+    if (q.duration && q.duration !== 20) {
+      forcedDuration = q.duration;
+    } else {
+      forcedDuration = 60;
+    }
   }
 
   if (forcedDuration) {
