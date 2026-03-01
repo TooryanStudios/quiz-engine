@@ -53,7 +53,7 @@ function transformLegacyQuestionToMatchPlus(questionPayload, room) {
   // Apply optional global duration override from miniGameConfig
   const configuredDuration = (() => {
     const d = Number(room?.miniGameConfig?.defaultDuration);
-    return (Number.isInteger(d) && d >= 10) ? d : 0;
+    return (Number.isInteger(d) && d >= 1) ? d : 0;
   })();
 
   if (questionPayload.type === 'match_plus') {

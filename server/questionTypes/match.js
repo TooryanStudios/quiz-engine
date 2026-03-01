@@ -22,6 +22,30 @@ function buildPuzzlePairs(gridSize) {
   });
 }
 
+function looksLikeImageUrl(value) {
+  if (typeof value !== 'string') return false;
+  const v = value.trim();
+  if (!v) return false;
+  return v.startsWith('/') || v.startsWith('http://') || v.startsWith('https://') || v.startsWith('data:image') || v.startsWith('blob:');
+}
+
+function resolveMatchPlusImage(room, q) {
+  const explicit = typeof q?.matchPlusImage === 'string' ? q.matchPlusImage.trim() : '';
+  if (explicit) return explicit;
+
+  const gameDefault = typeof room?.miniGameConfig?.defaultPuzzleImage === 'string'
+    ? room.miniGameConfig.defaultPuzzleImage.trim()
+    : '';
+  if (gameDefault) return gameDefault;
+
+  const pairs = Array.isArray(q?.pairs) ? q.pairs : [];
+  const leftFromPairs = pairs
+    .map((pair) => (typeof pair?.left === 'string' ? pair.left.trim() : ''))
+    .find(looksLikeImageUrl);
+
+  return leftFromPairs || '';
+}
+
 module.exports = function createMatchHandler({ calculatePartialScore }) {
   return {
     buildQuestionPayload: ({ room, q }) => {
@@ -55,7 +79,7 @@ module.exports = function createMatchHandler({ calculatePartialScore }) {
         rights: rightOrder.map((i) => safePairs[i].right),
         ...(isMatchPlus ? {
           matchPlusMode: mode,
-          matchPlusImage: typeof q.matchPlusImage === 'string' ? q.matchPlusImage : '',
+          matchPlusImage: resolveMatchPlusImage(room, q),
           matchPlusGridSize: gridSize,
         } : {}),
       };
@@ -87,7 +111,7 @@ module.exports = function createMatchHandler({ calculatePartialScore }) {
         : q.pairs,
       ...(q.type === 'match_plus' ? {
         matchPlusMode: normalizeMatchPlusMode(q.matchPlusMode),
-        matchPlusImage: typeof q.matchPlusImage === 'string' ? q.matchPlusImage : '',
+        matchPlusImage: resolveMatchPlusImage(null, q),
         matchPlusGridSize: normalizeMatchPlusGridSize(q.matchPlusGridSize),
       } : {}),
     }),

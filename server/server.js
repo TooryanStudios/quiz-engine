@@ -1491,6 +1491,15 @@ function sendQuestion(room, opts = {}) {
   if (!room || room.state === 'finished') return;
   const countdownExtraMs = opts.countdownExtraMs || 0;
   const q = room.questions[room.questionIndex];
+  const modeId = typeof room?.mode === 'string' ? room.mode.trim().toLowerCase() : '';
+  const gameDuration = Number(room?.miniGameConfig?.defaultDuration);
+  const hasGameDuration = Number.isFinite(gameDuration) && gameDuration >= 1;
+  const forcedDuration = (modeId === 'match-plus-arena' && hasGameDuration)
+    ? Math.floor(gameDuration)
+    : null;
+  if (forcedDuration) {
+    q.duration = forcedDuration;
+  }
   const baseDuration = q.duration || config.GAME.QUESTION_DURATION_SEC;
   const challengeSettings = room.challengeSettings || CHALLENGE_PRESETS.classic;
   const typeHandler = getQuestionTypeHandler(q.type);
