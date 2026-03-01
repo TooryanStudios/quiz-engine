@@ -7,7 +7,7 @@ const MATCH_PLUS_MODES = [
 ];
 
 const FALLBACK_PUZZLE_IMAGE = '/images/QYan_logo_300x164.jpg';
-const MATCH_PLUS_ARENA_BUILD_MARKER = 'Match+ Build: 2026-03-01 • simple-puzzle • v126';
+const MATCH_PLUS_ARENA_BUILD_MARKER = 'Match+ Build: 2026-03-01 • simple-puzzle • v127';
 
 function ensureBuildMarker() {
   if (typeof document === 'undefined') return;

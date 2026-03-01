@@ -261,18 +261,37 @@ export class MatchRenderer extends BaseRenderer {
     const chipIdx = parseInt(chip.dataset.chipIdx);
     const fromSlot = parseInt(chip.dataset.inSlot);
     const rect = chip.getBoundingClientRect();
-    
-    // Create ghost element
+    const size = Math.round(Math.min(rect.width || 90, rect.height || 90));
+
+    // Build ghost using the actual puzzle-tile background-image inline styles
+    // so it shows the real piece image, not any background-color of the chip wrapper
+    const tileSpan = chip.querySelector('[style*="background-image"]');
     const ghost = document.createElement('div');
     ghost.id = '__dgh';
-    ghost.className = 'match-chip match-drag-ghost';
-    ghost.innerHTML = chip.innerHTML;
-    ghost.style.cssText = `position:fixed;pointer-events:none;z-index:9999;
-      width:${rect.width}px;left:${rect.left}px;top:${rect.top}px;
-      opacity:0.9;transform:scale(1.1) rotate(-2deg);`;
+    if (tileSpan) {
+      ghost.style.backgroundImage    = tileSpan.style.backgroundImage;
+      ghost.style.backgroundSize     = tileSpan.style.backgroundSize;
+      ghost.style.backgroundPosition = tileSpan.style.backgroundPosition;
+      ghost.style.backgroundRepeat   = 'no-repeat';
+    } else {
+      // fallback: clone contents (classic mode)
+      ghost.innerHTML = chip.innerHTML;
+    }
+    ghost.style.position     = 'fixed';
+    ghost.style.pointerEvents = 'none';
+    ghost.style.zIndex       = '9999';
+    ghost.style.width        = size + 'px';
+    ghost.style.height       = size + 'px';
+    ghost.style.left         = rect.left + 'px';
+    ghost.style.top          = rect.top  + 'px';
+    ghost.style.opacity      = '0.92';
+    ghost.style.transform    = 'scale(1.08)';
+    ghost.style.borderRadius = '0';
+    ghost.style.boxShadow    = '0 8px 32px rgba(0,0,0,0.55)';
     document.body.appendChild(ghost);
     
-    chip.style.opacity = '0.2';
+    // visibility:hidden keeps the chip's grid slot so the pool layout doesn't shift
+    chip.style.visibility = 'hidden';
     
     this.drag = {
       chipIdx,

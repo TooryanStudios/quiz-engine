@@ -4259,7 +4259,8 @@ video.question-media {
   position: absolute;
   inset: 0;
   background: rgba(255, 255, 255, 0.04);
-  border: 2px dashed rgba(255,255,255,0.15);
+  border: 0;
+  border-radius: 0;
 }
 
 .simple-puzzle-dropzone.match-dz-filled {
@@ -4267,8 +4268,9 @@ video.question-media {
 }
 
 .simple-puzzle-dropzone.match-dz-hover {
-  border-color: rgba(70,234,221,0.7);
-  background: rgba(70,234,221,0.06);
+  background: rgba(70,234,221,0.12);
+  box-shadow: inset 0 0 0 2px rgba(70,234,221,0.6);
+  border-radius: 0;
 }
 
 /* Ghost target: hidden – not needed for sliced puzzle */
@@ -4287,14 +4289,24 @@ video.question-media {
   box-shadow: none;
   background: transparent;
   cursor: grab;
+  padding: 0;
 }
 
-/* ── Piece media (background-image tile spans) ── */
+/* Tile span inside a placed slot - must fill the entire slot cell */
+.simple-puzzle-dropzone .match-chip > [style*="background-image"] {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  background-size: 300% 300%; /* overridden by inline style but ensures no 0 fallback */
+}
+
+/* ── Piece media (background-image tile spans) in pool chips ── */
+.simple-puzzle-pool-grid .match-puzzle-chip-tile,
+.simple-puzzle-pool-grid .match-puzzle-slot-tile,
 .simple-puzzle-target-media,
-.simple-puzzle-piece-media,
-/* override old match-puzzle tile fixed sizes in simple puzzle context */
-.simple-puzzle-wrap .match-puzzle-chip-tile,
-.simple-puzzle-wrap .match-puzzle-slot-tile {
+.simple-puzzle-piece-media {
   display: block !important;
   width: var(--spt) !important;
   height: var(--spt) !important;
@@ -4330,14 +4342,22 @@ video.question-media {
   display: block;
   width: var(--spt);
   height: var(--spt);
+  min-height: 0 !important;
   overflow: hidden;
   position: relative;
   cursor: grab;
   border: 0 !important;
   border-radius: 0 !important;
   box-shadow: none;
-  padding: 0;
+  padding: 0 !important;
   background: rgba(255,255,255,0.04);
+  flex-shrink: 0;
+}
+
+/* Pool chip while being dragged - visibility:hidden keeps the grid slot */
+.simple-puzzle-pool-grid > .match-chip[style*="visibility: hidden"],
+.simple-puzzle-pool-grid > .match-chip[style*="visibility:hidden"] {
+  pointer-events: none;
 }
 
 /* ── Host preview ── */

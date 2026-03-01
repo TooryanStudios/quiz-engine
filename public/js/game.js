@@ -5,8 +5,8 @@ import { state, updateState, resetQuestionState} from './state/GameState.js?v=12
 import { Sounds, setMuted, isMuted } from './utils/sounds.js?v=122';
 import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js?v=122';
 import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js?v=122';
-import { QuestionRendererFactory } from './renderers/QuestionRenderer.js?v=126';
-import { resolveGameModeRuntime } from './gameModes/runtime/index.js?v=126';
+import { QuestionRendererFactory } from './renderers/QuestionRenderer.js?v=127';
+import { resolveGameModeRuntime } from './gameModes/runtime/index.js?v=127';
 
 // Fetch and display server build time on home screen
 fetch('/api/build-info')
