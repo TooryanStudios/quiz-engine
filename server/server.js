@@ -1496,25 +1496,19 @@ function sendQuestion(room, opts = {}) {
   const hasGameDuration = Number.isFinite(gameDuration) && gameDuration >= 1;
   const isLikelyMatchPlusArena = modeId === 'match-plus-arena'
     || q?.type === 'match_plus'
+    || q?.type === 'match'
     || typeof room?.miniGameConfig?.defaultMatchPlusMode === 'string'
     || typeof room?.miniGameConfig?.defaultPuzzleImage === 'string';
-  const forcedDuration = (isLikelyMatchPlusArena && hasGameDuration)
+
+  let forcedDuration = (isLikelyMatchPlusArena && hasGameDuration)
     ? Math.floor(gameDuration)
     : null;
-  // DEBUG — remove after timer verified
-  console.log('[match-plus-timer-debug]', JSON.stringify({
-    pin: room.pin,
-    gameMode: room.gameMode,
-    qType: q?.type,
-    modeId,
-    gameDurationSec: room?.miniGameConfig?.gameDurationSec,
-    defaultDuration: room?.miniGameConfig?.defaultDuration,
-    gameDuration,
-    hasGameDuration,
-    isLikelyMatchPlusArena,
-    forcedDuration,
-    miniGameConfigKeys: room?.miniGameConfig ? Object.keys(room.miniGameConfig) : null,
-  }));
+
+  // HARD-OVERRIDE: If it's a puzzle/match, force it to 60s if the current duration is the default 20s or shorter
+  if (isLikelyMatchPlusArena && (!forcedDuration || forcedDuration <= 20)) {
+    forcedDuration = 60;
+  }
+
   if (forcedDuration) {
     q.duration = forcedDuration;
   }

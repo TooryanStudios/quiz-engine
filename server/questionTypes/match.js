@@ -31,7 +31,7 @@ function looksLikeImageUrl(value) {
 
 function resolveMatchPlusImage(room, q) {
   const explicit = typeof q?.matchPlusImage === 'string' ? q.matchPlusImage.trim() : '';
-  if (explicit) return explicit;
+  if (explicit && !explicit.includes('QYan_logo_300x164.jpg')) return explicit;
 
   const gameDefault = typeof room?.miniGameConfig?.defaultPuzzleImage === 'string'
     ? room.miniGameConfig.defaultPuzzleImage.trim()
@@ -43,7 +43,7 @@ function resolveMatchPlusImage(room, q) {
     .map((pair) => (typeof pair?.left === 'string' ? pair.left.trim() : ''))
     .find(looksLikeImageUrl);
 
-  return leftFromPairs || '';
+  return leftFromPairs || '/images/QYan_logo_300x164.jpg';
 }
 
 function resolveMatchPlusInstruction(room, q) {
