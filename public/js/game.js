@@ -6,7 +6,7 @@ import { Sounds, setMuted, isMuted } from './utils/sounds.js?v=122';
 import { safeGet, safeSetDisplay, escapeHtml, hideConnectionChip, OPTION_COLORS, OPTION_ICONS } from './utils/dom.js?v=122';
 import { startClientTimer, stopClientTimer, getRemainingTime } from './utils/timer.js?v=122';
 import { QuestionRendererFactory } from './renderers/QuestionRenderer.js?v=128';
-import { resolveGameModeRuntime } from './gameModes/runtime/index.js?v=128';
+import { resolveGameModeRuntime } from './gameModes/runtime/index.js?v=134';
 
 // Fetch and display server build time on home screen
 fetch('/api/build-info')
@@ -62,6 +62,7 @@ function inferGameModeIdFromQuestion(question) {
   if (question.relay) return 'puzzle-relay';
   if (question.type === 'gear_machine' || question.gearMachine) return 'gear-machine';
   if (question.type === 'creator_studio' || question.creatorStudio) return 'creator-studio';
+  if (question.type === 'match_plus' || question.matchPlusPlugin || question.matchPlusMode || question.matchPlusImage) return 'match-plus-arena';
 
   return null;
 }

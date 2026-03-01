@@ -1491,7 +1491,7 @@ function sendQuestion(room, opts = {}) {
   if (!room || room.state === 'finished') return;
   const countdownExtraMs = opts.countdownExtraMs || 0;
   const q = room.questions[room.questionIndex];
-  const modeId = typeof room?.mode === 'string' ? room.mode.trim().toLowerCase() : '';
+  const modeId = typeof room?.gameMode === 'string' ? room.gameMode.trim().toLowerCase() : '';
   const gameDuration = Number(room?.miniGameConfig?.gameDurationSec ?? room?.miniGameConfig?.defaultDuration);
   const hasGameDuration = Number.isFinite(gameDuration) && gameDuration >= 1;
   const forcedDuration = (modeId === 'match-plus-arena' && hasGameDuration)
