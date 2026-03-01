@@ -1,7 +1,16 @@
 'use strict';
 
 function createGearMachineRuntime() {
-  const GAME_DURATION_SEC = 900;
+  // Duration and gear count are read from room.miniGameConfig — no hardcoded defaults
+  function getGameDurationSec(room) {
+    const d = Number(room?.miniGameConfig?.gameDurationSec ?? room?.miniGameConfig?.defaultDuration);
+    return (Number.isFinite(d) && d >= 1) ? d : 900;
+  }
+
+  function getGearsCount(room) {
+    const n = Number(room?.miniGameConfig?.gearsCount);
+    return (Number.isInteger(n) && n >= 1) ? Math.min(n, 12) : 4;
+  }
 
   function getConnectedPlayers(room) {
     return Array.from(room.players.values()).filter((player) => !player.disconnected);
@@ -20,17 +29,14 @@ function createGearMachineRuntime() {
     return normalizeAngle(slotIndex * normalizedStep);
   }
 
-  function createGearTemplate() {
-    const template = [
-      { id: 'g1', size: 'large', step: 30 },
-      { id: 'g2', size: 'small', step: 30 },
-      { id: 'g3', size: 'large', step: 30 },
-      { id: 'g4', size: 'small', step: 30 },
-    ];
-
-    return template.map((gear) => ({
-      ...gear,
-      targetAngle: pickRandomTargetAngle(gear.step),
+  function createGearTemplate(count) {
+    const n = (Number.isInteger(count) && count >= 1) ? Math.min(count, 12) : 4;
+    const sizePattern = ['large', 'small'];
+    return Array.from({ length: n }, (_, i) => ({
+      id: `g${i + 1}`,
+      size: sizePattern[i % 2],
+      step: 30,
+      targetAngle: pickRandomTargetAngle(30),
     }));
   }
 
@@ -38,7 +44,7 @@ function createGearMachineRuntime() {
     room.gearMachine = {
       startedAt: Date.now(),
       phase: 'play',
-      gears: createGearTemplate(),
+      gears: createGearTemplate(getGearsCount(room)),
       winnerId: null,
       winnerNickname: null,
       winnerTimeMs: null,
@@ -75,7 +81,7 @@ function createGearMachineRuntime() {
     io.to(room.pin).emit('game:question', {
       questionIndex: 0,
       total: 1,
-      duration: GAME_DURATION_SEC,
+      duration: getGameDurationSec(room),
       question: questionPayload,
       players: getConnectedPlayers(room).map((player) => ({
         id: player.id,
@@ -128,7 +134,7 @@ function createGearMachineRuntime() {
 
       room.questionIndex = 0;
       room.questions = [{ type: 'gear_machine', text: 'Gear Machine' }];
-      room.questionDuration = GAME_DURATION_SEC;
+      room.questionDuration = getGameDurationSec(room);
       room.questionStartTime = Date.now();
       room.answerOpenAt = Date.now();
       room.paused = false;

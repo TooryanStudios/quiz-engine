@@ -1,9 +1,14 @@
 'use strict';
 
 function createCreatorStudioRuntime() {
-  const DEFAULT_CREATE_DURATION_SEC = 45;
   const RATING_DURATION_SEC = 20;
   const RESULT_DURATION_SEC = 4;
+
+  // Read create-phase duration from admin config — no hardcoded defaults
+  function getDefaultCreateDurationSec(room) {
+    const d = Number(room?.miniGameConfig?.gameDurationSec ?? room?.miniGameConfig?.defaultDuration);
+    return (Number.isFinite(d) && d >= 1) ? d : 45;
+  }
 
   function getConnectedPlayers(room) {
     return Array.from(room.players.values()).filter((player) => !player.disconnected);
@@ -61,7 +66,8 @@ function createCreatorStudioRuntime() {
       }));
   }
 
-  function buildPrompts(quizData) {
+  function buildPrompts(quizData, defaultDurationSec) {
+    const fallbackSec = (Number.isFinite(defaultDurationSec) && defaultDurationSec >= 1) ? defaultDurationSec : 45;
     const source = Array.isArray(quizData?.questions) ? quizData.questions : [];
     const prompts = [];
 
@@ -71,7 +77,7 @@ function createCreatorStudioRuntime() {
 
       const duration = Number.isFinite(question?.duration)
         ? clamp(Number(question.duration), 15, 120)
-        : DEFAULT_CREATE_DURATION_SEC;
+        : fallbackSec;
 
       if (question?.creatorTask !== 'draw') return;
 
@@ -195,7 +201,7 @@ function createCreatorStudioRuntime() {
       },
     };
 
-    const duration = Number(options.durationSec || DEFAULT_CREATE_DURATION_SEC);
+    const duration = Number(options.durationSec) || getDefaultCreateDurationSec(room);
 
     room.questionIndex = studio.roundIndex;
     room.questionDuration = duration;
@@ -355,13 +361,12 @@ function createCreatorStudioRuntime() {
     studio.eligibleRaters = 0;
     studio.averageRating = 0;
 
-    emitStudioQuestion(room, io, 'create', {
-      durationSec: Number(prompt.createDurationSec || DEFAULT_CREATE_DURATION_SEC),
-    });
+    const createSec = Number(prompt.createDurationSec) || getDefaultCreateDurationSec(room);
+    emitStudioQuestion(room, io, 'create', { durationSec: createSec });
 
     studio.phaseTimer = setTimeout(() => {
       beginRatingPhase(room, io);
-    }, Number(prompt.createDurationSec || DEFAULT_CREATE_DURATION_SEC) * 1000);
+    }, createSec * 1000);
   }
 
   return {
@@ -377,7 +382,7 @@ function createCreatorStudioRuntime() {
         return false;
       }
 
-      const prompts = buildPrompts(quizData);
+      const prompts = buildPrompts(quizData, getDefaultCreateDurationSec(room));
       if (!prompts.length) {
         socket.emit('room:error', {
           message: 'Creator Studio يحتاج أسئلة رسم مخصصة (creatorTask=draw). لا توجد جولات قابلة للتشغيل.',
@@ -405,7 +410,7 @@ function createCreatorStudioRuntime() {
 
       room.questionIndex = 0;
       room.questions = prompts.map(() => ({ type: 'creator_studio', text: 'Creator Studio' }));
-      room.questionDuration = DEFAULT_CREATE_DURATION_SEC;
+      room.questionDuration = getDefaultCreateDurationSec(room);
       room.questionStartTime = Date.now();
       room.answerOpenAt = Date.now();
       room.paused = false;

@@ -2,16 +2,34 @@
 
 function createXoDuelRuntime() {
   const ROUND_RESULT_DELAY_MS = 3600;
-  const WIN_LINES = [
-    [0, 1, 2],
-    [3, 4, 5],
-    [6, 7, 8],
-    [0, 3, 6],
-    [1, 4, 7],
-    [2, 5, 8],
-    [0, 4, 8],
-    [2, 4, 6],
-  ];
+
+  // Generate all winning lines for a board of given size and win length
+  function generateWinLines(size, winLength) {
+    const sz = Math.max(3, Math.min(Number.isInteger(size) ? size : 3, 8));
+    const wl = Math.max(3, Math.min(Number.isInteger(winLength) ? winLength : 3, sz));
+    const lines = [];
+    for (let r = 0; r < sz; r++) {
+      for (let c = 0; c <= sz - wl; c++) {
+        lines.push(Array.from({ length: wl }, (_, i) => r * sz + c + i));
+      }
+    }
+    for (let c = 0; c < sz; c++) {
+      for (let r = 0; r <= sz - wl; r++) {
+        lines.push(Array.from({ length: wl }, (_, i) => (r + i) * sz + c));
+      }
+    }
+    for (let r = 0; r <= sz - wl; r++) {
+      for (let c = 0; c <= sz - wl; c++) {
+        lines.push(Array.from({ length: wl }, (_, i) => (r + i) * sz + c + i));
+      }
+    }
+    for (let r = 0; r <= sz - wl; r++) {
+      for (let c = wl - 1; c < sz; c++) {
+        lines.push(Array.from({ length: wl }, (_, i) => (r + i) * sz + c - i));
+      }
+    }
+    return lines;
+  }
 
   function getConnectedPlayers(room) {
     return Array.from(room.players.values()).filter((player) => !player.disconnected);
@@ -104,9 +122,15 @@ function createXoDuelRuntime() {
     const duelPlayers = getDuelPlayers(room);
     const p1 = duelPlayers[0] || null;
     const p2 = duelPlayers[1] || null;
+    const boardSize = Math.max(3, Math.min(8, Number(room?.miniGameConfig?.boardSize) || 3));
+    const winLength = Math.max(3, Math.min(boardSize, Number(room?.miniGameConfig?.winLength) || 3));
+    const winLines = generateWinLines(boardSize, winLength);
 
     return {
-      board: Array(9).fill(null),
+      board: Array(boardSize * boardSize).fill(null),
+      boardSize,
+      winLength,
+      winLines,
       scoreboard: {},
       duelPlayerIds: [p1?.id, p2?.id].filter(Boolean),
       players: [
@@ -153,10 +177,11 @@ function createXoDuelRuntime() {
     });
   }
 
-  function findWinner(board) {
-    for (const [a, b, c] of WIN_LINES) {
-      if (board[a] && board[a] === board[b] && board[a] === board[c]) {
-        return { symbol: board[a], line: [a, b, c] };
+  function findWinner(board, winLines) {
+    for (const line of winLines) {
+      const [first, ...rest] = line;
+      if (board[first] && rest.every((i) => board[i] === board[first])) {
+        return { symbol: board[first], line };
       }
     }
     return null;
@@ -189,6 +214,7 @@ function createXoDuelRuntime() {
       xo: {
         phase,
         board: [...room.xo.board],
+        boardSize: room.xo.boardSize || 3,
         players: payloadPlayers,
         waitingPlayers,
         needsPlayers: !!room.xo.needsPlayers,
@@ -327,7 +353,7 @@ function createXoDuelRuntime() {
 
     room.xo.duelPlayerIds = nextDuelIds;
     decrementCooldowns(room);
-    room.xo.board = Array(9).fill(null);
+    room.xo.board = Array((room.xo.boardSize || 3) * (room.xo.boardSize || 3)).fill(null);
     room.xo.activeTurnIndex = pickRandomTurnIndex(2);
     room.xo.turnSequence = 1;
     room.xo.winnerId = null;
@@ -442,7 +468,8 @@ function createXoDuelRuntime() {
       }
 
       const cellIndex = Number(answer?.cellIndex);
-      if (!Number.isInteger(cellIndex) || cellIndex < 0 || cellIndex > 8) {
+      const totalCells = (room.xo.boardSize || 3) * (room.xo.boardSize || 3);
+      if (!Number.isInteger(cellIndex) || cellIndex < 0 || cellIndex >= totalCells) {
         socket.emit('room:error', {
           message: 'اختيار الخانة غير صالح.',
           code: 'XO_DUEL_INVALID_CELL',
@@ -462,7 +489,7 @@ function createXoDuelRuntime() {
       room.xo.board[cellIndex] = contender.symbol;
       socket.emit('answer:received', { answer });
 
-      const winner = findWinner(room.xo.board);
+      const winner = findWinner(room.xo.board, room.xo.winLines);
       if (winner) {
         const rival = (room.xo.players || []).find((p) => p.id !== contender.id) || null;
         room.xo.winnerId = contender.id;

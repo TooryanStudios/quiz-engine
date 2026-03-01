@@ -14,6 +14,9 @@ function svgSymbol(symbol, size = '2rem') {
 
 function renderXoBoardHTML(board, interactive, activeSymbol, options = {}) {
   const winningLine = Array.isArray(options.winningLine) ? new Set(options.winningLine) : null;
+  const boardCols = (Number(options.boardSize) >= 3) ? Number(options.boardSize) : 3;
+  const cellMinPx = boardCols <= 3 ? '76px' : boardCols <= 4 ? '58px' : '46px';
+  const maxBoardW = boardCols <= 3 ? '330px' : boardCols <= 4 ? '320px' : '380px';
   const cells = board.map((cell, index) => {
     const disabled = !interactive || !!cell;
     const isWinningCell = !!winningLine && winningLine.has(index);
@@ -49,7 +52,7 @@ function renderXoBoardHTML(board, interactive, activeSymbol, options = {}) {
     `;
   }).join('');
 
-  return `<div class="xo-board-wrap"><div style="display:grid;grid-template-columns:repeat(3,minmax(76px,1fr));gap:0.55rem;max-width:330px;margin:0.35rem auto 0;">${cells}</div></div>`;
+  return `<div class="xo-board-wrap"><div style="display:grid;grid-template-columns:repeat(${boardCols},minmax(${cellMinPx},1fr));gap:0.55rem;max-width:${maxBoardW};margin:0.35rem auto 0;">${cells}</div></div>`;
 }
 
 let lastTurnOverlayKey = '';
@@ -497,7 +500,7 @@ function renderSpectatorBoard({ data }) {
   const activeSymbol = data?.question?.xo?.activeSymbol || 'X';
   const hostGrid = document.getElementById('host-options-grid');
   if (hostGrid) {
-    hostGrid.innerHTML = `${renderXoBoardHTML(board, false, activeSymbol, { winningLine: xo.winningLine })}${buildRoleLegendHTML(xo, xo.activePlayerId || null, null)}`;
+    hostGrid.innerHTML = `${renderXoBoardHTML(board, false, activeSymbol, { winningLine: xo.winningLine, boardSize: xo.boardSize })}${buildRoleLegendHTML(xo, xo.activePlayerId || null, null)}`;
   }
 
   const hostAnswerCounter = document.getElementById('host-answer-counter');
@@ -523,7 +526,7 @@ function renderPlayerBoard({ data, socket, state }) {
   const playerGrid = document.getElementById('player-options-grid');
   if (!playerGrid) return;
 
-  playerGrid.innerHTML = `${renderXoBoardHTML(board, isYourTurn, activeSymbol, { winningLine: xo.winningLine })}${buildRoleLegendHTML(xo, activePlayerId || null, socket?.id)}`;
+  playerGrid.innerHTML = `${renderXoBoardHTML(board, isYourTurn, activeSymbol, { winningLine: xo.winningLine, boardSize: xo.boardSize })}${buildRoleLegendHTML(xo, activePlayerId || null, socket?.id)}`;
 
   const titleEl = document.getElementById('player-question-text');
   if (titleEl) {
@@ -586,7 +589,7 @@ function renderRoundResultPhase({ data, state, socket, isHostOnly }) {
   if (isHostOnly) {
     const hostGrid = document.getElementById('host-options-grid');
     if (hostGrid) {
-      hostGrid.innerHTML = `${renderXoBoardHTML(board, false, xo.activeSymbol || 'X', { winningLine: xo.winningLine || xo.result?.winningLine })}${buildRoleLegendHTML(xo, winnerId || null)}`;
+      hostGrid.innerHTML = `${renderXoBoardHTML(board, false, xo.activeSymbol || 'X', { winningLine: xo.winningLine || xo.result?.winningLine, boardSize: xo.boardSize })}${buildRoleLegendHTML(xo, winnerId || null)}`;
     }
     const hostAnswerCounter = document.getElementById('host-answer-counter');
     if (hostAnswerCounter) {
@@ -609,7 +612,7 @@ function renderRoundResultPhase({ data, state, socket, isHostOnly }) {
 
   const playerGrid = document.getElementById('player-options-grid');
   if (playerGrid) {
-    playerGrid.innerHTML = `${renderXoBoardHTML(board, false, xo.activeSymbol || 'X', { winningLine: xo.winningLine || xo.result?.winningLine })}${buildRoleLegendHTML(xo, winnerId || null)}`;
+    playerGrid.innerHTML = `${renderXoBoardHTML(board, false, xo.activeSymbol || 'X', { winningLine: xo.winningLine || xo.result?.winningLine, boardSize: xo.boardSize })}${buildRoleLegendHTML(xo, winnerId || null)}`;
   }
 
   const answerMsg = document.getElementById('player-answered-msg');
