@@ -1501,6 +1501,20 @@ function sendQuestion(room, opts = {}) {
   const forcedDuration = (isLikelyMatchPlusArena && hasGameDuration)
     ? Math.floor(gameDuration)
     : null;
+  // DEBUG — remove after timer verified
+  console.log('[match-plus-timer-debug]', JSON.stringify({
+    pin: room.pin,
+    gameMode: room.gameMode,
+    qType: q?.type,
+    modeId,
+    gameDurationSec: room?.miniGameConfig?.gameDurationSec,
+    defaultDuration: room?.miniGameConfig?.defaultDuration,
+    gameDuration,
+    hasGameDuration,
+    isLikelyMatchPlusArena,
+    forcedDuration,
+    miniGameConfigKeys: room?.miniGameConfig ? Object.keys(room.miniGameConfig) : null,
+  }));
   if (forcedDuration) {
     q.duration = forcedDuration;
   }
@@ -2131,6 +2145,13 @@ io.on('connection', (socket) => {
 
     // Ensure room game mode/runtime is derived from quiz data when URL did not include gameMode
     const quizGameModeId = typeof quizData?.gameModeId === 'string' ? quizData.gameModeId.trim() : '';
+    // DEBUG — remove after timer verified
+    console.log('[match-plus-gamestart-debug]', JSON.stringify({
+      pin: room.pin,
+      roomGameModeBeforeInfer: room.gameMode,
+      quizGameModeId,
+      miniGameConfig: quizData?.miniGameConfig || null,
+    }));
     if ((!room.gameMode || !String(room.gameMode).trim()) && quizGameModeId) {
       room.gameMode = quizGameModeId;
       room.gameModeRuntime = createGameModeRuntime(quizGameModeId);
