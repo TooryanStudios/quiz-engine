@@ -1853,6 +1853,47 @@ export function QuizEditorPage() {
                 </p>
               </div>
 
+              {/* ─── Universal Game Duration Config ─── */}
+              {(() => {
+                const DURATION_POLICIES: Record<string, { type: string; defaultSec: number; min: number; max: number; label: string }> = {
+                  'match-plus-arena': { type: 'admin', defaultSec: 120, min: 30, max: 600, label: 'Total game duration (puzzle completion time)' },
+                  'puzzle-relay':     { type: 'per-round', defaultSec: 30, min: 10, max: 120, label: 'Per-round duration' },
+                  'xo-duel':          { type: 'self', defaultSec: 600, min: 60, max: 1800, label: 'Max game session time (game manages its own rounds)' },
+                  'gear-machine':     { type: 'self', defaultSec: 900, min: 120, max: 3600, label: 'Max game session time' },
+                  'creator-studio':   { type: 'self', defaultSec: 45, min: 15, max: 120, label: 'Creation phase duration' },
+                }
+                const policy = DURATION_POLICIES[gameModeId] || { type: 'per-round', defaultSec: 30, min: 5, max: 300, label: 'Duration per round' }
+                const selfManaged = policy.type === 'self'
+                return (
+                  <div style={{ padding: '0.75rem 0.85rem', borderRadius: '10px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', marginBottom: '0.5rem' }}>
+                    <div style={{ display: 'grid', gap: '0.65rem', gridTemplateColumns: '1fr 1fr', alignItems: 'end' }}>
+                      <div>
+                        <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>
+                          ⏱ Game Duration (sec)
+                        </label>
+                        <input
+                          type="number"
+                          min={policy.min}
+                          max={policy.max}
+                          step={5}
+                          value={Number(miniGameConfig.gameDurationSec || policy.defaultSec)}
+                          onChange={(e) => updateMiniGameConfig({ gameDurationSec: Number(e.target.value), defaultDuration: Number(e.target.value) })}
+                          placeholder={String(policy.defaultSec)}
+                          style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-deep)', color: 'var(--text)' }}
+                        />
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.4, paddingBottom: '0.3rem' }}>
+                        <strong>{policy.label}</strong><br />
+                        {selfManaged
+                          ? 'This game manages its own timer. Duration is a max cap.'
+                          : `Default: ${policy.defaultSec}s · Range: ${policy.min}–${policy.max}s`
+                        }
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
+
               {gameModeId === 'match-plus-arena' && (
                 <div style={{ display: 'grid', gap: '0.65rem', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
                   <div>
@@ -1881,23 +1922,6 @@ export function QuizEditorPage() {
                       <option value="3">3 × 3</option>
                       <option value="4">4 × 4</option>
                     </select>
-                  </div>
-
-                  <div>
-                    <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>Game Duration (sec)</label>
-                    <input
-                      type="number"
-                      min={10}
-                      max={600}
-                      step={5}
-                      value={Number(miniGameConfig.gameDurationSec || miniGameConfig.defaultDuration || 60)}
-                      onChange={(e) => updateMiniGameConfig({ gameDurationSec: Number(e.target.value), defaultDuration: Number(e.target.value) })}
-                      placeholder="60"
-                      style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', color: 'var(--text)' }}
-                    />
-                    <p style={{ margin: '0.25rem 0 0', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                      مدة اللعبة الكاملة — ليست زمن سؤال كويز
-                    </p>
                   </div>
 
                   <div style={{ gridColumn: '1 / -1' }}>

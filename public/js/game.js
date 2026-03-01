@@ -3713,32 +3713,6 @@ socket.on('game:final_question', () => {
 /** BOTH: New question */
 socket.on('game:question', (data) => {
   try {
-    // ═══════════════════════════════════════════════════════════════
-    // DEBUG OVERLAY — shows exact duration values on-screen
-    // ═══════════════════════════════════════════════════════════════
-    (function showTimerDebug() {
-      let dbg = document.getElementById('__timer_debug_overlay');
-      if (!dbg) {
-        dbg = document.createElement('div');
-        dbg.id = '__timer_debug_overlay';
-        dbg.style.cssText = 'position:fixed;top:10px;left:10px;z-index:999999;background:red;color:white;padding:16px 24px;font-size:20px;font-weight:bold;border-radius:12px;font-family:monospace;max-width:90vw;word-break:break-all;box-shadow:0 4px 20px rgba(0,0,0,0.5);';
-        document.body.appendChild(dbg);
-      }
-      const q = data?.question || {};
-      dbg.innerHTML = [
-        '⏱ TIMER DEBUG',
-        `data.duration = <b>${data?.duration}</b>`,
-        `q.duration = <b>${q?.duration}</b>`,
-        `q.type = <b>${q?.type}</b>`,
-        `q.matchPlusMode = <b>${q?.matchPlusMode || 'N/A'}</b>`,
-        `q.matchPlusImage = <b>${(q?.matchPlusImage || 'NONE').substring(0, 60)}</b>`,
-        `questionIndex = <b>${data?.questionIndex}</b>`,
-        `total = <b>${data?.total}</b>`,
-      ].join('<br>');
-      setTimeout(() => { if (dbg.parentNode) dbg.remove(); }, 15000);
-    })();
-    // ═══════════════════════════════════════════════════════════════
-
     let handledByMode = callGameModeHook('onGameQuestion', {
       data,
       state,

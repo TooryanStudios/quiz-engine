@@ -11,6 +11,7 @@ const config = require('../config');
 const { admin, getFirestore } = require('./firebaseAdmin');
 const { createQuestionTypeHandlers } = require('./questionTypes');
 const { createGameModeRuntime } = require('./gameModes/runtime');
+const { resolveGameDuration } = require('./gameModes/durationPolicy');
 
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
 const stripe = stripeSecretKey ? require('stripe')(stripeSecretKey) : null;
@@ -1491,36 +1492,14 @@ function sendQuestion(room, opts = {}) {
   if (!room || room.state === 'finished') return;
   const countdownExtraMs = opts.countdownExtraMs || 0;
   const q = room.questions[room.questionIndex];
-  const modeId = typeof room?.gameMode === 'string' ? room.gameMode.trim().toLowerCase() : '';
-  const gameDuration = Number(room?.miniGameConfig?.gameDurationSec ?? room?.miniGameConfig?.defaultDuration);
-  const hasGameDuration = Number.isFinite(gameDuration) && gameDuration >= 1;
-  const isLikelyMatchPlusArena = modeId === 'match-plus-arena'
-    || q?.type === 'match_plus'
-    || q?.type === 'match'
-    || typeof room?.miniGameConfig?.defaultMatchPlusMode === 'string'
-    || typeof room?.miniGameConfig?.defaultPuzzleImage === 'string';
 
-  // 1. Prioritize ANY duration from room settings (Game Duration in admin)
-  let forcedDuration = (hasGameDuration) ? Math.floor(gameDuration) : null;
-
-  // 2. Match Plus games: ignore the default question duration (20s) — it's a quiz default, not a game config.
-  //    Only respect q.duration if it looks intentionally set (not 20s platform default).
-  if (isLikelyMatchPlusArena && !forcedDuration) {
-    const questionDur = Number(q.duration);
-    if (questionDur > 0 && questionDur !== config.GAME.QUESTION_DURATION_SEC && questionDur !== 20) {
-      forcedDuration = questionDur;
-    } else {
-      forcedDuration = 120; // Sensible fallback for puzzle games when admin hasn't saved a game duration yet
-    }
-  }
-
-  if (forcedDuration) {
-    q.duration = forcedDuration;
+  // ─── Centralised duration resolution ───
+  const { durationSec: resolvedDuration, source: durationSource } = resolveGameDuration(room, q, config.GAME.QUESTION_DURATION_SEC);
+  if (resolvedDuration >= 1) {
+    q.duration = resolvedDuration;
   }
   const baseDuration = q.duration || config.GAME.QUESTION_DURATION_SEC;
-
-  // DEBUG — log duration for verification
-  console.log(`[Timer Debug] Room ${room.pin} | Question ${room.questionIndex + 1}/${room.questions.length} | Duration: ${baseDuration}s | isMatchPlus: ${isLikelyMatchPlusArena}`);
+  console.log(`[Duration] Room ${room.pin} | Q${room.questionIndex + 1}/${room.questions.length} | ${baseDuration}s (source: ${durationSource})`);
 
   const challengeSettings = room.challengeSettings || CHALLENGE_PRESETS.classic;
   const typeHandler = getQuestionTypeHandler(q.type);
@@ -1556,20 +1535,6 @@ function sendQuestion(room, opts = {}) {
 
     const dispatchDefault = () => {
       const effectiveDuration = resolveEffectiveDuration();
-      // DEBUG — trace every value in the duration chain
-      console.log('[TIMER FULL DEBUG]', JSON.stringify({
-        pin: room.pin,
-        roomGameMode: room.gameMode,
-        qType: q?.type,
-        qDuration: q?.duration,
-        baseDuration,
-        forcedDuration,
-        'questionPayload.duration': questionPayload.duration,
-        effectiveDuration,
-        'miniGameConfig.gameDurationSec': room?.miniGameConfig?.gameDurationSec,
-        'miniGameConfig.defaultDuration': room?.miniGameConfig?.defaultDuration,
-        miniGameConfigKeys: room?.miniGameConfig ? Object.keys(room.miniGameConfig) : null,
-      }));
       io.to(room.pin).emit('game:question', {
         questionIndex: room.questionIndex,
         total: room.questions.length,
@@ -2162,13 +2127,6 @@ io.on('connection', (socket) => {
 
     // Ensure room game mode/runtime is derived from quiz data when URL did not include gameMode
     const quizGameModeId = typeof quizData?.gameModeId === 'string' ? quizData.gameModeId.trim() : '';
-    // DEBUG — remove after timer verified
-    console.log('[match-plus-gamestart-debug]', JSON.stringify({
-      pin: room.pin,
-      roomGameModeBeforeInfer: room.gameMode,
-      quizGameModeId,
-      miniGameConfig: quizData?.miniGameConfig || null,
-    }));
     if ((!room.gameMode || !String(room.gameMode).trim()) && quizGameModeId) {
       room.gameMode = quizGameModeId;
       room.gameModeRuntime = createGameModeRuntime(quizGameModeId);
