@@ -4232,7 +4232,7 @@ video.question-media {
   --spt: 90px; /* tile size */
   --sgap: 3px; /* grid line width */
   display: grid;
-  grid-template-columns: calc(var(--spt) * 3 + var(--sgap) * 2) 1fr;
+  grid-template-columns: calc(var(--spt) * 3) 1fr; /* updated by inline style for dynamic grid sizes */
   gap: 20px;
   align-items: start;
   width: 100%;
@@ -4245,9 +4245,9 @@ video.question-media {
   display: grid;
   grid-template-columns: repeat(3, var(--spt));
   grid-template-rows: repeat(3, var(--spt));
-  gap: var(--sgap);
-  background: rgba(255, 255, 255, 0.18);
-  padding: var(--sgap);
+  gap: 0; /* no gaps — seamless image when all pieces placed */
+  background: transparent;
+  padding: 0;
   box-sizing: content-box;
 }
 
@@ -4270,6 +4270,11 @@ video.question-media {
 
 .simple-puzzle-dropzone.match-dz-filled {
   border: 0;
+}
+
+/* empty slot: faint outline behind any placed piece */
+.simple-puzzle-dropzone.match-dz-empty {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 
 .simple-puzzle-dropzone.match-dz-hover {
@@ -4339,9 +4344,9 @@ video.question-media {
 .simple-puzzle-pool-grid {
   display: grid;
   grid-template-columns: repeat(3, var(--spt));
-  gap: var(--sgap);
-  background: rgba(255, 255, 255, 0.18);
-  padding: var(--sgap);
+  gap: 2px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px;
   box-sizing: content-box;
 }
 
@@ -4365,6 +4370,15 @@ video.question-media {
 /* Pool chip while being dragged - visibility:hidden keeps the grid slot */
 .simple-puzzle-pool-grid > .match-chip[style*="visibility: hidden"],
 .simple-puzzle-pool-grid > .match-chip[style*="visibility:hidden"] {
+  pointer-events: none;
+}
+
+/* Placeholder occupies grid slot for already-placed pieces (no reflow) */
+.simple-puzzle-pool-grid > .simple-puzzle-piece-empty {
+  display: block;
+  width: var(--spt);
+  height: var(--spt);
+  background: transparent;
   pointer-events: none;
 }
 

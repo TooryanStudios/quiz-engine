@@ -32,16 +32,35 @@ function transformLegacyQuestionToMatchPlus(questionPayload, room) {
   const configuredMode = normalizeMode(room?.miniGameConfig?.defaultMatchPlusMode || room?.matchPlusMode || questionPayload.matchPlusMode);
   const configuredGrid = Number(room?.miniGameConfig?.defaultPuzzleGridSize || questionPayload.matchPlusGridSize || 3);
   const safeGrid = Number.isInteger(configuredGrid) ? Math.max(2, Math.min(4, configuredGrid)) : 3;
-  const configuredImage = typeof room?.miniGameConfig?.defaultPuzzleImage === 'string' && room.miniGameConfig.defaultPuzzleImage.trim()
+  // Salvage puzzle image from image-image pairs when matchPlusImage is not set
+  const _salvagedImage = (() => {
+    const pairsArr = Array.isArray(questionPayload.pairs) ? questionPayload.pairs : [];
+    for (const p of pairsArr) {
+      const l = typeof p?.left === 'string' ? p.left.trim() : '';
+      if (l && (l.startsWith('http') || l.startsWith('/') || l.startsWith('data:image') || l.startsWith('blob:'))) {
+        return l;
+      }
+    }
+    return null;
+  })();
+
+  const configuredImage = (typeof room?.miniGameConfig?.defaultPuzzleImage === 'string' && room.miniGameConfig.defaultPuzzleImage.trim())
     ? room.miniGameConfig.defaultPuzzleImage.trim()
-    : (typeof questionPayload.matchPlusImage === 'string' && questionPayload.matchPlusImage.trim()
+    : ((typeof questionPayload.matchPlusImage === 'string' && questionPayload.matchPlusImage.trim())
       ? questionPayload.matchPlusImage.trim()
-      : '/images/QYan_logo_300x164.jpg');
+      : (_salvagedImage || '/images/QYan_logo_300x164.jpg'));
+
+  // Apply optional global duration override from miniGameConfig
+  const configuredDuration = (() => {
+    const d = Number(room?.miniGameConfig?.defaultDuration);
+    return (Number.isInteger(d) && d >= 10) ? d : 0;
+  })();
 
   if (questionPayload.type === 'match_plus') {
     questionPayload.matchPlusMode = configuredMode;
     questionPayload.matchPlusGridSize = safeGrid;
     questionPayload.matchPlusImage = configuredImage;
+    if (configuredDuration) questionPayload.duration = configuredDuration;
     return questionPayload;
   }
 
@@ -86,6 +105,7 @@ function transformLegacyQuestionToMatchPlus(questionPayload, room) {
     matchPlusMode: configuredMode,
     matchPlusGridSize: safeGrid,
     matchPlusImage: configuredImage,
+    ...(configuredDuration ? { duration: configuredDuration } : {}),
     correctIndex: undefined,
     correctIndices: undefined,
     options: undefined,

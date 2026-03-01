@@ -202,10 +202,12 @@ export class MatchRenderer extends BaseRenderer {
     if (!container) return;
 
     const placed = new Set(state.matchConnections.filter(v => v !== -1));
+    const grid = this.getPuzzleGridSize();
+    const boardPx = `calc(var(--spt) * ${grid})`;
 
     container.innerHTML = `
-      <div class="simple-puzzle-wrap">
-        <div class="simple-puzzle-board">
+      <div class="simple-puzzle-wrap" style="grid-template-columns: ${boardPx} 1fr;">
+        <div class="simple-puzzle-board" style="grid-template-columns: repeat(${grid}, var(--spt)); grid-template-rows: repeat(${grid}, var(--spt));">
           ${lefts.map((leftValue, slotIndex) => {
             const pieceIndex = state.matchConnections[slotIndex];
             const filled = pieceIndex !== -1;
@@ -231,9 +233,9 @@ export class MatchRenderer extends BaseRenderer {
 
         <div class="simple-puzzle-pool">
           <span class="simple-puzzle-title">اسحب القطع إلى أماكنها الصحيحة</span>
-          <div class="simple-puzzle-pool-grid">
+          <div class="simple-puzzle-pool-grid" style="grid-template-columns: repeat(${grid}, var(--spt));">
             ${rights.map((value, pieceIndex) => {
-              if (placed.has(pieceIndex)) return '';
+              if (placed.has(pieceIndex)) return `<span class="simple-puzzle-piece-empty"></span>`;
               return `<span class="match-chip simple-puzzle-piece in-pool"
                            data-chip-idx="${pieceIndex}"
                            data-in-slot="-1">${this.renderPuzzleTile(value, 'simple-puzzle-piece-media', false)}</span>`;
