@@ -1879,20 +1879,30 @@ export function QuizEditorPage() {
                   </div>
 
                   <div>
-                    <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>Question Duration (sec)</label>
+                    <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>Game Duration (sec)</label>
                     <input
                       type="number"
                       min={10}
-                      max={300}
+                      max={600}
                       step={5}
-                      value={Number(miniGameConfig.defaultDuration || 60)}
-                      onChange={(e) => updateMiniGameConfig({ defaultDuration: Number(e.target.value) })}
+                      value={Number(miniGameConfig.gameDurationSec || miniGameConfig.defaultDuration || 60)}
+                      onChange={(e) => updateMiniGameConfig({ gameDurationSec: Number(e.target.value), defaultDuration: Number(e.target.value) })}
                       placeholder="60"
                       style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', color: 'var(--text)' }}
                     />
                     <p style={{ margin: '0.25rem 0 0', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                      مدة كل سؤال — يُطبَّق على الجميع
+                      مدة اللعبة الكاملة — ليست زمن سؤال كويز
                     </p>
+                  </div>
+
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>Game Instruction</label>
+                    <input
+                      value={String(miniGameConfig.gameInstruction || '')}
+                      onChange={(e) => updateMiniGameConfig({ gameInstruction: e.target.value })}
+                      placeholder="Arrange the pieces to complete the image"
+                      style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', color: 'var(--text)' }}
+                    />
                   </div>
 
                   <div style={{ gridColumn: '1 / -1' }}>

@@ -46,6 +46,18 @@ function resolveMatchPlusImage(room, q) {
   return leftFromPairs || '';
 }
 
+function resolveMatchPlusInstruction(room, q) {
+  const gameInstruction = typeof room?.miniGameConfig?.gameInstruction === 'string'
+    ? room.miniGameConfig.gameInstruction.trim()
+    : '';
+  if (gameInstruction) return gameInstruction;
+
+  const questionInstruction = typeof q?.matchPlusInstruction === 'string'
+    ? q.matchPlusInstruction.trim()
+    : '';
+  return questionInstruction || '';
+}
+
 module.exports = function createMatchHandler({ calculatePartialScore }) {
   return {
     buildQuestionPayload: ({ room, q }) => {
@@ -81,6 +93,7 @@ module.exports = function createMatchHandler({ calculatePartialScore }) {
           matchPlusMode: mode,
           matchPlusImage: resolveMatchPlusImage(room, q),
           matchPlusGridSize: gridSize,
+          matchPlusInstruction: resolveMatchPlusInstruction(room, q),
         } : {}),
       };
     },
@@ -113,6 +126,7 @@ module.exports = function createMatchHandler({ calculatePartialScore }) {
         matchPlusMode: normalizeMatchPlusMode(q.matchPlusMode),
         matchPlusImage: resolveMatchPlusImage(null, q),
         matchPlusGridSize: normalizeMatchPlusGridSize(q.matchPlusGridSize),
+        matchPlusInstruction: resolveMatchPlusInstruction(null, q),
       } : {}),
     }),
   };

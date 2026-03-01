@@ -1492,7 +1492,7 @@ function sendQuestion(room, opts = {}) {
   const countdownExtraMs = opts.countdownExtraMs || 0;
   const q = room.questions[room.questionIndex];
   const modeId = typeof room?.mode === 'string' ? room.mode.trim().toLowerCase() : '';
-  const gameDuration = Number(room?.miniGameConfig?.defaultDuration);
+  const gameDuration = Number(room?.miniGameConfig?.gameDurationSec ?? room?.miniGameConfig?.defaultDuration);
   const hasGameDuration = Number.isFinite(gameDuration) && gameDuration >= 1;
   const forcedDuration = (modeId === 'match-plus-arena' && hasGameDuration)
     ? Math.floor(gameDuration)

@@ -7,7 +7,24 @@ const MATCH_PLUS_MODES = [
 ];
 
 const FALLBACK_PUZZLE_IMAGE = '/images/QYan_logo_300x164.jpg';
-const MATCH_PLUS_ARENA_BUILD_MARKER = 'Match+ Build: 2026-03-01 • image+timer-hardfix • v132';
+const MATCH_PLUS_ARENA_BUILD_MARKER = 'Match+ Build: 2026-03-01 • game-mode-segregation • v133';
+
+function toggleQuizChrome(hidden) {
+  if (typeof document === 'undefined') return;
+
+  const ids = ['player-q-progress', 'host-q-progress', 'player-q-difficulty', 'host-q-difficulty'];
+  ids.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = hidden ? 'none' : '';
+  });
+
+  ['player-question-text', 'host-question-text'].forEach((id) => {
+    const textEl = document.getElementById(id);
+    if (!textEl) return;
+    const wrapper = textEl.parentElement;
+    if (wrapper) wrapper.style.display = hidden ? 'none' : '';
+  });
+}
 
 function ensureBuildMarker() {
   if (typeof document === 'undefined') return;
@@ -63,6 +80,11 @@ function normalizePuzzleQuestion(question) {
   // Always force image-puzzle in match-plus-arena
   question.matchPlusMode = 'image-puzzle';
 
+  if (!question.matchPlusInstruction || !String(question.matchPlusInstruction).trim()) {
+    question.matchPlusInstruction = 'Arrange the pieces to complete the image.';
+  }
+  question.text = '';
+
   // Ensure a puzzle image is set.
   // If matchPlusImage is empty, try to salvage one from the left-side image URLs
   // (covers quizzes originally created in image-image mode).
@@ -114,6 +136,7 @@ export const matchPlusArenaRuntime = {
 
   onGameStart({ state }) {
     ensureBuildMarker();
+    toggleQuizChrome(true);
     if (state?.role !== 'player') return false;
     const msgEl = document.getElementById('player-answered-msg');
     if (msgEl) msgEl.textContent = '🧩 Match Plus Arena ready';
@@ -122,6 +145,7 @@ export const matchPlusArenaRuntime = {
 
   onGameQuestion({ data, state, renderQuestion }) {
     ensureBuildMarker();
+    toggleQuizChrome(true);
     // Normalize question to puzzle mode before rendering (works even with old server)
     if (data?.question) {
       normalizePuzzleQuestion(data.question);
@@ -140,14 +164,17 @@ export const matchPlusArenaRuntime = {
   },
 
   onQuestionEnd() {
+    toggleQuizChrome(false);
     return false;
   },
 
   onLeaderboard() {
+    toggleQuizChrome(false);
     return false;
   },
 
   onGameOver() {
+    toggleQuizChrome(false);
     return false;
   },
 };

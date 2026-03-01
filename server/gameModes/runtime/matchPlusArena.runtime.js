@@ -50,9 +50,13 @@ function transformLegacyQuestionToMatchPlus(questionPayload, room) {
       ? questionPayload.matchPlusImage.trim()
       : (_salvagedImage || '/images/QYan_logo_300x164.jpg'));
 
+  const configuredInstruction = typeof room?.miniGameConfig?.gameInstruction === 'string'
+    ? room.miniGameConfig.gameInstruction.trim()
+    : '';
+
   // Apply optional global duration override from miniGameConfig
   const configuredDuration = (() => {
-    const d = Number(room?.miniGameConfig?.defaultDuration);
+    const d = Number(room?.miniGameConfig?.gameDurationSec ?? room?.miniGameConfig?.defaultDuration);
     return (Number.isInteger(d) && d >= 1) ? d : 0;
   })();
 
@@ -60,6 +64,8 @@ function transformLegacyQuestionToMatchPlus(questionPayload, room) {
     questionPayload.matchPlusMode = configuredMode;
     questionPayload.matchPlusGridSize = safeGrid;
     questionPayload.matchPlusImage = configuredImage;
+    questionPayload.matchPlusInstruction = configuredInstruction || (typeof questionPayload.matchPlusInstruction === 'string' ? questionPayload.matchPlusInstruction : '');
+    if (configuredInstruction) questionPayload.text = configuredInstruction;
     if (configuredDuration) questionPayload.duration = configuredDuration;
     return questionPayload;
   }
@@ -100,11 +106,12 @@ function transformLegacyQuestionToMatchPlus(questionPayload, room) {
   return {
     ...questionPayload,
     type: 'match_plus',
-    text: sourceText,
+    text: configuredInstruction || sourceText,
     pairs,
     matchPlusMode: configuredMode,
     matchPlusGridSize: safeGrid,
     matchPlusImage: configuredImage,
+    matchPlusInstruction: configuredInstruction,
     ...(configuredDuration ? { duration: configuredDuration } : {}),
     correctIndex: undefined,
     correctIndices: undefined,
@@ -119,6 +126,9 @@ function createMatchPlusArenaRuntime() {
     onGameStart({ room }) {
       if (!room || !Array.isArray(room.questions)) return false;
       room.questions = room.questions.map((question) => transformLegacyQuestionToMatchPlus(question, room));
+      if (room.questions.length > 1) {
+        room.questions = [room.questions[0]];
+      }
       return false;
     },
 
@@ -134,6 +144,11 @@ function createMatchPlusArenaRuntime() {
       questionPayload.matchPlusPlugin = true;
       questionPayload.matchPlusModes = [...MATCH_PLUS_MODES];
       questionPayload.matchPlusMode = normalizeMode(questionPayload.matchPlusMode || room?.matchPlusMode);
+      const configuredInstruction = typeof room?.miniGameConfig?.gameInstruction === 'string'
+        ? room.miniGameConfig.gameInstruction.trim()
+        : '';
+      questionPayload.matchPlusInstruction = configuredInstruction || (typeof questionPayload.matchPlusInstruction === 'string' ? questionPayload.matchPlusInstruction : '');
+      if (configuredInstruction) questionPayload.text = configuredInstruction;
       return false;
     },
 
