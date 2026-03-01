@@ -1855,14 +1855,14 @@ export function QuizEditorPage() {
 
               {/* ─── Universal Game Duration Config ─── */}
               {(() => {
-                const DURATION_POLICIES: Record<string, { type: string; defaultSec: number; min: number; max: number; label: string }> = {
-                  'match-plus-arena': { type: 'admin', defaultSec: 120, min: 30, max: 600, label: 'Total game duration (puzzle completion time)' },
-                  'puzzle-relay':     { type: 'per-round', defaultSec: 30, min: 10, max: 120, label: 'Per-round duration' },
-                  'xo-duel':          { type: 'self', defaultSec: 600, min: 60, max: 1800, label: 'Max game session time (game manages its own rounds)' },
-                  'gear-machine':     { type: 'self', defaultSec: 900, min: 120, max: 3600, label: 'Max game session time' },
-                  'creator-studio':   { type: 'self', defaultSec: 45, min: 15, max: 120, label: 'Creation phase duration' },
+                const POLICY_LABELS: Record<string, { type: string; label: string }> = {
+                  'match-plus-arena': { type: 'admin', label: 'Total game duration — how long the player has to complete the puzzle' },
+                  'puzzle-relay':     { type: 'per-round', label: 'Per-round duration' },
+                  'xo-duel':          { type: 'self', label: 'Game session time (game manages its own rounds)' },
+                  'gear-machine':     { type: 'self', label: 'Game session time' },
+                  'creator-studio':   { type: 'self', label: 'Creation phase duration' },
                 }
-                const policy = DURATION_POLICIES[gameModeId] || { type: 'per-round', defaultSec: 30, min: 5, max: 300, label: 'Duration per round' }
+                const policy = POLICY_LABELS[gameModeId] || { type: 'per-round', label: 'Duration per round (seconds)' }
                 const selfManaged = policy.type === 'self'
                 return (
                   <div style={{ padding: '0.75rem 0.85rem', borderRadius: '10px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', marginBottom: '0.5rem' }}>
@@ -1873,20 +1873,19 @@ export function QuizEditorPage() {
                         </label>
                         <input
                           type="number"
-                          min={policy.min}
-                          max={policy.max}
+                          min={1}
                           step={5}
-                          value={Number(miniGameConfig.gameDurationSec || policy.defaultSec)}
+                          value={Number(miniGameConfig.gameDurationSec) || ''}
                           onChange={(e) => updateMiniGameConfig({ gameDurationSec: Number(e.target.value), defaultDuration: Number(e.target.value) })}
-                          placeholder={String(policy.defaultSec)}
+                          placeholder="Enter duration in seconds"
                           style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-deep)', color: 'var(--text)' }}
                         />
                       </div>
                       <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.4, paddingBottom: '0.3rem' }}>
                         <strong>{policy.label}</strong><br />
                         {selfManaged
-                          ? 'This game manages its own timer. Duration is a max cap.'
-                          : `Default: ${policy.defaultSec}s · Range: ${policy.min}–${policy.max}s`
+                          ? 'This game manages its own timer internally.'
+                          : 'The exact value you enter here will be used as the game timer. No limits.'
                         }
                       </div>
                     </div>

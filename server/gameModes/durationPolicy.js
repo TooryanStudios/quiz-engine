@@ -14,108 +14,26 @@
  *   'per-round'  — uses individual question durations from the quiz
  *   'none'       — no timer (game ends when player finishes or host ends it)
  *
- * defaultDurationSec — fallback if no config is provided
- * minDurationSec     — minimum allowed value (clamped)
- * maxDurationSec     — maximum allowed value (clamped)
+ * No hardcoded defaults, min, or max. Admin-set values are used as-is.
  */
 
 const GAME_MODE_DURATION_POLICIES = Object.freeze({
-  'match-plus-arena': {
-    type: 'admin',
-    defaultDurationSec: 120,
-    minDurationSec: 30,
-    maxDurationSec: 600,
-  },
-  'puzzle-relay': {
-    type: 'per-round',
-    defaultDurationSec: 30,
-    minDurationSec: 10,
-    maxDurationSec: 120,
-  },
-  'xo-duel': {
-    type: 'self',
-    defaultDurationSec: 600,
-    minDurationSec: 60,
-    maxDurationSec: 1800,
-  },
-  'gear-machine': {
-    type: 'self',
-    defaultDurationSec: 900,
-    minDurationSec: 120,
-    maxDurationSec: 3600,
-  },
-  'creator-studio': {
-    type: 'self',
-    defaultDurationSec: 45,
-    minDurationSec: 15,
-    maxDurationSec: 120,
-  },
-  'clue-chain': {
-    type: 'per-round',
-    defaultDurationSec: 30,
-    minDurationSec: 10,
-    maxDurationSec: 120,
-  },
-  'mystery-room-quiz': {
-    type: 'per-round',
-    defaultDurationSec: 30,
-    minDurationSec: 10,
-    maxDurationSec: 120,
-  },
-  'build-the-story': {
-    type: 'per-round',
-    defaultDurationSec: 30,
-    minDurationSec: 10,
-    maxDurationSec: 120,
-  },
-  'map-quest-trivia': {
-    type: 'per-round',
-    defaultDurationSec: 30,
-    minDurationSec: 10,
-    maxDurationSec: 120,
-  },
-  'debate-duel-quiz': {
-    type: 'per-round',
-    defaultDurationSec: 30,
-    minDurationSec: 10,
-    maxDurationSec: 120,
-  },
-  'time-pressure-heist': {
-    type: 'per-round',
-    defaultDurationSec: 20,
-    minDurationSec: 5,
-    maxDurationSec: 60,
-  },
-  'memory-grid-battle': {
-    type: 'per-round',
-    defaultDurationSec: 30,
-    minDurationSec: 10,
-    maxDurationSec: 120,
-  },
-  'reverse-quiz': {
-    type: 'per-round',
-    defaultDurationSec: 30,
-    minDurationSec: 10,
-    maxDurationSec: 120,
-  },
-  'fact-or-fiction-lab': {
-    type: 'per-round',
-    defaultDurationSec: 30,
-    minDurationSec: 10,
-    maxDurationSec: 120,
-  },
-  'creative-constraint-quiz': {
-    type: 'per-round',
-    defaultDurationSec: 30,
-    minDurationSec: 10,
-    maxDurationSec: 120,
-  },
-  'alliance-betrayal-mode': {
-    type: 'per-round',
-    defaultDurationSec: 30,
-    minDurationSec: 10,
-    maxDurationSec: 120,
-  },
+  'match-plus-arena': { type: 'admin' },
+  'puzzle-relay':     { type: 'per-round' },
+  'xo-duel':          { type: 'self' },
+  'gear-machine':     { type: 'self' },
+  'creator-studio':   { type: 'self' },
+  'clue-chain':       { type: 'per-round' },
+  'mystery-room-quiz':{ type: 'per-round' },
+  'build-the-story':  { type: 'per-round' },
+  'map-quest-trivia': { type: 'per-round' },
+  'debate-duel-quiz': { type: 'per-round' },
+  'time-pressure-heist': { type: 'per-round' },
+  'memory-grid-battle':  { type: 'per-round' },
+  'reverse-quiz':     { type: 'per-round' },
+  'fact-or-fiction-lab':  { type: 'per-round' },
+  'creative-constraint-quiz': { type: 'per-round' },
+  'alliance-betrayal-mode':   { type: 'per-round' },
 });
 
 /**
@@ -129,69 +47,47 @@ const GAME_MODE_DURATION_POLICIES = Object.freeze({
 function resolveGameDuration(room, question, platformDefaultSec) {
   const modeId = typeof room?.gameMode === 'string' ? room.gameMode.trim().toLowerCase() : '';
   const policy = GAME_MODE_DURATION_POLICIES[modeId] || null;
+  const adminDur = _readAdminDuration(room);
 
-  // ─── No recognized game mode → use standard quiz question duration ───
+  // ─── No recognized game mode → standard quiz behaviour ───
   if (!policy) {
+    // Even without a policy, honour admin-set gameDurationSec if present
+    if (adminDur) return { durationSec: adminDur, source: 'admin-config (no-policy)' };
     const qDur = Number(question?.duration);
     const dur = (Number.isFinite(qDur) && qDur >= 1) ? qDur : (platformDefaultSec || 20);
     return { durationSec: dur, source: 'quiz-question-default' };
   }
 
-  // ─── 'self' — the runtime handles its own timing completely ───
-  //     We give it a generous fallback but the runtime overrides it anyway.
+  // ─── 'self' — runtime manages its own timer; admin overrides if set ───
   if (policy.type === 'self') {
-    const adminDur = _readAdminDuration(room);
-    const dur = adminDur || policy.defaultDurationSec;
-    return {
-      durationSec: _clamp(dur, policy.minDurationSec, policy.maxDurationSec),
-      source: adminDur ? 'admin-config (self-managed)' : 'policy-default (self-managed)',
-    };
-  }
-
-  // ─── 'admin' — use the gameDurationSec from admin panel, ignore question duration ───
-  if (policy.type === 'admin') {
-    const adminDur = _readAdminDuration(room);
-    if (adminDur) {
-      return {
-        durationSec: _clamp(adminDur, policy.minDurationSec, policy.maxDurationSec),
-        source: 'admin-config',
-      };
-    }
-    // Fallback: use policy default (NOT the quiz question's 20s)
-    return {
-      durationSec: policy.defaultDurationSec,
-      source: 'policy-default',
-    };
-  }
-
-  // ─── 'per-round' — use individual question duration from quiz ───
-  if (policy.type === 'per-round') {
-    const adminDur = _readAdminDuration(room);
-    if (adminDur) {
-      return {
-        durationSec: _clamp(adminDur, policy.minDurationSec, policy.maxDurationSec),
-        source: 'admin-config',
-      };
-    }
+    if (adminDur) return { durationSec: adminDur, source: 'admin-config (self-managed)' };
+    // Let the runtime handle it — don't override with a hardcoded value
     const qDur = Number(question?.duration);
-    if (Number.isFinite(qDur) && qDur >= 1) {
-      return {
-        durationSec: _clamp(qDur, policy.minDurationSec, policy.maxDurationSec),
-        source: 'question-duration',
-      };
-    }
-    return {
-      durationSec: policy.defaultDurationSec,
-      source: 'policy-default',
-    };
+    const dur = (Number.isFinite(qDur) && qDur >= 1) ? qDur : (platformDefaultSec || 20);
+    return { durationSec: dur, source: 'runtime-managed' };
+  }
+
+  // ─── 'admin' — use gameDurationSec exactly as set, no clamping ───
+  if (policy.type === 'admin') {
+    if (adminDur) return { durationSec: adminDur, source: 'admin-config' };
+    // If admin hasn't configured duration, use question's own duration
+    const qDur = Number(question?.duration);
+    const dur = (Number.isFinite(qDur) && qDur >= 1) ? qDur : (platformDefaultSec || 20);
+    return { durationSec: dur, source: 'question-fallback (no admin config)' };
+  }
+
+  // ─── 'per-round' — per-question; admin override if set ───
+  if (policy.type === 'per-round') {
+    if (adminDur) return { durationSec: adminDur, source: 'admin-config' };
+    const qDur = Number(question?.duration);
+    if (Number.isFinite(qDur) && qDur >= 1) return { durationSec: qDur, source: 'question-duration' };
+    return { durationSec: platformDefaultSec || 20, source: 'platform-default' };
   }
 
   // ─── 'none' — no timer ───
-  if (policy.type === 'none') {
-    return { durationSec: 0, source: 'no-timer' };
-  }
+  if (policy.type === 'none') return { durationSec: 0, source: 'no-timer' };
 
-  // Catch-all
+  // Catch-all — no hardcoded value, use platform default
   return { durationSec: platformDefaultSec || 20, source: 'fallback' };
 }
 
@@ -207,12 +103,8 @@ function _readAdminDuration(room) {
   return (Number.isFinite(val) && val >= 1) ? Math.floor(val) : null;
 }
 
-function _clamp(value, min, max) {
-  return Math.max(min, Math.min(max, Math.floor(value)));
-}
-
 /**
- * Get the policy definition for a mode (used by admin UI to show defaults/limits).
+ * Get the policy definition for a mode (used by admin UI).
  */
 function getDurationPolicy(modeId) {
   const key = typeof modeId === 'string' ? modeId.trim().toLowerCase() : '';
