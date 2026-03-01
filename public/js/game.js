@@ -30,6 +30,17 @@ const hostUidFromUrl  = queryParams.get('hostUid');
 const hostTokenFromUrl = queryParams.get('hostToken');
 const hostLaunchCodeFromUrl = queryParams.get('hostLaunchCode');
 const hostNameFromUrl = queryParams.get('hostName');
+
+// miniGameConfig passed from admin as JSON-encoded `cfg` URL param
+const miniGameConfigFromUrl = (() => {
+  const raw = queryParams.get('cfg');
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return (parsed && typeof parsed === 'object') ? parsed : null;
+  } catch (_) { return null; }
+})();
+
 const isAutoHostLaunch = !!(quizSlugFromUrl && modeFromUrl === 'host');
 
 const resolvedGameModeRuntime = resolveGameModeRuntime(gameModeFromUrl);
@@ -833,6 +844,7 @@ function startHostLaunch(quizSlug = null) {
     socket.emit('host:create', {
       quizSlug: quizSlug || null,
       gameMode: gameModeFromUrl || null,
+      miniGameConfig: miniGameConfigFromUrl || null,
       isReconnect: !!isRetry,
     });
     scheduleHostCreateTimeout();
@@ -3222,6 +3234,7 @@ socket.on('connect', () => {
       socket.emit('host:create', {
         quizSlug: quizSlugFromUrl || null,
         gameMode: gameModeFromUrl || null,
+        miniGameConfig: miniGameConfigFromUrl || null,
         isReconnect: true, // tells server to force-reclaim even if old socket still alive
       });
     }

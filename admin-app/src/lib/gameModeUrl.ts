@@ -6,6 +6,7 @@ export function buildHostGameUrl(params: {
   hostUid?: string
   hostToken?: string
   hostName?: string
+  miniGameConfig?: Record<string, unknown>
 }): string {
   const query = new URLSearchParams({
     quiz: params.quizId,
@@ -30,6 +31,12 @@ export function buildHostGameUrl(params: {
 
   if (params.hostName) {
     query.set('hostName', params.hostName)
+  }
+
+  if (params.miniGameConfig && typeof params.miniGameConfig === 'object' && Object.keys(params.miniGameConfig).length > 0) {
+    try {
+      query.set('cfg', JSON.stringify(params.miniGameConfig))
+    } catch (_) { /* skip if not serializable */ }
   }
 
   return `${params.serverBase}/start?${query.toString()}`

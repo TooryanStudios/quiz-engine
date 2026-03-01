@@ -1769,7 +1769,10 @@ function endQuestion(room) {
 io.on('connection', (socket) => {
 
   // ── HOST: Create a new room ──────────────────
-  socket.on('host:create', async ({ quizSlug, gameMode, isReconnect } = {}) => {
+  socket.on('host:create', async ({ quizSlug, gameMode, miniGameConfig: urlMiniGameConfig, isReconnect } = {}) => {
+    // Normalize miniGameConfig from URL: must be a plain object with at least one key
+    const urlCfg = (urlMiniGameConfig && typeof urlMiniGameConfig === 'object' && !Array.isArray(urlMiniGameConfig))
+      ? urlMiniGameConfig : null;
     try {
     // Enforce single host per quiz — reject if an active room already exists for this slug.
     // Exception: if the previous host socket is gone (page refresh / network drop),
@@ -1805,6 +1808,8 @@ io.on('connection', (socket) => {
             // Restore the room in-place so all shared links remain valid.
             existing.hostDisconnected = false;
             existing.hostSocketId = socket.id;
+            // Refresh URL-passed miniGameConfig on reconnect if provided
+            if (urlCfg) existing.miniGameConfig = urlCfg;
             socket.join(existing.pin);
             socket.data.hostPin = existing.pin;
             console.log(`[Room ${existing.pin}] Host RECLAIMED room for quiz "${quizSlug}" — same PIN preserved.`);
@@ -1845,8 +1850,8 @@ io.on('connection', (socket) => {
       mode: activeMode,
       quizSlug: quizSlug || null,
       gameMode: gameMode || null,
-      miniGameConfig: {},
-      matchPlusMode: null,
+      miniGameConfig: urlCfg || {},
+      matchPlusMode: urlCfg?.defaultMatchPlusMode || null,
       questions: DEFAULT_QUESTIONS,
       challengePreset: 'classic',
       challengeSettings: getPresetSettings('classic'),
@@ -2199,7 +2204,15 @@ io.on('connection', (socket) => {
 
     room.challengePreset = quizData.challengePreset || 'classic';
     room.challengeSettings = quizData.challengeSettings || getPresetSettings('classic');
-    room.miniGameConfig = (quizData.miniGameConfig && typeof quizData.miniGameConfig === 'object') ? quizData.miniGameConfig : {};
+    // Merge miniGameConfig: prefer Firestore data (source of truth) when it has actual keys,
+    // otherwise fall back to URL-passed config set at room creation (XO-like self-contained approach).
+    const firestoreCfg = (quizData.miniGameConfig && typeof quizData.miniGameConfig === 'object') ? quizData.miniGameConfig : {};
+    const hasFirestoreCfg = Object.keys(firestoreCfg).length > 0;
+    const urlCfgAtStart = (room.miniGameConfig && typeof room.miniGameConfig === 'object' && Object.keys(room.miniGameConfig).length > 0) ? room.miniGameConfig : null;
+    room.miniGameConfig = hasFirestoreCfg ? firestoreCfg : (urlCfgAtStart || {});
+    if (!hasFirestoreCfg && urlCfgAtStart) {
+      console.log(`[Room ${room.pin}] Using URL-passed miniGameConfig (Firestore config not found)`);
+    }
     room.matchPlusMode = typeof room.miniGameConfig.defaultMatchPlusMode === 'string'
       ? room.miniGameConfig.defaultMatchPlusMode
       : 'image-puzzle';
