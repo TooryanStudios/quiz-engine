@@ -4229,6 +4229,7 @@ video.question-media {
 
 /* Simple Image Puzzle (Match Plus Arena) */
 .simple-puzzle-wrap {
+  --simple-puzzle-tile-size: 86px;
   display: grid;
   grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr);
   gap: 16px;
@@ -4240,20 +4241,22 @@ video.question-media {
 
 .simple-puzzle-board {
   display: grid;
-  grid-template-columns: repeat(3, minmax(68px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(3, var(--simple-puzzle-tile-size));
+  gap: 0;
 }
 
 .simple-puzzle-cell {
-  aspect-ratio: 1 / 1;
+  width: var(--simple-puzzle-tile-size);
+  height: var(--simple-puzzle-tile-size);
 }
 
 .simple-puzzle-dropzone {
   position: relative;
   width: 100%;
   height: 100%;
-  min-height: 68px;
-  border-radius: 10px;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.03);
 }
@@ -4283,11 +4286,12 @@ video.question-media {
   position: relative;
   width: 100%;
   height: 100%;
-  min-height: 68px;
-  border-radius: 10px;
+  min-height: 0;
+  border-radius: 0;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 0;
   background: rgba(7, 10, 26, 0.78);
+  box-shadow: none;
 }
 
 .simple-puzzle-dropzone .simple-puzzle-piece {
@@ -4318,13 +4322,12 @@ video.question-media {
 
 .simple-puzzle-pool-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(68px, 1fr));
+  grid-template-columns: repeat(3, var(--simple-puzzle-tile-size));
   gap: 10px;
 }
 
 .simple-puzzle-dropzone-filled {
-  border-style: solid;
-  border-color: rgba(70, 234, 221, 0.5);
+  border: 0;
 }
 
 .simple-puzzle-host-wrap {
@@ -4343,15 +4346,16 @@ video.question-media {
 
 .simple-puzzle-host-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(68px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(3, var(--simple-puzzle-tile-size));
+  gap: 0;
 }
 
 .simple-puzzle-host-tile {
-  aspect-ratio: 1 / 1;
+  width: var(--simple-puzzle-tile-size);
+  height: var(--simple-puzzle-tile-size);
   overflow: hidden;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0;
+  border: 0;
 }
 
 .simple-puzzle-host-media {
@@ -4364,12 +4368,13 @@ video.question-media {
 
 @media (max-width: 700px) {
   .simple-puzzle-wrap {
+    --simple-puzzle-tile-size: 72px;
     grid-template-columns: 1fr;
   }
 
   .simple-puzzle-board,
   .simple-puzzle-pool-grid,
   .simple-puzzle-host-grid {
-    grid-template-columns: repeat(3, minmax(60px, 1fr));
+    grid-template-columns: repeat(3, var(--simple-puzzle-tile-size));
   }
 }

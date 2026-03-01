@@ -222,7 +222,7 @@ export class MatchRenderer extends BaseRenderer {
                   ? `<span class="match-chip simple-puzzle-piece in-slot"
                            data-chip-idx="${pieceIndex}"
                            data-in-slot="${slotIndex}">${placedContent}</span>`
-                  : `<span class="simple-puzzle-hint">ضع القطعة هنا</span>`
+                  : ''
                 }
               </div>
             </div>`;
