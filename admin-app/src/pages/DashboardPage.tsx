@@ -16,7 +16,7 @@ import { useDialog } from '../lib/DialogContext'
 type QuizItem = QuizDoc & { id: string }
 
 function getEditorPath(item: QuizItem): string {
-  const isMiniGame = item.contentType === 'mini-game' || (!!item.gameModeId && (!item.questions || item.questions.length === 0))
+  const isMiniGame = item.contentType === 'mini-game' || !!item.gameModeId
   return isMiniGame ? `/mini-game-editor/${item.id}` : `/editor/${item.id}`
 }
 

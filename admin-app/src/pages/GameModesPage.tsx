@@ -202,7 +202,7 @@ export function GameModesPage() {
     try {
       const id = await createQuiz(payload)
       showToast({ message: `Created test quiz for ${loadedGame.name}`, type: 'success' })
-      navigate(`/editor/${id}`)
+      navigate(`/mini-game-editor/${id}`)
     } catch (e) {
       showToast({
         message: e instanceof Error ? `Failed to create test quiz: ${e.message}` : 'Failed to create test quiz.',
