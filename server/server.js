@@ -1494,7 +1494,11 @@ function sendQuestion(room, opts = {}) {
   const modeId = typeof room?.gameMode === 'string' ? room.gameMode.trim().toLowerCase() : '';
   const gameDuration = Number(room?.miniGameConfig?.gameDurationSec ?? room?.miniGameConfig?.defaultDuration);
   const hasGameDuration = Number.isFinite(gameDuration) && gameDuration >= 1;
-  const forcedDuration = (modeId === 'match-plus-arena' && hasGameDuration)
+  const isLikelyMatchPlusArena = modeId === 'match-plus-arena'
+    || q?.type === 'match_plus'
+    || typeof room?.miniGameConfig?.defaultMatchPlusMode === 'string'
+    || typeof room?.miniGameConfig?.defaultPuzzleImage === 'string';
+  const forcedDuration = (isLikelyMatchPlusArena && hasGameDuration)
     ? Math.floor(gameDuration)
     : null;
   if (forcedDuration) {
@@ -2124,6 +2128,13 @@ io.on('connection', (socket) => {
     // Use preloaded quiz data if available (fetched at room creation), otherwise fetch now
     const quizData = room.preloadedQuizData || await refreshQuestions(room.quizSlug);
     room.preloadedQuizData = null; // clear cache after use
+
+    // Ensure room game mode/runtime is derived from quiz data when URL did not include gameMode
+    const quizGameModeId = typeof quizData?.gameModeId === 'string' ? quizData.gameModeId.trim() : '';
+    if ((!room.gameMode || !String(room.gameMode).trim()) && quizGameModeId) {
+      room.gameMode = quizGameModeId;
+      room.gameModeRuntime = createGameModeRuntime(quizGameModeId);
+    }
 
     // If a specific quiz was requested but couldn't be loaded, abort
     if (room.quizSlug && quizData.questions === DEFAULT_QUESTIONS) {
