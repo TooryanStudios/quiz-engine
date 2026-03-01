@@ -2204,12 +2204,15 @@ io.on('connection', (socket) => {
 
     room.challengePreset = quizData.challengePreset || 'classic';
     room.challengeSettings = quizData.challengeSettings || getPresetSettings('classic');
-    // Merge miniGameConfig: prefer Firestore data (source of truth) when it has actual keys,
-    // otherwise fall back to URL-passed config set at room creation (XO-like self-contained approach).
+    // Merge miniGameConfig: deep-merge URL cfg (base) with Firestore cfg on top.
+    // This means Firestore wins for any key it explicitly sets, BUT URL-passed
+    // fields (e.g. gameDurationSec) are preserved when Firestore doesn't have them.
+    // This is necessary because admin saves to qyan-om while the server reads
+    // from quizengine-e7818 — two separate databases.
     const firestoreCfg = (quizData.miniGameConfig && typeof quizData.miniGameConfig === 'object') ? quizData.miniGameConfig : {};
     const hasFirestoreCfg = Object.keys(firestoreCfg).length > 0;
     const urlCfgAtStart = (room.miniGameConfig && typeof room.miniGameConfig === 'object' && Object.keys(room.miniGameConfig).length > 0) ? room.miniGameConfig : null;
-    room.miniGameConfig = hasFirestoreCfg ? firestoreCfg : (urlCfgAtStart || {});
+    room.miniGameConfig = { ...(urlCfgAtStart || {}), ...firestoreCfg };
     if (!hasFirestoreCfg && urlCfgAtStart) {
       console.log(`[Room ${room.pin}] Using URL-passed miniGameConfig (Firestore config not found)`);
     }

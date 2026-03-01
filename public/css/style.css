@@ -4533,7 +4533,16 @@ video.question-media {
 
 @media (max-width: 700px) {
   .simple-puzzle-wrap {
-    --spt: 80px;
+    /* Auto-size tiles so the grid fills the screen width with small padding */
+    --spt: min(calc((100vw - 24px) / var(--spgrid, 3)), 90px);
     grid-template-columns: 1fr;
+    max-width: 100%;
+    gap: 8px;
+  }
+  .simple-puzzle-title-row {
+    padding: 2px 0;
+  }
+  .simple-puzzle-pool {
+    align-items: center;
   }
 }

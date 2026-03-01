@@ -211,7 +211,7 @@ export class MatchRenderer extends BaseRenderer {
     const { escapeHtml } = this.utils;
 
     container.innerHTML = `
-      <div class="simple-puzzle-wrap ${isComplete ? 'puzzle-complete' : ''}" style="grid-template-columns: ${boardPx} ${boardPx};">
+      <div class="simple-puzzle-wrap ${isComplete ? 'puzzle-complete' : ''}" style="--spgrid: ${grid};">
         <div class="simple-puzzle-title-row">
           <span class="simple-puzzle-title" dir="auto">${escapeHtml(instructionText)}</span>
         </div>
