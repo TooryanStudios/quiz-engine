@@ -1500,17 +1500,15 @@ function sendQuestion(room, opts = {}) {
     || typeof room?.miniGameConfig?.defaultMatchPlusMode === 'string'
     || typeof room?.miniGameConfig?.defaultPuzzleImage === 'string';
 
-  let forcedDuration = (isLikelyMatchPlusArena && hasGameDuration)
-    ? Math.floor(gameDuration)
-    : null;
+  // 1. Prioritize ANY duration from room settings (Game Duration in admin)
+  let forcedDuration = (hasGameDuration) ? Math.floor(gameDuration) : null;
 
-  // Use the admin's duration if set; only fallback to 60 if absolutely nothing else is provided for a match-plus game
+  // 2. If it's a Match Plus game and no settings duration, use the question's specific duration
   if (isLikelyMatchPlusArena && !forcedDuration) {
-    // Check if the individual question has a duration that isn't the 20s default
-    if (q.duration && q.duration !== 20) {
+    if (q.duration) {
       forcedDuration = q.duration;
     } else {
-      forcedDuration = 60;
+      forcedDuration = 60; // Ultimate fallback if everything is empty
     }
   }
 
