@@ -238,6 +238,7 @@ export class MatchRenderer extends BaseRenderer {
 
         <div class="simple-puzzle-pool">
           <span class="simple-puzzle-title" dir="auto">${escapeHtml(instructionText)}</span>
+          <button class="puzzle-hint-btn" type="button" title="اضغط مع الإبقاء لمشاهدة الصورة الكاملة">👁 تلميح</button>
           <div class="simple-puzzle-pool-grid" style="grid-template-columns: repeat(${grid}, var(--spt));">
             ${rights.map((value, pieceIndex) => {
               if (placed.has(pieceIndex)) return `<span class="simple-puzzle-piece-empty"></span>`;
@@ -253,6 +254,34 @@ export class MatchRenderer extends BaseRenderer {
     container.querySelectorAll('.match-chip').forEach(chip => {
       chip.addEventListener('pointerdown', this.onChipPointerDown.bind(this));
     });
+
+    // Hint button — hold to reveal full image, release to hide
+    const hintBtn = container.querySelector('.puzzle-hint-btn');
+    if (hintBtn) {
+      const imageUrl = this.getPuzzleImageUrl();
+      const showHint = (e) => {
+        e.preventDefault();
+        hintBtn.classList.add('is-held');
+        let overlay = document.getElementById('puzzle-hint-overlay');
+        if (!overlay) {
+          overlay = document.createElement('div');
+          overlay.id = 'puzzle-hint-overlay';
+          overlay.className = 'puzzle-hint-overlay';
+          document.body.appendChild(overlay);
+        }
+        overlay.style.backgroundImage = `url('${imageUrl}')`;
+        requestAnimationFrame(() => overlay.classList.add('is-visible'));
+      };
+      const hideHint = () => {
+        hintBtn.classList.remove('is-held');
+        const overlay = document.getElementById('puzzle-hint-overlay');
+        if (overlay) overlay.classList.remove('is-visible');
+      };
+      hintBtn.addEventListener('pointerdown', showHint);
+      hintBtn.addEventListener('pointerup', hideHint);
+      hintBtn.addEventListener('pointerleave', hideHint);
+      hintBtn.addEventListener('pointercancel', hideHint);
+    }
 
     this.correctSparkleSlot = -1;
     this.checkMatchComplete();

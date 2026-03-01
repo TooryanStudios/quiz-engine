@@ -4355,6 +4355,52 @@ video.question-media {
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.08em;
+  text-align: center;
+}
+
+/* ── Hint button ── */
+.puzzle-hint-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  width: 100%;
+  padding: 0.36rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid rgba(148,163,184,0.28);
+  background: rgba(255,255,255,0.06);
+  color: var(--text-dim);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.puzzle-hint-btn:active,
+.puzzle-hint-btn.is-held {
+  background: rgba(56,189,248,0.14);
+  border-color: rgba(56,189,248,0.55);
+  color: #38bdf8;
+}
+
+/* ── Hint full-image overlay ── */
+.puzzle-hint-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9500;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-color: rgba(2,6,23,0.88);
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.puzzle-hint-overlay.is-visible {
+  opacity: 1;
 }
 
 .simple-puzzle-pool-grid {
