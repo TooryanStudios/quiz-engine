@@ -1513,6 +1513,10 @@ function sendQuestion(room, opts = {}) {
     q.duration = forcedDuration;
   }
   const baseDuration = q.duration || config.GAME.QUESTION_DURATION_SEC;
+
+  // DEBUG — log duration for verification
+  console.log(`[Timer Debug] Room ${room.pin} | Question ${room.questionIndex + 1}/${room.questions.length} | Duration: ${baseDuration}s | isMatchPlus: ${isLikelyMatchPlusArena}`);
+
   const challengeSettings = room.challengeSettings || CHALLENGE_PRESETS.classic;
   const typeHandler = getQuestionTypeHandler(q.type);
   room.currentQuestionMeta = {
