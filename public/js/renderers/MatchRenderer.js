@@ -211,7 +211,10 @@ export class MatchRenderer extends BaseRenderer {
     const { escapeHtml } = this.utils;
 
     container.innerHTML = `
-      <div class="simple-puzzle-wrap ${isComplete ? 'puzzle-complete' : ''}" style="grid-template-columns: ${boardPx} 1fr;">
+      <div class="simple-puzzle-wrap ${isComplete ? 'puzzle-complete' : ''}" style="grid-template-columns: ${boardPx} ${boardPx};">
+        <div class="simple-puzzle-title-row">
+          <span class="simple-puzzle-title" dir="auto">${escapeHtml(instructionText)}</span>
+        </div>
         <div class="simple-puzzle-board" style="grid-template-columns: repeat(${grid}, var(--spt)); grid-template-rows: repeat(${grid}, var(--spt));">
           ${lefts.map((leftValue, slotIndex) => {
             const pieceIndex = state.matchConnections[slotIndex];
@@ -245,7 +248,6 @@ export class MatchRenderer extends BaseRenderer {
                            data-in-slot="-1">${this.renderPuzzleTile(value, 'simple-puzzle-piece-media', false)}</span>`;
             }).join('')}
           </div>
-          <span class="simple-puzzle-title" dir="auto">${escapeHtml(instructionText)}</span>
           <button class="puzzle-hint-btn" type="button" title="اضغط مع الإبقاء لمشاهدة الصورة الكاملة">👁 تلميح</button>
         </div>
       </div>

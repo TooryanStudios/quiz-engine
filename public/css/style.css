@@ -4229,15 +4229,25 @@ video.question-media {
 
 /* Simple Image Puzzle (Match Plus Arena) */
 .simple-puzzle-wrap {
-  --spt: 90px; /* tile size */
-  --sgap: 3px; /* grid line width */
+  --spt: 110px; /* tile size */
+  --sgap: 3px;  /* grid line width */
   display: grid;
-  grid-template-columns: calc(var(--spt) * 3) 1fr; /* updated by inline style for dynamic grid sizes */
-  gap: 20px;
+  grid-template-columns: calc(var(--spt) * 3) calc(var(--spt) * 3); /* overridden by inline style */
+  grid-template-rows: auto 1fr;
+  gap: 10px 20px;
   align-items: start;
   width: 100%;
-  max-width: 760px;
+  max-width: 960px;
   margin: 0 auto;
+}
+
+/* Title row spans both columns */
+.simple-puzzle-title-row {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 4px 0 2px;
 }
 
 /* ── Board (slots) ── */
@@ -4353,7 +4363,7 @@ video.question-media {
 .simple-puzzle-title {
   display: block;
   width: 100%;
-  font-size: 0.8rem;
+  font-size: 1rem;
   font-weight: 700;
   color: var(--text-dim);
   text-transform: uppercase;
