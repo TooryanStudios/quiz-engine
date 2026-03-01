@@ -1503,12 +1503,14 @@ function sendQuestion(room, opts = {}) {
   // 1. Prioritize ANY duration from room settings (Game Duration in admin)
   let forcedDuration = (hasGameDuration) ? Math.floor(gameDuration) : null;
 
-  // 2. If it's a Match Plus game and no settings duration, use the question's specific duration
+  // 2. Match Plus games: ignore the default question duration (20s) — it's a quiz default, not a game config.
+  //    Only respect q.duration if it looks intentionally set (not 20s platform default).
   if (isLikelyMatchPlusArena && !forcedDuration) {
-    if (q.duration) {
-      forcedDuration = q.duration;
+    const questionDur = Number(q.duration);
+    if (questionDur > 0 && questionDur !== config.GAME.QUESTION_DURATION_SEC && questionDur !== 20) {
+      forcedDuration = questionDur;
     } else {
-      forcedDuration = 60; // Ultimate fallback if everything is empty
+      forcedDuration = 120; // Sensible fallback for puzzle games when admin hasn't saved a game duration yet
     }
   }
 
