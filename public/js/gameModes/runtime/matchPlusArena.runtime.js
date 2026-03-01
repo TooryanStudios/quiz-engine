@@ -7,7 +7,7 @@ const MATCH_PLUS_MODES = [
 ];
 
 const FALLBACK_PUZZLE_IMAGE = '/images/QYan_logo_300x164.jpg';
-const MATCH_PLUS_ARENA_BUILD_MARKER = 'Match+ Build: 2026-03-01 • grid-lines • v128';
+const MATCH_PLUS_ARENA_BUILD_MARKER = 'Match+ Build: 2026-03-01 • salvage-image • v129';
 
 function ensureBuildMarker() {
   if (typeof document === 'undefined') return;
@@ -63,9 +63,18 @@ function normalizePuzzleQuestion(question) {
   // Always force image-puzzle in match-plus-arena
   question.matchPlusMode = 'image-puzzle';
 
-  // Ensure a puzzle image is set
+  // Ensure a puzzle image is set.
+  // If matchPlusImage is empty, try to salvage one from the left-side image URLs
+  // (covers quizzes originally created in image-image mode).
   if (!question.matchPlusImage || !question.matchPlusImage.trim()) {
-    question.matchPlusImage = FALLBACK_PUZZLE_IMAGE;
+    const leftsRaw = Array.isArray(question.lefts) ? question.lefts : [];
+    const pairsRaw = Array.isArray(question.pairs) ? question.pairs : [];
+    // Prefer lefts array (already expanded by server), fallback to pairs[].left
+    const candidates = leftsRaw.length > 0
+      ? leftsRaw
+      : pairsRaw.map(p => (p && typeof p.left === 'string') ? p.left : '');
+    const salvaged = candidates.find(looksLikeImageUrl);
+    question.matchPlusImage = salvaged ? salvaged.trim() : FALLBACK_PUZZLE_IMAGE;
   }
 
   // Normalize grid size
