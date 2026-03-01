@@ -11,6 +11,7 @@ export class MatchRenderer extends BaseRenderer {
   constructor(questionData) {
     super(questionData);
     this.drag = null;
+    this.correctSparkleSlot = -1;
   }
 
   isLikelyImageSource(value) {
@@ -218,7 +219,7 @@ export class MatchRenderer extends BaseRenderer {
             const targetContent = this.renderPuzzleTile(leftValue, 'simple-puzzle-target-media', true);
 
             return `<div class="simple-puzzle-cell">
-              <div class="match-dropzone simple-puzzle-dropzone ${filled ? 'match-dz-filled simple-puzzle-dropzone-filled' : 'match-dz-empty'}"
+              <div class="match-dropzone simple-puzzle-dropzone ${filled ? 'match-dz-filled simple-puzzle-dropzone-filled' : 'match-dz-empty'} ${slotIndex === this.correctSparkleSlot ? 'simple-puzzle-dropzone-correct' : ''}"
                    data-dropzone="${slotIndex}">
                 <span class="simple-puzzle-target">${targetContent}</span>
                 ${filled
@@ -249,6 +250,7 @@ export class MatchRenderer extends BaseRenderer {
       chip.addEventListener('pointerdown', this.onChipPointerDown.bind(this));
     });
 
+    this.correctSparkleSlot = -1;
     this.checkMatchComplete();
   }
   
@@ -348,9 +350,16 @@ export class MatchRenderer extends BaseRenderer {
       if (this.drag.fromSlot !== -1) {
         state.matchConnections[this.drag.fromSlot] = existed !== -1 ? existed : -1;
       }
+
+      const droppedPieceValue = String(state.matchRights[this.drag.chipIdx] ?? '').trim();
+      const targetPieceValue = String(state.matchLefts[toSlot] ?? '').trim();
+      this.correctSparkleSlot = droppedPieceValue && droppedPieceValue === targetPieceValue
+        ? toSlot
+        : -1;
       
       this.utils.Sounds.click();
     } else {
+      this.correctSparkleSlot = -1;
       if (this.drag.fromSlot !== -1) {
         state.matchConnections[this.drag.fromSlot] = -1;
       }
