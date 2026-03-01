@@ -301,6 +301,26 @@ app.get('/health', (_req, res) => {
 // Build info endpoint — returns server start time for the home screen version badge
 app.get('/api/build-info', (_req, res) => res.json({ buildTime: BUILD_TIME }));
 
+// Debug endpoint — inspect quiz miniGameConfig from Firestore
+app.get('/api/debug-quiz/:id', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ error: 'Firestore not available' });
+    const docRef = db.collection('quizzes').doc(req.params.id);
+    const snap = await docRef.get();
+    if (!snap.exists) return res.status(404).json({ error: 'Quiz not found' });
+    const data = snap.data();
+    res.json({
+      id: snap.id,
+      gameModeId: data.gameModeId || null,
+      miniGameConfig: data.miniGameConfig || null,
+      questionCount: (data.questions || []).length,
+      firstQuestionDuration: (data.questions || [])[0]?.duration || null,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // QR SVG endpoint — used as a resilient fallback when realtime payload misses qrSvg
 app.get('/api/qr-svg', async (req, res) => {
   const rawUrl = typeof req.query.url === 'string' ? req.query.url : '';
@@ -2160,6 +2180,7 @@ io.on('connection', (socket) => {
       : 'image-puzzle';
     room.enableScholarRole = quizData.enableScholarRole === true; // disabled by default
     console.log(`[Room ${room.pin}] Loaded ${room.questions.length} questions from quiz data`);
+    console.log(`[Room ${room.pin}] gameMode=${room.gameMode} | miniGameConfig=${JSON.stringify(room.miniGameConfig)} | gameDurationSec=${room.miniGameConfig.gameDurationSec} | defaultDuration=${room.miniGameConfig.defaultDuration}`);
 
     const roles = assignAsymmetricRoles(room);
     io.to(room.pin).emit('game:roles', {
