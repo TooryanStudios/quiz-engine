@@ -1554,6 +1554,20 @@ function sendQuestion(room, opts = {}) {
 
     const dispatchDefault = () => {
       const effectiveDuration = resolveEffectiveDuration();
+      // DEBUG — trace every value in the duration chain
+      console.log('[TIMER FULL DEBUG]', JSON.stringify({
+        pin: room.pin,
+        roomGameMode: room.gameMode,
+        qType: q?.type,
+        qDuration: q?.duration,
+        baseDuration,
+        forcedDuration,
+        'questionPayload.duration': questionPayload.duration,
+        effectiveDuration,
+        'miniGameConfig.gameDurationSec': room?.miniGameConfig?.gameDurationSec,
+        'miniGameConfig.defaultDuration': room?.miniGameConfig?.defaultDuration,
+        miniGameConfigKeys: room?.miniGameConfig ? Object.keys(room.miniGameConfig) : null,
+      }));
       io.to(room.pin).emit('game:question', {
         questionIndex: room.questionIndex,
         total: room.questions.length,
