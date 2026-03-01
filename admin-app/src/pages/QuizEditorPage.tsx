@@ -778,6 +778,14 @@ export function QuizEditorPage() {
       showStatus({ kind: 'error', msg: `فشل التحقق من الرابط: ${(error as Error).message}` })
       return
     }
+    // DEBUG: trace miniGameConfig save
+    console.log('[SAVE DEBUG]', {
+      isMiniGameContent,
+      gameModeId,
+      miniGameConfig,
+      willIncludeGameMode: (isMiniGameContent || !!gameModeId),
+      quizId,
+    })
     const payload: QuizDoc = {
       ownerId,
       title,
@@ -806,14 +814,38 @@ export function QuizEditorPage() {
         await updateQuiz(quizId, payload)
         setHasUnsavedChanges(false)
         showStatus({ kind: 'idle' })
-        showToast({ message: 'تم تحديث الاختبار بنجاح', type: 'success' })
+        if (payload.gameModeId && payload.miniGameConfig) {
+          const dur = (payload.miniGameConfig as Record<string, unknown>).gameDurationSec
+          showToast({ message: `✅ Saved: ${payload.gameModeId} | duration=${dur}s`, type: 'success' })
+          // Post-save verification: read back from Firestore
+          try {
+            const readBack = await getQuizById(quizId)
+            const savedCfg = readBack?.miniGameConfig as Record<string, unknown> | undefined
+            console.log('[POST-SAVE VERIFY]', {
+              docId: quizId,
+              gameModeIdInFirestore: readBack?.gameModeId,
+              miniGameConfigInFirestore: savedCfg,
+              gameDurationSecInFirestore: savedCfg?.gameDurationSec,
+            })
+            if (!savedCfg || !savedCfg.gameDurationSec) {
+              showToast({ message: '⚠️ WARNING: miniGameConfig NOT found in Firestore after save!', type: 'error' })
+            }
+          } catch { /* ignore read-back errors */ }
+        } else {
+          showToast({ message: 'تم تحديث الاختبار بنجاح', type: 'success' })
+        }
       } else {
         const id = await createQuiz(payload)
         void incrementPlatformStat('quizCreated')
         setQuizId(id)
         setHasUnsavedChanges(false)
         showStatus({ kind: 'idle' })
-        showToast({ message: 'تم حفظ الاختبار بنجاح', type: 'success' })
+        if (payload.gameModeId && payload.miniGameConfig) {
+          const dur = (payload.miniGameConfig as Record<string, unknown>).gameDurationSec
+          showToast({ message: `✅ Created: ${payload.gameModeId} | duration=${dur}s`, type: 'success' })
+        } else {
+          showToast({ message: 'تم حفظ الاختبار بنجاح', type: 'success' })
+        }
       }
     } catch (error) {
       showStatus({ kind: 'error', msg: `فشل الحفظ: ${(error as Error).message}` })
