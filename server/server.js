@@ -1,5 +1,18 @@
 'use strict';
 
+// ── Process-level crash guards ──────────────────────────────────────────────
+// Prevent an unhandled exception / rejected promise from killing the process.
+// Socket.io handlers that throw synchronously are already isolated per-event,
+// but async handlers without try/catch can surface here. Log the error and
+// keep the server alive rather than letting Render restart on every hiccup.
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] Uncaught exception — keeping process alive:', err?.stack || err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[FATAL] Unhandled promise rejection at', promise, 'reason:', reason?.stack || reason);
+});
+// ────────────────────────────────────────────────────────────────────────────
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -2046,6 +2059,7 @@ io.on('connection', (socket) => {
 
   // ── HOST: Refresh PIN (only when no players have joined) ────
   socket.on('host:refresh_pin', async () => {
+    try {
     const room = findHostRoom(socket.id);
     if (!room) { socket.emit('room:error', { message: 'Room not found.' }); return; }
     if (room.state !== 'lobby') { socket.emit('room:error', { message: 'Can only refresh PIN in lobby.' }); return; }
@@ -2074,6 +2088,10 @@ io.on('connection', (socket) => {
     console.log(`[Room] PIN refreshed: ${oldPin} -> ${newPin} by host=${socket.id}`);
     const modePayload = await buildRoomModePayload(room);
     socket.emit('room:pin_refreshed', { pin: newPin, ...modePayload });
+    } catch (error) {
+      console.error(`[host:refresh_pin] Error:`, error?.message || error);
+      socket.emit('room:error', { message: 'Failed to refresh PIN. Please try again.' });
+    }
   });
 
   // ── HOST: Join the game as a player too ───────
@@ -2443,6 +2461,7 @@ io.on('connection', (socket) => {
 
   // ── HOST: Set connection mode (local/global) ─
   socket.on('host:mode:set', async ({ mode }) => {
+    try {
     const room = findHostRoom(socket.id);
     if (!room || room.state !== 'lobby') return;
 
@@ -2456,6 +2475,9 @@ io.on('connection', (socket) => {
 
     const payload = await buildRoomModePayload(room);
     io.to(room.pin).emit('room:mode', payload);
+    } catch (error) {
+      console.error(`[host:mode:set] Error:`, error?.message || error);
+    }
   });
 
   // ── HOST: Sync room state (authoritative recovery path) ─
@@ -2594,6 +2616,7 @@ io.on('connection', (socket) => {
 
   // ── HOST: Start a new session in same room ───
   socket.on('host:new-session', async () => {
+    try {
     const room = findHostRoom(socket.id);
     if (!room || room.state !== 'finished') return;
 
@@ -2631,6 +2654,10 @@ io.on('connection', (socket) => {
       modeInfo,
       hostIsPlayer: room.hostIsPlayer,
     });
+    } catch (error) {
+      console.error(`[host:new-session] Error:`, error?.message || error);
+      socket.emit('room:error', { message: 'Failed to start new session. Please try again.' });
+    }
   });
 
   // ── PLAYER / HOST-PLAYER: Post-game vote ─────
