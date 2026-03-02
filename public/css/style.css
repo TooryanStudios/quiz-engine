@@ -3470,17 +3470,18 @@ video.question-media {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 28px;
+  gap: 15px; /* Compact gap */
   width: 100%;
-  max-width: 540px;
+  max-width: 500px;
   margin: 0 auto;
-  padding: 20px 12px 32px;
+  padding: 10px 12px 20px;
 }
 
 .podium-title {
-  font-size: 2rem;
+  font-size: 1.6rem; /* Smaller title */
   font-weight: 900;
   text-align: center;
+  margin-bottom: 5px;
   letter-spacing: -0.5px;
   animation: fadeSlideDown 0.5s ease-out both;
 }
@@ -3638,14 +3639,15 @@ video.question-media {
 }
 
 .podium-details {
-  background: var(--surface);
-  border-radius: 12px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 10px;
   overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.05);
 }
 .podium-details-summary {
-  padding: 12px 16px;
+  padding: 8px 14px;
   font-weight: 700;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   cursor: pointer;
   user-select: none;
   list-style: none;
@@ -3712,7 +3714,7 @@ video.question-media {
 .postgame-vote-buttons {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px; /* Slightly tighter gap */
 }
 
 /* Base vote button */
@@ -3721,18 +3723,23 @@ video.question-media {
   align-items: center;
   gap: 12px;
   width: 100%;
-  padding: 13px 18px;
-  border-radius: 14px;
-  border: 2px solid transparent;
-  background: rgba(255,255,255,0.06);
+  padding: 8px 14px; /* Much more compact padding */
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.08); /* Slimmer border */
+  background: rgba(255,255,255,0.05);
   color: var(--text);
-  font-size: 1rem;
+  font-size: 0.95rem; /* Slightly smaller text */
   font-weight: 700;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, transform 0.12s, box-shadow 0.15s;
   text-align: start;
   position: relative;
   overflow: hidden;
+  height: auto; /* Ensure no fixed height */
+}
+
+.vote-btn-icon { font-size: 1.25rem; } /* Scale down icons */
+.postgame-vote-title { margin: 10px 0 6px; font-size: 0.95rem; font-weight: 800; opacity: 0.9; }
   user-select: none;
   -webkit-user-select: none;
 }
@@ -3846,14 +3853,21 @@ video.question-media {
 
 /* Host-only action row */
 .postgame-host-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 2px;
+  display: flex !important; /* Force side-by-side */
+  flex-direction: row !important;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.postgame-host-actions button {
+  padding: 10px 14px !important;
+  font-size: 0.95rem !important;
+  border-radius: 12px !important;
 }
 
 @media (max-width: 500px) {
-  .postgame-host-actions { flex-direction: column; }
-  .vote-btn { padding: 11px 14px; font-size: 0.93rem; }
+  .postgame-host-actions { gap: 8px; flex-direction: row !important; }
+  .vote-btn { padding: 9px 14px; font-size: 0.93rem; }
 }
 
 
