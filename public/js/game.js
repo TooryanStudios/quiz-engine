@@ -4103,7 +4103,20 @@ socket.on('game:over', (data) => {
 
   // Show host action row only to the host
   const hostActionsEl = document.getElementById('postgame-host-actions');
-  if (hostActionsEl) hostActionsEl.style.display = state.role === 'host' ? 'flex' : 'none';
+  const voteTitleEl  = document.getElementById('postgame-vote-title');
+  const voteBtnWrap  = document.getElementById('postgame-vote-buttons');
+  
+  if (state.role === 'host') {
+    // HOST: Hide the voting buttons and title entirely, show primary host actions directly
+    if (hostActionsEl) hostActionsEl.style.display = 'flex';
+    if (voteTitleEl)   voteTitleEl.style.display   = 'none';
+    if (voteBtnWrap)   voteBtnWrap.style.display   = 'none';
+  } else {
+    // PLAYER: Show the voting buttons, hide host-only actions
+    if (hostActionsEl) hostActionsEl.style.display = 'none';
+    if (voteTitleEl)   voteTitleEl.style.display   = 'block';
+    if (voteBtnWrap)   voteBtnWrap.style.display   = 'flex';
+  }
 
   // Reset vote UI
   resetPostgameVoteUI();
