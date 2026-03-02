@@ -1939,16 +1939,32 @@ function showQuestionResult(data) {
       resultMsg.className = `result-score-msg ${data.boss.defeated ? 'correct' : 'incorrect'}`;
     }
   } else if (Array.isArray(data.correctPairs)) {
-    labelEl.textContent        = '✅ التطابق الصحيح';
-    answerEl.style.display     = 'none';
-    pairsEl.style.display      = 'block';
-    pairsEl.innerHTML = (data.correctPairs || []).map(p =>
-      `<li class="result-pair">
-        ${renderResultValue(p.left, 'left')}
-        <span class="pair-arrow">→</span>
-        ${renderResultValue(p.right, 'right')}
-      </li>`
-    ).join('');
+    if (type === 'match_plus' && isPuzzleMode) {
+      labelEl.textContent = '✅ الصورة الصحيحة';
+      answerEl.style.display = 'none';
+      pairsEl.style.display = 'block';
+      const fullImage = typeof data?.matchPlusImage === 'string' ? data.matchPlusImage.trim() : '';
+      if (fullImage) {
+        pairsEl.innerHTML = `
+          <li class="result-pair" style="justify-content:center;align-items:center;padding:0.5rem;">
+            <img src="${escapeHtml(fullImage)}" alt="puzzle solution" style="max-width: min(320px, 78vw); max-height: 260px; border-radius: 10px; object-fit: contain; border: 1px solid rgba(148,163,184,0.35); background: rgba(2,6,23,0.4);" />
+          </li>
+        `;
+      } else {
+        pairsEl.innerHTML = `<li class="result-pair"><span dir="auto">تم حلّ البازل ✅</span></li>`;
+      }
+    } else {
+      labelEl.textContent        = '✅ التطابق الصحيح';
+      answerEl.style.display     = 'none';
+      pairsEl.style.display      = 'block';
+      pairsEl.innerHTML = (data.correctPairs || []).map(p =>
+        `<li class="result-pair">
+          ${renderResultValue(p.left, 'left')}
+          <span class="pair-arrow">→</span>
+          ${renderResultValue(p.right, 'right')}
+        </li>`
+      ).join('');
+    }
   } else if (Array.isArray(data.correctOrder) && Array.isArray(data.items)) {
     labelEl.textContent    = '✅ الترتيب الصحيح';
     answerEl.style.display = 'none';
@@ -3983,7 +3999,7 @@ socket.on('game:leaderboard', (data) => {
   if (handledByMode === true) return;
 
   // Server already waits 2s after question:end before sending this — no extra delay needed
-  showLeaderboard(data, false);
+  showLeaderboard(data, !!data?.isFinal);
 });
 
 /** BOTH: Game over — Podium Ceremony */

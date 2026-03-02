@@ -1664,10 +1664,10 @@ function endMiniGameBlock(room) {
 
   room.state = 'leaderboard';
 
-  // Score match-plus blocks using the standard question-type evaluator so
-  // players receive points and correctness feedback before leaderboard.
+  // Score mini-game blocks using standard question-type evaluators so
+  // players receive points + correctness feedback before leaderboard.
   let didEmitBlockReveal = false;
-  if (room.currentQuestionPayload?.type === 'match_plus') {
+  if (room.currentQuestionPayload?.type && room.currentQuestionPayload.type !== 'mini_game_block') {
     const q = room.currentQuestionPayload;
     const duration = room.questionDuration || 60;
     const challengeSettings = room.challengeSettings || CHALLENGE_PRESETS.classic;
@@ -1723,23 +1723,41 @@ function endMiniGameBlock(room) {
   const isLastQuestion = room.questionIndex >= (Array.isArray(room.questions) ? room.questions.length - 1 : 0);
 
   if (isLastQuestion) {
-    room.state = 'finished';
-    const emitDefault = () => io.to(room.pin).emit('game:over', { leaderboard });
-    const handled = callRoomGameModeHook(room, 'onGameOver', {
-      room, io, leaderboard, endedByHost: false, dispatchDefault: emitDefault,
-    });
-    if (handled !== true) emitDefault();
+    const emitFinalLeaderboardThenGameOver = () => {
+      io.to(room.pin).emit('game:leaderboard', { leaderboard, isFinal: true });
+      setTimeout(() => {
+        room.state = 'finished';
+        const emitDefault = () => io.to(room.pin).emit('game:over', { leaderboard });
+        const handled = callRoomGameModeHook(room, 'onGameOver', {
+          room, io, leaderboard, endedByHost: false, dispatchDefault: emitDefault,
+        });
+        if (handled !== true) emitDefault();
+      }, config.GAME.LEADERBOARD_DURATION_MS);
+    };
+
+    if (didEmitBlockReveal) {
+      setTimeout(emitFinalLeaderboardThenGameOver, 1800);
+    } else {
+      emitFinalLeaderboardThenGameOver();
+    }
   } else {
-    const emitLeaderboardAndContinue = () => {
-      io.to(room.pin).emit('game:leaderboard', { leaderboard, isFinal: false });
+    const continueAfterLeaderboard = () => {
       room.questionIndex++;
       const isNextLast = room.questionIndex >= (Array.isArray(room.questions) ? room.questions.length - 1 : 0);
+      const finalQuestionOverlayDelayMs = 1800;
       if (isNextLast) {
         io.to(room.pin).emit('game:final_question');
-        setTimeout(() => sendQuestion(room), 4500);
+        setTimeout(() => sendQuestion(room), finalQuestionOverlayDelayMs);
       } else {
         sendQuestion(room);
       }
+    };
+
+    const emitLeaderboardAndContinue = () => {
+      io.to(room.pin).emit('game:leaderboard', { leaderboard, isFinal: false });
+      setTimeout(() => {
+        continueAfterLeaderboard();
+      }, config.GAME.LEADERBOARD_DURATION_MS);
     };
 
     if (didEmitBlockReveal) {
@@ -1948,19 +1966,22 @@ function endQuestion(room) {
       const isLastQuestion  = room.questionIndex >= room.questions.length - 1;
 
       if (isLastQuestion) {
-        room.state = 'finished';
-        const emitDefaultGameOver = () => {
-          io.to(room.pin).emit('game:over', { leaderboard });
-        };
-        const handledGameOver = callRoomGameModeHook(room, 'onGameOver', {
-          room,
-          io,
-          leaderboard,
-          endedByHost: false,
-          dispatchDefault: emitDefaultGameOver,
-        });
-        if (handledGameOver === true) return;
-        emitDefaultGameOver();
+        io.to(room.pin).emit('game:leaderboard', { leaderboard, isFinal: true });
+        setTimeout(() => {
+          room.state = 'finished';
+          const emitDefaultGameOver = () => {
+            io.to(room.pin).emit('game:over', { leaderboard });
+          };
+          const handledGameOver = callRoomGameModeHook(room, 'onGameOver', {
+            room,
+            io,
+            leaderboard,
+            endedByHost: false,
+            dispatchDefault: emitDefaultGameOver,
+          });
+          if (handledGameOver === true) return;
+          emitDefaultGameOver();
+        }, config.GAME.LEADERBOARD_DURATION_MS);
       } else {
         io.to(room.pin).emit('game:leaderboard', { leaderboard, isFinal: false });
         setTimeout(() => {
@@ -1973,7 +1994,7 @@ function endQuestion(room) {
             // Delay the actual question to let the animation play
             setTimeout(() => {
               sendQuestion(room);
-            }, 4500);
+            }, 1800);
           } else {
             sendQuestion(room);
           }
