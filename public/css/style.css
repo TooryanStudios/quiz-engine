@@ -4420,7 +4420,7 @@ video.question-media {
 
 /* Simple Image Puzzle (Match Plus Arena) */
 .simple-puzzle-wrap {
-  --spt: 46px; /* reduced from 62px */
+  --spt: 72px;
   --sgap: 3px;  /* grid line width */
   display: grid;
   grid-template-columns: calc(var(--spt) * var(--spgrid, 3)) calc(var(--spt) * var(--spgrid, 3));
@@ -4688,7 +4688,7 @@ video.question-media {
 
 /* ── Host preview ── */
 .simple-puzzle-host-wrap {
-  --spt: 48px; /* host tile size – smaller than player view */
+  --spt: 58px;
   max-width: 480px;
   margin: 0 auto;
   display: flex;
@@ -4725,7 +4725,7 @@ video.question-media {
 
 @media (max-width: 900px) {
   .simple-puzzle-wrap {
-    --spt: 38px;
+    --spt: 60px;
     grid-template-columns: calc(var(--spt) * var(--spgrid, 3)) calc(var(--spt) * var(--spgrid, 3));
     max-width: 100%;
     gap: 8px 16px;
@@ -4735,7 +4735,7 @@ video.question-media {
 @media (max-width: 700px) {
   .simple-puzzle-wrap {
     /* Stack board above pool on phone-sized screens */
-    --spt: min(calc((100vw - 32px) / var(--spgrid, 3)), 46px);
+    --spt: min(calc((100vw - 32px) / var(--spgrid, 3)), 64px);
     grid-template-columns: 1fr;
     grid-template-rows: auto auto auto;
     max-width: 100%;

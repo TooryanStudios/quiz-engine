@@ -261,6 +261,7 @@ export class MatchRenderer extends BaseRenderer {
     const hintBtn = container.querySelector('.puzzle-hint-btn');
     if (hintBtn) {
       const imageUrl = this.getPuzzleImageUrl();
+      let hintPinned = false;
       const showHint = (e) => {
         e.preventDefault();
         hintBtn.classList.add('is-held');
@@ -286,17 +287,53 @@ export class MatchRenderer extends BaseRenderer {
           document.body.appendChild(overlay);
         }
         overlay.style.backgroundImage = `url('${imageUrl}')`;
-        requestAnimationFrame(() => overlay.classList.add('is-visible'));
+        requestAnimationFrame(() => {
+          overlay.classList.add('is-visible');
+          overlay.style.opacity = '1';
+        });
       };
       const hideHint = () => {
+        if (hintPinned) return;
         hintBtn.classList.remove('is-held');
         const overlay = document.getElementById('puzzle-hint-overlay');
-        if (overlay) overlay.classList.remove('is-visible');
+        if (overlay) {
+          overlay.classList.remove('is-visible');
+          overlay.style.opacity = '0';
+        }
       };
+
+      const forceHideHint = () => {
+        hintPinned = false;
+        hintBtn.classList.remove('is-held');
+        const overlay = document.getElementById('puzzle-hint-overlay');
+        if (overlay) {
+          overlay.classList.remove('is-visible');
+          overlay.style.opacity = '0';
+        }
+      };
+
       hintBtn.addEventListener('pointerdown', showHint);
       hintBtn.addEventListener('pointerup', hideHint);
       hintBtn.addEventListener('pointerleave', hideHint);
       hintBtn.addEventListener('pointercancel', hideHint);
+
+      // Click/tap support: toggle a pinned hint for users who don't hold.
+      hintBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        hintPinned = !hintPinned;
+        if (hintPinned) {
+          showHint(e);
+        } else {
+          forceHideHint();
+        }
+      });
+
+      // Dismiss pinned hint if user taps anywhere on puzzle area.
+      container.addEventListener('pointerdown', (e) => {
+        if (!hintPinned) return;
+        if (e.target === hintBtn || hintBtn.contains(e.target)) return;
+        forceHideHint();
+      });
     }
 
     this.correctSparkleSlot = -1;
@@ -450,6 +487,30 @@ export class MatchRenderer extends BaseRenderer {
    */
   getAnswer() {
     return { matches: state.matchConnections, pairs: state.matchConnections };
+  }
+
+  onAnswerSubmitted() {
+    super.onAnswerSubmitted();
+    const msgEl = safeGet('player-answered-msg');
+    if (!msgEl) return;
+
+    const lefts = Array.isArray(state.matchLefts) ? state.matchLefts : [];
+    const rights = Array.isArray(state.matchRights) ? state.matchRights : [];
+    const matches = Array.isArray(state.matchConnections) ? state.matchConnections : [];
+    const expected = Math.min(lefts.length, matches.length);
+    let correct = 0;
+
+    for (let i = 0; i < expected; i++) {
+      const pickIndex = matches[i];
+      if (!Number.isInteger(pickIndex) || pickIndex < 0 || pickIndex >= rights.length) continue;
+      if (String(rights[pickIndex]) === String(lefts[i])) correct++;
+    }
+
+    if (expected > 0 && correct === expected) {
+      msgEl.textContent = '✅ إجابة صحيحة بالكامل! جاري احتساب النقاط…';
+    } else {
+      msgEl.textContent = `🟡 تم الإرسال: ${correct}/${expected} مطابقة صحيحة (انتظر النتيجة)`;
+    }
   }
   
   /**

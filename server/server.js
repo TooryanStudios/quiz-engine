@@ -1664,6 +1664,61 @@ function endMiniGameBlock(room) {
 
   room.state = 'leaderboard';
 
+  // Score match-plus blocks using the standard question-type evaluator so
+  // players receive points and correctness feedback before leaderboard.
+  let didEmitBlockReveal = false;
+  if (room.currentQuestionPayload?.type === 'match_plus') {
+    const q = room.currentQuestionPayload;
+    const duration = room.questionDuration || 60;
+    const challengeSettings = room.challengeSettings || CHALLENGE_PRESETS.classic;
+    const typeHandler = getQuestionTypeHandler(q.type);
+
+    if (typeHandler && typeof typeHandler.evaluateAnswer === 'function') {
+      const roundScores = [];
+
+      room.players.forEach((player) => {
+        const answer = player.currentAnswer;
+        const timeTaken = player.answerTime;
+        const { isCorrect, roundScore } = typeHandler.evaluateAnswer({
+          room,
+          q,
+          player,
+          answer,
+          timeTaken,
+          duration,
+          challengeSettings,
+        });
+
+        let penalty = 0;
+        if (!isCorrect && roundScore === 0) {
+          const shielded = room.currentQuestionMeta?.shieldTargetId === player.id;
+          penalty = shielded ? 0 : Number(challengeSettings.wrongPenalty || ROLE_WRONG_PENALTY);
+        }
+
+        player.score = Math.max(0, player.score + roundScore - penalty);
+        roundScores.push({
+          id: player.id,
+          nickname: player.nickname,
+          avatar: player.avatar || '🎮',
+          roundScore,
+          penalty,
+          totalScore: player.score,
+          isCorrect,
+          streak: player.streak,
+        });
+
+        player.currentAnswer = null;
+        player.answerTime = duration;
+      });
+
+      roundScores.sort((a, b) => b.totalScore - a.totalScore);
+      const correctReveal = { questionType: q.type, roundScores };
+      Object.assign(correctReveal, typeHandler.buildCorrectReveal({ room, q, challengeSettings }));
+      io.to(room.pin).emit('question:end', correctReveal);
+      didEmitBlockReveal = true;
+    }
+  }
+
   const leaderboard = buildLeaderboard(room);
   const isLastQuestion = room.questionIndex >= (Array.isArray(room.questions) ? room.questions.length - 1 : 0);
 
@@ -1675,8 +1730,8 @@ function endMiniGameBlock(room) {
     });
     if (handled !== true) emitDefault();
   } else {
-    io.to(room.pin).emit('game:leaderboard', { leaderboard, isFinal: false });
-    setTimeout(() => {
+    const emitLeaderboardAndContinue = () => {
+      io.to(room.pin).emit('game:leaderboard', { leaderboard, isFinal: false });
       room.questionIndex++;
       const isNextLast = room.questionIndex >= (Array.isArray(room.questions) ? room.questions.length - 1 : 0);
       if (isNextLast) {
@@ -1685,7 +1740,17 @@ function endMiniGameBlock(room) {
       } else {
         sendQuestion(room);
       }
-    }, config.GAME.LEADERBOARD_DURATION_MS);
+    };
+
+    if (didEmitBlockReveal) {
+      setTimeout(() => {
+        emitLeaderboardAndContinue();
+      }, 1800);
+    } else {
+      setTimeout(() => {
+        emitLeaderboardAndContinue();
+      }, config.GAME.LEADERBOARD_DURATION_MS);
+    }
   }
 }
 
