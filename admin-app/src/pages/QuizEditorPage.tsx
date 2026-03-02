@@ -497,10 +497,9 @@ export function QuizEditorPage() {
       const navState = location.state as Record<string, unknown> | null
       if (navState?.skipPicker) {
         if (navState.contentType) setContentType(navState.contentType as 'quiz' | 'mini-game' | 'mix')
-        setShowMetadataDialog(true)
-      } else {
-        setShowContentTypePicker(true)
       }
+      // Always go straight to the metadata dialog — picker is accessible via toolbar button
+      setShowMetadataDialog(true)
       return
     }
     getQuizById(routeId)
@@ -589,7 +588,8 @@ export function QuizEditorPage() {
       return
     }
     setContentType(type)
-    setShowMetadataDialog(true)
+    // Metadata dialog already shows on initial load; don't re-open it when
+    // the user switches type from the toolbar picker button.
   }
 
   const addMiniGameBlock = (gameId: string) => {
@@ -983,7 +983,17 @@ export function QuizEditorPage() {
           padding: '1.5rem',
         }}>
           <div style={{ width: '100%', maxWidth: '720px' }}>
-            <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+            <div style={{ textAlign: 'center', marginBottom: '2rem', position: 'relative' }}>
+              <button
+                type="button"
+                onClick={() => setShowContentTypePicker(false)}
+                style={{
+                  position: 'absolute', top: '-0.5rem', left: 0,
+                  background: 'transparent', border: '1px solid var(--border-strong)',
+                  color: 'var(--text-mid)', borderRadius: '8px',
+                  padding: '0.3rem 0.6rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 700,
+                }}
+              >✕ إغلاق</button>
               <h1 style={{ margin: '0 0 0.5rem', fontSize: '1.75rem', fontWeight: 900, color: 'var(--text-bright)' }}>
                 ماذا تريد أن تنشئ؟
               </h1>
@@ -1802,6 +1812,30 @@ export function QuizEditorPage() {
         <div style={{ display: 'flex', gap: isNarrowScreen ? '0.25rem' : '0.45rem', flexWrap: 'wrap', alignItems: 'center' }}>
           {/* Group 1: Settings & Add Question */}
           <div className="quiz-toolbar-group" style={{ display: 'flex', gap: isNarrowScreen ? '0.2rem' : '0.35rem', flexWrap: 'wrap', alignItems: 'center', background: 'var(--bg-surface)', border: '1px solid var(--border-strong)', borderRadius: '10px', padding: isNarrowScreen ? '0.15rem' : '0.25rem' }}>
+            {/* Content type badge — click to change type */}
+            {!quizId && (
+              <button
+                type="button"
+                onClick={() => setShowContentTypePicker(true)}
+                style={{
+                  background: 'transparent', border: '1px solid transparent',
+                  color: contentType === 'mix' ? '#059669' : contentType === 'mini-game' ? '#7c3aed' : 'var(--text-bright)',
+                  padding: isNarrowScreen ? '0.32rem 0.5rem' : '0.42rem 0.72rem',
+                  borderRadius: '8px', fontSize: isNarrowScreen ? '0.7rem' : '0.8rem', fontWeight: 700,
+                  cursor: 'pointer', transition: 'all 0.16s ease', whiteSpace: 'nowrap',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--border-strong)'; e.currentTarget.style.background = 'var(--bg-deep)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.background = 'transparent' }}
+                title="تغيير نوع المحتوى"
+              >
+                {contentType === 'mix' ? '🔀' : contentType === 'mini-game' ? '🎮' : '📋'}
+                {!isNarrowScreen && (
+                  <span style={{ marginRight: '0.3rem' }}>
+                    {contentType === 'mix' ? ' مزيج' : contentType === 'mini-game' ? ' ميني جيم' : ' اختبار'}
+                  </span>
+                )}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => openMetadataDialog()}
