@@ -243,7 +243,7 @@ export class MatchRenderer extends BaseRenderer {
     const diagnostics = this.getPuzzleDiagnostics(lefts, rights, state.matchConnections);
     const diagnosticsText = diagnostics.allCorrect
       ? '✅ إجابة صحيحة بالكامل! كل القطع في مكانها الصحيح.'
-      : `🧪 التشخيص: صحيح ضمن الموضوع ${diagnostics.correctCount}/${diagnostics.placedCount || 0} (${diagnostics.placedAverage}%) • التقدم الكلي ${diagnostics.correctCount}/${diagnostics.totalSlots} (${diagnostics.overallAverage}%)`;
+      : `🧪 التشخيص: الصحيح من القطع الموضوعة ${diagnostics.correctCount}/${diagnostics.placedCount || 0} (${diagnostics.placedAverage}%) • الإكمال الكلي ${diagnostics.correctCount}/${diagnostics.totalSlots} (${diagnostics.overallAverage}%)`;
 
     container.innerHTML = `
       <div class="simple-puzzle-wrap ${isComplete ? 'puzzle-complete' : ''}" style="--spgrid: ${grid};">

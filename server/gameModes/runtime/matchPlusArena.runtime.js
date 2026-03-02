@@ -161,7 +161,7 @@ function createMatchPlusArenaRuntime() {
       return true;
     },
 
-    startBlock({ room, io, questionIndex, total, duration, players, blockConfig }) {
+    startBlock({ room, io, questionIndex, total, duration, players, blockConfig, buildQuestionPayload }) {
       // Build a synthetic match_plus question from the block config
       const syntheticQ = {
         type: 'match_plus',
@@ -174,17 +174,36 @@ function createMatchPlusArenaRuntime() {
       };
 
       const questionPayload = transformLegacyQuestionToMatchPlus(syntheticQ, room);
+
+      // Build the final payload through the canonical match_plus handler so
+      // server-side scoring has consistent rightOrder metadata for evaluation.
+      let payloadForClients = { ...questionPayload };
+      if (typeof buildQuestionPayload === 'function') {
+        try {
+          const built = buildQuestionPayload('match_plus', questionPayload);
+          if (built && typeof built === 'object') {
+            payloadForClients = { ...questionPayload, ...built };
+          }
+        } catch (error) {
+          console.warn('[match-plus-arena] Failed to build canonical payload for block:', error?.message || error);
+        }
+      }
+
       questionPayload.matchPlusPlugin = true;
       questionPayload.matchPlusModes = [...MATCH_PLUS_MODES];
       questionPayload.miniGameBlockId = 'match-plus-arena';
 
-      room.currentQuestionPayload = { ...questionPayload };
+      payloadForClients.matchPlusPlugin = true;
+      payloadForClients.matchPlusModes = [...MATCH_PLUS_MODES];
+      payloadForClients.miniGameBlockId = 'match-plus-arena';
+
+      room.currentQuestionPayload = { ...payloadForClients };
       room.currentQuestionMeta = room.currentQuestionMeta || {};
 
       io.to(room.pin).emit('game:question', {
         questionIndex: questionIndex || 0,
         total: total || 1,
-        question: questionPayload,
+        question: payloadForClients,
         duration: duration || 60,
         players: players || [],
       });

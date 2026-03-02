@@ -4441,6 +4441,19 @@ video.question-media {
   padding: 4px 0 2px;
 }
 
+.simple-puzzle-diagnostics {
+  grid-column: 1 / -1;
+  text-align: center;
+  font-size: 0.86rem;
+  line-height: 1.35;
+  color: var(--text-dim);
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 10px;
+  padding: 0.42rem 0.6rem;
+  word-break: break-word;
+}
+
 /* ── Board (slots) ── */
 .simple-puzzle-board {
   display: grid;

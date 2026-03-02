@@ -867,6 +867,8 @@ function startHostLaunch(quizSlug = null) {
 // Player List Rendering
 // ─────────────────────────────────────────────
 function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
+    if (errEl) errEl.textContent = `⚠️ ${message}`;
+
   if (!listEl) return;
   const playersArr = Array.isArray(players) ? players : [];
   if (countEl) countEl.textContent = playersArr.length;
@@ -950,6 +952,8 @@ function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
 // Avatar Picker — Inline overlay (bypasses old modal)
 // ─────────────────────────────────────────────
 function openAvatarPicker(currentAvatar, onSelect) {
+    showError('join-error', `⚠️ ${message}`);
+
   // Remove any existing picker overlay
   const old = document.getElementById('avatar-inline-overlay');
   if (old) old.remove();
@@ -1928,31 +1932,22 @@ function showQuestionResult(data) {
   answerEl.style.display = '';
 
   if (type === 'boss' || data.boss) {
-    labelEl.textContent  = '⚔�? Boss Battle Result';
+    labelEl.textContent  = '⚔️ Boss Battle Result';
     answerEl.textContent = `${data.correctOption || ''}`;
 
     if (data.boss) {
       bossStatusText = data.boss.defeated
         ? `💥 ${data.boss.name} defeated!`
-        : `🛡�? ${data.boss.name} survived with ${data.boss.remainingHp}/${data.boss.maxHp} HP`;
+        : `🛡️ ${data.boss.name} survived with ${data.boss.remainingHp}/${data.boss.maxHp} HP`;
       resultMsg.textContent = `${bossStatusText} • Team Damage: ${data.boss.totalDamage}`;
       resultMsg.className = `result-score-msg ${data.boss.defeated ? 'correct' : 'incorrect'}`;
     }
   } else if (Array.isArray(data.correctPairs)) {
     if (type === 'match_plus' && isPuzzleMode) {
-      labelEl.textContent = '✅ الصورة الصحيحة';
-      answerEl.style.display = 'none';
-      pairsEl.style.display = 'block';
-      const fullImage = typeof data?.matchPlusImage === 'string' ? data.matchPlusImage.trim() : '';
-      if (fullImage) {
-        pairsEl.innerHTML = `
-          <li class="result-pair" style="justify-content:center;align-items:center;padding:0.5rem;">
-            <img src="${escapeHtml(fullImage)}" alt="puzzle solution" style="max-width: min(320px, 78vw); max-height: 260px; border-radius: 10px; object-fit: contain; border: 1px solid rgba(148,163,184,0.35); background: rgba(2,6,23,0.4);" />
-          </li>
-        `;
-      } else {
-        pairsEl.innerHTML = `<li class="result-pair"><span dir="auto">تم حلّ البازل ✅</span></li>`;
-      }
+      labelEl.textContent = '🧩 نتيجة البازل';
+      pairsEl.style.display = 'none';
+      answerEl.style.display = '';
+      answerEl.textContent = 'تم تقييم الإجابة. راجع نتيجة النقاط أدناه.';
     } else {
       labelEl.textContent        = '✅ التطابق الصحيح';
       answerEl.style.display     = 'none';
@@ -2045,7 +2040,7 @@ function showQuestionResult(data) {
     }
 
     if (data.boss?.teamBonus) {
-      streakMsg.textContent = `${streakMsg.textContent ? `${streakMsg.textContent} • ` : ''}�? Team bonus +${data.boss.teamBonus}`;
+      streakMsg.textContent = `${streakMsg.textContent ? `${streakMsg.textContent} • ` : ''}💎 Team bonus +${data.boss.teamBonus}`;
     }
   } else {
     resultMsg.textContent = '';
@@ -2062,7 +2057,7 @@ function showLeaderboard(data, isFinal) {
   const titleEl = document.getElementById('lb-title');
   const hintEl  = document.getElementById('lb-next-hint');
 
-  titleEl.textContent = isFinal ? '🎉 Final Results' : '�?� Leaderboard';
+  titleEl.textContent = isFinal ? '🎉 Final Results' : '🏆 Leaderboard';
   hintEl.textContent  = isFinal ? '' : 'Next question coming up…';
   hintEl.style.display = isFinal ? 'none' : 'block';
 
@@ -2102,8 +2097,8 @@ function updatePlayerScoreUI() {
 
 function roleDisplayName(role) {
   if (role === 'scholar') return '📘 Scholar';
-  if (role === 'shield') return '🛡�? Shield';
-  if (role === 'saboteur') return '�?��? Saboteur';
+  if (role === 'shield') return '🛡️ Shield';
+  if (role === 'saboteur') return '🕶️ Saboteur';
   return 'Player';
 }
 
@@ -2319,8 +2314,8 @@ document.getElementById('form-join').addEventListener('submit', (e) => {
   clearTimeout(joinTimeoutId);
   joinTimeoutId = setTimeout(() => {
     if (window.__dbgLog) window.__dbgLog('join TIMEOUT 10s');
-    pushJoinDebugLog('⚠�? TIMEOUT: No room:joined received after 10 seconds');
-    showError('join-error', '⚠�? Timeout joining room. Check your connection and try again.');
+    pushJoinDebugLog('⚠️ TIMEOUT: No room:joined received after 10 seconds');
+    showError('join-error', '⚠️ Timeout joining room. Check your connection and try again.');
     setConnectionStatus('error', 'Join timeout');
     if (joinBtn) { joinBtn.disabled = false; joinBtn.textContent = 'Join Game'; }
   }, 10000);
@@ -3088,7 +3083,7 @@ document.getElementById('btn-copy-join-url').addEventListener('click', async () 
   const btn = document.getElementById('btn-copy-join-url');
   const url = state.currentJoinUrl;
   if (!url) {
-    btn.textContent = '⚠�? No URL yet';
+    btn.textContent = '⚠️ No URL yet';
     setTimeout(() => { btn.textContent = '📋 Copy Join URL'; }, 1400);
     return;
   }
@@ -3693,9 +3688,9 @@ socket.on('room:error', ({ message, code }) => {
   const editPanel = document.getElementById('edit-profile-panel');
   if (state.role === 'player' && editPanel && editPanel.classList.contains('open')) {
     const errEl = document.getElementById('edit-profile-error');
-    if (errEl) errEl.textContent = `⚠�? ${message}`;
+    if (errEl) errEl.textContent = `⚠️ ${message}`;
   } else if (state.role === 'player') {
-    showError('join-error', `⚠�? ${message}`);
+    showError('join-error', `⚠️ ${message}`);
   } else {
     alert(`Server error: ${message}`);
   }
@@ -3882,13 +3877,13 @@ socket.on('game:question', (data) => {
 socket.on('role:shield_applied', ({ from }) => {
   if (state.role !== 'player') return;
   const msg = document.getElementById('player-answered-msg');
-  if (msg) msg.textContent = `🛡�? ${from} protected you from penalty this round.`;
+  if (msg) msg.textContent = `🛡️ ${from} protected you from penalty this round.`;
 });
 
 socket.on('role:frozen', ({ durationMs, from }) => {
   if (state.role !== 'player') return;
   clearTimeout(frozenTimeout);
-  setFrozenState(true, `�?��? ${from} froze your screen for ${Math.ceil((durationMs || 2000) / 1000)}s`);
+  setFrozenState(true, `🕶️ ${from} froze your screen for ${Math.ceil((durationMs || 2000) / 1000)}s`);
   frozenTimeout = setTimeout(() => {
     setFrozenState(false);
   }, durationMs || 2000);
@@ -3900,7 +3895,7 @@ socket.on('game:paused', () => {
   stopClientTimer();
   Sounds.pause();
   const btn = document.getElementById('btn-pause-resume');
-  if (btn) { btn.textContent = '▶�? Resume'; btn.dataset.paused = 'true'; }
+  if (btn) { btn.textContent = '▶️ Resume'; btn.dataset.paused = 'true'; }
   // Also update player-view pause button (solo mode)
   const pbtn = document.getElementById('btn-player-pause-resume');
   if (pbtn) { pbtn.textContent = '▶️ استئناف'; pbtn.dataset.paused = 'true'; }
@@ -3922,7 +3917,7 @@ socket.on('game:resumed', ({ timeRemaining }) => {
   document.getElementById('overlay-paused').style.display = 'none';
   document.getElementById('btn-overlay-resume').style.display = 'none';
   const btn = document.getElementById('btn-pause-resume');
-  if (btn) { btn.textContent = '�?��? Pause'; btn.dataset.paused = 'false'; }
+  if (btn) { btn.textContent = '⏸️ Pause'; btn.dataset.paused = 'false'; }
   // Also update player-view pause button (solo mode)
   const pbtn2 = document.getElementById('btn-player-pause-resume');
   if (pbtn2) { pbtn2.textContent = '⏸️ إيقاف'; pbtn2.dataset.paused = 'false'; }

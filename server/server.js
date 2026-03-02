@@ -1593,7 +1593,20 @@ function sendMiniGameBlock(room, q, opts = {}) {
 
   let started = false;
   if (typeof blockRuntime.startBlock === 'function') {
-    started = blockRuntime.startBlock({ room, io, questionIndex, total, duration, players, blockConfig: blockCfg });
+    started = blockRuntime.startBlock({
+      room,
+      io,
+      questionIndex,
+      total,
+      duration,
+      players,
+      blockConfig: blockCfg,
+      buildQuestionPayload: (questionType, qInput) => {
+        const handler = getQuestionTypeHandler(questionType);
+        if (!handler || typeof handler.buildQuestionPayload !== 'function') return null;
+        return handler.buildQuestionPayload({ room, q: qInput });
+      },
+    });
   }
 
   if (started === false) {
