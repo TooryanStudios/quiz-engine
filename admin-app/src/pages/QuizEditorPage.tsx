@@ -209,6 +209,7 @@ export function QuizEditorPage() {
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null)
   const [showCropDialog, setShowCropDialog] = useState(false)
   const [uploadingMiniGameImage, setUploadingMiniGameImage] = useState(false)
+  const [puzzleCropTarget, setPuzzleCropTarget] = useState<{ kind: 'default' } | { kind: 'block'; questionIndex: number }>({ kind: 'default' })
   const [showContentTypePicker, setShowContentTypePicker] = useState(false)
   const [contentType, setContentType] = useState<'quiz' | 'mini-game' | 'mix'>('quiz')
   const [showAddBlockPicker, setShowAddBlockPicker] = useState(false)
@@ -276,37 +277,18 @@ export function QuizEditorPage() {
     input.click()
   }
 
-  const uploadMiniGameBlockPuzzleImage = async (questionIndex: number) => {
+  const openMiniGamePuzzleCropPicker = (target: { kind: 'default' } | { kind: 'block'; questionIndex: number }) => {
     const input = document.createElement('input')
     input.type = 'file'
     input.accept = 'image/*'
-    input.onchange = async (event) => {
+    input.onchange = (event) => {
       const file = (event.target as HTMLInputElement).files?.[0]
       if (!file) return
 
-      try {
-        showToast({ message: '⏳ جاري رفع صورة البازل...', type: 'info' })
-        const ext = file.name.split('.').pop() || 'jpg'
-        const path = `mini-game-blocks/match-plus/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
-        const storageRef = ref(storage, path)
-        await uploadBytes(storageRef, file)
-        const url = await getDownloadURL(storageRef)
-
-        const targetQuestion = questions[questionIndex]
-        if (!targetQuestion) return
-        const currentCfg = (targetQuestion.miniGameBlockConfig || {}) as Record<string, unknown>
-        updateQuestion(questionIndex, {
-          miniGameBlockConfig: {
-            ...currentCfg,
-            puzzleImage: url,
-          },
-        })
-
-        showToast({ message: '✅ تم رفع صورة البازل بنجاح', type: 'success' })
-      } catch (error) {
-        console.error('Mini-game block puzzle image upload failed', error)
-        showToast({ message: '❌ فشل رفع صورة البازل', type: 'error' })
-      }
+      setPuzzleCropTarget(target)
+      const localUrl = URL.createObjectURL(file)
+      setCropImageSrc(localUrl)
+      setShowCropDialog(true)
     }
     input.click()
   }
@@ -320,27 +302,35 @@ export function QuizEditorPage() {
   }
 
   const pickMiniGamePuzzleImage = () => {
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = 'image/*'
-    input.onchange = (event) => {
-      const file = (event.target as HTMLInputElement).files?.[0]
-      if (!file) return
-      const localUrl = URL.createObjectURL(file)
-      setCropImageSrc(localUrl)
-      setShowCropDialog(true)
-    }
-    input.click()
+    openMiniGamePuzzleCropPicker({ kind: 'default' })
   }
 
   const handleMiniGamePuzzleCropConfirm = async (blob: Blob) => {
     setUploadingMiniGameImage(true)
     try {
-      const path = `mini-games/match-plus-arena/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
+      showToast({ message: '⏳ جاري رفع صورة البازل...', type: 'info' })
+      const path = puzzleCropTarget.kind === 'block'
+        ? `mini-game-blocks/match-plus/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
+        : `mini-games/match-plus-arena/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
       const storageRef = ref(storage, path)
       await uploadBytes(storageRef, blob, { contentType: 'image/jpeg' })
       const url = await getDownloadURL(storageRef)
-      updateMiniGameConfig({ defaultPuzzleImage: url })
+
+      if (puzzleCropTarget.kind === 'block') {
+        const targetQuestion = questions[puzzleCropTarget.questionIndex]
+        if (targetQuestion) {
+          const currentCfg = (targetQuestion.miniGameBlockConfig || {}) as Record<string, unknown>
+          updateQuestion(puzzleCropTarget.questionIndex, {
+            miniGameBlockConfig: {
+              ...currentCfg,
+              puzzleImage: url,
+            },
+          })
+        }
+      } else {
+        updateMiniGameConfig({ defaultPuzzleImage: url })
+      }
+
       showToast({ message: '✅ تم رفع صورة البازل المربعة بنجاح', type: 'success' })
       closeCropDialog()
     } catch (error) {
@@ -2336,20 +2326,22 @@ export function QuizEditorPage() {
                             <input value={String(blockCfg.puzzleImage || '')} onChange={(e) => updateBlockCfg({ puzzleImage: e.target.value })} placeholder="https://..." style={{ flex: 1, minWidth: '240px', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', color: 'var(--text)' }} />
                             <button
                               type="button"
-                              onClick={() => uploadMiniGameBlockPuzzleImage(index)}
+                              onClick={() => openMiniGamePuzzleCropPicker({ kind: 'block', questionIndex: index })}
+                              disabled={uploadingMiniGameImage}
                               style={{
                                 border: '1px solid var(--border-strong)',
                                 borderRadius: '8px',
                                 background: 'var(--bg-surface)',
                                 color: 'var(--text)',
                                 padding: '0.48rem 0.75rem',
-                                cursor: 'pointer',
+                                cursor: uploadingMiniGameImage ? 'not-allowed' : 'pointer',
+                                opacity: uploadingMiniGameImage ? 0.65 : 1,
                                 fontWeight: 700,
                                 fontSize: '0.78rem',
                                 whiteSpace: 'nowrap',
                               }}
                             >
-                              📁 Upload
+                              {uploadingMiniGameImage ? '⏳ Uploading...' : '🖼️ Upload & Crop'}
                             </button>
                           </div>
                           {String(blockCfg.puzzleImage || '').trim() && (
