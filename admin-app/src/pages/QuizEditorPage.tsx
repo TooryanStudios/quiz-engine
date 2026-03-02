@@ -498,8 +498,6 @@ export function QuizEditorPage() {
       if (navState?.skipPicker) {
         if (navState.contentType) setContentType(navState.contentType as 'quiz' | 'mini-game' | 'mix')
       }
-      // Always go straight to the metadata dialog — picker is accessible via toolbar button
-      setShowMetadataDialog(true)
       return
     }
     getQuizById(routeId)
