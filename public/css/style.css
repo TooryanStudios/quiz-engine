@@ -1018,6 +1018,32 @@ h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-dim); }
   font-weight: 800;
   font-size: 0.85rem;
   white-space: nowrap;
+  position: relative;
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.score-badge.score-bump {
+  transform: scale(1.2) translateY(-2px);
+  box-shadow: 0 0 15px var(--success);
+}
+
+.floating-score-delta {
+  position: absolute;
+  top: -25px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--success);
+  font-weight: 900;
+  font-size: 1.1rem;
+  text-shadow: 0 0 8px rgba(0,0,0,0.8);
+  pointer-events: none;
+  animation: floatUp 0.8s ease-out forwards;
+}
+
+@keyframes floatUp {
+  0% { transform: translate(-50%, 0); opacity: 0; }
+  20% { opacity: 1; }
+  100% { transform: translate(-50%, -30px); opacity: 0; }
 }
 
 .role-badge {

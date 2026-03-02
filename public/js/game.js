@@ -2009,8 +2009,9 @@ function showQuestionResult(data) {
   const myRound = (data.roundScores || []).find(r => r.id === socket.id);
   if ((state.role === 'player' || state.hostIsPlayer) && myRound) {
     state.myStreak = myRound.streak;
-    state.myScore  = myRound.totalScore;
-    updatePlayerScoreUI();
+    
+    // Universal Score Update
+    UniversalScore.update(myRound.totalScore, { animate: true });
 
     if (myRound.isCorrect) {
       Sounds.correct();
@@ -2047,6 +2048,43 @@ function showQuestionResult(data) {
 
   setTimeout(() => showView('view-question-result'), 400);
 }
+
+// ─────────────────────────────────────────────
+// Universal Score State Management
+// ─────────────────────────────────────────────
+const UniversalScore = {
+  update(newScore, options = {}) {
+    const oldScore = state.myScore || 0;
+    state.myScore = newScore;
+    updatePlayerScoreUI();
+
+    if (options.animate && newScore > oldScore) {
+       this.playScoreAnimation(newScore - oldScore);
+    }
+    
+    // Dispatch local event for other components to listen
+    window.dispatchEvent(new CustomEvent('score:updated', { 
+      detail: { score: newScore, delta: newScore - oldScore } 
+    }));
+  },
+
+  playScoreAnimation(delta) {
+    const badge = document.getElementById('player-score-badge');
+    if (!badge) return;
+    
+    // Simple bump animation
+    badge.classList.remove('score-bump');
+    void badge.offsetWidth; // trigger reflow
+    badge.classList.add('score-bump');
+    
+    // Floating text if possible
+    const floating = document.createElement('div');
+    floating.className = 'floating-score-delta';
+    floating.textContent = `+${delta}`;
+    badge.appendChild(floating);
+    setTimeout(() => floating.remove(), 1000);
+  }
+};
 
 // ─────────────────────────────────────────────
 // Leaderboard Screen
@@ -2103,8 +2141,15 @@ function showError(elId, message) {
 }
 
 function updatePlayerScoreUI() {
-  const scoreEl = document.getElementById('player-score-count');
-  if (scoreEl) scoreEl.textContent = String(state.myScore || 0);
+  const scoreTargets = document.querySelectorAll('.universal-score-count');
+  const scoreStr = `${state.myScore || 0} pts`;
+  scoreTargets.forEach(el => {
+    el.textContent = scoreStr;
+  });
+  
+  // Legacy support for any elements still using the old ID
+  const oldScoreEl = document.getElementById('player-score-count');
+  if (oldScoreEl) oldScoreEl.textContent = String(state.myScore || 0);
 }
 
 function roleDisplayName(role) {
@@ -4006,6 +4051,13 @@ socket.on('game:leaderboard', (data) => {
   if (handledByMode === true) return;
 
   // Server already waits 2s after question:end before sending this — no extra delay needed
+  
+  // Universal Score Update from Leaderboard (Sync in case of race)
+  const myEntry = (data.leaderboard || []).find(e => e.id === socket.id);
+  if (myEntry && myEntry.totalScore !== undefined) {
+    UniversalScore.update(myEntry.totalScore, { animate: false });
+  }
+
   showLeaderboard(data, !!data?.isFinal);
 });
 
