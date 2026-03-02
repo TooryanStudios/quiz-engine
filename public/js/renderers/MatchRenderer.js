@@ -269,6 +269,20 @@ export class MatchRenderer extends BaseRenderer {
           overlay = document.createElement('div');
           overlay.id = 'puzzle-hint-overlay';
           overlay.className = 'puzzle-hint-overlay';
+          // Set base styles in JS to avoid CSS insertion issues
+          Object.assign(overlay.style, {
+            position: 'fixed',
+            inset: '0',
+            zIndex: '9500',
+            backgroundSize: window.innerWidth < 600 ? '90% auto' : '65% auto',
+            backgroundRepeat: 'no-repeat',
+            backgroundPosition: 'center',
+            backgroundColor: 'rgba(2,6,23,0.85)',
+            backdropFilter: 'blur(6px)',
+            pointerEvents: 'none',
+            opacity: '0',
+            transition: 'opacity 0.15s ease'
+          });
           document.body.appendChild(overlay);
         }
         overlay.style.backgroundImage = `url('${imageUrl}')`;
@@ -451,8 +465,9 @@ export class MatchRenderer extends BaseRenderer {
     const forceLeftImage = this.isImageMatchMode() && (mode === 'image-text' || mode === 'image-image');
 
     if (isPuzzleMode) {
+      const puzzleGridSize = this.getPuzzleGridSize();
       grid.innerHTML = `
-        <div class="simple-puzzle-host-wrap">
+        <div class="simple-puzzle-host-wrap" style="--spgrid: ${puzzleGridSize};">
           <div class="simple-puzzle-host-title">صورة مجزأة: رتّب القطع حسب مكانها</div>
           <div class="simple-puzzle-host-grid">
             ${lefts.map(l => `<span class="simple-puzzle-host-tile">${this.renderPuzzleTile(l, 'simple-puzzle-host-media', true)}</span>`).join('')}

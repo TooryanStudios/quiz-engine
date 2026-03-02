@@ -3105,7 +3105,31 @@ document.getElementById('btn-mute').addEventListener('click', () => {
   document.getElementById('btn-mute').textContent = isMuted() ? '🔇' : '🔊';
 });
 
-// Play Again button — restart the session in the same room
+// ── Post-Game Vote Buttons ──────────────────
+// Each vote button emits a socket vote and marks itself selected
+document.querySelectorAll('.vote-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const vote = btn.dataset.vote;
+    if (!vote) return;
+    Sounds.click();
+
+    // Optimistic UI: mark selected immediately
+    document.querySelectorAll('.vote-btn').forEach(b => b.classList.remove('vote-selected'));
+    btn.classList.add('vote-selected');
+
+    // Tell server
+    socket.emit('player:postgame_vote', { vote });
+
+    // If the player voted exit, navigate them away after a short delay
+    if (vote === 'exit') {
+      setTimeout(() => {
+        window.location.href = '/' + window.location.search;
+      }, 1800);
+    }
+  });
+});
+
+// ── Host action buttons (play-again / new-session) ──
 document.getElementById('btn-play-again').addEventListener('click', () => {
   if (state.role === 'host') {
     Sounds.click();
@@ -3121,6 +3145,7 @@ document.getElementById('btn-start-new-session').addEventListener('click', () =>
   // Go back to dashboard/home
   window.location.href = 'https://qyan-om.web.app/dashboard';
 });
+
 
 // Back to Home from Room Closed
 document.getElementById('btn-home-from-closed').addEventListener('click', () => {
@@ -3491,8 +3516,9 @@ socket.on('room:rejoined', ({ pin, nickname, avatar, players, score, streak, roo
       const resPanel = document.getElementById('podium-full-results');
       if (resPanel) resPanel.classList.add('podium-results-visible');
       
-      const newSessBtn = document.getElementById('btn-start-new-session');
-      if (newSessBtn) newSessBtn.style.display = 'none';
+      const hostActionsRejoin = document.getElementById('postgame-host-actions');
+      if (hostActionsRejoin) hostActionsRejoin.style.display = 'none';
+      resetPostgameVoteUI();
       
       clearGameSession();
       showView('view-game-over');
@@ -3906,8 +3932,35 @@ socket.on('game:over', (data) => {
   document.getElementById('overlay-paused').style.display = 'none';
 
   const lb = data.leaderboard || [];
-  const newSessionBtn = document.getElementById('btn-start-new-session');
-  newSessionBtn.style.display = state.role === 'host' ? 'block' : 'none';
+
+  // Detect if the current player/solo-host scored 0
+  const myEntry = lb.find(e => e.id === socket.id);
+  const myScore = myEntry ? (myEntry.totalScore || 0) : null;
+  const isZeroScore = myScore === 0;
+
+  // Zero-score challenge banner
+  const zeroBanner = document.getElementById('zero-score-banner');
+  if (zeroBanner) {
+    if (isZeroScore) {
+      const msgs = [
+        '😤 صفر نقاط؟! أنت تستطيع أفضل من هذا — العب مرة أخرى!',
+        '💪 الأبطال لا يستسلمون! حاول مرة أخرى وأثبت نفسك!',
+        '🔥 صفر؟! هذا تحدٍّ لك — هل أنت مستعد للانتقام؟',
+        '🎯 لم تُسجِّل أي نقطة هذه المرة... لكن المباراة القادمة لك!',
+      ];
+      zeroBanner.textContent = msgs[Math.floor(Math.random() * msgs.length)];
+      zeroBanner.style.display = '';
+    } else {
+      zeroBanner.style.display = 'none';
+    }
+  }
+
+  // Show host action row only to the host
+  const hostActionsEl = document.getElementById('postgame-host-actions');
+  if (hostActionsEl) hostActionsEl.style.display = state.role === 'host' ? 'flex' : 'none';
+
+  // Reset vote UI
+  resetPostgameVoteUI();
 
   // Populate full leaderboard list
   document.getElementById('final-leaderboard-list').innerHTML = lb
@@ -3971,16 +4024,18 @@ socket.on('game:over', (data) => {
     if (el && lb[1]) el.classList.add('podium-revealed');
   }, REVEAL_INTERVAL);
 
-  // 1st place (center pillar, tallest) — full celebration
+  // 1st place (center pillar, tallest) — full celebration (skipped for 0-score players)
   setTimeout(() => {
     const el = document.getElementById('podium-slot-1');
     if (el && lb[0]) el.classList.add('podium-revealed');
-    Sounds.fanfare();
-    if (typeof confetti === 'function') {
-      confetti({ particleCount: 180, spread: 90, origin: { y: 0.45 } });
-      setTimeout(() => confetti({ particleCount: 90, angle: 55, spread: 60, origin: { x: 0 } }), 350);
-      setTimeout(() => confetti({ particleCount: 90, angle: 125, spread: 60, origin: { x: 1 } }), 650);
-      setTimeout(() => confetti({ particleCount: 60, spread: 120, origin: { y: 0.3 }, colors: ['#facc15','#fb923c','#34d399'] }), 1100);
+    if (!isZeroScore) {
+      Sounds.fanfare();
+      if (typeof confetti === 'function') {
+        confetti({ particleCount: 180, spread: 90, origin: { y: 0.45 } });
+        setTimeout(() => confetti({ particleCount: 90, angle: 55, spread: 60, origin: { x: 0 } }), 350);
+        setTimeout(() => confetti({ particleCount: 90, angle: 125, spread: 60, origin: { x: 1 } }), 650);
+        setTimeout(() => confetti({ particleCount: 60, spread: 120, origin: { y: 0.3 }, colors: ['#facc15','#fb923c','#34d399'] }), 1100);
+      }
     }
   }, REVEAL_INTERVAL * 2);
 
@@ -3989,6 +4044,67 @@ socket.on('game:over', (data) => {
     fullResults.classList.add('podium-results-visible');
   }, REVEAL_INTERVAL * 2 + 100);
 });
+
+// ─────────────────────────────────────────────
+// Post-Game Vote helpers
+// ─────────────────────────────────────────────
+function resetPostgameVoteUI() {
+  // Clear selected state on vote buttons
+  document.querySelectorAll('.vote-btn').forEach(b => b.classList.remove('vote-selected'));
+  // Reset counts
+  ['new_quiz','play_again','exit'].forEach(v => {
+    const el = document.getElementById(`vote-count-${v}`);
+    if (el) el.textContent = '0';
+  });
+  // Hide exit list
+  const exitList = document.getElementById('postgame-exit-list');
+  if (exitList) exitList.style.display = 'none';
+  document.getElementById('postgame-exit-players').innerHTML = '';
+  // Hide zero-score banner
+  const zeroBanner = document.getElementById('zero-score-banner');
+  if (zeroBanner) zeroBanner.style.display = 'none';
+}
+
+function updatePostgameVoteCounts({ counts = {}, exitedPlayers = [] } = {}) {
+  ['new_quiz','play_again','exit'].forEach(v => {
+    const el = document.getElementById(`vote-count-${v}`);
+    if (!el) return;
+    const next = String(counts[v] || 0);
+    if (el.textContent !== next) {
+      el.textContent = next;
+      el.classList.remove('count-bump');
+      // Force reflow so re-adding the class triggers animation
+      void el.offsetWidth;
+      el.classList.add('count-bump');
+      setTimeout(() => el.classList.remove('count-bump'), 250);
+    }
+  });
+
+  // Show/hide exit list
+  const exitListWrap = document.getElementById('postgame-exit-list');
+  const exitUl = document.getElementById('postgame-exit-players');
+  if (!exitListWrap || !exitUl) return;
+
+  if (exitedPlayers.length > 0) {
+    exitListWrap.style.display = '';
+    exitUl.innerHTML = exitedPlayers.map(p =>
+      `<li class="postgame-exit-chip">
+        <span class="exit-avatar">${escapeHtml(p.avatar || '🎮')}</span>
+        <span>${escapeHtml(p.nickname)}</span>
+      </li>`
+    ).join('');
+  } else {
+    exitListWrap.style.display = 'none';
+    exitUl.innerHTML = '';
+  }
+}
+
+/** BOTH: Live vote count update broadcast by server */
+socket.on('game:vote_update', ({ counts, exitedPlayers }) => {
+  updatePostgameVoteCounts({ counts, exitedPlayers });
+});
+
+
 
 socket.on('room:reset', ({ players, modeInfo, hostIsPlayer }) => {
   clearScholarPreviewInterval();

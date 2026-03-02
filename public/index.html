@@ -600,14 +600,56 @@
           <summary class="podium-details-summary">📋 Full Leaderboard</summary>
           <ol class="leaderboard-list" id="final-leaderboard-list"></ol>
         </details>
-        <div class="podium-actions" style="display: flex; gap: 10px; justify-content: center;">
-          <button class="btn btn-secondary" id="btn-start-new-session" style="display:none; flex: 1; font-weight: normal;">
-            🏠 العودة للوحة التحكم
-          </button>
-          <button class="btn btn-primary" id="btn-play-again" style="flex: 1; font-weight: normal;">
-            🔁 العب مرة أخرى
-          </button>
-        </div>
+        <!-- ── Post-Game Vote Panel ── -->
+        <div class="postgame-vote-wrap" id="postgame-vote-wrap">
+
+          <!-- Vote buttons (shown while voting is open) -->
+          <div class="postgame-vote-buttons" id="postgame-vote-buttons">
+            <!-- Shown only when current player ended with 0 pts -->
+            <div class="zero-score-banner" id="zero-score-banner" style="display:none"></div>
+            <p class="postgame-vote-title" id="postgame-vote-title">ماذا تريد أن تفعل؟</p>
+
+            <button class="vote-btn vote-btn-new" id="vote-btn-new-quiz" data-vote="new_quiz">
+              <span class="vote-btn-icon">🎲</span>
+              <span class="vote-btn-label">كويز جديد</span>
+              <span class="vote-btn-count" id="vote-count-new_quiz">0</span>
+            </button>
+
+            <button class="vote-btn vote-btn-again" id="vote-btn-play-again" data-vote="play_again">
+              <span class="vote-btn-icon">🔁</span>
+              <span class="vote-btn-label">العب مرة أخرى</span>
+              <span class="vote-btn-count" id="vote-count-play_again">0</span>
+            </button>
+
+            <button class="vote-btn vote-btn-exit" id="vote-btn-exit" data-vote="exit">
+              <span class="vote-btn-icon">🚪</span>
+              <span class="vote-btn-label">خروج</span>
+              <span class="vote-btn-count" id="vote-count-exit">0</span>
+            </button>
+
+            <!-- "Create your own" accent CTA -->
+            <a class="vote-btn-create" id="btn-create-quiz" href="https://qyan-om.web.app/editor" target="_blank" rel="noopener noreferrer">
+              ✨ أنشئ كويزك الخاص الآن!
+            </a>
+          </div>
+
+          <!-- Exited players list (visible after someone votes exit) -->
+          <div class="postgame-exit-list" id="postgame-exit-list" style="display:none">
+            <p class="postgame-exit-title">👋 غادر اللعبة</p>
+            <ul class="postgame-exit-players" id="postgame-exit-players"></ul>
+          </div>
+
+          <!-- Host-only action buttons (shown after vote resolves or host decides) -->
+          <div class="postgame-host-actions" id="postgame-host-actions" style="display:none">
+            <button class="btn btn-primary" id="btn-play-again" style="flex: 1;">
+              🔁 العب مرة أخرى
+            </button>
+            <button class="btn btn-secondary" id="btn-start-new-session" style="flex: 1;">
+              🎲 كويز جديد
+            </button>
+          </div>
+
+        </div><!-- /postgame-vote-wrap -->
       </div>
 
     </div><!-- /podium-ceremony -->
