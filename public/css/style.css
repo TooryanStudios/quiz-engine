@@ -3640,6 +3640,197 @@ video.question-media {
   gap: 10px;
 }
 
+/* ═══════════════════════════════════════════
+   Post-Game Vote Panel
+═══════════════════════════════════════════ */
+.postgame-vote-wrap {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.postgame-vote-title {
+  text-align: center;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 4px;
+  letter-spacing: 0.01em;
+}
+
+/* Challenge banner for 0-score players */
+.zero-score-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 8px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #ff6b35 0%, #f7c948 100%);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+  box-shadow: 0 4px 18px rgba(255, 107, 53, 0.40);
+  animation: zeroBannerPop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes zeroBannerPop {
+  from { opacity: 0; transform: scale(0.85) translateY(6px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0);   }
+}
+
+.postgame-vote-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Base vote button */
+.vote-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 13px 18px;
+  border-radius: 14px;
+  border: 2px solid transparent;
+  background: rgba(255,255,255,0.06);
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.12s, box-shadow 0.15s;
+  text-align: start;
+  position: relative;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.vote-btn:active { transform: scale(0.97); }
+.vote-btn:hover  { background: rgba(255,255,255,0.1); }
+
+/* Selected state */
+.vote-btn.vote-selected {
+  border-color: var(--success);
+  background: rgba(45,212,191,0.14);
+  box-shadow: 0 0 0 3px rgba(45,212,191,0.18);
+}
+.vote-btn.vote-selected::after {
+  content: '✓';
+  position: absolute;
+  inset-inline-end: 14px;
+  font-size: 1.1rem;
+  color: var(--success);
+  font-weight: 900;
+}
+
+/* Variant colors */
+.vote-btn-new    { --_accent: #818cf8; }   /* indigo */
+.vote-btn-again  { --_accent: #34d399; }   /* emerald */
+.vote-btn-exit   { --_accent: #f87171; }   /* red */
+.vote-btn.vote-btn-new.vote-selected    { border-color: #818cf8; background: rgba(129,140,248,0.14); box-shadow: 0 0 0 3px rgba(129,140,248,0.18); }
+.vote-btn.vote-btn-again.vote-selected  { border-color: #34d399; background: rgba(52,211,153,0.14); box-shadow: 0 0 0 3px rgba(52,211,153,0.18); }
+.vote-btn.vote-btn-exit.vote-selected   { border-color: #f87171; background: rgba(248,113,113,0.14); box-shadow: 0 0 0 3px rgba(248,113,113,0.18); }
+
+.vote-btn-icon  { font-size: 1.5rem; line-height: 1; flex-shrink: 0; }
+.vote-btn-label { flex: 1; }
+.vote-btn-count {
+  min-width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  font-weight: 900;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  transition: transform 0.15s, background 0.15s;
+}
+.vote-btn-count.count-bump {
+  transform: scale(1.3);
+  background: rgba(255,255,255,0.2);
+}
+
+/* Create-your-own CTA */
+.vote-btn-create {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 18px;
+  border-radius: 14px;
+  border: 2px dashed rgba(250,204,21,0.45);
+  background: rgba(250,204,21,0.06);
+  color: #facc15;
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.12s;
+  text-align: center;
+  letter-spacing: 0.01em;
+}
+.vote-btn-create:hover  { background: rgba(250,204,21,0.14); border-color: rgba(250,204,21,0.7); transform: translateY(-1px); }
+.vote-btn-create:active { transform: scale(0.97); }
+
+/* Exited players section */
+.postgame-exit-list {
+  background: rgba(248,113,113,0.07);
+  border: 1px solid rgba(248,113,113,0.22);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+.postgame-exit-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #f87171;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 8px;
+}
+.postgame-exit-players {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0;
+  margin: 0;
+}
+.postgame-exit-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(248,113,113,0.12);
+  border: 1px solid rgba(248,113,113,0.25);
+  border-radius: 20px;
+  padding: 4px 10px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.postgame-exit-chip .exit-avatar {
+  font-size: 1rem;
+}
+
+/* Host-only action row */
+.postgame-host-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+@media (max-width: 500px) {
+  .postgame-host-actions { flex-direction: column; }
+  .vote-btn { padding: 11px 14px; font-size: 0.93rem; }
+}
+
+
 @keyframes fadeSlideDown {
   from { opacity: 0; transform: translateY(-14px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -4147,12 +4338,12 @@ video.question-media {
   background-repeat: no-repeat;
 }
 .match-puzzle-chip-tile {
-  width: 62px;
-  height: 62px;
+  width: 46px;
+  height: 46px;
 }
 .match-puzzle-slot-tile {
-  width: 70px;
-  height: 70px;
+  width: 52px;
+  height: 52px;
 }
 
 /* Placeholder when no image is available */
@@ -4223,21 +4414,21 @@ video.question-media {
     max-width: 56px;
     max-height: 56px;
   }
-  .match-puzzle-chip-tile { width: 50px; height: 50px; }
-  .match-puzzle-slot-tile { width: 56px; height: 56px; }
+  .match-puzzle-chip-tile { width: 38px; height: 38px; }
+  .match-puzzle-slot-tile { width: 42px; height: 42px; }
 }
 
 /* Simple Image Puzzle (Match Plus Arena) */
 .simple-puzzle-wrap {
-  --spt: 110px; /* tile size */
+  --spt: 46px; /* reduced from 62px */
   --sgap: 3px;  /* grid line width */
   display: grid;
-  grid-template-columns: calc(var(--spt) * 3) calc(var(--spt) * 3); /* overridden by inline style */
+  grid-template-columns: calc(var(--spt) * var(--spgrid, 3)) calc(var(--spt) * var(--spgrid, 3));
   grid-template-rows: auto 1fr;
   gap: 10px 20px;
   align-items: start;
   width: 100%;
-  max-width: 960px;
+  max-width: 800px;
   margin: 0 auto;
 }
 
@@ -4497,7 +4688,8 @@ video.question-media {
 
 /* ── Host preview ── */
 .simple-puzzle-host-wrap {
-  max-width: 520px;
+  --spt: 48px; /* host tile size – smaller than player view */
+  max-width: 480px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -4512,8 +4704,8 @@ video.question-media {
 
 .simple-puzzle-host-grid {
   display: grid;
-  grid-template-columns: repeat(3, var(--spt));
-  grid-template-rows: repeat(3, var(--spt));
+  grid-template-columns: repeat(var(--spgrid, 3), var(--spt));
+  grid-template-rows: repeat(var(--spgrid, 3), var(--spt));
   gap: 0;
 }
 
@@ -4531,18 +4723,34 @@ video.question-media {
   max-height: none;
 }
 
+@media (max-width: 900px) {
+  .simple-puzzle-wrap {
+    --spt: 38px;
+    grid-template-columns: calc(var(--spt) * var(--spgrid, 3)) calc(var(--spt) * var(--spgrid, 3));
+    max-width: 100%;
+    gap: 8px 16px;
+  }
+}
+
 @media (max-width: 700px) {
   .simple-puzzle-wrap {
-    /* Auto-size tiles so the grid fills the screen width with small padding */
-    --spt: min(calc((100vw - 24px) / var(--spgrid, 3)), 90px);
+    /* Stack board above pool on phone-sized screens */
+    --spt: min(calc((100vw - 32px) / var(--spgrid, 3)), 46px);
     grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
     max-width: 100%;
     gap: 8px;
+    justify-items: center;
   }
-  .simple-puzzle-title-row {
-    padding: 2px 0;
+  .simple-puzzle-board {
+    order: 1; /* drop area on top */
   }
   .simple-puzzle-pool {
+    order: 2; /* pieces below */
     align-items: center;
+  }
+  .simple-puzzle-title-row {
+    order: 0;
+    padding: 2px 0;
   }
 }
