@@ -555,11 +555,7 @@ export function QuizEditorPage() {
     if (!isMiniGameContent && gameModeId) {
       setGameModeId('')
     }
-    if (isMiniGameContent && questions.length > 0) {
-      setQuestions([])
-      setCollapsedQuestions([])
-    }
-  }, [isMiniGameContent, gameModeId, questions.length])
+  }, [isMiniGameContent, gameModeId])
 
   const replaceQuestion = (index: number, next: QuizQuestion) => {
     setHasUnsavedChanges(true)
@@ -572,14 +568,12 @@ export function QuizEditorPage() {
   }
 
   const addQuestion = () => {
-    if (isMiniGameContent) {
-      showToast({ message: 'هذا المحتوى ميني جيم. أضف إعدادات اللعبة بدل الأسئلة.', type: 'info' })
-      return
-    }
     setHasUnsavedChanges(true)
     const nextQuestion = gameModeId === 'creator-studio'
       ? { ...creatorStudioStarterQuestion }
-      : { ...starterQuestion }
+      : (gameModeId === 'match-plus-arena' 
+        ? { ...starterQuestion, type: 'match_plus' as QuestionType, matchPlusMode: 'image-puzzle' as const } 
+        : { ...starterQuestion })
     setQuestions((prev) => [...prev, nextQuestion])
     setCollapsedQuestions((prev) => [...prev, false])
   }
@@ -1620,31 +1614,37 @@ export function QuizEditorPage() {
                 <option value="private" style={{ color: '#0f172a' }}>🔒 خاص</option>
               </select>
             </div>
-            <span style={{ background: 'var(--bg-surface)', color: 'var(--text-dim)', fontSize: isNarrowScreen ? '0.6rem' : '0.72rem', padding: isNarrowScreen ? '2px 8px' : '3px 12px', borderRadius: '999px' }}>
-              {isMiniGameContent ? `🎮 ${miniGameCards.find((game) => game.id === gameModeId)?.englishName || 'Mini Game'}` : `📝 ${questions.length} سؤال`}
-            </span>
 
-            {!isNarrowScreen && (
-              <>
-                {randomizeQuestions && (
-                  <span style={{ background: 'var(--bg-surface)', color: '#a78bfa', fontSize: '0.72rem', padding: '3px 12px', borderRadius: '999px', border: '1px solid #7c3aed44' }}>
-                    🔀 ترتيب جلسة عشوائي
-                  </span>
-                )}
-                {quizId && (
-                  <a
-                    href={buildHostGameUrl({ serverBase: SERVER_BASE, quizId, gameModeId: isMiniGameContent ? (gameModeId || undefined) : undefined })}
-                    target="_blank" rel="noopener noreferrer"
-                    onClick={(e) => {
-                      e.preventDefault()
-                      void launchGameFromEditor(quizId)
-                    }}
-                    style={{ background: 'var(--bg-surface)', color: '#60a5fa', fontSize: '0.72rem', padding: '3px 12px', borderRadius: '999px', textDecoration: 'none' }}
-                  >
-                    🔗 رابط اللعبة ↗
-                  </a>
-                )}
-              </>
+            {quizId && (
+              <a
+                href={buildHostGameUrl({ serverBase: SERVER_BASE, quizId, gameModeId: isMiniGameContent ? (gameModeId || undefined) : undefined })}
+                target="_blank" rel="noopener noreferrer"
+                onClick={(e) => {
+                  e.preventDefault()
+                  void launchGameFromEditor(quizId)
+                }}
+                style={{
+                  background: 'var(--bg-surface)',
+                  color: '#60a5fa',
+                  fontSize: isNarrowScreen ? '0.75rem' : '0.88rem',
+                  padding: isNarrowScreen ? '4px 12px' : '6px 16px',
+                  borderRadius: '999px',
+                  textDecoration: 'none',
+                  border: '1px solid #60a5fa',
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+              >
+                <span style={{ fontSize: isNarrowScreen ? '0.85rem' : '1.1rem' }}>▶</span> {isNarrowScreen ? 'لعب' : 'رابط اللعبة ↗'}
+              </a>
+            )}
+
+            {!isNarrowScreen && randomizeQuestions && (
+              <span style={{ background: 'var(--bg-surface)', color: '#a78bfa', fontSize: '0.72rem', padding: '3px 12px', borderRadius: '999px', border: '1px solid #7c3aed44' }}>
+                🔀 ترتيب جلسة عشوائي
+              </span>
             )}
           </div>
           </div>{/* end inner text div */}
@@ -2141,7 +2141,7 @@ export function QuizEditorPage() {
                     title="اسحب لإعادة الترتيب"
                   >⠿</span>
                   <h3 style={{ margin: '0', fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-bright)', letterSpacing: '0.5px' }}>
-                    السؤال {index + 1}
+                    {q.type === 'match_plus' && q.matchPlusMode === 'image-puzzle' ? `البازل ${index + 1}` : `السؤال ${index + 1}`}
                   </h3>
                 </>
               )}
@@ -3125,15 +3125,19 @@ export function QuizEditorPage() {
               boxShadow: '0 4px 15px rgba(59, 130, 246, 0.4)'
             }}>+</div>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem' }}>
-              <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-bright)' }}>إضافة سؤال جديد</span>
-              <span style={{ fontSize: '0.82rem', opacity: 0.7 }}>اختر من بين 6 أنواع مختلفة من الأسئلة</span>
+              <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-bright)' }}>
+                {gameModeId === 'match-plus-arena' ? 'إضافة بازل جديد' : 'إضافة سؤال جديد'}
+              </span>
+              <span style={{ fontSize: '0.82rem', opacity: 0.7 }}>
+                {gameModeId === 'match-plus-arena' ? 'أضف صورة جديدة ليقوم اللاعب بحلها' : 'اختر من بين 6 أنواع مختلفة من الأسئلة'}
+              </span>
             </div>
           </div>
 
           <div 
             onClick={loadSamples}
             style={{
-              display: 'flex',
+              display: gameModeId === 'match-plus-arena' ? 'none' : 'flex',
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
@@ -3219,8 +3223,12 @@ export function QuizEditorPage() {
             boxShadow: '0 4px 15px rgba(59, 130, 246, 0.4)'
           }}>+</div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem' }}>
-            <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-bright)' }}>إضافة سؤال جديد</span>
-            <span style={{ fontSize: '0.82rem', opacity: 0.7 }}>اختر من بين 6 أنواع مختلفة من الأسئلة</span>
+            <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-bright)' }}>
+              {gameModeId === 'match-plus-arena' ? 'إضافة بازل جديد' : 'إضافة سؤال جديد'}
+            </span>
+            <span style={{ fontSize: '0.82rem', opacity: 0.7 }}>
+              {gameModeId === 'match-plus-arena' ? 'أضف صورة جديدة ليقوم اللاعب بحلها' : 'اختر من بين 6 أنواع مختلفة من الأسئلة'}
+            </span>
           </div>
         </div>
       )}
