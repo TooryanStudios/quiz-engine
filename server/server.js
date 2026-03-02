@@ -1620,6 +1620,9 @@ function sendMiniGameBlock(room, q, opts = {}) {
  */
 function endMiniGameBlock(room) {
   if (!room) return;
+  // Double-execution guard: _blockState is deleted on first run; bail if already gone
+  if (!room._blockState) return;
+  if (room.state === 'finished') return;
 
   clearTimeout(room.questionTimer);
   room.questionTimer = null;
@@ -2532,7 +2535,7 @@ io.on('connection', (socket) => {
     const room = findHostRoom(socket.id);
     if (!room || (room.state !== 'question' && room.state !== 'question-pending' && !room.paused)) return;
     console.log(`[Room ${room.pin}] Question skipped by host.`);
-    endQuestion(room);
+    if (room._blockState) { endMiniGameBlock(room); } else { endQuestion(room); }
   });
 
   // ── HOST: Force end question (client safety net when server timer missed) ──
@@ -2543,7 +2546,7 @@ io.on('connection', (socket) => {
     console.log(`[Room ${room.pin}] Force end question triggered by host client (timer safety net).`);
     clearTimeout(room.questionTimer);
     room.questionTimer = null;
-    endQuestion(room);
+    if (room._blockState) { endMiniGameBlock(room); } else { endQuestion(room); }
   });
 
   // ── HOST: End game now and show final results ─
@@ -2559,6 +2562,16 @@ io.on('connection', (socket) => {
     room.paused = false;
     room.pausedTimeRemaining = 0;
     room.state = 'finished';
+
+    // If a mini-game block is running, restore original runtime before calling hooks
+    if (room._blockState) {
+      if (room.xo?.transitionTimer) { clearTimeout(room.xo.transitionTimer); room.xo.transitionTimer = null; }
+      room.gameModeRuntime = room._blockState.prevRuntime;
+      room.miniGameConfig  = room._blockState.prevMiniGameConfig;
+      delete room._blockState;
+      delete room.xo;
+      delete room.gearMachine;
+    }
 
     const leaderboard = buildLeaderboard(room);
     console.log(`[Room ${room.pin}] Ended by host ${socket.id}.`);

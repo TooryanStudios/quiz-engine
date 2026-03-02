@@ -203,9 +203,8 @@ function createGearMachineRuntime() {
 
       // In block mode: advance to next question instead of ending the game
       if (room._blockState) {
-        if (typeof room._blockState.endBlock === 'function') {
-          setTimeout(() => room._blockState.endBlock(), 2000);
-        }
+        // Use optional chaining — _blockState might be gone if block timer fired first
+        setTimeout(() => room._blockState?.endBlock?.(), 2000);
         return true;
       }
 
