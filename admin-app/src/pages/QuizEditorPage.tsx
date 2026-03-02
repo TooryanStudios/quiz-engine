@@ -310,7 +310,7 @@ export function QuizEditorPage() {
     try {
       showToast({ message: '⏳ جاري رفع صورة البازل...', type: 'info' })
       const path = puzzleCropTarget.kind === 'block'
-        ? `mini-game-blocks/match-plus/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
+        ? `mini-games/match-plus-arena/blocks/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
         : `mini-games/match-plus-arena/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
       const storageRef = ref(storage, path)
       await uploadBytes(storageRef, blob, { contentType: 'image/jpeg' })
