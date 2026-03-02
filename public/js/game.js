@@ -867,8 +867,6 @@ function startHostLaunch(quizSlug = null) {
 // Player List Rendering
 // ─────────────────────────────────────────────
 function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
-    if (errEl) errEl.textContent = `⚠️ ${message}`;
-
   if (!listEl) return;
   const playersArr = Array.isArray(players) ? players : [];
   if (countEl) countEl.textContent = playersArr.length;

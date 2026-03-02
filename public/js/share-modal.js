@@ -1,6 +1,11 @@
 (function(){
 	'use strict';
 
+	function onSafe(target, eventName, handler){
+		if (!target || typeof target.addEventListener !== 'function') return;
+		target.addEventListener(eventName, handler);
+	}
+
 	function boot(){
 		var trigger = document.getElementById('btn-share-menu');
 		var panel = document.getElementById('share-actions');
@@ -22,16 +27,12 @@
 			}
 		};
 
-		if (typeof trigger.addEventListener === 'function') {
-			trigger.addEventListener('click', onTriggerClick);
-		}
-		if (typeof document.addEventListener === 'function') {
-			document.addEventListener('click', onDocumentClick);
-		}
+		onSafe(trigger, 'click', onTriggerClick);
+		onSafe(document, 'click', onDocumentClick);
 	}
 
 	if (document.readyState === 'loading') {
-		document.addEventListener('DOMContentLoaded', boot);
+		onSafe(document, 'DOMContentLoaded', boot);
 	} else {
 		boot();
 	}
