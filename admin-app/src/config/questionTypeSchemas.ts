@@ -304,6 +304,10 @@ function applyCreatorStudioFields(question: QuizQuestion, source: Partial<QuizQu
 }
 
 export function sanitizeQuestionBySchema(question: QuizQuestion): QuizQuestion {
+  // Mini-game block questions are opaque — skip schema normalisation entirely
+  if ((question as QuizQuestion & { miniGameBlockId?: string }).miniGameBlockId) {
+    return question
+  }
   const normalized = coerceQuestionToSchemaType(question, question.type)
   const editor = getQuestionTypeEditorMeta(question.type)
   const timerPolicy = getQuestionTypeTimerPolicy(question.type)

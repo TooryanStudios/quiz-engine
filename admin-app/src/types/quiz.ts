@@ -38,13 +38,16 @@ export interface QuizQuestion {
   bossName?: string
   bossHp?: number
   duration?: number
+  /** When set, this question slot is a mini-game block (not a normal question) */
+  miniGameBlockId?: string
+  miniGameBlockConfig?: Record<string, unknown>
 }
 
 export interface QuizDoc {
   id?: string
   ownerId: string
   originalOwnerId?: string // Link to the original creator if cloned
-  contentType?: 'quiz' | 'mini-game'
+  contentType?: 'quiz' | 'mini-game' | 'mix'
   title: string
   slug: string
   description?: string

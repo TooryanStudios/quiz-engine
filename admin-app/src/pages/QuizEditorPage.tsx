@@ -210,6 +210,8 @@ export function QuizEditorPage() {
   const [showCropDialog, setShowCropDialog] = useState(false)
   const [uploadingMiniGameImage, setUploadingMiniGameImage] = useState(false)
   const [showContentTypePicker, setShowContentTypePicker] = useState(false)
+  const [contentType, setContentType] = useState<'quiz' | 'mini-game' | 'mix'>('quiz')
+  const [showAddBlockPicker, setShowAddBlockPicker] = useState(false)
 
   // AI Feature States
   const [aiAction, setAiAction] = useState<'generate' | 'recheck' | null>(null)
@@ -494,6 +496,7 @@ export function QuizEditorPage() {
       // If navigated here with skipPicker flag (e.g. after picker redirected to /mini-game-editor)
       const navState = location.state as Record<string, unknown> | null
       if (navState?.skipPicker) {
+        if (navState.contentType) setContentType(navState.contentType as 'quiz' | 'mini-game' | 'mix')
         setShowMetadataDialog(true)
       } else {
         setShowContentTypePicker(true)
@@ -520,6 +523,7 @@ export function QuizEditorPage() {
         const rawQuestions = data.questions ?? []
         const normalizedQuestions = sanitizeQuestions(rawQuestions)
         const deprecatedCount = rawQuestions.filter((question) => normalizeQuestionType((question as { type?: unknown }).type) !== question.type).length
+        setContentType((data.contentType as 'quiz' | 'mini-game' | 'mix') || (isMiniGameContent ? 'mini-game' : 'quiz'))
         setQuestions(isMiniGameContent ? [] : normalizedQuestions)
         setCollapsedQuestions(Array(isMiniGameContent ? 0 : normalizedQuestions.length).fill(false))
         if (deprecatedCount > 0) {
@@ -584,7 +588,21 @@ export function QuizEditorPage() {
       navigate('/editor', { state: { skipPicker: true } })
       return
     }
+    setContentType(type)
     setShowMetadataDialog(true)
+  }
+
+  const addMiniGameBlock = (gameId: string) => {
+    setHasUnsavedChanges(true)
+    setQuestions((prev) => [...prev, {
+      type: 'single',
+      text: '',
+      duration: 60,
+      miniGameBlockId: gameId,
+      miniGameBlockConfig: {},
+    }])
+    setCollapsedQuestions((prev) => [...prev, false])
+    setShowAddBlockPicker(false)
   }
 
   const addQuestion = () => {
@@ -805,6 +823,7 @@ export function QuizEditorPage() {
       title,
       slug,
       visibility,
+      contentType: isMiniGameContent ? 'mini-game' : contentType,
       priceTier: requiresSubscription ? 'starter' : 'free',
       gameModeId: (isMiniGameContent || !!gameModeId) ? (gameModeId || undefined) : undefined,
       miniGameConfig: (isMiniGameContent || !!gameModeId) ? miniGameConfig : undefined,
@@ -2170,6 +2189,127 @@ export function QuizEditorPage() {
         </section>
       ) : questions.map((q, index) => (
         (() => {
+          // ── Mini-game block card ──
+          if (q.miniGameBlockId) {
+            const blockMeta = miniGameCards.find((g) => g.id === q.miniGameBlockId)
+            const blockCfg = (q.miniGameBlockConfig || {}) as Record<string, unknown>
+            const updateBlockCfg = (patch: Record<string, unknown>) =>
+              updateQuestion(index, { miniGameBlockConfig: { ...blockCfg, ...patch } })
+            return (
+              <section
+                key={index}
+                className="panel"
+                draggable
+                onDragStart={() => setDragIndex(index)}
+                onDragOver={(e) => { e.preventDefault(); setDragOverIndex(index) }}
+                onDrop={() => { if (dragIndex !== null) moveQuestion(dragIndex, index); setDragIndex(null); setDragOverIndex(null) }}
+                onDragEnd={() => { setDragIndex(null); setDragOverIndex(null) }}
+                style={{
+                  backgroundColor: 'var(--bg-deep)',
+                  border: '1px solid #4b5563',
+                  borderLeft: '6px solid #7c3aed',
+                  padding: '1.2rem',
+                  borderRadius: '14px',
+                  marginBottom: '0.75rem',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                  opacity: dragIndex === index ? 0.5 : 1,
+                }}
+              >
+                {/* Block card header */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-strong)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.7rem' }}>
+                    <span style={{ fontSize: '1rem', color: 'var(--text-muted)', cursor: 'grab', background: 'var(--bg-surface)', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px' }} draggable={false}>⠿</span>
+                    <span style={{ fontSize: '1.4rem' }}>{blockMeta?.icon || '🎮'}</span>
+                    <div>
+                      <div style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--text-bright)' }}>{blockMeta?.arabicName || blockMeta?.englishName || q.miniGameBlockId}</div>
+                      <div style={{ fontSize: '0.75rem', color: '#a78bfa', fontWeight: 600 }}>🎮 Mini-Game Block #{index + 1}</div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <button type="button" onClick={() => setCollapsedQuestions((prev) => { const n = [...prev]; n[index] = !n[index]; return n })} style={{ background: 'var(--bg-deep)', border: '1px solid var(--border-strong)', color: 'var(--text-mid)', fontSize: '0.85rem', width: '28px', height: '28px', borderRadius: '6px', cursor: 'pointer' }}>
+                      {collapsedQuestions[index] ? '▾' : '▴'}
+                    </button>
+                    <button type="button" onClick={() => removeQuestion(index)} style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444', fontSize: '0.8rem', width: '28px', height: '28px', borderRadius: '6px', border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer' }}>✕</button>
+                  </div>
+                </div>
+                {!collapsedQuestions[index] && (
+                  <div style={{ display: 'grid', gap: '0.75rem' }}>
+                    {/* Duration */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem', alignItems: 'end' }}>
+                      <div>
+                        <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>⏱ Game Duration (sec)</label>
+                        <input type="number" min={10} step={5} value={Number(q.duration || 60)} onChange={(e) => updateQuestion(index, { duration: Number(e.target.value) })} style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-deep)', color: 'var(--text)' }} />
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>{blockMeta?.description || 'Configure this mini-game block'}</div>
+                    </div>
+                    {/* match-plus-arena specific config */}
+                    {q.miniGameBlockId === 'match-plus-arena' && (
+                      <div style={{ display: 'grid', gap: '0.65rem', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+                        <div>
+                          <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>Match Mode</label>
+                          <select value={String(blockCfg.matchMode || 'image-puzzle')} onChange={(e) => updateBlockCfg({ matchMode: e.target.value })} style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', color: 'var(--text)' }}>
+                            <option value="emoji-emoji">Emoji → Emoji</option>
+                            <option value="emoji-text">Emoji → Text</option>
+                            <option value="image-text">Image → Text</option>
+                            <option value="image-image">Image → Image</option>
+                            <option value="image-puzzle">Image Puzzle</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>Puzzle Grid</label>
+                          <select value={String(blockCfg.gridSize || 3)} onChange={(e) => updateBlockCfg({ gridSize: Number(e.target.value) })} style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', color: 'var(--text)' }}>
+                            <option value="2">2 × 2</option>
+                            <option value="3">3 × 3</option>
+                            <option value="4">4 × 4</option>
+                          </select>
+                        </div>
+                        <div style={{ gridColumn: '1 / -1' }}>
+                          <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>Puzzle Image URL</label>
+                          <input value={String(blockCfg.puzzleImage || '')} onChange={(e) => updateBlockCfg({ puzzleImage: e.target.value })} placeholder="https://..." style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', color: 'var(--text)' }} />
+                          {String(blockCfg.puzzleImage || '').trim() && (
+                            <div style={{ marginTop: '0.5rem', width: '90px', aspectRatio: '1/1', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--border-strong)' }}>
+                              <img src={String(blockCfg.puzzleImage)} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ gridColumn: '1 / -1' }}>
+                          <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>Instruction</label>
+                          <input value={String(blockCfg.instruction || '')} onChange={(e) => updateBlockCfg({ instruction: e.target.value })} placeholder="Arrange the pieces to complete the image" style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', color: 'var(--text)' }} />
+                        </div>
+                      </div>
+                    )}
+                    {/* xo-duel specific config */}
+                    {q.miniGameBlockId === 'xo-duel' && (
+                      <div style={{ display: 'grid', gap: '0.65rem', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+                        <div>
+                          <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>Board Size</label>
+                          <input type="number" min={3} max={8} value={Number(blockCfg.boardSize || 3)} onChange={(e) => updateBlockCfg({ boardSize: Number(e.target.value) })} style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', color: 'var(--text)' }} />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>Win Length</label>
+                          <input type="number" min={3} max={5} value={Number(blockCfg.winLength || 3)} onChange={(e) => updateBlockCfg({ winLength: Number(e.target.value) })} style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', color: 'var(--text)' }} />
+                        </div>
+                      </div>
+                    )}
+                    {/* gear-machine specific config */}
+                    {q.miniGameBlockId === 'gear-machine' && (
+                      <div style={{ display: 'grid', gap: '0.65rem', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+                        <div>
+                          <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>Gears Count</label>
+                          <input type="number" min={3} max={12} value={Number(blockCfg.gearsCount || 5)} onChange={(e) => updateBlockCfg({ gearsCount: Number(e.target.value) })} style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', color: 'var(--text)' }} />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>Max Turns</label>
+                          <input type="number" min={3} max={40} value={Number(blockCfg.maxTurns || 12)} onChange={(e) => updateBlockCfg({ maxTurns: Number(e.target.value) })} style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', color: 'var(--text)' }} />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+            )
+          }
+
           const editorMeta = getQuestionTypeEditorMeta(q.type)
           const isCreatorStudioMode = gameModeId === 'creator-studio'
           const isMultiSelectOptions = editorMeta.answerMode === 'options' && editorMeta.selectionMode === 'multi'
@@ -3196,7 +3336,60 @@ export function QuizEditorPage() {
         })()
       ))}
 
-      {!isMiniGameContent && (!quizId && questions.length === 0) ? (
+      {!isMiniGameContent && contentType === 'mix' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '1rem', marginBottom: '3rem', animation: 'slideUp 0.4s ease-out' }}>
+          <div onClick={addQuestion} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.9rem', padding: '2rem', borderRadius: '16px', border: '2px dashed #3b82f6', backgroundColor: 'rgba(59,130,246,0.05)', cursor: 'pointer', transition: 'all 0.25s' }}
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#60a5fa'; e.currentTarget.style.backgroundColor = 'rgba(59,130,246,0.1)'; e.currentTarget.style.transform = 'scale(1.01)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#3b82f6'; e.currentTarget.style.backgroundColor = 'rgba(59,130,246,0.05)'; e.currentTarget.style.transform = 'scale(1)' }}>
+            <div style={{ width: '46px', height: '46px', borderRadius: '50%', background: '#3b82f6', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem' }}>❓</div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontWeight: 800, color: 'var(--text-bright)', fontSize: '1rem' }}>إضافة سؤال</div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-mid)', marginTop: '0.2rem' }}>اختيار، مطابقة، ترتيب، كتابة...</div>
+            </div>
+          </div>
+          <div onClick={() => setShowAddBlockPicker(true)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.9rem', padding: '2rem', borderRadius: '16px', border: '2px dashed #7c3aed', backgroundColor: 'rgba(124,58,237,0.05)', cursor: 'pointer', transition: 'all 0.25s' }}
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#a78bfa'; e.currentTarget.style.backgroundColor = 'rgba(124,58,237,0.1)'; e.currentTarget.style.transform = 'scale(1.01)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#7c3aed'; e.currentTarget.style.backgroundColor = 'rgba(124,58,237,0.05)'; e.currentTarget.style.transform = 'scale(1)' }}>
+            <div style={{ width: '46px', height: '46px', borderRadius: '50%', background: '#7c3aed', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem' }}>🎮</div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontWeight: 800, color: 'var(--text-bright)', fontSize: '1rem' }}>إضافة ميني جيم</div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-mid)', marginTop: '0.2rem' }}>بازل، XO، ترس، إبداعي...</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Block Picker Overlay */}
+      {showAddBlockPicker && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(2,6,23,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(10px)', padding: '1.5rem', animation: 'fadeIn 0.2s ease-out' }}>
+          <div style={{ width: '100%', maxWidth: '680px', background: 'var(--bg-surface)', borderRadius: '20px', border: '1px solid var(--border-strong)', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+            <div style={{ padding: '1.25rem 1.5rem', background: 'linear-gradient(135deg, #7c3aed, #4f46e5)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#fff' }}>🎮 اختر ميني جيم</h2>
+                <p style={{ margin: '0.2rem 0 0', fontSize: '0.8rem', color: 'rgba(255,255,255,0.75)' }}>سيتم إضافته كبلوك مستقل في نفس الاختبار</p>
+              </div>
+              <button onClick={() => setShowAddBlockPicker(false)} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
+            </div>
+            <div style={{ padding: '1.25rem', maxHeight: '70vh', overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '0.75rem' }}>
+              {miniGameCards.map((game) => (
+                <div
+                  key={game.id}
+                  onClick={() => addMiniGameBlock(game.id)}
+                  style={{ padding: '1rem', borderRadius: '14px', border: '1.5px solid var(--border-strong)', background: 'var(--bg-deep)', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#7c3aed'; e.currentTarget.style.background = 'rgba(124,58,237,0.1)'; e.currentTarget.style.transform = 'translateY(-2px)' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-strong)'; e.currentTarget.style.background = 'var(--bg-deep)'; e.currentTarget.style.transform = 'translateY(0)' }}
+                >
+                  <div style={{ fontSize: '1.6rem' }}>{game.icon}</div>
+                  <div style={{ fontWeight: 700, color: 'var(--text-bright)', fontSize: '0.85rem' }}>{game.arabicName}</div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-mid)', lineHeight: 1.4 }}>{game.description}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!isMiniGameContent && contentType !== 'mix' && (!quizId && questions.length === 0) ? (
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
@@ -3299,7 +3492,7 @@ export function QuizEditorPage() {
             </div>
           </div>
         </div>
-      ) : (
+      ) : contentType === 'mix' ? null : (
         <div 
           onClick={addQuestion}
           style={{
