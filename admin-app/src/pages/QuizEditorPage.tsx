@@ -276,6 +276,41 @@ export function QuizEditorPage() {
     input.click()
   }
 
+  const uploadMiniGameBlockPuzzleImage = async (questionIndex: number) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'image/*'
+    input.onchange = async (event) => {
+      const file = (event.target as HTMLInputElement).files?.[0]
+      if (!file) return
+
+      try {
+        showToast({ message: '⏳ جاري رفع صورة البازل...', type: 'info' })
+        const ext = file.name.split('.').pop() || 'jpg'
+        const path = `mini-game-blocks/match-plus/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+        const storageRef = ref(storage, path)
+        await uploadBytes(storageRef, file)
+        const url = await getDownloadURL(storageRef)
+
+        const targetQuestion = questions[questionIndex]
+        if (!targetQuestion) return
+        const currentCfg = (targetQuestion.miniGameBlockConfig || {}) as Record<string, unknown>
+        updateQuestion(questionIndex, {
+          miniGameBlockConfig: {
+            ...currentCfg,
+            puzzleImage: url,
+          },
+        })
+
+        showToast({ message: '✅ تم رفع صورة البازل بنجاح', type: 'success' })
+      } catch (error) {
+        console.error('Mini-game block puzzle image upload failed', error)
+        showToast({ message: '❌ فشل رفع صورة البازل', type: 'error' })
+      }
+    }
+    input.click()
+  }
+
   const closeCropDialog = () => {
     if (cropImageSrc?.startsWith('blob:')) {
       URL.revokeObjectURL(cropImageSrc)
@@ -2297,7 +2332,26 @@ export function QuizEditorPage() {
                         </div>
                         <div style={{ gridColumn: '1 / -1' }}>
                           <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>Puzzle Image URL</label>
-                          <input value={String(blockCfg.puzzleImage || '')} onChange={(e) => updateBlockCfg({ puzzleImage: e.target.value })} placeholder="https://..." style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', color: 'var(--text)' }} />
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            <input value={String(blockCfg.puzzleImage || '')} onChange={(e) => updateBlockCfg({ puzzleImage: e.target.value })} placeholder="https://..." style={{ flex: 1, minWidth: '240px', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', color: 'var(--text)' }} />
+                            <button
+                              type="button"
+                              onClick={() => uploadMiniGameBlockPuzzleImage(index)}
+                              style={{
+                                border: '1px solid var(--border-strong)',
+                                borderRadius: '8px',
+                                background: 'var(--bg-surface)',
+                                color: 'var(--text)',
+                                padding: '0.48rem 0.75rem',
+                                cursor: 'pointer',
+                                fontWeight: 700,
+                                fontSize: '0.78rem',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              📁 Upload
+                            </button>
+                          </div>
                           {String(blockCfg.puzzleImage || '').trim() && (
                             <div style={{ marginTop: '0.5rem', width: '90px', aspectRatio: '1/1', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--border-strong)' }}>
                               <img src={String(blockCfg.puzzleImage)} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -2895,23 +2949,64 @@ export function QuizEditorPage() {
 
                   {(q.matchPlusMode || 'image-image') === 'image-puzzle' && (
                     <>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                        <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 700 }}>صورة البازل</span>
-                        <input
-                          value={q.matchPlusImage || ''}
-                          onChange={(e) => updateQuestion(index, { matchPlusImage: e.target.value })}
-                          placeholder="رابط الصورة الكاملة"
-                          style={{
-                            padding: '0.5rem 0.6rem',
-                            borderRadius: '8px',
-                            border: '1px solid var(--border-strong)',
-                            background: 'var(--bg-surface)',
-                            color: 'var(--text)',
-                            fontSize: '0.82rem',
-                            outline: 'none',
-                          }}
-                        />
-                      </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 700 }}>صورة البازل</span>
+                    <div style={{ display: 'flex', gap: '0.35rem' }}>
+                      <input
+                        value={q.matchPlusImage || ''}
+                        onChange={(e) => updateQuestion(index, { matchPlusImage: e.target.value })}
+                        placeholder="رابط الصورة الكاملة"
+                        style={{
+                          flex: 1,
+                          padding: '0.5rem 0.6rem',
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-strong)',
+                          background: 'var(--bg-surface)',
+                          color: 'var(--text)',
+                          fontSize: '0.82rem',
+                          outline: 'none',
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const input = document.createElement('input')
+                          input.type = 'file'
+                          input.accept = 'image/*'
+                          input.onchange = async (event) => {
+                            const file = (event.target as HTMLInputElement).files?.[0]
+                            if (!file) return
+                            try {
+                              showToast({ message: '⏳ جاري رفع الصورة...', type: 'info' })
+                              const ext = file.name.split('.').pop() || 'jpg'
+                              const storagePath = `match-plus-puzzle/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+                              const storageRef = ref(storage, storagePath)
+                              await uploadBytes(storageRef, file)
+                              const url = await getDownloadURL(storageRef)
+                              updateQuestion(index, { matchPlusImage: url })
+                              showToast({ message: '✅ تم رفع الصورة بنجاح', type: 'success' })
+                            } catch (err) {
+                              console.error('Puzzle image upload failed', err)
+                              showToast({ message: '❌ فشل رفع الصورة', type: 'error' })
+                            }
+                          }
+                          input.click()
+                        }}
+                        style={{
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-strong)',
+                          background: 'var(--bg-surface)',
+                          color: 'var(--text)',
+                          fontSize: '0.78rem',
+                          fontWeight: 700,
+                          padding: '0 0.8rem',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        📁 رفع
+                      </button>
+                    </div>
+                  </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                         <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 700 }}>حجم الشبكة</span>
                         <select

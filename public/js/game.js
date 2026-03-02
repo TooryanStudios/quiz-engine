@@ -1486,6 +1486,10 @@ document.addEventListener('visibilitychange', () => {
 // Final Question Dramatic Overlay
 // ─────────────────────────────────────────────
 function showFinalQuestionOverlay() {
+  if (typeof state.suppressFinalQuestionOverlayUntil === 'number' && Date.now() < state.suppressFinalQuestionOverlayUntil) {
+    return;
+  }
+
   const overlay = document.getElementById('overlay-final-question');
   if (!overlay) return;
   overlay.style.display = 'flex';
@@ -1515,12 +1519,25 @@ function dismissFinalQuestionOverlay() {
 }
 
 function bypassFinalQuestionOverlay(reason = 'manual') {
+  state.suppressFinalQuestionOverlayUntil = Date.now() + 15000;
+
   updateDiagnose({
     event: 'final-question:bypass',
     error: `overlay bypass (${reason})`,
     role: state.role || '-',
     view: document.querySelector('.view.active')?.id || '-',
   });
+
+  const overlay = document.getElementById('overlay-final-question');
+  if (overlay) {
+    overlay.style.display = 'none';
+    overlay.style.opacity = '';
+    overlay.classList.remove('final-q-fade-out');
+  }
+
+  const isHostOnly = state.role === 'host' && !state.hostIsPlayer;
+  showView(isHostOnly ? 'view-host-question' : 'view-player-question', { skipUrlSync: true });
+
   dismissFinalQuestionOverlay();
 }
 
