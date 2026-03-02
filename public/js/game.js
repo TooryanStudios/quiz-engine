@@ -2055,9 +2055,23 @@ function showLeaderboard(data, isFinal) {
   const titleEl = document.getElementById('lb-title');
   const hintEl  = document.getElementById('lb-next-hint');
 
-  titleEl.textContent = isFinal ? '🎉 Final Results' : '🏆 Leaderboard';
-  hintEl.textContent  = isFinal ? '' : 'Next question coming up…';
-  hintEl.style.display = isFinal ? 'none' : 'block';
+  titleEl.textContent = isFinal ? '🎉 النتائج النهائية' : '🏆 Leaderboard';
+  if (isFinal) {
+    hintEl.textContent = '🏅 جاري عرض النتائج…';
+    hintEl.style.display = 'block';
+    // Count down to podium
+    let secs = 4;
+    const tick = () => {
+      if (secs <= 0) { hintEl.textContent = '🏆 عرض المنصة…'; return; }
+      hintEl.textContent = `🏅 جاري عرض النتائج… (${secs})`;
+      secs--;
+      setTimeout(tick, 1000);
+    };
+    tick();
+  } else {
+    hintEl.textContent  = 'Next question coming up…';
+    hintEl.style.display = 'block';
+  }
 
   // Clear previous question's media so it doesn't show behind the next question hint
   clearQuestionMedia();
@@ -4089,20 +4103,22 @@ socket.on('game:over', (data) => {
   showView('view-game-over');
   Sounds.fanfare();
 
-  // ── Sequential reveal: 3rd → 2nd → 1st ──
-  const REVEAL_INTERVAL = 50;
+  // ── Sequential reveal: 3rd → 2nd → 1st (staged for drama) ──
+  const REVEAL_3RD = 600;
+  const REVEAL_2ND = 1600;
+  const REVEAL_1ST = 2800;
 
   // 3rd place (right pillar, shortest)
   setTimeout(() => {
     const el = document.getElementById('podium-slot-3');
     if (el && lb[2]) el.classList.add('podium-revealed');
-  }, 0);
+  }, REVEAL_3RD);
 
   // 2nd place (left pillar, medium)
   setTimeout(() => {
     const el = document.getElementById('podium-slot-2');
     if (el && lb[1]) el.classList.add('podium-revealed');
-  }, REVEAL_INTERVAL);
+  }, REVEAL_2ND);
 
   // 1st place (center pillar, tallest) — full celebration (skipped for 0-score players)
   setTimeout(() => {
@@ -4117,12 +4133,12 @@ socket.on('game:over', (data) => {
         setTimeout(() => confetti({ particleCount: 60, spread: 120, origin: { y: 0.3 }, colors: ['#facc15','#fb923c','#34d399'] }), 1100);
       }
     }
-  }, REVEAL_INTERVAL * 2);
+  }, REVEAL_1ST);
 
-  // Full results fade in after the ceremony
+  // Full results fade in after the full ceremony completes
   setTimeout(() => {
     fullResults.classList.add('podium-results-visible');
-  }, REVEAL_INTERVAL * 2 + 100);
+  }, REVEAL_1ST + 800);
 });
 
 // ─────────────────────────────────────────────
