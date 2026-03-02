@@ -209,6 +209,7 @@ export function QuizEditorPage() {
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null)
   const [showCropDialog, setShowCropDialog] = useState(false)
   const [uploadingMiniGameImage, setUploadingMiniGameImage] = useState(false)
+  const [showContentTypePicker, setShowContentTypePicker] = useState(false)
 
   // AI Feature States
   const [aiAction, setAiAction] = useState<'generate' | 'recheck' | null>(null)
@@ -489,8 +490,14 @@ export function QuizEditorPage() {
       setTempTitle(defaultTitle)
       setTempSlug(defaultSlug)
       setTempGameModeId('')
-      setShowMetadataDialog(true)
       setCollapsedQuestions([])
+      // If navigated here with skipPicker flag (e.g. after picker redirected to /mini-game-editor)
+      const navState = location.state as Record<string, unknown> | null
+      if (navState?.skipPicker) {
+        setShowMetadataDialog(true)
+      } else {
+        setShowContentTypePicker(true)
+      }
       return
     }
     getQuizById(routeId)
@@ -565,6 +572,19 @@ export function QuizEditorPage() {
   const updateQuestion = (index: number, patch: Partial<QuizQuestion>) => {
     setHasUnsavedChanges(true)
     setQuestions((prev) => prev.map((q, i) => (i === index ? { ...q, ...patch } : q)))
+  }
+
+  const handleContentTypeSelect = (type: 'quiz' | 'mini-game' | 'mix') => {
+    setShowContentTypePicker(false)
+    if (type === 'mini-game' && !isMiniGameContent) {
+      navigate('/mini-game-editor', { state: { skipPicker: true } })
+      return
+    }
+    if (type === 'quiz' && isMiniGameContent) {
+      navigate('/editor', { state: { skipPicker: true } })
+      return
+    }
+    setShowMetadataDialog(true)
   }
 
   const addQuestion = () => {
@@ -933,6 +953,105 @@ export function QuizEditorPage() {
 
   return (
     <>
+      {/* Content Type Picker */}
+      {showContentTypePicker && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 2000,
+          background: 'rgba(2, 6, 23, 0.92)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          backdropFilter: 'blur(12px)',
+          animation: 'fadeIn 0.25s ease-out',
+          padding: '1.5rem',
+        }}>
+          <div style={{ width: '100%', maxWidth: '720px' }}>
+            <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+              <h1 style={{ margin: '0 0 0.5rem', fontSize: '1.75rem', fontWeight: 900, color: 'var(--text-bright)' }}>
+                ماذا تريد أن تنشئ؟
+              </h1>
+              <p style={{ margin: 0, color: 'var(--text-mid)', fontSize: '0.95rem' }}>
+                اختر نوع المحتوى ثم سنكمل الإعدادات معاً
+              </p>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '1rem' }}>
+              {[
+                {
+                  type: 'quiz' as const,
+                  icon: '📋',
+                  title: 'اختبار',
+                  titleEn: 'Quiz',
+                  desc: 'أسئلة متعددة الأنواع: اختيار، ترتيب، تطابق، كتابة والمزيد',
+                  accent: '#2563eb',
+                  bg: 'rgba(37,99,235,0.12)',
+                },
+                {
+                  type: 'mini-game' as const,
+                  icon: '🎮',
+                  title: 'ميني جيم',
+                  titleEn: 'Mini Game',
+                  desc: 'لعبة تفاعلية مستقلة: بازل، XO، تروس، استوديو إبداعي',
+                  accent: '#7c3aed',
+                  bg: 'rgba(124,58,237,0.12)',
+                },
+                {
+                  type: 'mix' as const,
+                  icon: '🔀',
+                  title: 'مزيج',
+                  titleEn: 'Mixed',
+                  desc: 'ادمج أسئلة عادية مع بازل صور أو أنواع إبداعية في نفس الجلسة',
+                  accent: '#059669',
+                  bg: 'rgba(5,150,105,0.12)',
+                },
+              ].map((opt) => (
+                <div
+                  key={opt.type}
+                  onClick={() => handleContentTypeSelect(opt.type)}
+                  style={{
+                    background: 'var(--bg-surface)',
+                    border: `2px solid ${opt.accent}44`,
+                    borderRadius: '18px',
+                    padding: '1.75rem 1.5rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.22s cubic-bezier(0.4,0,0.2,1)',
+                    display: 'flex', flexDirection: 'column', gap: '0.9rem',
+                    position: 'relative', overflow: 'hidden',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = opt.accent
+                    e.currentTarget.style.background = opt.bg
+                    e.currentTarget.style.transform = 'translateY(-4px)'
+                    e.currentTarget.style.boxShadow = `0 12px 32px ${opt.accent}33`
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = `${opt.accent}44`
+                    e.currentTarget.style.background = 'var(--bg-surface)'
+                    e.currentTarget.style.transform = 'translateY(0)'
+                    e.currentTarget.style.boxShadow = 'none'
+                  }}
+                >
+                  <div style={{
+                    width: '52px', height: '52px', borderRadius: '14px',
+                    background: opt.bg, display: 'flex', alignItems: 'center',
+                    justifyContent: 'center', fontSize: '1.7rem',
+                    border: `1px solid ${opt.accent}33`,
+                  }}>{opt.icon}</div>
+                  <div>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-bright)', marginBottom: '0.3rem' }}>
+                      {opt.title} <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-muted)', marginRight: '0.25rem' }}>{opt.titleEn}</span>
+                    </div>
+                    <div style={{ fontSize: '0.82rem', color: 'var(--text-mid)', lineHeight: 1.5 }}>{opt.desc}</div>
+                  </div>
+                  <div style={{
+                    position: 'absolute', bottom: 0, left: 0, right: 0, height: '3px',
+                    background: `linear-gradient(90deg, ${opt.accent}, transparent)`,
+                    opacity: 0.6,
+                  }} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Metadata Dialog */}
       {showMetadataDialog && (
         <div
