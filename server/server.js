@@ -2868,7 +2868,11 @@ io.on('connection', (socket) => {
 
       // Auto-end when every connected player has answered
       if (connectedPlayers.length > 0 && answeredCount === connectedPlayers.length) {
-        endQuestion(room);
+        if (room._blockState) {
+          endMiniGameBlock(room);
+        } else {
+          endQuestion(room);
+        }
       }
     };
 

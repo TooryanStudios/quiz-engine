@@ -152,8 +152,12 @@ function createMatchPlusArenaRuntime() {
       return false;
     },
 
-    onPlayerAnswer({ dispatchDefault }) {
+    onPlayerAnswer({ room, dispatchDefault }) {
       dispatchDefault();
+      // In block mode, the dispatchDefault auto-end handles it;
+      // but if somehow all pairs are matched before timeout, also signal via endBlock.
+      // The dispatchDefault already calls endMiniGameBlock if all players answered,
+      // so we just let it flow through.
       return true;
     },
 
