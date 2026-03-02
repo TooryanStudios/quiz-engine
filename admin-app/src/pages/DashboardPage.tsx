@@ -12,6 +12,7 @@ import placeholderImg from '../assets/QYan_logo_300x164.jpg'
 import { useToast } from '../lib/ToastContext'
 import { useSubscription } from '../lib/useSubscription'
 import { useDialog } from '../lib/DialogContext'
+import { vfx } from '../lib/vfx'
 
 type QuizItem = QuizDoc & { id: string }
 
@@ -705,7 +706,11 @@ export function DashboardPage() {
           {visibleCount < quizzes.length && (
             <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
               <button
-                onClick={() => setVisibleCount((c) => c + 6)}
+                onClick={(e) => {
+                  vfx.floatText('+6', e.clientX, e.clientY, '#2563eb');
+                  vfx.confetti();
+                  setVisibleCount((c) => c + 6);
+                }}
                 style={{
                   padding: '0.65rem 2.25rem', borderRadius: '10px', fontSize: '0.875rem', fontWeight: 700,
                   background: 'linear-gradient(135deg, #2563eb, #7c3aed)',

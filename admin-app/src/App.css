@@ -634,6 +634,12 @@
   .admin-main [style*="minWidth: '360px'"] {
     min-width: auto !important;
   }
+
+  /* Force grid auto-fit columns to be smaller for thin mobile screens */
+  .admin-main [style*="display: 'grid'"][style*="minmax(320px, 1fr)"],
+  .admin-main [style*="display: 'grid'"][style*="minmax(360px, 1fr)"] {
+    grid-template-columns: 1fr !important;
+  }
 }
 
 /* ── Dashboard responsive grid ── */

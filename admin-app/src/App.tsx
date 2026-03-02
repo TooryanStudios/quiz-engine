@@ -10,6 +10,7 @@ import { incrementPlatformStat, recordUserActivity, subscribeUserDoc, grantAdmin
 import { DialogProvider } from './lib/DialogContext'
 import { ToastProvider } from './lib/ToastContext'
 import { Dialog } from './components/Dialog'
+import { VFXContainer } from './components/VFXContainer'
 import { LoginPage } from './pages/LoginPage'
 import logoImg from './assets/QYan_logo_300x164.jpg'
 const BillingPage     = lazy(() => import('./pages/BillingPage').then(m => ({ default: m.BillingPage })))
@@ -542,6 +543,7 @@ function App() {
           )}
         </div>
         <Dialog />
+        <VFXContainer />
       </DialogProvider>
     </ToastProvider>
   )
