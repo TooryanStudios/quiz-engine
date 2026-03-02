@@ -3852,9 +3852,40 @@ socket.on('game:start', ({ totalQuestions }) => {
       .then((data) => {
         if (!data || !Array.isArray(data.questions)) return;
         data.questions.forEach((q) => {
+          // Standard media
           if (q.media && q.media.url && q.media.type === 'image') {
             const img = new Image();
             img.src = q.media.url;
+          }
+          // Mini-game: Match/Puzzle images
+          if (q.matchPlusImage) {
+            const img = new Image();
+            img.src = q.matchPlusImage;
+          }
+          // Mini-game: Options media (images in matching tiles or standard options)
+          if (Array.isArray(q.options)) {
+            q.options.forEach(opt => {
+              if (typeof opt === 'string' && (opt.startsWith('http') || opt.startsWith('/'))) {
+                const img = new Image();
+                img.src = opt;
+              }
+            });
+          }
+          if (Array.isArray(q.rights)) {
+            q.rights.forEach(r => {
+              if (typeof r === 'string' && (r.startsWith('http') || r.startsWith('/'))) {
+                const img = new Image();
+                img.src = r;
+              }
+            });
+          }
+          if (Array.isArray(q.lefts)) {
+            q.lefts.forEach(l => {
+              if (typeof l === 'string' && (l.startsWith('http') || l.startsWith('/'))) {
+                const img = new Image();
+                img.src = l;
+              }
+            });
           }
         });
       })
