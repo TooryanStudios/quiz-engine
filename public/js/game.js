@@ -54,6 +54,11 @@ function getGameModeRuntime() {
 }
 
 function callGameModeHook(hookName, payload = {}) {
+  // Always dismiss final-question overlay if it's a new question, regardless of game mode
+  if (hookName === 'onGameQuestion') {
+    dismissFinalQuestionOverlay();
+  }
+
   const runtime = getGameModeRuntime();
   if (!runtime) return undefined;
   const hook = runtime[hookName];
