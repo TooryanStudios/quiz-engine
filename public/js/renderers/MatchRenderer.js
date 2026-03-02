@@ -57,6 +57,37 @@ export class MatchRenderer extends BaseRenderer {
     return parsed - 1;
   }
 
+  getPuzzleDiagnostics(lefts, rights, connections) {
+    const totalSlots = Array.isArray(lefts) ? lefts.length : 0;
+    const picks = Array.isArray(connections) ? connections : [];
+    let placedCount = 0;
+    let correctCount = 0;
+
+    for (let slotIndex = 0; slotIndex < totalSlots; slotIndex++) {
+      const pickIndex = picks[slotIndex];
+      if (!Number.isInteger(pickIndex) || pickIndex < 0 || pickIndex >= rights.length) continue;
+      placedCount++;
+      if (String(rights[pickIndex]) === String(lefts[slotIndex])) {
+        correctCount++;
+      }
+    }
+
+    const placedAverage = placedCount > 0 ? Math.round((correctCount / placedCount) * 100) : 0;
+    const overallAverage = totalSlots > 0 ? Math.round((correctCount / totalSlots) * 100) : 0;
+    const allPlaced = totalSlots > 0 && placedCount === totalSlots;
+    const allCorrect = totalSlots > 0 && correctCount === totalSlots;
+
+    return {
+      totalSlots,
+      placedCount,
+      correctCount,
+      placedAverage,
+      overallAverage,
+      allPlaced,
+      allCorrect,
+    };
+  }
+
   renderPuzzleTile(value, className = 'match-chip-media', forSlot = false) {
     const image = this.getPuzzleImageUrl();
     const grid = this.getPuzzleGridSize();
@@ -209,12 +240,17 @@ export class MatchRenderer extends BaseRenderer {
     const instruction = String(this.question?.matchPlusInstruction || '').trim();
     const instructionText = instruction || 'Arrange the pieces to complete the image.';
     const { escapeHtml } = this.utils;
+    const diagnostics = this.getPuzzleDiagnostics(lefts, rights, state.matchConnections);
+    const diagnosticsText = diagnostics.allCorrect
+      ? '✅ إجابة صحيحة بالكامل! كل القطع في مكانها الصحيح.'
+      : `🧪 التشخيص: صحيح ضمن الموضوع ${diagnostics.correctCount}/${diagnostics.placedCount || 0} (${diagnostics.placedAverage}%) • التقدم الكلي ${diagnostics.correctCount}/${diagnostics.totalSlots} (${diagnostics.overallAverage}%)`;
 
     container.innerHTML = `
       <div class="simple-puzzle-wrap ${isComplete ? 'puzzle-complete' : ''}" style="--spgrid: ${grid};">
         <div class="simple-puzzle-title-row">
           <span class="simple-puzzle-title" dir="auto">${escapeHtml(instructionText)}</span>
         </div>
+        <div class="simple-puzzle-diagnostics" dir="auto">${escapeHtml(diagnosticsText)}</div>
         <div class="simple-puzzle-board" style="grid-template-columns: repeat(${grid}, var(--spt)); grid-template-rows: repeat(${grid}, var(--spt));">
           ${lefts.map((leftValue, slotIndex) => {
             const pieceIndex = state.matchConnections[slotIndex];
@@ -497,19 +533,12 @@ export class MatchRenderer extends BaseRenderer {
     const lefts = Array.isArray(state.matchLefts) ? state.matchLefts : [];
     const rights = Array.isArray(state.matchRights) ? state.matchRights : [];
     const matches = Array.isArray(state.matchConnections) ? state.matchConnections : [];
-    const expected = Math.min(lefts.length, matches.length);
-    let correct = 0;
+    const diagnostics = this.getPuzzleDiagnostics(lefts, rights, matches);
 
-    for (let i = 0; i < expected; i++) {
-      const pickIndex = matches[i];
-      if (!Number.isInteger(pickIndex) || pickIndex < 0 || pickIndex >= rights.length) continue;
-      if (String(rights[pickIndex]) === String(lefts[i])) correct++;
-    }
-
-    if (expected > 0 && correct === expected) {
+    if (diagnostics.totalSlots > 0 && diagnostics.allCorrect) {
       msgEl.textContent = '✅ إجابة صحيحة بالكامل! جاري احتساب النقاط…';
     } else {
-      msgEl.textContent = `🟡 تم الإرسال: ${correct}/${expected} مطابقة صحيحة (انتظر النتيجة)`;
+      msgEl.textContent = `🟡 تم الإرسال: ${diagnostics.correctCount}/${diagnostics.totalSlots} صحيحة (${diagnostics.overallAverage}%) • دقة العناصر الموضوعة ${diagnostics.correctCount}/${diagnostics.placedCount || 0} (${diagnostics.placedAverage}%)`;
     }
   }
   
