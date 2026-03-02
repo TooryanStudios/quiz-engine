@@ -4136,17 +4136,29 @@ socket.on('game:over', (data) => {
   const hostActionsEl = document.getElementById('postgame-host-actions');
   const voteTitleEl  = document.getElementById('postgame-vote-title');
   const voteBtnWrap  = document.getElementById('postgame-vote-buttons');
+  const exitBtn      = document.getElementById('vote-btn-exit');
+  const createBtn    = document.getElementById('btn-create-quiz');
   
   if (state.role === 'host') {
-    // HOST: Hide the voting buttons and title entirely, show primary host actions directly
+    // HOST: Hide only standard vote options that duplicate host actions
     if (hostActionsEl) hostActionsEl.style.display = 'flex';
-    if (voteTitleEl)   voteTitleEl.style.display   = 'none';
-    if (voteBtnWrap)   voteBtnWrap.style.display   = 'none';
+    
+    // Hide New/Again votes (duplicates), but KEEP Exit and Create buttons visible
+    const newQuizVote = document.getElementById('vote-btn-new-quiz');
+    const againVote   = document.getElementById('vote-btn-play-again');
+    if (newQuizVote) newQuizVote.style.display = 'none';
+    if (againVote)   againVote.style.display   = 'none';
+    
+    if (voteTitleEl) voteTitleEl.style.display = 'block'; 
+    if (voteBtnWrap) voteBtnWrap.style.display = 'flex';
   } else {
-    // PLAYER: Show the voting buttons, hide host-only actions
+    // PLAYER: Show all voting buttons, hide host-only actions
     if (hostActionsEl) hostActionsEl.style.display = 'none';
     if (voteTitleEl)   voteTitleEl.style.display   = 'block';
     if (voteBtnWrap)   voteBtnWrap.style.display   = 'flex';
+    
+    // Ensure all individual buttons are visible for players
+    document.querySelectorAll('.vote-btn').forEach(btn => btn.style.display = 'flex');
   }
 
   // Reset vote UI
