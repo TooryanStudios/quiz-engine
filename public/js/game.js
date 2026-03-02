@@ -1514,6 +1514,16 @@ function dismissFinalQuestionOverlay() {
   }, 500);
 }
 
+function bypassFinalQuestionOverlay(reason = 'manual') {
+  updateDiagnose({
+    event: 'final-question:bypass',
+    error: `overlay bypass (${reason})`,
+    role: state.role || '-',
+    view: document.querySelector('.view.active')?.id || '-',
+  });
+  dismissFinalQuestionOverlay();
+}
+
 // ─────────────────────────────────────────────
 // Question Rendering — dispatcher
 // ─────────────────────────────────────────────
@@ -1796,8 +1806,25 @@ function submitAnswer(answer) {
 
   QuestionRendererFactory.onAnswerSubmitted(answer);
 
-  document.getElementById('player-answered-msg').textContent =
-    '✅ تم إرسال إجابتك! انتظر الآخرين…';
+  const answeredMsg = document.getElementById('player-answered-msg');
+  const participantCount = Array.isArray(state.questionPlayers)
+    ? state.questionPlayers.filter((p) => p && typeof p.id === 'string' && p.id.trim().length > 0).length
+    : 0;
+  const isSoloRound = participantCount <= 1;
+
+  if (answeredMsg) {
+    answeredMsg.textContent = isSoloRound
+      ? '✅ تم إرسال إجابتك! جاري الانتقال…'
+      : '✅ تم إرسال إجابتك! انتظر الآخرين…';
+  }
+
+  if (isSoloRound && state.role === 'host' && state.hostIsPlayer) {
+    setTimeout(() => {
+      if (state.questionIndex >= 0 && !state.isPaused) {
+        socket.emit('host:force_end_question');
+      }
+    }, 250);
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -2197,6 +2224,13 @@ const printJoinDebugBtn = document.getElementById('btn-print-join-debug');
 if (printJoinDebugBtn) {
   printJoinDebugBtn.addEventListener('click', () => {
     printJoinDebugDialog();
+  });
+}
+
+const finalQuestionBypassBtn = document.getElementById('btn-final-q-bypass');
+if (finalQuestionBypassBtn) {
+  finalQuestionBypassBtn.addEventListener('click', () => {
+    bypassFinalQuestionOverlay('button');
   });
 }
 
@@ -3477,7 +3511,12 @@ socket.on('room:rejoined', ({ pin, nickname, avatar, players, score, streak, roo
       const ansMsg = document.getElementById('player-answered-msg');
       if (questionData.hasAnswered && ansMsg) {
         state.hasAnswered = true;
-        ansMsg.textContent = '✅ تم إرسال إجابتك! انتظر الآخرين…';
+        const participants = Array.isArray(questionData.players)
+          ? questionData.players.filter((p) => p && typeof p.id === 'string' && p.id.trim().length > 0).length
+          : 0;
+        ansMsg.textContent = participants <= 1
+          ? '✅ تم إرسال إجابتك! جاري الانتقال…'
+          : '✅ تم إرسال إجابتك! انتظر الآخرين…';
       }
     } else if (roomState === 'finished' && leaderboard) {
       // Populate podium immediately (no ceremony delay on rejoin)
