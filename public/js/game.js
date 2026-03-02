@@ -2005,9 +2005,9 @@ function showQuestionResult(data) {
 
   }
 
-  // Score / streak message for player
+  // Score / streak message for player (also update when host is playing as a player)
   const myRound = (data.roundScores || []).find(r => r.id === socket.id);
-  if (state.role === 'player' && myRound) {
+  if ((state.role === 'player' || state.hostIsPlayer) && myRound) {
     state.myStreak = myRound.streak;
     state.myScore  = myRound.totalScore;
     updatePlayerScoreUI();
