@@ -1521,6 +1521,16 @@ function dismissFinalQuestionOverlay() {
 function bypassFinalQuestionOverlay(reason = 'manual') {
   state.suppressFinalQuestionOverlayUntil = Date.now() + 15000;
 
+  const debugEl = document.getElementById('final-q-bypass-debug');
+  if (debugEl) {
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    const ss = String(now.getSeconds()).padStart(2, '0');
+    const activeViewId = document.querySelector('.view.active')?.id || '-';
+    debugEl.textContent = `bypass@${hh}:${mm}:${ss} | reason=${reason} | role=${state.role || '-'} | view=${activeViewId} | q=${state.questionIndex ?? '-'}`;
+  }
+
   updateDiagnose({
     event: 'final-question:bypass',
     error: `overlay bypass (${reason})`,
