@@ -1531,12 +1531,163 @@ function callRoomGameModeHook(room, hookName, payload = {}) {
 // Game Flow
 // ─────────────────────────────────────────────
 
+// ─── Mini-game block helpers ──────────────────────────────────────────────────
+
+/**
+ * Handle a question slot that is a mini-game block (q.miniGameBlockId is set).
+ * Saves the current room runtime/config, installs the block's runtime,
+ * calls startBlock() on it, and sets a timer to advance after q.duration.
+ */
+function sendMiniGameBlock(room, q, opts = {}) {
+  const blockId = q.miniGameBlockId;
+  const blockCfg = (q.miniGameBlockConfig && typeof q.miniGameBlockConfig === 'object')
+    ? q.miniGameBlockConfig : {};
+  const duration = q.duration || 60;
+  const countdownExtraMs = opts.countdownExtraMs || 0;
+
+  console.log(`[Room ${room.pin}] Starting mini-game block: ${blockId} (Q${room.questionIndex + 1}/${Array.isArray(room.questions) ? room.questions.length : '?'})`);
+
+  // Save previous runtime/config so endMiniGameBlock can restore them
+  room._blockState = {
+    prevRuntime: room.gameModeRuntime,
+    prevMiniGameConfig: { ...(room.miniGameConfig || {}) },
+    endBlock: () => endMiniGameBlock(room),
+  };
+
+  // Merge block-level config on top of room config
+  room.miniGameConfig = { ...(room.miniGameConfig || {}), ...blockCfg };
+
+  // Install block runtime
+  const blockRuntime = createGameModeRuntime(blockId);
+  room.gameModeRuntime = blockRuntime;
+
+  room.questionStartTime = Date.now();
+  room.questionDuration = duration;
+  room.state = 'question';
+  room.paused = false;
+  room.pausedTimeRemaining = 0;
+  room.answerOpenAt = Date.now();
+  room.currentQuestionMeta = {
+    shieldTargetId: null,
+    shieldActivatedBy: null,
+    saboteurUsedBy: null,
+    rightOrder: null,
+  };
+
+  const questionIndex = room.questionIndex;
+  const total = Array.isArray(room.questions) ? room.questions.length : 1;
+  const players = getPlayerList(room);
+
+  let started = false;
+  if (typeof blockRuntime.startBlock === 'function') {
+    started = blockRuntime.startBlock({ room, io, questionIndex, total, duration, players, blockConfig: blockCfg });
+  }
+
+  if (started === false) {
+    // Runtime could not start the block (e.g. not enough players) — skip over it
+    console.warn(`[Room ${room.pin}] Mini-game block "${blockId}" could not start — skipping.`);
+    endMiniGameBlock(room);
+    return;
+  }
+
+  if (!started) {
+    // Fallback: runtime has no startBlock — emit a generic block question
+    const questionPayload = {
+      type: 'mini_game_block',
+      miniGameBlockId: blockId,
+      miniGameBlockConfig: blockCfg,
+      text: blockId,
+    };
+    room.currentQuestionPayload = { ...questionPayload };
+    io.to(room.pin).emit('game:question', {
+      questionIndex,
+      total,
+      question: questionPayload,
+      duration,
+      players,
+    });
+  }
+
+  // Block timer — auto-advance after duration regardless of mini-game state
+  room.questionTimer = setTimeout(() => {
+    endMiniGameBlock(room);
+  }, duration * 1000 + countdownExtraMs);
+}
+
+/**
+ * End a mini-game block: restore previous runtime/config and advance to the
+ * next question (or finish the game if this was the last slot).
+ */
+function endMiniGameBlock(room) {
+  if (!room) return;
+
+  clearTimeout(room.questionTimer);
+  room.questionTimer = null;
+  clearTimeout(room.previewTimer);
+  room.previewTimer = null;
+
+  // Clear any xo round-transition timer
+  if (room.xo?.transitionTimer) {
+    clearTimeout(room.xo.transitionTimer);
+    room.xo.transitionTimer = null;
+  }
+
+  const blockId = room.gameModeRuntime?.id || '';
+  console.log(`[Room ${room.pin}] Ending mini-game block: ${blockId}`);
+
+  // Restore previous runtime/config
+  if (room._blockState) {
+    room.gameModeRuntime = room._blockState.prevRuntime;
+    room.miniGameConfig = room._blockState.prevMiniGameConfig;
+    delete room._blockState;
+  }
+
+  // Clean up mini-game-specific room state
+  if (room.xo !== undefined) room.xo = undefined;
+  if (room.gearMachine !== undefined) room.gearMachine = undefined;
+
+  room.state = 'leaderboard';
+
+  const leaderboard = buildLeaderboard(room);
+  const isLastQuestion = room.questionIndex >= (Array.isArray(room.questions) ? room.questions.length - 1 : 0);
+
+  if (isLastQuestion) {
+    room.state = 'finished';
+    const emitDefault = () => io.to(room.pin).emit('game:over', { leaderboard });
+    const handled = callRoomGameModeHook(room, 'onGameOver', {
+      room, io, leaderboard, endedByHost: false, dispatchDefault: emitDefault,
+    });
+    if (handled !== true) emitDefault();
+  } else {
+    io.to(room.pin).emit('game:leaderboard', { leaderboard, isFinal: false });
+    setTimeout(() => {
+      room.questionIndex++;
+      const isNextLast = room.questionIndex >= (Array.isArray(room.questions) ? room.questions.length - 1 : 0);
+      if (isNextLast) {
+        io.to(room.pin).emit('game:final_question');
+        setTimeout(() => sendQuestion(room), 4500);
+      } else {
+        sendQuestion(room);
+      }
+    }, config.GAME.LEADERBOARD_DURATION_MS);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 /** Broadcast the current question to all sockets in a room. */
 function sendQuestion(room, opts = {}) {
   // Guard: don't fire if the game was ended while quiz was loading
   if (!room || room.state === 'finished') return;
   const countdownExtraMs = opts.countdownExtraMs || 0;
   const q = room.questions[room.questionIndex];
+
+  // ─── Mini-game block: delegate to block handler ───────────────────────────
+  if (q && q.miniGameBlockId) {
+    sendMiniGameBlock(room, q, opts);
+    return;
+  }
+  // ─────────────────────────────────────────────────────────────────────────
 
   // ─── Centralised duration resolution ───
   const { durationSec: resolvedDuration, source: durationSource } = resolveGameDuration(room, q, config.GAME.QUESTION_DURATION_SEC);
@@ -2446,13 +2597,11 @@ io.on('connection', (socket) => {
     room.roles = null;
     room.challengePreset = 'classic';
     room.challengeSettings = getPresetSettings('classic');
-
-    // Keep the host-player entry if they joined as a player
-    // if (room.hostIsPlayer) {
-    //   room.players.delete(socket.id);
-    //   room.hostIsPlayer = false;
-    //   socket.data.pin = null;
-    // }
+    // Clear end-of-game vote state
+    if (room.postgameVotes) {
+      room.postgameVotes = {};
+      room.postgameVotedSockets = new Set();
+    }
 
     room.players.forEach((player) => {
       player.score = 0;
@@ -2469,6 +2618,58 @@ io.on('connection', (socket) => {
       modeInfo,
       hostIsPlayer: room.hostIsPlayer,
     });
+  });
+
+  // ── PLAYER / HOST-PLAYER: Post-game vote ─────
+  // Votes: 'new_quiz' | 'play_again' | 'exit'
+  socket.on('player:postgame_vote', ({ vote } = {}) => {
+    const VALID_VOTES = new Set(['new_quiz', 'play_again', 'exit']);
+    if (!VALID_VOTES.has(vote)) return;
+
+    // Find room by player pin, or by host socket
+    const pin = socket.data?.pin || socket.data?.hostPin;
+    const room = (pin && rooms.get(pin)) || findHostRoom(socket.id);
+    if (!room || room.state !== 'finished') return;
+
+    // Lazy-init vote state on the room object
+    if (!room.postgameVotes) {
+      room.postgameVotes = { new_quiz: [], play_again: [], exit: [] };
+      room.postgameVotedSockets = new Set();
+    }
+
+    // Allow one vote per socket; allow changing vote (remove old, add new)
+    const prevVote = room._voteBySocket && room._voteBySocket.get(socket.id);
+    if (!room._voteBySocket) room._voteBySocket = new Map();
+
+    if (prevVote && prevVote !== vote) {
+      // Remove from old bucket
+      const bucket = room.postgameVotes[prevVote];
+      if (bucket) {
+        const idx = bucket.indexOf(socket.id);
+        if (idx !== -1) bucket.splice(idx, 1);
+      }
+    }
+    room._voteBySocket.set(socket.id, vote);
+
+    // Add to new bucket (avoid duplicates)
+    const bucket = room.postgameVotes[vote];
+    if (!bucket.includes(socket.id)) bucket.push(socket.id);
+
+    // Build per-option counts and exited-player list
+    const totalPlayers = Array.from(room.players.values()).filter(p => !p.disconnected).length
+      + (room.hostIsPlayer ? 0 : 0); // host is not a voter unless also a player
+    const counts = {
+      new_quiz:   room.postgameVotes.new_quiz.length,
+      play_again: room.postgameVotes.play_again.length,
+      exit:       room.postgameVotes.exit.length,
+    };
+    const exitedPlayers = room.postgameVotes.exit.map(sid => {
+      const p = room.players.get(sid);
+      return p ? { id: sid, nickname: p.nickname, avatar: p.avatar || '🎮' } : null;
+    }).filter(Boolean);
+
+    console.log(`[Room ${room.pin}] Vote: ${vote} by ${socket.id}. Counts:`, counts);
+    io.to(room.pin).emit('game:vote_update', { counts, exitedPlayers });
   });
 
   // ── HOST: Kick a player from the lobby ───────

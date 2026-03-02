@@ -78,9 +78,12 @@ function createGearMachineRuntime() {
     room.currentQuestionPayload = questionPayload;
     room.currentQuestionMeta = room.currentQuestionMeta || {};
 
+    const blockQIndex = room._blockState ? (room.questionIndex || 0) : 0;
+    const blockTotal = room._blockState ? (Array.isArray(room.questions) ? room.questions.length : 1) : 1;
+
     io.to(room.pin).emit('game:question', {
-      questionIndex: 0,
-      total: 1,
+      questionIndex: blockQIndex,
+      total: blockTotal,
       duration: getGameDurationSec(room),
       question: questionPayload,
       players: getConnectedPlayers(room).map((player) => ({
@@ -198,6 +201,14 @@ function createGearMachineRuntime() {
         winnerTimeMs: machine.winnerTimeMs,
       });
 
+      // In block mode: advance to next question instead of ending the game
+      if (room._blockState) {
+        if (typeof room._blockState.endBlock === 'function') {
+          setTimeout(() => room._blockState.endBlock(), 2000);
+        }
+        return true;
+      }
+
       const leaderboard = buildFinalLeaderboard(room);
       room.state = 'finished';
 
@@ -218,6 +229,9 @@ function createGearMachineRuntime() {
     },
 
     onGameOver({ room, io, endedByHost, dispatchDefault }) {
+      // In block mode, suppress game:over
+      if (room?._blockState) return true;
+
       if (room?.gearMachine) {
         if (room.state !== 'finished') {
           room.state = 'finished';
@@ -235,6 +249,28 @@ function createGearMachineRuntime() {
       }
 
       if (typeof dispatchDefault === 'function') dispatchDefault();
+      return true;
+    },
+    startBlock({ room, io, questionIndex, total, duration, blockConfig }) {
+      const connected = getConnectedPlayers(room);
+      if (connected.length < 1) return false;
+
+      // Apply block-specific config
+      if (blockConfig?.gearsCount) {
+        room.miniGameConfig = { ...(room.miniGameConfig || {}), gearsCount: blockConfig.gearsCount };
+      }
+      if (blockConfig?.maxTurns) {
+        room.miniGameConfig = { ...(room.miniGameConfig || {}), maxTurns: blockConfig.maxTurns };
+      }
+      if (blockConfig?.gameDurationSec || blockConfig?.defaultDuration) {
+        room.miniGameConfig = {
+          ...(room.miniGameConfig || {}),
+          gameDurationSec: blockConfig.gameDurationSec || blockConfig.defaultDuration,
+        };
+      }
+
+      initializeMachine(room);
+      emitMachineQuestion(room, io);
       return true;
     },
   };

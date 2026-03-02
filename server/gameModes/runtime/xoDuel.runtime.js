@@ -237,9 +237,13 @@ function createXoDuelRuntime() {
     room.currentQuestionMeta.xoActivePlayerId = activePlayer?.id || null;
     room.xo.phase = phase;
 
+    // In block mode, use the correct questionIndex/total from the room
+    const blockQIndex = room._blockState ? (room.questionIndex || 0) : 0;
+    const blockTotal = room._blockState ? (Array.isArray(room.questions) ? room.questions.length : 1) : 1;
+
     io.to(room.pin).emit('game:question', {
-      questionIndex: 0,
-      total: 1,
+      questionIndex: blockQIndex,
+      total: blockTotal,
       duration: phase === 'round-result' ? Math.ceil((options.nextRoundInMs || ROUND_RESULT_DELAY_MS) / 1000) : 600,
       question: questionPayload,
       players: getConnectedPlayers(room).map((player) => ({
@@ -260,9 +264,12 @@ function createXoDuelRuntime() {
       ? Math.ceil((room.currentQuestionPayload?.xo?.nextRoundInMs || room.xo?.roundResultDelayMs || ROUND_RESULT_DELAY_MS) / 1000)
       : 600;
 
+    const blockQIndex = room._blockState ? (room.questionIndex || 0) : 0;
+    const blockTotal = room._blockState ? (Array.isArray(room.questions) ? room.questions.length : 1) : 1;
+
     socket.emit('game:question', {
-      questionIndex: 0,
-      total: 1,
+      questionIndex: blockQIndex,
+      total: blockTotal,
       duration,
       question: room.currentQuestionPayload,
       players: getConnectedPlayers(room).map((player) => ({
@@ -278,6 +285,11 @@ function createXoDuelRuntime() {
 
   function emitXoGameOver(room, io, reason) {
     clearRoundTransitionTimer(room);
+    // In block mode, do NOT emit game:over — let endMiniGameBlock handle the transition
+    if (room._blockState) {
+      room.xo.finished = true;
+      return;
+    }
     room.state = 'finished';
     room.xo.finished = true;
 
@@ -344,6 +356,8 @@ function createXoDuelRuntime() {
 
   function startNextRound(room, io) {
     if (!room?.xo || room.xo.finished || room.state === 'finished') return;
+    // In block mode, don't start a new round — the block timer will advance the game
+    if (room._blockState) return;
 
     const nextDuelIds = chooseNextDuel(room);
     if (!nextDuelIds || nextDuelIds.length < 2) {
@@ -525,6 +539,14 @@ function createXoDuelRuntime() {
     },
 
     onQuestionEnd({ room, io }) {
+      if (room?._blockState) {
+        // Block mode: clear transition timer but don't emit game:over
+        if (room.xo?.transitionTimer) {
+          clearTimeout(room.xo.transitionTimer);
+          room.xo.transitionTimer = null;
+        }
+        return true;
+      }
       if (room?.xo && !room.xo.finished) {
         emitXoGameOver(room, io, 'ended');
       }
@@ -532,11 +554,87 @@ function createXoDuelRuntime() {
     },
 
     onGameOver({ room, io, endedByHost, dispatchDefault }) {
+      if (room?._blockState) {
+        // Block mode: suppress game:over
+        return true;
+      }
       if (room?.xo) {
         emitXoGameOver(room, io, endedByHost ? 'ended_by_host' : 'completed');
         return true;
       }
       if (typeof dispatchDefault === 'function') dispatchDefault();
+      return true;
+    },
+
+    startBlock({ room, io, questionIndex, total, duration }) {
+      const connected = getConnectedPlayers(room);
+      if (connected.length < 2) return false;
+
+      room.xo = createInitialDuelState(room);
+      ensureScoreboard(room);
+      hydrateDuelPlayers(room);
+
+      const activePlayer = getActivePlayer(room);
+      const payloadPlayers = (room.xo.players || []).map((player) => ({
+        id: player.id,
+        nickname: player.nickname,
+        symbol: player.symbol,
+        score: player.score || 0,
+      }));
+
+      const waitingPlayers = getSortedScoreboard(room)
+        .filter((entry) => !(room.xo.players || []).some((p) => p.id === entry.id))
+        .map((entry) => ({
+          id: entry.id,
+          nickname: entry.nickname,
+          score: entry.score,
+          cooldownRounds: entry.cooldownRounds,
+        }));
+
+      const questionPayload = {
+        type: 'xo_duel',
+        text: 'X O Duel',
+        miniGameBlockId: 'xo-duel',
+        xo: {
+          phase: 'play',
+          board: [...room.xo.board],
+          boardSize: room.xo.boardSize || 3,
+          players: payloadPlayers,
+          waitingPlayers,
+          needsPlayers: !!room.xo.needsPlayers,
+          turnSequence: Number(room.xo.turnSequence || 1),
+          activePlayerId: activePlayer?.id || null,
+          activeNickname: activePlayer?.nickname || null,
+          activeSymbol: activePlayer?.symbol || null,
+          round: room.xo.round || 1,
+          maxRounds: room.xo.maxRounds || 1,
+          winnerId: null,
+          loserId: null,
+          draw: false,
+          winningLine: null,
+        },
+      };
+
+      room.currentQuestionPayload = questionPayload;
+      room.currentQuestionMeta = room.currentQuestionMeta || {};
+      room.currentQuestionMeta.xoActivePlayerId = activePlayer?.id || null;
+      room.xo.phase = 'play';
+
+      io.to(room.pin).emit('game:question', {
+        questionIndex: questionIndex || 0,
+        total: total || 1,
+        duration: duration || 600,
+        question: questionPayload,
+        players: getConnectedPlayers(room).map((player) => ({
+          id: player.id,
+          nickname: player.nickname,
+          avatar: player.avatar || '🎮',
+          score: player.score || 0,
+          streak: player.streak || 0,
+          isHost: !!player.isHostPlayer,
+        })),
+      });
+
       return true;
     },
   };

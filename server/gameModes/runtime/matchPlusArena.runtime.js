@@ -156,6 +156,37 @@ function createMatchPlusArenaRuntime() {
       dispatchDefault();
       return true;
     },
+
+    startBlock({ room, io, questionIndex, total, duration, players, blockConfig }) {
+      // Build a synthetic match_plus question from the block config
+      const syntheticQ = {
+        type: 'match_plus',
+        text: blockConfig?.instruction || '',
+        matchPlusMode: blockConfig?.matchMode || 'image-puzzle',
+        matchPlusGridSize: Number(blockConfig?.gridSize) || 3,
+        matchPlusImage: blockConfig?.puzzleImage || '/images/QYan_logo_300x164.jpg',
+        matchPlusInstruction: blockConfig?.instruction || '',
+        pairs: [],
+      };
+
+      const questionPayload = transformLegacyQuestionToMatchPlus(syntheticQ, room);
+      questionPayload.matchPlusPlugin = true;
+      questionPayload.matchPlusModes = [...MATCH_PLUS_MODES];
+      questionPayload.miniGameBlockId = 'match-plus-arena';
+
+      room.currentQuestionPayload = { ...questionPayload };
+      room.currentQuestionMeta = room.currentQuestionMeta || {};
+
+      io.to(room.pin).emit('game:question', {
+        questionIndex: questionIndex || 0,
+        total: total || 1,
+        question: questionPayload,
+        duration: duration || 60,
+        players: players || [],
+      });
+
+      return true;
+    },
   };
 }
 
