@@ -28,7 +28,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       id,
       message: options.message,
       type: options.type || 'info',
-      durationMs: options.durationMs || 2500,
+      durationMs: options.durationMs !== undefined ? options.durationMs : 5000,
     }
     setToast(nextToast)
 

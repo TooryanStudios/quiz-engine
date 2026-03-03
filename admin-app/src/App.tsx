@@ -22,6 +22,7 @@ const QuizPreviewPage = lazy(() => import('./pages/QuizPreviewPage').then(m => (
 const GameModesPage   = lazy(() => import('./pages/GameModesPage').then(m => ({ default: m.GameModesPage })))
 const MasterAdminPage = lazy(() => import('./pages/MasterAdminPage').then(m => ({ default: m.MasterAdminPage })))
 const VoiceLabPage    = lazy(() => import('./pages/VoiceLabPage').then(m => ({ default: m.VoiceLabPage })))
+const AILabPage       = lazy(() => import('./pages/AILabPage'))
 
 const MASTER_EMAIL = import.meta.env.VITE_MASTER_EMAIL as string | undefined
 const MASTER_PATH  = import.meta.env.VITE_MASTER_PATH  as string | undefined
@@ -310,6 +311,13 @@ function App() {
                         <span className="nav-label">Voice Lab</span>
                       </NavLink>
                       <NavLink
+                        to="/ai-lab"
+                        className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
+                      >
+                        <span className="nav-icon">🤖</span>
+                        <span className="nav-label">AI Lab</span>
+                      </NavLink>
+                      <NavLink
                         to={`${MASTER_PATH}/dashboard`}
                         className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
                         target="_blank"
@@ -415,6 +423,13 @@ function App() {
                           style={{ marginTop: '0.5rem' }}>
                           <span style={{ marginRight: '0.6rem' }}>🎙️</span>
                           Voice Lab
+                        </NavLink>
+                        <NavLink
+                          to="/ai-lab"
+                          className={({ isActive }) => isActive ? 'active' : ''}
+                          style={{ marginTop: '0.5rem' }}>
+                          <span style={{ marginRight: '0.6rem' }}>🤖</span>
+                          AI Lab
                         </NavLink>
                         <NavLink
                           to={`${MASTER_PATH}/dashboard`}
@@ -531,6 +546,7 @@ function App() {
               <Route path="/preview/:id" element={<RequireAuth user={user}><QuizPreviewPage /></RequireAuth>} />
               <Route path="/packs" element={<RequireAuth user={user}><PacksPage /></RequireAuth>} />
               <Route path="/voice-lab" element={<RequireAdmin user={user}><VoiceLabPage /></RequireAdmin>} />
+              <Route path="/ai-lab" element={<RequireAdmin user={user}><AILabPage /></RequireAdmin>} />
               <Route path="/billing" element={<RequireAuth user={user}><BillingPage /></RequireAuth>} />
               <Route path="/profile" element={<RequireAuth user={user}><ProfilePage /></RequireAuth>} />
             </Routes>

@@ -1,4 +1,5 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
+import { GoogleGenerativeAI } from "@google/generative-ai"
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { storage } from '../lib/firebase'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
@@ -216,8 +217,15 @@ export function QuizEditorPage() {
 
   // AI Feature States
   const [aiAction, setAiAction] = useState<'generate' | 'recheck' | null>(null)
+  const [aiConflictData, setAiConflictData] = useState<{ questions: QuizQuestion[]; count: number } | null>(null)
+  const [selectedAiIndices, setSelectedAiIndices] = useState<number[]>([])
+  const [aiQuestionCount, setAiQuestionCount] = useState(10)
+  const [showAiSelectionOverlay, setShowAiSelectionOverlay] = useState(false)
 
   const [aiPrompt, setAiPrompt] = useState('')
+  const [aiContextFiles, setAiContextFiles] = useState<{ name: string; type: string; data: string }[]>([])
+  const [isUploadingAiFile, setIsUploadingAiFile] = useState(false)
+  const [isGeneratingAi, setIsGeneratingAi] = useState(false)
   const [isNarrowScreen, setIsNarrowScreen] = useState(window.innerWidth < 768)
   const [enabledQuestionTypeIds, setEnabledQuestionTypeIds] = useState<QuestionType[]>([...DEFAULT_ENABLED_QUESTION_TYPE_IDS])
   const [questionTypeAccessByType, setQuestionTypeAccessByType] = useState<Record<QuestionTypeId, QuestionTypeAccessTier>>({ ...QUESTION_TYPE_DEFAULT_ACCESS_BY_TYPE })
@@ -348,6 +356,12 @@ export function QuizEditorPage() {
 
   const fallbackQuestionType = enabledQuestionTypeIds[0] ?? 'single'
   const requiresSubscription = questions.some((question) => questionTypeAccessByType[question.type] === 'premium')
+  const miniGameBlocksCount = useMemo(
+    () => questions.filter((question) => Boolean((question as { miniGameBlockId?: string }).miniGameBlockId)).length,
+    [questions],
+  )
+  const totalQuizItemsCount = questions.length
+  const pureQuestionsCount = Math.max(0, totalQuizItemsCount - miniGameBlocksCount)
   const isPremiumQuestionType = (type: QuestionType) => questionTypeAccessByType[type] === 'premium'
 
   const openUpgradeDialog = (message?: string) => {
@@ -454,6 +468,25 @@ export function QuizEditorPage() {
     setHasUnsavedChanges(true)
     setQuestions((prev) => prev.map((question) => ({ ...question, duration: normalizedDuration })))
     showToast({ message: `تم تطبيق ${normalizedDuration} ثانية على جميع الأسئلة`, type: 'success' })
+  }
+
+  const handleConflictResolve = (mode: 'append' | 'replace' | 'new') => {
+    if (mode === 'replace') {
+      showDialog({
+        title: 'تأكيد الاستبدال',
+        message: 'سيتم حذف جميع الأسئلة الحالية واستبدالها بالأسئلة المُحددة من الذكاء الاصطناعي. هل تريد المتابعة؟',
+        confirmText: 'نعم، استبدال',
+        cancelText: 'إلغاء',
+        onConfirm: () => {
+          handleAiExecute(mode)
+          setShowAiSelectionOverlay(false)
+        },
+      })
+      return
+    }
+
+    handleAiExecute(mode);
+    setShowAiSelectionOverlay(false);
   }
 
   const saveMetadata = async () => {
@@ -638,6 +671,256 @@ export function QuizEditorPage() {
     setQuestions((prev) => [...prev, nextQuestion])
     setCollapsedQuestions((prev) => [...prev, false])
   }
+
+  const handleAiExecute = async (mode: 'append' | 'replace' | 'new') => {
+    if (!aiConflictData) return;
+    const selectedQuestions = aiConflictData.questions.filter((_, i) => selectedAiIndices.includes(i));
+    if (selectedQuestions.length === 0) {
+      showToast({ message: '⚠️ يرجى اختيار سؤال واحد على الأقل', type: 'error' });
+      return;
+    }
+
+    if (mode === 'new') {
+      setQuestions(selectedQuestions);
+      setQuizId(null);
+      setTitle(`${tempTitle} (Generated)`);
+      setSlug(ensureScopedSlug(titleToSlug(`${tempTitle} (Generated)`) || 'quiz', ownerId || ''));
+      setCollapsedQuestions(Array(selectedQuestions.length).fill(false));
+      setAiConflictData(null);
+      setShowMetadataDialog(true);
+    } else if (mode === 'replace') {
+      setQuestions(selectedQuestions);
+      setCollapsedQuestions(Array(selectedQuestions.length).fill(false));
+      setAiConflictData(null);
+    } else {
+      setQuestions(prev => [...prev, ...selectedQuestions]);
+      setCollapsedQuestions(prev => [...prev, ...Array(selectedQuestions.length).fill(false)]);
+      setAiConflictData(null);
+    }
+    setHasUnsavedChanges(true);
+    showToast({ message: `✅ تم إضافة ${selectedQuestions.length} سؤال بنجاح`, type: 'success' });
+  }
+
+  const handleGenerateAI = async () => {
+    if (!aiPrompt.trim() && aiContextFiles.length === 0) {
+      showToast({ message: '⚠️ يرجى كتابة وصف للاختبار أو تحميل ملف', type: 'error' });
+      return;
+    }
+
+    setIsGeneratingAi(true);
+    showToast({ message: '⏳ جاري التوليد... يرجى الانتظار', type: 'info' });
+
+    try {
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      if (!apiKey) throw new Error('Gemini API Key is missing');
+
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const modelCandidates = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.0-flash'];
+
+      const MAX_QUESTION_TEXT_LENGTH = 120;
+      const MAX_OPTION_TEXT_LENGTH = 48;
+
+      const clampText = (value: unknown, maxLength: number) => {
+        const normalized = String(value ?? '').replace(/\s+/g, ' ').trim();
+        if (normalized.length <= maxLength) return normalized;
+        return `${normalized.slice(0, maxLength - 1).trimEnd()}…`;
+      };
+
+      const normalizeAiQuestions = (items: unknown[]): QuizQuestion[] => {
+        return items.map((raw): QuizQuestion => {
+          const source = (raw ?? {}) as Record<string, unknown>;
+          const rawType = String(source.type ?? 'single').toLowerCase();
+          const normalizedType: QuizQuestion['type'] = rawType === 'multiple' || rawType === 'multi' ? 'multi' : 'single';
+
+          let options = Array.isArray(source.options)
+            ? source.options.map((option) => clampText(option, MAX_OPTION_TEXT_LENGTH)).filter(Boolean)
+            : [];
+
+          if (rawType === 'boolean') {
+            options = ['صح', 'خطأ'];
+          }
+
+          if (options.length < 2) {
+            options = ['الخيار الأول', 'الخيار الثاني'];
+          }
+
+          if (options.length > 4) {
+            options = options.slice(0, 4);
+          }
+
+          const rawCorrectAnswer = clampText(source.correctAnswer, MAX_OPTION_TEXT_LENGTH);
+          let correctIndex = options.findIndex((option) => option === rawCorrectAnswer);
+          if (correctIndex < 0) correctIndex = 0;
+
+          return {
+            type: normalizedType,
+            text: clampText(source.text, MAX_QUESTION_TEXT_LENGTH),
+            options,
+            correctIndex,
+            duration: Number(source.duration) > 0 ? Number(source.duration) : 20,
+          };
+        });
+      };
+
+      const promptText = `Generate a quiz with ${aiQuestionCount} questions based on the provided content. 
+      Topic/Context: "${aiPrompt}".
+      Return ONLY a JSON array of objects with this structure (no markdown tags, no backticks, just the raw JSON array):
+      [
+        {
+          "type": "single" | "multiple" | "boolean",
+          "text": "question text in Arabic",
+          "options": ["option1", "option2", "option3", "option4"],
+          "correctAnswer": "the exact string of the correct option",
+          "duration": 20
+        }
+      ]
+      Important: Use Arabic for all text. For boolean, options must be ["صح", "خطأ"].
+      Keep content concise for mobile gameplay UI:
+      - Max question text length: ${MAX_QUESTION_TEXT_LENGTH} characters
+      - Max option text length: ${MAX_OPTION_TEXT_LENGTH} characters`;
+
+      const userMessage: any = {
+        role: "user",
+        parts: [{ text: promptText }]
+      };
+
+      // Add files to the prompt
+      for (const file of aiContextFiles) {
+        userMessage.parts.push({
+          inlineData: {
+            data: file.data,
+            mimeType: file.type
+          }
+        });
+      }
+
+      let generatedQuestions: any[] | null = null;
+      let lastError: unknown = null;
+
+      for (const modelName of modelCandidates) {
+        try {
+          const model = genAI.getGenerativeModel({ model: modelName });
+          const result = await model.generateContent({
+            contents: [userMessage],
+            generationConfig: {
+              responseMimeType: "application/json"
+            }
+          });
+
+          const response = await result.response;
+          let text = response.text();
+          text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+
+          let parsed: any = null;
+          try {
+            parsed = JSON.parse(text);
+          } catch {
+            const firstBracket = text.indexOf('[');
+            const lastBracket = text.lastIndexOf(']');
+            if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
+              parsed = JSON.parse(text.slice(firstBracket, lastBracket + 1));
+            }
+          }
+
+          if (Array.isArray(parsed)) {
+            generatedQuestions = parsed;
+            break;
+          }
+          if (parsed && Array.isArray(parsed.questions)) {
+            generatedQuestions = parsed.questions;
+            break;
+          }
+
+          throw new Error('AI response is not a valid questions array');
+        } catch (err) {
+          lastError = err;
+        }
+      }
+
+      if (!generatedQuestions || generatedQuestions.length === 0) {
+        throw lastError || new Error('No questions generated');
+      }
+
+      const normalizedGeneratedQuestions = normalizeAiQuestions(generatedQuestions);
+      setAiConflictData({ questions: normalizedGeneratedQuestions, count: normalizedGeneratedQuestions.length });
+      setSelectedAiIndices(normalizedGeneratedQuestions.map((_, i) => i));
+      setAiAction(null);
+      setShowAiSelectionOverlay(true);
+      showToast({ message: `✅ تم توليد ${normalizedGeneratedQuestions.length} سؤال`, type: 'success' });
+    } catch (error) {
+      console.error('AI Generation failed:', error);
+      const message = error instanceof Error ? error.message : 'فشل إنشاء الأسئلة بالذكاء الاصطناعي';
+      showToast({ message: `❌ ${message}`, type: 'error' });
+    } finally {
+      setIsGeneratingAi(false);
+    }
+  }
+
+  const handleAiFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isGeneratingAi) {
+      showToast({ message: '⏳ لا يمكن تعديل الملفات أثناء التوليد', type: 'info' });
+      return;
+    }
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setIsUploadingAiFile(true);
+    try {
+      const currentFiles = [...aiContextFiles];
+      const newlyProcessedFiles: { name: string; type: string; data: string }[] = [];
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        
+        // Check if file already exists in either the current list OR the ones we just processed in this batch
+        const isDuplicate = currentFiles.some(f => f.name === file.name) || 
+                           newlyProcessedFiles.some(f => f.name === file.name);
+
+        if (isDuplicate) {
+          showToast({ message: `الملف "${file.name}" موجود بالفعل`, type: 'info' });
+          continue;
+        }
+
+        if (file.size > 10 * 1024 * 1024) {
+          showToast({ message: `الملف ${file.name} كبير جداً (>10MB)`, type: 'error' });
+          continue;
+        }
+
+        const base64Data = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const base64 = (reader.result as string).split(',')[1];
+            resolve(base64);
+          };
+          reader.readAsDataURL(file);
+        });
+
+        newlyProcessedFiles.push({
+          name: file.name,
+          type: file.type,
+          data: base64Data
+        });
+      }
+
+      setAiContextFiles([...currentFiles, ...newlyProcessedFiles]);
+      if (newlyProcessedFiles.length > 0) {
+        showToast({ message: '✅ تم تحميل الملفات بنجاح', type: 'info' });
+      }
+    } catch (err) {
+      console.error('File upload failed:', err);
+      showToast({ message: '❌ فشل تحميل الملفات', type: 'error' });
+    } finally {
+      setIsUploadingAiFile(false);
+    }
+  };
+
+  const removeAiFile = (index: number) => {
+    if (isGeneratingAi) {
+      showToast({ message: '⏳ لا يمكن حذف الملفات أثناء التوليد', type: 'info' });
+      return;
+    }
+    setAiContextFiles(prev => prev.filter((_, i) => i !== index));
+  };
 
   const loadSamples = () => {
     showDialog({
@@ -1256,6 +1539,83 @@ export function QuizEditorPage() {
                 </p>
               </div>
 
+              {/* AI Generation Tools Section */}
+              <div style={{
+                marginTop: '1rem',
+                padding: '1rem',
+                background: 'linear-gradient(135deg, rgba(124, 58, 237, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%)',
+                borderRadius: '12px',
+                border: '1px solid rgba(124, 58, 237, 0.3)',
+              }}>
+                <label style={{ fontSize: '0.9em', color: 'var(--text-bright)', display: 'block', marginBottom: '0.8rem', fontWeight: 800 }}>
+                  ✨ إنشاء الأسئلة بالذكاء الاصطناعي (Gemini 1.5 Flash)
+                </label>
+                
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+                  {[3, 5, 8, 10, 15].map(num => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => setAiQuestionCount(num)}
+                      style={{
+                        padding: '0.4rem 0.8rem',
+                        borderRadius: '20px',
+                        border: '1px solid ' + (aiQuestionCount === num ? 'var(--text-bright)' : 'var(--border-strong)'),
+                        background: aiQuestionCount === num ? 'var(--text-bright)' : 'var(--bg-deep)',
+                        color: aiQuestionCount === num ? 'var(--bg-deep)' : 'var(--text-mid)',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                      }}
+                    >
+                      {num} أسئلة
+                    </button>
+                  ))}
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.6rem' }}>
+                  <textarea
+                    value={aiPrompt}
+                    onChange={(e) => setAiPrompt(e.target.value)}
+                    placeholder="اكتب موضوع الاختبار أو معلومات عنه ليقوم الذكاء الاصطناعي بإنشاء الأسئلة..."
+                    style={{
+                      flex: 1,
+                      padding: '0.75rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-strong)',
+                      background: 'var(--bg-surface)',
+                      color: 'var(--text)',
+                      fontSize: '0.9rem',
+                      minHeight: '80px',
+                      resize: 'vertical',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleGenerateAI}
+                    disabled={aiAction === 'generate' || !aiPrompt.trim()}
+                    style={{
+                      padding: '0 1.2rem',
+                      borderRadius: '8px',
+                      background: 'var(--text-bright)',
+                      color: 'var(--bg-deep)',
+                      fontWeight: 800,
+                      cursor: aiAction === 'generate' ? 'not-allowed' : 'pointer',
+                      opacity: (aiAction === 'generate' || !aiPrompt.trim()) ? 0.6 : 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                    }}
+                  >
+                    {aiAction === 'generate' ? '⏳ جاري الإنشاء...' : '🚀 إنشاء'}
+                  </button>
+                </div>
+                <p style={{ marginTop: '0.5rem', fontSize: '0.75em', color: 'var(--text-mid)' }}>
+                  سيتم تحليل النص المكتوب وتوليد أسئلة اختيار من متعدد في ثوانٍ.
+                </p>
+              </div>
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div>
                   <label style={{ fontSize: '0.9em', color: 'var(--text-mid)', display: 'block', marginBottom: '0.5rem', fontWeight: 600 }}>الخصوصية</label>
@@ -1817,6 +2177,20 @@ export function QuizEditorPage() {
                 🔀 ترتيب جلسة عشوائي
               </span>
             )}
+
+            <span
+              style={{
+                background: 'var(--bg-surface)',
+                color: 'var(--text-bright)',
+                fontSize: isNarrowScreen ? '0.62rem' : '0.74rem',
+                padding: isNarrowScreen ? '2px 8px' : '3px 12px',
+                borderRadius: '999px',
+                border: '1px solid var(--border-strong)',
+                fontWeight: 700,
+              }}
+            >
+              📊 إجمالي العناصر: {totalQuizItemsCount} (أسئلة: {pureQuestionsCount} • ميني جيم: {miniGameBlocksCount})
+            </span>
           </div>
           </div>{/* end inner text div */}
         </div>{/* end profile row */}
@@ -3478,6 +3852,128 @@ export function QuizEditorPage() {
         </div>
       )}
 
+      {/* Global AI Selection Overlay */}
+      {showAiSelectionOverlay && aiConflictData && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(2, 6, 23, 0.85)',
+          backdropFilter: 'blur(10px)',
+          zIndex: 25000,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: '1.5rem',
+        }}>
+          <div style={{
+            width: 'min(760px, 90vw)',
+            maxHeight: '90vh',
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border-strong)',
+            borderRadius: '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+          }}>
+            <div style={{ padding: '1.2rem', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, color: 'var(--text-bright)', fontSize: '1.2rem' }}>✨ اختر الأسئلة التي تريد إضافتها</h3>
+              <div style={{ display: 'flex', gap: '0.8rem' }}>
+                <button
+                  onClick={() => {
+                    if (selectedAiIndices.length === aiConflictData.questions.length) setSelectedAiIndices([])
+                    else setSelectedAiIndices(aiConflictData.questions.map((_, i) => i))
+                  }}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-bright)', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 700 }}
+                >
+                  {selectedAiIndices.length === aiConflictData.questions.length ? 'إلغاء الكل' : 'تحديد الكل'}
+                </button>
+                <button
+                  onClick={() => setShowAiSelectionOverlay(false)}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.2rem' }}
+                >✕</button>
+              </div>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: '0.8rem' }}>
+              <div style={{ display: 'grid', gap: '0.8rem' }}>
+                {aiConflictData.questions.map((q, idx) => (
+                  <div
+                    key={idx}
+                    onClick={() => {
+                      setSelectedAiIndices(prev =>
+                        prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx]
+                      )
+                    }}
+                    style={{
+                      padding: '1rem',
+                      borderRadius: '10px',
+                      border: '1px solid ' + (selectedAiIndices.includes(idx) ? 'var(--text-bright)' : 'var(--border-strong)'),
+                      background: selectedAiIndices.includes(idx) ? 'rgba(59, 130, 246, 0.1)' : 'var(--bg-deep)',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      position: 'relative',
+                    }}
+                  >
+                    <div style={{ position: 'absolute', right: '1rem', top: '1rem' }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedAiIndices.includes(idx)}
+                        readOnly
+                        style={{ width: '1.2rem', height: '1.2rem', accentColor: 'var(--text-bright)' }}
+                      />
+                    </div>
+                    <div style={{ marginLeft: '1.5rem', marginRight: '2rem' }}>
+                      <p style={{ margin: '0 0 0.5rem', color: 'var(--text)', fontWeight: 700, fontSize: '1rem', textAlign: 'right' }}>{q.text}</p>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                        {q.options?.map((opt, i) => (
+                          <div key={i} style={{
+                            fontSize: '0.85rem',
+                            color: (q.correctIndex ?? 0) === i ? '#10b981' : 'var(--text-muted)',
+                            fontWeight: (q.correctIndex ?? 0) === i ? 700 : 400,
+                            textAlign: 'right'
+                          }}>
+                            • {opt}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ padding: '1rem', borderTop: '1px solid var(--border)', background: 'var(--bg-deep)', borderBottomLeftRadius: '16px', borderBottomRightRadius: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.8rem', flexWrap: 'wrap' }}>
+                <span style={{ color: 'var(--text-mid)', fontWeight: 700 }}>تم اختيار {selectedAiIndices.length} من {aiConflictData.questions.length}</span>
+                <div style={{ display: 'flex', gap: '0.8rem' }}>
+                  {questions.length > 0 ? (
+                    <>
+                      <button
+                        onClick={() => handleConflictResolve('append')}
+                        style={{ padding: '0.7rem 1.2rem', borderRadius: '8px', background: 'var(--text-bright)', color: 'var(--bg-deep)', border: 'none', fontWeight: 800, cursor: 'pointer' }}
+                      >➕ إضافة للأسئلة الحالية</button>
+                      <button
+                        onClick={() => handleConflictResolve('replace')}
+                        style={{ padding: '0.7rem 1.2rem', borderRadius: '8px', background: '#ef4444', color: 'white', border: 'none', fontWeight: 800, cursor: 'pointer' }}
+                      >🔄 استبدال الأسئلة الحالية</button>
+                      <button
+                        onClick={() => handleConflictResolve('new')}
+                        style={{ padding: '0.7rem 1.2rem', borderRadius: '8px', background: '#7c3aed', color: 'white', border: 'none', fontWeight: 800, cursor: 'pointer' }}
+                      >✨ إنشاء اختبار جديد</button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => handleConflictResolve('append')}
+                      style={{ padding: '0.7rem 2rem', borderRadius: '8px', background: 'var(--text-bright)', color: 'var(--bg-deep)', border: 'none', fontWeight: 800, cursor: 'pointer' }}
+                    >تأكيد الإضافة ✨</button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add Block Picker Overlay */}
       {showAddBlockPicker && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(2,6,23,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(10px)', padding: '1.5rem', animation: 'fadeIn 0.2s ease-out' }}>
@@ -3689,7 +4185,7 @@ export function QuizEditorPage() {
             position: 'relative'
           }}>
             {/* Header */}
-            <div style={{ padding: '1.25rem 1.5rem', background: 'linear-gradient(135deg, #7c3aed, #db2777)', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ padding: '1.25rem 1.5rem', background: 'linear-gradient(135deg, #7c3aed, #db2777)', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', direction: 'rtl' }}>
               <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800 }}>
                 {aiAction === 'generate' ? '✨ توليد أسئلة بالذكاء الاصطناعي' : '🛡️ تدقيق ذكي ومراجعة الأسئلة'}
               </h2>
@@ -3700,7 +4196,7 @@ export function QuizEditorPage() {
             </div>
 
             {/* Content */}
-            <div style={{ padding: '2rem', position: 'relative' }}>
+            <div style={{ padding: '2rem', position: 'relative', direction: 'rtl', textAlign: 'right' }}>
               {aiAction === 'generate' ? (
                 <>
                   <p style={{ color: 'var(--text-mid)', fontSize: '0.95rem', marginBottom: '1.5rem', lineHeight: 1.6 }}>
@@ -3713,25 +4209,80 @@ export function QuizEditorPage() {
                       placeholder="امتحان في الفيزياء للفصل الأول، موضوع الخلية..."
                       value={aiPrompt}
                       onChange={(e) => setAiPrompt(e.target.value)}
-                      style={{ width: '100%', height: '100px', padding: '1rem', borderRadius: '12px', border: '1.5px solid var(--border-strong)', background: 'var(--bg-deep)', color: 'var(--text)', fontSize: '0.9rem', outline: 'none', transition: 'border-color 0.2s', resize: 'none' }}
+                      style={{ width: '100%', height: '100px', padding: '1rem', borderRadius: '12px', border: '1.5px solid var(--border-strong)', background: 'var(--bg-deep)', color: 'var(--text)', fontSize: '0.9rem', outline: 'none', transition: 'border-color 0.2s', resize: 'none', textAlign: 'right', direction: 'rtl' }}
                     />
                   </div>
 
-                  <div style={{ display: 'flex', gap: '0.8rem', alignItems: 'center', marginBottom: '2rem' }}>
-                    <label 
-                      style={{ 
-                        flex: 1, height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.6rem',
-                        borderRadius: '12px', border: '1.5px dashed var(--border-strong)', background: 'var(--bg-deep)',
-                        cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.85rem'
-                      }}
-                    >
-                      <input type="file" style={{ display: 'none' }} accept="image/*" />
-                      📷 رفع صور
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, display: 'block', marginBottom: '0.5rem', textTransform: 'uppercase' }}>
+                      عدد الأسئلة
                     </label>
-                    <div style={{ flex: 1, padding: '0 1rem', fontSize: '0.8rem', color: 'var(--text-dim)', textAlign: 'center' }}>
-                      أو ارفع صفحات الكتاب
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      {[3, 5, 8, 10, 15].map((count) => (
+                        <button
+                          key={count}
+                          type="button"
+                          onClick={() => setAiQuestionCount(count)}
+                          disabled={isGeneratingAi}
+                          style={{
+                            padding: '0.4rem 0.8rem',
+                            borderRadius: '20px',
+                            border: '1px solid ' + (aiQuestionCount === count ? 'var(--text-bright)' : 'var(--border-strong)'),
+                            background: aiQuestionCount === count ? 'var(--text-bright)' : 'var(--bg-deep)',
+                            color: aiQuestionCount === count ? 'var(--bg-deep)' : 'var(--text-mid)',
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            cursor: isGeneratingAi ? 'not-allowed' : 'pointer',
+                            opacity: isGeneratingAi ? 0.6 : 1,
+                          }}
+                        >
+                          {count} أسئلة
+                        </button>
+                      ))}
                     </div>
                   </div>
+
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.8rem', alignItems: 'center', marginBottom: '2rem' }}>
+                    <label 
+                      style={{ 
+                        flex: 1, minWidth: '150px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.6rem',
+                        borderRadius: '12px', border: '1.5px dashed var(--border-strong)', background: 'var(--bg-deep)',
+                        cursor: (isUploadingAiFile || isGeneratingAi) ? 'not-allowed' : 'pointer', color: 'var(--text-muted)', fontSize: '0.85rem',
+                        opacity: isGeneratingAi ? 0.6 : 1
+                      }}
+                    >
+                      <input 
+                        type="file" 
+                        style={{ display: 'none' }} 
+                        accept="image/*,application/pdf" 
+                        multiple 
+                        onChange={handleAiFileUpload}
+                        disabled={isUploadingAiFile || isGeneratingAi}
+                      />
+                      {isGeneratingAi ? '⛔ الإضافة متوقفة أثناء التوليد' : (isUploadingAiFile ? '⏳ جاري التحميل...' : '📷 رفع صور أو PDF')}
+                    </label>
+                  </div>
+
+                  {aiContextFiles.length > 0 && (
+                    <div style={{ marginBottom: '1.5rem', display: 'flex', flexWrap: 'wrap', gap: '0.5rem', direction: 'rtl' }}>
+                      {aiContextFiles.map((file, idx) => (
+                        <div key={idx} style={{ 
+                          background: 'var(--bg-deep)', padding: '0.3rem 0.6rem', borderRadius: '8px', 
+                          display: 'flex', alignItems: 'center', gap: '0.5rem', border: '1px solid var(--border-strong)',
+                          fontSize: '0.8rem', color: 'var(--text-mid)', flexDirection: 'row-reverse'
+                        }}>
+                          <span style={{ maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {file.type.includes('pdf') ? '📄' : '🖼️'} {file.name}
+                          </span>
+                          <button 
+                            onClick={() => removeAiFile(idx)}
+                            disabled={isGeneratingAi}
+                            style={{ background: 'none', border: 'none', color: '#db2777', cursor: isGeneratingAi ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: isGeneratingAi ? 0.5 : 1 }}
+                          >✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </>
               ) : (
                 <>
@@ -3755,52 +4306,33 @@ export function QuizEditorPage() {
 
               {/* Action Button */}
               <button 
-                onClick={() => {
-                   if (!isSubscribed) {
-                     openUpgradeDialog('Smart Generation and Smart Checking are premium features. Please upgrade your account to use them.')
-                   } else {
-                     showToast({ message: 'جاري العمل... هذه الميزة تحت التطوير حالياً لمشتركي PRO!', type: 'info' })
-                   }
-                }}
+                onClick={handleGenerateAI}
+                disabled={isGeneratingAi || (aiAction === 'generate' && !aiPrompt.trim() && aiContextFiles.length === 0)}
                 style={{
                   width: '100%', padding: '1rem', borderRadius: '12px', border: 'none',
-                  background: 'linear-gradient(135deg, #7c3aed, #db2777)', color: '#fff',
-                  fontSize: '1rem', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s',
-                  boxShadow: '0 4px 15px rgba(124, 58, 237, 0.4)'
+                  background: (aiAction === 'generate' && !aiPrompt.trim() && aiContextFiles.length === 0) ? 'var(--bg-deep)' : 'linear-gradient(135deg, #7c3aed, #db2777)', 
+                  color: (aiAction === 'generate' && !aiPrompt.trim() && aiContextFiles.length === 0) ? 'var(--text-muted)' : '#fff',
+                  fontSize: '1rem', fontWeight: 800, cursor: isGeneratingAi ? 'wait' : ((aiAction === 'generate' && !aiPrompt.trim() && aiContextFiles.length === 0) ? 'not-allowed' : 'pointer'), transition: 'all 0.2s',
+                  boxShadow: (aiAction === 'generate' && !aiPrompt.trim() && aiContextFiles.length === 0) ? 'none' : '0 4px 15px rgba(124, 58, 237, 0.4)',
+                  opacity: isGeneratingAi ? 0.7 : 1
                 }}
-                onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(124, 58, 237, 0.5)' }}
-                onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 15px rgba(124, 58, 237, 0.4)' }}
+                onMouseEnter={(e) => { 
+                  if (!isGeneratingAi && !(aiAction === 'generate' && !aiPrompt.trim() && aiContextFiles.length === 0)) {
+                    e.currentTarget.style.transform = 'translateY(-2px)'; 
+                    e.currentTarget.style.boxShadow = '0 6px 20px rgba(124, 58, 237, 0.5)';
+                  }
+                }}
+                onMouseLeave={(e) => { 
+                  e.currentTarget.style.transform = 'translateY(0)'; 
+                  if (!(aiAction === 'generate' && !aiPrompt.trim() && aiContextFiles.length === 0)) {
+                    e.currentTarget.style.boxShadow = '0 4px 15px rgba(124, 58, 237, 0.4)';
+                  }
+                }}
               >
-                {aiAction === 'generate' ? '🚀 ابدأ التوليد' : '🛡️ ابدأ التدقيق'}
+                {isGeneratingAi ? '⏳ جاري التوليد...' : (aiAction === 'generate' ? '🚀 ابدأ التوليد' : '🛡️ ابدأ التدقيق')}
               </button>
 
-              {/* Subscription Lock Overlay (if not subscribed) */}
-              {!isSubscribed && (
-                <div style={{
-                  position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                  background: 'rgba(23, 23, 23, 0.65)', backdropFilter: 'blur(3px)',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                  padding: '1.5rem', textAlign: 'center', zIndex: 10
-                }}>
-                  <div style={{ 
-                    background: '#fbbf24', color: '#000', padding: '0.4rem 0.8rem', 
-                    borderRadius: '20px', fontWeight: 900, fontSize: '0.75rem', 
-                    marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.4rem'
-                  }}>
-                    <span>🔒 PREMIUM ONLY</span>
-                  </div>
-                  <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.2rem', color: '#fff' }}>تتطلب ترقية الحساب</h3>
-                  <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.85rem', marginBottom: '1.5rem' }}>
-                    استخدم قوة الذكاء الاصطناعي لتوفير ساعات من العمل. اشترك في الباقة الاحترافية للوصول.
-                  </p>
-                  <button 
-                    onClick={() => navigate('/billing')}
-                    style={{ background: '#fff', color: '#000', border: 'none', padding: '0.7rem 1.4rem', borderRadius: '10px', fontWeight: 700, cursor: 'pointer' }}
-                  >
-                    🚀 ترقية الآن
-                  </button>
-                </div>
-              )}
+              {/* Removed Subscription Lock Overlay */}
             </div>
           </div>
         </div>

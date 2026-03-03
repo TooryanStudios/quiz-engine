@@ -102,6 +102,29 @@ export async function listPublicQuizzes() {
   return snap.docs.map((d) => ({ id: d.id, ...(d.data() as QuizDoc) }))
 }
 
+export async function saveEditorDraft(ownerId: string, quizId: string | null, draft: any) {
+  const draftDoc = draft.questions.length > 0 ? draft : null
+  const draftId = quizId ? `draft_${quizId}` : `draft_new_${ownerId}`
+  await updateDoc(doc(db, 'users', ownerId), {
+    [`editorDrafts.${draftId}`]: deepClean(draftDoc) || null
+  })
+}
+
+export async function getEditorDraft(ownerId: string, quizId: string | null) {
+  const snap = await getDoc(doc(db, 'users', ownerId))
+  if (!snap.exists()) return null
+  const data = snap.data()
+  const draftId = quizId ? `draft_${quizId}` : `draft_new_${ownerId}`
+  return (data.editorDrafts?.[draftId] || null) as any
+}
+
+export async function clearEditorDraft(ownerId: string, quizId: string | null) {
+  const draftId = quizId ? `draft_${quizId}` : `draft_new_${ownerId}`
+  await updateDoc(doc(db, 'users', ownerId), {
+    [`editorDrafts.${draftId}`]: null
+  })
+}
+
 export async function listPublicQuizzesByOwner(ownerId: string) {
   const q = query(
     quizzesCol,
