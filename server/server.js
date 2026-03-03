@@ -556,7 +556,12 @@ app.get('/api/lobby-quiz-catalog', async (req, res) => {
     const gameModeId = typeof data.gameModeId === 'string' ? data.gameModeId : null;
     const visibility = data.visibility === 'private' ? 'private' : 'public';
     const ownerId = typeof data.ownerId === 'string' ? data.ownerId : null;
-    return { slug, title, coverImage, gameModeId, visibility, ownerId };
+    
+    // Genre: Show "لعبة" (Game) for mini-games, "كويز" (Quiz) for standard/legacy
+    const isMiniGame = !!gameModeId && gameModeId !== 'legacy' && gameModeId !== 'standard';
+    const genre = isMiniGame ? 'لعبة' : 'كويز';
+    
+    return { slug, title, coverImage, gameModeId, visibility, ownerId, genre };
   };
 
   try {
@@ -568,11 +573,20 @@ app.get('/api/lobby-quiz-catalog', async (req, res) => {
 
     let mySnap = null;
     if (verifiedUid) {
+      // Step 1: Query by ownerId field
       mySnap = await db
         .collection('quizzes')
         .where('ownerId', '==', verifiedUid)
-        .limit(limitValue)
         .get();
+      
+      // Step 2: If the standard ownerId query is empty, try the direct ID reference as a fallback 
+      // some early docs might use the UID as the document ID directly or in different path.
+      if (mySnap.empty) {
+        mySnap = await db
+          .collection('quizzes')
+          .where('userId', '==', verifiedUid) // alternate field used in some branches
+          .get();
+      }
     }
 
     const publicGames = publicSnap.docs.map(mapQuizCard);
@@ -581,8 +595,8 @@ app.get('/api/lobby-quiz-catalog', async (req, res) => {
     return res.json({
       publicGames,
       myGames,
-      totalPublic: publicGames.length,
-      totalMine: myGames.length,
+      totalPublic: publicSnap.size,
+      totalMine: mySnap ? mySnap.size : 0,
     });
   } catch (error) {
     console.error('[lobby-quiz-catalog] failed', error?.message || error);

@@ -2835,14 +2835,17 @@ function renderSwitchCard(item, category) {
   btn.className = 'switch-game-card';
   btn.setAttribute('dir', 'rtl');
   
-  const fallbackThumb = '/images/QYan_logo_300x164.jpg'; // Match admin placeholder
+  const fallbackThumb = '/images/QYan_logo_300x164.jpg';
   const thumbUrl = item.coverImage || fallbackThumb;
+  
+  // Show genre (لعبة/كويز) in the meta line
+  const genreLabel = item.genre || 'كويز';
   
   btn.innerHTML = `
     <img class="switch-game-thumb" src="${escapeHtml(thumbUrl)}" alt="" onerror="this.src='${fallbackThumb}';" />
     <div class="switch-game-body">
       <div class="switch-game-title" title="${escapeHtml(item.title || item.slug)}">${escapeHtml(item.title || item.slug)}</div>
-      <div class="switch-game-meta">${escapeHtml(category)} · ${escapeHtml(item.slug || '')}</div>
+      <div class="switch-game-meta">${escapeHtml(genreLabel)} · ${escapeHtml(category)} · ${escapeHtml(item.slug || '')}</div>
     </div>
   `;
   btn.addEventListener('click', () => {
