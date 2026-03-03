@@ -2338,11 +2338,11 @@ export function QuizEditorPage() {
         </div>
       )}
 
-      {/* ── Hero header — desktop only ── */}
-      {!isNarrowScreen && <div style={{
+      {/* ── Hero header ── */}
+      <div style={{
         background: 'linear-gradient(180deg, var(--bg-surface) 0%, var(--bg-deep) 100%)',
         borderBottom: '1px solid var(--border-strong)',
-        marginBottom: '1.5rem',
+        marginBottom: isNarrowScreen ? '0' : '1.5rem',
         borderRadius: isNarrowScreen ? '0 0 20px 20px' : '0 0 24px 24px',
         boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
         padding: isNarrowScreen ? '1rem 0.8rem' : '2rem 1.5rem',
@@ -2477,7 +2477,7 @@ export function QuizEditorPage() {
             </div>
           </div>
         </div>
-      </div>}
+      </div>
 
       {/* ── Sticky toolbar ── */}
       {showToolbarDropdown && (
@@ -2494,7 +2494,7 @@ export function QuizEditorPage() {
         padding: isNarrowScreen ? '0.5rem 0.6rem' : '0.55rem 0.65rem',
         marginBottom: '1rem',
         boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
-        margin: isNarrowScreen ? '-12px -12px 1rem -12px' : '0 0 1rem 0',
+        margin: isNarrowScreen ? '-0.25rem -1rem 1rem -1rem' : '0 0 1rem 0',
       }}>
         <div style={{ display: 'flex', gap: isNarrowScreen ? '0.3rem' : '0.45rem', alignItems: 'center', flexWrap: 'nowrap' }}>
 
