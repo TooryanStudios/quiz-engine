@@ -221,6 +221,7 @@ export function QuizEditorPage() {
   const [selectedAiIndices, setSelectedAiIndices] = useState<number[]>([])
   const [aiQuestionCount, setAiQuestionCount] = useState(10)
   const [showAiSelectionOverlay, setShowAiSelectionOverlay] = useState(false)
+  const [showToolbarDropdown, setShowToolbarDropdown] = useState(false)
 
   const [aiPrompt, setAiPrompt] = useState('')
   const [aiContextFiles, setAiContextFiles] = useState<{ name: string; type: string; data: string }[]>([])
@@ -2027,10 +2028,11 @@ export function QuizEditorPage() {
       <div style={{
         background: 'linear-gradient(135deg, var(--bg-deep) 0%, #1e1b4b 100%)',
         border: '1px solid var(--border-mid)',
-        borderRadius: '16px',
+        borderRadius: isNarrowScreen ? '0 0 16px 16px' : '16px',
         marginBottom: '1.25rem',
         position: 'relative',
         overflow: 'hidden',
+        marginTop: isNarrowScreen ? '-1rem' : '0',
       }}>
         {/* Full-width cover background (dimmed) */}
         <div style={{ width: '100%', height: isNarrowScreen ? '120px' : '180px', overflow: 'hidden', position: 'relative' }}>
@@ -2197,189 +2199,221 @@ export function QuizEditorPage() {
       </div>{/* end hero */}
 
       {/* ── Sticky toolbar ── */}
+      {showToolbarDropdown && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 99 }}
+          onClick={() => setShowToolbarDropdown(false)}
+        />
+      )}
       <div style={{
-        position: 'sticky', top: 0, zIndex: 100,
+        position: 'sticky', top: isNarrowScreen ? '0' : '0.5rem', zIndex: 100,
         background: 'var(--bg-deep)',
         border: '1px solid var(--border-mid)',
-        borderRadius: '12px',
-        padding: isNarrowScreen ? '0.35rem 0.4rem' : '0.55rem 0.65rem',
+        borderRadius: isNarrowScreen ? '0' : '12px',
+        padding: isNarrowScreen ? '0.5rem 0.6rem' : '0.55rem 0.65rem',
         marginBottom: '1rem',
         boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
+        margin: isNarrowScreen ? '0 -1rem 1rem -1rem' : '0 0 1rem 0',
       }}>
-        <div style={{ display: 'flex', gap: isNarrowScreen ? '0.25rem' : '0.45rem', flexWrap: 'wrap', alignItems: 'center' }}>
-          {/* Group 1: Settings & Add Question */}
-          <div className="quiz-toolbar-group" style={{ display: 'flex', gap: isNarrowScreen ? '0.2rem' : '0.35rem', flexWrap: 'wrap', alignItems: 'center', background: 'var(--bg-surface)', border: '1px solid var(--border-strong)', borderRadius: '10px', padding: isNarrowScreen ? '0.15rem' : '0.25rem' }}>
-            {/* Content type badge — click to change type */}
-            {!quizId && (
-              <button
-                type="button"
-                onClick={() => setShowContentTypePicker(true)}
-                style={{
-                  background: 'transparent', border: '1px solid transparent',
-                  color: contentType === 'mix' ? '#059669' : contentType === 'mini-game' ? '#7c3aed' : 'var(--text-bright)',
-                  padding: isNarrowScreen ? '0.32rem 0.5rem' : '0.42rem 0.72rem',
-                  borderRadius: '8px', fontSize: isNarrowScreen ? '0.7rem' : '0.8rem', fontWeight: 700,
-                  cursor: 'pointer', transition: 'all 0.16s ease', whiteSpace: 'nowrap',
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--border-strong)'; e.currentTarget.style.background = 'var(--bg-deep)' }}
-                onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.background = 'transparent' }}
-                title="تغيير نوع المحتوى"
-              >
-                {contentType === 'mix' ? '🔀' : contentType === 'mini-game' ? '🎮' : '📋'}
-                {!isNarrowScreen && (
-                  <span style={{ marginRight: '0.3rem' }}>
-                    {contentType === 'mix' ? ' مزيج' : contentType === 'mini-game' ? ' ميني جيم' : ' اختبار'}
-                  </span>
+        <div style={{ display: 'flex', gap: isNarrowScreen ? '0.3rem' : '0.45rem', alignItems: 'center', flexWrap: 'nowrap' }}>
+
+          {/* Content type badge */}
+          {!quizId && (
+            <button
+              type="button"
+              onClick={() => setShowContentTypePicker(true)}
+              style={{
+                background: 'transparent', border: '1px solid transparent',
+                color: contentType === 'mix' ? '#059669' : contentType === 'mini-game' ? '#7c3aed' : 'var(--text-bright)',
+                padding: isNarrowScreen ? '0.4rem 0.5rem' : '0.42rem 0.72rem',
+                borderRadius: '8px', cursor: 'pointer', transition: 'all 0.16s ease',
+                display: 'flex', flexDirection: isNarrowScreen ? 'column' : 'row',
+                alignItems: 'center', gap: isNarrowScreen ? '0.15rem' : '0.3rem',
+                minWidth: isNarrowScreen ? '48px' : 'auto', flexShrink: 0,
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--border-strong)'; e.currentTarget.style.background = 'var(--bg-surface)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.background = 'transparent' }}
+              title="تغيير نوع المحتوى"
+            >
+              <span style={{ fontSize: isNarrowScreen ? '1.3rem' : '0.9rem' }}>{contentType === 'mix' ? '🔀' : contentType === 'mini-game' ? '🎮' : '📋'}</span>
+              <span style={{ fontSize: isNarrowScreen ? '0.58rem' : '0.8rem', fontWeight: 700 }}>{contentType === 'mix' ? 'مزيج' : contentType === 'mini-game' ? 'ميني' : 'اختبار'}</span>
+            </button>
+          )}
+
+          {/* ── Gear dropdown ── */}
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <button
+              type="button"
+              onClick={() => setShowToolbarDropdown((v) => !v)}
+              style={{
+                background: showToolbarDropdown ? 'var(--bg-surface)' : 'transparent',
+                border: '1px solid ' + (showToolbarDropdown ? 'var(--border-strong)' : 'transparent'),
+                color: 'var(--text)',
+                padding: isNarrowScreen ? '0.4rem 0.5rem' : '0.42rem 0.72rem',
+                borderRadius: '8px', fontWeight: 700,
+                cursor: 'pointer', transition: 'all 0.16s ease',
+                display: 'flex', flexDirection: isNarrowScreen ? 'column' : 'row',
+                alignItems: 'center', gap: isNarrowScreen ? '0.15rem' : '0.3rem',
+                minWidth: isNarrowScreen ? '48px' : 'auto',
+              }}
+              title="المزيد من الخيارات"
+            >
+              <span style={{ fontSize: isNarrowScreen ? '1.3rem' : '1rem' }}>⚙️</span>
+              <span style={{ fontSize: isNarrowScreen ? '0.58rem' : '0.8rem', fontWeight: 700 }}>الإعدادات {isNarrowScreen ? '' : showToolbarDropdown ? '▴' : '▾'}</span>
+            </button>
+
+            {/* Dropdown panel */}
+            {showToolbarDropdown && (
+              <div style={{
+                position: 'absolute',
+                top: 'calc(100% + 6px)',
+                left: 0,
+                minWidth: '220px',
+                maxWidth: '90vw',
+                background: 'var(--bg-deep)',
+                border: '1px solid var(--border-strong)',
+                borderRadius: '12px',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.45)',
+                zIndex: 200,
+                overflow: 'hidden',
+                animation: 'slideUp 0.15s ease-out',
+              }}>
+                {/* Settings modal item */}
+                <button type="button" onClick={() => { openMetadataDialog(); setShowToolbarDropdown(false) }}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.75rem 1rem', background: 'transparent', border: 'none', color: 'var(--text)', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 700, borderBottom: '1px solid var(--border-strong)' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-surface)' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                >⚙️ <span>إعدادات الاختبار</span></button>
+
+                {/* Divider label */}
+                <div style={{ padding: '0.4rem 1rem 0.2rem', fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px' }}>الأسئلة</div>
+
+                <button type="button"
+                  onClick={() => { setCollapsedQuestions(Array(questions.length).fill(true)); setShowToolbarDropdown(false) }}
+                  disabled={questions.length === 0}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.65rem 1rem', background: 'transparent', border: 'none', color: questions.length === 0 ? 'var(--text-muted)' : 'var(--text)', cursor: questions.length === 0 ? 'not-allowed' : 'pointer', fontSize: '0.88rem', fontWeight: 600, opacity: questions.length === 0 ? 0.45 : 1 }}
+                  onMouseEnter={(e) => { if (questions.length > 0) e.currentTarget.style.background = 'var(--bg-surface)' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                >▾ <span>طي جميع الأسئلة</span></button>
+
+                <button type="button"
+                  onClick={() => { setCollapsedQuestions(Array(questions.length).fill(false)); setShowToolbarDropdown(false) }}
+                  disabled={questions.length === 0}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.65rem 1rem', background: 'transparent', border: 'none', color: questions.length === 0 ? 'var(--text-muted)' : 'var(--text)', cursor: questions.length === 0 ? 'not-allowed' : 'pointer', fontSize: '0.88rem', fontWeight: 600, opacity: questions.length === 0 ? 0.45 : 1, borderBottom: '1px solid var(--border-strong)' }}
+                  onMouseEnter={(e) => { if (questions.length > 0) e.currentTarget.style.background = 'var(--bg-surface)' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                >▴ <span>فتح جميع الأسئلة</span></button>
+
+                {/* Divider label */}
+                <div style={{ padding: '0.4rem 1rem 0.2rem', fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px' }}>الرابط</div>
+
+                {quizId && (
+                  <button type="button" onClick={() => { void (async () => { await (async () => window.open(`/preview/${quizId}`, '_blank'))(); })(); setShowToolbarDropdown(false) }}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.65rem 1rem', background: 'transparent', border: 'none', color: 'var(--text)', cursor: 'pointer', fontSize: '0.88rem', fontWeight: 600 }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-surface)' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                  >👁️ <span>معاينة الاختبار</span></button>
                 )}
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => openMetadataDialog()}
-              style={{
-                background: 'transparent', border: '1px solid transparent', color: 'var(--text)',
-                padding: isNarrowScreen ? '0.32rem 0.5rem' : '0.42rem 0.72rem', borderRadius: '8px', fontSize: isNarrowScreen ? '0.7rem' : '0.8rem', fontWeight: 700,
-                cursor: 'pointer', transition: 'all 0.16s ease', whiteSpace: 'nowrap',
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--border-strong)'; e.currentTarget.style.background = 'var(--bg-deep)' }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.background = 'transparent' }}
-              title="إعدادات الاختبار"
-            >{isNarrowScreen ? '⚙️' : '⚙️ إعدادات'}</button>
 
-            {!isMiniGameContent && (
-              <button
-                type="button"
-                onClick={addQuestion}
-                style={{
-                  background: 'var(--text-bright)', border: '1px solid var(--text-bright)', color: '#fff',
-                  padding: isNarrowScreen ? '0.32rem 0.55rem' : '0.42rem 0.78rem', borderRadius: '8px', fontSize: isNarrowScreen ? '0.7rem' : '0.8rem', fontWeight: 700,
-                  cursor: 'pointer', transition: 'all 0.16s ease', whiteSpace: 'nowrap',
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)' }}
-                onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)' }}
-                title="إضافة سؤال جديد"
-              >{isNarrowScreen ? '➕' : '➕ إضافة سؤال'}</button>
+                <button type="button"
+                  onClick={() => { void copyEditorLink(); setShowToolbarDropdown(false) }}
+                  disabled={!quizId}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.65rem 1rem', background: 'transparent', border: 'none', color: !quizId ? 'var(--text-muted)' : 'var(--text)', cursor: !quizId ? 'not-allowed' : 'pointer', fontSize: '0.88rem', fontWeight: 600, opacity: !quizId ? 0.45 : 1 }}
+                  onMouseEnter={(e) => { if (quizId) e.currentTarget.style.background = 'var(--bg-surface)' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                >📋 <span>نسخ الرابط</span></button>
+
+                <button type="button"
+                  onClick={() => { void shareEditorLink(); setShowToolbarDropdown(false) }}
+                  disabled={!quizId}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.65rem 1rem', background: 'transparent', border: 'none', color: !quizId ? 'var(--text-muted)' : 'var(--text)', cursor: !quizId ? 'not-allowed' : 'pointer', fontSize: '0.88rem', fontWeight: 600, opacity: !quizId ? 0.45 : 1 }}
+                  onMouseEnter={(e) => { if (quizId) e.currentTarget.style.background = 'var(--bg-surface)' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                >🔗 <span>مشاركة الرابط</span></button>
+
+                {/* Delete quiz — danger zone */}
+                {quizId && (
+                  <>
+                    <div style={{ height: '1px', background: 'var(--border-strong)', margin: '0.25rem 0' }} />
+                    <button type="button"
+                      onClick={() => { setShowToolbarDropdown(false); handleDeleteQuiz() }}
+                      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.75rem 1rem', background: 'transparent', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '0.88rem', fontWeight: 700 }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(248,113,113,0.1)' }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                    >🗑️ <span>حذف الاختبار</span></button>
+                  </>
+                )}
+              </div>
             )}
           </div>
 
-          {/* Group 2: AI Functions */}
-          <div className="quiz-toolbar-group" style={{ display: 'flex', gap: isNarrowScreen ? '0.2rem' : '0.35rem', flexWrap: 'wrap', alignItems: 'center', background: 'var(--bg-surface)', border: '1px solid var(--border-strong)', borderRadius: '10px', padding: isNarrowScreen ? '0.15rem' : '0.25rem' }}>
+          {/* Add question */}
+          {!isMiniGameContent && (
             <button
               type="button"
-              onClick={() => { setAiAction('generate'); void incrementPlatformStat('aiGenerateClicks') }}
+              onClick={addQuestion}
               style={{
-                background: 'transparent', border: '1px solid transparent', color: 'var(--text)',
-                padding: isNarrowScreen ? '0.32rem 0.5rem' : '0.42rem 0.72rem', borderRadius: '8px', fontSize: isNarrowScreen ? '0.7rem' : '0.8rem', fontWeight: 700,
-                cursor: 'pointer', transition: 'all 0.16s ease', whiteSpace: 'nowrap',
+                background: 'var(--text-bright)', border: '1px solid var(--text-bright)', color: '#fff',
+                padding: isNarrowScreen ? '0.4rem 0.5rem' : '0.42rem 0.78rem', borderRadius: '8px', fontWeight: 700,
+                cursor: 'pointer', transition: 'all 0.16s ease',
+                display: 'flex', flexDirection: isNarrowScreen ? 'column' : 'row',
+                alignItems: 'center', gap: isNarrowScreen ? '0.15rem' : '0.3rem',
+                minWidth: isNarrowScreen ? '48px' : 'auto', flexShrink: 0,
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--text-bright)'; e.currentTarget.style.background = 'rgba(59,130,246,0.1)' }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.background = 'transparent' }}
-              title="توليد ذكي"
-            >{isNarrowScreen ? '✨' : '✨ توليد ذكي'}</button>
+              onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)' }}
+              title="إضافة سؤال جديد"
+            >
+              <span style={{ fontSize: isNarrowScreen ? '1.3rem' : '0.9rem' }}>➕</span>
+              <span style={{ fontSize: isNarrowScreen ? '0.58rem' : '0.8rem', fontWeight: 700 }}>إضافة</span>
+            </button>
+          )}
 
-            <button
-              type="button"
-              onClick={() => { setAiAction('recheck'); void incrementPlatformStat('aiRecheckClicks') }}
-              style={{
-                background: 'transparent', border: '1px solid transparent', color: 'var(--text)',
-                padding: isNarrowScreen ? '0.32rem 0.5rem' : '0.42rem 0.72rem', borderRadius: '8px', fontSize: isNarrowScreen ? '0.7rem' : '0.8rem', fontWeight: 700,
-                cursor: 'pointer', transition: 'all 0.16s ease', whiteSpace: 'nowrap',
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--text-bright)'; e.currentTarget.style.background = 'rgba(59,130,246,0.1)' }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.background = 'transparent' }}
-              title="تدقيق ذكي"
-            >{isNarrowScreen ? '🛡️' : '🛡️ تدقيق ذكي'}</button>
-          </div>
+          {/* AI Generate */}
+          <button
+            type="button"
+            onClick={() => { setAiAction('generate'); void incrementPlatformStat('aiGenerateClicks') }}
+            style={{
+              background: 'transparent', border: '1px solid transparent', color: 'var(--text)',
+              padding: isNarrowScreen ? '0.4rem 0.5rem' : '0.42rem 0.72rem', borderRadius: '8px', fontWeight: 700,
+              cursor: 'pointer', transition: 'all 0.16s ease',
+              display: 'flex', flexDirection: isNarrowScreen ? 'column' : 'row',
+              alignItems: 'center', gap: isNarrowScreen ? '0.15rem' : '0.3rem',
+              minWidth: isNarrowScreen ? '48px' : 'auto', flexShrink: 0,
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--text-bright)'; e.currentTarget.style.background = 'rgba(59,130,246,0.1)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.background = 'transparent' }}
+            title="توليد ذكي"
+          >
+            <span style={{ fontSize: isNarrowScreen ? '1.3rem' : '0.9rem' }}>✨</span>
+            <span style={{ fontSize: isNarrowScreen ? '0.58rem' : '0.8rem', fontWeight: 700 }}>توليد</span>
+          </button>
 
-          {/* Group 3: Collapse/Expand/Preview/Copy/Share */}
-          <div className="quiz-toolbar-group" style={{ display: 'flex', gap: isNarrowScreen ? '0.2rem' : '0.35rem', flexWrap: 'wrap', alignItems: 'center', background: 'var(--bg-surface)', border: '1px solid var(--border-strong)', borderRadius: '10px', padding: isNarrowScreen ? '0.15rem' : '0.25rem' }}>
-            <button
-              type="button"
-              onClick={() => setCollapsedQuestions(Array(questions.length).fill(true))}
-              disabled={!quizId || questions.length === 0}
-              style={{
-                background: 'transparent', border: '1px solid transparent', color: 'var(--text)',
-                padding: isNarrowScreen ? '0.32rem 0.45rem' : '0.42rem 0.68rem', borderRadius: '8px', fontSize: isNarrowScreen ? '0.65rem' : '0.8rem', fontWeight: 700,
-                cursor: !quizId || questions.length === 0 ? 'not-allowed' : 'pointer', opacity: !quizId || questions.length === 0 ? 0.5 : 1, whiteSpace: 'nowrap',
-              }}
-              title="طي جميع الأسئلة"
-            >{isNarrowScreen ? '▾' : '▾ طي'}</button>
+          {/* AI Recheck */}
+          <button
+            type="button"
+            onClick={() => { setAiAction('recheck'); void incrementPlatformStat('aiRecheckClicks') }}
+            style={{
+              background: 'transparent', border: '1px solid transparent', color: 'var(--text)',
+              padding: isNarrowScreen ? '0.4rem 0.5rem' : '0.42rem 0.72rem', borderRadius: '8px', fontWeight: 700,
+              cursor: 'pointer', transition: 'all 0.16s ease',
+              display: 'flex', flexDirection: isNarrowScreen ? 'column' : 'row',
+              alignItems: 'center', gap: isNarrowScreen ? '0.15rem' : '0.3rem',
+              minWidth: isNarrowScreen ? '48px' : 'auto', flexShrink: 0,
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--text-bright)'; e.currentTarget.style.background = 'rgba(59,130,246,0.1)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.background = 'transparent' }}
+            title="تدقيق ذكي"
+          >
+            <span style={{ fontSize: isNarrowScreen ? '1.3rem' : '0.9rem' }}>🛡️</span>
+            <span style={{ fontSize: isNarrowScreen ? '0.58rem' : '0.8rem', fontWeight: 700 }}>تدقيق</span>
+          </button>
 
-            <button
-              type="button"
-              onClick={() => setCollapsedQuestions(Array(questions.length).fill(false))}
-              disabled={!quizId || questions.length === 0}
-              style={{
-                background: 'transparent', border: '1px solid transparent', color: 'var(--text)',
-                padding: isNarrowScreen ? '0.32rem 0.45rem' : '0.42rem 0.68rem', borderRadius: '8px', fontSize: isNarrowScreen ? '0.65rem' : '0.8rem', fontWeight: 700,
-                cursor: !quizId || questions.length === 0 ? 'not-allowed' : 'pointer', opacity: !quizId || questions.length === 0 ? 0.5 : 1, whiteSpace: 'nowrap',
-              }}
-              title="فتح جميع الأسئلة"
-            >{isNarrowScreen ? '▴' : '▴ فتح'}</button>
+          {/* Spacer */}
+          <div style={{ flex: 1 }} />
 
-            {quizId && (
-              <button
-                type="button"
-                onClick={() => window.open(`/preview/${quizId}`, '_blank')}
-                style={{
-                  background: 'transparent', border: '1px solid transparent', color: 'var(--text)',
-                  padding: isNarrowScreen ? '0.32rem 0.5rem' : '0.42rem 0.7rem', borderRadius: '8px', fontSize: isNarrowScreen ? '0.65rem' : '0.8rem', fontWeight: 700,
-                  cursor: 'pointer', transition: 'all 0.16s ease', whiteSpace: 'nowrap',
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--border-strong)'; e.currentTarget.style.background = 'var(--bg-deep)' }}
-                onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.background = 'transparent' }}
-                title="معاينة الاختبار"
-              >{isNarrowScreen ? '👁️' : '👁️ معاينة'}</button>
-            )}
-
-            <button
-              type="button"
-              onClick={copyEditorLink}
-              disabled={!quizId}
-              style={{
-                background: 'transparent', border: '1px solid transparent', color: 'var(--text)',
-                padding: isNarrowScreen ? '0.32rem 0.5rem' : '0.42rem 0.7rem', borderRadius: '8px', fontSize: isNarrowScreen ? '0.65rem' : '0.8rem', fontWeight: 700,
-                cursor: !quizId ? 'not-allowed' : 'pointer', opacity: !quizId ? 0.5 : 1, transition: 'all 0.16s ease', whiteSpace: 'nowrap',
-              }}
-              onMouseEnter={(e) => { if (quizId) { e.currentTarget.style.borderColor = 'var(--border-strong)'; e.currentTarget.style.background = 'var(--bg-deep)' } }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.background = 'transparent' }}
-              title="نسخ رابط المحرر"
-            >{isNarrowScreen ? '📋' : '📋 نسخ الرابط'}</button>
-
-            <button
-              type="button"
-              onClick={shareEditorLink}
-              disabled={!quizId}
-              style={{
-                background: 'transparent', border: '1px solid transparent', color: 'var(--text)',
-                padding: isNarrowScreen ? '0.32rem 0.5rem' : '0.42rem 0.7rem', borderRadius: '8px', fontSize: isNarrowScreen ? '0.65rem' : '0.8rem', fontWeight: 700,
-                cursor: !quizId ? 'not-allowed' : 'pointer', opacity: !quizId ? 0.5 : 1, transition: 'all 0.16s ease', whiteSpace: 'nowrap',
-              }}
-              onMouseEnter={(e) => { if (quizId) { e.currentTarget.style.borderColor = 'var(--border-strong)'; e.currentTarget.style.background = 'var(--bg-deep)' } }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.background = 'transparent' }}
-              title="مشاركة رابط المحرر"
-            >{isNarrowScreen ? '🔗' : '🔗 مشاركة'}</button>
-          </div>
-
-          {!isNarrowScreen && <div style={{ flex: 1, minWidth: '8px' }} />}
-
-          {/* Group 4: Delete & Save */}
-          <div className="quiz-toolbar-group" style={{ display: 'flex', gap: isNarrowScreen ? '0.2rem' : '0.35rem', flexWrap: isNarrowScreen ? 'nowrap' : 'wrap', alignItems: 'center', background: 'var(--bg-surface)', border: '1px solid var(--border-strong)', borderRadius: '10px', padding: isNarrowScreen ? '0.15rem' : '0.25rem', ...(isNarrowScreen && { marginLeft: 'auto' }) }}>
-            {quizId && (
-              <button
-                type="button"
-                onClick={handleDeleteQuiz}
-                style={{
-                  background: 'transparent', border: '1px solid rgba(248,113,113,0.45)', color: '#f87171',
-                  padding: isNarrowScreen ? '0.32rem 0.5rem' : '0.42rem 0.7rem', borderRadius: '8px', fontSize: isNarrowScreen ? '0.65rem' : '0.8rem', fontWeight: 700,
-                  cursor: 'pointer', transition: 'all 0.16s ease', whiteSpace: 'nowrap',
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(248,113,113,0.12)' }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
-                title="حذف الاختبار"
-              >{isNarrowScreen ? '🗑️' : '🗑️ حذف'}</button>
-            )}
-
+          {/* Save — pushed to the end */}
+          <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
             <button
               type="button"
               onClick={saveQuiz}
@@ -2396,18 +2430,26 @@ export function QuizEditorPage() {
                 background: hasUnsavedChanges ? 'var(--text-bright)' : 'rgba(59,130,246,0.16)',
                 border: '1px solid var(--text-bright)',
                 color: hasUnsavedChanges ? '#fff' : 'var(--text-bright)',
-                padding: isNarrowScreen ? '0.32rem 0.55rem' : '0.42rem 0.8rem', borderRadius: '8px', fontSize: isNarrowScreen ? '0.7rem' : '0.8rem',
-                fontWeight: 700, cursor: status.kind === 'saving' ? 'not-allowed' : 'pointer',
+                padding: isNarrowScreen ? '0.4rem 0.5rem' : '0.42rem 0.8rem',
+                borderRadius: '8px', fontWeight: 700,
+                cursor: status.kind === 'saving' ? 'not-allowed' : 'pointer',
                 opacity: status.kind === 'saving' ? 0.6 : 1,
-                transition: 'all 0.16s ease', whiteSpace: 'nowrap',
+                transition: 'all 0.16s ease',
+                display: 'flex', flexDirection: isNarrowScreen ? 'column' : 'row',
+                alignItems: 'center', gap: isNarrowScreen ? '0.15rem' : '0.3rem',
+                minWidth: isNarrowScreen ? '48px' : 'auto',
               }}
               title={hasUnsavedChanges ? 'حفظ التغييرات' : 'لا توجد تغييرات'}
             >
-              {status.kind === 'saving' ? <><span className="save-icon-spinning">🔄</span> {isNarrowScreen ? '' : 'حفظ'}</> : <>{isNarrowScreen ? '💾' : '💾 حفظ'}</>}
+              <span style={{ fontSize: isNarrowScreen ? '1.3rem' : '0.9rem' }}>
+                {status.kind === 'saving' ? <span className="save-icon-spinning">🔄</span> : '💾'}
+              </span>
+              <span style={{ fontSize: isNarrowScreen ? '0.58rem' : '0.8rem', fontWeight: 700 }}>حفظ</span>
             </button>
-          </div>
-        </div>
-      </div>
+          </div>{/* end delete+save group */}
+
+        </div>{/* end flex row */}
+      </div>{/* end sticky toolbar */}
 
       {isMiniGameContent ? (
         <section
@@ -2858,7 +2900,7 @@ export function QuizEditorPage() {
               )}
             </div>
             
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               {!collapsedQuestions[index] && !isCreatorStudioMode && (
                 <>
                   <select
@@ -2872,14 +2914,14 @@ export function QuizEditorPage() {
                       replaceQuestion(index, coerceQuestionToType(q, nextType))
                     }}
                     style={{
-                      minWidth: '160px',
-                      padding: '0.45rem 0.75rem',
+                      minWidth: isNarrowScreen ? '130px' : '160px',
+                      padding: '0.5rem 0.75rem',
                       borderRadius: '8px',
                       border: '1px solid var(--border-strong)',
                       backgroundColor: 'var(--bg-deep)',
                       color: 'var(--text)',
-                      fontSize: '0.96rem',
-                      fontWeight: 400,
+                      fontSize: '0.92rem',
+                      fontWeight: 600,
                       cursor: 'pointer',
                       outline: 'none',
                     }}
@@ -2890,19 +2932,30 @@ export function QuizEditorPage() {
                     ))}
                   </select>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', direction: 'rtl', background: 'var(--bg-deep)', border: '1px solid var(--border-strong)', borderRadius: '8px', padding: '0.25rem 0.45rem', height: '42px' }}>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 400 }}>⏱️</span>
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '0.45rem', 
+                    direction: 'rtl', 
+                    background: 'var(--bg-deep)', 
+                    border: '1px solid var(--border-strong)', 
+                    borderRadius: '8px', 
+                    padding: '0 0.6rem', 
+                    height: '42px',
+                    minWidth: '85px'
+                  }}>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 400 }}>⏱️</span>
                     <select
                       value={String(q.duration || 20)}
                       onChange={(e) => updateQuestion(index, { duration: Number(e.target.value) })}
                       style={{
-                        minWidth: '55px',
+                        minWidth: '45px',
                         height: '100%',
                         border: 'none',
                         background: 'transparent',
                         color: 'var(--text)',
-                        fontSize: '0.9rem',
-                        fontWeight: 400,
+                        fontSize: '0.92rem',
+                        fontWeight: 700,
                         outline: 'none',
                         cursor: 'pointer',
                         padding: '0 0.2rem',
@@ -2919,7 +2972,7 @@ export function QuizEditorPage() {
                     </select>
                   </div>
 
-                  <div style={{ width: '1px', height: '20px', background: 'var(--border-strong)', margin: '0 0.2rem' }} />
+                  {!isNarrowScreen && <div style={{ width: '1px', height: '24px', background: 'var(--border-strong)', margin: '0 0.2rem' }} />}
                 </>
               )}
 
@@ -2932,7 +2985,7 @@ export function QuizEditorPage() {
                 })}
                 style={{
                   background: 'var(--bg-deep)', border: '1px solid var(--border-strong)', color: 'var(--text-mid)',
-                  fontSize: '0.85rem', width: '28px', height: '28px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                  fontSize: '0.85rem', width: '32px', height: '32px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'
                 }}
               >
                 {collapsedQuestions[index] ? '▾' : '▴'}
@@ -2945,9 +2998,9 @@ export function QuizEditorPage() {
                   background: 'rgba(239, 68, 68, 0.1)', 
                   color: '#ef4444', 
                   fontSize: '0.8rem', 
-                  width: '28px', 
-                  height: '28px', 
-                  borderRadius: '6px', 
+                  width: '32px', 
+                  height: '32px', 
+                  borderRadius: '8px', 
                   border: '1px solid rgba(239, 68, 68, 0.2)', 
                   cursor: 'pointer',
                   display: 'flex',
