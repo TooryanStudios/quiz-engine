@@ -62,10 +62,7 @@ function App() {
   const [theme, setTheme] = useState<'dark' | 'light'>(
     () => 'light'
   )
-  const [signingOut, setSigningOut] = useState(false)
-
   const handleSignOut = useCallback(() => {
-    setSigningOut(true)
     markSignOut()
     localStorage.removeItem('qyan:session')
     void signOut(auth)
@@ -201,26 +198,33 @@ function App() {
     }
 
     return (
-      <div className="app-loading-screen">
-        <img src={logoImg} alt="QYan" className="app-loading-logo" />
-        <div className="app-loading-spinner" />
-      </div>
+      <ToastProvider>
+        <DialogProvider>
+          <div className="login-shell">
+            <main className="login-main">
+              <LoginPage />
+            </main>
+          </div>
+          <Dialog />
+        </DialogProvider>
+      </ToastProvider>
     )
   }
 
   // While Firebase has resolved but user is null and we're not yet on /login,
-  // show the loading screen for that frame — prevents the authenticated sidebar flash.
+  // show the login page for that frame — prevents the authenticated sidebar flash.
   if (user === null && !isLoginPage) {
     return (
-      <div className="app-loading-screen">
-        <img src={logoImg} alt="QYan" className="app-loading-logo" />
-        <div className="app-loading-spinner" />
-        {signingOut && (
-          <p style={{ color: 'var(--text-dim)', marginTop: '1rem', fontSize: '0.9rem' }}>
-            Signing out…
-          </p>
-        )}
-      </div>
+      <ToastProvider>
+        <DialogProvider>
+          <div className="login-shell">
+            <main className="login-main">
+              <LoginPage />
+            </main>
+          </div>
+          <Dialog />
+        </DialogProvider>
+      </ToastProvider>
     )
   }
 
