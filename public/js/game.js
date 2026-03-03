@@ -2812,8 +2812,11 @@ const switchMineList = document.getElementById('switch-mine-list');
 
 function closeSwitchGameDialog() {
   if (!switchGameDialog) return;
-  switchGameDialog.style.display = 'none';
-  switchGameDialog.setAttribute('aria-hidden', 'true');
+  switchGameDialog.classList.remove('active');
+  setTimeout(() => {
+    switchGameDialog.style.display = 'none';
+    switchGameDialog.setAttribute('aria-hidden', 'true');
+  }, 300);
 }
 
 function buildSwitchHostUrl(item) {
@@ -2830,30 +2833,38 @@ function renderSwitchCard(item, category) {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'switch-game-card';
+  btn.setAttribute('dir', 'rtl');
+  
+  const thumbUrl = item.coverImage || '';
+  
   btn.innerHTML = `
-    <img class="switch-game-thumb" src="${escapeHtml(item.coverImage || '')}" alt="" onerror="this.removeAttribute('src');" />
+    <img class="switch-game-thumb" src="${escapeHtml(thumbUrl)}" alt="" onerror="this.style.display='none';" />
     <div class="switch-game-body">
-      <div class="switch-game-title">${escapeHtml(item.title || item.slug)}</div>
-      <div class="switch-game-meta">${category} · ${escapeHtml(item.slug || '')}</div>
+      <div class="switch-game-title" title="${escapeHtml(item.title || item.slug)}">${escapeHtml(item.title || item.slug)}</div>
+      <div class="switch-game-meta">${escapeHtml(category)} · ${escapeHtml(item.slug || '')}</div>
     </div>
   `;
   btn.addEventListener('click', () => {
-    if (switchGameStatus) switchGameStatus.textContent = 'Switching game…';
+    if (switchGameStatus) {
+      switchGameStatus.innerHTML = `
+        <div class="switch-loading-spinner"></div>
+        <span style="margin-top:8px; display:block;">جاري التحويل...</span>
+      `;
+    }
+    Sounds.click();
     window.location.href = buildSwitchHostUrl(item);
   });
   return btn;
 }
 
-function renderSwitchSection(container, items, categoryLabel) {
+function renderSwitchSection(container, items, categoryLabel, sectionEl) {
   if (!container) return;
   container.innerHTML = '';
   if (!Array.isArray(items) || !items.length) {
-    const empty = document.createElement('div');
-    empty.className = 'switch-game-meta';
-    empty.textContent = 'No games found.';
-    container.appendChild(empty);
+    if (sectionEl) sectionEl.style.display = 'none';
     return;
   }
+  if (sectionEl) sectionEl.style.display = 'block';
   items.forEach((item) => {
     if (!item || !item.slug) return;
     container.appendChild(renderSwitchCard(item, categoryLabel));
@@ -2862,28 +2873,39 @@ function renderSwitchSection(container, items, categoryLabel) {
 
 async function loadSwitchGameCatalog() {
   if (!switchGameStatus) return;
-  switchGameStatus.textContent = 'Loading available games…';
+  switchGameStatus.innerHTML = `
+    <div class="switch-loading-spinner"></div>
+    <span style="margin-top:8px; display:block;">جاري تحميل قائمة الألعاب...</span>
+  `;
 
   const params = new URLSearchParams();
   if (hostUidFromUrl) params.set('hostUid', hostUidFromUrl);
   if (hostTokenFromUrl) params.set('hostToken', hostTokenFromUrl);
   if (hostLaunchCodeFromUrl) params.set('hostLaunchCode', hostLaunchCodeFromUrl);
-  params.set('limit', '30');
+  params.set('limit', '40');
 
   try {
     const res = await fetch(`/api/lobby-quiz-catalog?${params.toString()}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    renderSwitchSection(switchPublicList, data.publicGames || [], 'Public');
-    renderSwitchSection(switchMineList, data.myGames || [], 'Mine');
-    const pub = Array.isArray(data.publicGames) ? data.publicGames.length : 0;
-    const mine = Array.isArray(data.myGames) ? data.myGames.length : 0;
-    switchGameStatus.textContent = `Loaded ${pub} public and ${mine} personal games.`;
+    
+    const mineSect = document.getElementById('section-mine');
+    const pubSect  = document.getElementById('section-public');
+    
+    renderSwitchSection(switchMineList, data.myGames || [], 'خاص', mineSect);
+    renderSwitchSection(switchPublicList, data.publicGames || [], 'عام', pubSect);
+    
+    const pCount = Array.isArray(data.publicGames) ? data.publicGames.length : 0;
+    const mCount = Array.isArray(data.myGames) ? data.myGames.length : 0;
+    
+    if (pCount === 0 && mCount === 0) {
+      switchGameStatus.innerHTML = `<div style="padding:20px; color:#666;">لم يتم العثور على ألعاب متاحة حالياً.</div>`;
+    } else {
+      switchGameStatus.innerHTML = `<div style="font-size:0.85rem; color:#888;">تم العثور على ${pCount} لعبة عامة و ${mCount} من ألعابك.</div>`;
+    }
   } catch (error) {
     console.error('[switch-game] catalog failed', error);
-    if (switchPublicList) switchPublicList.innerHTML = '';
-    if (switchMineList) switchMineList.innerHTML = '';
-    switchGameStatus.textContent = 'Failed to load games. Try again.';
+    switchGameStatus.innerHTML = '<div style="color:#ff4444;">❌ فشل تحميل الألعاب. يرجى المحاولة لاحقاً.</div>';
   }
 }
 
@@ -2891,7 +2913,11 @@ if (switchGameBtn && switchGameDialog) {
   switchGameBtn.addEventListener('click', () => {
     Sounds.click();
     switchGameDialog.style.display = 'flex';
-    switchGameDialog.setAttribute('aria-hidden', 'false');
+    // Small delay to ensure display:flex is applied before adding .active for the animation
+    requestAnimationFrame(() => {
+      switchGameDialog.classList.add('active');
+      switchGameDialog.setAttribute('aria-hidden', 'false');
+    });
     void loadSwitchGameCatalog();
   });
 }

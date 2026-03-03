@@ -335,18 +335,28 @@
       <div id="switch-game-dialog" class="switch-game-dialog" style="display:none" aria-hidden="true">
         <div class="switch-game-panel" role="dialog" aria-modal="true" aria-label="Choose game or quiz">
           <div class="switch-game-header">
-            <h3>🎮 اختر لعبة أو كويز</h3>
+            <div class="switch-header-title-group">
+              <h3>🎮 اختر لعبة أو كويز</h3>
+              <p class="switch-game-sub">اختر من مكتبة الألعاب العامة أو ألعابك الخاصة للبدء فوراً.</p>
+            </div>
             <button type="button" id="btn-close-switch-game" class="switch-game-close" aria-label="Close">✕</button>
           </div>
-          <p class="switch-game-sub">Public Games + Your Games. Click any thumbnail to switch immediately.</p>
-          <div id="switch-game-status" class="switch-game-status">Loading…</div>
-          <div class="switch-game-section">
-            <div class="switch-game-section-title">🌐 Public Games</div>
-            <div id="switch-public-list" class="switch-game-grid"></div>
+          
+          <div id="switch-game-status" class="switch-game-status">
+            <div class="switch-loading-spinner"></div>
+            <span>جاري تحميل الألعاب...</span>
           </div>
-          <div class="switch-game-section">
-            <div class="switch-game-section-title">👤 Your Games</div>
-            <div id="switch-mine-list" class="switch-game-grid"></div>
+
+          <div class="switch-game-content">
+            <div class="switch-game-section" id="section-mine">
+              <div class="switch-game-section-title">👤 ألعابي الخاصة (Your Games)</div>
+              <div id="switch-mine-list" class="switch-game-grid"></div>
+            </div>
+
+            <div class="switch-game-section" id="section-public">
+              <div class="switch-game-section-title">🌐 الألعاب العامة (Public Games)</div>
+              <div id="switch-public-list" class="switch-game-grid"></div>
+            </div>
           </div>
         </div>
       </div>
