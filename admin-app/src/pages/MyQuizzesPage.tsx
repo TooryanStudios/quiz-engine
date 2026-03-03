@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { auth } from '../lib/firebase'
-import { incrementShareCount, subscribeMyQuizzes, updateQuiz } from '../lib/quizRepo'
+import { incrementQuizPlayCount, incrementShareCount, subscribeMyQuizzes, updateQuiz } from '../lib/quizRepo'
 import { incrementPlatformStat } from '../lib/adminRepo'
 import { guardedLaunchGame } from '../lib/gameLaunch'
 import { buildHostGameUrl } from '../lib/gameModeUrl'
@@ -134,7 +134,10 @@ export function MyQuizzesPage() {
       preOpenedTab,
       onUnavailable: () => showToast({ message: 'Game server is temporarily unavailable.', type: 'error' }),
       onPopupBlocked: () => showToast({ message: 'Popup was blocked. Please allow popups and try again.', type: 'info' }),
-      onLaunch: () => { void incrementPlatformStat('sessionHosted') },
+      onLaunch: () => {
+        void incrementPlatformStat('sessionHosted')
+        void incrementQuizPlayCount(quiz.id)
+      },
     })
   }
 

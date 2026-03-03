@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { auth } from '../lib/firebase'
-import { incrementShareCount, listPublicQuizzes, subscribeMyQuizzes, updateQuiz } from '../lib/quizRepo'
+import { incrementQuizPlayCount, incrementShareCount, listPublicQuizzes, subscribeMyQuizzes, updateQuiz } from '../lib/quizRepo'
 import { incrementPlatformStat } from '../lib/adminRepo'
 import { guardedLaunchGame } from '../lib/gameLaunch'
 import { buildHostGameUrl } from '../lib/gameModeUrl'
@@ -196,7 +196,10 @@ export function DashboardPage() {
           type: 'info',
         })
       },
-      onLaunch: () => { void incrementPlatformStat('sessionHosted') },
+      onLaunch: () => {
+        void incrementPlatformStat('sessionHosted')
+        void incrementQuizPlayCount(quiz.id)
+      },
     })
   }
 

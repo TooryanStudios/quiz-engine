@@ -36,7 +36,7 @@ import {
   getQuestionTypeTimerPolicy,
   sanitizeQuestionBySchema,
 } from '../config/questionTypeSchemas'
-import { createQuiz, deleteQuiz, findQuizByOwnerAndSlug, getQuizById, updateQuiz } from '../lib/quizRepo'
+import { createQuiz, deleteQuiz, findQuizByOwnerAndSlug, getQuizById, incrementQuizPlayCount, updateQuiz } from '../lib/quizRepo'
 import { incrementPlatformStat, subscribeMiniGameSettings, subscribeQuestionTypeSettings } from '../lib/adminRepo'
 import { ImageCropDialog } from '../components/ImageCropDialog'
 import placeholderImg from '../assets/QYan_logo_300x164.jpg'
@@ -1579,7 +1579,10 @@ export function QuizEditorPage() {
           type: 'info',
         })
       },
-      onLaunch: () => { void incrementPlatformStat('sessionHosted') },
+      onLaunch: () => {
+        void incrementPlatformStat('sessionHosted')
+        void incrementQuizPlayCount(quizIdToLaunch)
+      },
     })
   }
 

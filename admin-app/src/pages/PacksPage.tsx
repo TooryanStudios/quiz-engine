@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { auth } from '../lib/firebase'
 import { useTheme } from '../lib/useTheme'
 import { useToast } from '../lib/ToastContext'
-import { cloneQuiz, listPublicQuizzes } from '../lib/quizRepo'
+import { cloneQuiz, incrementQuizPlayCount, listPublicQuizzes } from '../lib/quizRepo'
 import { guardedLaunchGame } from '../lib/gameLaunch'
 import { buildHostGameUrl } from '../lib/gameModeUrl'
 import { getHostLaunchAuthParams } from '../lib/hostLaunchAuth'
@@ -132,6 +132,7 @@ export function PacksPage() {
           type: 'info',
         })
       },
+      onLaunch: () => { void incrementQuizPlayCount(quiz.id) },
     })
   }
 

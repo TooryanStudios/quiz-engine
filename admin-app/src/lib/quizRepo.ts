@@ -40,6 +40,15 @@ export async function incrementShareCount(id: string) {
   })
 }
 
+/** Called every time a quiz/game is successfully launched as a host session. */
+export async function incrementQuizPlayCount(id: string) {
+  try {
+    await updateDoc(doc(db, 'quizzes', id), {
+      totalPlays: increment(1)
+    })
+  } catch { /* non-critical */ }
+}
+
 export async function listMyQuizzes(ownerId: string) {
   const q = query(quizzesCol, where('ownerId', '==', ownerId), limit(50))
   const snap = await getDocs(q)
