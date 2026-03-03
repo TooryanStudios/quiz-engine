@@ -26,10 +26,16 @@ const queryParams = new URLSearchParams(window.location.search);
 const quizSlugFromUrl = queryParams.get('quiz');
 const modeFromUrl     = queryParams.get('mode');
 const gameModeFromUrl = queryParams.get('gameMode');
-const hostUidFromUrl  = queryParams.get('hostUid');
-const hostTokenFromUrl = queryParams.get('hostToken');
+
+// Check both query params and localStorage for host credentials
+const hostUidFromUrl  = queryParams.get('hostUid') || localStorage.getItem('last_host_uid');
+const hostTokenFromUrl = queryParams.get('hostToken') || localStorage.getItem('last_host_token');
 const hostLaunchCodeFromUrl = queryParams.get('hostLaunchCode');
 const hostNameFromUrl = queryParams.get('hostName');
+
+// Persist credentials if they are in the URL
+if (queryParams.get('hostUid')) localStorage.setItem('last_host_uid', queryParams.get('hostUid'));
+if (queryParams.get('hostToken')) localStorage.setItem('last_host_token', queryParams.get('hostToken'));
 
 // miniGameConfig passed from admin as JSON-encoded `cfg` URL param
 const miniGameConfigFromUrl = (() => {
@@ -2820,12 +2826,16 @@ function closeSwitchGameDialog() {
 }
 
 function buildSwitchHostUrl(item) {
-  const url = new URL(window.location.href);
-  const params = new URLSearchParams(url.search);
+  const params = new URLSearchParams();
   params.set('mode', 'host');
   params.set('quiz', item.slug);
   if (item.gameModeId) params.set('gameMode', item.gameModeId);
-  else params.delete('gameMode');
+
+  // Carry forward all launch credentials to new session
+  if (hostUidFromUrl) params.set('hostUid', hostUidFromUrl);
+  if (hostTokenFromUrl) params.set('hostToken', hostTokenFromUrl);
+  if (hostLaunchCodeFromUrl) params.set('hostLaunchCode', hostLaunchCodeFromUrl);
+  
   return `${window.location.origin}/start?${params.toString()}`;
 }
 
