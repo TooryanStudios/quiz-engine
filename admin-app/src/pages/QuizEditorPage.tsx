@@ -4363,18 +4363,22 @@ export function QuizEditorPage() {
           zIndex: 25000,
           display: 'flex',
           justifyContent: 'center',
-          alignItems: 'center',
+          alignItems: isNarrowScreen ? 'flex-start' : 'center',
           padding: isNarrowScreen ? '0.5rem' : '1.5rem',
+          paddingTop: isNarrowScreen ? '62px' : '1.5rem',
+          paddingBottom: isNarrowScreen ? '0.75rem' : '1.5rem',
+          boxSizing: 'border-box',
         }}>
           <div style={{
             width: 'min(760px, 98vw)',
-            maxHeight: isNarrowScreen ? 'calc(100dvh - 1rem)' : '90dvh',
+            maxHeight: isNarrowScreen ? 'calc(100dvh - 68px)' : 'calc(100dvh - 3rem)',
             background: 'var(--bg-surface)',
             border: '1px solid var(--border-strong)',
             borderRadius: '16px',
             display: 'flex',
             flexDirection: 'column',
             boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+            overflow: 'hidden',
           }}>
             <div style={{ padding: '1.2rem', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ direction: 'rtl' }}>
