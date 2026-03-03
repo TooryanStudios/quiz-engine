@@ -2835,10 +2835,11 @@ function renderSwitchCard(item, category) {
   btn.className = 'switch-game-card';
   btn.setAttribute('dir', 'rtl');
   
-  const thumbUrl = item.coverImage || '';
+  const fallbackThumb = '/images/QYan_logo_300x164.jpg'; // Match admin placeholder
+  const thumbUrl = item.coverImage || fallbackThumb;
   
   btn.innerHTML = `
-    <img class="switch-game-thumb" src="${escapeHtml(thumbUrl)}" alt="" onerror="this.style.display='none';" />
+    <img class="switch-game-thumb" src="${escapeHtml(thumbUrl)}" alt="" onerror="this.src='${fallbackThumb}';" />
     <div class="switch-game-body">
       <div class="switch-game-title" title="${escapeHtml(item.title || item.slug)}">${escapeHtml(item.title || item.slug)}</div>
       <div class="switch-game-meta">${escapeHtml(category)} · ${escapeHtml(item.slug || '')}</div>
@@ -2848,7 +2849,7 @@ function renderSwitchCard(item, category) {
     if (switchGameStatus) {
       switchGameStatus.innerHTML = `
         <div class="switch-loading-spinner"></div>
-        <span style="margin-top:8px; display:block;">جاري التحويل...</span>
+        <span style="margin-left:8px;">جاري التحويل...</span>
       `;
     }
     Sounds.click();
@@ -2875,14 +2876,14 @@ async function loadSwitchGameCatalog() {
   if (!switchGameStatus) return;
   switchGameStatus.innerHTML = `
     <div class="switch-loading-spinner"></div>
-    <span style="margin-top:8px; display:block;">جاري تحميل قائمة الألعاب...</span>
+    <span style="margin-left:8px;">جاري تحميل قائمة الألعاب...</span>
   `;
 
   const params = new URLSearchParams();
   if (hostUidFromUrl) params.set('hostUid', hostUidFromUrl);
   if (hostTokenFromUrl) params.set('hostToken', hostTokenFromUrl);
   if (hostLaunchCodeFromUrl) params.set('hostLaunchCode', hostLaunchCodeFromUrl);
-  params.set('limit', '40');
+  params.set('limit', '100'); // Show more games
 
   try {
     const res = await fetch(`/api/lobby-quiz-catalog?${params.toString()}`);
