@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0, viewport-fit=cover" />
   <title>QYan</title>
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
@@ -13,8 +13,37 @@
   <link rel="stylesheet" href="/css/style.css?v=128" />
   <!-- Prevent browser zoom (Ctrl+scroll, Ctrl+±, pinch) -->
   <script>
+    // 1. Prevent Ctrl+Wheel (mouse zoom)
     document.addEventListener('wheel', function(e){ if(e.ctrlKey){ e.preventDefault(); } }, { passive: false });
+    
+    // 2. Prevent Ctrl +/- / 0 (keyboard zoom)
     document.addEventListener('keydown', function(e){ if(e.ctrlKey && (e.key==='+' || e.key==='-' || e.key==='=' || e.key==='0')){ e.preventDefault(); } });
+    
+    // 3. Force-reset zoom if window size suggests it (Safety Net)
+    window.addEventListener('resize', () => {
+      if (window.visualViewport && Math.abs(window.visualViewport.scale - 1) > 0.01) {
+        // Some browsers allow minor programmatic resets, but mostly we want to detect it
+        console.warn("Zoom detected. Scale:", window.visualViewport.scale);
+      }
+    });
+
+    // 4. Prevent multi-touch pinch-to-zoom on the entire document (Mobile Safari/Chrome)
+    document.addEventListener('touchstart', (e) => {
+      if (e.touches.length > 1) {
+        e.preventDefault();
+      }
+    }, { passive: false });
+
+    // 5. Detect and block double-tap to zoom
+    let lastTouchEnd = 0;
+    document.addEventListener('touchend', (e) => {
+      const now = (new Date()).getTime();
+      if (now - lastTouchEnd <= 300) {
+        e.preventDefault();
+      }
+      lastTouchEnd = now;
+    }, false);
+
     (function () {
       const params = new URLSearchParams(window.location.search);
       if (params.get('quiz') && params.get('mode') === 'host') {
