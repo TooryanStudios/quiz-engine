@@ -125,11 +125,13 @@ export function MyQuizzesPage() {
       })
       return
     }
+    const preOpenedTab = window.open('', '_blank')
     const authParams = await getHostLaunchAuthParams({ serverBase: SERVER_BASE, currentUser: auth.currentUser })
     const gameUrl = buildHostGameUrl({ serverBase: SERVER_BASE, quizId: quiz.id, gameModeId: quiz.gameModeId, ...authParams })
     await guardedLaunchGame({
       serverBase: SERVER_BASE,
       gameUrl,
+      preOpenedTab,
       onUnavailable: () => showToast({ message: 'Game server is temporarily unavailable.', type: 'error' }),
       onPopupBlocked: () => showToast({ message: 'Popup was blocked. Please allow popups and try again.', type: 'info' }),
       onLaunch: () => { void incrementPlatformStat('sessionHosted') },

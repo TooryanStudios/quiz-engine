@@ -1548,6 +1548,7 @@ export function QuizEditorPage() {
       return
     }
 
+    const preOpenedTab = window.open('', '_blank')
     const authParams = await getHostLaunchAuthParams({
       serverBase: SERVER_BASE,
       currentUser: auth.currentUser,
@@ -1565,6 +1566,7 @@ export function QuizEditorPage() {
     await guardedLaunchGame({
       serverBase: SERVER_BASE,
       gameUrl,
+      preOpenedTab,
       onUnavailable: () => {
         showToast({
           message: 'Game server is temporarily unavailable. Please try again in a moment.',

@@ -164,6 +164,11 @@ export function DashboardPage() {
       return
     }
 
+    // Open the window NOW — synchronously inside the user-gesture — before any
+    // async work.  Mobile browsers (iOS Safari) will block window.open() if it
+    // happens after an await.
+    const preOpenedTab = window.open('', '_blank')
+
     const authParams = await getHostLaunchAuthParams({
       serverBase: SERVER_BASE,
       currentUser: auth.currentUser,
@@ -178,6 +183,7 @@ export function DashboardPage() {
     await guardedLaunchGame({
       serverBase: SERVER_BASE,
       gameUrl,
+      preOpenedTab,
       onUnavailable: () => {
         showToast({
           message: 'Game server is temporarily unavailable. Please try again in a moment.',
