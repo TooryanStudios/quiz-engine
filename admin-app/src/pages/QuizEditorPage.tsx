@@ -264,7 +264,7 @@ function AiGeneratingOverlay({ mode }: { mode: 'generate' | 'recheck' }) {
 
           {/* Cycling message */}
           <div key={msgIdx} style={{
-            fontSize: '0.88rem', color: 'var(--text-mid)',
+            fontSize: '0.88rem', color: '#fff',
             animation: 'aiMsgFade 2.8s ease-in-out forwards',
             minHeight: '1.4em',
           }}>
