@@ -981,7 +981,6 @@ export function QuizEditorPage() {
       return;
     }
 
-    const isDefaultTitle = !title || title === 'New Quiz' || title === 'New Mini Game';
     const titleToApply = aiSuggestedTitle.trim();
 
     if (mode === 'new') {
@@ -996,13 +995,15 @@ export function QuizEditorPage() {
     } else if (mode === 'replace') {
       setQuestions(selectedQuestions);
       setCollapsedQuestions(Array(selectedQuestions.length).fill(false));
-      if (isDefaultTitle && titleToApply) setTitle(titleToApply);
+      if (titleToApply) setTitle(titleToApply);
       setAiConflictData(null);
+      setShowMetadataDialog(false);
     } else {
       setQuestions(prev => [...prev, ...selectedQuestions]);
       setCollapsedQuestions(prev => [...prev, ...Array(selectedQuestions.length).fill(false)]);
-      if (isDefaultTitle && titleToApply) setTitle(titleToApply);
+      if (titleToApply) setTitle(titleToApply);
       setAiConflictData(null);
+      setShowMetadataDialog(false);
     }
     setAiSuggestedTitle('');
     setHasUnsavedChanges(true);
