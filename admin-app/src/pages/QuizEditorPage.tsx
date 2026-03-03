@@ -4822,17 +4822,18 @@ export function QuizEditorPage() {
             </div>{/* end scrollable content */}
 
             {/* Sticky footer — keeps button visible above keyboard on mobile */}
-            <div style={{ padding: isNarrowScreen ? '0.75rem 1.25rem' : '1rem 2rem', borderTop: '1px solid var(--border-strong)', background: 'var(--bg-surface)', flexShrink: 0, borderBottomLeftRadius: '24px', borderBottomRightRadius: '24px' }}>
+            <div style={{ padding: isNarrowScreen ? '0.75rem 1.25rem' : '1rem 2rem', borderTop: '1px solid var(--border-strong)', background: 'var(--bg-surface)', flexShrink: 0, borderBottomLeftRadius: '24px', borderBottomRightRadius: '24px', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
               <button 
                 onClick={handleGenerateAI}
                 disabled={isGeneratingAi || (aiAction === 'generate' && !aiPrompt.trim() && aiContextFiles.length === 0)}
                 style={{
-                  width: '100%', padding: '0.85rem 1rem', borderRadius: '12px', border: 'none',
+                  width: '100%', padding: '1.1rem 1rem', borderRadius: '14px', border: 'none',
                   background: (aiAction === 'generate' && !aiPrompt.trim() && aiContextFiles.length === 0) ? 'var(--bg-deep)' : 'linear-gradient(135deg, #7c3aed, #db2777)', 
                   color: (aiAction === 'generate' && !aiPrompt.trim() && aiContextFiles.length === 0) ? 'var(--text-muted)' : '#fff',
-                  fontSize: '1rem', fontWeight: 800, cursor: isGeneratingAi ? 'wait' : ((aiAction === 'generate' && !aiPrompt.trim() && aiContextFiles.length === 0) ? 'not-allowed' : 'pointer'), transition: 'all 0.2s',
+                  fontSize: '1.1rem', fontWeight: 800, cursor: isGeneratingAi ? 'wait' : ((aiAction === 'generate' && !aiPrompt.trim() && aiContextFiles.length === 0) ? 'not-allowed' : 'pointer'), transition: 'all 0.2s',
                   boxShadow: (aiAction === 'generate' && !aiPrompt.trim() && aiContextFiles.length === 0) ? 'none' : '0 4px 15px rgba(124, 58, 237, 0.4)',
-                  opacity: isGeneratingAi ? 0.7 : 1
+                  opacity: isGeneratingAi ? 0.7 : 1,
+                  letterSpacing: '0.3px',
                 }}
                 onMouseEnter={(e) => { 
                   if (!isGeneratingAi && !(aiAction === 'generate' && !aiPrompt.trim() && aiContextFiles.length === 0)) {
@@ -4848,6 +4849,24 @@ export function QuizEditorPage() {
                 }}
               >
                 {isGeneratingAi ? '⏳ جاري التوليد...' : (aiAction === 'generate' ? '🚀 ابدأ التوليد' : '🛡️ ابدأ التدقيق')}
+              </button>
+              <button
+                onClick={() => setAiAction(null)}
+                disabled={isGeneratingAi}
+                style={{
+                  width: '100%', padding: '0.75rem 1rem', borderRadius: '12px',
+                  border: '1px solid var(--border-strong)',
+                  background: 'transparent',
+                  color: 'var(--text-mid)',
+                  fontSize: '0.95rem', fontWeight: 600,
+                  cursor: isGeneratingAi ? 'not-allowed' : 'pointer',
+                  opacity: isGeneratingAi ? 0.4 : 1,
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={(e) => { if (!isGeneratingAi) e.currentTarget.style.background = 'var(--bg-deep)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+              >
+                ✕ إلغاء
               </button>
             </div>{/* end sticky footer */}
           </div>
