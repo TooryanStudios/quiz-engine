@@ -373,6 +373,8 @@ export function QuizEditorPage() {
   const [miniGameArabicNamesById, setMiniGameArabicNamesById] = useState<Record<MiniGameId, string>>({ ...MINI_GAME_DEFAULT_ARABIC_NAMES })
   const [miniGameAccessById, setMiniGameAccessById] = useState<Record<MiniGameId, MiniGameAccessTier>>({ ...MINI_GAME_DEFAULT_ACCESS_BY_ID })
   
+  // Sticky Bar Diagnostic Ref
+
   type StatusState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'success'; msg: string } | { kind: 'error'; msg: string } | { kind: 'info'; msg: string }
   const [status, setStatus] = useState<StatusState>({ kind: 'idle' })
 
@@ -2342,7 +2344,7 @@ export function QuizEditorPage() {
       <div style={{
         background: 'linear-gradient(180deg, var(--bg-surface) 0%, var(--bg-deep) 100%)',
         borderBottom: '1px solid var(--border-strong)',
-        marginBottom: isNarrowScreen ? '0' : '1.5rem',
+        marginBottom: '1.5rem',
         borderRadius: isNarrowScreen ? '0 0 20px 20px' : '0 0 24px 24px',
         boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
         padding: isNarrowScreen ? '1rem 0.8rem' : '2rem 1.5rem',
@@ -2434,7 +2436,7 @@ export function QuizEditorPage() {
                   type="button"
                   onClick={() => void launchGameFromEditor(quizId)}
                   style={{
-                    background: 'var(--accent)',
+                    background: isNarrowScreen ? 'var(--play-btn)' : 'var(--accent)',
                     color: '#fff',
                     fontSize: isNarrowScreen ? '0.85rem' : '1rem',
                     padding: isNarrowScreen ? '8px 20px' : '10px 24px',
@@ -2445,7 +2447,7 @@ export function QuizEditorPage() {
                     alignItems: 'center',
                     gap: '8px',
                     cursor: 'pointer',
-                    boxShadow: '0 4px 12px rgba(124,58,237,0.3)',
+                    boxShadow: isNarrowScreen ? '0 4px 12px rgba(22,163,74,0.35)' : '0 4px 12px rgba(37,99,235,0.3)',
                     transition: 'transform 0.2s',
                   }}
                   onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-2px)' }}
@@ -2461,8 +2463,8 @@ export function QuizEditorPage() {
                 style={{
                   background: 'rgba(255,255,255,0.05)',
                   color: 'var(--text-bright)',
-                  fontSize: isNarrowScreen ? '0.8rem' : '0.9rem',
-                  padding: isNarrowScreen ? '8px 16px' : '10px 20px',
+                  fontSize: isNarrowScreen ? '0.85rem' : '0.9rem',
+                  padding: isNarrowScreen ? '8px 20px' : '10px 20px',
                   borderRadius: '12px',
                   border: '1px solid var(--border-strong)',
                   fontWeight: 700,
@@ -2486,16 +2488,17 @@ export function QuizEditorPage() {
           onClick={() => setShowToolbarDropdown(false)}
         />
       )}
-      <div style={{
-        position: 'sticky', top: isNarrowScreen ? '0' : '0.5rem', zIndex: 100,
-        background: 'var(--bg-deep)',
-        border: '1px solid var(--border-mid)',
-        borderRadius: isNarrowScreen ? '0' : '12px',
-        padding: isNarrowScreen ? '0.5rem 0.6rem' : '0.55rem 0.65rem',
-        marginBottom: '1rem',
-        boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
-        margin: isNarrowScreen ? '-0.25rem -1rem 1rem -1rem' : '0 0 1rem 0',
-      }}>
+      <div 
+        style={{
+          position: 'sticky', top: isNarrowScreen ? '-12px' : '0.5rem', zIndex: 100,
+          background: 'var(--bg-deep)',
+          border: '1px solid var(--border-mid)',
+          borderRadius: isNarrowScreen ? '0' : '12px',
+          padding: isNarrowScreen ? '0.5rem 0.6rem' : '0.55rem 0.65rem',
+          marginBottom: '1rem',
+          boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
+          margin: isNarrowScreen ? '0 -1rem 1rem -1rem' : '0 0 1rem 0',
+        }}>
         <div style={{ display: 'flex', gap: isNarrowScreen ? '0.3rem' : '0.45rem', alignItems: 'center', flexWrap: 'nowrap' }}>
 
           {/* Content type badge */}
@@ -2518,6 +2521,36 @@ export function QuizEditorPage() {
             >
               <span style={{ fontSize: isNarrowScreen ? '1.3rem' : '0.9rem' }}>{contentType === 'mix' ? '🔀' : contentType === 'mini-game' ? '🎮' : '📋'}</span>
               <span style={{ fontSize: isNarrowScreen ? '0.58rem' : '0.8rem', fontWeight: 700 }}>{contentType === 'mix' ? 'مزيج' : contentType === 'mini-game' ? 'ميني' : 'اختبار'}</span>
+            </button>
+          )}
+
+          {/* ── Back button (mobile only) ── */}
+          {isNarrowScreen && (
+            <button
+              type="button"
+              onClick={() => navigate(-1)}
+              style={{
+                background: 'transparent',
+                border: '1px solid transparent',
+                color: 'var(--text)',
+                padding: '0.4rem 0.5rem',
+                borderRadius: '8px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                transition: 'all 0.16s ease',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '0.15rem',
+                minWidth: '48px',
+                flexShrink: 0,
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--border-strong)'; e.currentTarget.style.background = 'var(--bg-surface)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.background = 'transparent' }}
+              title="رجوع"
+            >
+              <span style={{ fontSize: '1.3rem' }}>←</span>
+              <span style={{ fontSize: '0.58rem', fontWeight: 700 }}>رجوع</span>
             </button>
           )}
 
@@ -2634,7 +2667,7 @@ export function QuizEditorPage() {
               type="button"
               onClick={() => showAddQuestionDialog()}
               style={{
-                background: 'var(--text-bright)', border: '1px solid var(--text-bright)', color: '#fff',
+                background: 'var(--accent)', border: '1px solid var(--accent)', color: '#fff',
                 padding: isNarrowScreen ? '0.4rem 0.5rem' : '0.42rem 0.78rem', borderRadius: '8px', fontWeight: 700,
                 cursor: 'pointer', transition: 'all 0.16s ease',
                 display: 'flex', flexDirection: isNarrowScreen ? 'column' : 'row',
@@ -2667,7 +2700,7 @@ export function QuizEditorPage() {
             title="توليد ذكي"
           >
             <span style={{ fontSize: isNarrowScreen ? '1.3rem' : '0.9rem' }}>✨</span>
-            <span style={{ fontSize: isNarrowScreen ? '0.58rem' : '0.8rem', fontWeight: 700 }}>توليد</span>
+            <span style={{ fontSize: isNarrowScreen ? '0.58rem' : '0.8rem', fontWeight: 700 }}>{isNarrowScreen ? 'توليد ذكي' : 'توليد ذكي'}</span>
           </button>
 
           {/* AI Recheck */}
@@ -3562,9 +3595,9 @@ export function QuizEditorPage() {
                         alignItems: 'center',
                         padding: '0.6rem 1rem',
                         borderRadius: '12px',
-                        border: `2px solid ${isCorrect ? 'var(--text-bright)' : 'var(--border-strong)'}`,
-                        backgroundColor: isCorrect ? 'rgba(59, 130, 246, 0.08)' : 'var(--bg-deep)',
-                        boxShadow: isCorrect ? '0 0 15px rgba(59, 130, 246, 0.15)' : 'none',
+                        border: `2px solid ${isCorrect ? 'var(--accent)' : 'var(--border-strong)'}`,
+                        backgroundColor: isCorrect ? 'rgba(37, 99, 235, 0.08)' : 'var(--bg-deep)',
+                        boxShadow: isCorrect ? '0 0 15px rgba(37, 99, 235, 0.2)' : 'none',
                         transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                         position: 'relative',
                         overflow: 'hidden'
@@ -3586,15 +3619,15 @@ export function QuizEditorPage() {
                           width: '24px',
                           height: '24px',
                           borderRadius: '50%',
-                          border: `2px solid ${isCorrect ? 'var(--text-bright)' : 'var(--text-muted)'}`,
-                          backgroundColor: isCorrect ? 'var(--text-bright)' : 'transparent',
+                          border: `2px solid ${isCorrect ? 'var(--accent)' : 'var(--text-muted)'}`,
+                          backgroundColor: isCorrect ? 'var(--accent)' : 'transparent',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
                           cursor: 'pointer',
                           color: '#fff',
                           fontSize: '0.8rem',
-                          boxShadow: isCorrect ? '0 2px 6px rgba(59, 130, 246, 0.4)' : 'none',
+                          boxShadow: isCorrect ? '0 2px 6px rgba(37, 99, 235, 0.4)' : 'none',
                           transition: 'all 0.2s',
                         }}
                       >
@@ -4157,13 +4190,13 @@ export function QuizEditorPage() {
                       padding: '0.4rem 1rem',
                       borderRadius: '8px',
                       border: 'none',
-                      backgroundColor: isSelected ? 'var(--text-bright)' : 'transparent',
+                      backgroundColor: isSelected ? 'var(--accent)' : 'transparent',
                       color: isSelected ? '#fff' : 'var(--text-mid)',
                       cursor: 'pointer',
                       fontSize: '0.8rem',
                       transition: 'all 0.2s ease',
                       fontWeight: isSelected ? 600 : 500,
-                      boxShadow: isSelected ? '0 2px 6px rgba(0,0,0,0.1)' : 'none',
+                      boxShadow: isSelected ? '0 2px 6px rgba(37,99,235,0.25)' : 'none',
                     }}
                   >
                     {option.label}
@@ -4222,7 +4255,7 @@ export function QuizEditorPage() {
                       padding: '0 1rem',
                       border: 'none',
                       borderLeft: '1px solid var(--border-strong)',
-                      backgroundColor: uploadingIndex === index ? 'rgba(59, 130, 246, 0.15)' : 'var(--text-bright)',
+                      backgroundColor: uploadingIndex === index ? 'rgba(37, 99, 235, 0.25)' : 'var(--accent)',
                       color: '#fff',
                       cursor: uploadingIndex === index ? 'not-allowed' : 'pointer',
                       display: 'flex',
@@ -4260,7 +4293,7 @@ export function QuizEditorPage() {
                       padding: '0 1rem',
                       border: 'none',
                       borderLeft: '1px solid var(--border-strong)',
-                      backgroundColor: 'var(--text-bright)',
+                      backgroundColor: 'var(--accent)',
                       color: '#fff',
                       cursor: 'pointer',
                       display: 'flex',

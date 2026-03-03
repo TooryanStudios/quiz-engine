@@ -16,6 +16,7 @@ import logoImg from './assets/QYan_logo_300x164.jpg'
 const BillingPage     = lazy(() => import('./pages/BillingPage').then(m => ({ default: m.BillingPage })))
 const DashboardPage   = lazy(() => import('./pages/DashboardPage').then(m => ({ default: m.DashboardPage })))
 const PacksPage       = lazy(() => import('./pages/PacksPage').then(m => ({ default: m.PacksPage })))
+const MyQuizzesPage   = lazy(() => import('./pages/MyQuizzesPage').then(m => ({ default: m.MyQuizzesPage })))
 const ProfilePage     = lazy(() => import('./pages/ProfilePage').then(m => ({ default: m.ProfilePage })))
 const QuizEditorPage  = lazy(() => import('./pages/QuizEditorPage').then(m => ({ default: m.QuizEditorPage })))
 const QuizPreviewPage = lazy(() => import('./pages/QuizPreviewPage').then(m => ({ default: m.QuizPreviewPage })))
@@ -32,10 +33,11 @@ if (!MASTER_EMAIL || !MASTER_PATH) {
 }
 
 const NAV = [
-  { to: '/dashboard', icon: '🏠', label: 'Dashboard', end: true },
-  { to: '/editor',    icon: '✏️',  label: 'Quiz Editor' },
-  { to: '/packs',     icon: '📦', label: 'Packs' },
-  { to: '/billing',   icon: '💳', label: 'Billing' },
+  { to: '/dashboard',   icon: '🏠', label: 'Dashboard', end: true },
+  { to: '/editor',      icon: '✏️',  label: 'Quiz Editor' },
+  { to: '/my-quizzes',  icon: '📚', label: 'My Quizzes' },
+  { to: '/packs',       icon: '📦', label: 'Packs' },
+  { to: '/billing',     icon: '💳', label: 'Billing' },
 ]
 
 function RequireAuth({ user, children }: { user: User | null; children: ReactElement }) {
@@ -545,6 +547,7 @@ function App() {
               <Route path="/game-modes" element={<RequireAdmin user={user}><GameModesPage /></RequireAdmin>} />
               <Route path="/preview/:id" element={<RequireAuth user={user}><QuizPreviewPage /></RequireAuth>} />
               <Route path="/packs" element={<RequireAuth user={user}><PacksPage /></RequireAuth>} />
+              <Route path="/my-quizzes" element={<RequireAuth user={user}><MyQuizzesPage /></RequireAuth>} />
               <Route path="/voice-lab" element={<RequireAdmin user={user}><VoiceLabPage /></RequireAdmin>} />
               <Route path="/ai-lab" element={<RequireAdmin user={user}><AILabPage /></RequireAdmin>} />
               <Route path="/billing" element={<RequireAuth user={user}><BillingPage /></RequireAuth>} />

@@ -17,6 +17,7 @@
   --text-muted:     #94a3b8;
   --text-faint:     #94a3b8;
   --accent:         #2563eb;
+  --play-btn:       #16a34a;
 }
 
 /* ── Dark theme ── */
@@ -35,6 +36,7 @@
   --text-muted:     #64748b;
   --text-faint:     #4b5563;
   --accent:         #2563eb;
+  --play-btn:       #16a34a;
 }
 
 * {

@@ -12,7 +12,6 @@ import placeholderImg from '../assets/QYan_logo_300x164.jpg'
 import { useToast } from '../lib/ToastContext'
 import { useSubscription } from '../lib/useSubscription'
 import { useDialog } from '../lib/DialogContext'
-import { vfx } from '../lib/vfx'
 
 type QuizItem = QuizDoc & { id: string }
 
@@ -390,6 +389,13 @@ export function DashboardPage() {
             {loading ? '...' : `${quizzes.length} quiz${quizzes.length !== 1 ? 'zes' : ''}`}
           </p>
         </div>
+        {quizzes.length > 0 && (
+          <Link to="/my-quizzes" style={{ textDecoration: 'none' }}>
+            <button style={{ background: 'transparent', border: '1px solid var(--border-mid)', color: 'var(--text-dim)', padding: '5px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600 }}>
+              View all →
+            </button>
+          </Link>
+        )}
       </div>
 
       {/* ── Loading skeleton ── */}
@@ -441,7 +447,7 @@ export function DashboardPage() {
             const isHovered = hoveredId === q.id
 
             const aBtnStyle: React.CSSProperties = {
-              width: '100%', padding: '0.38rem 0.5rem', borderRadius: '7px',
+              width: '100%', padding: '0.78rem 0.5rem', borderRadius: '7px',
               background: dark ? '#1e293b' : '#f1f5f9',
               color: dark ? '#94a3b8' : '#475569',
               fontSize: '0.75rem', fontWeight: 600,
@@ -512,13 +518,13 @@ export function DashboardPage() {
                       transform: isHovered ? 'translate(-50%, -50%) scale(1)' : 'translate(-50%, -50%) scale(0.8)',
                       opacity: isHovered ? 1 : 0,
                       transition: 'opacity 0.2s, transform 0.2s',
-                      padding: '0.4rem 1rem',
+                      padding: '0.55rem 1.3rem',
                       borderRadius: '10px',
                       whiteSpace: 'nowrap',
                       background: 'rgba(22,163,74,0.9)', backdropFilter: 'blur(4px)',
                       border: '2px solid rgba(255,255,255,0.5)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem',
-                      color: '#fff', fontSize: '0.82rem', fontWeight: 700,
+                      color: '#fff', fontSize: '0.92rem', fontWeight: 700,
                       textDecoration: 'none', zIndex: 5,
                       boxShadow: '0 4px 14px rgba(0,0,0,0.5)',
                     }}
@@ -705,25 +711,21 @@ export function DashboardPage() {
           </div>
           {visibleCount < quizzes.length && (
             <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
-              <button
-                onClick={(e) => {
-                  vfx.floatText('+6', e.clientX, e.clientY, '#2563eb');
-                  vfx.confetti();
-                  setVisibleCount((c) => c + 6);
-                }}
-                style={{
-                  padding: '0.65rem 2.25rem', borderRadius: '10px', fontSize: '0.875rem', fontWeight: 700,
-                  background: 'linear-gradient(135deg, #2563eb, #7c3aed)',
-                  color: '#fff',
-                  border: 'none',
-                  cursor: 'pointer', transition: 'opacity 0.15s, transform 0.15s',
-                  boxShadow: '0 4px 14px rgba(37,99,235,0.4)',
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.85'; e.currentTarget.style.transform = 'translateY(-1px)' }}
-                onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(0)' }}
-              >
-                Load more · {Math.min(6, quizzes.length - visibleCount)} more
-              </button>
+              <Link to="/my-quizzes" style={{ textDecoration: 'none' }}>
+                <button
+                  style={{
+                    padding: '0.65rem 2.25rem', borderRadius: '10px', fontSize: '0.875rem', fontWeight: 700,
+                    background: 'linear-gradient(135deg, #2563eb, #7c3aed)',
+                    color: '#fff', border: 'none',
+                    cursor: 'pointer', transition: 'opacity 0.15s, transform 0.15s',
+                    boxShadow: '0 4px 14px rgba(37,99,235,0.4)',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.85'; e.currentTarget.style.transform = 'translateY(-1px)' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(0)' }}
+                >
+                  View all {quizzes.length} quizzes →
+                </button>
+              </Link>
             </div>
           )}
         </>
