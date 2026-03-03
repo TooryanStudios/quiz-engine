@@ -75,7 +75,7 @@ export function DashboardPage() {
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
   const [updatingId, setUpdatingId] = useState<string | null>(null)
-  const [visibleCount, setVisibleCount] = useState(6)
+  const visibleCount = 6
   const menuRef = useRef<HTMLDivElement>(null)
   const { showToast } = useToast()
   const { show: showDialog } = useDialog()
