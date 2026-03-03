@@ -42,7 +42,7 @@ export function Dialog() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 9999,
+          zIndex: 99999,
           animation: 'fadeIn 0.2s ease-in-out',
         }}
         onClick={handleCancel}
