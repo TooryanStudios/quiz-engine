@@ -2338,8 +2338,8 @@ export function QuizEditorPage() {
         </div>
       )}
 
-      {/* ── Hero header ── */}
-      <div style={{
+      {/* ── Hero header — desktop only ── */}
+      {!isNarrowScreen && <div style={{
         background: 'linear-gradient(180deg, var(--bg-surface) 0%, var(--bg-deep) 100%)',
         borderBottom: '1px solid var(--border-strong)',
         marginBottom: '1.5rem',
@@ -2477,7 +2477,7 @@ export function QuizEditorPage() {
             </div>
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* ── Sticky toolbar ── */}
       {showToolbarDropdown && (
