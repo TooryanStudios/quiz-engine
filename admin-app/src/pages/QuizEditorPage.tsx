@@ -2377,7 +2377,7 @@ export function QuizEditorPage() {
           </div>
 
           <div style={{ flex: 1, textAlign: isNarrowScreen ? 'center' : 'right', width: '100%' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: isNarrowScreen ? 'center' : 'flex-end', gap: '0.6rem', marginBottom: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: isNarrowScreen ? 'center' : 'flex-end', gap: '0.5rem', marginBottom: '0.5rem' }}>
               <input
                 dir="auto"
                 value={title}
@@ -2395,6 +2395,17 @@ export function QuizEditorPage() {
                   padding: 0,
                 }}
               />
+              <span
+                style={{
+                  fontSize: isNarrowScreen ? '0.9rem' : '1.1rem',
+                  color: 'var(--text-muted)',
+                  opacity: 0.55,
+                  flexShrink: 0,
+                  pointerEvents: 'none',
+                  lineHeight: 1,
+                }}
+                title="قابل للتعديل"
+              >✏️</span>
             </div>
             
             <div
