@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 
 export interface DialogOptions {
   title: string
-  message: string
+  message: string | ReactNode
   confirmText?: string
   cancelText?: string
   onConfirm: () => void | Promise<void>

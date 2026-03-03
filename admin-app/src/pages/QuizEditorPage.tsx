@@ -300,25 +300,11 @@ function AiGeneratingOverlay({ mode }: { mode: 'generate' | 'recheck' }) {
   )
 }
 
-// ── Question type accent colors ──────────────────────────────────────────
-const QUESTION_TYPE_COLORS: Record<string, string> = {
-  single:     '#3b82f6',
-  multi:      '#8b5cf6',
-  boss:       '#ef4444',
-  match:      '#f59e0b',
-  match_plus: '#f59e0b',
-  order:      '#10b981',
-  type:       '#06b6d4',
-}
-
-// Arabic letter labels for answer option slots
-const OPTION_LETTERS = ['أ', 'ب', 'ج', 'د', 'هـ', 'و']
-
 export function QuizEditorPage() {
   const { id: routeId } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const location = useLocation()
-  const { show: showDialog } = useDialog()
+  const { show: showDialog, hide: hideDialog } = useDialog()
   const { showToast } = useToast()
   const { isSubscribed } = useSubscription()
   // Always points to the latest saveQuiz closure so setTimeout callbacks never use stale state
@@ -379,7 +365,6 @@ export function QuizEditorPage() {
   const [isUploadingAiFile, setIsUploadingAiFile] = useState(false)
   const [isGeneratingAi, setIsGeneratingAi] = useState(false)
   const [aiGeneratingMode, setAiGeneratingMode] = useState<'generate' | 'recheck'>('generate')
-  const [mobileQuestionPicker, setMobileQuestionPicker] = useState<{ kind: 'type' | 'duration'; questionIndex: number } | null>(null)
   const [isNarrowScreen, setIsNarrowScreen] = useState(window.innerWidth < 768)
   const [enabledQuestionTypeIds, setEnabledQuestionTypeIds] = useState<QuestionType[]>([...DEFAULT_ENABLED_QUESTION_TYPE_IDS])
   const [questionTypeAccessByType, setQuestionTypeAccessByType] = useState<Record<QuestionTypeId, QuestionTypeAccessTier>>({ ...QUESTION_TYPE_DEFAULT_ACCESS_BY_TYPE })
@@ -815,15 +800,177 @@ export function QuizEditorPage() {
     setShowAddBlockPicker(false)
   }
 
-  const addQuestion = () => {
+  const addQuestion = (type?: QuestionType) => {
     setHasUnsavedChanges(true)
-    const nextQuestion = gameModeId === 'creator-studio'
+    const baseQuestion = gameModeId === 'creator-studio'
       ? { ...creatorStudioStarterQuestion }
       : (gameModeId === 'match-plus-arena' 
         ? { ...starterQuestion, type: 'match_plus' as QuestionType, matchPlusMode: 'image-puzzle' as const } 
         : { ...starterQuestion })
+    
+    const nextQuestion = type ? { ...baseQuestion, type } : baseQuestion
+    
     setQuestions((prev) => [...prev, nextQuestion])
     setCollapsedQuestions((prev) => [...prev, false])
+  }
+
+  const showAddQuestionDialog = (initialTab: 'questions' | 'minigames' = 'questions') => {
+    const miniGames = Object.values(MINI_GAME_DEFINITIONS)
+    
+    showDialog({
+      title: 'إضافة محتوى جديد',
+      message: (
+        <div style={{ marginTop: '1rem' }}>
+          {/* Tabs Header */}
+          <div style={{ 
+            display: 'flex', 
+            background: 'var(--bg-deep)', 
+            borderRadius: '12px', 
+            padding: '4px', 
+            marginBottom: '1.2rem',
+            border: '1px solid var(--border-strong)'
+          }}>
+            <button
+              id="tab-btn-questions"
+              onClick={(e) => {
+                document.getElementById('content-questions')!.style.display = 'grid'
+                document.getElementById('content-minigames')!.style.display = 'none'
+                e.currentTarget.style.background = 'var(--accent)'
+                e.currentTarget.style.color = '#fff'
+                document.getElementById('tab-btn-minigames')!.style.background = 'transparent'
+                document.getElementById('tab-btn-minigames')!.style.color = 'var(--text-mid)'
+              }}
+              style={{
+                flex: 1,
+                padding: '0.6rem',
+                borderRadius: '8px',
+                border: 'none',
+                background: initialTab === 'questions' ? 'var(--accent)' : 'transparent',
+                color: initialTab === 'questions' ? '#fff' : 'var(--text-mid)',
+                fontWeight: 700,
+                fontSize: '0.9rem',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              ❓ أسئلة
+            </button>
+            <button
+              id="tab-btn-minigames"
+              onClick={(e) => {
+                document.getElementById('content-questions')!.style.display = 'none'
+                document.getElementById('content-minigames')!.style.display = 'grid'
+                e.currentTarget.style.background = 'var(--accent)'
+                e.currentTarget.style.color = '#fff'
+                document.getElementById('tab-btn-questions')!.style.background = 'transparent'
+                document.getElementById('tab-btn-questions')!.style.color = 'var(--text-mid)'
+              }}
+              style={{
+                flex: 1,
+                padding: '0.6rem',
+                borderRadius: '8px',
+                border: 'none',
+                background: initialTab === 'minigames' ? 'var(--accent)' : 'transparent',
+                color: initialTab === 'minigames' ? '#fff' : 'var(--text-mid)',
+                fontWeight: 700,
+                fontSize: '0.9rem',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              🎮 ميني جيم
+            </button>
+          </div>
+
+          {/* Questions Tab Content */}
+          <div id="content-questions" style={{ 
+            display: initialTab === 'questions' ? 'grid' : 'none', 
+            gridTemplateColumns: '1fr', 
+            gap: '0.6rem', 
+            maxHeight: '50vh', 
+            overflowY: 'auto', 
+            padding: '0.2rem' 
+          }}>
+            {questionTypeOptions.map((opt, i) => (
+              <button
+                key={i}
+                onClick={() => {
+                  const nextType = opt.value as QuestionType
+                  if (isPremiumQuestionType(nextType) && !isSubscribed) {
+                    openUpgradeDialog('This question type is premium. Please upgrade your account to use it.')
+                    return
+                  }
+                  addQuestion(nextType)
+                  hideDialog()
+                }}
+                style={{
+                  padding: '1rem',
+                  background: 'var(--bg-deep)',
+                  color: 'var(--text)',
+                  border: '1px solid var(--border-strong)',
+                  borderRadius: '12px',
+                  textAlign: 'right',
+                  fontWeight: 600,
+                  fontSize: '0.95rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer'
+                }}
+              >
+                <span>{opt.label}</span>
+                <span style={{ fontSize: '1.2rem' }}>➕</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Mini-Games Tab Content */}
+          <div id="content-minigames" style={{ 
+            display: initialTab === 'minigames' ? 'grid' : 'none', 
+            gridTemplateColumns: '1fr', 
+            gap: '0.6rem', 
+            maxHeight: '50vh', 
+            overflowY: 'auto', 
+            padding: '0.2rem' 
+          }}>
+            {miniGames.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => {
+                  addMiniGameBlock(m.id)
+                  hideDialog()
+                }}
+                style={{
+                  padding: '1rem',
+                  background: 'var(--bg-deep)',
+                  color: 'var(--text)',
+                  border: '1px solid var(--border-strong)',
+                  borderRadius: '12px',
+                  textAlign: 'right',
+                  fontWeight: 600,
+                  fontSize: '0.95rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+                  <span style={{ fontSize: '1.4rem' }}>{m.icon}</span>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontWeight: 700 }}>{m.defaultArabicName}</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>{m.description}</div>
+                  </div>
+                </div>
+                <span style={{ fontSize: '1.2rem' }}>➕</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ),
+      confirmText: 'إغلاق',
+      onConfirm: () => hideDialog()
+    })
   }
 
   const handleAiExecute = async (mode: 'append' | 'replace' | 'new') => {
@@ -1177,19 +1324,7 @@ export function QuizEditorPage() {
     }
   }, [tempCoverImage, showMetadataDialog])
 
-  if (loading) return (
-    <div style={{ padding: '1.5rem 0' }}>
-      {[0, 1, 2].map((i) => (
-        <div key={i} style={{
-          height: '76px', borderRadius: '14px',
-          background: 'var(--bg-surface)', border: '1px solid var(--border)',
-          marginBottom: '0.75rem',
-          animation: 'skeletonPulse 1.6s ease-in-out infinite',
-          animationDelay: `${i * 0.18}s`,
-        }} />
-      ))}
-    </div>
-  )
+  if (loading) return <section className="panel"><p>Loading quiz...</p></section>
 
   const removeQuestion = (index: number) => {
     showDialog({
@@ -2204,177 +2339,133 @@ export function QuizEditorPage() {
 
       {/* ── Hero header ── */}
       <div style={{
-        background: 'linear-gradient(135deg, var(--bg-deep) 0%, #1e1b4b 100%)',
-        border: '1px solid var(--border-mid)',
-        borderRadius: isNarrowScreen ? '0 0 16px 16px' : '16px',
-        marginBottom: '1.25rem',
-        position: 'relative',
-        overflow: 'hidden',
+        background: 'linear-gradient(180deg, var(--bg-surface) 0%, var(--bg-deep) 100%)',
+        borderBottom: '1px solid var(--border-strong)',
+        marginBottom: '1.5rem',
+        borderRadius: isNarrowScreen ? '0 0 20px 20px' : '0 0 24px 24px',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
+        padding: isNarrowScreen ? '1rem 0.8rem' : '2rem 1.5rem',
         marginTop: isNarrowScreen ? '-1rem' : '0',
       }}>
-        {/* Full-width cover background (dimmed) */}
-        <div style={{ width: '100%', height: isNarrowScreen ? '120px' : '180px', overflow: 'hidden', position: 'relative' }}>
-          <img
-            src={coverImage || placeholderImg}
-            alt=""
-            style={{
-              width: '100%', height: '100%',
-              objectFit: 'cover',
-              opacity: coverImage ? 0.55 : 0.2,
-              padding: 0,
-              boxSizing: 'border-box',
+        <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', gap: isNarrowScreen ? '1rem' : '1.8rem', alignItems: 'center', flexDirection: isNarrowScreen ? 'column' : 'row' }}>
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <div style={{
+              width: isNarrowScreen ? '100px' : '130px',
+              height: isNarrowScreen ? '100px' : '130px',
+              borderRadius: '20px',
+              overflow: 'hidden',
+              border: '3px solid var(--accent)',
+              background: 'var(--bg-deep)',
+              cursor: 'pointer',
+              boxShadow: '0 8px 16px rgba(124,58,237,0.2)',
+              transition: 'transform 0.2s',
             }}
-            onError={(e) => { (e.currentTarget as HTMLImageElement).src = placeholderImg }}
-          />
-        </div>
-        <div style={{ padding: isNarrowScreen ? '0 1rem 1rem' : '0 2rem 1.5rem', marginTop: isNarrowScreen ? '-40px' : '-60px', position: 'relative', display: 'flex', alignItems: 'flex-end', gap: isNarrowScreen ? '0.8rem' : '1.25rem' }}>
-          {/* Profile image thumbnail */}
-          <div style={{
-            width: isNarrowScreen ? '56px' : '72px', height: isNarrowScreen ? '56px' : '72px', borderRadius: '12px', flexShrink: 0,
-            border: '3px solid #1e1b4b', overflow: 'hidden',
-            boxShadow: '0 4px 16px rgba(0,0,0,0.6)', background: 'var(--bg-deep)',
-          }}>
-            <img
-              src={coverImage || placeholderImg}
-              alt="quiz cover"
-              style={{ width: '100%', height: '100%', objectFit: 'cover', padding: 0, boxSizing: 'border-box' }}
-              onError={(e) => { (e.currentTarget as HTMLImageElement).src = placeholderImg }}
-            />
+            onClick={() => openMetadataDialog()}
+            onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.02)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)' }}
+            >
+              <img src={coverImage || placeholderImg} alt="Thumbnail" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: '0.65rem', padding: '4px', textAlign: 'center', fontWeight: 700 }}>
+                تغيير الصورة
+              </div>
+            </div>
+            {uploadingCover && (
+              <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '20px' }}>
+                <span className="save-icon-spinning">🔄</span>
+              </div>
+            )}
           </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', marginBottom: '0.5rem' }}>
-              <h1 style={{ margin: 0, fontSize: isNarrowScreen ? '1.1rem' : '1.5rem', fontWeight: 800, color: 'var(--text-bright)', fontFamily: 'Cairo, Segoe UI, Tahoma, system-ui, sans-serif' }}>
-                {title || 'اختبار جديد'}
-              </h1>
+
+          <div style={{ flex: 1, textAlign: isNarrowScreen ? 'center' : 'right', width: '100%' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: isNarrowScreen ? 'center' : 'flex-end', gap: '0.6rem', marginBottom: '0.5rem' }}>
+              <input
+                dir="auto"
+                value={title}
+                onChange={(e) => { setTitle(e.target.value); setHasUnsavedChanges(true) }}
+                placeholder="عنوان الاختبار..."
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text-bright)',
+                  fontSize: isNarrowScreen ? '1.5rem' : '2.2rem',
+                  fontWeight: 900,
+                  width: '100%',
+                  textAlign: isNarrowScreen ? 'center' : 'right',
+                  outline: 'none',
+                  padding: 0,
+                }}
+              />
+            </div>
+            
+            <div
+              dir="auto"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-mid)',
+                fontSize: '0.95rem',
+                width: '100%',
+                textAlign: isNarrowScreen ? 'center' : 'right',
+                marginBottom: '1rem',
+                minHeight: '1.2em',
+                lineHeight: 1.5,
+                cursor: 'pointer'
+              }}
+              onClick={() => openMetadataDialog()}
+            >
+              📊 {pureQuestionsCount} سؤال {miniGameBlocksCount > 0 ? `• 🎮 ${miniGameBlocksCount} ميني جيم` : ''} • {visibility === 'public' ? '🌐 عام' : '🔒 خاص'}
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', flexWrap: 'wrap', justifyContent: isNarrowScreen ? 'center' : 'flex-end' }}>
+              {quizId && (
+                <button
+                  type="button"
+                  onClick={() => void launchGameFromEditor(quizId)}
+                  style={{
+                    background: 'var(--accent)',
+                    color: '#fff',
+                    fontSize: isNarrowScreen ? '0.85rem' : '1rem',
+                    padding: isNarrowScreen ? '8px 20px' : '10px 24px',
+                    borderRadius: '12px',
+                    border: 'none',
+                    fontWeight: 800,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(124,58,237,0.3)',
+                    transition: 'transform 0.2s',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-2px)' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)' }}
+                >
+                  <span style={{ fontSize: '1.1rem' }}>▶</span> {isNarrowScreen ? 'تشغيل اللعبة' : 'لعب الاختبار الآن'}
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={() => openMetadataDialog()}
-                title="تعديل اسم الاختبار"
                 style={{
-                  width: isNarrowScreen ? '26px' : '30px',
-                  height: isNarrowScreen ? '26px' : '30px',
-                  borderRadius: '7px',
+                  background: 'rgba(255,255,255,0.05)',
+                  color: 'var(--text-bright)',
+                  fontSize: isNarrowScreen ? '0.8rem' : '0.9rem',
+                  padding: isNarrowScreen ? '8px 16px' : '10px 20px',
+                  borderRadius: '12px',
                   border: '1px solid var(--border-strong)',
-                  background: 'var(--bg-surface)',
-                  color: 'var(--text-mid)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                  fontWeight: 700,
                   cursor: 'pointer',
-                  fontSize: isNarrowScreen ? '0.78rem' : '0.85rem',
-                  flexShrink: 0,
+                  transition: 'all 0.2s'
                 }}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
               >
-                ✏️
+                ⚙️ الإعدادات
               </button>
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: isNarrowScreen ? '0.35rem' : '0.5rem', alignItems: 'center' }}>
-            <div style={{
-              background: challengePreset === 'easy' ? '#16a34a' : challengePreset === 'hard' ? '#dc2626' : '#2563eb',
-              color: '#fff', fontSize: isNarrowScreen ? '0.6rem' : '0.72rem', fontWeight: 700, padding: isNarrowScreen ? '2px 8px' : '1px 10px', borderRadius: '999px',
-              display: 'flex', alignItems: 'center',
-            }}>
-              <select
-                value={challengePreset}
-                onChange={(e) => {
-                  setChallengePreset(e.target.value as ChallengePreset)
-                  setHasUnsavedChanges(true)
-                }}
-                style={{
-                  background: 'transparent',
-                  color: '#fff',
-                  border: 'none',
-                  fontSize: isNarrowScreen ? '0.6rem' : '0.74rem',
-                  fontWeight: 700,
-                  outline: 'none',
-                  cursor: 'pointer',
-                  padding: '2px 2px',
-                }}
-                title="مستوى الصعوبة"
-              >
-                <option value="easy" style={{ color: '#0f172a' }}>🟢 سهل</option>
-                <option value="classic" style={{ color: '#0f172a' }}>🔵 عادي</option>
-                <option value="hard" style={{ color: '#0f172a' }}>🔴 صعب</option>
-              </select>
-            </div>
-            <div style={{
-              background: 'var(--bg-surface)', color: visibility === 'public' ? '#86efac' : '#fca5a5',
-              fontSize: isNarrowScreen ? '0.6rem' : '0.72rem', fontWeight: 600, padding: isNarrowScreen ? '2px 8px' : '1px 10px', borderRadius: '999px',
-              border: `1px solid ${visibility === 'public' ? '#16a34a44' : '#dc262644'}`,
-              display: 'flex', alignItems: 'center',
-            }}>
-              <select
-                value={visibility}
-                onChange={(e) => {
-                  setVisibility(e.target.value as 'public' | 'private')
-                  setHasUnsavedChanges(true)
-                }}
-                style={{
-                  background: 'transparent',
-                  color: visibility === 'public' ? '#86efac' : '#fca5a5',
-                  border: 'none',
-                  fontSize: isNarrowScreen ? '0.6rem' : '0.74rem',
-                  fontWeight: 700,
-                  outline: 'none',
-                  cursor: 'pointer',
-                  padding: '2px 2px',
-                }}
-                title="الخصوصية"
-              >
-                <option value="public" style={{ color: '#0f172a' }}>🌐 عام</option>
-                <option value="private" style={{ color: '#0f172a' }}>🔒 خاص</option>
-              </select>
-            </div>
-
-            {quizId && (
-              <a
-                href={buildHostGameUrl({ serverBase: SERVER_BASE, quizId, gameModeId: isMiniGameContent ? (gameModeId || undefined) : undefined })}
-                target="_blank" rel="noopener noreferrer"
-                onClick={(e) => {
-                  e.preventDefault()
-                  void launchGameFromEditor(quizId)
-                }}
-                style={{
-                  background: 'var(--bg-surface)',
-                  color: '#60a5fa',
-                  fontSize: isNarrowScreen ? '0.75rem' : '0.88rem',
-                  padding: isNarrowScreen ? '4px 12px' : '6px 16px',
-                  borderRadius: '999px',
-                  textDecoration: 'none',
-                  border: '1px solid #60a5fa',
-                  fontWeight: 700,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}
-              >
-                <span style={{ fontSize: isNarrowScreen ? '0.85rem' : '1.1rem' }}>▶</span> {isNarrowScreen ? 'لعب' : 'رابط اللعبة ↗'}
-              </a>
-            )}
-
-            {!isNarrowScreen && randomizeQuestions && (
-              <span style={{ background: 'var(--bg-surface)', color: '#a78bfa', fontSize: '0.72rem', padding: '3px 12px', borderRadius: '999px', border: '1px solid #7c3aed44' }}>
-                🔀 ترتيب جلسة عشوائي
-              </span>
-            )}
-
-            <span
-              style={{
-                background: 'var(--bg-surface)',
-                color: 'var(--text-bright)',
-                fontSize: isNarrowScreen ? '0.62rem' : '0.74rem',
-                padding: isNarrowScreen ? '2px 8px' : '3px 12px',
-                borderRadius: '999px',
-                border: '1px solid var(--border-strong)',
-                fontWeight: 700,
-              }}
-            >
-              📊 إجمالي العناصر: {totalQuizItemsCount} (أسئلة: {pureQuestionsCount} • ميني جيم: {miniGameBlocksCount})
-            </span>
           </div>
-          </div>{/* end inner text div */}
-        </div>{/* end profile row */}
-      </div>{/* end hero */}
+        </div>
+      </div>
 
       {/* ── Sticky toolbar ── */}
       {showToolbarDropdown && (
@@ -2385,13 +2476,12 @@ export function QuizEditorPage() {
       )}
       <div style={{
         position: 'sticky', top: isNarrowScreen ? '0' : '0.5rem', zIndex: 100,
-        background: 'linear-gradient(180deg, var(--bg-deep) 0%, color-mix(in srgb, var(--bg-deep) 92%, transparent) 100%)',
+        background: 'var(--bg-deep)',
         border: '1px solid var(--border-mid)',
-        borderTop: '2px solid rgba(59,130,246,0.35)',
         borderRadius: isNarrowScreen ? '0' : '12px',
         padding: isNarrowScreen ? '0.5rem 0.6rem' : '0.55rem 0.65rem',
         marginBottom: '1rem',
-        boxShadow: '0 4px 20px rgba(0,0,0,0.32)',
+        boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
         margin: isNarrowScreen ? '0 -1rem 1rem -1rem' : '0 0 1rem 0',
       }}>
         <div style={{ display: 'flex', gap: isNarrowScreen ? '0.3rem' : '0.45rem', alignItems: 'center', flexWrap: 'nowrap' }}>
@@ -2530,7 +2620,7 @@ export function QuizEditorPage() {
           {!isMiniGameContent && (
             <button
               type="button"
-              onClick={addQuestion}
+              onClick={() => showAddQuestionDialog()}
               style={{
                 background: 'var(--text-bright)', border: '1px solid var(--text-bright)', color: '#fff',
                 padding: isNarrowScreen ? '0.4rem 0.5rem' : '0.42rem 0.78rem', borderRadius: '8px', fontWeight: 700,
@@ -2587,24 +2677,6 @@ export function QuizEditorPage() {
             <span style={{ fontSize: isNarrowScreen ? '1.3rem' : '0.9rem' }}>🛡️</span>
             <span style={{ fontSize: isNarrowScreen ? '0.58rem' : '0.8rem', fontWeight: 700 }}>تدقيق</span>
           </button>
-
-          {/* Question count badge */}
-          {!isMiniGameContent && questions.length > 0 && (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: '0.3rem',
-              padding: isNarrowScreen ? '0.25rem 0.5rem' : '0.28rem 0.72rem',
-              borderRadius: '999px',
-              background: 'rgba(59,130,246,0.12)',
-              border: '1px solid rgba(59,130,246,0.25)',
-              color: '#93c5fd',
-              fontSize: isNarrowScreen ? '0.6rem' : '0.76rem',
-              fontWeight: 700,
-              flexShrink: 0,
-            }}>
-              <span>{questions.length}</span>
-              {!isNarrowScreen && <span style={{ fontWeight: 500, marginRight: '0.2rem' }}>سؤال</span>}
-            </div>
-          )}
 
           {/* Spacer */}
           <div style={{ flex: 1 }} />
@@ -3023,7 +3095,7 @@ export function QuizEditorPage() {
               : '1px solid #4b5563',
             borderLeft: dragOverIndex === index && dragIndex !== index
               ? '6px solid #7c3aed'
-              : `6px solid ${QUESTION_TYPE_COLORS[q.type] ?? '#3b82f6'}`,
+              : '6px solid #3b82f6',
             padding: '1.2rem',
             borderRadius: '14px',
             marginBottom: '0.75rem',
@@ -3057,14 +3129,6 @@ export function QuizEditorPage() {
                     }}
                     title="اسحب لإعادة الترتيب"
                   >⠿</span>
-                  <span style={{
-                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                    width: '22px', height: '22px', borderRadius: '6px', flexShrink: 0,
-                    background: `${QUESTION_TYPE_COLORS[q.type] ?? '#3b82f6'}22`,
-                    border: `1.5px solid ${QUESTION_TYPE_COLORS[q.type] ?? '#3b82f6'}44`,
-                    color: QUESTION_TYPE_COLORS[q.type] ?? '#3b82f6',
-                    fontSize: '0.68rem', fontWeight: 900,
-                  }}>{index + 1}</span>
                   <span
                     style={{
                       fontSize: '0.92rem',
@@ -3098,16 +3162,8 @@ export function QuizEditorPage() {
                     }}
                     title="اسحب لإعادة الترتيب"
                   >⠿</span>
-                  <span style={{
-                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                    width: '26px', height: '26px', borderRadius: '8px', flexShrink: 0,
-                    background: `${QUESTION_TYPE_COLORS[q.type] ?? '#3b82f6'}22`,
-                    border: `1.5px solid ${QUESTION_TYPE_COLORS[q.type] ?? '#3b82f6'}55`,
-                    color: QUESTION_TYPE_COLORS[q.type] ?? '#3b82f6',
-                    fontSize: '0.72rem', fontWeight: 900, lineHeight: 1,
-                  }}>{index + 1}</span>
                   <h3 style={{ margin: '0', fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-bright)', letterSpacing: '0.5px' }}>
-                    {q.type === 'match_plus' && q.matchPlusMode === 'image-puzzle' ? 'البازل' : 'السؤال'}
+                    {q.type === 'match_plus' && q.matchPlusMode === 'image-puzzle' ? `البازل ${index + 1}` : `السؤال ${index + 1}`}
                   </h3>
                 </>
               )}
@@ -3116,134 +3172,188 @@ export function QuizEditorPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               {!collapsedQuestions[index] && !isCreatorStudioMode && (
                 <>
-                  {isNarrowScreen ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => setMobileQuestionPicker({ kind: 'type', questionIndex: index })}
-                        style={{
-                          minWidth: '170px',
-                          maxWidth: 'calc(100vw - 180px)',
-                          padding: '0.5rem 0.75rem',
-                          borderRadius: '8px',
-                          border: '1px solid var(--border-strong)',
-                          backgroundColor: 'var(--bg-deep)',
-                          color: 'var(--text)',
-                          fontSize: '0.84rem',
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: '0.5rem',
-                        }}
-                        title="نوع السؤال"
-                      >
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {questionTypeOptions.find((option) => option.value === q.type)?.label || 'نوع السؤال'}
-                        </span>
-                        <span style={{ color: 'var(--text-muted)' }}>▾</span>
-                      </button>
+                  <select
+                    value={q.type}
+                    onChange={(e) => {
+                      const nextType = e.target.value as QuestionType
+                      if (isPremiumQuestionType(nextType) && !isSubscribed) {
+                        openUpgradeDialog('This question type is premium. Please upgrade your account to use it.')
+                        return
+                      }
+                      replaceQuestion(index, coerceQuestionToType(q, nextType))
+                    }}
+                    style={{
+                      display: isNarrowScreen ? 'none' : 'block',
+                      minWidth: '160px',
+                      padding: '0.5rem 0.75rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-strong)',
+                      backgroundColor: 'var(--bg-deep)',
+                      color: 'var(--text)',
+                      fontSize: '0.92rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      outline: 'none',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                    title="نوع السؤال"
+                  >
+                    {questionTypeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
 
-                      <button
-                        type="button"
-                        onClick={() => setMobileQuestionPicker({ kind: 'duration', questionIndex: index })}
+                  {isNarrowScreen && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        showDialog({
+                          title: 'اختر نوع السؤال',
+                          message: (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.5rem', marginTop: '1rem' }}>
+                              {questionTypeOptions.map((opt, i) => (
+                                <button
+                                  key={i}
+                                  onClick={() => {
+                                    const nextType = opt.value as QuestionType
+                                    if (isPremiumQuestionType(nextType) && !isSubscribed) {
+                                      openUpgradeDialog('This question type is premium. Please upgrade your account to use it.')
+                                      return
+                                    }
+                                    replaceQuestion(index, coerceQuestionToType(q, nextType))
+                                    hideDialog()
+                                  }}
+                                  style={{
+                                    padding: '1rem',
+                                    background: q.type === opt.value ? 'var(--accent)' : 'var(--bg-deep)',
+                                    color: q.type === opt.value ? '#fff' : 'var(--text)',
+                                    border: '1px solid var(--border-strong)',
+                                    borderRadius: '12px',
+                                    textAlign: 'right',
+                                    fontWeight: 600,
+                                    fontSize: '0.95rem'
+                                  }}
+                                >
+                                  {opt.label}
+                                </button>
+                              ))}
+                            </div>
+                          ),
+                          confirmText: 'إغلاق',
+                          onConfirm: () => hideDialog()
+                        })
+                      }}
+                      style={{
+                        padding: '0.5rem 0.75rem',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-strong)',
+                        backgroundColor: 'var(--bg-deep)',
+                        color: 'var(--text)',
+                        fontSize: '0.84rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        width: '140px',
+                        textAlign: 'right',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      {questionTypeOptions.find(o => o.value === q.type)?.label || 'نوع السؤال'}
+                    </button>
+                  )}
+
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '0.45rem', 
+                    direction: 'rtl', 
+                    background: 'var(--bg-deep)', 
+                    border: '1px solid var(--border-strong)', 
+                    borderRadius: '8px', 
+                    padding: '0 0.6rem', 
+                    height: '42px',
+                    minWidth: isNarrowScreen ? '70px' : '85px'
+                  }}>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 400 }}>⏱️</span>
+                    <select
+                      value={String(q.duration || 20)}
+                      onChange={(e) => updateQuestion(index, { duration: Number(e.target.value) })}
+                      style={{
+                        display: isNarrowScreen ? 'none' : 'block',
+                        minWidth: '45px',
+                        height: '100%',
+                        border: 'none',
+                        background: 'transparent',
+                        color: 'var(--text)',
+                        fontSize: '0.92rem',
+                        fontWeight: 700,
+                        outline: 'none',
+                        cursor: 'pointer',
+                        padding: '0 0.2rem',
+                        direction: 'rtl',
+                        textAlign: 'right',
+                      }}
+                      title="مدة السؤال"
+                    >
+                      {getQuestionTypeTimerPolicy(q.type).allowedDurations.map((seconds) => (
+                        <option key={seconds} value={seconds} style={{ color: '#0f172a' }}>
+                          {seconds} ث
+                        </option>
+                      ))}
+                    </select>
+                    {isNarrowScreen && (
+                      <div 
+                        onClick={() => {
+                          const policy = getQuestionTypeTimerPolicy(q.type)
+                          showDialog({
+                            title: 'مدة السؤال (ثواني)',
+                            message: (
+                              <div style={{ 
+                                display: 'grid', 
+                                gridTemplateColumns: 'repeat(3, 1fr)', 
+                                gap: '0.6rem', 
+                                marginTop: '1rem' 
+                              }}>
+                                {policy.allowedDurations.map((seconds) => (
+                                  <button
+                                    key={seconds}
+                                    onClick={() => {
+                                      updateQuestion(index, { duration: seconds })
+                                      hideDialog()
+                                    }}
+                                    style={{
+                                      padding: '0.8rem',
+                                      background: q.duration === seconds ? 'var(--accent)' : 'var(--bg-deep)',
+                                      color: q.duration === seconds ? '#fff' : 'var(--text)',
+                                      border: '1px solid var(--border-strong)',
+                                      borderRadius: '10px',
+                                      fontWeight: 800,
+                                      fontSize: '1rem'
+                                    }}
+                                  >
+                                    {seconds}
+                                  </button>
+                                ))}
+                              </div>
+                            ),
+                            confirmText: 'تم',
+                            onConfirm: () => hideDialog()
+                          })
+                        }}
                         style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: '0.45rem',
-                          direction: 'rtl',
-                          background: 'var(--bg-deep)',
-                          border: '1px solid var(--border-strong)',
-                          borderRadius: '8px',
-                          padding: '0 0.6rem',
-                          height: '42px',
-                          minWidth: '96px',
                           color: 'var(--text)',
                           fontSize: '0.92rem',
                           fontWeight: 700,
                           cursor: 'pointer',
                         }}
-                        title="مدة السؤال"
                       >
-                        <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 400 }}>⏱️</span>
-                        <span>{q.duration || 20} ث</span>
-                        <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>▾</span>
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <select
-                        value={q.type}
-                        onChange={(e) => {
-                          const nextType = e.target.value as QuestionType
-                          if (isPremiumQuestionType(nextType) && !isSubscribed) {
-                            openUpgradeDialog('This question type is premium. Please upgrade your account to use it.')
-                            return
-                          }
-                          replaceQuestion(index, coerceQuestionToType(q, nextType))
-                        }}
-                        style={{
-                          minWidth: '160px',
-                          padding: '0.5rem 0.75rem',
-                          borderRadius: '8px',
-                          border: '1px solid var(--border-strong)',
-                          backgroundColor: 'var(--bg-deep)',
-                          color: 'var(--text)',
-                          fontSize: '0.92rem',
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          outline: 'none',
-                        }}
-                        title="نوع السؤال"
-                      >
-                        {questionTypeOptions.map((option) => (
-                          <option key={option.value} value={option.value}>{option.label}</option>
-                        ))}
-                      </select>
-
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.45rem',
-                        direction: 'rtl',
-                        background: 'var(--bg-deep)',
-                        border: '1px solid var(--border-strong)',
-                        borderRadius: '8px',
-                        padding: '0 0.6rem',
-                        height: '42px',
-                        minWidth: '85px'
-                      }}>
-                        <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 400 }}>⏱️</span>
-                        <select
-                          value={String(q.duration || 20)}
-                          onChange={(e) => updateQuestion(index, { duration: Number(e.target.value) })}
-                          style={{
-                            minWidth: '45px',
-                            height: '100%',
-                            border: 'none',
-                            background: 'transparent',
-                            color: 'var(--text)',
-                            fontSize: '0.92rem',
-                            fontWeight: 700,
-                            outline: 'none',
-                            cursor: 'pointer',
-                            padding: '0 0.2rem',
-                            direction: 'rtl',
-                            textAlign: 'right',
-                          }}
-                          title="مدة السؤال"
-                        >
-                          {getQuestionTypeTimerPolicy(q.type).allowedDurations.map((seconds) => (
-                            <option key={seconds} value={seconds} style={{ color: '#0f172a' }}>
-                              {seconds} ث
-                            </option>
-                          ))}
-                        </select>
+                        {q.duration || 20}
                       </div>
-                    </>
-                  )}
+                    )}
+                  </div>
 
                   {!isNarrowScreen && <div style={{ width: '1px', height: '24px', background: 'var(--border-strong)', margin: '0 0.2rem' }} />}
                 </>
@@ -3251,40 +3361,91 @@ export function QuizEditorPage() {
 
               <button
                 type="button"
-                onClick={() => setCollapsedQuestions((prev) => {
-                  const next = [...prev]
-                  next[index] = !next[index]
-                  return next
-                })}
-                style={{
-                  background: 'var(--bg-deep)', border: '1px solid var(--border-strong)', color: 'var(--text-mid)',
-                  fontSize: '0.85rem', width: '32px', height: '32px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                onClick={() => {
+                  showDialog({
+                    title: 'خيارات السؤال',
+                    message: (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem', marginTop: '1rem' }}>
+                        <button
+                          onClick={() => {
+                            setCollapsedQuestions((prev) => {
+                              const next = [...prev]
+                              next[index] = !next[index]
+                              return next
+                            })
+                            hideDialog()
+                          }}
+                          style={{
+                            padding: '1rem',
+                            background: 'var(--bg-deep)',
+                            color: 'var(--text)',
+                            border: '1px solid var(--border-strong)',
+                            borderRadius: '12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            fontWeight: 600,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <span>{collapsedQuestions[index] ? 'توسيع السؤال' : 'طي السؤال'}</span>
+                          <span>{collapsedQuestions[index] ? '▾' : '▴'}</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            hideDialog()
+                            showDialog({
+                              title: 'حذف السؤال',
+                              message: 'هل أنت متأكد من رغبتك في حذف هذا السؤال؟ لا يمكن التراجع عن هذه الخطوة.',
+                              confirmText: 'حذف',
+                              cancelText: 'إلغاء',
+                              isDangerous: true,
+                              onConfirm: () => {
+                                removeQuestion(index)
+                                hideDialog()
+                              }
+                            })
+                          }}
+                          style={{
+                            padding: '1rem',
+                            background: 'rgba(239, 68, 68, 0.1)',
+                            color: '#ef4444',
+                            border: '1px solid rgba(239, 68, 68, 0.2)',
+                            borderRadius: '12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            fontWeight: 600,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <span>حذف السؤال</span>
+                          <span>🗑️</span>
+                        </button>
+                      </div>
+                    ),
+                    confirmText: 'إغلاق',
+                    onConfirm: () => hideDialog()
+                  })
                 }}
-              >
-                {collapsedQuestions[index] ? '▾' : '▴'}
-              </button>
-              
-              <button 
-                type="button" 
-                onClick={() => removeQuestion(index)} 
-                style={{ 
-                  background: 'rgba(239, 68, 68, 0.1)', 
-                  color: '#ef4444', 
-                  fontSize: '0.8rem', 
-                  width: '32px', 
-                  height: '32px', 
-                  borderRadius: '8px', 
-                  border: '1px solid rgba(239, 68, 68, 0.2)', 
+                style={{
+                  background: 'var(--bg-deep)',
+                  border: '1px solid var(--border-strong)',
+                  color: 'var(--text-mid)',
+                  fontSize: '1.2rem',
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '8px',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  transition: 'all 0.2s'
+                  padding: 0,
+                  lineHeight: 1
                 }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = '#ef4444'; e.currentTarget.style.color = '#fff' }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; e.currentTarget.style.color = '#ef4444' }}
               >
-                🗑️
+                ⋮
               </button>
             </div>
           </div>
@@ -3296,13 +3457,7 @@ export function QuizEditorPage() {
           <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.2rem', alignItems: 'flex-start' }}>
             <div style={{ flex: 1 }}>
               <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600 }}>نص السؤال</label>
-              <div style={{
-                display: 'flex', gap: '0',
-                background: 'var(--bg-deep)', borderRadius: '10px',
-                border: '1.5px solid var(--border-strong)',
-                borderLeft: `3px solid ${QUESTION_TYPE_COLORS[q.type] ?? '#3b82f6'}`,
-                overflow: 'hidden', transition: 'border-color 0.2s',
-              }}>
+              <div style={{ display: 'flex', gap: '0', background: 'var(--bg-deep)', borderRadius: '8px', border: '1px solid var(--border-strong)', overflow: 'hidden', transition: 'border-color 0.2s' }}>
                 <input
                   dir="auto"
                   value={q.text}
@@ -3310,13 +3465,12 @@ export function QuizEditorPage() {
                   placeholder="اكتب السؤال هنا..."
                   style={{
                     flex: 1,
-                    padding: '0.75rem 0.9rem',
+                    padding: '0.65rem 0.85rem',
                     border: 'none',
                     background: 'transparent',
                     color: 'var(--text)',
-                    fontSize: '1.05rem',
-                    outline: 'none',
-                    fontWeight: 500,
+                    fontSize: '1rem',
+                    outline: 'none'
                   }}
                 />
                 <button
@@ -3396,15 +3550,15 @@ export function QuizEditorPage() {
                         alignItems: 'center',
                         padding: '0.6rem 1rem',
                         borderRadius: '12px',
-                        border: `2px solid ${isCorrect ? '#22c55e' : 'var(--border-strong)'}`,
-                        backgroundColor: isCorrect ? 'rgba(34, 197, 94, 0.08)' : 'var(--bg-deep)',
-                        boxShadow: isCorrect ? '0 0 14px rgba(34, 197, 94, 0.18)' : 'none',
+                        border: `2px solid ${isCorrect ? 'var(--text-bright)' : 'var(--border-strong)'}`,
+                        backgroundColor: isCorrect ? 'rgba(59, 130, 246, 0.08)' : 'var(--bg-deep)',
+                        boxShadow: isCorrect ? '0 0 15px rgba(59, 130, 246, 0.15)' : 'none',
                         transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                         position: 'relative',
                         overflow: 'hidden'
                       }}
                     >
-                      {/* Letter badge + correct toggle */}
+                      {/* Checkmark indicator for correct answers */}
                       <div
                         onClick={() => {
                           if (isMultiSelectOptions) {
@@ -3417,26 +3571,22 @@ export function QuizEditorPage() {
                           }
                         }}
                         style={{
-                          width: '28px',
-                          height: '28px',
-                          borderRadius: '8px',
-                          border: `2px solid ${isCorrect ? '#22c55e' : 'var(--border-strong)'}`,
-                          backgroundColor: isCorrect ? '#22c55e' : 'var(--bg-surface)',
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '50%',
+                          border: `2px solid ${isCorrect ? 'var(--text-bright)' : 'var(--text-muted)'}`,
+                          backgroundColor: isCorrect ? 'var(--text-bright)' : 'transparent',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
                           cursor: 'pointer',
-                          color: isCorrect ? '#fff' : 'var(--text-muted)',
-                          fontSize: '0.76rem',
-                          fontWeight: 800,
-                          boxShadow: isCorrect ? '0 2px 8px rgba(34, 197, 94, 0.38)' : 'none',
+                          color: '#fff',
+                          fontSize: '0.8rem',
+                          boxShadow: isCorrect ? '0 2px 6px rgba(59, 130, 246, 0.4)' : 'none',
                           transition: 'all 0.2s',
-                          flexShrink: 0,
-                          userSelect: 'none',
                         }}
-                        title={isCorrect ? 'إجابة صحيحة' : 'اضغط لتحديد كإجابة صحيحة'}
                       >
-                        {OPTION_LETTERS[optIndex] ?? String(optIndex + 1)}
+                        {isCorrect && '✓'}
                       </div>
                       
                       <input
@@ -4166,54 +4316,9 @@ export function QuizEditorPage() {
         })()
       ))}
 
-      {/* Empty state - no questions */}
-      {!isMiniGameContent && contentType !== 'mix' && questions.length === 0 && (
-        <div style={{
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          gap: '1.25rem', padding: '3.5rem 2rem',
-          borderRadius: '16px', border: '2px dashed var(--border-strong)',
-          background: 'linear-gradient(135deg, rgba(59,130,246,0.03), rgba(124,58,237,0.03))',
-          marginBottom: '1.5rem', textAlign: 'center', direction: 'rtl',
-          animation: 'fadeIn 0.4s ease-out',
-        }}>
-          <div style={{ fontSize: '3rem', lineHeight: 1 }}>📝</div>
-          <div>
-            <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-bright)', marginBottom: '0.45rem' }}>
-              لا توجد أسئلة بعد
-            </div>
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-mid)', lineHeight: 1.6, maxWidth: '340px' }}>
-              أضف سؤالاً يدوياً أو اترك الذكاء الاصطناعي يتولى الأمر — توليد أسئلة رائعة في ثوانِ
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-            <button
-              type="button"
-              onClick={addQuestion}
-              style={{
-                padding: '0.65rem 1.4rem', borderRadius: '10px', border: 'none',
-                background: 'var(--text-bright)', color: '#fff', fontWeight: 700,
-                cursor: 'pointer', fontSize: '0.88rem',
-                display: 'flex', alignItems: 'center', gap: '0.4rem',
-              }}
-            >➕ إضافة سؤال</button>
-            <button
-              type="button"
-              onClick={() => { setAiAction('generate'); void incrementPlatformStat('aiGenerateClicks') }}
-              style={{
-                padding: '0.65rem 1.4rem', borderRadius: '10px',
-                border: '1px solid rgba(124,58,237,0.45)',
-                background: 'rgba(124,58,237,0.1)', color: '#a78bfa', fontWeight: 700,
-                cursor: 'pointer', fontSize: '0.88rem',
-                display: 'flex', alignItems: 'center', gap: '0.4rem',
-              }}
-            >✨ توليد بالذكاء الاصطناعي</button>
-          </div>
-        </div>
-      )}
-
       {!isMiniGameContent && contentType === 'mix' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '1rem', marginBottom: '3rem', animation: 'slideUp 0.4s ease-out' }}>
-          <div onClick={addQuestion} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.9rem', padding: '2rem', borderRadius: '16px', border: '2px dashed #3b82f6', backgroundColor: 'rgba(59,130,246,0.05)', cursor: 'pointer', transition: 'all 0.25s' }}
+          <div onClick={() => showAddQuestionDialog()} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.9rem', padding: '2rem', borderRadius: '16px', border: '2px dashed #3b82f6', backgroundColor: 'rgba(59,130,246,0.05)', cursor: 'pointer', transition: 'all 0.25s' }}
             onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#60a5fa'; e.currentTarget.style.backgroundColor = 'rgba(59,130,246,0.1)'; e.currentTarget.style.transform = 'scale(1.01)' }}
             onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#3b82f6'; e.currentTarget.style.backgroundColor = 'rgba(59,130,246,0.05)'; e.currentTarget.style.transform = 'scale(1)' }}>
             <div style={{ width: '46px', height: '46px', borderRadius: '50%', background: '#3b82f6', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem' }}>❓</div>
@@ -4222,7 +4327,7 @@ export function QuizEditorPage() {
               <div style={{ fontSize: '0.78rem', color: 'var(--text-mid)', marginTop: '0.2rem' }}>اختيار، مطابقة، ترتيب، كتابة...</div>
             </div>
           </div>
-          <div onClick={() => setShowAddBlockPicker(true)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.9rem', padding: '2rem', borderRadius: '16px', border: '2px dashed #7c3aed', backgroundColor: 'rgba(124,58,237,0.05)', cursor: 'pointer', transition: 'all 0.25s' }}
+          <div onClick={() => showAddQuestionDialog('minigames')} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.9rem', padding: '2rem', borderRadius: '16px', border: '2px dashed #7c3aed', backgroundColor: 'rgba(124,58,237,0.05)', cursor: 'pointer', transition: 'all 0.25s' }}
             onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#a78bfa'; e.currentTarget.style.backgroundColor = 'rgba(124,58,237,0.1)'; e.currentTarget.style.transform = 'scale(1.01)' }}
             onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#7c3aed'; e.currentTarget.style.backgroundColor = 'rgba(124,58,237,0.05)'; e.currentTarget.style.transform = 'scale(1)' }}>
             <div style={{ width: '46px', height: '46px', borderRadius: '50%', background: '#7c3aed', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem' }}>🎮</div>
@@ -4236,127 +4341,6 @@ export function QuizEditorPage() {
 
       {/* AI Generating Overlay */}
       {isGeneratingAi && <AiGeneratingOverlay mode={aiGeneratingMode} />}
-
-      {isNarrowScreen && mobileQuestionPicker && questions[mobileQuestionPicker.questionIndex] && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 26000,
-            background: 'rgba(2,6,23,0.86)',
-            backdropFilter: 'blur(8px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '0.8rem',
-            direction: 'rtl',
-          }}
-          onClick={() => setMobileQuestionPicker(null)}
-        >
-          <div
-            style={{
-              width: '100%',
-              maxWidth: '420px',
-              maxHeight: '80dvh',
-              background: 'var(--bg-surface)',
-              border: '1px solid var(--border-strong)',
-              borderRadius: '16px',
-              overflow: 'hidden',
-              display: 'flex',
-              flexDirection: 'column',
-              boxShadow: '0 20px 45px rgba(0,0,0,0.45)',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ padding: '0.9rem 1rem', borderBottom: '1px solid var(--border-strong)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-bright)' }}>
-                {mobileQuestionPicker.kind === 'type' ? 'اختر نوع السؤال' : 'اختر مدة السؤال'}
-              </div>
-              <button
-                type="button"
-                onClick={() => setMobileQuestionPicker(null)}
-                style={{ background: 'transparent', border: '1px solid var(--border-strong)', color: 'var(--text-mid)', borderRadius: '8px', width: '30px', height: '30px', cursor: 'pointer' }}
-              >✕</button>
-            </div>
-
-            <div style={{ overflowY: 'auto', padding: '0.4rem' }}>
-              {mobileQuestionPicker.kind === 'type'
-                ? questionTypeOptions.map((option) => {
-                  const selectedQuestion = questions[mobileQuestionPicker.questionIndex]
-                  const isActive = selectedQuestion.type === option.value
-                  const isPremium = isPremiumQuestionType(option.value)
-                  const isLocked = isPremium && !isSubscribed
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => {
-                        if (isLocked) {
-                          openUpgradeDialog('This question type is premium. Please upgrade your account to use it.')
-                          return
-                        }
-                        replaceQuestion(
-                          mobileQuestionPicker.questionIndex,
-                          coerceQuestionToType(selectedQuestion, option.value as QuestionType),
-                        )
-                        setMobileQuestionPicker(null)
-                      }}
-                      style={{
-                        width: '100%',
-                        textAlign: 'right',
-                        padding: '0.72rem 0.8rem',
-                        borderRadius: '10px',
-                        border: '1px solid ' + (isActive ? 'var(--text-bright)' : 'var(--border-strong)'),
-                        background: isActive ? 'rgba(59,130,246,0.14)' : 'var(--bg-deep)',
-                        color: isLocked ? 'var(--text-muted)' : 'var(--text)',
-                        fontSize: '0.86rem',
-                        fontWeight: isActive ? 800 : 600,
-                        cursor: isLocked ? 'not-allowed' : 'pointer',
-                        marginBottom: '0.4rem',
-                        opacity: isLocked ? 0.6 : 1,
-                      }}
-                    >
-                      {option.label}
-                    </button>
-                  )
-                })
-                : getQuestionTypeTimerPolicy(questions[mobileQuestionPicker.questionIndex].type).allowedDurations.map((seconds) => {
-                  const selectedQuestion = questions[mobileQuestionPicker.questionIndex]
-                  const isActive = Number(selectedQuestion.duration || 20) === Number(seconds)
-                  return (
-                    <button
-                      key={seconds}
-                      type="button"
-                      onClick={() => {
-                        updateQuestion(mobileQuestionPicker.questionIndex, { duration: Number(seconds) })
-                        setMobileQuestionPicker(null)
-                      }}
-                      style={{
-                        width: '100%',
-                        textAlign: 'right',
-                        padding: '0.72rem 0.8rem',
-                        borderRadius: '10px',
-                        border: '1px solid ' + (isActive ? 'var(--text-bright)' : 'var(--border-strong)'),
-                        background: isActive ? 'rgba(59,130,246,0.14)' : 'var(--bg-deep)',
-                        color: 'var(--text)',
-                        fontSize: '0.9rem',
-                        fontWeight: isActive ? 800 : 600,
-                        cursor: 'pointer',
-                        marginBottom: '0.4rem',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                      }}
-                    >
-                      <span>ثانية {seconds}</span>
-                      {isActive ? <span style={{ color: 'var(--text-bright)' }}>✓</span> : <span />}
-                    </button>
-                  )
-                })}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Global AI Selection Overlay */}
       {showAiSelectionOverlay && aiConflictData && (
@@ -4528,7 +4512,7 @@ export function QuizEditorPage() {
           marginBottom: '3rem',
         }}>
           <div 
-            onClick={addQuestion}
+            onClick={() => showAddQuestionDialog()}
             style={{
               display: 'flex',
               flexDirection: 'column',
@@ -4625,7 +4609,7 @@ export function QuizEditorPage() {
         </div>
       ) : contentType === 'mix' ? null : (
         <div 
-          onClick={addQuestion}
+          onClick={() => showAddQuestionDialog()}
           style={{
             display: 'flex',
             flexDirection: 'column',

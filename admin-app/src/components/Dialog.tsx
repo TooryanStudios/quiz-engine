@@ -50,14 +50,14 @@ export function Dialog() {
         {/* Dialog Box */}
         <div
           style={{
-            backgroundColor: '#1a1a1a',
-            borderRadius: '8px',
-            border: '1px solid #333',
-            boxShadow: '0 10px 40px rgba(0, 0, 0, 0.8)',
-            minWidth: '300px',
+            backgroundColor: 'var(--bg-surface)',
+            borderRadius: '16px',
+            border: '1px solid var(--border-strong)',
+            boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)',
+            minWidth: '320px',
             maxWidth: '500px',
             padding: '1.5rem',
-            animation: 'slideUp 0.3s ease-out',
+            animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
           }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -67,23 +67,24 @@ export function Dialog() {
               marginTop: 0,
               marginBottom: '1rem',
               fontSize: '1.25em',
-              color: '#fff',
+              color: 'var(--text-bright)',
+              fontWeight: 800,
             }}
           >
             {dialog.title}
           </h2>
 
           {/* Message */}
-          <p
+          <div
             style={{
               marginTop: 0,
               marginBottom: '1.5rem',
               lineHeight: '1.5',
-              color: '#ccc',
+              color: 'var(--text-mid)',
             }}
           >
             {dialog.message}
-          </p>
+          </div>
 
           {/* Actions */}
           <div
@@ -97,18 +98,19 @@ export function Dialog() {
               onClick={handleCancel}
               disabled={loading}
               style={{
-                padding: '0.5rem 1rem',
-                borderRadius: '4px',
-                border: 'none',
-                backgroundColor: '#333',
-                color: '#fff',
+                padding: '0.6rem 1.2rem',
+                borderRadius: '10px',
+                border: '1px solid var(--border-strong)',
+                backgroundColor: 'rgba(255,255,255,0.05)',
+                color: 'var(--text)',
                 cursor: loading ? 'not-allowed' : 'pointer',
                 opacity: loading ? 0.6 : 1,
                 fontSize: '0.95em',
-                transition: 'background-color 0.2s',
+                fontWeight: 600,
+                transition: 'all 0.2s',
               }}
-              onMouseEnter={(e) => !loading && (e.currentTarget.style.backgroundColor = '#444')}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#333')}
+              onMouseEnter={(e) => !loading && (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)')}
             >
               {dialog.cancelText || 'إلغاء'}
             </button>
@@ -116,20 +118,22 @@ export function Dialog() {
               onClick={handleConfirm}
               disabled={loading}
               style={{
-                padding: '0.5rem 1rem',
-                borderRadius: '4px',
+                padding: '0.6rem 1.2rem',
+                borderRadius: '10px',
                 border: 'none',
-                backgroundColor: dialog.isDangerous ? '#a32525' : '#1a5a8c',
+                backgroundColor: dialog.isDangerous ? '#ef4444' : 'var(--accent)',
                 color: '#fff',
                 cursor: loading ? 'not-allowed' : 'pointer',
                 opacity: loading ? 0.6 : 1,
                 fontSize: '0.95em',
-                transition: 'background-color 0.2s',
+                fontWeight: 700,
+                transition: 'all 0.2s',
+                boxShadow: dialog.isDangerous ? '0 4px 12px rgba(239, 68, 68, 0.2)' : '0 4px 12px rgba(124, 58, 237, 0.2)',
               }}
               onMouseEnter={(e) =>
-                !loading && (e.currentTarget.style.backgroundColor = dialog.isDangerous ? '#c73535' : '#2a7aac')
+                !loading && (e.currentTarget.style.transform = 'translateY(-1px)')
               }
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = dialog.isDangerous ? '#a32525' : '#1a5a8c')}
+              onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateY(0)')}
             >
               {loading ? '⏳ ...' : dialog.confirmText || 'موافق'}
             </button>
