@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { auth } from '../lib/firebase'
-import { incrementShareCount, subscribeMyQuizzes, updateQuiz } from '../lib/quizRepo'
+import { incrementShareCount, listPublicQuizzes, subscribeMyQuizzes, updateQuiz } from '../lib/quizRepo'
 import { incrementPlatformStat } from '../lib/adminRepo'
 import { guardedLaunchGame } from '../lib/gameLaunch'
 import { buildHostGameUrl } from '../lib/gameModeUrl'
@@ -77,11 +77,23 @@ export function DashboardPage() {
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const visibleCount = 6
   const menuRef = useRef<HTMLDivElement>(null)
+  const [publicLibrary, setPublicLibrary] = useState<(QuizDoc & { id: string })[]>([])
+  const [publicLoading, setPublicLoading] = useState(true)
   const { showToast } = useToast()
   const { show: showDialog } = useDialog()
   const { isSubscribed } = useSubscription()
   const appTheme = useTheme()
   const dark = appTheme === 'dark'
+
+  useEffect(() => {
+    listPublicQuizzes()
+      .then((list) => {
+        const toMs = (ts: any) => ts?.toMillis?.() ?? (ts?.seconds ? ts.seconds * 1000 : 0)
+        setPublicLibrary([...list].sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt)).slice(0, 6))
+      })
+      .catch(() => {})
+      .finally(() => setPublicLoading(false))
+  }, [])
 
   useEffect(() => {
     const uid = auth.currentUser?.uid
@@ -274,6 +286,86 @@ export function DashboardPage() {
             <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '3px', background: sc.accent, opacity: 0.6 }} />
           </div>
         ))}
+      </div>
+
+      {/* ── Public Library Preview ── */}
+      <div style={{ marginBottom: '2rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: 'var(--text-bright)' }}>📚 مكتبة الاختبارات</h3>
+            <p style={{ margin: '0.2rem 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>اختبارات عامة منشورة للجميع</p>
+          </div>
+          <Link to="/packs" style={{ textDecoration: 'none' }}>
+            <button style={{
+              background: 'linear-gradient(135deg, #2563eb, #7c3aed)',
+              border: 'none', color: '#fff',
+              padding: '0.45rem 1rem', borderRadius: '8px',
+              fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}>استعراض الكل ›</button>
+          </Link>
+        </div>
+
+        {publicLoading ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '0.75rem' }}>
+            {[1,2,3,4,5,6].map(i => (
+              <div key={i} style={{ height: 120, borderRadius: 12, background: 'linear-gradient(90deg, var(--bg-deep) 25%, var(--border) 50%, var(--bg-deep) 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.5s infinite' }} />
+            ))}
+          </div>
+        ) : publicLibrary.length === 0 ? null : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '0.75rem' }}>
+            {publicLibrary.map((q) => {
+              const cover = (q as any).coverImage || getCoverImage((q as any).questions ?? [])
+              const emoji = pickEmoji((q as any).tags ?? [], q.title)
+              return (
+                <div key={(q as any).id} className="pub-card" style={{
+                  background: 'var(--bg-surface)', border: '1px solid var(--border)',
+                  borderRadius: '12px', overflow: 'hidden',
+                  transition: 'border-color 0.15s, transform 0.15s',
+                }}
+                onMouseEnter={(e) => { const el = e.currentTarget as HTMLElement; el.style.borderColor = 'var(--accent, #2563eb)'; el.style.transform = 'translateY(-2px)' }}
+                onMouseLeave={(e) => { const el = e.currentTarget as HTMLElement; el.style.borderColor = 'var(--border)'; el.style.transform = 'translateY(0)' }}
+                >
+                  {/* Thumbnail with play button */}
+                  <div style={{ height: 90, position: 'relative', background: cover ? `url(${cover}) center/cover no-repeat` : 'linear-gradient(135deg, #1e40af33, #7c3aed33)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem' }}>
+                    {!cover && emoji}
+                    {/* Play button overlay */}
+                    <div style={{
+                      position: 'absolute', inset: 0,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      background: 'rgba(0,0,0,0.18)',
+                    }}
+                    className="pub-card-overlay"
+                    >
+                      <div className="pub-play-btn" style={{
+                        width: 46, height: 46, borderRadius: '50%',
+                        background: '#16a34a',
+                        border: '2.5px solid #fff',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: '1.25rem',
+                        paddingLeft: '3px',
+                        color: '#fff',
+                        transition: 'transform 0.18s',
+                        cursor: 'pointer',
+                      }}
+                      onClick={() => handleLaunchGame(q as QuizItem)}
+                      >▶</div>
+                    </div>
+                  </div>
+                  {/* Info — clicking navigates to packs */}
+                  <Link to="/packs" style={{ textDecoration: 'none' }}>
+                    <div style={{ padding: '0.5rem 0.6rem' }}>
+                      <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-bright)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{q.title}</div>
+                      <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        {(q as any).questions?.length ?? 0} أسئلة
+                      </div>
+                    </div>
+                  </Link>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* ── Quick Actions + Recently Updated ── */}
@@ -736,6 +828,8 @@ export function DashboardPage() {
           0% { background-position: -200% 0; }
           100% { background-position: 200% 0; }
         }
+        .pub-card:hover .pub-play-btn { transform: scale(1.18); }
+
       `}</style>
     </div>
   )

@@ -33,11 +33,11 @@ if (!MASTER_EMAIL || !MASTER_PATH) {
 }
 
 const NAV = [
-  { to: '/dashboard',   icon: '🏠', label: 'Dashboard', end: true },
-  { to: '/editor',      icon: '✏️',  label: 'Quiz Editor' },
-  { to: '/my-quizzes',  icon: '📚', label: 'My Quizzes' },
-  { to: '/packs',       icon: '📦', label: 'Packs' },
-  { to: '/billing',     icon: '💳', label: 'Billing' },
+  { to: '/dashboard',   icon: '🏠', label: 'الرئيسية', end: true },
+  { to: '/editor',      icon: '✏️',  label: 'محرر الاختبارات' },
+  { to: '/my-quizzes',  icon: '📚', label: 'اختباراتي' },
+  { to: '/packs',       icon: '📦', label: 'المكتبة' },
+  { to: '/billing',     icon: '💳', label: 'الاشتراك' },
 ]
 
 function RequireAuth({ user, children }: { user: User | null; children: ReactElement }) {
@@ -67,6 +67,7 @@ function App() {
   const handleSignOut = useCallback(() => {
     setSigningOut(true)
     markSignOut()
+    localStorage.removeItem('qyan:session')
     void signOut(auth)
   }, [])
 
@@ -80,8 +81,29 @@ function App() {
   }, [theme])
 
   useEffect(() => {
-    return onAuthStateChanged(auth, (u) => {
+    // Safety timeout: if Firebase auth hasn't resolved in 4 s, treat as
+    // unauthenticated so the user lands on /login instead of staring at a spinner.
+    const authTimeout = setTimeout(() => {
+      setUser((prev) => {
+        if (prev === undefined) {
+          navigate('/login', { replace: true, state: { signedOut: consumeSignOut() } })
+          return null
+        }
+        return prev
+      })
+    }, 4000)
+
+    const unsub = onAuthStateChanged(auth, (u) => {
+      clearTimeout(authTimeout)
       setUser(u)
+
+      // Persist a cheap hint so future app loads know whether to show the
+      // spinner (likely returning session) or skip straight to login.
+      if (u) {
+        localStorage.setItem('qyan:session', '1')
+      } else {
+        localStorage.removeItem('qyan:session')
+      }
 
       // Keep initial navigation fast; never block UI on network calls.
       if (u && window.location.pathname === '/login') {
@@ -128,6 +150,7 @@ function App() {
         }
       }
     })
+    return () => { clearTimeout(authTimeout); unsub() }
   }, [navigate])
 
   // Real-time blocked-user enforcement: sign out immediately if status becomes 'blocked'
@@ -158,8 +181,11 @@ function App() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
+  // No session hint → skip spinner and go straight to login for first-time / logged-out visitors.
+  const hasSessionHint = localStorage.getItem('qyan:session') === '1'
+
   if (user === undefined) {
-    if (isLoginPage) {
+    if (isLoginPage || !hasSessionHint) {
       return (
         <ToastProvider>
           <DialogProvider>
@@ -302,7 +328,7 @@ function App() {
                         className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
                       >
                         <span className="nav-icon">🧩</span>
-                        <span className="nav-label">Game Modes</span>
+                        <span className="nav-label">أوضاع اللعب</span>
                       </NavLink>
                       <NavLink
                         to="/voice-lab"
@@ -310,14 +336,14 @@ function App() {
                         style={{ marginTop: '1rem', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}
                       >
                         <span className="nav-icon">🎙️</span>
-                        <span className="nav-label">Voice Lab</span>
+                        <span className="nav-label">مختبر الصوت</span>
                       </NavLink>
                       <NavLink
                         to="/ai-lab"
                         className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
                       >
                         <span className="nav-icon">🤖</span>
-                        <span className="nav-label">AI Lab</span>
+                        <span className="nav-label">مختبر الذكاء</span>
                       </NavLink>
                       <NavLink
                         to={`${MASTER_PATH}/dashboard`}
@@ -326,7 +352,7 @@ function App() {
                         rel="noopener noreferrer"
                       >
                         <span className="nav-icon">👑</span>
-                        <span className="nav-label">Master Admin ↗</span>
+                        <span className="nav-label">الإدارة ↗</span>
                       </NavLink>
                     </>
                   )}
@@ -417,21 +443,21 @@ function App() {
                           className={({ isActive }) => isActive ? 'active' : ''}
                           style={{ borderTop: '1px solid var(--border)', marginTop: '0.5rem', paddingTop: '0.5rem' }}>
                           <span style={{ marginRight: '0.6rem' }}>🧩</span>
-                          Game Modes
+                          أوضاع اللعب
                         </NavLink>
                         <NavLink
                           to="/voice-lab"
                           className={({ isActive }) => isActive ? 'active' : ''}
                           style={{ marginTop: '0.5rem' }}>
                           <span style={{ marginRight: '0.6rem' }}>🎙️</span>
-                          Voice Lab
+                          مختبر الصوت
                         </NavLink>
                         <NavLink
                           to="/ai-lab"
                           className={({ isActive }) => isActive ? 'active' : ''}
                           style={{ marginTop: '0.5rem' }}>
                           <span style={{ marginRight: '0.6rem' }}>🤖</span>
-                          AI Lab
+                          مختبر الذكاء
                         </NavLink>
                         <NavLink
                           to={`${MASTER_PATH}/dashboard`}
@@ -439,7 +465,7 @@ function App() {
                           target="_blank"
                           rel="noopener noreferrer">
                           <span style={{ marginRight: '0.6rem' }}>👑</span>
-                          Master Admin ↗
+                          الإدارة ↗
                         </NavLink>
                       </>
                     )}
