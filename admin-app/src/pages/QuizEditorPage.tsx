@@ -2494,7 +2494,7 @@ export function QuizEditorPage() {
         padding: isNarrowScreen ? '0.5rem 0.6rem' : '0.55rem 0.65rem',
         marginBottom: '1rem',
         boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
-        margin: isNarrowScreen ? '0 -1rem 1rem -1rem' : '0 0 1rem 0',
+        margin: isNarrowScreen ? '-12px -12px 1rem -12px' : '0 0 1rem 0',
       }}>
         <div style={{ display: 'flex', gap: isNarrowScreen ? '0.3rem' : '0.45rem', alignItems: 'center', flexWrap: 'nowrap' }}>
 
