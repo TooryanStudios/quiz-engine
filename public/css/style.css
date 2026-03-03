@@ -218,7 +218,7 @@ body.question-only .host-controls {
   min-height: 100dvh; /* Use dynamic viewport height */
   height: 100dvh;
   align-items: center;
-  justify-content: flex-start; /* Start from top to allow scrolling */
+  justify-content: safe center; /* Center when content fits; fall back to flex-start on overflow so content stays reachable */
   padding: 10px;
   box-sizing: border-box;
   overflow-y: auto; /* Allow scrolling if content overflows */
