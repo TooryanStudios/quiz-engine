@@ -313,7 +313,8 @@ export function QuizEditorPage() {
   const [quizId, setQuizId] = useState<string | null>(routeId ?? null)
   const [title, setTitle] = useState('')
   const [slug, setSlug] = useState('')
-  const [visibility, setVisibility] = useState<'public' | 'private'>('public')
+  const [visibility, setVisibility] = useState<'public' | 'private'>('private')
+  const [approvalStatus, setApprovalStatus] = useState<'pending' | 'approved' | 'rejected' | undefined>(undefined)
   const [gameModeId, setGameModeId] = useState<string>('')
   const [miniGameConfig, setMiniGameConfig] = useState<Record<string, unknown>>({})
   const [challengePreset, setChallengePreset] = useState<ChallengePreset>('classic')
@@ -322,7 +323,7 @@ export function QuizEditorPage() {
   const [showMetadataDialog, setShowMetadataDialog] = useState(false)
   const [tempTitle, setTempTitle] = useState('')
   const [tempSlug, setTempSlug] = useState('')
-  const [tempVisibility, setTempVisibility] = useState<'public' | 'private'>('public')
+  const [tempVisibility, setTempVisibility] = useState<'public' | 'private'>('private')
   const [tempGameModeId, setTempGameModeId] = useState<string>('')
   const [tempChallenge, setTempChallenge] = useState<ChallengePreset>('classic')
   const [tempEnableScholarRole, setTempEnableScholarRole] = useState(false)
@@ -710,6 +711,7 @@ export function QuizEditorPage() {
         setTitle(data.title)
         setSlug(data.slug)
         setVisibility(data.visibility)
+        setApprovalStatus(data.approvalStatus)
         setGameModeId(isMiniGameContent ? (data.gameModeId ?? '') : '')
         setMiniGameConfig((data.miniGameConfig && typeof data.miniGameConfig === 'object') ? data.miniGameConfig as Record<string, unknown> : {})
         setChallengePreset(data.challengePreset || 'classic')
@@ -1441,11 +1443,21 @@ export function QuizEditorPage() {
       willIncludeGameMode: (isMiniGameContent || !!gameModeId),
       quizId,
     })
+    const masterEmail = import.meta.env.VITE_MASTER_EMAIL as string | undefined
+    const isMasterAdmin = !!masterEmail && auth.currentUser?.email === masterEmail
+    // Non-admins requesting public → set pending approval; master admin can approve directly
+    const effectiveVisibility = (!isMasterAdmin && visibility === 'public') ? 'private' : visibility
+    const effectiveApprovalStatus: 'pending' | 'approved' | 'rejected' | undefined =
+      !isMasterAdmin && visibility === 'public' ? 'pending'
+      : isMasterAdmin && visibility === 'public' ? 'approved'
+      : visibility === 'private' && approvalStatus !== 'rejected' ? undefined
+      : approvalStatus
     const payload: QuizDoc = {
       ownerId,
       title,
       slug,
-      visibility,
+      visibility: effectiveVisibility,
+      approvalStatus: effectiveApprovalStatus,
       contentType: isMiniGameContent ? 'mini-game' : contentType,
       priceTier: requiresSubscription ? 'starter' : 'free',
       gameModeId: (isMiniGameContent || !!gameModeId) ? (gameModeId || undefined) : undefined,
@@ -1955,9 +1967,19 @@ export function QuizEditorPage() {
                       fontSize: '1em',
                     }}
                   >
-                    <option value="public">عام</option>
-                    <option value="private">خاص</option>
+                    <option value="public">طلب نشر للعموم 🕐</option>
+                    <option value="private">خاص 🔒</option>
                   </select>
+                  {tempVisibility === 'public' && approvalStatus !== 'approved' && (
+                    <p style={{ margin: '0.4rem 0 0', fontSize: '0.75em', color: 'var(--text-muted)' }}>
+                      سيتم مراجعة الاختبار من المشرف قبل نشره للعموم.
+                    </p>
+                  )}
+                  {approvalStatus === 'rejected' && tempVisibility !== 'public' && (
+                    <p style={{ margin: '0.4rem 0 0', fontSize: '0.75em', color: '#ef4444' }}>
+                      ❌ تم رفض طلب النشر السابق.
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -2432,7 +2454,7 @@ export function QuizEditorPage() {
               }}
               onClick={() => openMetadataDialog()}
             >
-              📊 {pureQuestionsCount} سؤال {miniGameBlocksCount > 0 ? `• 🎮 ${miniGameBlocksCount} ميني جيم` : ''} • {visibility === 'public' ? '🌐 عام' : '🔒 خاص'}
+              📊 {pureQuestionsCount} سؤال {miniGameBlocksCount > 0 ? `• 🎮 ${miniGameBlocksCount} ميني جيم` : ''} • {visibility === 'public' ? '🌐 عام' : approvalStatus === 'pending' ? '🕐 في انتظار الموافقة' : approvalStatus === 'rejected' ? '❌ مرفوض' : '🔒 خاص'}
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', flexWrap: 'wrap', justifyContent: isNarrowScreen ? 'center' : 'flex-end' }}>

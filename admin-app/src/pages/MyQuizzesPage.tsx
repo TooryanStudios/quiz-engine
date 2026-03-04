@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { auth } from '../lib/firebase'
-import { incrementQuizPlayCount, incrementShareCount, subscribeMyQuizzes, updateQuiz } from '../lib/quizRepo'
+import { cancelPublishRequest, incrementQuizPlayCount, incrementShareCount, requestPublicVisibility, subscribeMyQuizzes, updateQuiz } from '../lib/quizRepo'
 import { incrementPlatformStat } from '../lib/adminRepo'
 import { guardedLaunchGame } from '../lib/gameLaunch'
 import { buildHostGameUrl } from '../lib/gameModeUrl'
@@ -94,17 +94,42 @@ export function MyQuizzesPage() {
 
   async function handleVisibilityChange(quiz: QuizItem, newVis: 'public' | 'private') {
     setMenuOpenId(null)
-    if (newVis === quiz.visibility) return
+    const masterEmail = import.meta.env.VITE_MASTER_EMAIL as string | undefined
+    const isMasterAdmin = !!masterEmail && auth.currentUser?.email === masterEmail
+
     if (newVis === 'private') {
-      const ok = window.confirm(`Make "${quiz.title}" private?\n\nIt will no longer appear in the Public Library.`)
+      if (quiz.visibility === 'private' && !quiz.approvalStatus) return
+      const ok = quiz.approvalStatus === 'pending'
+        ? window.confirm(`إلغاء طلب النشر لـ "${quiz.title}"؟`)
+        : window.confirm(`Make "${quiz.title}" private?\n\nIt will no longer appear in the Public Library.`)
       if (!ok) return
+      setUpdatingId(quiz.id)
+      try {
+        await cancelPublishRequest(quiz.id)
+        setQuizzes((prev) => prev.map((q) => q.id === quiz.id ? { ...q, visibility: 'private', approvalStatus: undefined } : q))
+      } catch {
+        alert('Failed to update. Please try again.')
+      } finally {
+        setUpdatingId(null)
+      }
+      return
     }
+
+    if (quiz.approvalStatus === 'pending') return
+    if (quiz.visibility === 'public') return
+
     setUpdatingId(quiz.id)
     try {
-      await updateQuiz(quiz.id, { visibility: newVis })
-      setQuizzes((prev) => prev.map((q) => q.id === quiz.id ? { ...q, visibility: newVis } : q))
+      if (isMasterAdmin) {
+        await updateQuiz(quiz.id, { visibility: 'public', approvalStatus: 'approved' })
+        setQuizzes((prev) => prev.map((q) => q.id === quiz.id ? { ...q, visibility: 'public', approvalStatus: 'approved' } : q))
+      } else {
+        await requestPublicVisibility(quiz.id)
+        setQuizzes((prev) => prev.map((q) => q.id === quiz.id ? { ...q, approvalStatus: 'pending' } : q))
+        showToast({ message: '🕐 تم إرسال طلب النشر، سينظر المشرف فيه قريباً.', type: 'info' })
+      }
     } catch {
-      alert('Failed to update visibility. Please try again.')
+      alert('Failed to submit request. Please try again.')
     } finally {
       setUpdatingId(null)
     }
@@ -477,17 +502,21 @@ export function MyQuizzesPage() {
 
                     {/* Visibility toggle */}
                     <button
-                      title={q.visibility === 'public' ? 'Make Private' : 'Make Public'}
+                      title={
+                        q.visibility === 'public' ? 'Make Private'
+                        : q.approvalStatus === 'pending' ? 'في انتظار الموافقة - اضغط للإلغاء'
+                        : 'Request to Publish'
+                      }
                       disabled={updatingId === q.id}
                       onClick={(e) => {
                         e.stopPropagation()
-                        void handleVisibilityChange(q, q.visibility === 'public' ? 'private' : 'public')
+                        void handleVisibilityChange(q, q.visibility === 'public' ? 'private' : q.approvalStatus === 'pending' ? 'private' : 'public')
                       }}
                       style={{ ...aBtnStyle, width: 'auto', flex: 'none', padding: '0.38rem 0.55rem', opacity: updatingId === q.id ? 0.5 : 1 }}
                       onMouseEnter={(e) => Object.assign(e.currentTarget.style, { background: dark ? '#273549' : '#e2e8f0', color: dark ? '#e2e8f0' : '#0f172a' })}
                       onMouseLeave={(e) => Object.assign(e.currentTarget.style, { background: dark ? '#1e293b' : '#f1f5f9', color: dark ? '#94a3b8' : '#475569' })}
                     >
-                      {q.visibility === 'public' ? '🔒' : '🌐'}
+                      {q.visibility === 'public' ? '🔒' : q.approvalStatus === 'pending' ? '🕐' : '🌐'}
                     </button>
                   </div>
                 </div>

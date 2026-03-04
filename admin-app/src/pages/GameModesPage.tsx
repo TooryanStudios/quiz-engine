@@ -189,7 +189,7 @@ export function GameModesPage() {
       title: `${loadedGame.name} Test Quiz`,
       slug,
       description: `Dedicated test quiz for ${loadedGame.name}`,
-      visibility: 'public', // Must be public so play.qyan.app can read it via Firestore REST API
+      visibility: 'private', // Firestore rules allow read:true so game server reads all quizzes regardless of visibility
       challengePreset: 'classic',
       randomizeQuestions: false,
       enableScholarRole: false,

@@ -2,6 +2,7 @@ import {
   addDoc,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -93,6 +94,23 @@ export async function deleteQuiz(id: string) {
 export async function updateQuiz(id: string, payload: Partial<QuizDoc>) {
   await updateDoc(doc(db, 'quizzes', id), {
     ...deepClean(payload),
+    updatedAt: serverTimestamp(),
+  })
+}
+
+/** Non-admin: submit a publish request. Sets approvalStatus='pending', keeps visibility='private'. */
+export async function requestPublicVisibility(id: string) {
+  await updateDoc(doc(db, 'quizzes', id), {
+    approvalStatus: 'pending',
+    updatedAt: serverTimestamp(),
+  })
+}
+
+/** Cancel a pending publish request — removes the approvalStatus field entirely. */
+export async function cancelPublishRequest(id: string) {
+  await updateDoc(doc(db, 'quizzes', id), {
+    approvalStatus: deleteField(),
+    visibility: 'private',
     updatedAt: serverTimestamp(),
   })
 }

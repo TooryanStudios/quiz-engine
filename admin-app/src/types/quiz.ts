@@ -69,6 +69,9 @@ export interface QuizDoc {
   // Rating (future)
   rating?: { total: number; count: number }
 
+  // Approval workflow
+  approvalStatus?: 'pending' | 'approved' | 'rejected'
+
   // Metadata/Stats
   createdAt?: any
   updatedAt?: any

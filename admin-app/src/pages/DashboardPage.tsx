@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { auth } from '../lib/firebase'
-import { incrementQuizPlayCount, incrementShareCount, listPublicQuizzes, subscribeMyQuizzes, updateQuiz } from '../lib/quizRepo'
+import { cancelPublishRequest, incrementQuizPlayCount, incrementShareCount, listPublicQuizzes, requestPublicVisibility, subscribeMyQuizzes, updateQuiz } from '../lib/quizRepo'
 import { incrementPlatformStat } from '../lib/adminRepo'
 import { guardedLaunchGame } from '../lib/gameLaunch'
 import { buildHostGameUrl } from '../lib/gameModeUrl'
@@ -126,21 +126,44 @@ export function DashboardPage() {
 
   async function handleVisibilityChange(quiz: QuizItem, newVis: 'public' | 'private') {
     setMenuOpenId(null)
-    if (newVis === quiz.visibility) return
+    const masterEmail = import.meta.env.VITE_MASTER_EMAIL as string | undefined
+    const isMasterAdmin = !!masterEmail && auth.currentUser?.email === masterEmail
+
     if (newVis === 'private') {
-      const ok = window.confirm(
-        `Make "${quiz.title}" private?\n\nIt will no longer appear in the Public Library and no one else can see it.`
-      )
+      // If already private with no pending request, nothing to do
+      if (quiz.visibility === 'private' && !quiz.approvalStatus) return
+      const ok = quiz.approvalStatus === 'pending'
+        ? window.confirm(`إلغاء طلب النشر لـ "${quiz.title}"؟`)
+        : window.confirm(`Make "${quiz.title}" private?\n\nIt will no longer appear in the Public Library.`)
       if (!ok) return
+      setUpdatingId(quiz.id)
+      try {
+        await cancelPublishRequest(quiz.id)
+        setQuizzes((prev) => prev.map((q) => q.id === quiz.id ? { ...q, visibility: 'private', approvalStatus: undefined } : q))
+      } catch {
+        alert('Failed to update. Please try again.')
+      } finally {
+        setUpdatingId(null)
+      }
+      return
     }
+
+    // Requesting public
+    if (quiz.approvalStatus === 'pending') return // already pending, ignore
+    if (quiz.visibility === 'public') return // already public
+
     setUpdatingId(quiz.id)
     try {
-      await updateQuiz(quiz.id, { visibility: newVis })
-      setQuizzes((prev) =>
-        prev.map((q) => q.id === quiz.id ? { ...q, visibility: newVis } : q)
-      )
+      if (isMasterAdmin) {
+        await updateQuiz(quiz.id, { visibility: 'public', approvalStatus: 'approved' })
+        setQuizzes((prev) => prev.map((q) => q.id === quiz.id ? { ...q, visibility: 'public', approvalStatus: 'approved' } : q))
+      } else {
+        await requestPublicVisibility(quiz.id)
+        setQuizzes((prev) => prev.map((q) => q.id === quiz.id ? { ...q, approvalStatus: 'pending' } : q))
+        showToast({ message: '🕐 تم إرسال طلب النشر، سينظر المشرف فيه قريباً.', type: 'info' })
+      }
     } catch {
-      alert('Failed to update visibility. Please try again.')
+      alert('Failed to submit request. Please try again.')
     } finally {
       setUpdatingId(null)
     }
@@ -733,25 +756,32 @@ export function DashboardPage() {
                         <div style={{ padding: '6px 10px', fontSize: '0.62rem', color: dark ? '#64748b' : '#94a3b8', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
                           Visibility
                         </div>
-                        {(['public', 'private'] as const).map((v) => (
-                          <button
-                            key={v}
-                            onClick={(e) => { e.stopPropagation(); handleVisibilityChange(q, v) }}
-                            style={{
-                              width: '100%', display: 'flex', alignItems: 'center', gap: '0.5rem',
-                              padding: '8px 12px', background: q.visibility === v ? (dark ? '#0f172a' : '#f1f5f9') : 'transparent',
-                              border: 'none', color: q.visibility === v ? (dark ? '#f1f5f9' : '#0f172a') : (dark ? '#94a3b8' : '#64748b'),
-                              fontSize: '0.8rem', cursor: 'pointer', textAlign: 'left',
-                              transition: 'background 0.15s',
-                            }}
-                            onMouseEnter={(e) => { if (q.visibility !== v) e.currentTarget.style.background = dark ? '#273549' : '#f8fafc' }}
-                            onMouseLeave={(e) => { if (q.visibility !== v) e.currentTarget.style.background = 'transparent' }}
-                          >
-                            <span>{v === 'public' ? '🌐' : '🔒'}</span>
-                            <span style={{ flex: 1 }}>{v === 'public' ? 'عام' : 'خاص'}</span>
-                            {q.visibility === v && <span style={{ fontSize: '0.7rem', color: '#2563eb' }}>✓</span>}
-                          </button>
-                        ))}
+                        {(['public', 'private'] as const).map((v) => {
+                          const isActive = v === 'public'
+                            ? (q.visibility === 'public' || q.approvalStatus === 'pending')
+                            : (q.visibility === 'private' && !q.approvalStatus)
+                          const label = v === 'public'
+                            ? (q.approvalStatus === 'pending' ? 'في الانتظار 🕐' : q.visibility === 'public' ? 'عام' : 'طلب نشر 🌐')
+                            : 'خاص 🔒'
+                          return (
+                            <button
+                              key={v}
+                              onClick={(e) => { e.stopPropagation(); handleVisibilityChange(q, v) }}
+                              style={{
+                                width: '100%', display: 'flex', alignItems: 'center', gap: '0.5rem',
+                                padding: '8px 12px', background: isActive ? (dark ? '#0f172a' : '#f1f5f9') : 'transparent',
+                                border: 'none', color: isActive ? (dark ? '#f1f5f9' : '#0f172a') : (dark ? '#94a3b8' : '#64748b'),
+                                fontSize: '0.8rem', cursor: 'pointer', textAlign: 'left',
+                                transition: 'background 0.15s',
+                              }}
+                              onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = dark ? '#273549' : '#f8fafc' }}
+                              onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = 'transparent' }}
+                            >
+                              <span style={{ flex: 1 }}>{label}</span>
+                              {isActive && <span style={{ fontSize: '0.7rem', color: '#2563eb' }}>✓</span>}
+                            </button>
+                          )
+                        })}
                       </div>
                     )}
                 </div>

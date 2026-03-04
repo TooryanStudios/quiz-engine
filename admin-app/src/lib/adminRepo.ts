@@ -470,6 +470,18 @@ export async function getTotalUsersCount(): Promise<number> {
   }
 }
 
+// ── Quiz approval workflow ─────────────────────────────────────────────────────
 
+export async function approveQuiz(id: string): Promise<void> {
+  await updateDoc(doc(db, 'quizzes', id), {
+    visibility: 'public',
+    approvalStatus: 'approved',
+  })
+}
 
-
+export async function rejectQuiz(id: string): Promise<void> {
+  await updateDoc(doc(db, 'quizzes', id), {
+    visibility: 'private',
+    approvalStatus: 'rejected',
+  })
+}
