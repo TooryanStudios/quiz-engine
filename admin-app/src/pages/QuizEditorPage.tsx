@@ -1114,6 +1114,13 @@ export function QuizEditorPage() {
       return
     }
 
+    // Unsplash search result pages are not direct image links
+    if (candidate.startsWith('https://unsplash.com/s/photos/')) {
+        setCoverPreviewChecking(false)
+        setCoverPreviewError('هذا ليس رابط صورة مباشر. الرجاء نسخ عنوان الصورة الفعلي.')
+        return
+    }
+
     let cancelled = false
     setCoverPreviewChecking(true)
     setCoverPreviewError('')

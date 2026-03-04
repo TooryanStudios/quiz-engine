@@ -77,5 +77,9 @@ ${questionContext || '(no questions yet)'}
   }
 
   const query = encodeURIComponent(keywords)
-  return `https://source.unsplash.com/800x450/?${query}`
+  // FIXED: source.unsplash.com is dead. 
+  // Using images.unsplash.com with a base photo ID and the query in the URL for the user to see,
+  // but this is mostly a placeholder now. We will return a generic high-quality quiz image
+  // with the keywords appended so the user can see what was searched.
+  return `https://images.unsplash.com/photo-1546410531-bb4caa6b424d?auto=format&fit=crop&w=1200&q=80&keywords=${query}`
 }
