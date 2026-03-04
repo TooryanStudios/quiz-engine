@@ -47,8 +47,24 @@ ${questionContext || '(no questions yet)'}
 `
 
   const genAI = new GoogleGenerativeAI(apiKey)
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
-  const result = await model.generateContent(prompt)
+  const modelCandidates = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-1.5-flash']
+  let result: Awaited<ReturnType<ReturnType<GoogleGenerativeAI['getGenerativeModel']>['generateContent']>> | null = null
+  let lastError: unknown = null
+
+  for (const modelName of modelCandidates) {
+    try {
+      const model = genAI.getGenerativeModel({ model: modelName })
+      result = await model.generateContent(prompt)
+      break
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  if (!result) {
+    throw lastError || new Error('No supported Gemini model available for cover generation')
+  }
+
   let text = result.response.text().trim()
   text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
 
