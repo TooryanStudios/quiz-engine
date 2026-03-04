@@ -1385,6 +1385,7 @@ export function QuizEditorPage() {
       serverBase: SERVER_BASE,
       quizId: quizIdToLaunch,
       gameModeId: isMiniGameContent ? (gameModeId || undefined) : undefined,
+      themeId: themeId === 'default' ? 'default-dark' : themeId,
       miniGameConfig: (isMiniGameContent && miniGameConfig && Object.keys(miniGameConfig).length > 0)
         ? miniGameConfig as Record<string, unknown>
         : undefined,

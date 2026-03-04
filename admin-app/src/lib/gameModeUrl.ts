@@ -2,6 +2,7 @@ export function buildHostGameUrl(params: {
   serverBase: string
   quizId: string
   gameModeId?: string
+  themeId?: string
   launchCode?: string
   hostUid?: string
   hostToken?: string
@@ -15,6 +16,10 @@ export function buildHostGameUrl(params: {
 
   if (params.gameModeId) {
     query.set('gameMode', params.gameModeId)
+  }
+
+  if (params.themeId) {
+    query.set('theme', params.themeId)
   }
 
   if (params.launchCode) {

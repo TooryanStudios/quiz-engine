@@ -196,8 +196,8 @@
 .quiz-card-full {
   border-radius: 14px;
   background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  box-shadow: var(--shadow-sm);
+  border: 2px solid var(--border-mid); /* More prominent outline */
+  box-shadow: var(--shadow-md);
   transform: translateY(0);
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
   display: flex;

@@ -114,6 +114,7 @@ export function PacksPage() {
       serverBase: SERVER_BASE,
       quizId: quiz.id,
       gameModeId: quiz.gameModeId,
+      themeId: quiz.themeId,
       ...authParams,
     })
     await guardedLaunchGame({
@@ -314,7 +315,7 @@ export function PacksPage() {
                   />
                   {/* Centered play button overlay */}
                   <a
-                    href={buildHostGameUrl({ serverBase: SERVER_BASE, quizId: q.id, gameModeId: q.gameModeId })}
+                    href={buildHostGameUrl({ serverBase: SERVER_BASE, quizId: q.id, gameModeId: q.gameModeId, themeId: q.themeId })}
                     target="_blank" rel="noopener noreferrer"
                     onClick={(e) => {
                       e.preventDefault()

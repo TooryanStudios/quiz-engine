@@ -10,6 +10,13 @@
   --border:         #e2e8f0;
   --border-mid:     #cbd5e1;
   --border-strong:  #94a3b8;
+  --border-subtle:  #e2e8f0;  /* Added missing variable */
+
+  /* Missing card properties */
+  --bg-card:        #ffffff;
+  --shadow-sm:      0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md:      0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+
   --text:           #1e293b;
   --text-bright:    #0f172a;
   --text-mid:       #475569;
@@ -29,6 +36,12 @@
   --border:         #1f2937;
   --border-mid:     #1e293b;
   --border-strong:  #334155;
+  --border-subtle:  #1f2937;  /* Added missing variable */
+
+  --bg-card:        #0f172a;
+  --shadow-sm:      0 1px 2px 0 rgb(0 0 0 / 0.5);
+  --shadow-md:      0 4px 6px -1px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.5);
+
   --text:           #e2e8f0;
   --text-bright:    #f1f5f9;
   --text-mid:       #cbd5e1;
