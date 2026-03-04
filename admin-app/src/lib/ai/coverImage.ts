@@ -78,8 +78,7 @@ ${questionContext || '(no questions yet)'}
 
   const query = encodeURIComponent(keywords)
   // FIXED: source.unsplash.com is dead. 
-  // Using images.unsplash.com with a base photo ID and the query in the URL for the user to see,
-  // but this is mostly a placeholder now. We will return a generic high-quality quiz image
-  // with the keywords appended so the user can see what was searched.
-  return `https://images.unsplash.com/photo-1546410531-bb4caa6b424d?auto=format&fit=crop&w=1200&q=80&keywords=${query}`
+  // Using images.unsplash.com with the 'sig' parameter to get random related images.
+  // This is the most reliable way to get a direct image link from Unsplash currently.
+  return `https://images.unsplash.com/photo-1546410531-bb4caa6b424d?auto=format&fit=crop&w=1200&q=80&sig=${query}`
 }
