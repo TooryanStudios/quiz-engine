@@ -602,7 +602,12 @@ export function QuizEditorPage() {
         setChallengePreset(data.challengePreset || 'classic')
         setEnableScholarRole(data.enableScholarRole ?? false)
         setRandomizeQuestions(data.randomizeQuestions ?? false)
-        setCoverImage((data.coverImage || '').trim() || DEFAULT_COVER_IMAGE)
+        // Vite-hashed asset paths (e.g. /assets/QYan_logo_300x164-D746paDg.jpg) are
+        // build-specific and break after every rebuild. Treat them as "no cover" and
+        // fall back to the current placeholder instead.
+        const rawCover = (data.coverImage || '').trim()
+        const isViteAsset = rawCover.startsWith('/assets/') && !rawCover.startsWith('http')
+        setCoverImage(rawCover && !isViteAsset ? rawCover : DEFAULT_COVER_IMAGE)
         const rawQuestions = data.questions ?? []
         const normalizedQuestions = sanitizeQuestions(rawQuestions)
         const deprecatedCount = rawQuestions.filter((question) => normalizeQuestionType((question as { type?: unknown }).type) !== question.type).length
@@ -1280,7 +1285,10 @@ export function QuizEditorPage() {
       challengePreset,
       enableScholarRole,
       randomizeQuestions,
-      coverImage: (coverImage || '').trim() || DEFAULT_COVER_IMAGE,
+      // Never persist Vite-hashed asset paths — they are build-specific and
+      // will 404 after the next deploy. Save empty string instead so the UI
+      // falls back to the current placeholder on every load.
+      coverImage: (() => { const c = (coverImage || '').trim(); return (c && !c.startsWith('/assets/')) ? c : '' })(),
       tags: ['animals'],
       questions: isMiniGameContent
         ? []
