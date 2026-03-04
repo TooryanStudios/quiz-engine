@@ -239,6 +239,10 @@
   color: #fff;
 }
 
+.sidebar-user-initials.small {
+  font-size: 0.65rem;
+}
+
 .sidebar-user-name {
   font-size: 0.8rem;
   font-weight: 600;
@@ -952,18 +956,20 @@ button:disabled {
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   padding-bottom: 0;
+  width: 100%;
+  touch-action: pan-x;
 }
 
 .master-tab-bar::-webkit-scrollbar { display: none; }
 
 .master-tab-btn {
   flex-shrink: 0;
-  padding: 0.45rem 0.9rem;
+  padding: 0.8rem 0.9rem;
   border: none;
   border-bottom: 2px solid transparent;
   background: transparent;
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
@@ -977,12 +983,27 @@ button:disabled {
   background: transparent;
 }
 
+@media (max-width: 600px) {
+  .master-header {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+  .master-tab-bar {
+    gap: 0;
+  }
+  .master-tab-btn {
+    padding: 0.45rem 0.6rem;
+    font-size: 0.75rem;
+  }
+}
+
 .master-content {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
   padding: 1rem 1.25rem 2rem;
+  touch-action: pan-y;
 }
 
 .master-scroll-table {
@@ -991,6 +1012,7 @@ button:disabled {
   border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--bg-surface);
+  touch-action: pan-x pan-y;
 }
 
 .login-shell {
@@ -1095,6 +1117,103 @@ button:disabled {
   text-align: center;
   font-size: 0.75rem;
   color: var(--text-faint);
+}
+
+/* ── App Shell Layout Extras ── */
+.admin-main {
+  flex: 1;
+  padding: 1.5rem;
+  overflow-y: auto;
+  position: relative;
+  background: var(--bg-page);
+}
+
+.mobile-nav-content {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.mobile-nav-link-icon {
+  margin-right: 0.6rem;
+}
+
+.mobile-nav-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 0.5rem 0;
+}
+
+.mobile-profile-section {
+  padding: 12px 0;
+}
+
+.mobile-profile-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 12px 20px;
+  margin-bottom: 0.5rem;
+}
+
+.mobile-profile-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+}
+
+.mobile-profile-initials {
+  width: 32px;
+  height: 32px;
+  font-size: 0.7rem;
+}
+
+.mobile-profile-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.mobile-profile-name {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.mobile-profile-email {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-theme-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  margin-bottom: 0.5rem;
+}
+
+.mobile-signout-btn {
+  width: calc(100% - 40px);
+  margin: 0 20px;
+  background: transparent;
+  border: 1px solid var(--border-mid);
+  color: #f87171;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.mobile-signout-btn:hover {
+  background: var(--bg-deep);
+  border-color: var(--border-strong);
+}
   background: var(--bg-deep);
   border-top: 1px solid var(--border);
 }

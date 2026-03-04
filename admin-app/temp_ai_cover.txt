@@ -1,0 +1,51 @@
+  const [isGeneratingAiCover, setIsGeneratingAiCover] = useState(false);
+
+  const handleGenerateAiCover = async () => {
+    setIsGeneratingAiCover(true);
+    try {
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      if (!apiKey) throw new Error('Gemini API Key is missing');
+
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+
+      // Build context from title and questions
+      const quizContext = {
+        title: tempTitle || title,
+        questions: questions.slice(0, 5).map(q => ({ text: q.text, options: q.options }))
+      };
+
+      const prompt = `Analyze this quiz content and generate a highly descriptive and artistic Image Generation Prompt for a quiz cover.
+      Quiz Title: "${quizContext.title}"
+      Sample Questions: ${JSON.stringify(quizContext.questions)}
+
+      Your task:
+      1. Identify the core theme (e.g., Space, History, Nature, Tech).
+      2. Create a specific, high-quality prompt for an image generator.
+      3. Return ONLY a JSON object with this structure:
+      {
+        "theme": "one word theme",
+        "imagePrompt": "A professional wide-angle cinematic shot of [theme elements], vibrant colors, high resolution, digital art style, 16:9 aspect ratio, clean composition, no text.",
+        "searchKeywords": "specific keywords for stock photo search"
+      }
+      Important: Focus on visual elements that match the quiz's specific questions. If it's about animals, mention specific animals from the questions.`;
+
+      const result = await model.generateContent(prompt);
+      const text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const parsed = JSON.parse(text);
+
+      // Now use the prompt to search Unsplash (small/medium size)
+      const query = encodeURIComponent(parsed.searchKeywords || parsed.theme);
+      // We'll use a high-quality relevant Unsplash URL as a fallback if we can't call an image API directly
+      // but based on the existing code, we usually set a URL.
+      const suggestedUrl = `https://images.unsplash.com/photo-featured/?${query}&auto=format&fit=crop&q=80&w=800`;
+      
+      setTempCoverImage(suggestedUrl);
+      showToast({ message: '? ?? ????? ???? ???? ?????? ????? ??? ???????', type: 'success' });
+    } catch (error) {
+      console.error('AI Cover Generation failed:', error);
+      showToast({ message: '? ??? ????? ???? ??????? ?????????', type: 'error' });
+    } finally {
+      setIsGeneratingAiCover(false);
+    }
+  };

@@ -53,6 +53,7 @@ export interface QuizDoc {
   description?: string
   visibility: 'public' | 'private'
   gameModeId?: string
+  themeId?: string
   miniGameConfig?: Record<string, unknown>
   priceTier?: 'free' | 'starter' | 'pro'
   challengePreset?: ChallengePreset

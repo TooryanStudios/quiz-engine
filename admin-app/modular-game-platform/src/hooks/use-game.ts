@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { loadGame, unloadGame } from '../core/game-loader';
-import { GameModule } from '../core/types';
+import type { GameModule } from '../core/types';
 
 export const useGame = (gameId: string) => {
     const [game, setGame] = useState<GameModule | null>(null);

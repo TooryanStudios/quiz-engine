@@ -286,6 +286,21 @@ export function GameModesPage() {
                 >
                   Play
                 </button>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/play-test/${game.id}`)}
+                  style={{
+                    padding: '.45rem .75rem',
+                    borderRadius: 8,
+                    border: '1px solid var(--border)',
+                    background: '#2563eb',
+                    color: 'white',
+                    cursor: 'pointer',
+                  }}
+                  title="Open visual gameplay test"
+                >
+                  Visual
+                </button>
               </div>
             </div>
           ))}

@@ -1,12 +1,14 @@
-import React, { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import './DashboardPage.css'
 import { auth } from '../lib/firebase'
 import { cancelPublishRequest, incrementQuizPlayCount, incrementShareCount, listPublicQuizzes, requestPublicVisibility, subscribeMyQuizzes, updateQuiz } from '../lib/quizRepo'
+import { getCoverFromQuestions, isNewContent } from '../lib/utils'
 import { incrementPlatformStat } from '../lib/adminRepo'
 import { guardedLaunchGame } from '../lib/gameLaunch'
 import { buildHostGameUrl } from '../lib/gameModeUrl'
 import { getHostLaunchAuthParams } from '../lib/hostLaunchAuth'
-import type { QuizDoc, QuizQuestion } from '../types/quiz'
+import type { QuizDoc } from '../types/quiz'
 import { useTheme } from '../lib/useTheme'
 import placeholderImg from '../assets/QYan_logo_300x164.jpg'
 import { useToast } from '../lib/ToastContext'
@@ -26,14 +28,6 @@ const SERVER_BASE = IS_LOCAL_DEV
   : (import.meta.env.VITE_API_BASE_URL || 'https://play.qyan.app')
 
 // ── helpers ───────────────────────────────────────────────────────────────────
-
-/** Pick the first image URL found in any question's media field */
-function getCoverImage(questions: QuizQuestion[]): string | null {
-  for (const q of questions ?? []) {
-    if (q.media?.type === 'image' && q.media.url) return q.media.url
-  }
-  return null
-}
 
 /** Map tag/title keywords to an emoji icon */
 function pickEmoji(tags: string[], title: string): string {
@@ -57,14 +51,6 @@ function presetBadge(preset?: string) {
   if (preset === 'easy') return { label: 'سهل', color: '#16a34a' }
   if (preset === 'hard') return { label: 'صعب', color: '#dc2626' }
   return { label: 'عادي', color: '#2563eb' }
-}
-
-/** Returns true if the quiz was created within the last 14 days (industry standard) */
-const NEW_QUIZ_MS = 14 * 24 * 60 * 60 * 1000
-function isNewQuiz(createdAt: any): boolean {
-  if (!createdAt) return false
-  const ms: number = createdAt?.toMillis?.() ?? (createdAt?.seconds ? createdAt.seconds * 1000 : 0)
-  return ms > 0 && Date.now() - ms < NEW_QUIZ_MS
 }
 
 // ── component ─────────────────────────────────────────────────────────────────
@@ -244,41 +230,23 @@ export function DashboardPage() {
     .slice(0, 4)
 
   return (
-    <div style={{ padding: '0' }}>
+    <div className="dashboard-container">
       {/* ── Welcome banner ── */}
-      <div style={{
-        paddingTop: '1.5rem', paddingBottom: '1.25rem',
-        marginBottom: '1.5rem',
-        borderBottom: '1px solid var(--border)',
-        display: 'flex', alignItems: 'center',
-        justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem',
-      }}>
+      <div className="dashboard-header">
         <div>
-          <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-bright)' }}>
+          <h2 className="dashboard-header-title">
             {greeting}, {displayName} 👋
           </h2>
-          <p style={{ margin: '0.25rem 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>{dateStr}</p>
+          <p className="dashboard-header-date">{dateStr}</p>
         </div>
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <div className="dashboard-header-actions">
         <Link to="/editor" style={{ textDecoration: 'none' }}>
-          <button style={{
-            display: 'flex', alignItems: 'center', gap: '0.5rem',
-            padding: '0.65rem 1.3rem', borderRadius: '10px',
-            background: 'linear-gradient(135deg, #2563eb, #7c3aed)',
-            border: 'none', color: '#fff', fontSize: '0.9rem', fontWeight: 600,
-            cursor: 'pointer', boxShadow: '0 4px 14px rgba(37,99,235,0.35)', whiteSpace: 'nowrap',
-          }}>
+          <button className="dashboard-btn dashboard-btn-primary">
             <span>＋</span> New Quiz
           </button>
         </Link>
         <Link to="/mini-game-editor" style={{ textDecoration: 'none' }}>
-          <button style={{
-            display: 'flex', alignItems: 'center', gap: '0.5rem',
-            padding: '0.65rem 1.3rem', borderRadius: '10px',
-            background: 'var(--bg-surface)',
-            border: '1px solid var(--border-strong)', color: 'var(--text)', fontSize: '0.9rem', fontWeight: 600,
-            cursor: 'pointer', whiteSpace: 'nowrap',
-          }}>
+          <button className="dashboard-btn dashboard-btn-secondary">
             <span>🎮</span> New Mini Game
           </button>
         </Link>
@@ -286,55 +254,31 @@ export function DashboardPage() {
       </div>
 
       {/* ── Stats row ── */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(145px, 1fr))',
-        gap: '1rem', marginBottom: '1.5rem',
-      }}>
+      <div className="dashboard-stats-grid">
         {([
           { icon: '📋', value: loading ? '—' : String(quizzes.length), label: 'Total Quizzes', accent: '#2563eb', bg: 'rgba(37,99,235,0.12)' },
           { icon: '❓', value: loading ? '—' : String(totalQuestions), label: 'Questions', accent: '#7c3aed', bg: 'rgba(124,58,237,0.12)' },
           { icon: '🌐', value: loading ? '—' : String(publicCount), label: 'Public', accent: '#059669', bg: 'rgba(5,150,105,0.12)' },
           { icon: '🔒', value: loading ? '—' : String(privateCount), label: 'Private', accent: '#d97706', bg: 'rgba(217,119,6,0.12)' },
         ] as const).map((sc) => (
-          <div key={sc.label} style={{
-            background: 'var(--bg-surface)', border: '1px solid var(--border)',
-            borderRadius: '14px', padding: '1rem 1.1rem',
-            display: 'flex', flexDirection: 'column', gap: '0.45rem',
-            position: 'relative', overflow: 'hidden',
-          }}>
-            <div style={{
-              width: 36, height: 36, borderRadius: '10px', background: sc.bg,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem',
-            }}>
-              {sc.icon}
-            </div>
-            <div style={{ fontSize: '1.65rem', fontWeight: 800, color: 'var(--text-bright)', lineHeight: 1 }}>
-              {sc.value}
-            </div>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 500 }}>
-              {sc.label}
-            </div>
-            <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '3px', background: sc.accent, opacity: 0.6 }} />
+          <div key={sc.label} className="stat-card">
+            <div className="stat-icon-bg" style={{ background: sc.bg }}>{sc.icon}</div>
+            <div className="stat-value">{sc.value}</div>
+            <div className="stat-label">{sc.label}</div>
+            <div className="stat-accent-bar" style={{ background: sc.accent }} />
           </div>
         ))}
       </div>
 
       {/* ── Public Library Preview ── */}
-      <div style={{ marginBottom: '2rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+      <div className="dashboard-section">
+        <div className="dashboard-section-header">
           <div>
-            <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: 'var(--text-bright)' }}>📚 مكتبة الاختبارات</h3>
-            <p style={{ margin: '0.2rem 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>اختبارات عامة منشورة للجميع</p>
+            <h3 className="dashboard-section-title">📚 مكتبة الاختبارات</h3>
+            <p className="dashboard-section-desc">اختبارات عامة منشورة للجميع</p>
           </div>
           <Link to="/packs" style={{ textDecoration: 'none' }}>
-            <button style={{
-              background: 'linear-gradient(135deg, #2563eb, #7c3aed)',
-              border: 'none', color: '#fff',
-              padding: '0.45rem 1rem', borderRadius: '8px',
-              fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}>استعراض الكل ›</button>
+            <button className="dashboard-link-btn">استعراض الكل ›</button>
           </Link>
         </div>
 
@@ -347,48 +291,23 @@ export function DashboardPage() {
         ) : publicLibrary.length === 0 ? null : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '0.75rem' }}>
             {publicLibrary.map((q) => {
-              const cover = (q as any).coverImage || getCoverImage((q as any).questions ?? [])
+              const cover = (q as any).coverImage || getCoverFromQuestions((q as any).questions ?? [])
               const emoji = pickEmoji((q as any).tags ?? [], q.title)
               return (
-                <div key={(q as any).id} className="pub-card" style={{
-                  background: 'var(--bg-surface)', border: '1px solid var(--border)',
-                  borderRadius: '12px', overflow: 'hidden',
-                  transition: 'border-color 0.15s, transform 0.15s',
-                }}
-                onMouseEnter={(e) => { const el = e.currentTarget as HTMLElement; el.style.borderColor = 'var(--accent, #2563eb)'; el.style.transform = 'translateY(-2px)' }}
-                onMouseLeave={(e) => { const el = e.currentTarget as HTMLElement; el.style.borderColor = 'var(--border)'; el.style.transform = 'translateY(0)' }}
-                >
+                <div key={(q as any).id} className="pub-card" onClick={() => handleLaunchGame(q as QuizItem)}>
                   {/* Thumbnail with play button */}
-                  <div style={{ height: 90, position: 'relative', background: cover ? `url(${cover}) center/cover no-repeat` : 'linear-gradient(135deg, #1e40af33, #7c3aed33)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem' }}>
+                  <div className="pub-cover" style={{ background: cover ? `url(${cover}) center/cover no-repeat` : 'linear-gradient(135deg, #1e40af33, #7c3aed33)', fontSize: '2rem' }}>
                     {!cover && emoji}
                     {/* Play button overlay */}
-                    <div style={{
-                      position: 'absolute', inset: 0,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      background: 'rgba(0,0,0,0.18)',
-                    }}
-                    className="pub-card-overlay"
-                    >
-                      <div className="pub-play-btn" style={{
-                        width: 46, height: 46, borderRadius: '50%',
-                        background: '#16a34a',
-                        border: '2.5px solid #fff',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: '1.25rem',
-                        paddingLeft: '3px',
-                        color: '#fff',
-                        transition: 'transform 0.18s',
-                        cursor: 'pointer',
-                      }}
-                      onClick={() => handleLaunchGame(q as QuizItem)}
-                      >▶</div>
+                    <div className="pub-play-overlay">
+                      <div className="pub-play-btn">▶</div>
                     </div>
                   </div>
                   {/* Info — clicking navigates to packs */}
-                  <Link to="/packs" style={{ textDecoration: 'none' }}>
-                    <div style={{ padding: '0.5rem 0.6rem' }}>
-                      <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-bright)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{q.title}</div>
-                      <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  <Link to="/packs" style={{ textDecoration: 'none' }} onClick={(e) => e.stopPropagation()}>
+                    <div className="pub-info">
+                      <div className="pub-title">{q.title}</div>
+                      <div className="pub-meta">
                         {(q as any).questions?.length ?? 0} أسئلة
                       </div>
                     </div>
@@ -401,13 +320,11 @@ export function DashboardPage() {
       </div>
 
       {/* ── Quick Actions + Recently Updated ── */}
-      <div className="dashboard-mid-grid" style={{ marginBottom: '2.5rem' }}>
+      <div className="dashboard-mid-grid">
         {/* Quick Actions */}
-        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '14px', padding: '1rem 1.1rem' }}>
-          <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: '0.75rem' }}>
-            Quick Actions
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+        <div className="activity-list-container">
+          <div className="activity-list-title">Quick Actions</div>
+          <div className="activity-list">
             {([
               { icon: '＋', label: 'New Quiz', to: '/editor', primary: true },
               { icon: '🎮', label: 'New Mini Game', to: '/mini-game-editor', primary: false },
@@ -416,25 +333,7 @@ export function DashboardPage() {
               { icon: '💳', label: 'Billing', to: '/billing', primary: false },
             ] as const).map((qa) => (
               <Link key={qa.label} to={qa.to} style={{ textDecoration: 'none' }}>
-                <div
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '0.65rem',
-                    padding: '0.6rem 0.8rem', borderRadius: '9px',
-                    background: qa.primary ? 'linear-gradient(135deg, #2563eb, #7c3aed)' : 'var(--bg-deep)',
-                    border: qa.primary ? 'none' : '1px solid var(--border)',
-                    color: qa.primary ? '#fff' : 'var(--text)',
-                    cursor: 'pointer', transition: 'opacity 0.15s, transform 0.15s',
-                    fontSize: '0.85rem', fontWeight: qa.primary ? 700 : 500,
-                  }}
-                  onMouseEnter={(e) => {
-                    ;(e.currentTarget as HTMLElement).style.opacity = '0.85'
-                    ;(e.currentTarget as HTMLElement).style.transform = 'translateX(3px)'
-                  }}
-                  onMouseLeave={(e) => {
-                    ;(e.currentTarget as HTMLElement).style.opacity = '1'
-                    ;(e.currentTarget as HTMLElement).style.transform = 'translateX(0)'
-                  }}
-                >
+                <div className={`activity-item ${qa.primary ? 'primary' : ''}`}>
                   <span style={{ width: 20, textAlign: 'center', flexShrink: 0 }}>{qa.icon}</span>
                   <span style={{ flex: 1 }}>{qa.label}</span>
                   <span style={{ fontSize: '0.7rem', opacity: 0.4 }}>›</span>
@@ -445,45 +344,34 @@ export function DashboardPage() {
         </div>
 
         {/* Recently Updated */}
-        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '14px', padding: '1rem 1.1rem' }}>
-          <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: '0.75rem' }}>
-            Recently Updated
-          </div>
+        <div className="activity-list-container">
+          <div className="activity-list-title">Recently Updated</div>
           {loading ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <div className="activity-list">
               {[1,2,3].map(i => (
-                <div key={i} style={{ height: 50, borderRadius: 10, background: 'linear-gradient(90deg, var(--bg-deep) 25%, var(--border) 50%, var(--bg-deep) 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.5s infinite' }} />
+                <div key={i} className="shimmer-card" style={{ height: 50 }} />
               ))}
             </div>
           ) : recentQuizzes.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>No quizzes yet</div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+            <div className="activity-list">
               {recentQuizzes.map((q) => {
                 const emoji = pickEmoji(q.tags ?? [], q.title)
                 const badge = presetBadge(q.challengePreset)
                 return (
-                  <div key={q.id}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: '0.75rem',
-                      padding: '0.6rem 0.75rem', borderRadius: '10px',
-                      background: 'var(--bg-deep)', border: '1px solid var(--border)',
-                      transition: 'border-color 0.15s',
-                    }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-strong)' }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)' }}
-                  >
+                  <div key={q.id} className="activity-item compact">
                     <span style={{ fontSize: '1.25rem', flexShrink: 0 }}>{emoji}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                        <div style={{ fontSize: '0.83rem', fontWeight: 600, color: 'var(--text-bright)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
+                        <div className="activity-item-title">
                           {q.title}
                         </div>
-                        {isNewQuiz(q.createdAt) && (
-                          <span style={{ flexShrink: 0, fontSize: '0.58rem', fontWeight: 800, letterSpacing: '0.06em', padding: '1px 5px', borderRadius: '4px', background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', textTransform: 'uppercase' }}>New</span>
+                        {isNewContent(q.createdAt) && (
+                          <span className="badge-new">New</span>
                         )}
                       </div>
-                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '1px' }}>
+                      <div className="activity-item-meta">
                         {q.questions?.length ?? 0} questions
                         &nbsp;&middot;&nbsp;<span style={{ color: badge.color }}>{badge.label}</span>
                         &nbsp;&middot;&nbsp;{q.visibility === 'public' ? '🌐 Public' : '🔒 Private'}
@@ -491,10 +379,10 @@ export function DashboardPage() {
                     </div>
                     <div style={{ display: 'flex', gap: '0.3rem', flexShrink: 0 }}>
                       <Link to={`/preview/${q.id}`} title="Preview" style={{ textDecoration: 'none' }}>
-                        <button style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-dim)', padding: '4px 8px', borderRadius: '6px', fontSize: '0.7rem', cursor: 'pointer' }}>👁️</button>
+                        <button className="icon-btn-small">👁️</button>
                       </Link>
                       <Link to={getEditorPath(q)} title="Edit" style={{ textDecoration: 'none' }}>
-                        <button style={{ background: '#2563eb', border: 'none', color: '#fff', padding: '4px 8px', borderRadius: '6px', fontSize: '0.7rem', cursor: 'pointer' }}>✏️</button>
+                        <button className="icon-btn-small primary">✏️</button>
                       </Link>
                     </div>
                   </div>
@@ -506,16 +394,16 @@ export function DashboardPage() {
       </div>
 
       {/* ── My Quizzes ── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+      <div className="dashboard-section-header" style={{ marginTop: '2.5rem' }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: 'var(--text-bright)' }}>My Quizzes</h3>
-          <p style={{ margin: '0.2rem 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+          <h3 className="dashboard-section-title">My Quizzes</h3>
+          <p className="dashboard-section-desc">
             {loading ? '...' : `${quizzes.length} quiz${quizzes.length !== 1 ? 'zes' : ''}`}
           </p>
         </div>
         {quizzes.length > 0 && (
           <Link to="/my-quizzes" style={{ textDecoration: 'none' }}>
-            <button style={{ background: 'transparent', border: '1px solid var(--border-mid)', color: 'var(--text-dim)', padding: '5px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600 }}>
+            <button className="dashboard-link-btn outlined">
               View all →
             </button>
           </Link>
@@ -524,33 +412,21 @@ export function DashboardPage() {
 
       {/* ── Loading skeleton ── */}
       {loading && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem' }}>
+        <div className="dashboard-grid">
           {[1,2,3,4,5,6].map((i) => (
-            <div key={i} style={{
-              height: '190px',
-              borderRadius: '12px',
-              background: dark ? 'linear-gradient(90deg, #1e293b 25%, #273549 50%, #1e293b 75%)' : 'linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%)',
-              backgroundSize: '200% 100%',
-              animation: 'shimmer 1.5s infinite',
-            }} />
+            <div key={i} className="shimmer-card quiz-card-shimmer" />
           ))}
         </div>
       )}
 
       {/* ── Empty state ── */}
       {!loading && quizzes.length === 0 && (
-        <div style={{
-          textAlign: 'center',
-          padding: '5rem 2rem',
-          border: `2px dashed ${dark ? '#1e293b' : '#cbd5e1'}`,
-          borderRadius: '20px',
-          color: 'var(--text-mid)',
-        }}>
-          <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>📋</div>
-          <h3 style={{ color: '#94a3b8', margin: '0 0 0.5rem' }}>لا توجد اختبارات بعد</h3>
-          <p style={{ margin: '0 0 1.5rem' }}>أنشئ أول اختبار لك الآن</p>
+        <div className="empty-state-container">
+          <div className="empty-state-icon">📋</div>
+          <h3 className="empty-state-title">لا توجد اختبارات بعد</h3>
+          <p className="empty-state-desc">أنشئ أول اختبار لك الآن</p>
           <Link to="/editor" style={{ textDecoration: 'none' }}>
-            <button style={{ padding: '0.75rem 2rem', borderRadius: '10px', background: 'linear-gradient(135deg, #2563eb, #7c3aed)' }}>
+            <button className="dashboard-btn dashboard-btn-primary" style={{ padding: '0.75rem 2rem' }}>
               ＋ إنشاء اختبار
             </button>
           </Link>
@@ -566,7 +442,7 @@ export function DashboardPage() {
             gap: '1rem',
           }}>
             {quizzes.slice(0, visibleCount).map((q) => {
-            const coverImg = q.coverImage || getCoverImage(q.questions ?? [])
+            const coverImg = q.coverImage || getCoverFromQuestions(q.questions ?? [])
             const badge = presetBadge(q.challengePreset)
             const isHovered = hoveredId === q.id
 
@@ -711,7 +587,7 @@ export function DashboardPage() {
                     </div>
                   )}
                   {/* NEW badge — bottom-right of cover */}
-                  {isNewQuiz(q.createdAt) && (
+                  {isNewContent(q.createdAt) && (
                     <div style={{
                       position: 'absolute', bottom: '6px', right: '6px',
                       background: 'linear-gradient(135deg,#10b981,#059669)',

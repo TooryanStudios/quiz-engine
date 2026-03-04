@@ -33,6 +33,12 @@ export const tdStyle: React.CSSProperties = { padding: '0.55rem 0.75rem', fontSi
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+export function formatJoinDate(ts: { toDate(): Date } | undefined | null): string {
+  if (!ts) return 'unknown'
+  const d = ts.toDate()
+  return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+}
+
 export function formatLastSeen(ts: { toDate(): Date } | undefined): string {
   if (!ts) return '🕐 never'
   const d = ts.toDate()

@@ -81,6 +81,35 @@ export interface ThemePackRecord {
   tokens: ThemePaletteTokens
 }
 
+// ── Shared Built-in palettes ─────────────────────────────────────────────────
+export const THEME_PRESETS: { key: string; label: string; tokens: ThemePaletteTokens }[] = [
+  {
+    key: 'default-dark',
+    label: '🌑 Default Dark',
+    tokens: { bg: '#1a1a2e', surface: '#16213e', surface2: '#0f3460', accent: '#e94560', text: '#eaeaea', textDim: '#8892a4', success: '#2dd4bf' },
+  },
+  {
+    key: 'default-light',
+    label: '☀️ Default Light',
+    tokens: { bg: '#f1f5f9', surface: '#ffffff', surface2: '#e2e8f0', accent: '#e94560', text: '#0f172a', textDim: '#475569', success: '#0d9488' },
+  },
+  {
+    key: 'warm-sand',
+    label: '🏜️ Warm Sand',
+    tokens: { bg: '#e8d098', surface: '#fef0cc', surface2: '#c9a96e', accent: '#3d8080', text: '#2d1b0e', textDim: '#7a5230', success: '#9655a2' },
+  },
+  {
+    key: 'ocean',
+    label: '🌊 Ocean',
+    tokens: { bg: '#0a2342', surface: '#123560', surface2: '#1a4a7a', accent: '#00b4d8', text: '#e0f4ff', textDim: '#7ec8e3', success: '#06d6a0' },
+  },
+  {
+    key: 'forest',
+    label: '🌿 Forest',
+    tokens: { bg: '#0d2614', surface: '#132e1a', surface2: '#1e4a28', accent: '#52b788', text: '#d8f3dc', textDim: '#74c69d', success: '#f4a261' },
+  },
+]
+
 export interface ThemeEditorSettings {
   themes: ThemePackRecord[]
   updatedAt?: any
@@ -239,9 +268,8 @@ export function subscribePlatformStats(onData: (stats: PlatformStats) => void) {
 
 export async function incrementPlatformStat(field: keyof PlatformStats) {
   try {
-    const snap = await getDoc(statsDoc)
-    if (snap.exists()) { await updateDoc(statsDoc, { [field]: increment(1) }) }
-    else { await setDoc(statsDoc, { [field]: 1 }, { merge: true }) }
+    // setDoc with merge creates-or-updates in one round trip — no read needed.
+    await setDoc(statsDoc, { [field]: increment(1) }, { merge: true })
   } catch { /* non-critical */ }
 }
 
@@ -362,6 +390,20 @@ const DEFAULT_THEME_SETTINGS: ThemeEditorSettings = {
         text: '#0f172a',
         textDim: '#475569',
         success: '#0d9488',
+      },
+    },
+    {
+      id: 'warm-sand',
+      name: 'Warm Sand',
+      enabled: true,
+      tokens: {
+        bg: '#e8d098',      // sandy desert backdrop
+        surface: '#fef0cc', // cream card panels
+        surface2: '#c9a96e',// golden sandy dividers / borders
+        accent: '#3d8080',  // muted teal (primary action, e.g. Pause)
+        text: '#2d1b0e',    // dark brown text
+        textDim: '#7a5230', // warm mid-brown secondary text
+        success: '#9655a2', // purple (answer highlights / correct)
       },
     },
   ],

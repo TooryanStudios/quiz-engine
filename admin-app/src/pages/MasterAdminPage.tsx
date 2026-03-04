@@ -139,7 +139,7 @@ export function MasterAdminPage() {
           />
         )}
         {activeTab === 'creators'   && <CreatorsTab   creators={creators} users={usersData.users} />}
-        {activeTab === 'users'      && <UsersTab      users={usersData.users} quizzes={quizzesData.quizzes} dark={dark} hasMore={usersData.hasMore} loadingMore={usersData.loadingMore} onLoadMore={usersData.loadMore} error={usersData.error} />}
+        {activeTab === 'users'      && <UsersTab      users={usersData.users} quizzes={quizzesData.quizzes} sessions={sessions.sessions} dark={dark} hasMore={usersData.hasMore} loadingMore={usersData.loadingMore} onLoadMore={usersData.loadMore} error={usersData.error} />}
       </main>
     </>
   )

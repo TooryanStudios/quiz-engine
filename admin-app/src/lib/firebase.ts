@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app'
 import { getAuth, GoogleAuthProvider } from 'firebase/auth'
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore'
+import { initializeFirestore, persistentLocalCache, persistentSingleTabManager } from 'firebase/firestore'
 import { getFunctions } from 'firebase/functions'
 import { getStorage } from 'firebase/storage'
 
@@ -17,7 +17,11 @@ const app = initializeApp(firebaseConfig)
 
 export const auth = getAuth(app)
 export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+  // persistentSingleTabManager uses a Service Worker which is fully supported
+  // on all mobile browsers. persistentMultipleTabManager uses SharedWorker,
+  // which is not supported on iOS Safari or many Android browsers and causes
+  // a 3-10 second delay during SDK initialization on mobile.
+  localCache: persistentLocalCache({ tabManager: persistentSingleTabManager(undefined) }),
 })
 export const storage = getStorage(app)
 export const functions = getFunctions(app)

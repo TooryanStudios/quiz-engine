@@ -2,6 +2,7 @@ import React from 'react';
 import { listGames, setGameEnabled } from '../core/game-loader';
 import { RegisteredGameSummary } from '../core/types';
 import Settings from './settings';
+import GameShell from '../components/game-shell';
 
 const Dashboard: React.FC = () => {
     const [games, setGames] = React.useState<RegisteredGameSummary[]>([]);
@@ -20,20 +21,30 @@ const Dashboard: React.FC = () => {
     };
 
     return (
-        <div>
-            <h1>Admin Dashboard</h1>
-            <h2>Manage Games</h2>
-            <ul>
-                {games.map(game => (
-                    <li key={game.id}>
-                        <h3>{game.name}</h3>
-                        <p>{game.description}</p>
-                        <p>Enabled: {game.enabled ? 'Yes' : 'No'} | Loaded: {game.loaded ? 'Yes' : 'No'}</p>
-                        <Settings game={game} onToggle={onToggle} />
-                    </li>
-                ))}
-            </ul>
-        </div>
+        <GameShell title="Admin Console">
+            <div className="admin-container">
+                <h2>Manage Marketplace Games</h2>
+                <div className="game-list">
+                    {games.map(game => (
+                        <div key={game.id} className="game-card">
+                            <div className="game-info">
+                                <h3>{game.name}</h3>
+                                <p>{game.description}</p>
+                                <div className="status-container">
+                                    <span className={`status-tag ${game.enabled ? 'enabled' : 'disabled'}`}>
+                                        {game.enabled ? 'Active' : 'Disabled'}
+                                    </span>
+                                    {game.loaded && <span className="status-tag loaded">Loaded in Memory</span>}
+                                </div>
+                            </div>
+                            <div className="game-actions">
+                                <Settings game={game} onToggle={onToggle} />
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </GameShell>
     );
 };
 

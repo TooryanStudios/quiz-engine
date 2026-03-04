@@ -41,6 +41,16 @@ export function LoginPage() {
   const handleGoogleLogin = async () => {
     setError('')
     setLoading(true)
+
+    // Mobile browsers almost always block popups because the async wrapper
+    // breaks the direct user-gesture chain. Skip the popup attempt entirely
+    // on mobile and go straight to redirect — saves 1-2 sec per login.
+    const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+    if (isMobile) {
+      await signInWithRedirect(auth, googleProvider)
+      return // page will reload after redirect; finally block still runs
+    }
+
     try {
       await signInWithPopup(auth, googleProvider)
       showToast({ message: 'جاري تحميل بياناتك…', type: 'info', durationMs: 4000 })

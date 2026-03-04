@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { ThemePackRecord, ThemePaletteTokens } from '../../lib/adminRepo'
+import { type ThemePackRecord, type ThemePaletteTokens, THEME_PRESETS } from '../../lib/adminRepo'
 
 interface Props {
   themes: ThemePackRecord[]
@@ -16,6 +16,7 @@ const EMPTY_TOKENS: ThemePaletteTokens = {
   textDim: '#8892a4',
   success: '#2dd4bf',
 }
+
 
 function formatUpdatedAt(value?: { toDate(): Date }) {
   if (!value) return 'Never'
@@ -78,6 +79,12 @@ export function ThemeEditorTab({ themes, updatedAt, onSave }: Props) {
         },
       }
     }))
+  }
+
+  const loadPreset = (id: string, presetKey: string) => {
+    const preset = THEME_PRESETS.find(p => p.key === presetKey)
+    if (!preset) return
+    setItems((prev) => prev.map((item) => item.id === id ? { ...item, tokens: { ...preset.tokens } } : item))
   }
 
   const removeTheme = (id: string) => {
@@ -179,7 +186,28 @@ export function ThemeEditorTab({ themes, updatedAt, onSave }: Props) {
                   fontSize: '0.86rem',
                 }}
               />
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              {/* Preset loader — applies a built-in palette in one click */}
+              <select
+                defaultValue=""
+                onChange={e => { if (e.target.value) { loadPreset(theme.id, e.target.value); e.target.value = '' } }}
+                title="Load a preset palette into this theme"
+                style={{
+                  border: '1px solid var(--border)',
+                  background: 'var(--bg)',
+                  color: 'var(--text)',
+                  borderRadius: '8px',
+                  padding: '0.4rem 0.5rem',
+                  fontSize: '0.75rem',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                <option value="" disabled>🎨 Preset</option>
+                {THEME_PRESETS.map(p => (
+                  <option key={p.key} value={p.key}>{p.label}</option>
+                ))}
+              </select>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem', color: 'var(--text-muted)', flexShrink: 0 }}>
                 <input type="checkbox" checked={theme.enabled} onChange={() => toggleEnabled(theme.id)} />
                 Enabled
               </label>

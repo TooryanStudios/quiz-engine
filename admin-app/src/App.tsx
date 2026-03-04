@@ -6,6 +6,7 @@ import type { ReactElement } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import './App.css'
 import { auth } from './lib/firebase'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { incrementPlatformStat, recordUserActivity, subscribeUserDoc, grantAdminClaim } from './lib/adminRepo'
 import { DialogProvider } from './lib/DialogContext'
 import { ToastProvider } from './lib/ToastContext'
@@ -24,6 +25,7 @@ const GameModesPage   = lazy(() => import('./pages/GameModesPage').then(m => ({ 
 const MasterAdminPage = lazy(() => import('./pages/MasterAdminPage').then(m => ({ default: m.MasterAdminPage })))
 const VoiceLabPage    = lazy(() => import('./pages/VoiceLabPage').then(m => ({ default: m.VoiceLabPage })))
 const AILabPage       = lazy(() => import('./pages/AILabPage'))
+const PlayTestPage    = lazy(() => import('./pages/PlayTestPage'))
 
 const MASTER_EMAIL = import.meta.env.VITE_MASTER_EMAIL as string | undefined
 const MASTER_PATH  = import.meta.env.VITE_MASTER_PATH  as string | undefined
@@ -270,7 +272,7 @@ function App() {
                       {user.photoURL ? (
                         <img src={user.photoURL} referrerPolicy="no-referrer" alt="" className="sidebar-user-avatar" />
                       ) : (
-                        <div className="sidebar-user-avatar sidebar-user-initials" style={{ fontSize: '0.65rem' }}>
+                        <div className="sidebar-user-avatar sidebar-user-initials small">
                           {(user.displayName || user.email || '?').slice(0, 2).toUpperCase()}
                         </div>
                       )}
@@ -427,7 +429,7 @@ function App() {
               {user && (
                 <nav className={`mobile-nav-drawer ${burgerOpen ? 'drawer-open' : ''}`}>
                   {/* Navigation links */}
-                  <div style={{ flex: 1, overflowY: 'auto' }}>
+                  <div className="mobile-nav-content">
                     {NAV.map(({ to, icon, label, end }) => (
                       <NavLink
                         key={to}
@@ -435,7 +437,7 @@ function App() {
                         end={end}
                         className={({ isActive }) => isActive ? 'active' : ''}
                       >
-                        <span style={{ marginRight: '0.6rem' }}>{icon}</span>
+                        <span className="mobile-nav-link-icon">{icon}</span>
                         {label}
                       </NavLink>
                     ))}
@@ -446,21 +448,21 @@ function App() {
                           to="/game-modes"
                           className={({ isActive }) => isActive ? 'active' : ''}
                           style={{ borderTop: '1px solid var(--border)', marginTop: '0.5rem', paddingTop: '0.5rem' }}>
-                          <span style={{ marginRight: '0.6rem' }}>🧩</span>
+                          <span className="mobile-nav-link-icon">🧩</span>
                           أوضاع اللعب
                         </NavLink>
                         <NavLink
                           to="/voice-lab"
                           className={({ isActive }) => isActive ? 'active' : ''}
                           style={{ marginTop: '0.5rem' }}>
-                          <span style={{ marginRight: '0.6rem' }}>🎙️</span>
+                          <span className="mobile-nav-link-icon">🎙️</span>
                           مختبر الصوت
                         </NavLink>
                         <NavLink
                           to="/ai-lab"
                           className={({ isActive }) => isActive ? 'active' : ''}
                           style={{ marginTop: '0.5rem' }}>
-                          <span style={{ marginRight: '0.6rem' }}>🤖</span>
+                          <span className="mobile-nav-link-icon">🤖</span>
                           مختبر الذكاء
                         </NavLink>
                         <NavLink
@@ -468,7 +470,7 @@ function App() {
                           className={({ isActive }) => isActive ? 'active' : ''}
                           target="_blank"
                           rel="noopener noreferrer">
-                          <span style={{ marginRight: '0.6rem' }}>👑</span>
+                          <span className="mobile-nav-link-icon">👑</span>
                           الإدارة ↗
                         </NavLink>
                       </>
@@ -476,43 +478,29 @@ function App() {
                   </div>
 
                   {/* Divider */}
-                  <div style={{ height: '1px', background: 'var(--border)', margin: '0.5rem 0' }}></div>
+                  <div className="mobile-nav-divider"></div>
 
                   {/* Profile section in drawer */}
-                  <div style={{ padding: '12px 0' }}>
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.75rem',
-                      padding: '12px 20px',
-                      marginBottom: '0.5rem',
-                    }}>
+                  <div className="mobile-profile-section">
+                    <div className="mobile-profile-info">
                       {user.photoURL ? (
-                        <img src={user.photoURL} referrerPolicy="no-referrer" alt="" style={{ width: 32, height: 32, borderRadius: '50%' }} />
+                        <img src={user.photoURL} referrerPolicy="no-referrer" alt="" className="mobile-profile-avatar" />
                       ) : (
-                        <div className="sidebar-user-avatar sidebar-user-initials" style={{ width: 32, height: 32, fontSize: '0.7rem' }}>
+                        <div className="sidebar-user-avatar sidebar-user-initials mobile-profile-initials">
                           {(user.displayName || user.email || '?').slice(0, 2).toUpperCase()}
                         </div>
                       )}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text)' }}>
+                      <div className="mobile-profile-text">
+                        <div className="mobile-profile-name">
                           {user.displayName || user.email?.split('@')[0]}
                         </div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div className="mobile-profile-email">
                           {user.email}
                         </div>
                       </div>
                     </div>
 
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '10px 20px',
-                      fontSize: '0.85rem',
-                      color: 'var(--text-dim)',
-                      marginBottom: '0.5rem',
-                    }}>
+                    <div className="mobile-theme-row">
                       <span>Theme</span>
                       <div className="theme-pill">
                         <button
@@ -530,27 +518,7 @@ function App() {
 
                     <button
                       onClick={handleSignOut}
-                      style={{
-                        width: 'calc(100% - 40px)',
-                        margin: '0 20px',
-                        background: 'transparent',
-                        border: '1px solid var(--border-mid)',
-                        color: '#f87171',
-                        fontSize: '0.85rem',
-                        fontWeight: 600,
-                        padding: '10px 12px',
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        transition: 'background 0.15s, border-color 0.15s',
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'var(--bg-deep)';
-                        e.currentTarget.style.borderColor = 'var(--border-strong)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'transparent';
-                        e.currentTarget.style.borderColor = 'var(--border-mid)';
-                      }}
+                      className="mobile-signout-btn"
                     >
                       Sign Out
                     </button>
@@ -560,30 +528,33 @@ function App() {
             </aside>
           )}
           <main className={isLoginPage ? 'login-main' : 'admin-main'} data-scrollable="true">
-            <Suspense fallback={
-              <div className="app-loading-screen">
-                <img src={logoImg} alt="QYan" className="app-loading-logo" />
-                <div className="app-loading-spinner" />
-              </div>
-            }>
-            <Routes>
-              <Route path="/" element={<Navigate to={user ? '/dashboard' : '/login'} replace />} />
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/dashboard" element={<RequireAuth user={user}><DashboardPage /></RequireAuth>} />
-              <Route path="/editor" element={<RequireAuth user={user}><QuizEditorPage /></RequireAuth>} />
-              <Route path="/editor/:id" element={<RequireAuth user={user}><QuizEditorPage /></RequireAuth>} />
-              <Route path="/mini-game-editor" element={<RequireAuth user={user}><QuizEditorPage /></RequireAuth>} />
-              <Route path="/mini-game-editor/:id" element={<RequireAuth user={user}><QuizEditorPage /></RequireAuth>} />
-              <Route path="/game-modes" element={<RequireAdmin user={user}><GameModesPage /></RequireAdmin>} />
-              <Route path="/preview/:id" element={<RequireAuth user={user}><QuizPreviewPage /></RequireAuth>} />
-              <Route path="/packs" element={<RequireAuth user={user}><PacksPage /></RequireAuth>} />
-              <Route path="/my-quizzes" element={<RequireAuth user={user}><MyQuizzesPage /></RequireAuth>} />
-              <Route path="/voice-lab" element={<RequireAdmin user={user}><VoiceLabPage /></RequireAdmin>} />
-              <Route path="/ai-lab" element={<RequireAdmin user={user}><AILabPage /></RequireAdmin>} />
-              <Route path="/billing" element={<RequireAuth user={user}><BillingPage /></RequireAuth>} />
-              <Route path="/profile" element={<RequireAuth user={user}><ProfilePage /></RequireAuth>} />
-            </Routes>
-            </Suspense>
+            <ErrorBoundary>
+              <Suspense fallback={
+                <div className="app-loading-screen">
+                  <img src={logoImg} alt="QYan" className="app-loading-logo" />
+                  <div className="app-loading-spinner" />
+                </div>
+              }>
+              <Routes>
+                <Route path="/" element={<Navigate to={user ? '/dashboard' : '/login'} replace />} />
+                <Route path="/login" element={<LoginPage />} />
+                <Route path="/dashboard" element={<RequireAuth user={user}><DashboardPage /></RequireAuth>} />
+                <Route path="/editor" element={<RequireAuth user={user}><QuizEditorPage /></RequireAuth>} />
+                <Route path="/editor/:id" element={<RequireAuth user={user}><QuizEditorPage /></RequireAuth>} />
+                <Route path="/mini-game-editor" element={<RequireAuth user={user}><QuizEditorPage /></RequireAuth>} />
+                <Route path="/mini-game-editor/:id" element={<RequireAuth user={user}><QuizEditorPage /></RequireAuth>} />
+                <Route path="/game-modes" element={<RequireAdmin user={user}><GameModesPage /></RequireAdmin>} />
+                <Route path="/play-test/:gameId" element={<RequireAdmin user={user}><PlayTestPage /></RequireAdmin>} />
+                <Route path="/preview/:id" element={<RequireAuth user={user}><QuizPreviewPage /></RequireAuth>} />
+                <Route path="/packs" element={<RequireAuth user={user}><PacksPage /></RequireAuth>} />
+                <Route path="/my-quizzes" element={<RequireAuth user={user}><MyQuizzesPage /></RequireAuth>} />
+                <Route path="/voice-lab" element={<RequireAdmin user={user}><VoiceLabPage /></RequireAdmin>} />
+                <Route path="/ai-lab" element={<RequireAdmin user={user}><AILabPage /></RequireAdmin>} />
+                <Route path="/billing" element={<RequireAuth user={user}><BillingPage /></RequireAuth>} />
+                <Route path="/profile" element={<RequireAuth user={user}><ProfilePage /></RequireAuth>} />
+              </Routes>
+              </Suspense>
+            </ErrorBoundary>
           </main>
           {!isLoginPage && (
             <div className="tooryan-attribution-admin" aria-label="Prototype attribution">

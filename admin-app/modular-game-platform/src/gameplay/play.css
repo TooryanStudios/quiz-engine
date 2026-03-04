@@ -1,0 +1,310 @@
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@500;700;800&family=VT323&display=swap');
+
+.retro-quiz-container {
+  /* Default fallbacks if variables aren't set */
+  --theme-bg: #e8d098;
+  --theme-surface: #fef0cc;
+  --theme-surface-2: #c9a96e;
+  --theme-accent: #3d8080;
+  --theme-text: #2d1b0e;
+  --theme-text-dim: #7a5230;
+  --theme-success: #9655a2;
+
+  background-color: var(--theme-bg);
+  min-height: 100vh;
+  padding: 1rem;
+  font-family: 'Tajawal', sans-serif;
+  position: relative;
+  overflow: hidden;
+  color: var(--theme-text);
+  /* The dot pattern uses surface-2 for contrast */
+  background-image: radial-gradient(var(--theme-surface-2) 2px, transparent 2px);
+  background-size: 30px 30px;
+}
+
+/* Retro UI Elements */
+.pixel-border {
+  border: 4px solid var(--theme-text);
+  border-radius: 12px;
+  box-shadow: 0 4px 0 var(--theme-text);
+}
+
+/* Header Section */
+.retro-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 2rem;
+  position: relative;
+  z-index: 10;
+}
+
+.badge-server {
+  background: var(--theme-accent);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 20px;
+  border: 2px solid var(--theme-text);
+  font-weight: bold;
+  font-size: 0.9rem;
+}
+
+.badge-points {
+  background: var(--theme-surface);
+  padding: 4px 16px;
+  border-radius: 20px;
+  border: 2px solid var(--theme-text);
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--theme-text);
+}
+
+/* Center HUD */
+.hub-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  background: var(--theme-surface);
+  padding: 8px 16px;
+  border-radius: 30px;
+  border: 3px solid var(--theme-text);
+}
+
+.timer-circle {
+  background: white;
+  border: 4px solid var(--theme-accent);
+  border-radius: 50%;
+  width: 50px;
+  height: 50px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #333;
+}
+
+.pin-badge {
+  background: var(--theme-surface);
+  border: 2px solid var(--theme-text);
+  padding: 4px 16px;
+  border-radius: 8px;
+  font-weight: 800;
+  margin-top: -15px;
+  z-index: 5;
+  box-shadow: 0 3px 0 var(--theme-surface-2);
+}
+
+.hearts {
+  display: flex;
+  gap: 4px;
+  color: #df5d5c;
+  font-size: 1.2rem;
+}
+
+/* Question Card */
+.question-card {
+  background: var(--theme-surface);
+  padding: 6px;
+  border-radius: 16px;
+  margin-bottom: 2rem;
+  border: 4px solid var(--theme-text);
+  box-shadow: 0 6px 0 var(--theme-text);
+  position: relative;
+}
+
+.question-card-inner {
+  border: 3px solid var(--theme-surface-2);
+  border-radius: 10px;
+  padding: 20px;
+  text-align: center;
+  background: var(--theme-surface);
+}
+
+.question-text {
+  font-size: 1.8rem;
+  font-weight: 800;
+  margin: 0;
+  line-height: 1.4;
+  color: var(--theme-text);
+}
+
+.calendar-icon {
+  background: white;
+  border: 2px solid var(--theme-text);
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 1rem;
+  position: absolute;
+  top: -10px;
+  right: 20px;
+  transform: rotate(5deg);
+  color: var(--theme-text);
+}
+
+/* Play Area */
+.play-area {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 3rem;
+  position: relative;
+  z-index: 10;
+}
+
+.drop-zones, .drag-items {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.drop-zone {
+  background: var(--theme-surface);
+  border: 3px dashed var(--theme-surface-2);
+  border-radius: 12px;
+  padding: 15px;
+  text-align: center;
+  position: relative;
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'VT323', monospace;
+  font-size: 1.4rem;
+  color: var(--theme-text-dim);
+}
+
+.drop-zone-filled {
+  border-style: solid;
+  border-color: var(--theme-text);
+  background: var(--theme-accent);
+  color: white;
+  font-family: 'Tajawal', sans-serif;
+  font-weight: bold;
+  box-shadow: 0 4px 0 var(--theme-surface-2);
+}
+
+.zone-label {
+  position: absolute;
+  top: -12px;
+  right: 15px;
+  background: var(--theme-bg);
+  padding: 0 8px;
+  font-family: 'Tajawal', sans-serif;
+  font-weight: 800;
+  color: var(--theme-text);
+}
+
+.drag-item {
+  background: var(--theme-success);
+  color: white;
+  padding: 15px;
+  border-radius: 12px;
+  text-align: center;
+  font-weight: 800;
+  font-size: 1.2rem;
+  cursor: grab;
+  /* Retro purple button */
+  border: 4px solid var(--theme-text);
+  box-shadow: 0 4px 0 var(--theme-text), inset 0 3px 0 rgba(255,255,255,0.2);
+}
+
+.drag-title {
+  text-align: center;
+  font-weight: 800;
+  color: var(--theme-text);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* Actions Bottom */
+.bottom-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding-bottom: 40px;
+}
+
+.actions-row {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+}
+
+.btn-retro {
+  font-family: 'Tajawal', sans-serif;
+  font-weight: 800;
+  font-size: 1.2rem;
+  padding: 10px 24px;
+  border-radius: 12px;
+  border: 4px solid var(--theme-text);
+  box-shadow: 0 6px 0 var(--theme-text);
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+
+.btn-retro:active {
+  transform: translateY(4px);
+  box-shadow: 0 2px 0 var(--theme-text);
+}
+
+.btn-pause {
+  background: var(--theme-accent);
+}
+.btn-end {
+  background: #df605e;
+}
+.btn-submit {
+  background: #ce5754;
+  font-size: 1.8rem;
+  padding: 12px 60px;
+  border-radius: 16px;
+  border: 4px solid var(--theme-text);
+  box-shadow: 0 0 0 4px var(--theme-accent), 0 8px 0 var(--theme-text);
+  margin-top: 10px;
+}
+
+.shop-icon {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  background: var(--theme-surface-2);
+  border: 4px solid var(--theme-text);
+  border-radius: 50%;
+  width: 70px;
+  height: 70px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  box-shadow: 0 4px 0 var(--theme-text);
+  flex-direction: column;
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: var(--theme-text);
+}
+
+/* Background decorations */
+.cactus {
+  position: absolute;
+  opacity: 0.8;
+  z-index: 1;
+}
+.cactus-1 { bottom: 80px; left: 10px; width: 60px; }
+.cactus-2 { bottom: 200px; right: 10px; width: 40px; }
