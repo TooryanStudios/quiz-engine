@@ -4,6 +4,7 @@ import { subscribeAllUsers, fetchMoreUsers, fetchAuthUsers, type UserProfile, ty
 
 export interface UsersData {
   users: UserProfile[]
+  authUsers: AuthUserRecord[]
   hasMore: boolean
   loadingMore: boolean
   loadMore: () => Promise<void>
@@ -88,6 +89,6 @@ export function useUsersData(): UsersData {
     }
   }
 
-  return { users, hasMore, loadingMore, loadMore, error }
+  return { users, authUsers, hasMore, loadingMore, loadMore, error }
 }
 

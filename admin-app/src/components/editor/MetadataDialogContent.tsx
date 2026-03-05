@@ -21,8 +21,10 @@ type MiniGameCard = {
 
 type MetadataDialogContentProps = {
   title: string
+  description: string
   shareUrl: string
   onTitleChange: (value: string) => void
+  onDescriptionChange: (value: string) => void
   onCopyShareUrl: () => void
   onShareUrl: () => void
 
@@ -79,13 +81,16 @@ type MetadataDialogContentProps = {
   onCoverUrlChange: (value: string) => void
   onUploadCoverClick: () => void
   onGenerateCoverClick: () => void
+  onOpenCoverLibraryClick: () => void
   onUseDefaultCoverClick: () => void
 }
 
 export function MetadataDialogContent({
   title,
+  description,
   shareUrl,
   onTitleChange,
+  onDescriptionChange,
   onCopyShareUrl,
   onShareUrl,
   tempThemeId,
@@ -128,14 +133,17 @@ export function MetadataDialogContent({
   onCoverUrlChange,
   onUploadCoverClick,
   onGenerateCoverClick,
+  onOpenCoverLibraryClick,
   onUseDefaultCoverClick,
 }: MetadataDialogContentProps) {
   return (
     <>
       <MetadataBasicInfoSection
         title={title}
+        description={description}
         shareUrl={shareUrl}
         onTitleChange={onTitleChange}
+        onDescriptionChange={onDescriptionChange}
         onCopyShareUrl={onCopyShareUrl}
         onShareUrl={onShareUrl}
       />
@@ -199,6 +207,7 @@ export function MetadataDialogContent({
         isGeneratingCoverImage={isGeneratingCoverImage}
         onCoverUrlChange={onCoverUrlChange}
         onUploadClick={onUploadCoverClick}
+        onOpenLibraryClick={onOpenCoverLibraryClick}
         onGenerateClick={onGenerateCoverClick}
         onUseDefaultClick={onUseDefaultCoverClick}
       />

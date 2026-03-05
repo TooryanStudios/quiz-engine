@@ -71,6 +71,15 @@ export function MasterAdminPage() {
   const totalPlayers = quizzesData.quizzes.reduce((s, q) => s + (q.totalPlayers || 0), 0)
   const totalShares  = quizzesData.quizzes.reduce((s, q) => s + (q.shareCount   || 0), 0)
 
+  // Industry-standard: “new users” = accounts created in a rolling window (Auth creationTime)
+  const now = Date.now()
+  const cutoff24h = now - 24 * 60 * 60 * 1000
+  const newUsersLast24Hours = usersData.authUsers.filter((u) => {
+    if (!u.creationTime) return false
+    const t = Date.parse(u.creationTime)
+    return Number.isFinite(t) && t >= cutoff24h
+  }).length
+
   // Derived creator groups for CreatorsTab
   const creatorMap = quizzesData.quizzes.reduce<Record<string, {
     ownerId: string
@@ -107,7 +116,7 @@ export function MasterAdminPage() {
       </header>
 
       <main className="master-content">
-        {activeTab === 'overview'   && <OverviewTab   quizzes={quizzesData.quizzes} totalPlays={totalPlays} totalPlayers={totalPlayers} totalShares={totalShares} />}
+        {activeTab === 'overview'   && <OverviewTab   quizzes={quizzesData.quizzes} totalPlays={totalPlays} totalPlayers={totalPlayers} totalShares={totalShares} newUsersLast24Hours={newUsersLast24Hours} />}
         {activeTab === 'sessions'   && <SessionsTab   sessions={sessions.sessions}   hasMore={sessions.hasMore}    loadingMore={sessions.loadingMore}    onLoadMore={sessions.loadMore} />}
         {activeTab === 'quizzes'    && <QuizzesTab    quizzes={quizzesData.quizzes}  hasMore={quizzesData.hasMore} loadingMore={quizzesData.loadingMore} onLoadMore={quizzesData.loadMore} />}
         {activeTab === 'engagement' && <EngagementTab platformStats={platformStats} />}

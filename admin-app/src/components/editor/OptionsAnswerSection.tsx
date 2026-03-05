@@ -3,6 +3,7 @@ import type { QuizQuestion } from '../../types/quiz'
 type OptionsAnswerSectionProps = {
   question: QuizQuestion
   optionMin: number
+  optionMax: number
   isMultiSelectOptions: boolean
   sectionLabel: string
   modeLabel: string
@@ -12,11 +13,15 @@ type OptionsAnswerSectionProps = {
 export function OptionsAnswerSection({
   question,
   optionMin,
+  optionMax,
   isMultiSelectOptions,
   sectionLabel,
   modeLabel,
   onUpdateQuestion,
 }: OptionsAnswerSectionProps) {
+  const optionCount = (question.options || []).length
+  const canAddOption = optionCount < optionMax
+
   return (
     <div style={{ marginBottom: '1.2rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.6rem' }}>
@@ -135,6 +140,7 @@ export function OptionsAnswerSection({
         <button
           type="button"
           onClick={() => {
+            if (!canAddOption) return
             const next = [...(question.options || []), 'خيار جديد']
             onUpdateQuestion({ options: next })
           }}
@@ -146,19 +152,24 @@ export function OptionsAnswerSection({
             padding: '0.6rem 1rem',
             borderRadius: '12px',
             border: '2px dashed var(--border-strong)',
-            backgroundColor: 'rgba(59, 130, 246, 0.03)',
-            color: 'var(--text-mid)',
+            backgroundColor: canAddOption ? 'rgba(59, 130, 246, 0.03)' : 'transparent',
+            color: canAddOption ? 'var(--text-mid)' : 'var(--text-muted)',
             fontSize: '0.95rem',
             fontWeight: 700,
-            cursor: 'pointer',
+            cursor: canAddOption ? 'pointer' : 'not-allowed',
             transition: 'all 0.2s',
+            opacity: canAddOption ? 1 : 0.65,
           }}
+          disabled={!canAddOption}
+          title={canAddOption ? 'إضافة خيار' : `الحد الأقصى ${optionMax} خيارات`}
           onMouseEnter={(e) => {
+            if (!canAddOption) return
             e.currentTarget.style.borderColor = 'var(--text-bright)'
             e.currentTarget.style.color = 'var(--text-bright)'
             e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.08)'
           }}
           onMouseLeave={(e) => {
+            if (!canAddOption) return
             e.currentTarget.style.borderColor = 'var(--border-strong)'
             e.currentTarget.style.color = 'var(--text-mid)'
             e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.03)'

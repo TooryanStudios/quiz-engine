@@ -1,15 +1,19 @@
 type MetadataBasicInfoSectionProps = {
   title: string
+  description: string
   shareUrl: string
   onTitleChange: (value: string) => void
+  onDescriptionChange: (value: string) => void
   onCopyShareUrl: () => void
   onShareUrl: () => void
 }
 
 export function MetadataBasicInfoSection({
   title,
+  description,
   shareUrl,
   onTitleChange,
+  onDescriptionChange,
   onCopyShareUrl,
   onShareUrl,
 }: MetadataBasicInfoSectionProps) {
@@ -33,6 +37,31 @@ export function MetadataBasicInfoSection({
             fontSize: '1em',
           }}
         />
+      </div>
+
+      <div>
+        <label style={{ fontSize: '0.9em', color: 'var(--text-mid)', display: 'block', marginBottom: '0.5rem', fontWeight: 600 }}>وصف الاختبار (اختياري)</label>
+        <textarea
+          value={description}
+          onChange={(event) => onDescriptionChange(event.target.value)}
+          placeholder="أضف وصفًا موجزًا يساعد الذكاء الاصطناعي على فهم موضوع الاختبار..."
+          rows={3}
+          style={{
+            width: '100%',
+            padding: '0.75rem',
+            borderRadius: '8px',
+            border: '1px solid var(--border-strong)',
+            backgroundColor: 'var(--bg-surface)',
+            color: 'var(--text)',
+            boxSizing: 'border-box',
+            fontSize: '0.92em',
+            resize: 'vertical',
+            lineHeight: 1.5,
+          }}
+        />
+        <p style={{ marginTop: '0.25rem', fontSize: '0.78em', color: 'var(--text-mid)' }}>
+          يُستخدم لتحسين نتائج توليد الأسئلة والصور بالذكاء الاصطناعي.
+        </p>
       </div>
 
       <div>

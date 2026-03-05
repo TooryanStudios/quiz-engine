@@ -28,7 +28,7 @@ export function MetadataAiSection({
       border: '1px solid rgba(124, 58, 237, 0.3)',
     }}>
       <label style={{ fontSize: '0.9em', color: 'var(--text-bright)', display: 'block', marginBottom: '0.8rem', fontWeight: 800 }}>
-        ✨ إنشاء الأسئلة بالذكاء الاصطناعي (Gemini 1.5 Flash)
+        ✨ إنشاء الأسئلة بالذكاء الاصطناعي
       </label>
 
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
@@ -92,7 +92,7 @@ export function MetadataAiSection({
         </button>
       </div>
       <p style={{ marginTop: '0.5rem', fontSize: '0.75em', color: 'var(--text-mid)' }}>
-        سيتم تحليل النص المكتوب وتوليد أسئلة اختيار من متعدد في ثوانٍ.
+        سيتم تحليل النص المكتوب وتوليد أسئلة في ثوانٍ. تنبيه: قد يخطئ الذكاء الاصطناعي — يرجى مراجعة الأسئلة والإجابات قبل الحفظ.
       </p>
     </div>
   )

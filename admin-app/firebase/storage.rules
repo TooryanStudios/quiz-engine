@@ -1,6 +1,32 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+    function quizDoc(quizId) {
+      return firestore.get(/databases/(default)/documents/quizzes/$(quizId));
+    }
+
+    function quizExists(quizId) {
+      return exists(/databases/(default)/documents/quizzes/$(quizId));
+    }
+
+    function isQuizOwner(quizId) {
+      return request.auth != null
+        && quizExists(quizId)
+        && quizDoc(quizId).data.ownerId == request.auth.uid;
+    }
+
+    function isQuizPublic(quizId) {
+      return quizExists(quizId)
+        && quizDoc(quizId).data.visibility == 'public';
+    }
+
+    // Quiz-scoped assets (preferred): public iff quiz is public.
+    match /quiz-assets/{quizId}/{allPaths=**} {
+      allow read: if isQuizPublic(quizId) || isQuizOwner(quizId);
+      allow write: if isQuizOwner(quizId)
+                   && request.resource.size < 20 * 1024 * 1024;
+    }
+
     // quiz-media uploads: any authenticated user can write (testing mode)
     match /quiz-media/{allPaths=**} {
       allow read: if true;

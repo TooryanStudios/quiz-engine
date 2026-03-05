@@ -1,6 +1,7 @@
 import { EditorHeroActions } from './EditorHeroActions'
 import { EditorHeroCoverCard } from './EditorHeroCoverCard'
 import { EditorHeroTitleInput } from './EditorHeroTitleInput'
+import './EditorModern.css'
 
 type VisibilityState = 'public' | 'private'
 type ApprovalState = 'pending' | 'approved' | 'rejected' | undefined
@@ -37,16 +38,8 @@ export function EditorHeroSection({
   onPlayQuiz,
 }: EditorHeroSectionProps) {
   return (
-    <div style={{
-      background: 'linear-gradient(180deg, var(--bg-surface) 0%, var(--bg-deep) 100%)',
-      borderBottom: '1px solid var(--border-strong)',
-      marginBottom: '1.5rem',
-      borderRadius: isNarrowScreen ? '0 0 20px 20px' : '0 0 24px 24px',
-      boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
-      padding: isNarrowScreen ? '1rem 0.8rem' : '2rem 1.5rem',
-      marginTop: isNarrowScreen ? '-1rem' : '0',
-    }}>
-      <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', gap: isNarrowScreen ? '1rem' : '1.8rem', alignItems: 'center', flexDirection: isNarrowScreen ? 'column' : 'row' }}>
+    <div className={`editor-hero${isNarrowScreen ? ' editor-hero--narrow' : ''}`}>
+      <div className={`editor-hero-inner${isNarrowScreen ? ' editor-hero-inner--narrow' : ''}`}>
         <EditorHeroCoverCard
           isNarrowScreen={isNarrowScreen}
           coverImage={coverImage}
@@ -55,7 +48,7 @@ export function EditorHeroSection({
           onOpenMetadata={onOpenMetadata}
         />
 
-        <div style={{ flex: 1, textAlign: isNarrowScreen ? 'center' : 'right', width: '100%' }}>
+        <div className={`editor-hero-content${isNarrowScreen ? ' editor-hero-content--narrow' : ''}`}>
           <EditorHeroTitleInput
             isNarrowScreen={isNarrowScreen}
             title={title}

@@ -10,6 +10,71 @@ type AddContentDialogBodyProps = {
   onSelectMiniGame: (id: string) => void
 }
 
+interface QuestionTypeVisual {
+  icon: string
+  name: string
+  description: string
+  accent: string
+}
+
+const QUESTION_TYPE_VISUALS: Record<string, QuestionTypeVisual> = {
+  single: {
+    icon: '🧩',
+    name: 'اختيار واحد',
+    description: 'اختر الجواب الصحيح الواحد من بين الخيارات',
+    accent: '#3b82f6',
+  },
+  multi: {
+    icon: '✅',
+    name: 'اختيار متعدد',
+    description: 'قد يكون أكثر من إجابة صحيحة واحدة',
+    accent: '#8b5cf6',
+  },
+  match: {
+    icon: '🔗',
+    name: 'مطابقة',
+    description: 'صِل كل عنصر بما يناسبه من العمود الآخر',
+    accent: '#14b8a6',
+  },
+  match_plus: {
+    icon: '🧠',
+    name: 'مطابقة بلس',
+    description: 'نسخة متقدمة من سؤال المطابقة',
+    accent: '#ec4899',
+  },
+  order: {
+    icon: '🔢',
+    name: 'ترتيب',
+    description: 'رتّب العناصر بالترتيب الصحيح',
+    accent: '#f97316',
+  },
+  order_plus: {
+    icon: '📊',
+    name: 'ترتيب بلس',
+    description: 'نسخة متقدمة من سؤال الترتيب',
+    accent: '#f59e0b',
+  },
+  type: {
+    icon: '⌨️',
+    name: 'كتابة الإجابة',
+    description: 'اكتب الجواب بنفسك بدون خيارات',
+    accent: '#6366f1',
+  },
+  boss: {
+    icon: '👑',
+    name: 'سؤال زعيم',
+    description: 'اختيار واحد بصيغة التحدي الكبير',
+    accent: '#eab308',
+  },
+}
+
+const MINIGAME_ACCENT_COLORS = [
+  '#3b82f6', '#8b5cf6', '#14b8a6', '#ec4899',
+  '#f97316', '#f59e0b', '#6366f1', '#eab308',
+  '#22c55e', '#ef4444', '#06b6d4', '#a855f7',
+  '#84cc16', '#f43f5e', '#0ea5e9', '#d946ef',
+]
+
 export function AddContentDialogBody({
   initialTab,
   questionTypeOptions,
@@ -20,122 +85,66 @@ export function AddContentDialogBody({
   const [activeTab, setActiveTab] = useState<'questions' | 'minigames'>(initialTab)
 
   return (
-    <div style={{ marginTop: '1rem' }}>
-      <div style={{
-        display: 'flex',
-        background: 'var(--bg-deep)',
-        borderRadius: '12px',
-        padding: '4px',
-        marginBottom: '1.2rem',
-        border: '1px solid var(--border-strong)',
-      }}>
+    <div className="add-content-dialog">
+      {/* Tab switcher */}
+      <div className="add-content-tabs">
         <button
+          className={`add-content-tab${activeTab === 'questions' ? ' add-content-tab--active' : ''}`}
           onClick={() => setActiveTab('questions')}
-          style={{
-            flex: 1,
-            padding: '0.6rem',
-            borderRadius: '8px',
-            border: 'none',
-            background: activeTab === 'questions' ? 'var(--accent)' : 'transparent',
-            color: activeTab === 'questions' ? '#fff' : 'var(--text-mid)',
-            fontWeight: 700,
-            fontSize: '0.9rem',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-          }}
         >
           ❓ أسئلة
         </button>
         <button
+          className={`add-content-tab${activeTab === 'minigames' ? ' add-content-tab--active' : ''}`}
           onClick={() => setActiveTab('minigames')}
-          style={{
-            flex: 1,
-            padding: '0.6rem',
-            borderRadius: '8px',
-            border: 'none',
-            background: activeTab === 'minigames' ? 'var(--accent)' : 'transparent',
-            color: activeTab === 'minigames' ? '#fff' : 'var(--text-mid)',
-            fontWeight: 700,
-            fontSize: '0.9rem',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-          }}
         >
           🎮 ميني جيم
         </button>
       </div>
 
+      {/* Questions grid */}
       {activeTab === 'questions' && (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr',
-          gap: '0.6rem',
-          maxHeight: '50vh',
-          overflowY: 'auto',
-          padding: '0.2rem',
-        }}>
-          {questionTypeOptions.map((opt, index) => (
-            <button
-              key={index}
-              onClick={() => onSelectQuestion(opt.value as QuestionType)}
-              style={{
-                padding: '1rem',
-                background: 'var(--bg-deep)',
-                color: 'var(--text)',
-                border: '1px solid var(--border-strong)',
-                borderRadius: '12px',
-                textAlign: 'right',
-                fontWeight: 600,
-                fontSize: '0.95rem',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                cursor: 'pointer',
-              }}
-            >
-              <span>{opt.label}</span>
-              <span style={{ fontSize: '1.2rem' }}>➕</span>
-            </button>
-          ))}
+        <div className="add-content-grid">
+          {questionTypeOptions.map((opt) => {
+            const visual = QUESTION_TYPE_VISUALS[opt.value] ?? {
+              icon: '❓',
+              name: opt.label,
+              description: '',
+              accent: '#64748b',
+            }
+            return (
+              <button
+                key={opt.value}
+                className="add-content-card"
+                style={{ '--card-accent': visual.accent } as React.CSSProperties}
+                onClick={() => onSelectQuestion(opt.value as QuestionType)}
+              >
+                <div className="add-content-card__icon">{visual.icon}</div>
+                <div className="add-content-card__body">
+                  <div className="add-content-card__name">{visual.name}</div>
+                  <div className="add-content-card__desc">{visual.description}</div>
+                </div>
+              </button>
+            )
+          })}
         </div>
       )}
 
+      {/* Mini-games grid */}
       {activeTab === 'minigames' && (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr',
-          gap: '0.6rem',
-          maxHeight: '50vh',
-          overflowY: 'auto',
-          padding: '0.2rem',
-        }}>
-          {miniGames.map((miniGame) => (
+        <div className="add-content-grid add-content-grid--minigames">
+          {miniGames.map((miniGame, idx) => (
             <button
               key={miniGame.id}
+              className="add-content-card"
+              style={{ '--card-accent': MINIGAME_ACCENT_COLORS[idx % MINIGAME_ACCENT_COLORS.length] } as React.CSSProperties}
               onClick={() => onSelectMiniGame(miniGame.id)}
-              style={{
-                padding: '1rem',
-                background: 'var(--bg-deep)',
-                color: 'var(--text)',
-                border: '1px solid var(--border-strong)',
-                borderRadius: '12px',
-                textAlign: 'right',
-                fontWeight: 600,
-                fontSize: '0.95rem',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                cursor: 'pointer',
-              }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
-                <span style={{ fontSize: '1.4rem' }}>{miniGame.icon}</span>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontWeight: 700 }}>{miniGame.defaultArabicName}</div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>{miniGame.description}</div>
-                </div>
+              <div className="add-content-card__icon">{miniGame.icon}</div>
+              <div className="add-content-card__body">
+                <div className="add-content-card__name">{miniGame.defaultArabicName}</div>
+                <div className="add-content-card__desc">{miniGame.description}</div>
               </div>
-              <span style={{ fontSize: '1.2rem' }}>➕</span>
             </button>
           ))}
         </div>

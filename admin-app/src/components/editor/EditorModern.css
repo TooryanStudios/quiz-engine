@@ -1,0 +1,896 @@
+.editor-hero {
+  background: linear-gradient(180deg, var(--bg-surface) 0%, var(--bg-deep) 100%);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  box-shadow: var(--shadow-md);
+  padding: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.editor-hero--narrow {
+  border-radius: 16px;
+  padding: 1rem 0.85rem;
+  margin-top: -0.5rem;
+}
+
+.editor-hero-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.editor-hero-inner--narrow {
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.editor-hero-content {
+  flex: 1;
+  width: 100%;
+  text-align: end;
+}
+
+.editor-hero-content--narrow {
+  text-align: center;
+}
+
+.editor-hero-cover {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.editor-hero-cover-card {
+  width: 130px;
+  height: 130px;
+  border-radius: 20px;
+  overflow: hidden;
+  border: 2px solid var(--border-strong);
+  background: var(--bg-deep);
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+  transition: transform 0.16s ease, border-color 0.16s ease;
+}
+
+.editor-hero-cover--narrow .editor-hero-cover-card {
+  width: 104px;
+  height: 104px;
+  border-radius: 16px;
+}
+
+.editor-hero-cover-card:hover {
+  transform: translateY(-1px);
+  border-color: var(--accent);
+}
+
+.editor-hero-cover-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.editor-hero-cover-overlay {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  background: color-mix(in oklab, var(--bg-page) 65%, transparent);
+  color: var(--text-bright);
+  font-size: 0.68rem;
+  padding: 0.28rem;
+  text-align: center;
+  font-weight: 700;
+}
+
+.editor-hero-cover-loading {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in oklab, var(--bg-page) 62%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: inherit;
+}
+
+.editor-hero-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-bottom: 0.45rem;
+}
+
+.editor-hero-title-row--narrow {
+  justify-content: center;
+}
+
+.editor-hero-title-input {
+  background: transparent;
+  border: none;
+  color: var(--text-bright);
+  font-size: 2rem;
+  font-weight: 900;
+  width: 100%;
+  text-align: end;
+  outline: none;
+  padding: 0;
+  line-height: 1.1;
+}
+
+.editor-hero-title-row--narrow .editor-hero-title-input {
+  text-align: center;
+  font-size: 1.4rem;
+}
+
+.editor-hero-title-icon {
+  font-size: 1rem;
+  color: var(--text-muted);
+  opacity: 0.68;
+  flex-shrink: 0;
+  pointer-events: none;
+  line-height: 1;
+}
+
+.editor-hero-meta {
+  color: var(--text-mid);
+  font-size: 0.9rem;
+  width: 100%;
+  text-align: end;
+  margin-bottom: 0.95rem;
+  min-height: 1.2em;
+  line-height: 1.5;
+  cursor: pointer;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  transition: background 0.16s ease, border-color 0.16s ease;
+}
+
+.editor-hero-meta:hover {
+  background: var(--bg-deep);
+  border-color: var(--border);
+}
+
+.editor-hero-content--narrow .editor-hero-meta {
+  text-align: center;
+}
+
+.editor-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.editor-hero-actions--narrow {
+  justify-content: center;
+}
+
+.editor-hero-btn {
+  height: 42px;
+  padding: 0 1rem;
+  border-radius: 11px;
+  border: 1px solid var(--border-strong);
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  cursor: pointer;
+  transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+}
+
+.editor-hero-btn:hover {
+  transform: translateY(-1px);
+}
+
+.editor-hero-btn--play {
+  background: var(--play-btn);
+  color: #fff;
+  border-color: var(--play-btn);
+}
+
+.editor-hero-btn--settings {
+  background: var(--bg-surface);
+  color: var(--text-bright);
+}
+
+.editor-sticky-toolbar {
+  position: sticky;
+  top: 0.5rem;
+  z-index: 100;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.55rem 0.62rem;
+  margin-bottom: 1rem;
+  box-shadow: var(--shadow-md);
+}
+
+.editor-sticky-toolbar--narrow {
+  top: -12px;
+  border-radius: 0;
+  padding: 0.45rem 0.55rem;
+  margin: 0 -1rem 1rem -1rem;
+}
+
+.editor-toolbar-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+}
+
+.editor-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: nowrap;
+}
+
+.editor-toolbar-icon-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.42rem 0.72rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.editor-toolbar-icon-btn:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-deep);
+}
+
+.editor-toolbar-icon-btn.is-narrow {
+  min-width: 48px;
+  padding: 0.4rem 0.5rem;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.editor-toolbar-icon {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.editor-toolbar-icon-btn.is-narrow .editor-toolbar-icon {
+  font-size: 1.2rem;
+}
+
+.editor-toolbar-label {
+  font-size: 0.8rem;
+}
+
+.editor-toolbar-icon-btn.is-narrow .editor-toolbar-label {
+  font-size: 0.58rem;
+}
+
+.editor-toolbar-content-type--mix {
+  color: var(--play-btn);
+}
+
+.editor-toolbar-content-type--mini-game {
+  color: var(--accent);
+}
+
+.editor-toolbar-settings.is-open {
+  border-color: var(--border-strong);
+  background: var(--bg-deep);
+}
+
+.editor-toolbar-settings-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.editor-toolbar-spacer {
+  flex: 1;
+}
+
+.editor-toolbar-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.editor-toolbar-primary:hover {
+  transform: translateY(-1px);
+}
+
+.editor-toolbar-save {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--bg-deep);
+}
+
+.editor-toolbar-save.is-dirty {
+  background: var(--accent);
+  color: #fff;
+}
+
+.editor-toolbar-save:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
+.editor-toolbar-dropdown {
+  position: fixed;
+  min-width: 220px;
+  max-width: 90vw;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: var(--shadow-md);
+  z-index: 9999;
+  overflow: hidden;
+  animation: slideUp 0.15s ease-out;
+}
+
+.editor-toolbar-dropdown-section {
+  padding: 0.45rem 1rem 0.2rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.editor-toolbar-dropdown-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.66rem 1rem;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-align: start;
+  transition: background 0.14s ease;
+}
+
+.editor-toolbar-dropdown-item:hover:not(:disabled) {
+  background: var(--bg-deep);
+}
+
+.editor-toolbar-dropdown-item--divider {
+  border-bottom: 1px solid var(--border);
+}
+
+.editor-toolbar-dropdown-item:disabled {
+  opacity: 0.45;
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.editor-toolbar-dropdown-separator {
+  height: 1px;
+  background: var(--border);
+  margin: 0.2rem 0;
+}
+
+.editor-toolbar-dropdown-item--danger {
+  color: #ef4444;
+  font-weight: 700;
+}
+
+.editor-toolbar-dropdown-item--danger:hover {
+  background: color-mix(in oklab, #ef4444 12%, transparent);
+}
+
+@media (max-width: 768px) {
+  .editor-hero {
+    margin-bottom: 1rem;
+  }
+
+  .editor-hero-btn {
+    height: 40px;
+    padding: 0 0.9rem;
+    font-size: 0.84rem;
+  }
+
+  .editor-toolbar-row {
+    gap: 0.3rem;
+  }
+}/* -- Unified Header -- */
+.editor-unified-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  padding: 0.5rem 1rem;
+  min-height: 64px;
+}
+
+.editor-header-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1;
+}
+
+.editor-back-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 2rem;
+  line-height: 1;
+  padding: 0 0.5rem;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.editor-back-btn:hover {
+  color: var(--text-primary);
+}
+
+.editor-header-cover {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  padding: 0;
+  background: var(--bg-deep);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.editor-header-cover-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.editor-header-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.editor-header-title-input {
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 0.15rem 0.25rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  border-radius: 4px;
+  width: 100%;
+  max-width: 300px;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.editor-header-title-input:hover,
+.editor-header-title-input:focus {
+  background: var(--bg-surface-hover);
+  border-color: var(--border);
+  outline: none;
+}
+
+.editor-header-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.editor-header-pill {
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+}
+
+.editor-header-right {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.editor-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.editor-header-save-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 0.4rem 1.1rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: default;
+}
+
+.editor-header-save-btn .icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.editor-header-save-btn.unsaved {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.editor-header-save-btn.unsaved:hover {
+  background: var(--border);
+}
+
+.editor-header-btn {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.editor-header-btn:hover {
+  background: var(--bg-surface-hover);
+}
+
+.editor-header-add-btn {
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 0.4rem 1rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.editor-header-add-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(0,0,0,0.15);
+}
+
+.editor-header-settings-btn {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 0.4rem 1rem;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.editor-header-settings-btn .icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.editor-header-play-btn {
+  background: #10B981;
+  color: white;
+  border: none;
+  padding: 0.4rem 1rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
+}
+
+.editor-header-dropdown-wrap {
+  position: relative;
+}
+
+@media (max-width: 768px) {
+  /* Tighten the header itself */
+  .editor-unified-header {
+    padding: 0.4rem 0.6rem;
+    min-height: 56px;
+  }
+
+  /* Smaller back button */
+  .editor-back-btn {
+    font-size: 1.5rem;
+    padding: 0 0.25rem;
+  }
+
+  /* Left side gap */
+  .editor-header-left {
+    gap: 0.4rem;
+  }
+
+  /* Shrink cover thumbnail */
+  .editor-header-cover {
+    width: 36px;
+    height: 36px;
+  }
+
+  /* Narrower title */
+  .editor-header-title-input {
+    max-width: 120px;
+    font-size: 0.95rem;
+  }
+
+  /* Hide the pill row entirely on very small screens — saves ≈28px of vertical crowding */
+  .editor-header-meta {
+    display: none;
+  }
+
+  /* Tighten action row */
+  .editor-header-actions {
+    gap: 0.25rem;
+  }
+
+  /* Save button: icon only */
+  .editor-header-save-btn {
+    padding: 0.35rem 0.5rem;
+  }
+  .editor-header-save-btn .label {
+    display: none;
+  }
+
+  /* Add button: shorter */
+  .editor-header-add-btn {
+    padding: 0.35rem 0.6rem;
+    font-size: 0.8rem;
+  }
+
+  /* Settings: icon only  */
+  .editor-header-settings-btn {
+    padding: 0.35rem 0.5rem;
+    font-size: 0.85rem;
+  }
+
+  /* Play button: icon + short text */
+  .editor-header-play-btn {
+    padding: 0.35rem 0.6rem;
+    font-size: 0.82rem;
+  }
+}
+/* -- Robust Fixed Layout -- */
+/* Suppress admin-main's own scroll/padding when the editor is mounted */
+.admin-main:has(.quiz-editor-root) {
+  overflow: hidden !important;
+  padding: 0 !important;
+}
+
+.quiz-editor-root {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--bg-page);
+}
+
+/* Slide shell fills remaining space below the unified header */
+.quiz-editor-root .slide-editor-shell {
+  flex: 1;
+  overflow: hidden;
+  margin-top: 0;
+  align-items: stretch;
+  gap: 0;
+}
+
+/* Question card area scrolls independently inside its column */
+.quiz-editor-root .slide-editor-main {
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 1rem 1.25rem;
+}
+
+/* Slide panel fills height and its list scrolls */
+.quiz-editor-root .slide-panel--left {
+  height: 100%;
+  overflow: hidden;
+  /* Override the sticky positioning — the shell itself is already a fixed-height flex container */
+  position: static;
+  max-height: none;
+  align-self: auto;
+}
+.quiz-editor-root .slide-panel-list {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* ── Mobile: bottom filmstrip ── */
+@media (max-width: 768px) {
+  /* When the bottom panel is active, make the shell a column */
+  .quiz-editor-root .slide-editor-shell--bottom {
+    flex-direction: column;
+  }
+
+  /* Main area takes all remaining space above the strip */
+  .quiz-editor-root .slide-editor-shell--bottom .slide-editor-main {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 0.75rem 0.75rem 1.5rem;
+  }
+
+  /* Strip is fixed-height and full-width */
+  .quiz-editor-root .slide-panel--bottom {
+    flex-shrink: 0;
+    height: 110px;
+    width: 100%;
+    margin-bottom: calc(4rem + 4px);
+  }
+}
+
+/* ══════════════════════════════════════════════
+   Add-Content Dialog — Card Grid
+   ══════════════════════════════════════════════ */
+
+.add-content-dialog {
+  margin-top: 1rem;
+}
+
+/* Tab pill switcher */
+.add-content-tabs {
+  display: flex;
+  background: var(--bg-deep);
+  border-radius: 12px;
+  padding: 4px;
+  margin-bottom: 1.25rem;
+  border: 1px solid var(--border-strong);
+  gap: 4px;
+}
+
+.add-content-tab {
+  flex: 1;
+  padding: 0.55rem 0.5rem;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s;
+  font-family: inherit;
+}
+
+.add-content-tab--active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.add-content-tab:not(.add-content-tab--active):hover {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+/* 2-column card grid */
+.add-content-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.65rem;
+  max-height: 55vh;
+  overflow-y: auto;
+  padding: 0.15rem 0.1rem 0.5rem;
+}
+
+.add-content-grid--minigames {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+/* Individual card */
+.add-content-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.9rem 0.85rem 0.85rem;
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border-strong);
+  border-radius: 14px;
+  cursor: pointer;
+  text-align: right;
+  font-family: inherit;
+  color: var(--text-primary);
+  overflow: hidden;
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+  /* accent strip at top */
+  border-top: 3px solid var(--card-accent, var(--accent));
+}
+
+.add-content-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+  border-color: var(--card-accent, var(--accent));
+}
+
+.add-content-card:active {
+  transform: translateY(0);
+}
+
+/* Icon circle */
+.add-content-card__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--card-accent, var(--accent)) 18%, transparent);
+  font-size: 1.25rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.add-content-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  width: 100%;
+}
+
+.add-content-card__name {
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.add-content-card__desc {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+/* On very small screens fall back to single column */
+@media (max-width: 400px) {
+  .add-content-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── AI Loading Spinner ─────────────────────────────────────────── */
+@keyframes ai-spin {
+  to { transform: rotate(360deg); }
+}
+
+.ai-spinner {
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: ai-spin 0.65s linear infinite;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.editor-header-btn.loading,
+.editor-header-btn.loading:hover {
+  opacity: 0.6;
+  cursor: not-allowed;
+  pointer-events: none;
+}

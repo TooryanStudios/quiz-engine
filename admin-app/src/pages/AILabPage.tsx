@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useToast } from '../lib/ToastContext';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { generateQuizQuestions } from '../lib/ai/quizQuestions';
 
 interface Suggestion {
   text: string;
@@ -28,15 +28,21 @@ const AILabPage: React.FC = () => {
     }
   };
 
-  const fileToGenerativePart = async (file: File) => {
-    const base64EncodedDataPromise = new Promise<string>((resolve) => {
+  const fileToBase64 = async (file: File) => {
+    return await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
-      reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+      reader.onloadend = () => {
+        try {
+          const raw = String(reader.result || '')
+          const b64 = raw.split(',')[1] || ''
+          resolve(b64)
+        } catch (e) {
+          reject(e)
+        }
+      };
+      reader.onerror = () => reject(new Error('Failed to read file.'))
       reader.readAsDataURL(file);
     });
-    return {
-      inlineData: { data: await base64EncodedDataPromise, mimeType: file.type },
-    };
   };
 
   const handleProcess = async () => {
@@ -45,69 +51,62 @@ const AILabPage: React.FC = () => {
       return;
     }
 
-    if (!import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_GEMINI_API_KEY === 'your_gemini_api_key_here') {
-      showToast({ message: 'Gemini API Key is missing or invalid in .env.local', type: 'error' });
-      return;
-    }
-
     setLoading(true);
     setSuggestedQuestions([]);
     setExtractedText('Listing available models and analyzing...');
 
     try {
-      setExtractedText('Selecting cutting-edge model (Gemini 2.5 Flash)...');
-      
-      const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
-      
-      // Use gemini-2.5-flash which is top of your list and the very latest
-      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-      const imagePart = await fileToGenerativePart(file);
+      setExtractedText('Analyzing via server-side AI...');
 
-      const prompt = `
-        Analyze this file and perform two tasks:
-        1. Extract all text content (OCR or direct reading).
-        2. Create 3 to 5 high-quality multiple-choice questions (MCQs) in Arabic based on the content.
-        
-        Respond ONLY with a JSON object in this format:
-        {
-          "extractedText": "all extracted text here...",
-          "questions": [
-            {
-              "text": "The question title in Arabic",
-              "options": ["Option 1", "Option 2", "Option 3", "Option 4"],
-              "correctIndex": 0
-            }
-          ]
+      const b64 = await fileToBase64(file)
+
+      const prompt = `Analyze this file and perform two tasks:
+1) Extract all text content (OCR or direct reading).
+2) Create 3 to 5 high-quality multiple-choice questions (MCQs) in Arabic based on the content.
+
+Respond ONLY with a JSON object in this format:
+{
+  "extractedText": "all extracted text here...",
+  "questions": [
+    {
+      "text": "The question title in Arabic",
+      "type": "multiple",
+      "options": ["Option 1", "Option 2", "Option 3", "Option 4"],
+      "correctIndex": 0
+    }
+  ]
+}`;
+
+      const result = await generateQuizQuestions({
+        promptText: prompt,
+        questionCount: 5,
+        contextFiles: [{ name: file.name, type: file.type, data: b64 }],
+      })
+
+      const extracted = typeof result.extractedText === 'string' && result.extractedText.trim()
+        ? result.extractedText
+        : 'Text content has been processed.'
+
+      const mapped: Suggestion[] = (result.questions || []).map((q: any) => {
+        const options = Array.isArray(q?.options) ? q.options.map((o: any) => String(o)) : []
+        const correctIndex = typeof q?.correctIndex === 'number' ? q.correctIndex : undefined
+        return {
+          text: String(q?.text ?? ''),
+          type: String(q?.type ?? 'multiple'),
+          options,
+          correctIndex,
         }
-      `;
+      })
 
-      // 2. Generate Content
-      const result = await model.generateContent([prompt, imagePart]);
-      const response = await result.response;
-      const text = response.text();
-      
-      // Attempt to clean the output if it has weird headers or pre-text
-      let jsonStr = text;
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        jsonStr = jsonMatch[0];
-      }
-      
-      try {
-        const data = JSON.parse(jsonStr);
-        // We still keep the text in state but don't force a massive UI render of it if it's too large
-        setExtractedText(data.extractedText || "Text content has been processed.");
-        setSuggestedQuestions(data.questions || []);
-        showToast({ message: 'Analysis completed successfully!', type: 'success' });
-      } catch (e) {
-        console.error("JSON Parse Error:", e);
-        // Fallback: If JSON fails, just show the raw response in extractedText
-        setExtractedText(text);
-        showToast({ message: 'Completed, but could not format questions.', type: 'info' });
-      }
-
+      setExtractedText(extracted)
+      setSuggestedQuestions(mapped)
+      showToast({ message: 'Analysis completed successfully!', type: 'success' });
     } catch (err: any) {
       console.error(err);
+      const code = err?.code as string | undefined
+      if (typeof code === 'string' && code.includes('resource-exhausted')) {
+        showToast({ message: 'You have used all your free AI credits. Please upgrade via bank transfer (manual activation) to continue.', type: 'error', durationMs: 10000 })
+      }
       // Stay on screen for 10 seconds if there is an error
       showToast({ 
         message: `Processing error: ${err.message}`, 

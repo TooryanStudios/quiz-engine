@@ -70,7 +70,11 @@ export function AIFeaturesDialog({
           {aiAction === 'generate' ? (
             <>
               <p style={{ color: 'var(--text-mid)', fontSize: '0.95rem', marginBottom: '1.5rem', lineHeight: 1.6 }}>
-                صِف موضوع الاختبار أو ارفع صوراً، وسيقوم الذكاء الاصطناعي بإنشاء أسئلة احترافية لك في ثوانٍ.
+                صِف موضوع الاختبار أو ارفع صوراً، وسيقوم الذكاء الاصطناعي بإنشاء أسئلة لك في ثوانٍ.
+                <br />
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.9em' }}>
+                  تنبيه: قد يخطئ الذكاء الاصطناعي — يرجى مراجعة الأسئلة والإجابات قبل الحفظ.
+                </span>
               </p>
 
               <div style={{ marginBottom: '1.5rem' }}>

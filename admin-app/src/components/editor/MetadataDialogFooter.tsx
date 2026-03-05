@@ -38,6 +38,16 @@ export function MetadataDialogFooter({
             cursor: metadataChecking ? 'not-allowed' : 'pointer',
             opacity: metadataChecking ? 0.6 : 1,
             fontSize: '1em',
+            transition: 'all 0.16s ease',
+          }}
+          onMouseEnter={(event) => {
+            if (metadataChecking) return
+            event.currentTarget.style.backgroundColor = 'var(--bg-deep)'
+            event.currentTarget.style.transform = 'translateY(-1px)'
+          }}
+          onMouseLeave={(event) => {
+            event.currentTarget.style.backgroundColor = 'var(--bg-surface)'
+            event.currentTarget.style.transform = 'translateY(0)'
           }}
         >
           إلغاء

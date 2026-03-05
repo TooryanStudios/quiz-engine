@@ -1,5 +1,5 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
-import { GoogleGenerativeAI } from "@google/generative-ai"
+import { generateQuizQuestions } from '../lib/ai/quizQuestions'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { storage } from '../lib/firebase'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
@@ -38,8 +38,7 @@ import { createQuiz, deleteQuiz, findQuizByOwnerAndSlug, getQuizById, incrementQ
 import { incrementPlatformStat, subscribeMiniGameSettings, subscribeQuestionTypeSettings } from '../lib/adminRepo'
 import { ImageCropDialog } from '../components/ImageCropDialog'
 import { AiGeneratingOverlay } from '../components/editor/AiGeneratingOverlay'
-import { EditorHeroSection } from '../components/editor/EditorHeroSection'
-import { EditorStickyToolbar } from '../components/editor/EditorStickyToolbar'
+import { EditorUnifiedHeader } from '../components/editor/EditorUnifiedHeader'
 import { MiniGameConfigurationPanel } from '../components/editor/MiniGameConfigurationPanel'
 import { MixContentAddSection } from '../components/editor/MixContentAddSection'
 import { AddBlockPickerOverlay } from '../components/editor/AddBlockPickerOverlay'
@@ -50,10 +49,13 @@ import { MetadataDialogFooter } from '../components/editor/MetadataDialogFooter'
 import { MetadataDialogShell } from '../components/editor/MetadataDialogShell'
 import { AddContentDialogBody } from '../components/editor/AddContentDialogBody'
 import { ContentTypePickerOverlay } from '../components/editor/ContentTypePickerOverlay'
-import { AddQuestionCtaSection } from '../components/editor/AddQuestionCtaSection'
 import { AIFeaturesDialog } from '../components/editor/AIFeaturesDialog'
 import { EditorAnimationKeyframes } from '../components/editor/EditorAnimationKeyframes'
-import { generateAiCoverKeywords } from '../lib/ai/coverImage'
+import { generateAndStoreAiCoverImage } from '../lib/ai/coverImage'
+import { CoverAssetsDialogBody } from '../components/editor/CoverAssetsDialogBody'
+import { SlidePanel } from '../components/editor/SlidePanel'
+import { useSlidePanel } from '../hooks/useSlidePanel'
+import { useUserPrefs } from '../lib/UserPrefsContext'
 import placeholderImg from '../assets/QYan_logo_300x164.jpg'
 
 const IS_LOCAL_DEV = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
@@ -61,51 +63,6 @@ const SERVER_BASE = IS_LOCAL_DEV
   ? (import.meta.env.VITE_LOCAL_GAME_URL || 'http://localhost:3001')
   : (import.meta.env.VITE_API_BASE_URL || 'https://play.qyan.app')
 const DEFAULT_COVER_IMAGE = placeholderImg
-
-const SAMPLE_QUESTIONS: QuizQuestion[] = [
-  {
-    type: 'single', duration: 20,
-    text: '🐋 ما هو أكبر حيوان في العالم؟',
-    options: ['الفيل', 'الحوت الأزرق', 'القرش الأبيض', 'الزرافة'],
-    correctIndex: 1,
-  },
-  {
-    type: 'multi', duration: 25,
-    text: '🦋 أيّ من هذه الحيوانات من الثدييات؟ (اختر كل ما ينطبق)',
-    options: ['الدلفين', 'القرش', 'الخفاش', 'التمساح'],
-    correctIndices: [0, 2],
-  },
-  {
-    type: 'order', duration: 30,
-    text: '📏 رتّب هذه الحيوانات من الأصغر إلى الأكبر',
-    items: ['فأر', 'قطة', 'ذئب', 'حصان'],
-    correctOrder: [0, 1, 2, 3],
-  },
-  {
-    type: 'match', duration: 35,
-    text: '🍼 طابق كل حيوان بصغيره',
-    pairs: [
-      { left: 'بقرة', right: 'عجل' },
-      { left: 'خروف', right: 'حَمَل' },
-      { left: 'كلب', right: 'جرو' },
-      { left: 'قطة', right: 'هريرة' },
-    ],
-  },
-  {
-    type: 'type', duration: 20,
-    text: '✍️ اكتب عاصمة عُمان',
-    acceptedAnswers: ['مسقط', 'muscat'],
-    inputPlaceholder: 'اكتب الإجابة هنا',
-  },
-  {
-    type: 'boss', duration: 25,
-    text: '⚔️ أي كوكب يُعرف بالكوكب الأحمر؟',
-    options: ['الزهرة', 'المريخ', 'المشتري', 'نبتون'],
-    correctIndex: 1,
-    bossName: 'Tooryan Guardian',
-    bossHp: 120,
-  },
-]
 
 const starterQuestion: QuizQuestion = {
   type: 'single',
@@ -182,6 +139,9 @@ export function QuizEditorPage() {
   const { isSubscribed } = useSubscription()
   // Always points to the latest saveQuiz closure so setTimeout callbacks never use stale state
   const saveQuizRef = useRef<() => Promise<void>>(() => Promise.resolve())
+  // Tracks whether the no-ID (new quiz) initialization has already run so that navigating
+  // between /editor and /mini-game-editor (which flips isMiniGameContent) doesn't wipe the title.
+  const newEditorInitializedRef = useRef(false)
 
   const [quizId, setQuizId] = useState<string | null>(routeId ?? null)
   const [title, setTitle] = useState('')
@@ -196,6 +156,11 @@ export function QuizEditorPage() {
   const [showMetadataDialog, setShowMetadataDialog] = useState(false)
   const [tempTitle, setTempTitle] = useState('')
   const [tempSlug, setTempSlug] = useState('')
+  const [description, setDescription] = useState('')
+  const [tempDescription, setTempDescription] = useState('')
+  const [activeQuestionIndex, setActiveQuestionIndex] = useState(0)
+  const { slidePanelLayout } = useUserPrefs()
+  const slidePanel = useSlidePanel({ visible: true, orientation: window.innerWidth < 768 ? 'bottom' : slidePanelLayout })
   const [tempVisibility, setTempVisibility] = useState<'public' | 'private'>('private')
   const [tempGameModeId, setTempGameModeId] = useState<string>('')
   const [tempChallenge, setTempChallenge] = useState<ChallengePreset>('classic')
@@ -216,7 +181,7 @@ export function QuizEditorPage() {
   const [isGeneratingCoverImage, setIsGeneratingCoverImage] = useState(false)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [tempAllDuration, setTempAllDuration] = useState(20)
-  const [saveAfterMetadata, setSaveAfterMetadata] = useState(false)
+  const [, setSaveAfterMetadata] = useState(false)
   const [showMiniGamePicker, setShowMiniGamePicker] = useState(false)
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null)
   const [showCropDialog, setShowCropDialog] = useState(false)
@@ -254,6 +219,17 @@ export function QuizEditorPage() {
 
   type StatusState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'success'; msg: string } | { kind: 'error'; msg: string } | { kind: 'info'; msg: string }
   const [status, setStatus] = useState<StatusState>({ kind: 'idle' })
+
+  // Persist the last editor path with its ID so the sidebar nav link always returns to
+  // the quiz in progress rather than stripping the ID and creating a blank editor.
+  // Derive isMiniGame from location.pathname directly to avoid a temporal dead zone —
+  // the `isMiniGameContent` const is declared further down in the component body.
+  useEffect(() => {
+    if (!quizId) return
+    const isMiniGame = location.pathname.startsWith('/mini-game-editor')
+    const path = isMiniGame ? `/mini-game-editor/${quizId}` : `/editor/${quizId}`
+    sessionStorage.setItem(isMiniGame ? 'lastMiniGameEditorPath' : 'lastEditorPath', path)
+  }, [quizId, location.pathname])
 
   const showStatus = (s: StatusState, autoClear = false) => {
     setStatus(s)
@@ -374,12 +350,6 @@ export function QuizEditorPage() {
 
   const fallbackQuestionType = enabledQuestionTypeIds[0] ?? 'single'
   const requiresSubscription = questions.some((question) => questionTypeAccessByType[question.type] === 'premium')
-  const miniGameBlocksCount = useMemo(
-    () => questions.filter((question) => Boolean((question as { miniGameBlockId?: string }).miniGameBlockId)).length,
-    [questions],
-  )
-  const totalQuizItemsCount = questions.length
-  const pureQuestionsCount = Math.max(0, totalQuizItemsCount - miniGameBlocksCount)
   const isPremiumQuestionType = (type: QuestionType) => questionTypeAccessByType[type] === 'premium'
 
   const openUpgradeDialog = (message?: string) => {
@@ -471,6 +441,7 @@ export function QuizEditorPage() {
     setTempChallenge(challengePreset)
     setTempEnableScholarRole(enableScholarRole)
     setTempRandomizeQuestions(randomizeQuestions)
+    setTempDescription(description)
     setTempCoverImage(coverImage || DEFAULT_COVER_IMAGE)
     setTempAllDuration(questions.find((q) => Number.isFinite(q.duration) && (q.duration ?? 0) > 0)?.duration ?? 20)
     setShowMiniGamePicker(false)
@@ -548,12 +519,12 @@ export function QuizEditorPage() {
       const normalizedCoverImage = tempCoverImage.trim() || DEFAULT_COVER_IMAGE
       setCoverImage(normalizedCoverImage)
       setTempCoverImage(normalizedCoverImage)
+      setDescription(tempDescription.trim())
       setShowMiniGamePicker(false)
       setShowMetadataDialog(false)
-      if (saveAfterMetadata) {
-        setSaveAfterMetadata(false)
-        setTimeout(() => { void saveQuizRef.current() }, 0)
-      }
+      setSaveAfterMetadata(false)
+      // Always persist settings immediately when the user clicks موافق
+      setTimeout(() => { void saveQuizRef.current() }, 0)
     } catch (error) {
       showStatus({ kind: 'error', msg: `فشل التحقق: ${(error as Error).message}` })
     } finally {
@@ -563,27 +534,35 @@ export function QuizEditorPage() {
 
   useEffect(() => {
     if (!routeId) {
-      const defaultTitle = isMiniGameContent ? 'New Mini Game' : 'New Quiz'
-      const defaultSlug = ensureScopedSlug(isMiniGameContent ? 'new-mini-game' : 'new-quiz', ownerId)
-      setTitle(defaultTitle)
-      setSlug(defaultSlug)
-      setThemeId('default')
-      setGameModeId('')
-      setMiniGameConfig({})
-      setTempTitle(defaultTitle)
-      setTempSlug(defaultSlug)
-      setTempThemeId('default')
-      setTempGameModeId('')
-      setCoverImage(DEFAULT_COVER_IMAGE)
-      setTempCoverImage(DEFAULT_COVER_IMAGE)
-      setCollapsedQuestions([])
-      // If navigated here with skipPicker flag (e.g. after picker redirected to /mini-game-editor)
-      const navState = location.state as Record<string, unknown> | null
-      if (navState?.skipPicker) {
-        if (navState.contentType) setContentType(navState.contentType as 'quiz' | 'mini-game' | 'mix')
+      // Only fully reset when this is the first time landing on a new (no-ID) editor.
+      // Subsequent re-runs caused by isMiniGameContent flipping (user navigating between
+      // /editor and /mini-game-editor) must NOT overwrite a title the user already typed.
+      if (!newEditorInitializedRef.current) {
+        newEditorInitializedRef.current = true
+        const defaultTitle = isMiniGameContent ? 'New Mini Game' : 'New Quiz'
+        const defaultSlug = ensureScopedSlug(isMiniGameContent ? 'new-mini-game' : 'new-quiz', ownerId)
+        setTitle(defaultTitle)
+        setSlug(defaultSlug)
+        setThemeId('default')
+        setGameModeId('')
+        setMiniGameConfig({})
+        setTempTitle(defaultTitle)
+        setTempSlug(defaultSlug)
+        setTempThemeId('default')
+        setTempGameModeId('')
+        setCoverImage(DEFAULT_COVER_IMAGE)
+        setTempCoverImage(DEFAULT_COVER_IMAGE)
+        setCollapsedQuestions([])
+        // If navigated here with skipPicker flag (e.g. after picker redirected to /mini-game-editor)
+        const navState = location.state as Record<string, unknown> | null
+        if (navState?.skipPicker) {
+          if (navState.contentType) setContentType(navState.contentType as 'quiz' | 'mini-game' | 'mix')
+        }
       }
       return
     }
+    // Opening a real quiz by ID — allow re-initialization next time a new editor is opened
+    newEditorInitializedRef.current = false
     getQuizById(routeId)
       .then((data) => {
         if (!data) { showStatus({ kind: 'error', msg: 'لم يُعثر على الاختبار.' }); return }
@@ -608,6 +587,7 @@ export function QuizEditorPage() {
         const rawCover = (data.coverImage || '').trim()
         const isViteAsset = rawCover.startsWith('/assets/') && !rawCover.startsWith('http')
         setCoverImage(rawCover && !isViteAsset ? rawCover : DEFAULT_COVER_IMAGE)
+        setDescription(data.description || '')
         const rawQuestions = data.questions ?? []
         const normalizedQuestions = sanitizeQuestions(rawQuestions)
         const deprecatedCount = rawQuestions.filter((question) => normalizeQuestionType((question as { type?: unknown }).type) !== question.type).length
@@ -658,12 +638,12 @@ export function QuizEditorPage() {
 
   const replaceQuestion = (index: number, next: QuizQuestion) => {
     setHasUnsavedChanges(true)
-    setQuestions((prev) => prev.map((q, i) => (i === index ? next : q)))
+    setQuestions((prev) => prev.map((q, i) => (i === index ? sanitizeQuestion(next) : q)))
   }
 
   const updateQuestion = (index: number, patch: Partial<QuizQuestion>) => {
     setHasUnsavedChanges(true)
-    setQuestions((prev) => prev.map((q, i) => (i === index ? { ...q, ...patch } : q)))
+    setQuestions((prev) => prev.map((q, i) => (i === index ? sanitizeQuestion({ ...q, ...patch } as QuizQuestion) : q)))
   }
 
   const handleContentTypeSelect = (type: 'quiz' | 'mini-game' | 'mix') => {
@@ -691,6 +671,7 @@ export function QuizEditorPage() {
       miniGameBlockConfig: {},
     }])
     setCollapsedQuestions((prev) => [...prev, false])
+    setActiveQuestionIndex(questions.length)
     setShowAddBlockPicker(false)
   }
 
@@ -706,6 +687,7 @@ export function QuizEditorPage() {
     
     setQuestions((prev) => [...prev, nextQuestion])
     setCollapsedQuestions((prev) => [...prev, false])
+    setActiveQuestionIndex(questions.length)
   }
 
   const showAddQuestionDialog = (initialTab: 'questions' | 'minigames' = 'questions') => {
@@ -754,11 +736,13 @@ export function QuizEditorPage() {
       setTitle(newTitle);
       setSlug(ensureScopedSlug(titleToSlug(newTitle) || 'quiz', ownerId || ''));
       setCollapsedQuestions(Array(selectedQuestions.length).fill(false));
+      setActiveQuestionIndex(0);
       setAiConflictData(null);
       setShowMetadataDialog(true);
     } else if (mode === 'replace') {
       setQuestions(selectedQuestions);
       setCollapsedQuestions(Array(selectedQuestions.length).fill(false));
+      setActiveQuestionIndex(0);
       if (titleToApply) setTitle(titleToApply);
       setAiConflictData(null);
       setShowMetadataDialog(false);
@@ -784,12 +768,6 @@ export function QuizEditorPage() {
     setIsGeneratingAi(true);
 
     try {
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey) throw new Error('Gemini API Key is missing');
-
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const modelCandidates = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.0-flash'];
-
       const MAX_QUESTION_TEXT_LENGTH = 120;
       const MAX_OPTION_TEXT_LENGTH = 48;
 
@@ -817,8 +795,8 @@ export function QuizEditorPage() {
             options = ['الخيار الأول', 'الخيار الثاني'];
           }
 
-          if (options.length > 4) {
-            options = options.slice(0, 4);
+          if (options.length > 6) {
+            options = options.slice(0, 6);
           }
 
           const rawCorrectAnswer = clampText(source.correctAnswer, MAX_OPTION_TEXT_LENGTH);
@@ -853,71 +831,23 @@ export function QuizEditorPage() {
       Important: Use Arabic for all text including the title. For boolean questions, options must be ["صح", "خطأ"].
       Keep content concise for mobile gameplay UI:
       - Max question text length: ${MAX_QUESTION_TEXT_LENGTH} characters
-      - Max option text length: ${MAX_OPTION_TEXT_LENGTH} characters`;
+      - Max option text length: ${MAX_OPTION_TEXT_LENGTH} characters
+      - Max number of options: 6`;
 
-      const userMessage: any = {
-        role: "user",
-        parts: [{ text: promptText }]
-      };
+      const { questions: generatedQuestions, title: generatedTitle } = await generateQuizQuestions({
+        promptText,
+        questionCount: aiQuestionCount,
+        contextFiles: aiContextFiles,
+      })
 
-      // Add files to the prompt
-      for (const file of aiContextFiles) {
-        userMessage.parts.push({
-          inlineData: {
-            data: file.data,
-            mimeType: file.type
-          }
-        });
+      if (generatedTitle && typeof generatedTitle === 'string') {
+        setAiSuggestedTitle(generatedTitle.trim().slice(0, 60))
       }
 
-      let generatedQuestions: any[] | null = null;
-      let lastError: unknown = null;
-
-      for (const modelName of modelCandidates) {
-        try {
-          const model = genAI.getGenerativeModel({ model: modelName });
-          const result = await model.generateContent({
-            contents: [userMessage],
-            generationConfig: {
-              responseMimeType: "application/json"
-            }
-          });
-
-          const response = await result.response;
-          let text = response.text();
-          text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-
-          let parsed: any = null;
-          try {
-            parsed = JSON.parse(text);
-          } catch {
-            const firstBracket = text.indexOf('[');
-            const lastBracket = text.lastIndexOf(']');
-            if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
-              parsed = JSON.parse(text.slice(firstBracket, lastBracket + 1));
-            }
-          }
-
-          if (Array.isArray(parsed)) {
-            generatedQuestions = parsed;
-            break;
-          }
-          if (parsed && Array.isArray(parsed.questions)) {
-            generatedQuestions = parsed.questions;
-            if (parsed.title && typeof parsed.title === 'string') {
-              setAiSuggestedTitle(parsed.title.trim().slice(0, 60));
-            }
-            break;
-          }
-
-          throw new Error('AI response is not a valid questions array');
-        } catch (err) {
-          lastError = err;
-        }
-      }
-
-      if (!generatedQuestions || generatedQuestions.length === 0) {
-        throw lastError || new Error('No questions generated');
+      // Auto-fill description if empty
+      if (!description.trim() && aiPrompt.trim()) {
+        setDescription(aiPrompt.trim().slice(0, 300))
+        setTempDescription(aiPrompt.trim().slice(0, 300))
       }
 
       const normalizedGeneratedQuestions = normalizeAiQuestions(generatedQuestions);
@@ -928,7 +858,11 @@ export function QuizEditorPage() {
       showToast({ message: `✅ تم توليد ${normalizedGeneratedQuestions.length} سؤال`, type: 'success' });
     } catch (error) {
       console.error('AI Generation failed:', error);
-      const message = error instanceof Error ? error.message : 'فشل إنشاء الأسئلة بالذكاء الاصطناعي';
+      const code = (error as any)?.code as string | undefined
+      const message = error instanceof Error ? error.message : 'فشل إنشاء الأسئلة بالذكاء الاصطناعي'
+      if (typeof code === 'string' && code.includes('resource-exhausted')) {
+        openUpgradeDialog('You have used all your free AI credits. Please upgrade via bank transfer (manual activation) to continue.')
+      }
       showToast({ message: `❌ ${message}`, type: 'error' });
     } finally {
       setIsGeneratingAi(false);
@@ -940,40 +874,24 @@ export function QuizEditorPage() {
 
     setIsGeneratingCoverImage(true)
     try {
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY
-      if (!apiKey) throw new Error('Gemini API Key is missing')
-
-      // Use the generative AI to get keywords/description
-      const { keywords } = await generateAiCoverKeywords({
-        apiKey,
+      const { imageUrl } = await generateAndStoreAiCoverImage({
         title: tempTitle || title || '',
+        description: tempDescription || description || '',
         questions,
+        quizId: quizId || undefined,
       })
 
-      // Generate image using Imagen via Gemini (if available) or 
-      // informative message if Imagen is not directly available in this SDK version.
-      // Note: @google/generative-ai does not natively support Imagen 3 yet in this specific client SDK version for browsers.
-      // However, we will simulate the "AI look" or use a dedicated generation endpoint if setup.
-      // For now, we use a more stylized AI-generation proxy or inform the user.
-      
-      // Dedicated AI-styled query
-      const generatedUrl = `https://images.unsplash.com/photo-1546410531-bb4caa6b424d?auto=format&fit=crop&w=600&q=60&sig=${encodeURIComponent(keywords)}`
-      
-      // To fulfill "Storable in Firebase", we fetch the image blob and upload it automatically
-      const response = await fetch(generatedUrl)
-      const blob = await response.blob()
-      
-      const path = `quiz-covers/ai-${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
-      const storageRef = ref(storage, path)
-      await uploadBytes(storageRef, blob)
-      const firebaseRecordUrl = await getDownloadURL(storageRef)
-
-      setTempCoverImage(firebaseRecordUrl)
+      setTempCoverImage(imageUrl)
       setCoverPreviewError('')
       showToast({ message: '✨ تم توليد صورة غلاف وحفظها في Firebase', type: 'success' })
     } catch (error) {
       console.error('Cover AI generation failed:', error)
-      showToast({ message: '❌ فشل إنشاء صورة الغلاف بالذكاء الاصطناعي', type: 'error' })
+      const code = (error as any)?.code as string | undefined
+      const message = error instanceof Error ? error.message : 'فشل إنشاء صورة الغلاف بالذكاء الاصطناعي'
+      if (typeof code === 'string' && code.includes('resource-exhausted')) {
+        openUpgradeDialog('You have used all your free AI credits. Please upgrade via bank transfer (manual activation) to continue.')
+      }
+      showToast({ message: `❌ ${message}`, type: 'error' })
     } finally {
       setIsGeneratingCoverImage(false)
     }
@@ -991,8 +909,11 @@ export function QuizEditorPage() {
 
       setUploadingCover(true)
       try {
+        const uid = auth.currentUser?.uid
         const ext = file.name.split('.').pop() || 'jpg'
-        const path = `quiz-covers/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+        const path = uid
+          ? `quiz-covers/uploads/${uid}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+          : `quiz-covers/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
         const storageRef = ref(storage, path)
         await uploadBytes(storageRef, file)
         const url = await getDownloadURL(storageRef)
@@ -1006,6 +927,34 @@ export function QuizEditorPage() {
     }
 
     inp.click()
+  }
+
+  const openCoverAssetsLibrary = () => {
+    if (!auth.currentUser?.uid) {
+      showToast({ message: 'يرجى تسجيل الدخول أولاً', type: 'error' })
+      return
+    }
+
+    const previous = tempCoverImage
+    showDialog({
+      title: '🗂️ مكتبة الأصول',
+      message: (
+        <CoverAssetsDialogBody
+          initialSelectedUrl={previous}
+          onSelect={(url) => {
+            setTempCoverImage(url)
+            setCoverPreviewError('')
+          }}
+        />
+      ),
+      confirmText: 'تم',
+      cancelText: 'إلغاء',
+      onConfirm: () => {},
+      onCancel: () => {
+        setTempCoverImage(previous)
+        setCoverPreviewError('')
+      },
+    })
   }
 
   const handleAiFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1074,23 +1023,6 @@ export function QuizEditorPage() {
     setAiContextFiles(prev => prev.filter((_, i) => i !== index));
   };
 
-  const loadSamples = () => {
-    showDialog({
-      title: 'تحميل عينات جاهزة؟',
-      message: 'سيتم استبدال الأسئلة الحالية بعينة جاهزة. هل تريد المتابعة؟',
-      confirmText: 'نعم، تحميل العينات',
-      cancelText: 'إلغاء',
-      onConfirm: () => {
-        setHasUnsavedChanges(true)
-        setTitle('Animals Pack Quiz')
-        setSlug('animals-pack-quiz')
-        setQuestions(SAMPLE_QUESTIONS)
-        setCollapsedQuestions(Array(SAMPLE_QUESTIONS.length).fill(false))
-        showStatus({ kind: 'info', msg: 'تم تحميل عينات تتضمن Type Sprint و Boss Battle — اضغط حفظ للتخزين.' })
-      },
-    })
-  }
-
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       if (!hasUnsavedChanges) return
@@ -1102,15 +1034,18 @@ export function QuizEditorPage() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [hasUnsavedChanges])
 
-  // Track screen width for responsive toolbar
+  // Track screen width for responsive toolbar; also auto-switch slide panel orientation
   useEffect(() => {
     const handleResize = () => {
-      setIsNarrowScreen(window.innerWidth < 768)
+      const narrow = window.innerWidth < 768
+      setIsNarrowScreen(narrow)
+      slidePanel.setOrientation(narrow ? 'bottom' : slidePanelLayout)
     }
-    
+
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
-  }, [])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slidePanelLayout])
 
   useEffect(() => {
     if (!showMetadataDialog) return
@@ -1188,6 +1123,11 @@ export function QuizEditorPage() {
         setHasUnsavedChanges(true)
         setQuestions((prev) => prev.filter((_, i) => i !== index))
         setCollapsedQuestions((prev) => prev.filter((_, i) => i !== index))
+        setActiveQuestionIndex((prev) => {
+          if (index < prev) return prev - 1
+          if (index === prev) return Math.max(0, prev - 1)
+          return prev
+        })
       },
     })
   }
@@ -1281,14 +1221,6 @@ export function QuizEditorPage() {
       showStatus({ kind: 'error', msg: `فشل التحقق من الرابط: ${(error as Error).message}` })
       return
     }
-    // DEBUG: trace miniGameConfig save
-    console.log('[SAVE DEBUG]', {
-      isMiniGameContent,
-      gameModeId,
-      miniGameConfig,
-      willIncludeGameMode: (isMiniGameContent || !!gameModeId),
-      quizId,
-    })
     const masterEmail = import.meta.env.VITE_MASTER_EMAIL as string | undefined
     const isMasterAdmin = !!masterEmail && auth.currentUser?.email === masterEmail
     // Non-admins requesting public → set pending approval; master admin can approve directly
@@ -1312,6 +1244,7 @@ export function QuizEditorPage() {
       challengePreset,
       enableScholarRole,
       randomizeQuestions,
+      description: description.trim() || undefined,
       // Never persist Vite-hashed asset paths — they are build-specific and
       // will 404 after the next deploy. Save empty string instead so the UI
       // falls back to the current placeholder on every load.
@@ -1332,26 +1265,7 @@ export function QuizEditorPage() {
         await updateQuiz(quizId, payload)
         setHasUnsavedChanges(false)
         showStatus({ kind: 'idle' })
-        if (payload.gameModeId && payload.miniGameConfig) {
-          const dur = (payload.miniGameConfig as Record<string, unknown>).gameDurationSec
-          showToast({ message: `✅ Saved: ${payload.gameModeId} | duration=${dur}s`, type: 'success' })
-          // Post-save verification: read back from Firestore
-          try {
-            const readBack = await getQuizById(quizId)
-            const savedCfg = readBack?.miniGameConfig as Record<string, unknown> | undefined
-            console.log('[POST-SAVE VERIFY]', {
-              docId: quizId,
-              gameModeIdInFirestore: readBack?.gameModeId,
-              miniGameConfigInFirestore: savedCfg,
-              gameDurationSecInFirestore: savedCfg?.gameDurationSec,
-            })
-            if (!savedCfg || !savedCfg.gameDurationSec) {
-              showToast({ message: '⚠️ WARNING: miniGameConfig NOT found in Firestore after save!', type: 'error' })
-            }
-          } catch { /* ignore read-back errors */ }
-        } else {
-          showToast({ message: 'تم تحديث الاختبار بنجاح', type: 'success' })
-        }
+        showToast({ message: 'تم تحديث الاختبار بنجاح', type: 'success' })
       } else {
         const id = await createQuiz(payload)
         void incrementPlatformStat('quizCreated')
@@ -1462,7 +1376,7 @@ export function QuizEditorPage() {
   saveQuizRef.current = saveQuiz
 
   return (
-    <>
+    <div className="quiz-editor-root">
       {/* Content Type Picker */}
       {showContentTypePicker && (
         <ContentTypePickerOverlay
@@ -1489,6 +1403,7 @@ export function QuizEditorPage() {
       >
         <MetadataDialogContent
           title={tempTitle}
+          description={tempDescription}
           tempThemeId={tempThemeId}
           onThemeIdChange={setTempThemeId}
           shareUrl={shareUrl}
@@ -1498,6 +1413,7 @@ export function QuizEditorPage() {
               setTempSlug(ensureScopedSlug(titleToSlug(value) || 'quiz', ownerId))
             }
           }}
+          onDescriptionChange={setTempDescription}
           onCopyShareUrl={() => { void copyEditorLink() }}
           onShareUrl={() => { void shareEditorLink() }}
           aiQuestionCount={aiQuestionCount}
@@ -1541,38 +1457,33 @@ export function QuizEditorPage() {
           onCoverUrlChange={setTempCoverImage}
           onUploadCoverClick={handleUploadCoverImage}
           onGenerateCoverClick={() => { void handleGenerateCoverImage() }}
+          onOpenCoverLibraryClick={openCoverAssetsLibrary}
           onUseDefaultCoverClick={() => setTempCoverImage(DEFAULT_COVER_IMAGE)}
         />
       </MetadataDialogShell>
 
-      {/* ── Hero header ── */}
-      <EditorHeroSection
+      {/* ── Unified Workspace Header ── */}
+      <EditorUnifiedHeader
+        quizId={quizId}
+        isMiniGameContent={isMiniGameContent}
         isNarrowScreen={isNarrowScreen}
+        contentType={contentType}
+        
+        // Hero Props
         coverImage={coverImage}
         placeholderImage={placeholderImg}
         uploadingCover={uploadingCover}
         title={title}
-        pureQuestionsCount={pureQuestionsCount}
-        miniGameBlocksCount={miniGameBlocksCount}
         visibility={visibility}
         approvalStatus={approvalStatus}
-        quizId={quizId}
-        onOpenMetadata={openMetadataDialog}
         onTitleChange={(value) => {
           setTitle(value)
           setHasUnsavedChanges(true)
         }}
         onPlayQuiz={(id) => { void launchGameFromEditor(id) }}
-      />
 
-      {/* ── Sticky toolbar ── */}
-      <EditorStickyToolbar
-        quizId={quizId}
-        isMiniGameContent={isMiniGameContent}
-        isNarrowScreen={isNarrowScreen}
-        contentType={contentType}
+        // Toolbar Props
         showToolbarDropdown={showToolbarDropdown}
-        questionsCount={questions.length}
         isSaving={status.kind === 'saving'}
         hasUnsavedChanges={hasUnsavedChanges}
         onToggleDropdown={() => setShowToolbarDropdown((v) => !v)}
@@ -1580,8 +1491,6 @@ export function QuizEditorPage() {
         onOpenContentTypePicker={() => setShowContentTypePicker(true)}
         onBack={() => navigate(-1)}
         onOpenMetadata={openMetadataDialog}
-        onCollapseAll={() => setCollapsedQuestions(Array(questions.length).fill(true))}
-        onExpandAll={() => setCollapsedQuestions(Array(questions.length).fill(false))}
         onPreviewQuiz={() => { if (quizId) window.open(`/preview/${quizId}`, '_blank') }}
         onCopyLink={() => { void copyEditorLink() }}
         onShareLink={() => { void shareEditorLink() }}
@@ -1589,6 +1498,8 @@ export function QuizEditorPage() {
         onAddQuestion={() => showAddQuestionDialog()}
         onGenerateAI={() => { setAiAction('generate'); void incrementPlatformStat('aiGenerateClicks') }}
         onRecheckAI={() => { setAiAction('recheck'); void incrementPlatformStat('aiRecheckClicks') }}
+        isGeneratingAI={isGeneratingAi && aiGeneratingMode === 'generate'}
+        isRecheckingAI={isGeneratingAi && aiGeneratingMode === 'recheck'}
         onSave={() => { void saveQuiz() }}
       />
 
@@ -1603,42 +1514,81 @@ export function QuizEditorPage() {
           onPickMiniGamePuzzleImage={pickMiniGamePuzzleImage}
         />
       ) : (
-        <QuestionSection
-          questions={questions}
-          collapsedQuestions={collapsedQuestions}
-          dragIndex={dragIndex}
-          dragOverIndex={dragOverIndex}
-          isNarrowScreen={isNarrowScreen}
-          isSubscribed={isSubscribed}
-          gameModeId={gameModeId}
-          miniGameCards={miniGameCards}
-          uploadingMiniGameImage={uploadingMiniGameImage}
-          uploadingPairImageKey={uploadingPairImageKey}
-          uploadingIndex={uploadingIndex}
-          questionTypeOptions={questionTypeOptions}
-          onSetDragIndex={setDragIndex}
-          onSetDragOverIndex={setDragOverIndex}
-          onMoveQuestion={moveQuestion}
-          onToggleCollapse={(index) => setCollapsedQuestions((prev) => { const n = [...prev]; n[index] = !n[index]; return n })}
-          onRemoveQuestion={removeQuestion}
-          onUpdateQuestion={updateQuestion}
-          onReplaceQuestion={replaceQuestion}
-          onShowDialog={showDialog}
-          onHideDialog={hideDialog}
-          onShowToast={showToast}
-          onOpenUpgradeDialog={openUpgradeDialog}
-          onOpenMiniGamePuzzleCropPicker={openMiniGamePuzzleCropPicker}
-          onUploadPairImage={uploadMatchPairImage}
-          onSetUploadingIndex={setUploadingIndex}
-          isPremiumQuestionType={isPremiumQuestionType}
-        />
-      )}
+        <>
+          {/* ── Slideshow shell ── */}
+          <div className={`slide-editor-shell${slidePanel.orientation === 'bottom' ? ' slide-editor-shell--bottom' : ''}`}>
 
-      <MixContentAddSection
-        isVisible={!isMiniGameContent && contentType === 'mix'}
-        onAddQuestion={() => showAddQuestionDialog()}
-        onAddMiniGame={() => showAddQuestionDialog('minigames')}
-      />
+            {/* Left thumbnail panel */}
+            {slidePanel.visible && slidePanel.orientation === 'left' && questions.length > 0 && (
+              <SlidePanel
+                questions={questions}
+                activeIndex={activeQuestionIndex}
+                orientation="left"
+                onSelect={setActiveQuestionIndex}
+                onAdd={() => showAddQuestionDialog()}
+                onReorder={moveQuestion}
+              />
+            )}
+
+            {/* Main editor area */}
+            <div className="slide-editor-main">
+
+              <QuestionSection
+                quizId={quizId}
+                questions={questions}
+                collapsedQuestions={collapsedQuestions}
+                dragIndex={dragIndex}
+                dragOverIndex={dragOverIndex}
+                isNarrowScreen={isNarrowScreen}
+                isSubscribed={isSubscribed}
+                gameModeId={gameModeId}
+                miniGameCards={miniGameCards}
+                uploadingMiniGameImage={uploadingMiniGameImage}
+                uploadingPairImageKey={uploadingPairImageKey}
+                uploadingIndex={uploadingIndex}
+                questionTypeOptions={questionTypeOptions}
+                onSetDragIndex={setDragIndex}
+                onSetDragOverIndex={setDragOverIndex}
+                onMoveQuestion={moveQuestion}
+                onToggleCollapse={(index) => setCollapsedQuestions((prev) => { const n = [...prev]; n[index] = !n[index]; return n })}
+                onRemoveQuestion={removeQuestion}
+                onUpdateQuestion={updateQuestion}
+                onReplaceQuestion={replaceQuestion}
+                onShowDialog={showDialog}
+                onHideDialog={hideDialog}
+                onShowToast={showToast}
+                onOpenUpgradeDialog={openUpgradeDialog}
+                onOpenMiniGamePuzzleCropPicker={openMiniGamePuzzleCropPicker}
+                onUploadPairImage={uploadMatchPairImage}
+                onSetUploadingIndex={setUploadingIndex}
+                isPremiumQuestionType={isPremiumQuestionType}
+                quizTitle={title}
+                quizDescription={description}
+                activeIndex={activeQuestionIndex}
+              />
+
+              <MixContentAddSection
+                isVisible={contentType === 'mix'}
+                onAddQuestion={() => showAddQuestionDialog()}
+                onAddMiniGame={() => showAddQuestionDialog('minigames')}
+              />
+
+            </div>{/* /slide-editor-main */}
+
+            {/* Bottom thumbnail panel */}
+            {slidePanel.visible && slidePanel.orientation === 'bottom' && questions.length > 0 && (
+              <SlidePanel
+                questions={questions}
+                activeIndex={activeQuestionIndex}
+                orientation="bottom"
+                onSelect={setActiveQuestionIndex}
+                onAdd={() => showAddQuestionDialog()}
+                onReorder={moveQuestion}
+              />
+            )}
+          </div>{/* /slide-editor-shell */}
+        </>
+      )}
 
       {/* AI Generating Overlay */}
       {isGeneratingAi && <AiGeneratingOverlay mode={aiGeneratingMode} />}
@@ -1671,16 +1621,6 @@ export function QuizEditorPage() {
         onSelect={(id) => addMiniGameBlock(id)}
       />
 
-      <AddQuestionCtaSection
-        isMiniGameContent={isMiniGameContent}
-        contentType={contentType}
-        quizId={quizId}
-        questionsCount={questions.length}
-        gameModeId={gameModeId}
-        onShowAddDialog={() => showAddQuestionDialog()}
-        onLoadSamples={loadSamples}
-      />
-
       <ImageCropDialog
         isOpen={showCropDialog}
         imageSrc={cropImageSrc}
@@ -1708,6 +1648,6 @@ export function QuizEditorPage() {
       />
 
       <EditorAnimationKeyframes />
-    </>
+    </div>
   )
 }

@@ -5,6 +5,7 @@ import { db, auth } from './firebase'
 export interface SubscriptionState {
   isSubscribed: boolean
   plan: string | null
+  creditsRemaining: number | null
   loading: boolean
 }
 
@@ -13,27 +14,32 @@ export interface SubscriptionState {
  * has an active subscription (plan != null or activePackIds is non-empty).
  */
 export function useSubscription(): SubscriptionState {
-  const [state, setState] = useState<SubscriptionState>({ isSubscribed: false, plan: null, loading: true })
+  const [state, setState] = useState<SubscriptionState>({ isSubscribed: false, plan: null, creditsRemaining: null, loading: true })
 
   useEffect(() => {
     const uid = auth.currentUser?.uid
     if (!uid) {
-      setState({ isSubscribed: false, plan: null, loading: false })
+      setState({ isSubscribed: false, plan: null, creditsRemaining: null, loading: false })
       return
     }
 
     getDoc(doc(db, 'entitlements', uid))
       .then((snap) => {
         if (!snap.exists()) {
-          setState({ isSubscribed: false, plan: null, loading: false })
+          setState({ isSubscribed: false, plan: null, creditsRemaining: null, loading: false })
           return
         }
-        const data = snap.data() as { plan?: string; activePackIds?: string[] }
+        const data = snap.data() as { plan?: string; activePackIds?: string[]; creditsRemaining?: number }
         const hasPlan = !!data.plan && data.plan !== ''
         const hasPacks = Array.isArray(data.activePackIds) && data.activePackIds.length > 0
-        setState({ isSubscribed: hasPlan || hasPacks, plan: data.plan ?? null, loading: false })
+        setState({
+          isSubscribed: hasPlan || hasPacks,
+          plan: data.plan ?? null,
+          creditsRemaining: typeof data.creditsRemaining === 'number' ? data.creditsRemaining : null,
+          loading: false,
+        })
       })
-      .catch(() => setState({ isSubscribed: false, plan: null, loading: false }))
+      .catch(() => setState({ isSubscribed: false, plan: null, creditsRemaining: null, loading: false }))
   }, [])
 
   return state

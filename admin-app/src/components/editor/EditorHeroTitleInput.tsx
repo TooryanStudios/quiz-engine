@@ -10,35 +10,15 @@ export function EditorHeroTitleInput({
   onTitleChange,
 }: EditorHeroTitleInputProps) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: isNarrowScreen ? 'center' : 'flex-end', gap: '0.5rem', marginBottom: '0.5rem' }}>
+    <div className={`editor-hero-title-row${isNarrowScreen ? ' editor-hero-title-row--narrow' : ''}`}>
       <input
         dir="auto"
         value={title}
         onChange={(e) => onTitleChange(e.target.value)}
         placeholder="عنوان الاختبار..."
-        style={{
-          background: 'transparent',
-          border: 'none',
-          color: 'var(--text-bright)',
-          fontSize: isNarrowScreen ? '1.5rem' : '2.2rem',
-          fontWeight: 900,
-          width: '100%',
-          textAlign: isNarrowScreen ? 'center' : 'right',
-          outline: 'none',
-          padding: 0,
-        }}
+        className="editor-hero-title-input"
       />
-      <span
-        style={{
-          fontSize: isNarrowScreen ? '0.9rem' : '1.1rem',
-          color: 'var(--text-muted)',
-          opacity: 0.55,
-          flexShrink: 0,
-          pointerEvents: 'none',
-          lineHeight: 1,
-        }}
-        title="قابل للتعديل"
-      >✏️</span>
+      <span className="editor-hero-title-icon" title="قابل للتعديل">✏️</span>
     </div>
   )
 }

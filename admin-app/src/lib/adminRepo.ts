@@ -139,6 +139,16 @@ export interface UserProfile {
   statusUpdatedAt?: any
   /** True when profile was synthesised from Auth — no Firestore doc exists yet */
   _authOnly?: boolean
+  /** User preferences — persisted to Firestore */
+  language?: 'ar' | 'en'
+  theme?: 'dark' | 'light'
+  /** Gameplay identity (shown in-game, independent of Firebase Auth display name) */
+  gameDisplayName?: string
+  gameAvatar?: string
+  /** Editor slide panel layout preference */
+  slidePanelLayout?: 'left' | 'bottom'
+  /** Cumulative gameplay points earned */
+  points?: number
 }
 
 export interface PageResult<T> {
@@ -228,6 +238,32 @@ export function subscribeUserDoc(uid: string, onData: (profile: UserProfile | nu
 
 export async function setUserStatus(uid: string, status: 'active' | 'blocked' | 'deleted') {
   await updateDoc(doc(db, 'users', uid), { status, statusUpdatedAt: serverTimestamp() })
+}
+
+/** Save user preference + gameplay identity fields to Firestore. */
+export async function saveUserPrefs(
+  uid: string,
+  prefs: Partial<Pick<UserProfile, 'language' | 'theme' | 'gameDisplayName' | 'gameAvatar' | 'slidePanelLayout'>>
+): Promise<void> {
+  await setDoc(doc(db, 'users', uid), prefs, { merge: true })
+}
+
+/** One-shot load of user preference fields on login. Returns null when no doc exists yet. */
+export async function loadUserPrefs(
+  uid: string
+): Promise<Pick<UserProfile, 'language' | 'theme' | 'gameDisplayName' | 'gameAvatar' | 'slidePanelLayout'> | null> {
+  try {
+    const snap = await getDoc(doc(db, 'users', uid))
+    if (!snap.exists()) return null
+    const d = snap.data()
+    return {
+      language: d.language ?? undefined,
+      theme: d.theme ?? undefined,
+      gameDisplayName: d.gameDisplayName ?? undefined,
+      gameAvatar: d.gameAvatar ?? undefined,
+      slidePanelLayout: d.slidePanelLayout ?? undefined,
+    }
+  } catch { return null }
 }
 
 // ── User activity recording ───────────────────────────────────────────────────

@@ -86,7 +86,7 @@ export function MiniGameConfigurationPanel({
             const selfManaged = policy.type === 'self'
             return (
               <div style={{ padding: '0.75rem 0.85rem', borderRadius: '10px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', marginBottom: '0.5rem' }}>
-                <div style={{ display: 'grid', gap: '0.65rem', gridTemplateColumns: '1fr 1fr', alignItems: 'end' }}>
+                <div style={{ display: 'grid', gap: '0.65rem', gridTemplateColumns: '1fr 1fr 1fr', alignItems: 'end' }}>
                   <div>
                     <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>
                       ⏱ Game Duration (sec)
@@ -97,7 +97,22 @@ export function MiniGameConfigurationPanel({
                       step={5}
                       value={Number(miniGameConfig.gameDurationSec) || ''}
                       onChange={(e) => onUpdateMiniGameConfig({ gameDurationSec: Number(e.target.value), defaultDuration: Number(e.target.value) })}
-                      placeholder="Enter duration in seconds"
+                      placeholder="e.g. 60"
+                      style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-deep)', color: 'var(--text)' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>
+                      🔄 Number of Rounds
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={50}
+                      step={1}
+                      value={Number(miniGameConfig.numberOfRounds) || ''}
+                      onChange={(e) => onUpdateMiniGameConfig({ numberOfRounds: Number(e.target.value) })}
+                      placeholder="e.g. 3"
                       style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-deep)', color: 'var(--text)' }}
                     />
                   </div>

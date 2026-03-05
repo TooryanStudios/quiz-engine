@@ -1,7 +1,8 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { storage } from '../../lib/firebase'
 import type { QuizQuestion, QuestionType, QuizMedia } from '../../types/quiz'
+import { aiCheckQuestionCorrectness, aiGenerateQuestionMediaImage } from '../../lib/ai/questionTools'
 import {
   getQuestionTypeEditorMeta,
   getQuestionTypeTimerPolicy,
@@ -10,8 +11,7 @@ import {
 import { MiniGameBlockCard } from './MiniGameBlockCard'
 import { QuestionCardShell, QuestionCardHeader } from './QuestionCardShell'
 import { QuestionHeaderControls } from './QuestionHeaderControls'
-import { QuestionCardMenuButton } from './QuestionCardMenuButton'
-import { QuestionMenuDialogContent } from './QuestionMenuDialogContent'
+
 import { QuestionTypePickerDialogContent } from './QuestionTypePickerDialogContent'
 import { QuestionDurationPickerDialogContent } from './QuestionDurationPickerDialogContent'
 import { QuestionTextRow } from './QuestionTextRow'
@@ -24,6 +24,7 @@ import { OrderingAnswerSection } from './OrderingAnswerSection'
 import { QuestionMediaSection } from './QuestionMediaSection'
 
 interface QuestionSectionProps {
+  quizId?: string | null
   questions: QuizQuestion[]
   collapsedQuestions: boolean[]
   dragIndex: number | null
@@ -51,9 +52,14 @@ interface QuestionSectionProps {
   onUploadPairImage: (index: number, pairIndex: number, side: 'left' | 'right') => void
   onSetUploadingIndex: (index: number | null) => void
   isPremiumQuestionType: (type: QuestionType) => boolean
+  quizTitle?: string
+  quizDescription?: string
+  /** When set, only the question at this index is rendered (slideshow mode). */
+  activeIndex?: number
 }
 
 const QuestionSection: React.FC<QuestionSectionProps> = ({
+  quizId,
   questions,
   collapsedQuestions,
   dragIndex,
@@ -81,7 +87,22 @@ const QuestionSection: React.FC<QuestionSectionProps> = ({
   onUploadPairImage,
   onSetUploadingIndex,
   isPremiumQuestionType,
+  quizTitle,
+  quizDescription,
+  activeIndex,
 }) => {
+  type AiCheckResult = {
+    verdict: 'ok' | 'issues' | 'uncertain'
+    summary: string
+    issues?: string[]
+    suggestions?: string[]
+    creditsRemaining?: number
+  }
+
+  const [aiCheckLoadingIndex, setAiCheckLoadingIndex] = useState<number | null>(null)
+  const [aiImageLoadingIndex, setAiImageLoadingIndex] = useState<number | null>(null)
+  const [aiCheckResultByIndex, setAiCheckResultByIndex] = useState<Record<number, AiCheckResult>>({})
+
   const parseNumberList = (input: string, max: number) => {
     return input
       .split(',')
@@ -89,9 +110,17 @@ const QuestionSection: React.FC<QuestionSectionProps> = ({
       .filter((v) => Number.isInteger(v) && v >= 0 && v < max)
   }
 
+  // In slideshow mode only render the active slide; otherwise render all
+  const questionPairs: Array<[number, QuizQuestion]> =
+    activeIndex !== undefined
+      ? activeIndex >= 0 && activeIndex < questions.length
+        ? [[activeIndex, questions[activeIndex]] as [number, QuizQuestion]]
+        : []
+      : questions.map((q, i): [number, QuizQuestion] => [i, q])
+
   return (
     <>
-      {questions.map((q, index) => {
+      {questionPairs.map(([index, q]) => {
         // ── Mini-game block card ──
         if (q.miniGameBlockId) {
           return (
@@ -133,6 +162,7 @@ const QuestionSection: React.FC<QuestionSectionProps> = ({
         const isCreatorStudioMode = gameModeId === 'creator-studio'
         const isMultiSelectOptions = editorMeta.answerMode === 'options' && editorMeta.selectionMode === 'multi'
         const optionMin = editorMeta.optionsMin ?? 2
+        const optionMax = editorMeta.optionsMax ?? 6
 
         return (
           <QuestionCardShell
@@ -222,38 +252,40 @@ const QuestionSection: React.FC<QuestionSectionProps> = ({
                     />
                   )}
 
-                  <QuestionCardMenuButton
-                    onOpen={() => {
+                  <button
+                    type="button"
+                    title="حذف السؤال"
+                    onClick={() => {
                       onShowDialog({
-                        title: 'خيارات السؤال',
-                        message: (
-                          <QuestionMenuDialogContent
-                            collapsed={collapsedQuestions[index]}
-                            onToggle={() => {
-                              onToggleCollapse(index)
-                              onHideDialog()
-                            }}
-                            onDelete={() => {
-                              onHideDialog()
-                              onShowDialog({
-                                title: 'حذف السؤال',
-                                message: 'هل أنت متأكد من رغبتك في حذف هذا السؤال؟ لا يمكن التراجع عن هذه الخطوة.',
-                                confirmText: 'حذف',
-                                cancelText: 'إلغاء',
-                                isDangerous: true,
-                                onConfirm: () => {
-                                  onRemoveQuestion(index)
-                                  onHideDialog()
-                                },
-                              })
-                            }}
-                          />
-                        ),
-                        confirmText: 'إغلاق',
-                        onConfirm: () => onHideDialog(),
+                        title: 'حذف السؤال',
+                        message: 'هل أنت متأكد من رغبتك في حذف هذا السؤال؟ لا يمكن التراجع عن هذه الخطوة.',
+                        confirmText: 'حذف',
+                        cancelText: 'إلغاء',
+                        isDangerous: true,
+                        onConfirm: () => {
+                          onRemoveQuestion(index)
+                          onHideDialog()
+                        },
                       })
                     }}
-                  />
+                    style={{
+                      background: 'var(--bg-deep)',
+                      border: '1px solid var(--border-strong)',
+                      color: 'var(--text-muted)',
+                      fontSize: '1rem',
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: 0,
+                      lineHeight: 1,
+                    }}
+                  >
+                    🗑️
+                  </button>
                 </div>
               )}
             />
@@ -268,6 +300,7 @@ const QuestionSection: React.FC<QuestionSectionProps> = ({
                   <OptionsAnswerSection
                     question={q}
                     optionMin={optionMin}
+                    optionMax={optionMax}
                     isMultiSelectOptions={isMultiSelectOptions}
                     sectionLabel={editorMeta.optionsSectionLabel || 'الخيارات'}
                     modeLabel={(isMultiSelectOptions ? editorMeta.optionsModeMultiLabel : editorMeta.optionsModeSingleLabel) || ''}
@@ -344,9 +377,58 @@ const QuestionSection: React.FC<QuestionSectionProps> = ({
                 <QuestionMediaSection
                   question={q}
                   uploading={uploadingIndex === index}
+                  aiCheckLoading={aiCheckLoadingIndex === index}
+                  aiCheckResult={aiCheckResultByIndex[index] || null}
+                  onAiCheckClick={async () => {
+                    if (aiCheckLoadingIndex !== null) return
+                    setAiCheckLoadingIndex(index)
+                    try {
+                      const result = await aiCheckQuestionCorrectness(q)
+                      setAiCheckResultByIndex((prev) => ({ ...prev, [index]: result }))
+                      onShowToast({ message: '✅ تم التحقق بالذكاء الاصطناعي', type: 'success' })
+                    } catch (error) {
+                      console.error('AI check failed', error)
+                      const maybeCode = (error as { code?: unknown } | null | undefined)?.code
+                      const code = typeof maybeCode === 'string' ? maybeCode : undefined
+                      const message = error instanceof Error ? error.message : 'فشل التحقق بالذكاء الاصطناعي'
+                      if (typeof code === 'string' && code.includes('resource-exhausted')) {
+                        onOpenUpgradeDialog('You have used all your free AI credits. Please upgrade via bank transfer (manual activation) to continue.')
+                      }
+                      onShowToast({ message: `❌ ${message}`, type: 'error' })
+                    } finally {
+                      setAiCheckLoadingIndex(null)
+                    }
+                  }}
+                  aiImageLoading={aiImageLoadingIndex === index}
+                  onAiImageClick={async () => {
+                    if (aiImageLoadingIndex !== null) return
+                    setAiImageLoadingIndex(index)
+                    try {
+                      const { imageUrl } = await aiGenerateQuestionMediaImage(q, {
+                        quizId: quizId || undefined,
+                        quizTitle: quizTitle || undefined,
+                        quizDescription: quizDescription || undefined,
+                        otherQuestions: questions,
+                      })
+                      onUpdateQuestion(index, { media: { type: 'image', url: imageUrl } })
+                      onShowToast({ message: '✨ تم توليد صورة للسؤال', type: 'success' })
+                    } catch (error) {
+                      console.error('AI question image failed', error)
+                      const maybeCode = (error as { code?: unknown } | null | undefined)?.code
+                      const code = typeof maybeCode === 'string' ? maybeCode : undefined
+                      const message = error instanceof Error ? error.message : 'فشل توليد صورة السؤال'
+                      if (typeof code === 'string' && code.includes('resource-exhausted')) {
+                        onOpenUpgradeDialog('You have used all your free AI credits. Please upgrade via bank transfer (manual activation) to continue.')
+                      }
+                      onShowToast({ message: `❌ ${message}`, type: 'error' })
+                    } finally {
+                      setAiImageLoadingIndex(null)
+                    }
+                  }}
                   onSelectMediaType={(value) => {
                     if (value === 'none') {
-                      const { media: _media, ...rest } = q
+                      const { media: removedMedia, ...rest } = q
+                      void removedMedia
                       onReplaceQuestion(index, rest as QuizQuestion)
                       return
                     }

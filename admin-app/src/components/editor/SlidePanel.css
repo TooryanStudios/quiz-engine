@@ -1,0 +1,333 @@
+/* ── SlidePanel — the slide thumbnail strip ── */
+
+.slide-panel {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  flex-shrink: 0;
+  transition: width 0.25s ease, height 0.25s ease;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Left vertical strip */
+.slide-panel--left {
+  width: 172px;
+  align-self: flex-start;
+  position: sticky;
+  top: 4.5rem;
+  max-height: calc(100dvh - 6rem);
+  border-top: none;
+}
+
+/* Bottom horizontal filmstrip */
+.slide-panel--bottom {
+  width: 100%;
+  flex-direction: column;
+  height: 110px;
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+  box-shadow: 0 -2px 8px rgba(0,0,0,0.08);
+}
+
+/* ── Panel header ── */
+.slide-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-deep);
+  flex-shrink: 0;
+}
+
+.slide-panel-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.slide-panel-controls {
+  display: flex;
+  gap: 3px;
+}
+
+.slide-panel-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 3px 5px;
+  border-radius: 5px;
+  font-size: 0.8rem;
+  line-height: 1;
+  transition: background 0.15s, color 0.15s;
+}
+.slide-panel-btn:hover {
+  background: var(--border-mid);
+  color: var(--text);
+}
+
+/* ── Scroll containers ── */
+.slide-thumbs--col {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 7px;
+  overflow-y: auto;
+  flex: 1;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-mid) transparent;
+}
+
+.slide-thumbs--row {
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+  padding: 7px;
+  overflow-x: auto;
+  flex: 1;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-mid) transparent;
+  align-items: stretch;
+}
+
+/* ── Individual thumbnail ── */
+.slide-thumb {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 7px;
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-deep);
+  cursor: pointer;
+  text-align: right;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+  flex-shrink: 0;
+  width: 100%;
+  min-width: 0;
+}
+
+/* Fixed width in horizontal (row) mode */
+.slide-thumbs--row .slide-thumb {
+  width: 90px;
+  min-width: 90px;
+}
+
+.slide-thumb:hover {
+  border-color: var(--border-strong);
+  background: var(--border);
+}
+
+.slide-thumb--active {
+  border: 2px solid var(--accent);
+  background: var(--bg-surface);
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+
+/* ── Thumb header row (number + type icon) ── */
+.slide-thumb-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.slide-thumb-num {
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  border-radius: 4px;
+  padding: 1px 5px;
+  line-height: 1.5;
+  flex-shrink: 0;
+}
+.slide-thumb--active .slide-thumb-num {
+  color: var(--accent);
+  background: var(--bg-surface);
+}
+
+.slide-thumb-type {
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+/* ── Media thumbnail ── */
+.slide-thumb-img {
+  border-radius: 5px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.slide-thumb-img img {
+  width: 100%;
+  height: 40px;
+  object-fit: cover;
+  display: block;
+}
+
+/* ── Question text preview ── */
+.slide-thumb-text {
+  font-size: 0.67rem;
+  color: var(--text-dim);
+  line-height: 1.4;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  text-align: right;
+  word-break: break-word;
+}
+
+/* ── Add new slide button ── */
+.slide-thumb--add {
+  border-style: dashed;
+  border-color: var(--border-mid);
+  background: transparent;
+  align-items: center;
+  justify-content: center;
+  flex-direction: row;
+  gap: 5px;
+  min-height: 48px;
+  color: var(--text-muted);
+  transition: border-color 0.15s, color 0.15s;
+}
+.slide-thumb--add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--bg-surface);
+}
+.slide-thumb-add-icon {
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.slide-thumb-add-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+/* ── Slideshow wrapper layout ── */
+.slide-editor-shell {
+  display: flex;
+  flex-direction: row;
+  gap: 0.9rem;
+  align-items: flex-start;
+  margin-top: 0.5rem;
+}
+
+.slide-editor-shell--bottom {
+  flex-direction: column;
+}
+
+.slide-editor-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* ── Slide navigation bar (prev / current / next) ── */
+.slide-nav-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.42rem 0.55rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 0.6rem;
+  flex-wrap: wrap;
+  box-shadow: var(--shadow-sm);
+}
+
+.slide-nav-btn {
+  background: transparent;
+  border: 1px solid var(--border-mid);
+  color: var(--text-muted);
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+.slide-nav-btn:hover:not(:disabled) {
+  background: var(--border-mid);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.slide-nav-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.slide-nav-counter {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-mid);
+  flex: 1;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.slide-nav-counter em {
+  font-style: normal;
+  color: var(--text);
+}
+
+.slide-panel-toggle-btn {
+  background: transparent;
+  border: 1px solid var(--border-mid);
+  color: var(--text-muted);
+  padding: 4px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.slide-panel-toggle-btn:hover {
+  background: var(--border-mid);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.slide-panel-toggle-btn.active {
+  background: var(--bg-surface);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Drag-to-reorder states */
+.slide-thumb[draggable="true"] {
+  cursor: grab;
+}
+
+.slide-thumb--dragging {
+  opacity: 0.4;
+  cursor: grabbing;
+}
+
+.slide-thumb--drop-target {
+  outline: 2px dashed var(--accent);
+  outline-offset: 2px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-deep));
+}

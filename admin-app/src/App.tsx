@@ -7,7 +7,8 @@ import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'reac
 import './App.css'
 import { auth } from './lib/firebase'
 import { ErrorBoundary } from './components/ErrorBoundary'
-import { incrementPlatformStat, recordUserActivity, subscribeUserDoc, grantAdminClaim } from './lib/adminRepo'
+import { incrementPlatformStat, loadUserPrefs, recordUserActivity, subscribeUserDoc, grantAdminClaim } from './lib/adminRepo'
+import { UserPrefsContext } from './lib/UserPrefsContext'
 import { DialogProvider } from './lib/DialogContext'
 import { ToastProvider } from './lib/ToastContext'
 import { Dialog } from './components/Dialog'
@@ -25,6 +26,7 @@ const GameModesPage   = lazy(() => import('./pages/GameModesPage').then(m => ({ 
 const MasterAdminPage = lazy(() => import('./pages/MasterAdminPage').then(m => ({ default: m.MasterAdminPage })))
 const VoiceLabPage    = lazy(() => import('./pages/VoiceLabPage').then(m => ({ default: m.VoiceLabPage })))
 const AILabPage       = lazy(() => import('./pages/AILabPage'))
+const CoverGenLabPage = lazy(() => import('./pages/CoverGenLabPage'))
 const PlayTestPage    = lazy(() => import('./pages/PlayTestPage'))
 
 const MASTER_EMAIL = import.meta.env.VITE_MASTER_EMAIL as string | undefined
@@ -35,11 +37,13 @@ if (!MASTER_EMAIL || !MASTER_PATH) {
 }
 
 const NAV = [
-  { to: '/dashboard',   icon: '🏠', label: 'الرئيسية', end: true },
-  { to: '/editor',      icon: '✏️',  label: 'محرر الاختبارات' },
-  { to: '/my-quizzes',  icon: '📚', label: 'اختباراتي' },
+  { to: '/dashboard',        icon: '🏠', label: 'الرئيسية', end: true },
+  { to: '/editor',           icon: '✏️',  label: 'محرر الأسئلة' },
+  { to: '/mini-game-editor', icon: '🎮', label: 'محرر الألعاب' },
+  { to: '/my-quizzes',       icon: '📚', label: 'اختباراتي' },
   { to: '/packs',       icon: '📦', label: 'المكتبة' },
   { to: '/billing',     icon: '💳', label: 'الاشتراك' },
+  { to: '/profile',     icon: '👤', label: 'الملف الشخصي' },
 ]
 
 function RequireAuth({ user, children }: { user: User | null; children: ReactElement }) {
@@ -64,6 +68,12 @@ function App() {
   const [theme, setTheme] = useState<'dark' | 'light'>(
     () => 'light'
   )
+  const [language, setLanguage] = useState<'ar' | 'en'>(
+    () => (localStorage.getItem('quizAdminLang') as 'ar' | 'en') || 'ar'
+  )
+  const [slidePanelLayout, setSlidePanelLayout] = useState<'left' | 'bottom'>(
+    () => (localStorage.getItem('qyan:slidePanelLayout') as 'left' | 'bottom') || 'left'
+  )
   const handleSignOut = useCallback(() => {
     markSignOut()
     localStorage.removeItem('qyan:session')
@@ -78,6 +88,13 @@ function App() {
     document.documentElement.setAttribute('data-theme', theme)
     localStorage.setItem('quizAdminTheme', theme)
   }, [theme])
+
+  // Apply language direction
+  useEffect(() => {
+    document.documentElement.setAttribute('dir', language === 'ar' ? 'rtl' : 'ltr')
+    document.documentElement.setAttribute('lang', language)
+    localStorage.setItem('quizAdminLang', language)
+  }, [language])
 
   useEffect(() => {
     // Safety timeout: if Firebase auth hasn't resolved in 4 s, treat as
@@ -147,6 +164,12 @@ function App() {
           sessionStorage.setItem('_deviceTracked', '1')
           void incrementPlatformStat(isMobile ? 'mobileVisits' : 'desktopVisits')
         }
+        // Load saved preferences (language, theme) from Firestore and apply them
+        void loadUserPrefs(u.uid).then(prefs => {
+          if (prefs?.language) setLanguage(prefs.language)
+          if (prefs?.theme) setTheme(prefs.theme)
+          if (prefs?.slidePanelLayout) setSlidePanelLayout(prefs.slidePanelLayout)
+        })
       }
     })
     return () => { clearTimeout(authTimeout); unsub() }
@@ -254,6 +277,7 @@ function App() {
   }
 
   return (
+    <UserPrefsContext.Provider value={{ language, setLanguage, theme, setTheme, slidePanelLayout, setSlidePanelLayout }}>
     <ToastProvider>
       <DialogProvider>
         <div className={isLoginPage ? 'login-shell' : `admin-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
@@ -315,17 +339,29 @@ function App() {
               {/* Desktop nav */}
               {user && (
                 <nav className="sidebar-nav-desktop">
-                  {NAV.map(({ to, icon, label, end }) => (
-                    <NavLink
-                      key={to}
-                      to={to}
-                      end={end}
-                      className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
-                    >
-                      <span className="nav-icon">{icon}</span>
-                      <span className="nav-label">{label}</span>
-                    </NavLink>
-                  ))}
+                  {NAV.map(({ to, icon, label, end }) => {
+                    // For editor nav items, resolve to the last-used path (with quiz ID) so
+                    // clicking the link returns to the quiz in progress instead of a blank editor.
+                    const resolvedTo =
+                      to === '/editor'
+                        ? (sessionStorage.getItem('lastEditorPath') || to)
+                        : to === '/mini-game-editor'
+                        ? (sessionStorage.getItem('lastMiniGameEditorPath') || to)
+                        : to
+                    return (
+                      <NavLink
+                        key={to}
+                        to={resolvedTo}
+                        end={end}
+                        className={() =>
+                          `nav-link${(end ? location.pathname === to : location.pathname.startsWith(to)) ? ' active' : ''}`
+                        }
+                      >
+                        <span className="nav-icon">{icon}</span>
+                        <span className="nav-label">{label}</span>
+                      </NavLink>
+                    )
+                  })}
 
                   {user.email === MASTER_EMAIL && MASTER_PATH && (
                     <>
@@ -352,6 +388,13 @@ function App() {
                         <span className="nav-label">مختبر الذكاء</span>
                       </NavLink>
                       <NavLink
+                        to="/cover-gen-lab"
+                        className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
+                      >
+                        <span className="nav-icon">🖼️</span>
+                        <span className="nav-label">مختبر الغلاف</span>
+                      </NavLink>
+                      <NavLink
                         to={`${MASTER_PATH}/dashboard`}
                         className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
                         target="_blank"
@@ -368,7 +411,7 @@ function App() {
               {/* Desktop user section */}
               {user && (
                 <div className="sidebar-user">
-                  <div className="sidebar-user-chip">
+                  <NavLink to="/profile" className={({ isActive }) => `sidebar-user-chip${isActive ? ' active' : ''}`}>
                     {user.photoURL ? (
                       <img src={user.photoURL} referrerPolicy="no-referrer" alt="" className="sidebar-user-avatar" />
                     ) : (
@@ -379,23 +422,8 @@ function App() {
                     <span className="sidebar-user-name">
                       {user.displayName || user.email?.split('@')[0]}
                     </span>
-                  </div>
+                  </NavLink>
                   <button onClick={handleSignOut} className="sidebar-signout-btn">Sign Out</button>
-                  <div className="theme-toggle-row">
-                    <span className="theme-toggle-label">Theme</span>
-                    <div className="theme-pill">
-                      <button
-                        className={`theme-pill-btn${theme === 'dark' ? ' active' : ''}`}
-                        onClick={() => setTheme('dark')}
-                        title="Dark theme"
-                      >🌙</button>
-                      <button
-                        className={`theme-pill-btn${theme === 'light' ? ' active' : ''}`}
-                        onClick={() => setTheme('light')}
-                        title="Light theme"
-                      >☀️</button>
-                    </div>
-                  </div>
                 </div>
               )}
 
@@ -430,44 +458,61 @@ function App() {
                 <nav className={`mobile-nav-drawer ${burgerOpen ? 'drawer-open' : ''}`}>
                   {/* Navigation links */}
                   <div className="mobile-nav-content">
-                    {NAV.map(({ to, icon, label, end }) => (
-                      <NavLink
-                        key={to}
-                        to={to}
-                        end={end}
-                        className={({ isActive }) => isActive ? 'active' : ''}
-                      >
-                        <span className="mobile-nav-link-icon">{icon}</span>
-                        {label}
-                      </NavLink>
-                    ))}
+                    {NAV.map(({ to, icon, label, end }) => {
+                      const resolvedTo =
+                        to === '/editor'
+                          ? (sessionStorage.getItem('lastEditorPath') || to)
+                          : to === '/mini-game-editor'
+                          ? (sessionStorage.getItem('lastMiniGameEditorPath') || to)
+                          : to
+                      return (
+                        <NavLink
+                          key={to}
+                          to={resolvedTo}
+                          end={end}
+                          className={() =>
+                            `mobile-nav-link${(end ? location.pathname === to : location.pathname.startsWith(to)) ? ' active' : ''}`
+                          }
+                        >
+                          <span className="mobile-nav-link-icon">{icon}</span>
+                          {label}
+                        </NavLink>
+                      )
+                    })}
 
                     {user.email === MASTER_EMAIL && MASTER_PATH && (
                       <>
                         <NavLink
                           to="/game-modes"
-                          className={({ isActive }) => isActive ? 'active' : ''}
+                          className={({ isActive }) => `mobile-nav-link${isActive ? ' active' : ''}`}
                           style={{ borderTop: '1px solid var(--border)', marginTop: '0.5rem', paddingTop: '0.5rem' }}>
                           <span className="mobile-nav-link-icon">🧩</span>
                           أوضاع اللعب
                         </NavLink>
                         <NavLink
                           to="/voice-lab"
-                          className={({ isActive }) => isActive ? 'active' : ''}
+                          className={({ isActive }) => `mobile-nav-link${isActive ? ' active' : ''}`}
                           style={{ marginTop: '0.5rem' }}>
                           <span className="mobile-nav-link-icon">🎙️</span>
                           مختبر الصوت
                         </NavLink>
                         <NavLink
                           to="/ai-lab"
-                          className={({ isActive }) => isActive ? 'active' : ''}
+                          className={({ isActive }) => `mobile-nav-link${isActive ? ' active' : ''}`}
                           style={{ marginTop: '0.5rem' }}>
                           <span className="mobile-nav-link-icon">🤖</span>
                           مختبر الذكاء
                         </NavLink>
                         <NavLink
+                          to="/cover-gen-lab"
+                          className={({ isActive }) => `mobile-nav-link${isActive ? ' active' : ''}`}
+                          style={{ marginTop: '0.5rem' }}>
+                          <span className="mobile-nav-link-icon">🖼️</span>
+                          مختبر الغلاف
+                        </NavLink>
+                        <NavLink
                           to={`${MASTER_PATH}/dashboard`}
-                          className={({ isActive }) => isActive ? 'active' : ''}
+                          className={({ isActive }) => `mobile-nav-link${isActive ? ' active' : ''}`}
                           target="_blank"
                           rel="noopener noreferrer">
                           <span className="mobile-nav-link-icon">👑</span>
@@ -497,22 +542,6 @@ function App() {
                         <div className="mobile-profile-email">
                           {user.email}
                         </div>
-                      </div>
-                    </div>
-
-                    <div className="mobile-theme-row">
-                      <span>Theme</span>
-                      <div className="theme-pill">
-                        <button
-                          className={`theme-pill-btn${theme === 'dark' ? ' active' : ''}`}
-                          onClick={() => setTheme('dark')}
-                          title="Dark theme"
-                        >🌙</button>
-                        <button
-                          className={`theme-pill-btn${theme === 'light' ? ' active' : ''}`}
-                          onClick={() => setTheme('light')}
-                          title="Light theme"
-                        >☀️</button>
                       </div>
                     </div>
 
@@ -550,22 +579,20 @@ function App() {
                 <Route path="/my-quizzes" element={<RequireAuth user={user}><MyQuizzesPage /></RequireAuth>} />
                 <Route path="/voice-lab" element={<RequireAdmin user={user}><VoiceLabPage /></RequireAdmin>} />
                 <Route path="/ai-lab" element={<RequireAdmin user={user}><AILabPage /></RequireAdmin>} />
+                <Route path="/cover-gen-lab" element={<RequireAdmin user={user}><CoverGenLabPage /></RequireAdmin>} />
                 <Route path="/billing" element={<RequireAuth user={user}><BillingPage /></RequireAuth>} />
                 <Route path="/profile" element={<RequireAuth user={user}><ProfilePage /></RequireAuth>} />
               </Routes>
               </Suspense>
             </ErrorBoundary>
+
           </main>
-          {!isLoginPage && (
-            <div className="tooryan-attribution-admin" aria-label="Prototype attribution">
-              <span>© Tooryan Studios — Prototype build</span>
-            </div>
-          )}
-        </div>
+        </div>{/* end admin-shell */}
         <Dialog />
         <VFXContainer />
       </DialogProvider>
     </ToastProvider>
+    </UserPrefsContext.Provider>
   )
 }
 

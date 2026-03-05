@@ -275,7 +275,7 @@ export function DashboardPage() {
       <div className="dashboard-section">
         <div className="dashboard-section-header">
           <div>
-            <h3 className="dashboard-section-title">📚 مكتبة الاختبارات</h3>
+            <h3 className="dashboard-section-title">📚 مكتبة الأسئلة</h3>
             <p className="dashboard-section-desc">اختبارات عامة منشورة للجميع</p>
           </div>
           <Link to="/packs" style={{ textDecoration: 'none' }}>
