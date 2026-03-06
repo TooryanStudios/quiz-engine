@@ -251,7 +251,7 @@
   left: 50%;
   transform: translate(-50%, -50%) scale(0.8);
   opacity: 0;
-  transition: opacity 0.2s, transform 0.2s;
+  transition: opacity 0.2s, transform 0.2s, box-shadow 0.2s;
   padding: 0.55rem 1.3rem;
   border-radius: 10px;
   white-space: nowrap;
@@ -268,11 +268,19 @@
   text-decoration: none;
   z-index: 5;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
 }
 
 .quiz-card-full.hovered .play-overlay {
   opacity: 1;
   transform: translate(-50%, -50%) scale(1);
+}
+
+.play-overlay:hover {
+  background: rgba(22, 163, 74, 1);
+  transform: translate(-50%, -50%) scale(1.1);
+  box-shadow: 0 6px 24px rgba(22, 163, 74, 0.6), 0 0 20px rgba(22, 163, 74, 0.3);
+  border-color: rgba(255, 255, 255, 0.8);
 }
 
 .hero-gradient {
@@ -388,6 +396,8 @@
 .action-btn:hover {
   background: var(--bg-hover);
   color: var(--text-bright);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
 }
 
 .action-btn-primary {
@@ -485,4 +495,149 @@
 @keyframes shimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
+}
+
+/* ── Preview Dialog ─────────────────────────────────────────────────── */
+.preview-dialog-backdrop {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+  animation: fadeIn 0.2s ease;
+  padding: 1.5rem;
+}
+
+.preview-dialog {
+  background: var(--bg-surface, #fff);
+  border: 1px solid var(--border-strong, #e2e8f0);
+  border-radius: 16px;
+  width: 100%;
+  max-width: min(860px, calc(100vw - 3rem));
+  max-height: 92vh;
+  max-height: 92dvh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+.preview-dialog-header {
+  padding: 0.8rem 1rem;
+  border-bottom: 1px solid var(--border-subtle, #e2e8f0);
+  flex-shrink: 0;
+  background: linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-card) 100%);
+}
+
+.preview-dialog-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.preview-dialog-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--text-bright, #1e293b);
+}
+
+.preview-dialog-close {
+  background: transparent;
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  color: var(--text-dim, #64748b);
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.preview-dialog-close:hover {
+  background: #ef4444;
+  color: #fff;
+  border-color: #ef4444;
+}
+
+.preview-dialog-meta {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.preview-dialog-badge {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--bg-hover, #f1f5f9);
+  color: var(--text-dim, #64748b);
+}
+
+.preview-dialog-filters {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+}
+
+.preview-filter-btn {
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  border: none;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--bg-hover, #e2e8f0);
+  color: var(--text-dim, #64748b);
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.preview-filter-btn:hover {
+  opacity: 0.85;
+}
+
+.preview-filter-btn.active {
+  color: #fff;
+}
+
+
+.preview-dialog-body {
+  padding: 0;
+  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+  background: var(--bg-page, #f1f5f9);
+}
+
+.preview-dialog-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: calc(92vh - 110px);
+  min-height: calc(92dvh - 110px);
+  border: 0;
+  background: var(--bg-page, #f1f5f9);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }

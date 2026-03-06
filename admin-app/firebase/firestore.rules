@@ -81,5 +81,11 @@ service cloud.firestore {
       allow create, update: if isMasterAdmin();
       allow delete: if false;
     }
+
+    // Theme editor settings are publicly readable so the game server can resolve
+    // dynamic themes via the Firestore REST API without requiring auth credentials.
+    match /platform_settings/theme_editor {
+      allow read: if true;
+    }
   }
 }

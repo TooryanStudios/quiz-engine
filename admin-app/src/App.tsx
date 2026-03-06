@@ -36,15 +36,17 @@ if (!MASTER_EMAIL || !MASTER_PATH) {
   console.error('[config] VITE_MASTER_EMAIL or VITE_MASTER_PATH is not set. Admin features will be disabled.')
 }
 
-const NAV = [
-  { to: '/dashboard',        icon: '🏠', label: 'الرئيسية', end: true },
-  { to: '/editor',           icon: '✏️',  label: 'محرر الأسئلة' },
-  { to: '/mini-game-editor', icon: '🎮', label: 'محرر الألعاب' },
-  { to: '/my-quizzes',       icon: '📚', label: 'اختباراتي' },
-  { to: '/packs',       icon: '📦', label: 'المكتبة' },
-  { to: '/billing',     icon: '💳', label: 'الاشتراك' },
-  { to: '/profile',     icon: '👤', label: 'الملف الشخصي' },
-]
+function getNav(isAr: boolean) {
+  return [
+    { to: '/dashboard',        icon: '🏠', label: isAr ? 'الرئيسية' : 'Dashboard', end: true },
+    { to: '/editor',           icon: '✏️',  label: isAr ? 'محرر الأسئلة' : 'Quiz Editor' },
+    { to: '/mini-game-editor', icon: '🎮', label: isAr ? 'محرر الألعاب' : 'Game Editor' },
+    { to: '/my-quizzes',       icon: '📚', label: isAr ? 'اختباراتي' : 'My Quizzes' },
+    { to: '/packs',            icon: '📦', label: isAr ? 'المكتبة' : 'Library' },
+    { to: '/billing',          icon: '💳', label: isAr ? 'الاشتراك' : 'Billing' },
+    { to: '/profile',          icon: '👤', label: isAr ? 'الملف الشخصي' : 'Profile' },
+  ]
+}
 
 function RequireAuth({ user, children }: { user: User | null; children: ReactElement }) {
   if (!user) return <Navigate to="/login" replace />
@@ -61,6 +63,8 @@ function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
   const navigate = useNavigate()
   const location = useLocation()
+  const isLocalDevHost = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
+  const isLocalPlayTestPath = location.pathname === '/play-test' || location.pathname.startsWith('/play-test/')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [burgerOpen, setBurgerOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
@@ -71,6 +75,7 @@ function App() {
   const [language, setLanguage] = useState<'ar' | 'en'>(
     () => (localStorage.getItem('quizAdminLang') as 'ar' | 'en') || 'ar'
   )
+  const isAr = language === 'ar'
   const [slidePanelLayout, setSlidePanelLayout] = useState<'left' | 'bottom'>(
     () => (localStorage.getItem('qyan:slidePanelLayout') as 'left' | 'bottom') || 'left'
   )
@@ -82,6 +87,8 @@ function App() {
 
   const isLoginPage   = location.pathname === '/login'
   const isMasterPage  = MASTER_PATH ? location.pathname.startsWith(MASTER_PATH) : false
+  const isEmbeddedPreview = location.pathname.startsWith('/preview/') && new URLSearchParams(location.search).get('embedded') === '1'
+  const allowUnauthedLocalPlayTest = isLocalDevHost && isLocalPlayTestPath
 
   // Apply theme to document element
   useEffect(() => {
@@ -102,8 +109,10 @@ function App() {
     const authTimeout = setTimeout(() => {
       setUser((prev) => {
         if (prev === undefined) {
-          navigate('/login', { replace: true, state: { signedOut: consumeSignOut() } })
-          return null
+          if (!allowUnauthedLocalPlayTest) {
+            navigate('/login', { replace: true, state: { signedOut: consumeSignOut() } })
+            return null
+          }
         }
         return prev
       })
@@ -124,7 +133,7 @@ function App() {
       // Keep initial navigation fast; never block UI on network calls.
       if (u && window.location.pathname === '/login') {
         navigate('/dashboard', { replace: true })
-      } else if (!u && window.location.pathname !== '/login') {
+      } else if (!u && window.location.pathname !== '/login' && !(isLocalDevHost && (window.location.pathname === '/play-test' || window.location.pathname.startsWith('/play-test/')))) {
         navigate('/login', { replace: true, state: { signedOut: consumeSignOut() } })
       }
 
@@ -173,7 +182,7 @@ function App() {
       }
     })
     return () => { clearTimeout(authTimeout); unsub() }
-  }, [navigate])
+  }, [allowUnauthedLocalPlayTest, isLocalDevHost, navigate])
 
   // Real-time blocked-user enforcement: sign out immediately if status becomes 'blocked'
   useEffect(() => {
@@ -206,7 +215,7 @@ function App() {
   // No session hint → skip spinner and go straight to login for first-time / logged-out visitors.
   const hasSessionHint = localStorage.getItem('qyan:session') === '1'
 
-  if (user === undefined) {
+  if (user === undefined && !allowUnauthedLocalPlayTest) {
     if (isLoginPage || !hasSessionHint) {
       return (
         <ToastProvider>
@@ -223,33 +232,21 @@ function App() {
     }
 
     return (
-      <ToastProvider>
-        <DialogProvider>
-          <div className="login-shell">
-            <main className="login-main">
-              <LoginPage />
-            </main>
-          </div>
-          <Dialog />
-        </DialogProvider>
-      </ToastProvider>
+      <div className="app-loading-screen">
+        <img src={logoImg} alt="QYan" className="app-loading-logo" />
+        <div className="app-loading-spinner" />
+      </div>
     )
   }
 
   // While Firebase has resolved but user is null and we're not yet on /login,
   // show the login page for that frame — prevents the authenticated sidebar flash.
-  if (user === null && !isLoginPage) {
+  if (user === null && !isLoginPage && !allowUnauthedLocalPlayTest) {
     return (
-      <ToastProvider>
-        <DialogProvider>
-          <div className="login-shell">
-            <main className="login-main">
-              <LoginPage />
-            </main>
-          </div>
-          <Dialog />
-        </DialogProvider>
-      </ToastProvider>
+      <div className="app-loading-screen">
+        <img src={logoImg} alt="QYan" className="app-loading-logo" />
+        <div className="app-loading-spinner" />
+      </div>
     )
   }
 
@@ -273,6 +270,34 @@ function App() {
           <Dialog />
         </DialogProvider>
       </ToastProvider>
+    )
+  }
+
+  // ── Embedded Preview — no sidebar, no shell chrome ──
+  if (isEmbeddedPreview) {
+    return (
+      <UserPrefsContext.Provider value={{ language, setLanguage, theme, setTheme, slidePanelLayout, setSlidePanelLayout }}>
+        <ToastProvider>
+          <DialogProvider>
+            <div className="master-admin-standalone embedded-preview-shell">
+              <ErrorBoundary>
+                <Suspense fallback={
+                  <div className="app-loading-screen">
+                    <img src={logoImg} alt="QYan" className="app-loading-logo" />
+                    <div className="app-loading-spinner" />
+                  </div>
+                }>
+                  <Routes>
+                    <Route path="/preview/:id" element={<RequireAuth user={user ?? null}><QuizPreviewPage /></RequireAuth>} />
+                  </Routes>
+                </Suspense>
+              </ErrorBoundary>
+              <Dialog />
+              <VFXContainer />
+            </div>
+          </DialogProvider>
+        </ToastProvider>
+      </UserPrefsContext.Provider>
     )
   }
 
@@ -312,14 +337,14 @@ function App() {
                           }}
                           type="button"
                         >
-                          👤 Visit Profile
+                          {isAr ? '👤 الملف الشخصي' : '👤 Visit Profile'}
                         </button>
                         <button
                           className="header-profile-action danger"
                           onClick={handleSignOut}
                           type="button"
                         >
-                          🚪 Sign Out
+                          {isAr ? '🚪 تسجيل الخروج' : '🚪 Sign Out'}
                         </button>
                       </div>
                     )}
@@ -339,7 +364,7 @@ function App() {
               {/* Desktop nav */}
               {user && (
                 <nav className="sidebar-nav-desktop">
-                  {NAV.map(({ to, icon, label, end }) => {
+                  {getNav(isAr).map(({ to, icon, label, end }) => {
                     // For editor nav items, resolve to the last-used path (with quiz ID) so
                     // clicking the link returns to the quiz in progress instead of a blank editor.
                     const resolvedTo =
@@ -370,7 +395,7 @@ function App() {
                         className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
                       >
                         <span className="nav-icon">🧩</span>
-                        <span className="nav-label">أوضاع اللعب</span>
+                        <span className="nav-label">{isAr ? 'أوضاع اللعب' : 'Game Modes'}</span>
                       </NavLink>
                       <NavLink
                         to="/voice-lab"
@@ -378,21 +403,21 @@ function App() {
                         style={{ marginTop: '1rem', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}
                       >
                         <span className="nav-icon">🎙️</span>
-                        <span className="nav-label">مختبر الصوت</span>
+                        <span className="nav-label">{isAr ? 'مختبر الصوت' : 'Voice Lab'}</span>
                       </NavLink>
                       <NavLink
                         to="/ai-lab"
                         className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
                       >
                         <span className="nav-icon">🤖</span>
-                        <span className="nav-label">مختبر الذكاء</span>
+                        <span className="nav-label">{isAr ? 'مختبر الذكاء' : 'AI Lab'}</span>
                       </NavLink>
                       <NavLink
                         to="/cover-gen-lab"
                         className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
                       >
                         <span className="nav-icon">🖼️</span>
-                        <span className="nav-label">مختبر الغلاف</span>
+                        <span className="nav-label">{isAr ? 'مختبر الغلاف' : 'Cover Lab'}</span>
                       </NavLink>
                       <NavLink
                         to={`${MASTER_PATH}/dashboard`}
@@ -401,7 +426,7 @@ function App() {
                         rel="noopener noreferrer"
                       >
                         <span className="nav-icon">👑</span>
-                        <span className="nav-label">الإدارة ↗</span>
+                        <span className="nav-label">{isAr ? 'الإدارة ↗' : 'Admin ↗'}</span>
                       </NavLink>
                     </>
                   )}
@@ -423,7 +448,7 @@ function App() {
                       {user.displayName || user.email?.split('@')[0]}
                     </span>
                   </NavLink>
-                  <button onClick={handleSignOut} className="sidebar-signout-btn">Sign Out</button>
+                  <button onClick={handleSignOut} className="sidebar-signout-btn">{isAr ? 'تسجيل الخروج' : 'Sign Out'}</button>
                 </div>
               )}
 
@@ -458,7 +483,7 @@ function App() {
                 <nav className={`mobile-nav-drawer ${burgerOpen ? 'drawer-open' : ''}`}>
                   {/* Navigation links */}
                   <div className="mobile-nav-content">
-                    {NAV.map(({ to, icon, label, end }) => {
+                    {getNav(isAr).map(({ to, icon, label, end }) => {
                       const resolvedTo =
                         to === '/editor'
                           ? (sessionStorage.getItem('lastEditorPath') || to)
@@ -487,28 +512,28 @@ function App() {
                           className={({ isActive }) => `mobile-nav-link${isActive ? ' active' : ''}`}
                           style={{ borderTop: '1px solid var(--border)', marginTop: '0.5rem', paddingTop: '0.5rem' }}>
                           <span className="mobile-nav-link-icon">🧩</span>
-                          أوضاع اللعب
+                          {isAr ? 'أوضاع اللعب' : 'Game Modes'}
                         </NavLink>
                         <NavLink
                           to="/voice-lab"
                           className={({ isActive }) => `mobile-nav-link${isActive ? ' active' : ''}`}
                           style={{ marginTop: '0.5rem' }}>
                           <span className="mobile-nav-link-icon">🎙️</span>
-                          مختبر الصوت
+                          {isAr ? 'مختبر الصوت' : 'Voice Lab'}
                         </NavLink>
                         <NavLink
                           to="/ai-lab"
                           className={({ isActive }) => `mobile-nav-link${isActive ? ' active' : ''}`}
                           style={{ marginTop: '0.5rem' }}>
                           <span className="mobile-nav-link-icon">🤖</span>
-                          مختبر الذكاء
+                          {isAr ? 'مختبر الذكاء' : 'AI Lab'}
                         </NavLink>
                         <NavLink
                           to="/cover-gen-lab"
                           className={({ isActive }) => `mobile-nav-link${isActive ? ' active' : ''}`}
                           style={{ marginTop: '0.5rem' }}>
                           <span className="mobile-nav-link-icon">🖼️</span>
-                          مختبر الغلاف
+                          {isAr ? 'مختبر الغلاف' : 'Cover Lab'}
                         </NavLink>
                         <NavLink
                           to={`${MASTER_PATH}/dashboard`}
@@ -516,7 +541,7 @@ function App() {
                           target="_blank"
                           rel="noopener noreferrer">
                           <span className="mobile-nav-link-icon">👑</span>
-                          الإدارة ↗
+                          {isAr ? 'الإدارة ↗' : 'Admin ↗'}
                         </NavLink>
                       </>
                     )}
@@ -549,7 +574,7 @@ function App() {
                       onClick={handleSignOut}
                       className="mobile-signout-btn"
                     >
-                      Sign Out
+                      {isAr ? 'تسجيل الخروج' : 'Sign Out'}
                     </button>
                   </div>
                 </nav>
@@ -567,21 +592,22 @@ function App() {
               <Routes>
                 <Route path="/" element={<Navigate to={user ? '/dashboard' : '/login'} replace />} />
                 <Route path="/login" element={<LoginPage />} />
-                <Route path="/dashboard" element={<RequireAuth user={user}><DashboardPage /></RequireAuth>} />
-                <Route path="/editor" element={<RequireAuth user={user}><QuizEditorPage /></RequireAuth>} />
-                <Route path="/editor/:id" element={<RequireAuth user={user}><QuizEditorPage /></RequireAuth>} />
-                <Route path="/mini-game-editor" element={<RequireAuth user={user}><QuizEditorPage /></RequireAuth>} />
-                <Route path="/mini-game-editor/:id" element={<RequireAuth user={user}><QuizEditorPage /></RequireAuth>} />
-                <Route path="/game-modes" element={<RequireAdmin user={user}><GameModesPage /></RequireAdmin>} />
-                <Route path="/play-test/:gameId" element={<RequireAdmin user={user}><PlayTestPage /></RequireAdmin>} />
-                <Route path="/preview/:id" element={<RequireAuth user={user}><QuizPreviewPage /></RequireAuth>} />
-                <Route path="/packs" element={<RequireAuth user={user}><PacksPage /></RequireAuth>} />
-                <Route path="/my-quizzes" element={<RequireAuth user={user}><MyQuizzesPage /></RequireAuth>} />
-                <Route path="/voice-lab" element={<RequireAdmin user={user}><VoiceLabPage /></RequireAdmin>} />
-                <Route path="/ai-lab" element={<RequireAdmin user={user}><AILabPage /></RequireAdmin>} />
-                <Route path="/cover-gen-lab" element={<RequireAdmin user={user}><CoverGenLabPage /></RequireAdmin>} />
-                <Route path="/billing" element={<RequireAuth user={user}><BillingPage /></RequireAuth>} />
-                <Route path="/profile" element={<RequireAuth user={user}><ProfilePage /></RequireAuth>} />
+                <Route path="/dashboard" element={<RequireAuth user={user ?? null}><DashboardPage /></RequireAuth>} />
+                <Route path="/editor" element={<RequireAuth user={user ?? null}><QuizEditorPage /></RequireAuth>} />
+                <Route path="/editor/:id" element={<RequireAuth user={user ?? null}><QuizEditorPage /></RequireAuth>} />
+                <Route path="/mini-game-editor" element={<RequireAuth user={user ?? null}><QuizEditorPage /></RequireAuth>} />
+                <Route path="/mini-game-editor/:id" element={<RequireAuth user={user ?? null}><QuizEditorPage /></RequireAuth>} />
+                <Route path="/game-modes" element={<RequireAdmin user={user ?? null}><GameModesPage /></RequireAdmin>} />
+                <Route path="/play-test" element={allowUnauthedLocalPlayTest ? <PlayTestPage /> : <RequireAdmin user={user ?? null}><PlayTestPage /></RequireAdmin>} />
+                <Route path="/play-test/:gameId" element={allowUnauthedLocalPlayTest ? <PlayTestPage /> : <RequireAdmin user={user ?? null}><PlayTestPage /></RequireAdmin>} />
+                <Route path="/preview/:id" element={<RequireAuth user={user ?? null}><QuizPreviewPage /></RequireAuth>} />
+                <Route path="/packs" element={<RequireAuth user={user ?? null}><PacksPage /></RequireAuth>} />
+                <Route path="/my-quizzes" element={<RequireAuth user={user ?? null}><MyQuizzesPage /></RequireAuth>} />
+                <Route path="/voice-lab" element={<RequireAdmin user={user ?? null}><VoiceLabPage /></RequireAdmin>} />
+                <Route path="/ai-lab" element={<RequireAdmin user={user ?? null}><AILabPage /></RequireAdmin>} />
+                <Route path="/cover-gen-lab" element={<RequireAdmin user={user ?? null}><CoverGenLabPage /></RequireAdmin>} />
+                <Route path="/billing" element={<RequireAuth user={user ?? null}><BillingPage /></RequireAuth>} />
+                <Route path="/profile" element={<RequireAuth user={user ?? null}><ProfilePage /></RequireAuth>} />
               </Routes>
               </Suspense>
             </ErrorBoundary>

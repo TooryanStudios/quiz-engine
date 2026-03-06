@@ -8,7 +8,7 @@ import { useDialog } from '../lib/DialogContext'
 import { useToast } from '../lib/ToastContext'
 import { useSubscription } from '../lib/useSubscription'
 import { guardedLaunchGame } from '../lib/gameLaunch'
-import { buildHostGameUrl } from '../lib/gameModeUrl'
+import { buildHostGameUrl, buildPlayerGameUrl } from '../lib/gameModeUrl'
 import { getHostLaunchAuthParams } from '../lib/hostLaunchAuth'
 import type { ChallengePreset, QuizDoc, QuizQuestion, QuestionType } from '../types/quiz'
 import {
@@ -604,7 +604,11 @@ export function QuizEditorPage() {
   }, [routeId, ownerId, isMiniGameContent])
 
   const shareSlug = tempSlug || ensureScopedSlug(titleToSlug(tempTitle) || 'quiz', ownerId)
-  const shareUrl = `${SERVER_BASE}/player?quiz=${shareSlug}`
+  const shareUrl = buildPlayerGameUrl({
+    serverBase: SERVER_BASE,
+    quizId: shareSlug,
+    themeId,
+  })
   const miniGameCards = useMemo(() => {
     return MINI_GAME_IDS.map((id) => {
       const definition = MINI_GAME_DEFINITIONS[id]
@@ -1286,7 +1290,11 @@ export function QuizEditorPage() {
   }
 
   const editorShareSlug = slug || quizId || ''
-  const editorShareUrl = editorShareSlug ? `${SERVER_BASE}/player?quiz=${editorShareSlug}` : ''
+  const editorShareUrl = editorShareSlug ? buildPlayerGameUrl({
+    serverBase: SERVER_BASE,
+    quizId: editorShareSlug,
+    themeId,
+  }) : ''
 
   const copyEditorLink = async () => {
     if (!editorShareUrl) {

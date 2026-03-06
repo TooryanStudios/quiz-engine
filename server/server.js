@@ -316,20 +316,50 @@ app.get('/api/build-info', (_req, res) => res.json({ buildTime: BUILD_TIME }));
 
 // Debug endpoint — inspect quiz miniGameConfig from Firestore
 app.get('/api/debug-quiz/:id', async (req, res) => {
+  const quizId = req.params.id;
   try {
+    // 1. Try Admin SDK (fast, works when service account matches the quiz project)
     const db = getDbSafe();
-    if (!db) return res.status(503).json({ error: 'Firestore not available' });
-    const docRef = db.collection('quizzes').doc(req.params.id);
-    const snap = await docRef.get();
-    if (!snap.exists) return res.status(404).json({ error: 'Quiz not found' });
-    const data = snap.data();
-    res.json({
-      id: snap.id,
-      gameModeId: data.gameModeId || null,
-      miniGameConfig: data.miniGameConfig || null,
-      questionCount: (data.questions || []).length,
-      firstQuestionDuration: (data.questions || [])[0]?.duration || null,
-    });
+    if (db) {
+      const docRef = db.collection('quizzes').doc(quizId);
+      const snap = await docRef.get();
+      if (snap.exists) {
+        const data = snap.data();
+        return res.json({
+          id: snap.id,
+          title: data.title || null,
+          slug: data.slug || null,
+          themeId: typeof data.themeId === 'string' ? data.themeId : null,
+          gameModeId: data.gameModeId || null,
+          miniGameConfig: data.miniGameConfig || null,
+          visibility: data.visibility || null,
+          questionCount: (data.questions || []).length,
+          firstQuestionDuration: (data.questions || [])[0]?.duration || null,
+          updatedAt: typeof data.updatedAt?.toDate === 'function'
+            ? data.updatedAt.toDate().toISOString()
+            : (typeof data.updatedAt === 'string' ? data.updatedAt : null),
+          source: 'admin-sdk',
+        });
+      }
+    }
+
+    // 2. Fallback: Firestore REST API (reads from FIREBASE_REST_PROJECT_ID)
+    const restData = await getQuizDataFromRestApi(quizId);
+    if (restData) {
+      return res.json({
+        id: quizId,
+        title: restData.title || null,
+        themeId: restData.themeId || null,
+        gameModeId: restData.gameModeId || null,
+        visibility: null,
+        questionCount: (restData.questions || []).length,
+        challengePreset: restData.challengePreset || null,
+        updatedAt: restData.updatedAt || null,
+        source: 'rest-api',
+      });
+    }
+
+    res.status(404).json({ error: 'Quiz not found', hint: 'Check that FIREBASE_REST_PROJECT_ID and FIREBASE_REST_API_KEY point to the correct project' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -443,6 +473,7 @@ app.get('/api/quiz-info/:slug', async (req, res) => {
         return res.json({
           title: data.title || slug,
           questionCount: questions.length,
+          themeId: typeof data.themeId === 'string' ? data.themeId : null,
           mediaAssets,
           updatedAt,
         });
@@ -463,6 +494,7 @@ app.get('/api/quiz-info/:slug', async (req, res) => {
       return res.json({
         title: restData.title || slug,
         questionCount: questions.length,
+        themeId: typeof restData.themeId === 'string' ? restData.themeId : null,
         mediaAssets,
         updatedAt: restData.updatedAt || null,
       });
@@ -471,6 +503,119 @@ app.get('/api/quiz-info/:slug', async (req, res) => {
     console.error('[quiz-info] Error:', err.message);
   }
   res.status(404).json({ error: 'Quiz not found' });
+});
+
+// ── Theme helpers ──────────────────────────────────────────────────────────────
+// Convert admin camelCase ThemePaletteTokens to CSS variable map
+function themeTokensToCssVars(tokens) {
+  if (!tokens || typeof tokens !== 'object') return {};
+  const MAP = {
+    bg: '--bg',
+    surface: '--surface',
+    surface2: '--surface-2',
+    accent: '--accent',
+    text: '--text',
+    textDim: '--text-dim',
+    success: '--success',
+    danger: '--danger',
+    warning: '--warning',
+    submitBg: '--submit-bg',
+    submitText: '--submit-text',
+    pauseBg: '--pause-bg',
+    pauseText: '--pause-text',
+    dangerBg: '--danger-bg',
+    dangerText: '--danger-text',
+    headingFont: '--heading-font',
+    bodyFont: '--body-font',
+    bgPattern: '--bg-pattern',
+    bgPatternColor: '--bg-pattern-color',
+    bgPatternOpacity: '--bg-pattern-opacity',
+    bgImageUrl: '--bg-image-url',
+    cardRadius: '--card-radius',
+    btnRadius: '--btn-radius',
+    submitRadius: '--submit-radius',
+    timerRadius: '--timer-radius',
+  };
+  const result = {};
+  for (const [key, cssVar] of Object.entries(MAP)) {
+    const val = tokens[key];
+    if (val !== undefined && val !== null && val !== '') {
+      result[cssVar] = String(val);
+    }
+  }
+  // Also wire cardRadius → --radius so existing game CSS (which uses var(--radius)) picks it up
+  if (tokens.cardRadius !== undefined && tokens.cardRadius !== null && tokens.cardRadius !== '') {
+    result['--radius'] = String(tokens.cardRadius);
+  }
+  return result;
+}
+
+// Guess light/dark base theme from bg color brightness
+function guessBaseTheme(bgColor) {
+  if (!bgColor || typeof bgColor !== 'string') return 'dark';
+  const hex = bgColor.replace('#', '').trim();
+  if (hex.length !== 6) return 'dark';
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  if (isNaN(r) || isNaN(g) || isNaN(b)) return 'dark';
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5 ? 'light' : 'dark';
+}
+
+// Dynamic theme API — resolves a Firestore-managed theme by ID and returns
+// it in the same { id, name, baseTheme, tokens } shape as static theme.json files.
+app.get('/api/themes/:themeId', async (req, res) => {
+  const themeId = (req.params.themeId || '').trim();
+  if (!themeId) return res.status(400).json({ error: 'Missing themeId' });
+
+  try {
+    // 1. Try Admin SDK (fast path — works when service account is for qyan-om)
+    const db = getDbSafe();
+    if (db) {
+      const docSnap = await db.collection('platform_settings').doc('theme_editor').get();
+      if (docSnap.exists) {
+        const docData = docSnap.data() || {};
+        const themes = Array.isArray(docData.themes) ? docData.themes : [];
+        const theme = themes.find((t) => t && t.id === themeId && t.enabled !== false);
+        if (theme && theme.tokens) {
+          return res.json({
+            id: theme.id,
+            name: theme.name || theme.id,
+            baseTheme: guessBaseTheme(theme.tokens.bg),
+            tokens: themeTokensToCssVars(theme.tokens),
+          });
+        }
+      }
+    }
+
+    // 2. REST API fallback (Render deployment: server may point to different project)
+    const apiKey = process.env.FIREBASE_REST_API_KEY;
+    const projectId = process.env.FIREBASE_REST_PROJECT_ID;
+    if (apiKey && projectId) {
+      const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/platform_settings/theme_editor?key=${encodeURIComponent(apiKey)}`;
+      const restRes = await fetch(url, { headers: { Accept: 'application/json' } });
+      if (restRes.ok) {
+        const rawDoc = await restRes.json();
+        const docData = _firestoreDocToJs(rawDoc) || {};
+        const themes = Array.isArray(docData.themes) ? docData.themes : [];
+        const theme = themes.find((t) => t && t.id === themeId && t.enabled !== false);
+        if (theme && theme.tokens) {
+          return res.json({
+            id: theme.id,
+            name: theme.name || theme.id,
+            baseTheme: guessBaseTheme(theme.tokens.bg),
+            tokens: themeTokensToCssVars(theme.tokens),
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[/api/themes] Error:', err.message);
+    return res.status(500).json({ error: 'Failed to load theme' });
+  }
+
+  res.status(404).json({ error: 'Theme not found', themeId });
 });
 
 // Preview endpoint — view all quiz questions with answers (for testing/debugging)
@@ -1060,6 +1205,7 @@ async function getQuizDataFromRestApi(quizId) {
         ownerId: data.ownerId || null,
         priceTier: normalizePriceTier(data.priceTier),
         questions: data.questions,
+        themeId: typeof data.themeId === 'string' ? data.themeId : null,
         gameModeId: typeof data.gameModeId === 'string' ? data.gameModeId : null,
         miniGameConfig: (data.miniGameConfig && typeof data.miniGameConfig === 'object') ? data.miniGameConfig : {},
         challengePreset: data.challengePreset || 'classic',
@@ -1126,6 +1272,7 @@ async function getQuizData(quizSlug) {
               return {
                 title: data.title || null,
                 questions: data.questions,
+                themeId: typeof data.themeId === 'string' ? data.themeId : null,
                 gameModeId: typeof data.gameModeId === 'string' ? data.gameModeId : null,
                 miniGameConfig: (data.miniGameConfig && typeof data.miniGameConfig === 'object') ? data.miniGameConfig : {},
                 challengePreset: data.challengePreset || 'classic',
@@ -1148,6 +1295,7 @@ async function getQuizData(quizSlug) {
             return {
               title: data.title || null,
               questions: data.questions,
+              themeId: typeof data.themeId === 'string' ? data.themeId : null,
               gameModeId: typeof data.gameModeId === 'string' ? data.gameModeId : null,
               miniGameConfig: (data.miniGameConfig && typeof data.miniGameConfig === 'object') ? data.miniGameConfig : {},
               challengePreset: data.challengePreset || 'classic',
@@ -1204,6 +1352,7 @@ async function getQuizData(quizSlug) {
     console.log(`[Quiz] ✓ Loaded ${questions.length} questions from HTTP endpoint`);
     return {
       questions,
+      themeId: null,
       gameModeId: null,
       miniGameConfig: {},
       challengePreset: 'classic',
@@ -1233,6 +1382,7 @@ async function refreshQuestions(quizSlug) {
   console.log(`[Quiz] Loaded ${finalQuestions.length} questions (preset: ${remote?.challengePreset || 'classic'})`);
   return {
     questions: finalQuestions,
+    themeId: typeof remote?.themeId === 'string' ? remote.themeId : null,
     gameModeId: typeof remote?.gameModeId === 'string' ? remote.gameModeId : null,
     miniGameConfig: (remote?.miniGameConfig && typeof remote.miniGameConfig === 'object') ? remote.miniGameConfig : {},
     challengePreset: remote?.challengePreset || 'classic',

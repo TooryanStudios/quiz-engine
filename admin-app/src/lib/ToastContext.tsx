@@ -15,6 +15,7 @@ interface ToastState extends ToastOptions {
 
 interface ToastContextType {
   showToast: (options: ToastOptions) => void
+  hideToast: () => void
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined)
@@ -51,8 +52,19 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     }, duration)
   }
 
+  const hideToast = () => {
+    if (timeoutRef.current) window.clearTimeout(timeoutRef.current)
+    if (fadeTimeoutRef.current) window.clearTimeout(fadeTimeoutRef.current)
+    
+    setToast(prev => prev ? { ...prev, isVisible: false } : null)
+    
+    fadeTimeoutRef.current = window.setTimeout(() => {
+      setToast(null)
+    }, 400)
+  }
+
   return (
-    <ToastContext.Provider value={{ showToast }}>
+    <ToastContext.Provider value={{ showToast, hideToast }}>
       {children}
       <ToastView toast={toast} />
     </ToastContext.Provider>

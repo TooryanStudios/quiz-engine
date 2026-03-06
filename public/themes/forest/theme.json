@@ -1,0 +1,14 @@
+{
+  "id": "forest",
+  "name": "Forest",
+  "baseTheme": "dark",
+  "tokens": {
+    "--bg": "#0d2614",
+    "--surface": "#132e1a",
+    "--surface-2": "#1e4a28",
+    "--accent": "#52b788",
+    "--text": "#d8f3dc",
+    "--text-dim": "#74c69d",
+    "--success": "#f4a261"
+  }
+}

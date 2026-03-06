@@ -25,8 +25,22 @@ VITE_FIREBASE_APP_ID=
 VITE_STRIPE_PUBLISHABLE_KEY=
 VITE_STRIPE_TEST_PRICE_ID=
 VITE_API_BASE_URL=https://quizengine.onrender.com
+VITE_LOCAL_GAME_URL=http://localhost:3001
 VITE_PAYMENTS_MODE=mock
 ```
+
+## Local gameplay preview
+
+For local gameplay testing, set:
+
+```env
+VITE_LOCAL_GAME_URL=http://localhost:3001
+```
+
+When the admin app runs on localhost, launch/share links will automatically target your local gameplay server.
+
+- Host preview on localhost uses: `http://localhost:3001/?quiz=<id>&mode=host&theme=<themeId>`
+- Player preview on localhost uses: `http://localhost:3001/?quiz=<id>&theme=<themeId>`
 
 ## Firestore data model
 
@@ -71,7 +85,7 @@ Billing page will use **Simulate Purchase** and grant entitlement directly.
 
 Use public slug links:
 
-`https://quizengine.onrender.com/?quiz=<slug>`
+`https://quizengine.onrender.com/player?quiz=<slug>`
 
 The quiz engine server fetches quiz data by slug from cloud source.
 

@@ -5,12 +5,13 @@ import { useTheme } from '../lib/useTheme'
 import { useToast } from '../lib/ToastContext'
 import { cloneQuiz, incrementQuizPlayCount, listPublicQuizzes } from '../lib/quizRepo'
 import { guardedLaunchGame } from '../lib/gameLaunch'
-import { buildHostGameUrl } from '../lib/gameModeUrl'
+import { buildHostGameUrl, buildPlayerGameUrl } from '../lib/gameModeUrl'
 import { getHostLaunchAuthParams } from '../lib/hostLaunchAuth'
 import type { QuizDoc, QuizQuestion } from '../types/quiz'
 import placeholderImg from '../assets/QYan_logo_300x164.jpg'
 import { useSubscription } from '../lib/useSubscription'
 import { useDialog } from '../lib/DialogContext'
+import { useUserPrefs } from '../lib/UserPrefsContext'
 
 type QuizItem = QuizDoc & { id: string }
 
@@ -54,6 +55,37 @@ export function PacksPage() {
   const { showToast } = useToast()
   const { show: showDialog } = useDialog()
   const { isSubscribed } = useSubscription()
+  const { language } = useUserPrefs()
+  const isAr = language === 'ar'
+
+  const t = {
+    subReqTitle: isAr ? '🔒 اشتراك مطلوب' : '🔒 Subscription Required',
+    subReqMsg: isAr ? 'هذا الاختبار متميز. يرجى ترقية حسابك لاستخدامه.' : 'This quiz is a premium quiz. Please upgrade your account to use it.',
+    upgradeNow: isAr ? 'ترقية الآن' : 'Upgrade now',
+    cancel: isAr ? 'إلغاء' : 'Cancel',
+    loadError: isAr ? 'فشل تحميل الاختبارات العامة.' : 'Failed to load public quizzes.',
+    cloneSuccess: isAr ? 'تم استنساخ الاختبار — يمكنك الآن تعديل نسختك.' : 'Quiz cloned — you can now edit your copy.',
+    cloneFail: (msg: string) => isAr ? `فشل الاستنساخ: ${msg}` : `Clone failed: ${msg}`,
+    gameServerErr: isAr ? 'خادم اللعبة غير متوفر مؤقتاً. يرجى المحاولة مرة أخرى قريباً.' : 'Game server is temporarily unavailable. Please try again in a moment.',
+    popupBlocked: isAr ? 'تم حظر النافذة المنبثقة. يرجى السماح بالنوافذ المنبثقة والمحاولة مرة أخرى.' : 'Popup was blocked. Please allow popups and try again.',
+    title: isAr ? 'مكتبة الاختبارات العامة' : 'Public Quiz Library',
+    subtitle: (count: number) => isAr ? `${count} اختبار · تصفح، عاين أو استنسخ` : `${count} quiz${count !== 1 ? 'zes' : ''} · Browse, preview or clone`,
+    all: isAr ? 'الكل' : 'All',
+    mine: isAr ? 'خاصتي' : 'Mine',
+    others: isAr ? 'الآخرين' : 'Others',
+    searchPlaceholder: isAr ? 'بحث المواضيع، العناوين...' : 'Search topics, titles...',
+    noQuizzesYet: isAr ? 'لا توجد اختبارات عامة بعد.' : 'No public quizzes yet.',
+    noResultsFound: isAr ? 'لم يتم العثور على أية نتائج توافق بحثك.' : 'No quizzes matched your search.',
+    tryDifferent: isAr ? 'جرب كلمات مفتاحية أخرى.' : 'Try adjusting filters.',
+    playLabel: isAr ? '▶️ تشغيل' : '▶️ Play',
+    newBadge: isAr ? 'جديد' : 'New',
+    questionsCountDisplay: (count: number) => isAr ? `${count} سؤال` : `${count} q`,
+    previewStr: isAr ? '👁️ معاينة' : '👁️ Preview',
+    cloneStr: isAr ? 'استنساخ للتعديل' : 'Clone to Edit',
+    cloningStr: isAr ? 'جارٍ الاستنساخ...' : 'Cloning...',
+    loadMoreSimple: isAr ? 'تحميل المزيد' : 'Load more',
+  }
+
   const [filter, setFilter] = useState<'all' | 'mine' | 'others'>('all')
   const [search, setSearch] = useState('')
 
@@ -61,10 +93,10 @@ export function PacksPage() {
 
   const showUpgradeDialog = () => {
     showDialog({
-      title: '🔒 Subscription Required',
-      message: 'This quiz is a premium quiz. Please upgrade your account to use it.',
-      confirmText: 'Upgrade now',
-      cancelText: 'Cancel',
+      title: t.subReqTitle,
+      message: t.subReqMsg,
+      confirmText: t.upgradeNow,
+      cancelText: t.cancel,
       onConfirm: () => {
         window.location.assign('/billing')
       },
@@ -77,7 +109,7 @@ export function PacksPage() {
         const toMs = (ts: any) => ts?.toMillis?.() ?? (ts?.seconds ? ts.seconds * 1000 : 0)
         setQuizzes([...list].sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt)))
       })
-      .catch(() => setError('Failed to load public quizzes.'))
+      .catch(() => setError(t.loadError))
       .finally(() => setLoading(false))
   }, [])
 
@@ -90,10 +122,10 @@ export function PacksPage() {
     setCloningId(quiz.id)
     try {
       const newId = await cloneQuiz(quiz, currentUid)
-      showToast({ message: 'Quiz cloned — you can now edit your copy.', type: 'success' })
+      showToast({ message: t.cloneSuccess, type: 'success' })
       navigate(`/editor/${newId}`)
     } catch (err) {
-      showToast({ message: `Clone failed: ${(err as Error).message}`, type: 'error' })
+      showToast({ message: t.cloneFail((err as Error).message), type: 'error' })
     } finally {
       setCloningId(null)
     }
@@ -123,13 +155,13 @@ export function PacksPage() {
       preOpenedTab,
       onUnavailable: () => {
         showToast({
-          message: 'Game server is temporarily unavailable. Please try again in a moment.',
+          message: t.gameServerErr,
           type: 'error',
         })
       },
       onPopupBlocked: () => {
         showToast({
-          message: 'Popup was blocked. Please allow popups and try again.',
+          message: t.popupBlocked,
           type: 'info',
         })
       },
@@ -191,15 +223,15 @@ export function PacksPage() {
         marginBottom: '1.5rem', padding: '1.5rem 0 0', flexWrap: 'wrap', gap: '1rem',
       }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: '1.6rem', fontWeight: 700, color: 'var(--text-bright)' }}>Public Quiz Library</h2>
+          <h2 style={{ margin: 0, fontSize: '1.6rem', fontWeight: 700, color: 'var(--text-bright)' }}>{t.title}</h2>
           <p style={{ margin: '0.3rem 0 0', fontSize: '0.9rem', color: 'var(--text-dim)' }}>
-            {loading ? '…' : `${visible.length} quiz${visible.length !== 1 ? 'zes' : ''} · Browse, preview or clone`}
+            {loading ? '…' : t.subtitle(visible.length)}
           </p>
         </div>
         {/* Filter + Search */}
         <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>
           <input
-            placeholder="Search…"
+            placeholder={t.searchPlaceholder}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ width: '180px', padding: '8px 12px', fontSize: '0.85rem' }}
@@ -220,7 +252,7 @@ export function PacksPage() {
                 borderRadius: '8px',
               }}
             >
-              {f === 'all' ? 'All' : f === 'mine' ? 'Mine' : 'Community'}
+              {f === 'all' ? t.all : f === 'mine' ? t.mine : t.others}
             </button>
           ))}
         </div>
@@ -249,11 +281,11 @@ export function PacksPage() {
           border: '2px dashed var(--border-mid)', borderRadius: '20px', color: 'var(--text-mid)',
         }}>
           <div style={{ fontSize: '3.5rem', marginBottom: '1rem' }}>🔭</div>
-          <h3 style={{ color: '#94a3b8', margin: '0 0 0.5rem' }}>No quizzes found</h3>
+          <h3 style={{ color: '#94a3b8', margin: '0 0 0.5rem' }}>{t.noResultsFound}</h3>
           <p style={{ margin: 0 }}>
             {quizzes.length === 0
-              ? 'Set a quiz to "Public" in the editor to share it here.'
-              : 'Try a different search or filter.'}
+              ? t.noQuizzesYet
+              : t.tryDifferent}
           </p>
         </div>
       )}
@@ -339,7 +371,7 @@ export function PacksPage() {
                       boxShadow: '0 4px 14px rgba(0,0,0,0.5)',
                     }}
                   >
-                    &#9654; Play
+                    {t.playLabel}
                   </a>
                   {/* Subtle bottom fade */}
                   <div style={{
@@ -391,7 +423,7 @@ export function PacksPage() {
                       padding: '2px 6px', borderRadius: '4px',
                       textTransform: 'uppercase', letterSpacing: '0.06em',
                       boxShadow: '0 1px 4px rgba(0,0,0,0.4)', zIndex: 7,
-                    }}>New</div>
+                    }}>{t.newBadge}</div>
                   )}
                 </div>
 
@@ -407,7 +439,7 @@ export function PacksPage() {
                     {q.title}
                   </div>
                   <div style={{ fontSize: '0.72rem', color: 'var(--text-mid)', fontWeight: 500 }}>
-                    {q.questions?.length ?? 0} questions
+                    {t.questionsCountDisplay(q.questions?.length ?? 0)}
                   </div>
                 </div>
 
@@ -426,17 +458,21 @@ export function PacksPage() {
                         <button style={actionBtnStyle}
                           onMouseEnter={(e) => Object.assign(e.currentTarget.style, actionBtnHover)}
                           onMouseLeave={(e) => Object.assign(e.currentTarget.style, actionBtnStyle)}
-                        >Preview</button>
+                        >{t.previewStr}</button>
                       </Link>
                       <Link to={`/editor/${q.id}`} style={{ textDecoration: 'none', flex: 1 }}>
                         <button style={actionBtnPrimary}
                           onMouseEnter={(e) => Object.assign(e.currentTarget.style, actionBtnPrimaryHover)}
                           onMouseLeave={(e) => Object.assign(e.currentTarget.style, actionBtnPrimary)}
-                        >Edit</button>
+                        >{isAr ? 'تعديل' : 'Edit'}</button>
                       </Link>
                       <button
                         title="Copy link"
-                        onClick={() => navigator.clipboard?.writeText(`${SERVER_BASE}/player?quiz=${encodeURIComponent(q.id)}`).then(() => alert('Link copied!'))}
+                        onClick={() => navigator.clipboard?.writeText(buildPlayerGameUrl({
+                          serverBase: SERVER_BASE,
+                          quizId: q.id,
+                          themeId: q.themeId,
+                        })).then(() => alert(isAr ? 'تم النسخ!' : 'Link copied!'))}
                         style={{ ...actionBtnStyle, width: 'auto', flex: 'none', padding: '0.4rem 0.55rem' }}
                         onMouseEnter={(e) => Object.assign(e.currentTarget.style, { ...actionBtnHover, width: 'auto', flex: 'none', padding: '0.4rem 0.55rem' })}
                         onMouseLeave={(e) => Object.assign(e.currentTarget.style, { ...actionBtnStyle, width: 'auto', flex: 'none', padding: '0.4rem 0.55rem' })}
@@ -448,7 +484,7 @@ export function PacksPage() {
                         <button style={actionBtnStyle}
                           onMouseEnter={(e) => Object.assign(e.currentTarget.style, actionBtnHover)}
                           onMouseLeave={(e) => Object.assign(e.currentTarget.style, actionBtnStyle)}
-                        >Preview</button>
+                        >{t.previewStr}</button>
                       </Link>
                       <button
                         onClick={() => handleClone(q)}
@@ -456,7 +492,7 @@ export function PacksPage() {
                         style={{ ...actionBtnPrimary, flex: 1, opacity: cloningId === q.id ? 0.6 : 1, cursor: cloningId === q.id ? 'not-allowed' : 'pointer' }}
                         onMouseEnter={(e) => { if (cloningId !== q.id) Object.assign(e.currentTarget.style, actionBtnPrimaryHover) }}
                         onMouseLeave={(e) => Object.assign(e.currentTarget.style, { ...actionBtnPrimary, flex: '1' })}
-                      >{cloningId === q.id ? 'Cloning…' : 'Clone'}</button>
+                      >{cloningId === q.id ? t.cloningStr : t.cloneStr}</button>
                     </>
                   )}
                 </div>
@@ -479,7 +515,7 @@ export function PacksPage() {
                 onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.85'; e.currentTarget.style.transform = 'translateY(-1px)' }}
                 onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(0)' }}
               >
-                Load more · {Math.min(6, visible.length - visibleCount)} more
+                {t.loadMoreSimple} · {Math.min(6, visible.length - visibleCount)} {isAr ? 'إضافية' : 'more'}
               </button>
             </div>
           )}

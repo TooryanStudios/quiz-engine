@@ -32,6 +32,7 @@ const hostUidFromUrl  = queryParams.get('hostUid') || localStorage.getItem('last
 const hostTokenFromUrl = queryParams.get('hostToken') || localStorage.getItem('last_host_token');
 const hostLaunchCodeFromUrl = queryParams.get('hostLaunchCode');
 const hostNameFromUrl = queryParams.get('hostName');
+let initialQuizInfoPromise = Promise.resolve(null);
 
 // Persist credentials if they are in the URL
 if (queryParams.get('hostUid')) localStorage.setItem('last_host_uid', queryParams.get('hostUid'));
@@ -208,10 +209,10 @@ if (quizSlugFromUrl) {
     // intentionally not shown on player join screen
   };
   setText(`🆔 ${quizSlugFromUrl}`);
-  fetch(`/api/quiz-info/${encodeURIComponent(quizSlugFromUrl)}`)
+  initialQuizInfoPromise = fetch(`/api/quiz-info/${encodeURIComponent(quizSlugFromUrl)}`)
     .then((r) => r.ok ? r.json() : null)
     .then((data) => {
-      if (!data) return;
+      if (!data) return null;
       const updatedAtRaw = data.updatedAt || null;
       const updatedAtDisplay = updatedAtRaw
         ? (isNaN(Date.parse(updatedAtRaw)) ? String(updatedAtRaw) : new Date(updatedAtRaw).toLocaleString())
@@ -235,8 +236,9 @@ if (quizSlugFromUrl) {
           status: 'No media to preload',
         });
       }
+      return data;
     })
-    .catch(() => {});
+    .catch(() => null);
 }
 
 // ─────────────────────────────────────────────
@@ -413,6 +415,7 @@ function triggerPlayerPreload(quizSlug) {
     .then(r => r.ok ? r.json() : null)
     .then(data => {
       if (!data) return;
+      applyQuizThemePreference(data.themeId);
       if (data.mediaAssets && data.mediaAssets.length > 0) {
         preloadMediaAssets('player', data.title, data.questionCount, data.mediaAssets);
       } else {
@@ -2529,6 +2532,31 @@ let themeManifestCache = null;
 let activeThemeId = null;
 let activeThemeVarKeys = [];
 
+function normalizeRuntimeThemeId(themeId) {
+  if (typeof themeId !== 'string') return null;
+  const normalized = themeId.trim().toLowerCase();
+  if (!normalized) return null;
+
+  if (normalized === 'default' || normalized === 'dark' || normalized === 'default-dark') {
+    return 'dark';
+  }
+  if (normalized === 'light' || normalized === 'default-light') {
+    return 'light';
+  }
+
+  // Return as-is so dynamic (Firestore-managed) theme IDs are preserved
+  return normalized;
+}
+
+function applyQuizThemePreference(themeId) {
+  const resolvedThemeId = normalizeRuntimeThemeId(themeId);
+  if (!resolvedThemeId) return Promise.resolve(null);
+  if (themeQueryFromUrl && themeQueryFromUrl.trim()) {
+    return Promise.resolve(null);
+  }
+  return loadThemeById(resolvedThemeId, { silent: true });
+}
+
 function ensureThemeCssLink() {
   let link = document.getElementById('qyan-runtime-theme-css');
   if (link) return link;
@@ -2560,6 +2588,88 @@ function clearThemeVariables() {
   activeThemeVarKeys = [];
 }
 
+// Convert hex color + alpha to rgba string (mirrors ThemePreview.tsx hexAlpha)
+function _hexAlpha(hex, alpha) {
+  try {
+    const h = (hex || '').replace('#', '');
+    if (h.length !== 6) return hex;
+    const r = parseInt(h.slice(0, 2), 16);
+    const g = parseInt(h.slice(2, 4), 16);
+    const b = parseInt(h.slice(4, 6), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  } catch (_) { return hex; }
+}
+
+// Apply background pattern and/or image to the root element from theme tokens
+// Uses --app-bg-image / --app-bg-size CSS vars that body's stylesheet already reads.
+function applyThemeBgPattern(root, tokens) {
+  const pattern    = tokens['--bg-pattern']        || 'none';
+  const pc         = tokens['--bg-pattern-color']  || tokens['--surface-2'] || '';
+  const rawOp      = tokens['--bg-pattern-opacity'];
+  const op         = rawOp !== undefined ? parseFloat(rawOp) : 0.25;
+  const bgImageUrl = tokens['--bg-image-url']      || '';
+
+  let bgImage = 'none';
+  let bgSize  = 'cover';
+  let bgRepeat = 'no-repeat';
+  let bgPos   = 'center center';
+
+  switch (pattern) {
+    case 'dots':
+      bgImage  = `radial-gradient(circle, ${_hexAlpha(pc, op)} 1.5px, transparent 1.5px)`;
+      bgSize   = '22px 22px';
+      bgRepeat = 'repeat';
+      break;
+    case 'grid':
+      bgImage = [
+        `linear-gradient(${_hexAlpha(pc, op)} 1px, transparent 1px)`,
+        `linear-gradient(90deg, ${_hexAlpha(pc, op)} 1px, transparent 1px)`,
+      ].join(', ');
+      bgSize   = '24px 24px';
+      bgRepeat = 'repeat';
+      break;
+    case 'stripes':
+      bgImage  = `repeating-linear-gradient(45deg, transparent, transparent 10px, ${_hexAlpha(pc, op)} 10px, ${_hexAlpha(pc, op)} 11px)`;
+      bgRepeat = 'repeat';
+      break;
+    case 'dunes': {
+      const bg = tokens['--bg'] || 'transparent';
+      const c1 = _hexAlpha(pc, op * 0.5);
+      const c2 = _hexAlpha(pc, op);
+      // Dunes uses a full gradient override — expressed as bg-image over solid --bg
+      bgImage  = `linear-gradient(180deg, transparent 0%, transparent 55%, ${c1} 80%, ${c2} 100%)`;
+      bgRepeat = 'no-repeat';
+      bgSize   = '100% 100%';
+      break;
+    }
+    case 'custom':
+      if (bgImageUrl) {
+        bgImage = `url(${JSON.stringify(bgImageUrl)})`;
+        bgSize  = 'cover';
+      }
+      break;
+    default:
+      if (bgImageUrl) {
+        bgImage = `url(${JSON.stringify(bgImageUrl)})`;
+        bgSize  = 'cover';
+      }
+      break;
+  }
+
+  // Set via CSS vars so they integrate with the body background shorthands in style.css
+  // and are tracked in activeThemeVarKeys for cleanup on next theme load.
+  const appVars = {
+    '--app-bg-image':    bgImage,
+    '--app-bg-size':     bgSize,
+    '--app-bg-repeat':   bgRepeat,
+    '--app-bg-position': bgPos,
+  };
+  Object.entries(appVars).forEach(([name, value]) => {
+    root.style.setProperty(name, value);
+    if (!activeThemeVarKeys.includes(name)) activeThemeVarKeys.push(name);
+  });
+}
+
 function applyThemePayload(themePayload, themeIdFromManifest = null) {
   const root = document.documentElement;
   const themeId = themeIdFromManifest || themePayload?.id || 'dark';
@@ -2575,6 +2685,34 @@ function applyThemePayload(themePayload, themeIdFromManifest = null) {
     root.style.setProperty(varName, String(value));
     activeThemeVarKeys.push(varName);
   });
+
+  // Load Google Fonts if heading or body font tokens are set
+  const headingFont = tokens['--heading-font'];
+  const bodyFont = tokens['--body-font'];
+  [headingFont, bodyFont].filter(Boolean).forEach((fontName) => {
+    if (typeof fontName !== 'string' || !fontName.trim()) return;
+    const linkId = `gfont-${fontName.replace(/[^a-z0-9]/gi, '-').toLowerCase()}`;
+    if (!document.getElementById(linkId)) {
+      const link = document.createElement('link');
+      link.id = linkId;
+      link.rel = 'stylesheet';
+      link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(fontName.trim())}:wght@400;600;700&display=swap`;
+      document.head.appendChild(link);
+    }
+  });
+
+  // Apply font families to root via CSS custom properties (consumed by game CSS)
+  if (headingFont) {
+    root.style.setProperty('--font-heading', `'${headingFont}', sans-serif`);
+    if (!activeThemeVarKeys.includes('--font-heading')) activeThemeVarKeys.push('--font-heading');
+  }
+  if (bodyFont) {
+    root.style.setProperty('--font-body', `'${bodyFont}', sans-serif`);
+    if (!activeThemeVarKeys.includes('--font-body')) activeThemeVarKeys.push('--font-body');
+  }
+
+  // Apply background pattern / image
+  applyThemeBgPattern(root, tokens);
 
   root.setAttribute('data-theme', baseTheme);
   root.setAttribute('data-theme-id', themeId);
@@ -2642,6 +2780,25 @@ async function loadThemeById(themeId, { silent = false } = {}) {
     const defaultId = manifest.defaultThemeId || 'dark';
     const resolvedId = themeId || defaultId;
     let entry = findThemeEntry(manifest, resolvedId);
+
+    // Theme not in static manifest — try dynamic Firestore-backed API first
+    if (!entry && resolvedId !== defaultId) {
+      try {
+        const apiRes = await fetch(`/api/themes/${encodeURIComponent(resolvedId)}`, { cache: 'no-store' });
+        if (apiRes.ok) {
+          const dynamicPayload = await apiRes.json();
+          if (dynamicPayload && typeof dynamicPayload.tokens === 'object') {
+            applyThemePayload(dynamicPayload, resolvedId);
+            return resolvedId;
+          }
+        }
+      } catch (_apiErr) {
+        // fall through to static default below
+      }
+      // Dynamic lookup failed — fall back to default static theme
+      entry = findThemeEntry(manifest, defaultId);
+    }
+
     if (!entry) entry = findThemeEntry(manifest, defaultId);
     if (!entry || !entry.file) throw new Error('No valid theme entry found');
 
@@ -2722,7 +2879,21 @@ window.getGameThemes = async () => {
   const storedTheme = (() => {
     try { return localStorage.getItem(THEME_KEY); } catch (_) { return null; }
   })();
-  const initialThemeId = themeQueryFromUrl || storedTheme || 'dark';
+  let initialThemeId = normalizeRuntimeThemeId(themeQueryFromUrl) || null;
+
+  if (!initialThemeId) {
+    try {
+      const initialQuizInfo = await initialQuizInfoPromise;
+      initialThemeId = normalizeRuntimeThemeId(initialQuizInfo?.themeId) || null;
+    } catch (_) {
+      initialThemeId = null;
+    }
+  }
+
+  if (!initialThemeId) {
+    initialThemeId = normalizeRuntimeThemeId(storedTheme) || 'dark';
+  }
+
   await loadThemeById(initialThemeId);
   await hydrateThemeSelect();
 })();

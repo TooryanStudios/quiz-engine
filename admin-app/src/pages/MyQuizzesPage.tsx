@@ -1,9 +1,9 @@
-import { useEffect, useState, useMemo } from 'react'
+﻿import { useEffect, useState, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { auth } from '../lib/firebase'
 import { cancelPublishRequest, incrementShareCount, subscribeMyQuizzes, updateQuiz } from '../lib/quizRepo'
 import { getCoverFromQuestions, isNewContent } from '../lib/utils'
-import { buildHostGameUrl } from '../lib/gameModeUrl'
+import { buildHostGameUrl, buildPlayerGameUrl } from '../lib/gameModeUrl'
 import type { QuizDoc } from '../types/quiz'
 import { useTheme } from '../lib/useTheme'
 import placeholderImg from '../assets/QYan_logo_300x164.jpg'
@@ -11,15 +11,17 @@ import { useToast } from '../lib/ToastContext'
 import { vfx } from '../lib/vfx'
 import './MyQuizzesPage.css'
 
+import { useUserPrefs } from '../lib/UserPrefsContext'
+
 type QuizItem = QuizDoc & { id: string }
 type ContentFilter = 'all' | 'quiz' | 'mini-game'
 
 const SERVER_BASE = 'https://play.qyan.app'
 
-function presetBadge(preset?: string) {
-  if (preset === 'easy') return { label: 'سهل', color: '#16a34a' }
-  if (preset === 'hard') return { label: 'صعب', color: '#dc2626' }
-  return { label: 'عادي', color: '#2563eb' }
+function presetBadge(preset?: string, isAr?: boolean) {
+  if (preset === 'easy') return { label: isAr ? 'سهل' : 'Easy', color: '#16a34a' }
+  if (preset === 'hard') return { label: isAr ? 'صعب' : 'Hard', color: '#dc2626' }
+  return { label: isAr ? 'عادي' : 'Normal', color: '#2563eb' }
 }
 
 export function MyQuizzesPage() {
@@ -32,7 +34,53 @@ export function MyQuizzesPage() {
   const [contentFilter, setContentFilter] = useState<ContentFilter>('all')
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'title'>('newest')
   const [visibleCount, setVisibleCount] = useState(12)
+  const [previewQuiz, setPreviewQuiz] = useState<QuizItem | null>(null)
   const { showToast } = useToast()
+  const { language } = useUserPrefs()
+  
+  const isAr = language === 'ar'
+  const t = {
+    back: isAr ? 'رجوع ⬅️' : '⬅️ Back',
+    title: isAr ? 'اختباراتي' : 'My Quizzes',
+    newQuiz: isAr ? '+ اختبار جديد' : '+ New Quiz',
+    quizzesLabel: isAr ? 'الاختبارات' : 'Quizzes',
+    miniGamesLabel: isAr ? 'الألعاب المصغرة' : 'Mini Games',
+    publicLabel: isAr ? 'عام' : 'Public',
+    questionsLabel: isAr ? 'الأسئلة' : 'Questions',
+    searchPlaceholder: isAr ? 'البحث في الاختبارات...' : 'Search quizzes...',
+    all: isAr ? 'الكل' : 'All',
+    newestFirst: isAr ? 'الأحدث أولاً' : 'Newest first',
+    oldestFirst: isAr ? 'الأقدم أولاً' : 'Oldest first',
+    titleSort: isAr ? 'الاسم' : 'Title',
+    questionsWord: isAr ? 'سؤال' : 'questions',
+    newBadge: isAr ? 'جديد' : 'NEW',
+    preview: isAr ? 'معاينة' : 'Preview',
+    edit: isAr ? 'تعديل' : 'Edit',
+    copyLinkTitle: isAr ? 'نسخ رابط الاختبار' : 'Copy link',
+    linkCopied: isAr ? 'تم نسخ الرابط!' : 'Link copied!',
+    visibilityPriv: isAr ? 'خاص' : 'Private',
+    visibilityPub: isAr ? 'عام' : 'Public',
+    pending: isAr ? 'في الانتظار' : 'Pending',
+    cancelConfirm: isAr ? 'إلغاء طلب النشر؟' : 'Cancel publish request?',
+    makePrivateConfirm: isAr ? 'جعل الاختبار خاصاً؟ لن يظهر في المكتبة بعد الآن.' : 'Make quiz private? It will no longer appear in the library.',
+    cancelSuccess: isAr ? 'تم إلغاء النشر' : 'Publish cancelled',
+    failOperation: isAr ? 'فشل العملية' : 'Operation failed',
+    publishSuccess: isAr ? 'تم النشر بنجاح! سيتم مراجعته قريباً.' : 'Published successfully! Will be reviewed soon.',
+    publishFail: isAr ? 'فشل النشر' : 'Publish failed',
+    resultsTotal: (filtered: number, total: number) => isAr ? `${filtered} نتيجة • ${total} الإجمالي` : `${filtered} results • ${total} total`,
+    loadMore: (count: number) => isAr ? `تحميل المزيد • ${count} إضافية` : `Load more • ${count} more`,
+    noQuizzesYet: isAr ? 'لا توجد اختبارات بحسابك حتى الآن' : 'No quizzes yet',
+    noResultsFound: isAr ? 'لم يتم العثور على نتائج' : 'No results found',
+    tryDifferentSearch: isAr ? 'جرب كلمات مفتاحية مختلفة.' : 'Try a different search or filter.',
+    playLabel: isAr ? '▶️ تشغيل' : '▶️ Play',
+    questionsCountDisplay: (count: number) => isAr ? `${count} سؤال` : `${count} questions`,
+    previewStr: isAr ? '🔍 معاينة' : '🔍 Preview',
+    editStr: isAr ? '✏️ تعديل' : '✏️ Edit',
+    copyLinkHint: isAr ? 'نسخ الرابط' : 'Copy Link',
+    visibilityHint: isAr ? 'إعدادات الخصوصية' : 'Toggle Visibility',
+    loadMoreSimple: isAr ? 'تحميل المزيد' : 'Load more',
+  }
+
   useTheme() // Keep for context if needed, but not used directly
 
   useEffect(() => {
@@ -54,15 +102,15 @@ export function MyQuizzesPage() {
   async function handleVisibilityChange(quiz: QuizItem, newVis: 'public' | 'private') {
     if (newVis === 'private') {
       const ok = quiz.approvalStatus === 'pending'
-        ? window.confirm('إلغاء طلب النشر؟')
-        : window.confirm('جعل الاختبار خاصاً؟ لن يظهر في المكتبة بعد الآن.')
+        ? window.confirm(t.cancelConfirm)
+        : window.confirm(t.makePrivateConfirm)
       if (!ok) return
       setUpdatingId(quiz.id)
       try {
         await cancelPublishRequest(quiz.id)
-        showToast({ message: 'تم إلغاء النشر', type: 'success' })
+        showToast({ message: t.cancelSuccess, type: 'success' })
       } catch {
-        showToast({ message: 'فشل العملية', type: 'error' })
+        showToast({ message: t.failOperation, type: 'error' })
       } finally {
         setUpdatingId(null)
       }
@@ -70,9 +118,9 @@ export function MyQuizzesPage() {
       setUpdatingId(quiz.id)
       try {
         await updateQuiz(quiz.id, { visibility: 'public' })
-        showToast({ message: 'تم النشر بنجاح! سيتم مراجعته قريباً.', type: 'success' })
+        showToast({ message: t.publishSuccess, type: 'success' })
       } catch {
-        showToast({ message: 'فشل النشر', type: 'error' })
+        showToast({ message: t.publishFail, type: 'error' })
       } finally {
         setUpdatingId(null)
       }
@@ -107,26 +155,26 @@ export function MyQuizzesPage() {
     <div className="my-quizzes-page">
       <div className="page-header">
         <div className="header-left">
-          <button onClick={() => navigate('/dashboard')} className="back-button">⬅️ Back</button>
+          <button onClick={() => navigate('/dashboard')} className="back-button">{t.back}</button>
           <div>
-            <h2 className="page-title">My Quizzes</h2>
+            <h2 className="page-title">{t.title}</h2>
             <p className="page-subtitle">
-              {loading ? '...' : `${filtered.length} results • ${quizzes.length} total`}
+              {loading ? '...' : t.resultsTotal(filtered.length, quizzes.length)}
             </p>
           </div>
         </div>
         <Link to="/editor" className="no-underline">
-          <button className="new-quiz-button">+ New Quiz</button>
+          <button className="new-quiz-button">{t.newQuiz}</button>
         </Link>
       </div>
 
       {!loading && quizzes.length > 0 && (
         <div className="stats-bar">
           {[
-            { label: 'Quizzes', value: quizCount, icon: '📝' },
-            { label: 'Mini Games', value: miniGameCount, icon: '🎮' },
-            { label: 'Public', value: publicCount, icon: '🌐' },
-            { label: 'Questions', value: totalQuestions, icon: '❓' },
+            { label: t.quizzesLabel, value: quizCount, icon: '📝' },
+            { label: t.miniGamesLabel, value: miniGameCount, icon: '🎮' },
+            { label: t.publicLabel, value: publicCount, icon: '🌐' },
+            { label: t.questionsLabel, value: totalQuestions, icon: '❓' },
           ].map(({ label, value, icon }) => (
             <div key={label} className="stat-pill">
               <span className="stat-icon">{icon}</span>
@@ -141,11 +189,11 @@ export function MyQuizzesPage() {
 
       <div className="filter-bar">
         <input
-          placeholder="Search quizzes..."
+          placeholder={t.searchPlaceholder}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="search-input"
-          aria-label="Search quizzes"
+          aria-label={t.searchPlaceholder}
         />
         <div className="filter-group">
           {(['all', 'quiz', 'mini-game'] as const).map((f) => (
@@ -154,7 +202,7 @@ export function MyQuizzesPage() {
               onClick={() => setContentFilter(f)}
               className={`filter-button ${contentFilter === f ? 'active' : ''}`}
             >
-              {f === 'all' ? 'All' : f === 'quiz' ? '📝 Quizzes' : '🎮 Mini Games'}
+              {f === 'all' ? t.all : f === 'quiz' ? `📝 ${t.quizzesLabel}` : `🎮 ${t.miniGamesLabel}`}
             </button>
           ))}
         </div>
@@ -164,9 +212,9 @@ export function MyQuizzesPage() {
           className="sort-select"
           title="Sort by"
         >
-          <option value="newest">Newest first</option>
-          <option value="oldest">Oldest first</option>
-          <option value="title">A → Z</option>
+          <option value="newest">{t.newestFirst}</option>
+          <option value="oldest">{t.oldestFirst}</option>
+          <option value="title">{t.titleSort}</option>
         </select>
       </div>
 
@@ -179,8 +227,8 @@ export function MyQuizzesPage() {
       {!loading && filtered.length === 0 && (
         <div className="empty-state">
           <div className="empty-icon">{quizzes.length === 0 ? '📭' : '🔍'}</div>
-          <h3 className="empty-title">{quizzes.length === 0 ? 'No quizzes yet' : 'No results found'}</h3>
-          <p className="empty-description">Try a different search or filter.</p>
+          <h3 className="empty-title">{quizzes.length === 0 ? t.noQuizzesYet : t.noResultsFound}</h3>
+          <p className="empty-description">{t.tryDifferentSearch}</p>
         </div>
       )}
 
@@ -208,42 +256,44 @@ export function MyQuizzesPage() {
                   <a
                     href={buildHostGameUrl({ serverBase: SERVER_BASE, quizId: q.id, gameModeId: q.gameModeId, themeId: q.themeId })}
                     target="_blank" rel="noopener noreferrer"
-                    onClick={(e) => { e.preventDefault(); vfx.floatText('Play!', e.clientX, e.clientY); window.open(e.currentTarget.href, '_blank') }}
+                    onClick={(e) => { e.preventDefault(); vfx.floatText(t.playLabel, e.clientX, e.clientY); window.open(e.currentTarget.href, '_blank') }}
                     className="play-overlay"
                   >
-                    ▶️ Play
+                    {t.playLabel}
                   </a>
                   <div className="hero-gradient" />
                   <div className={`type-badge ${isMini ? 'mini' : 'quiz'}`}>
-                    {isMini ? '🎮 Mini' : '📝 Quiz'}
+                    {isMini ? `🎮 ${t.miniGamesLabel}` : `📝 ${t.quizzesLabel}`}
                   </div>
-                  {isNewContent(q.createdAt) && <div className="new-badge">New</div>}
+                  {isNewContent(q.createdAt) && <div className="new-badge">{t.newBadge}</div>}
                   <div className="visibility-pill-top">{q.visibility === 'public' ? '🌐' : '🔒'}</div>
                 </div>
 
                 <div className="card-body">
                   <div className="card-title">{q.title}</div>
                   <div className="card-stats">
-                    {q.questions?.length ?? 0} سؤال
+                    {t.questionsCountDisplay(q.questions?.length ?? 0)}
                     {q.challengePreset && <> • <span style={{ color: badge.color }}>{badge.label}</span></>}
                   </div>
                 </div>
 
                 <div className="action-bar-hover">
-                  <Link to={`/preview/${q.id}`} className="flex-1 no-underline">
-                    <button className="action-btn">👁️ معاينة</button>
-                  </Link>
+                  <button className="action-btn flex-1" onClick={() => setPreviewQuiz(q)}>{t.previewStr}</button>
                   <Link to={isMini ? `/mini-game-editor/${q.id}` : `/editor/${q.id}`} className="flex-1 no-underline">
-                    <button className="action-btn-primary">✏️ تعديل</button>
+                    <button className="action-btn">{t.editStr}</button>
                   </Link>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText(`${SERVER_BASE}/player?quiz=${q.id}`)
-                      showToast({ message: 'تم نسخ الرابط!', type: 'success' })
+                      navigator.clipboard.writeText(buildPlayerGameUrl({
+                        serverBase: SERVER_BASE,
+                        quizId: q.id,
+                        themeId: q.themeId,
+                      }))
+                      showToast({ message: t.linkCopied, type: 'success' })
                       incrementShareCount(q.id).catch(console.error)
                     }}
                     className="action-btn icon-only"
-                    title="Copy Link"
+                    title={t.copyLinkHint}
                   >
                     🔗
                   </button>
@@ -251,7 +301,7 @@ export function MyQuizzesPage() {
                     onClick={() => handleVisibilityChange(q, q.visibility === 'public' ? 'private' : 'public')}
                     className="action-btn icon-only"
                     disabled={updatingId === q.id}
-                    title="Toggle Visibility"
+                    title={t.visibilityHint}
                   >
                     {q.visibility === 'public' ? '🔒' : q.approvalStatus === 'pending' ? '🕒' : '🌐'}
                   </button>
@@ -265,10 +315,58 @@ export function MyQuizzesPage() {
       {visibleCount < filtered.length && (
         <div className="load-more-container">
           <button onClick={() => setVisibleCount(c => c + 12)} className="load-more-btn">
-            Load more
+            {t.loadMoreSimple}
           </button>
         </div>
       )}
+
+      {/* ── Preview Dialog ── */}
+      {previewQuiz && (
+        <QuizPreviewDialog
+          quiz={previewQuiz}
+          isAr={isAr}
+          onClose={() => setPreviewQuiz(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+function QuizPreviewDialog({ quiz, isAr, onClose }: { quiz: QuizItem; isAr: boolean; onClose: () => void }) {
+  const isMini = quiz.contentType === 'mini-game' || !!quiz.gameModeId
+  const previewTitle = isMini
+    ? (isAr ? 'معاينة اللعبة' : 'Game Preview')
+    : (isAr ? 'معاينة الاختبار' : 'Quiz Preview')
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
+
+  useEffect(() => {
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = '' }
+  }, [])
+
+  return (
+    <div className="preview-dialog-backdrop" onClick={onClose}>
+      <div className="preview-dialog" onClick={e => e.stopPropagation()}>
+        <div className="preview-dialog-header">
+          <div className="preview-dialog-title-row">
+            <h2 className="preview-dialog-title">{previewTitle}</h2>
+            <button className="preview-dialog-close" onClick={onClose} aria-label={isAr ? 'إغلاق المعاينة' : 'Close preview'}>✕</button>
+          </div>
+        </div>
+        <div className="preview-dialog-body">
+          <iframe
+            key={quiz.id}
+            src={`/preview/${quiz.id}?embedded=1`}
+            title={`${quiz.title} preview`}
+            className="preview-dialog-frame"
+          />
+        </div>
+      </div>
     </div>
   )
 }

@@ -12,9 +12,19 @@
       "file": "/themes/light/theme.json"
     },
     {
+      "id": "warm-sand",
+      "name": "Warm Sand",
+      "file": "/themes/warm-sand/theme.json"
+    },
+    {
       "id": "ocean",
-      "name": "Ocean Night",
+      "name": "Ocean",
       "file": "/themes/ocean/theme.json"
+    },
+    {
+      "id": "forest",
+      "name": "Forest",
+      "file": "/themes/forest/theme.json"
     }
   ]
 }

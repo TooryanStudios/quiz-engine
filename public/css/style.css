@@ -167,7 +167,7 @@ body,
 html { font-size: 16px; }
 
 body {
-  font-family: 'Vazirmatn', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-body, 'Vazirmatn', 'Segoe UI', system-ui, -apple-system, sans-serif);
   background: var(--bg);
   background-image: var(--app-bg-image, none);
   background-size: var(--app-bg-size, cover);
@@ -177,6 +177,17 @@ body {
   margin: 0;
   padding: 0;
   min-height: 100vh;
+}
+
+/* Apply heading font to titles and question text when a theme font is set */
+h1, h2, h3,
+.quiz-name,
+.quiz-title,
+.question-text,
+.question-html,
+.host-quiz-title,
+.screen-title {
+  font-family: var(--font-heading, inherit);
 }
 
 /* ── Scroll / pinch lock during active gameplay ── */

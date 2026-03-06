@@ -65,6 +65,7 @@ export interface MiniGameSettings {
 }
 
 export interface ThemePaletteTokens {
+  // ── Core palette ─────────────────────────────────────
   bg: string
   surface: string
   surface2: string
@@ -72,6 +73,29 @@ export interface ThemePaletteTokens {
   text: string
   textDim: string
   success: string
+  // ── Extended state colors ─────────────────────────────
+  danger?: string        // destructive / wrong-answer highlight
+  warning?: string       // timer-low / warning state
+  // ── Button overrides ─────────────────────────────────
+  submitBg?: string      // Submit / confirm button background
+  submitText?: string    // Submit button label color
+  pauseBg?: string       // Pause button background
+  pauseText?: string     // Pause button label color
+  dangerBg?: string      // End-Game / cancel button background
+  dangerText?: string    // End-Game button label color
+  // ── Typography ───────────────────────────────────────
+  headingFont?: string   // e.g. 'Tajawal', 'Fredoka One'
+  bodyFont?: string
+  // ── Background pattern ───────────────────────────────
+  bgPattern?: string     // 'none'|'dots'|'grid'|'stripes'|'dunes'|'custom'
+  bgPatternColor?: string
+  bgPatternOpacity?: number  // 0–1
+  bgImageUrl?: string
+  // ── Shape / geometry (free-form CSS values) ──────────
+  cardRadius?: string    // e.g. '12px'
+  btnRadius?: string
+  submitRadius?: string
+  timerRadius?: string   // '50%' = circle
 }
 
 export interface ThemePackRecord {
@@ -96,7 +120,19 @@ export const THEME_PRESETS: { key: string; label: string; tokens: ThemePaletteTo
   {
     key: 'warm-sand',
     label: '🏜️ Warm Sand',
-    tokens: { bg: '#e8d098', surface: '#fef0cc', surface2: '#c9a96e', accent: '#3d8080', text: '#2d1b0e', textDim: '#7a5230', success: '#9655a2' },
+    tokens: {
+      bg: '#e8c98a', surface: '#fef6e4', surface2: '#c9a96e',
+      accent: '#9b6ecf',
+      text: '#2d1b0e', textDim: '#7a5230',
+      success: '#2d6a4f',
+      danger: '#c0392b', warning: '#e67e22',
+      submitBg: '#c0392b', submitText: '#ffffff',
+      pauseBg: '#2d6a4f', pauseText: '#ffffff',
+      dangerBg: '#a83232', dangerText: '#ffffff',
+      headingFont: 'Tajawal', bodyFont: 'Tajawal',
+      bgPattern: 'dunes', bgPatternColor: '#c9a96e', bgPatternOpacity: 0.3,
+      cardRadius: '12px', btnRadius: '10px', submitRadius: '14px', timerRadius: '50%',
+    },
   },
   {
     key: 'ocean',
@@ -433,13 +469,17 @@ const DEFAULT_THEME_SETTINGS: ThemeEditorSettings = {
       name: 'Warm Sand',
       enabled: true,
       tokens: {
-        bg: '#e8d098',      // sandy desert backdrop
-        surface: '#fef0cc', // cream card panels
-        surface2: '#c9a96e',// golden sandy dividers / borders
-        accent: '#3d8080',  // muted teal (primary action, e.g. Pause)
-        text: '#2d1b0e',    // dark brown text
-        textDim: '#7a5230', // warm mid-brown secondary text
-        success: '#9655a2', // purple (answer highlights / correct)
+        bg: '#e8c98a', surface: '#fef6e4', surface2: '#c9a96e',
+        accent: '#9b6ecf',
+        text: '#2d1b0e', textDim: '#7a5230',
+        success: '#2d6a4f',
+        danger: '#c0392b', warning: '#e67e22',
+        submitBg: '#c0392b', submitText: '#ffffff',
+        pauseBg: '#2d6a4f', pauseText: '#ffffff',
+        dangerBg: '#a83232', dangerText: '#ffffff',
+        headingFont: 'Tajawal', bodyFont: 'Tajawal',
+        bgPattern: 'dunes', bgPatternColor: '#c9a96e', bgPatternOpacity: 0.3,
+        cardRadius: '12px', btnRadius: '10px', submitRadius: '14px', timerRadius: '50%',
       },
     },
   ],
@@ -451,9 +491,22 @@ function normalizeHex(value: unknown, fallback: string): string {
   return /^#[0-9a-fA-F]{6}$/.test(trimmed) ? trimmed : fallback
 }
 
+function normalizeOptStr(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function normalizeOpacity(value: unknown): number | undefined {
+  if (typeof value === 'number' && value >= 0 && value <= 1) return value
+  if (typeof value === 'string') {
+    const n = parseFloat(value)
+    if (!isNaN(n) && n >= 0 && n <= 1) return n
+  }
+  return undefined
+}
+
 function normalizeThemeTokens(raw: unknown): ThemePaletteTokens {
   const source = raw && typeof raw === 'object' ? raw as Partial<ThemePaletteTokens> : {}
-  return {
+  const base: ThemePaletteTokens = {
     bg: normalizeHex(source.bg, DEFAULT_THEME_TOKENS.bg),
     surface: normalizeHex(source.surface, DEFAULT_THEME_TOKENS.surface),
     surface2: normalizeHex(source.surface2, DEFAULT_THEME_TOKENS.surface2),
@@ -462,6 +515,27 @@ function normalizeThemeTokens(raw: unknown): ThemePaletteTokens {
     textDim: normalizeHex(source.textDim, DEFAULT_THEME_TOKENS.textDim),
     success: normalizeHex(source.success, DEFAULT_THEME_TOKENS.success),
   }
+  // Extended optional fields
+  const optHex = (v: unknown) => { const h = normalizeHex(v, ''); return h || undefined }
+  if (source.danger !== undefined)        base.danger        = optHex(source.danger)
+  if (source.warning !== undefined)       base.warning       = optHex(source.warning)
+  if (source.submitBg !== undefined)      base.submitBg      = optHex(source.submitBg)
+  if (source.submitText !== undefined)    base.submitText    = optHex(source.submitText)
+  if (source.pauseBg !== undefined)       base.pauseBg       = optHex(source.pauseBg)
+  if (source.pauseText !== undefined)     base.pauseText     = optHex(source.pauseText)
+  if (source.dangerBg !== undefined)      base.dangerBg      = optHex(source.dangerBg)
+  if (source.dangerText !== undefined)    base.dangerText    = optHex(source.dangerText)
+  if (source.headingFont !== undefined)   base.headingFont   = normalizeOptStr(source.headingFont)
+  if (source.bodyFont !== undefined)      base.bodyFont      = normalizeOptStr(source.bodyFont)
+  if (source.bgPattern !== undefined)     base.bgPattern     = normalizeOptStr(source.bgPattern)
+  if (source.bgPatternColor !== undefined) base.bgPatternColor = optHex(source.bgPatternColor)
+  if (source.bgPatternOpacity !== undefined) base.bgPatternOpacity = normalizeOpacity(source.bgPatternOpacity)
+  if (source.bgImageUrl !== undefined)    base.bgImageUrl    = normalizeOptStr(source.bgImageUrl)
+  if (source.cardRadius !== undefined)    base.cardRadius    = normalizeOptStr(source.cardRadius)
+  if (source.btnRadius !== undefined)     base.btnRadius     = normalizeOptStr(source.btnRadius)
+  if (source.submitRadius !== undefined)  base.submitRadius  = normalizeOptStr(source.submitRadius)
+  if (source.timerRadius !== undefined)   base.timerRadius   = normalizeOptStr(source.timerRadius)
+  return base
 }
 
 function sanitizeThemeId(value: unknown, fallback: string): string {

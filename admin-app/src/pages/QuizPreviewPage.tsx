@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { getQuizById } from '../lib/quizRepo'
 import type { QuizDoc, QuizQuestion } from '../types/quiz'
 import { getQuestionTypePreviewMeta } from '../config/questionTypeSchemas'
+import { useUserPrefs } from '../lib/UserPrefsContext'
 
 // ── Theme tokens ─────────────────────────────────────────────────────────────
 
@@ -33,6 +34,9 @@ interface Tokens {
   orderNum: React.CSSProperties
   matchArrow: string
   typeAnswerLabel: string
+  successBg: string
+  successBorder: string
+  successText: string
   toggleBtn: React.CSSProperties
   toggleBtnHoverBg: string
   toggleBtnHoverColor: string
@@ -98,6 +102,9 @@ function makeTokens(theme: Theme): Tokens {
     },
     matchArrow: dark ? '#475569' : '#94a3b8',
     typeAnswerLabel: dark ? '#64748b' : '#94a3b8',
+    successBg: dark ? '#14532d44' : '#dcfce7',
+    successBorder: dark ? '#16a34a44' : '#22c55e',
+    successText: dark ? '#86efac' : '#166534',
     toggleBtn: {
       background: dark ? '#1e293b' : '#e2e8f0',
       border: 'none',
@@ -189,8 +196,8 @@ function QuestionCard({ q, idx, tk }: { q: QuizQuestion; idx: number; tk: Tokens
                 border: i === q.correctIndex
                   ? '1.5px solid #16a34a'
                   : `1px solid ${tk.wrongOptionBorder}`,
-                background: i === q.correctIndex ? '#14532d44' : tk.wrongOptionBg,
-                color: i === q.correctIndex ? '#86efac' : tk.textMuted,
+                background: i === q.correctIndex ? tk.successBg : tk.wrongOptionBg,
+                color: i === q.correctIndex ? tk.successText : tk.textMuted,
                 display: 'flex', alignItems: 'center', gap: '0.4rem',
               }}>
                 {i === q.correctIndex ? '✅' : <span style={{ opacity: 0.4 }}>○</span>}
@@ -247,7 +254,7 @@ function QuestionCard({ q, idx, tk }: { q: QuizQuestion; idx: number; tk: Tokens
                   <>
                     <span style={{ color: '#93c5fd', fontWeight: 600, minWidth: '90px' }}>{p.left}</span>
                     <span style={{ color: tk.matchArrow }}>←→</span>
-                    <span style={{ color: '#86efac', fontWeight: 600 }}>{p.right}</span>
+                    <span style={{ color: tk.successText, fontWeight: 700 }}>{p.right}</span>
                   </>
                 )}
               </div>
@@ -278,8 +285,8 @@ function QuestionCard({ q, idx, tk }: { q: QuizQuestion; idx: number; tk: Tokens
             <span style={{ fontSize: '0.78rem', color: tk.typeAnswerLabel, alignSelf: 'center' }}>الإجابات المقبولة:</span>
             {q.acceptedAnswers.map((ans, i) => (
               <span key={i} style={{
-                background: '#14532d44', color: '#86efac',
-                border: '1px solid #16a34a44',
+                background: tk.successBg, color: tk.successText,
+                border: `1px solid ${tk.successBorder}`,
                 padding: '3px 10px', borderRadius: '999px', fontSize: '0.82rem', fontWeight: 600,
               }}>
                 {ans}
@@ -311,12 +318,11 @@ function QuestionCard({ q, idx, tk }: { q: QuizQuestion; idx: number; tk: Tokens
 export function QuizPreviewPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const embedded = new URLSearchParams(window.location.search).get('embedded') === '1'
+  const { theme, setTheme } = useUserPrefs()
   const [quiz, setQuiz] = useState<QuizDoc | null>(null)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<string>('all')
-  const [theme, setTheme] = useState<Theme>(() => {
-    try { return (localStorage.getItem('previewTheme') as Theme) || 'dark' } catch { return 'dark' }
-  })
 
   const tk = makeTokens(theme)
   const isDark = theme === 'dark'
@@ -324,7 +330,6 @@ export function QuizPreviewPage() {
   const toggleTheme = () => {
     const next: Theme = isDark ? 'light' : 'dark'
     setTheme(next)
-    try { localStorage.setItem('previewTheme', next) } catch { /* ignore */ }
   }
 
   useEffect(() => {
@@ -342,7 +347,7 @@ export function QuizPreviewPage() {
     : []
 
   return (
-    <div style={tk.pageWrap}>
+    <div style={embedded ? { ...tk.pageWrap, width: '100%', maxWidth: '960px', padding: '1rem 1.25rem 2rem', minHeight: 'auto', boxSizing: 'border-box' } : tk.pageWrap}>
       {loading && (
         <div style={{ textAlign: 'center', padding: '5rem', color: tk.textMuted }}>
           <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>⏳</div>
@@ -364,7 +369,7 @@ export function QuizPreviewPage() {
             background: tk.heroBg,
             border: `1px solid ${tk.heroBorder}`,
             borderRadius: '16px',
-            padding: '1.75rem 2rem',
+            padding: embedded ? '1.1rem 1.25rem' : '1.75rem 2rem',
             marginBottom: '1.5rem',
             position: 'relative',
             overflow: 'hidden',
@@ -378,44 +383,45 @@ export function QuizPreviewPage() {
             }} />
 
             {/* Back + Edit + Theme toggle row */}
-            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', alignItems: 'center' }}>
-              <button onClick={() => navigate('/dashboard')} style={tk.backBtn as React.CSSProperties}>
-                ← العودة
-              </button>
-              <Link to={`/editor/${id}`} style={{ textDecoration: 'none' }}>
-                <button style={{
-                  background: 'linear-gradient(135deg,#2563eb,#7c3aed)', border: 'none', color: '#fff',
-                  padding: '0.45rem 1rem', borderRadius: '8px', cursor: 'pointer',
-                  fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '0.3rem',
-                }}>
-                  ✏️ تعديل
+            {!embedded && (
+              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', alignItems: 'center' }}>
+                <button onClick={() => navigate('/dashboard')} style={tk.backBtn as React.CSSProperties}>
+                  ← العودة
                 </button>
-              </Link>
+                <Link to={`/editor/${id}`} style={{ textDecoration: 'none' }}>
+                  <button style={{
+                    background: 'linear-gradient(135deg,#2563eb,#7c3aed)', border: 'none', color: '#fff',
+                    padding: '0.45rem 1rem', borderRadius: '8px', cursor: 'pointer',
+                    fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '0.3rem',
+                  }}>
+                    ✏️ تعديل
+                  </button>
+                </Link>
 
-              {/* Theme toggle */}
-              <div style={{ marginRight: 'auto' }}>
-                <button
-                  onClick={toggleTheme}
-                  title={isDark ? 'التبديل إلى الوضع الفاتح' : 'التبديل إلى الوضع الداكن'}
-                  style={tk.toggleBtn as React.CSSProperties}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = tk.toggleBtnHoverBg
-                    e.currentTarget.style.color = tk.toggleBtnHoverColor
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = (tk.toggleBtn as React.CSSProperties).background as string
-                    e.currentTarget.style.color = (tk.toggleBtn as React.CSSProperties).color as string
-                  }}
-                >
-                  {isDark ? '☀️' : '🌙'}
-                  <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>
-                    {isDark ? 'فاتح' : 'داكن'}
-                  </span>
-                </button>
+                <div style={{ marginRight: 'auto' }}>
+                  <button
+                    onClick={toggleTheme}
+                    title={isDark ? 'التبديل إلى الوضع الفاتح' : 'التبديل إلى الوضع الداكن'}
+                    style={tk.toggleBtn as React.CSSProperties}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = tk.toggleBtnHoverBg
+                      e.currentTarget.style.color = tk.toggleBtnHoverColor
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = (tk.toggleBtn as React.CSSProperties).background as string
+                      e.currentTarget.style.color = (tk.toggleBtn as React.CSSProperties).color as string
+                    }}
+                  >
+                    {isDark ? '☀️' : '🌙'}
+                    <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>
+                      {isDark ? 'فاتح' : 'داكن'}
+                    </span>
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
-            <h1 style={{ margin: '0 0 0.6rem', fontSize: '1.6rem', fontWeight: 800, color: tk.heroTitle }}>
+            <h1 style={{ margin: '0 0 0.6rem', fontSize: embedded ? '1.25rem' : '1.6rem', fontWeight: 800, color: tk.heroTitle }}>
               {quiz.title}
             </h1>
 
@@ -427,9 +433,9 @@ export function QuizPreviewPage() {
               }}>{preset.text}</span>
               <span style={{
                 background: tk.badgeBg,
-                color: quiz.visibility === 'public' ? '#16a34a' : '#dc2626',
+                color: quiz.visibility === 'public' ? tk.successText : '#dc2626',
                 fontSize: '0.72rem', fontWeight: 600, padding: '3px 12px',
-                borderRadius: '999px', border: `1px solid ${quiz.visibility === 'public' ? '#16a34a44' : '#dc262644'}`,
+                borderRadius: '999px', border: `1px solid ${quiz.visibility === 'public' ? tk.successBorder : '#dc262644'}`,
               }}>
                 {quiz.visibility === 'public' ? '🌐 عام' : '🔒 خاص'}
               </span>

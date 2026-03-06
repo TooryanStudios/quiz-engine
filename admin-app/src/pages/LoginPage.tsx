@@ -14,7 +14,8 @@ const TAGLINES = [
 export function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { showToast } = useToast()
+  const { showToast, hideToast } = useToast()
+  const isLocalDevHost = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [theme, setTheme] = useState<'dark'|'light'>('dark')
@@ -51,16 +52,31 @@ export function LoginPage() {
       return // page will reload after redirect; finally block still runs
     }
 
+    const hintTimer = setTimeout(() => {
+      showToast({ message: 'إذا لم تفتح نافذة جوجل، يرجى التأكد من السماح بالنوافذ المنبثقة (Pop-ups) للموقع أو الانتظار قليلاً.', type: 'info', durationMs: 10000 })
+    }, 4000)
+
     try {
       await signInWithPopup(auth, googleProvider)
-      showToast({ message: 'جاري تحميل بياناتك…', type: 'info', durationMs: 4000 })
+      clearTimeout(hintTimer)
+      hideToast()
       navigate('/dashboard', { replace: true })
     } catch (err: unknown) {
+      clearTimeout(hintTimer)
+      hideToast()
       const code = typeof err === 'object' && err !== null && 'code' in err
         ? String((err as { code?: string }).code) : ''
       if (code === 'auth/popup-blocked' || code === 'auth/cancelled-popup-request') {
         showToast({ message: 'Popup was blocked. Redirecting…', type: 'info', durationMs: 3000 })
         await signInWithRedirect(auth, googleProvider)
+        return
+      }
+      if (code === 'auth/unauthorized-domain') {
+        setError(
+          isLocalDevHost
+            ? 'Localhost غير مضاف في Firebase Authorized Domains. أضف localhost و 127.0.0.1 من Firebase Console > Authentication > Settings > Authorized domains.'
+            : 'هذا الدومين غير مصرح به في Firebase Authentication. أضفه إلى Authorized domains.'
+        )
         return
       }
       if (code === 'auth/popup-closed-by-user') {
@@ -111,6 +127,12 @@ export function LoginPage() {
         {/* Signed-out banner */}
         {showBanner && (
           <div className="lp-banner-ok">✓ تم تسجيل الخروج بنجاح</div>
+        )}
+
+        {isLocalDevHost && (
+          <div className="lp-banner-warn">
+            Local preview: if the Google dialog closes immediately, add localhost and 127.0.0.1 to Firebase Authorized Domains.
+          </div>
         )}
 
         {/* Error */}
@@ -322,6 +344,12 @@ export function LoginPage() {
           color: #34d399; border-radius: 10px; padding: 0.5rem 1rem;
           font-size: 0.82rem; font-weight: 600; width: 100%; text-align: center;
         }
+        .lp-banner-warn {
+          background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.28);
+          color: #fde68a; border-radius: 10px; padding: 0.55rem 0.9rem;
+          font-size: 0.78rem; font-weight: 600; width: 100%; text-align: center;
+          line-height: 1.45;
+        }
         .lp-error {
           background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.3);
           color: #fca5a5; border-radius: 10px; padding: 0.5rem 1rem;
@@ -391,6 +419,7 @@ export function LoginPage() {
         .lp-bg--light .lp-theme-btn { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.1); }
         .lp-bg--light .lp-theme-btn.active { border-color: rgba(124,58,237,0.5); }
         .lp-bg--light .lp-banner-ok { background: rgba(16,185,129,0.1); }
+        .lp-bg--light .lp-banner-warn { background: rgba(245,158,11,0.08); color: #92400e; }
         .lp-bg--light .lp-error { background: rgba(239,68,68,0.08); }
       `}</style>
     </div>

@@ -6,7 +6,7 @@ import { cancelPublishRequest, incrementQuizPlayCount, incrementShareCount, list
 import { getCoverFromQuestions, isNewContent } from '../lib/utils'
 import { incrementPlatformStat } from '../lib/adminRepo'
 import { guardedLaunchGame } from '../lib/gameLaunch'
-import { buildHostGameUrl } from '../lib/gameModeUrl'
+import { buildHostGameUrl, buildPlayerGameUrl } from '../lib/gameModeUrl'
 import { getHostLaunchAuthParams } from '../lib/hostLaunchAuth'
 import type { QuizDoc } from '../types/quiz'
 import { useTheme } from '../lib/useTheme'
@@ -14,6 +14,7 @@ import placeholderImg from '../assets/QYan_logo_300x164.jpg'
 import { useToast } from '../lib/ToastContext'
 import { useSubscription } from '../lib/useSubscription'
 import { useDialog } from '../lib/DialogContext'
+import { useUserPrefs } from '../lib/UserPrefsContext'
 
 type QuizItem = QuizDoc & { id: string }
 
@@ -70,6 +71,38 @@ export function DashboardPage() {
   const { isSubscribed } = useSubscription()
   const appTheme = useTheme()
   const dark = appTheme === 'dark'
+  const { language } = useUserPrefs()
+  
+  const isAr = language === 'ar'
+  const t = {
+    greeting: isAr ? (new Date().getHours() < 12 ? 'صباح الخير' : 'مساء الخير') : (new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening'),
+    newQuiz: isAr ? 'اختبار جديد' : 'New Quiz',
+    newMiniGame: isAr ? 'لعبة مصغرة جديدة' : 'New Mini Game',
+    totalQuizzes: isAr ? 'إجمالي الاختبارات' : 'Total Quizzes',
+    questions: isAr ? 'الأسئلة' : 'Questions',
+    public: isAr ? 'عام' : 'Public',
+    private: isAr ? 'خاص' : 'Private',
+    libTitle: isAr ? 'مكتبة الأسئلة' : 'Packs Library',
+    libDesc: isAr ? 'اختبارات عامة منشورة للجميع' : 'Public quizzes available to everyone',
+    viewAllStr: isAr ? 'استعراض الكل ›' : 'View all ›',
+    quickActions: isAr ? 'إجراءات سريعة' : 'Quick Actions',
+    quizEditor: isAr ? 'محرر الاختبارات' : 'Quiz Editor',
+    billing: isAr ? 'الاشتراك' : 'Billing',
+    recentlyUpdated: isAr ? 'آخر التحديثات' : 'Recently Updated',
+    noQuizzes: isAr ? 'لا توجد اختبارات بعد' : 'No quizzes yet',
+    createFirst: isAr ? 'أنشئ أول اختبار لك الآن' : 'Create your first quiz now',
+    questionsWord: isAr ? 'أسئلة' : 'questions',
+    questionWord: isAr ? 'سؤال' : 'question',
+    myQuizzes: isAr ? 'اختباراتي' : 'My Quizzes',
+    play: isAr ? 'العب' : 'Play',
+    visibility: isAr ? 'الرؤية' : 'Visibility',
+    pending: isAr ? 'في الانتظار 🕐' : 'Pending 🕐',
+    pubReq: isAr ? 'طلب نشر 🌐' : 'Publish Request 🌐',
+    newBadge: isAr ? 'جديد' : 'NEW',
+    dateLocale: isAr ? 'ar-EG' : 'en-US',
+    quizzesCountStr: (count: number) => isAr ? `${count} اختبار${count !== 1 ? 'ات' : ''}` : `${count} quiz${count !== 1 ? 'zes' : ''}`,
+    viewAllQuizzes: (count: number) => isAr ? `استعراض جميع الـ ${count} اختبارات ←` : `View all ${count} quizzes →`
+  }
 
   useEffect(() => {
     listPublicQuizzes()
@@ -216,9 +249,7 @@ export function DashboardPage() {
   // ── Dashboard derived data ─────────────────────────────────────────────────
   const authUser = auth.currentUser
   const displayName = authUser?.displayName || authUser?.email?.split('@')[0] || 'there'
-  const hour = new Date().getHours()
-  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
-  const dateStr = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+  const dateStr = new Date().toLocaleDateString(t.dateLocale, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
   const totalQuestions = quizzes.reduce((sum, q) => sum + (q.questions?.length ?? 0), 0)
   const publicCount = quizzes.filter(q => q.visibility === 'public').length
   const privateCount = quizzes.filter(q => q.visibility === 'private').length
@@ -236,19 +267,19 @@ export function DashboardPage() {
       <div className="dashboard-header">
         <div>
           <h2 className="dashboard-header-title">
-            {greeting}, {displayName} 👋
+            {t.greeting}, {displayName} 👋
           </h2>
           <p className="dashboard-header-date">{dateStr}</p>
         </div>
         <div className="dashboard-header-actions">
         <Link to="/editor" style={{ textDecoration: 'none' }}>
           <button className="dashboard-btn dashboard-btn-primary">
-            <span>＋</span> New Quiz
+            <span>＋</span> {t.newQuiz}
           </button>
         </Link>
         <Link to="/mini-game-editor" style={{ textDecoration: 'none' }}>
           <button className="dashboard-btn dashboard-btn-secondary">
-            <span>🎮</span> New Mini Game
+            <span>🎮</span> {t.newMiniGame}
           </button>
         </Link>
         </div>
@@ -257,10 +288,10 @@ export function DashboardPage() {
       {/* ── Stats row ── */}
       <div className="dashboard-stats-grid">
         {([
-          { icon: '📋', value: loading ? '—' : String(quizzes.length), label: 'Total Quizzes', accent: '#2563eb', bg: 'rgba(37,99,235,0.12)' },
-          { icon: '❓', value: loading ? '—' : String(totalQuestions), label: 'Questions', accent: '#7c3aed', bg: 'rgba(124,58,237,0.12)' },
-          { icon: '🌐', value: loading ? '—' : String(publicCount), label: 'Public', accent: '#059669', bg: 'rgba(5,150,105,0.12)' },
-          { icon: '🔒', value: loading ? '—' : String(privateCount), label: 'Private', accent: '#d97706', bg: 'rgba(217,119,6,0.12)' },
+          { icon: '📋', value: loading ? '—' : String(quizzes.length), label: t.totalQuizzes, accent: '#2563eb', bg: 'rgba(37,99,235,0.12)' },
+          { icon: '❓', value: loading ? '—' : String(totalQuestions), label: t.questions, accent: '#7c3aed', bg: 'rgba(124,58,237,0.12)' },
+          { icon: '🌐', value: loading ? '—' : String(publicCount), label: t.public, accent: '#059669', bg: 'rgba(5,150,105,0.12)' },
+          { icon: '🔒', value: loading ? '—' : String(privateCount), label: t.private, accent: '#d97706', bg: 'rgba(217,119,6,0.12)' },
         ] as const).map((sc) => (
           <div key={sc.label} className="stat-card">
             <div className="stat-icon-bg" style={{ background: sc.bg }}>{sc.icon}</div>
@@ -275,11 +306,11 @@ export function DashboardPage() {
       <div className="dashboard-section">
         <div className="dashboard-section-header">
           <div>
-            <h3 className="dashboard-section-title">📚 مكتبة الأسئلة</h3>
-            <p className="dashboard-section-desc">اختبارات عامة منشورة للجميع</p>
+            <h3 className="dashboard-section-title">📚 {t.libTitle}</h3>
+            <p className="dashboard-section-desc">{t.libDesc}</p>
           </div>
           <Link to="/packs" style={{ textDecoration: 'none' }}>
-            <button className="dashboard-link-btn">استعراض الكل ›</button>
+            <button className="dashboard-link-btn">{t.viewAllStr}</button>
           </Link>
         </div>
 
@@ -309,7 +340,7 @@ export function DashboardPage() {
                     <div className="pub-info">
                       <div className="pub-title">{q.title}</div>
                       <div className="pub-meta">
-                        {(q as any).questions?.length ?? 0} أسئلة
+                        {(q as any).questions?.length ?? 0} {t.questionsWord}
                       </div>
                     </div>
                   </Link>
@@ -324,14 +355,14 @@ export function DashboardPage() {
       <div className="dashboard-mid-grid">
         {/* Quick Actions */}
         <div className="activity-list-container">
-          <div className="activity-list-title">Quick Actions</div>
+          <div className="activity-list-title">{t.quickActions}</div>
           <div className="activity-list">
             {([
-              { icon: '＋', label: 'New Quiz', to: '/editor', primary: true },
-              { icon: '🎮', label: 'New Mini Game', to: '/mini-game-editor', primary: false },
-              { icon: '✏️', label: 'Quiz Editor', to: '/editor', primary: false },
-              { icon: '📦', label: 'Packs Library', to: '/packs', primary: false },
-              { icon: '💳', label: 'Billing', to: '/billing', primary: false },
+              { icon: '＋', label: t.newQuiz, to: '/editor', primary: true },
+              { icon: '🎮', label: t.newMiniGame, to: '/mini-game-editor', primary: false },
+              { icon: '✏️', label: t.quizEditor, to: '/editor', primary: false },
+              { icon: '📦', label: t.libTitle, to: '/packs', primary: false },
+              { icon: '💳', label: t.billing, to: '/billing', primary: false },
             ] as const).map((qa) => (
               <Link key={qa.label} to={qa.to} style={{ textDecoration: 'none' }}>
                 <div className={`activity-item ${qa.primary ? 'primary' : ''}`}>
@@ -346,7 +377,7 @@ export function DashboardPage() {
 
         {/* Recently Updated */}
         <div className="activity-list-container">
-          <div className="activity-list-title">Recently Updated</div>
+          <div className="activity-list-title">{t.recentlyUpdated}</div>
           {loading ? (
             <div className="activity-list">
               {[1,2,3].map(i => (
@@ -354,7 +385,7 @@ export function DashboardPage() {
               ))}
             </div>
           ) : recentQuizzes.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>No quizzes yet</div>
+            <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>{t.noQuizzes}</div>
           ) : (
             <div className="activity-list">
               {recentQuizzes.map((q) => {
@@ -369,13 +400,13 @@ export function DashboardPage() {
                           {q.title}
                         </div>
                         {isNewContent(q.createdAt) && (
-                          <span className="badge-new">New</span>
+                          <span className="badge-new">{t.newBadge}</span>
                         )}
                       </div>
                       <div className="activity-item-meta">
-                        {q.questions?.length ?? 0} questions
+                        {q.questions?.length ?? 0} {t.questionsWord}
                         &nbsp;&middot;&nbsp;<span style={{ color: badge.color }}>{badge.label}</span>
-                        &nbsp;&middot;&nbsp;{q.visibility === 'public' ? '🌐 Public' : '🔒 Private'}
+                        &nbsp;&middot;&nbsp;{q.visibility === 'public' ? `🌐 ${t.public}` : `🔒 ${t.private}`}
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: '0.3rem', flexShrink: 0 }}>
@@ -397,15 +428,15 @@ export function DashboardPage() {
       {/* ── My Quizzes ── */}
       <div className="dashboard-section-header" style={{ marginTop: '2.5rem' }}>
         <div>
-          <h3 className="dashboard-section-title">My Quizzes</h3>
+          <h3 className="dashboard-section-title">{t.myQuizzes}</h3>
           <p className="dashboard-section-desc">
-            {loading ? '...' : `${quizzes.length} quiz${quizzes.length !== 1 ? 'zes' : ''}`}
+            {loading ? '...' : t.quizzesCountStr(quizzes.length)}
           </p>
         </div>
         {quizzes.length > 0 && (
           <Link to="/my-quizzes" style={{ textDecoration: 'none' }}>
             <button className="dashboard-link-btn outlined">
-              View all →
+              {t.viewAllStr}
             </button>
           </Link>
         )}
@@ -424,11 +455,11 @@ export function DashboardPage() {
       {!loading && quizzes.length === 0 && (
         <div className="empty-state-container">
           <div className="empty-state-icon">📋</div>
-          <h3 className="empty-state-title">لا توجد اختبارات بعد</h3>
-          <p className="empty-state-desc">أنشئ أول اختبار لك الآن</p>
+          <h3 className="empty-state-title">{t.noQuizzes}</h3>
+          <p className="empty-state-desc">{t.createFirst}</p>
           <Link to="/editor" style={{ textDecoration: 'none' }}>
             <button className="dashboard-btn dashboard-btn-primary" style={{ padding: '0.75rem 2rem' }}>
-              ＋ إنشاء اختبار
+              <span>＋</span> {t.newQuiz}
             </button>
           </Link>
         </div>
@@ -530,7 +561,7 @@ export function DashboardPage() {
                       boxShadow: '0 4px 14px rgba(0,0,0,0.5)',
                     }}
                   >
-                    &#9654; Play
+                    &#9654; {t.play}
                   </a>
                   {/* Subtle bottom fade */}
                   <div style={{
@@ -596,7 +627,7 @@ export function DashboardPage() {
                       padding: '2px 6px', borderRadius: '4px',
                       textTransform: 'uppercase', letterSpacing: '0.06em',
                       boxShadow: '0 1px 4px rgba(0,0,0,0.4)', zIndex: 7,
-                    }}>New</div>
+                    }}>{t.newBadge}</div>
                   )}
                 </div>
 
@@ -631,15 +662,15 @@ export function DashboardPage() {
                         overflow: 'hidden', marginTop: '4px',
                       }}>
                         <div style={{ padding: '6px 10px', fontSize: '0.62rem', color: dark ? '#64748b' : '#94a3b8', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                          Visibility
+                          {t.visibility}
                         </div>
                         {(['public', 'private'] as const).map((v) => {
                           const isActive = v === 'public'
                             ? (q.visibility === 'public' || q.approvalStatus === 'pending')
                             : (q.visibility === 'private' && !q.approvalStatus)
                           const label = v === 'public'
-                            ? (q.approvalStatus === 'pending' ? 'في الانتظار 🕐' : q.visibility === 'public' ? 'عام' : 'طلب نشر 🌐')
-                            : 'خاص 🔒'
+                            ? (q.approvalStatus === 'pending' ? t.pending : q.visibility === 'public' ? t.public : t.pubReq)
+                            : `${t.private} 🔒`
                           return (
                             <button
                               key={v}
@@ -673,7 +704,7 @@ export function DashboardPage() {
                     {q.title}
                   </div>
                   <div style={{ fontSize: '0.72rem', color: 'var(--text-mid)', fontWeight: 500 }}>
-                    {q.questions?.length ?? 0} سؤال
+                    {q.questions?.length ?? 0} {t.questionWord}
                   </div>
                 </div>
 
@@ -690,21 +721,25 @@ export function DashboardPage() {
                     <button style={aBtnStyle}
                       onMouseEnter={(e) => Object.assign(e.currentTarget.style, { background: dark ? '#273549' : '#e2e8f0', color: dark ? '#e2e8f0' : '#0f172a' })}
                       onMouseLeave={(e) => Object.assign(e.currentTarget.style, { background: dark ? '#1e293b' : '#f1f5f9', color: dark ? '#94a3b8' : '#475569' })}
-                    >معاينة</button>
+                    >{isAr ? 'معاينة' : 'Preview'}</button>
                   </Link>
                   <Link to={getEditorPath(q)} style={{ textDecoration: 'none', flex: 1 }}>
                     <button style={aBtnPrimary}
                       onMouseEnter={(e) => Object.assign(e.currentTarget.style, { background: '#1d4ed8', color: '#fff', borderColor: '#2563eb' })}
                     onMouseLeave={(e) => Object.assign(e.currentTarget.style, { background: dark ? '#1e3a5f' : '#dbeafe', color: dark ? '#93c5fd' : '#1d4ed8', borderColor: dark ? '#1e4a7a' : '#bfdbfe' })}
-                    >تعديل</button>
+                    >{isAr ? 'تعديل' : 'Edit'}</button>
                   </Link>
                   <button
-                    title="نسخ رابط الاختبار"
+                    title={isAr ? 'نسخ رابط الاختبار' : 'Copy link'}
                     onClick={(e) => {
                       e.stopPropagation()
-                      navigator.clipboard?.writeText(`${SERVER_BASE}/player?quiz=${encodeURIComponent(q.id)}`)
+                      navigator.clipboard?.writeText(buildPlayerGameUrl({
+                        serverBase: SERVER_BASE,
+                        quizId: q.id,
+                        themeId: q.themeId,
+                      }))
                         .then(() => {
-                          showToast({ message: 'تم نسخ الرابط!', type: 'success' })
+                          showToast({ message: isAr ? 'تم نسخ الرابط!' : 'Link copied!', type: 'success' })
                           incrementShareCount(q.id).catch(console.error)
                         })
                     }}
@@ -731,7 +766,7 @@ export function DashboardPage() {
                   onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.85'; e.currentTarget.style.transform = 'translateY(-1px)' }}
                   onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(0)' }}
                 >
-                  View all {quizzes.length} quizzes →
+                  {t.viewAllQuizzes(quizzes.length)}
                 </button>
               </Link>
             </div>

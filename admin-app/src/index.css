@@ -14,6 +14,7 @@
 
   /* Missing card properties */
   --bg-card:        #ffffff;
+  --bg-hover:       #f1f5f9;
   --shadow-sm:      0 1px 2px 0 rgb(0 0 0 / 0.05);
   --shadow-md:      0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
 
@@ -39,6 +40,7 @@
   --border-subtle:  #1f2937;  /* Added missing variable */
 
   --bg-card:        #0f172a;
+  --bg-hover:       #1e293b;
   --shadow-sm:      0 1px 2px 0 rgb(0 0 0 / 0.5);
   --shadow-md:      0 4px 6px -1px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.5);
 
@@ -107,6 +109,32 @@ textarea::placeholder {
   height: 100dvh;
   overflow: hidden;
   position: relative;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-mid) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--border-mid);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+  background-clip: padding-box;
 }
 
 h2 {

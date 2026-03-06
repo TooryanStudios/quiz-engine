@@ -1,0 +1,14 @@
+{
+  "id": "warm-sand",
+  "name": "Warm Sand",
+  "baseTheme": "light",
+  "tokens": {
+    "--bg": "#e8d098",
+    "--surface": "#fef0cc",
+    "--surface-2": "#c9a96e",
+    "--accent": "#3d8080",
+    "--text": "#2d1b0e",
+    "--text-dim": "#7a5230",
+    "--success": "#9655a2"
+  }
+}

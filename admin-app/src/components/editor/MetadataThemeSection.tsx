@@ -1,13 +1,47 @@
-import { THEME_PRESETS } from '../../lib/adminRepo'
+import { useEffect, useState } from 'react'
+import {
+  THEME_PRESETS,
+  subscribeThemeEditorSettings,
+  type ThemePackRecord,
+  type ThemePaletteTokens,
+} from '../../lib/adminRepo'
 import { useDialog } from '../../lib/DialogContext'
 
-function resolveSelectedTheme(selectedThemeId: string) {
+// ── Build a unified theme list: Firestore custom themes + built-in presets ──
+type FlatTheme = {
+  id: string
+  label: string
+  tokens: ThemePaletteTokens
+  isCustom: boolean
+}
+
+function buildFlatThemes(custom: ThemePackRecord[]): FlatTheme[] {
+  const enabled = custom.filter((t) => t.enabled !== false)
+  const builtIn: FlatTheme[] = THEME_PRESETS.map((p) => ({
+    id: p.key,
+    label: p.label,
+    tokens: p.tokens,
+    isCustom: false,
+  }))
+  if (enabled.length === 0) return builtIn
+  const customFlat: FlatTheme[] = enabled.map((t) => ({
+    id: t.id,
+    label: t.name,
+    tokens: t.tokens,
+    isCustom: true,
+  }))
+  return [...customFlat, ...builtIn]
+}
+
+// ── Compact color strip shown on each card ───────────────────────────────────
+function ColorStrip({ tokens }: { tokens: ThemePaletteTokens }) {
+  const swatches = [tokens.bg, tokens.surface, tokens.surface2, tokens.accent, tokens.success]
   return (
-    THEME_PRESETS.find((t) => t.key === selectedThemeId) ||
-    (selectedThemeId === 'default'
-      ? THEME_PRESETS.find((t) => t.key === 'default-dark')
-      : undefined) ||
-    THEME_PRESETS[0]
+    <div style={{ display: 'flex', height: '26px', borderRadius: '6px 6px 0 0', overflow: 'hidden' }}>
+      {swatches.map((color, i) => (
+        <div key={i} style={{ flex: 1, background: color }} />
+      ))}
+    </div>
   )
 }
 
@@ -18,72 +52,102 @@ function ThemePickerBody(props: {
   const { selectedThemeId, onPick } = props
   const { hide } = useDialog()
 
+  const [themes, setThemes] = useState<FlatTheme[]>(() => buildFlatThemes([]))
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const unsub = subscribeThemeEditorSettings((settings) => {
+      setThemes(buildFlatThemes(settings.themes || []))
+      setLoading(false)
+    })
+    return unsub
+  }, [])
+
+  const activeId = selectedThemeId === 'default' ? 'default-dark' : selectedThemeId
+
   return (
-    <div style={{ display: 'grid', gap: '0.75rem' }}>
-      <div style={{ color: 'var(--text-mid)', fontSize: '0.9rem', lineHeight: 1.5 }}>
-        اختر ثيمًا من القائمة:
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+      {loading && (
+        <div style={{ color: 'var(--text-mid)', fontSize: '0.82rem' }}>
+          جاري تحميل الثيمات…
+        </div>
+      )}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-        gap: '0.75rem',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(128px, 1fr))',
+        gap: '0.5rem',
+        maxHeight: '60vh',
+        overflowY: 'auto',
+        paddingRight: '2px',
       }}>
-        {THEME_PRESETS.map((theme) => {
-          const isActive = selectedThemeId === theme.key || (selectedThemeId === 'default' && theme.key === 'default-dark')
-
+        {themes.map((theme) => {
+          const isActive = theme.id === activeId
           return (
             <button
-              key={theme.key}
+              key={theme.id}
               type="button"
-              onClick={() => { onPick(theme.key); hide() }}
+              onClick={() => { onPick(theme.id); hide() }}
               style={{
                 display: 'flex',
                 flexDirection: 'column',
-                alignItems: 'stretch',
                 padding: 0,
-                border: isActive ? '2px solid var(--accent)' : '1px solid var(--border-subtle)',
-                borderRadius: '10px',
-                background: 'var(--surface-2)',
+                border: isActive ? '2px solid var(--accent)' : '1px solid var(--border-subtle, #3a3f52)',
+                borderRadius: '8px',
+                background: isActive
+                  ? 'color-mix(in srgb, var(--accent) 8%, var(--surface))'
+                  : 'var(--surface)',
                 cursor: 'pointer',
                 overflow: 'hidden',
-                transition: 'all 0.16s ease',
-                transform: isActive ? 'scale(1.02)' : 'scale(1)',
-                opacity: isActive ? 1 : 0.9,
+                transition: 'border-color 0.13s, transform 0.12s',
+                transform: isActive ? 'scale(1.03)' : 'scale(1)',
+                boxShadow: isActive ? '0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent)' : 'none',
+                textAlign: 'left',
               }}
+              onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.borderColor = 'var(--accent)' }}
+              onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.borderColor = 'var(--border-subtle, #3a3f52)' }}
             >
-              <div style={{
-                height: '60px',
-                background: theme.tokens.bg,
-                position: 'relative',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}>
-                <div style={{
-                  width: '70%',
-                  height: '24px',
-                  background: theme.tokens.surface,
-                  borderRadius: '4px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  padding: '0 8px',
-                  gap: '4px',
-                }}>
-                  <div style={{ width: '16px', height: '8px', borderRadius: '2px', background: theme.tokens.accent }} />
-                  <div style={{ width: '30%', height: '4px', borderRadius: '2px', background: theme.tokens.textDim }} />
-                </div>
-              </div>
+              <ColorStrip tokens={theme.tokens} />
 
-              <div style={{
-                padding: '0.5rem',
-                textAlign: 'center',
-                fontSize: '0.85em',
-                fontWeight: isActive ? 700 : 500,
-                color: 'var(--text-main)',
-                background: isActive ? 'var(--surface-hover)' : 'transparent',
-                borderTop: '1px solid var(--border-subtle)',
-              }}>
-                {theme.label}
+              <div style={{ padding: '0.4rem 0.5rem' }}>
+                <div style={{
+                  fontSize: '0.8rem',
+                  fontWeight: isActive ? 700 : 600,
+                  color: isActive ? 'var(--accent)' : 'var(--text)',
+                  lineHeight: 1.25,
+                  marginBottom: '0.15rem',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}>
+                  {theme.label}
+                </div>
+                <div style={{
+                  fontSize: '0.65rem',
+                  fontFamily: 'monospace',
+                  color: 'var(--text-dim)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  direction: 'ltr',
+                }}>
+                  {theme.id}
+                </div>
+                {theme.isCustom && (
+                  <div style={{
+                    marginTop: '0.2rem',
+                    display: 'inline-block',
+                    fontSize: '0.58rem',
+                    fontWeight: 700,
+                    background: 'color-mix(in srgb, var(--accent) 15%, transparent)',
+                    color: 'var(--accent)',
+                    borderRadius: '3px',
+                    padding: '1px 4px',
+                    letterSpacing: '0.04em',
+                    textTransform: 'uppercase',
+                  }}>
+                    مخصص
+                  </div>
+                )}
               </div>
             </button>
           )
@@ -104,16 +168,23 @@ export function MetadataThemeSection({
 }: MetadataThemeSectionProps) {
   const { show: showDialog } = useDialog()
 
-  const selectedTheme = resolveSelectedTheme(selectedThemeId)
+  const [themes, setThemes] = useState<FlatTheme[]>(() => buildFlatThemes([]))
+  useEffect(() => {
+    const unsub = subscribeThemeEditorSettings((s) => setThemes(buildFlatThemes(s.themes || [])))
+    return unsub
+  }, [])
+
+  const activeId = selectedThemeId === 'default' ? 'default-dark' : selectedThemeId
+  const current = themes.find((t) => t.id === activeId) ?? themes[0]
 
   return (
     <div style={{ marginTop: '1.5rem' }}>
-      <label style={{ 
-        fontSize: '0.9em', 
-        color: 'var(--text-mid)', 
-        display: 'block', 
-        marginBottom: '0.5rem', 
-        fontWeight: 600 
+      <label style={{
+        fontSize: '0.9em',
+        color: 'var(--text-mid)',
+        display: 'block',
+        marginBottom: '0.5rem',
+        fontWeight: 600,
       }}>
         اختر الثيم (Theme)
       </label>
@@ -139,59 +210,57 @@ export function MetadataThemeSection({
         style={{
           width: '100%',
           display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'stretch',
-          padding: 0,
+          alignItems: 'center',
+          gap: '0.75rem',
+          padding: '0.6rem 0.85rem',
           border: '1px solid var(--border-strong)',
-          borderRadius: '12px',
-          background: 'var(--bg-surface)',
+          borderRadius: '10px',
+          background: 'var(--bg-surface, var(--surface))',
           cursor: 'pointer',
-          overflow: 'hidden',
-          transition: 'all 0.16s ease',
+          transition: 'all 0.15s ease',
         }}
-        onMouseEnter={(event) => {
-          event.currentTarget.style.transform = 'translateY(-1px)'
-          event.currentTarget.style.borderColor = 'var(--accent)'
+        onMouseEnter={(e) => {
+          e.currentTarget.style.borderColor = 'var(--accent)'
+          e.currentTarget.style.transform = 'translateY(-1px)'
         }}
-        onMouseLeave={(event) => {
-          event.currentTarget.style.transform = 'translateY(0)'
-          event.currentTarget.style.borderColor = 'var(--border-strong)'
+        onMouseLeave={(e) => {
+          e.currentTarget.style.borderColor = 'var(--border-strong)'
+          e.currentTarget.style.transform = 'translateY(0)'
         }}
       >
-        <div style={{
-          height: '68px',
-          background: selectedTheme.tokens.bg,
-          position: 'relative',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}>
+        {current && (
           <div style={{
-            width: '78%',
-            height: '26px',
-            background: selectedTheme.tokens.surface,
-            borderRadius: '6px',
             display: 'flex',
-            alignItems: 'center',
-            padding: '0 10px',
-            gap: '6px',
+            width: '52px',
+            height: '30px',
+            borderRadius: '5px',
+            overflow: 'hidden',
+            flexShrink: 0,
+            border: '1px solid var(--border-subtle, #3a3f52)',
           }}>
-            <div style={{ width: '18px', height: '10px', borderRadius: '3px', background: selectedTheme.tokens.accent }} />
-            <div style={{ width: '34%', height: '5px', borderRadius: '3px', background: selectedTheme.tokens.textDim }} />
+            {[current.tokens.bg, current.tokens.surface2, current.tokens.accent, current.tokens.success].map((c, i) => (
+              <div key={i} style={{ flex: 1, background: c }} />
+            ))}
+          </div>
+        )}
+
+        <div style={{ flex: 1, textAlign: 'left', minWidth: 0 }}>
+          <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text)', lineHeight: 1.2 }}>
+            {current?.label ?? activeId}
+          </div>
+          <div style={{
+            fontSize: '0.7rem',
+            fontFamily: 'monospace',
+            color: 'var(--text-dim)',
+            direction: 'ltr',
+          }}>
+            {activeId}
           </div>
         </div>
-        <div style={{
-          padding: '0.75rem 0.85rem',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          borderTop: '1px solid var(--border)',
-          color: 'var(--text)',
-          fontWeight: 700,
-        }}>
-          <span>{selectedTheme.label}</span>
-          <span style={{ color: 'var(--text-mid)', fontWeight: 700 }}>تغيير ▸</span>
-        </div>
+
+        <span style={{ color: 'var(--text-mid)', fontWeight: 700, flexShrink: 0 }}>
+          تغيير ▸
+        </span>
       </button>
     </div>
   )

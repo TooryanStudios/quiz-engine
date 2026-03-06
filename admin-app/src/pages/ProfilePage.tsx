@@ -11,6 +11,37 @@ import './ProfilePage.css'
 export function ProfilePage() {
   const { language, setLanguage, theme, setTheme, slidePanelLayout, setSlidePanelLayout } = useUserPrefs()
   const { creditsRemaining, plan, loading: subLoading } = useSubscription()
+  const isAr = language === 'ar'
+
+  const t = {
+    title: isAr ? '👤 الملف الشخصي والإعدادات' : '👤 Profile & Settings',
+    gameplayIdentity: isAr ? 'هوية اللعب' : 'Gameplay Identity',
+    gameplayDesc: isAr ? 'يتم عرضها للاعبين الآخرين أثناء المباريات المباشرة — منفصلة عن اسم حسابك.' : 'Shown to other players during live games — separate from your account name.',
+    displayNameLabel: isAr ? 'اسم العرض (في اللعبة)' : 'Display Name (in-game)',
+    displayNamePlaceholder: (name: string) => isAr ? `${name} أو اسمك المستعار...` : `${name} or your game name...`,
+    avatarLabel: isAr ? 'الصورة الرمزية (في اللعبة)' : 'Avatar (in-game)',
+    chooseIconBtn: isAr ? 'اختر أيقونة' : 'Choose Icon',
+    removeBtn: isAr ? '✕ إزالة' : '✕ Remove',
+    savingStr: isAr ? 'جارٍ الحفظ...' : 'Saving...',
+    savedStr: isAr ? '✓ تم الحفظ' : '✓ Saved',
+    saveChangesBtn: isAr ? 'حفظ التغييرات' : 'Save Changes',
+    appearance: isAr ? 'المظهر' : 'Appearance',
+    themeLabel: isAr ? 'السمة' : 'Theme',
+    dark: isAr ? '🌙 داكن' : '🌙 Dark',
+    light: isAr ? '☀️ فاتح' : '☀️ Light',
+    languageLabel: isAr ? 'اللغة' : 'Language',
+    slidePanelLabel: isAr ? 'لوحة التمرير' : 'Slide Panel',
+    slidePanelLeft: isAr ? '▐ يسار' : '▐ Left',
+    slidePanelBottom: isAr ? '▄ أسفل' : '▄ Bottom',
+    aiCreditsTitle: isAr ? 'رصيد الذكاء الاصطناعي' : 'AI Credits',
+    loadingStr: isAr ? 'جاري التحميل...' : 'Loading...',
+    creditsRemaining: isAr ? 'رصيد متبقي' : 'credits remaining',
+    accountInfo: isAr ? 'معلومات الحساب' : 'Account Info',
+    emailLabel: isAr ? 'البريد الإلكتروني' : 'Email',
+    signInsLabel: isAr ? 'تسجيلات الدخول' : 'Sign-ins',
+    platformLabel: isAr ? 'المنصة' : 'Platform',
+    lastSeenLabel: isAr ? 'آخر ظهور' : 'Last seen',
+  }
 
   const [user, setUser] = useState<User | null>(auth.currentUser)
   const [profile, setProfile] = useState<UserProfile | null>(null)
@@ -22,6 +53,7 @@ export function ProfilePage() {
 
   const [saving, setSaving] = useState(false)
   const [savedAt, setSavedAt] = useState<number | null>(null)
+  const [isSwitchingLanguage, setIsSwitchingLanguage] = useState(false)
 
   // Avatar emoji picker
   const [showAvatarPicker, setShowAvatarPicker] = useState(false)
@@ -71,8 +103,19 @@ export function ProfilePage() {
   }
 
   function handleLangChange(l: 'ar' | 'en') {
-    setLanguage(l)
-    if (user) void saveUserPrefs(user.uid, { language: l })
+    if (l === language) return
+    setIsSwitchingLanguage(true)
+    
+    // Slight delay to allow overlay to render before setting language (which triggers layout shifts)
+    setTimeout(() => {
+      setLanguage(l)
+      if (user) void saveUserPrefs(user.uid, { language: l })
+      
+      // Delay removing the overlay to allow DOM to settle
+      setTimeout(() => {
+        setIsSwitchingLanguage(false)
+      }, 400)
+    }, 50)
   }
 
   function handleLayoutChange(l: 'left' | 'bottom') {
@@ -86,13 +129,11 @@ export function ProfilePage() {
 
   return (
     <section className="profile-page">
-      <h2>👤 Profile &amp; Settings</h2>
+      <h2>{t.title}</h2>
 
       {/* ── Identity header ── */}
       <div className="profile-avatar-header">
-        {avatarEmoji ? (
-          <div className="profile-avatar-emoji-large">{avatarEmoji}</div>
-        ) : user?.photoURL ? (
+        {user?.photoURL ? (
           <img
             src={user.photoURL}
             alt=""
@@ -114,22 +155,22 @@ export function ProfilePage() {
 
       {/* ── Gameplay Identity ── */}
       <div className="profile-section">
-        <h3>Gameplay Identity</h3>
+        <h3>{t.gameplayIdentity}</h3>
         <p className="profile-section-desc">
-          Shown to other players during live games — separate from your account name.
+          {t.gameplayDesc}
         </p>
 
-        <label className="profile-field-label" htmlFor="gdn">Display Name (in-game)</label>
+        <label className="profile-field-label" htmlFor="gdn">{t.displayNameLabel}</label>
         <input
           id="gdn"
           className="profile-input"
           value={gameDisplayName}
           onChange={e => setGameDisplayName(e.target.value)}
-          placeholder={user?.displayName || 'Your game name…'}
+          placeholder={t.displayNamePlaceholder(user?.displayName || '')}
           maxLength={40}
         />
 
-        <span className="profile-field-label">Avatar (in-game)</span>
+        <span className="profile-field-label">{t.avatarLabel}</span>
         <div className="profile-avatar-pick-row">
           <div className="profile-avatar-pick-emoji">
             {avatarEmoji || '🎮'}
@@ -139,7 +180,7 @@ export function ProfilePage() {
             className="profile-btn profile-btn-secondary"
             onClick={() => setShowAvatarPicker(true)}
           >
-            اختر أيقونة
+            {t.chooseIconBtn}
           </button>
           {avatarEmoji && (
             <button
@@ -147,7 +188,7 @@ export function ProfilePage() {
               className="profile-btn profile-btn-ghost profile-remove-avatar-btn"
               onClick={() => setGameAvatar('')}
             >
-              ✕ Remove
+              {t.removeBtn}
             </button>
           )}
         </div>
@@ -157,32 +198,32 @@ export function ProfilePage() {
           onClick={handleSave}
           disabled={saving || profileLoading}
         >
-          {saving ? 'Saving…' : recentlySaved ? '✓ Saved' : 'Save Changes'}
+          {saving ? t.savingStr : recentlySaved ? t.savedStr : t.saveChangesBtn}
         </button>
       </div>
 
       {/* ── Appearance ── */}
       <div className="profile-section">
-        <h3>Appearance</h3>
+        <h3>{t.appearance}</h3>
 
         <div className="profile-toggle-row">
-          <span>Theme</span>
+          <span>{t.themeLabel}</span>
           <div className="theme-pill">
             <button
               className={`theme-pill-btn${theme === 'dark' ? ' active' : ''}`}
               onClick={() => handleThemeChange('dark')}
               title="Dark"
-            >🌙 Dark</button>
+            >{t.dark}</button>
             <button
               className={`theme-pill-btn${theme === 'light' ? ' active' : ''}`}
               onClick={() => handleThemeChange('light')}
               title="Light"
-            >☀️ Light</button>
+            >{t.light}</button>
           </div>
         </div>
 
         <div className="profile-toggle-row">
-          <span>Language</span>
+          <span>{t.languageLabel}</span>
           <div className="theme-pill">
             <button
               className={`theme-pill-btn${language === 'ar' ? ' active' : ''}`}
@@ -198,31 +239,31 @@ export function ProfilePage() {
         </div>
 
         <div className="profile-toggle-row">
-          <span>Slide Panel</span>
+          <span>{t.slidePanelLabel}</span>
           <div className="theme-pill">
             <button
               className={`theme-pill-btn${slidePanelLayout === 'left' ? ' active' : ''}`}
               onClick={() => handleLayoutChange('left')}
               title="Left vertical strip"
-            >▐ Left</button>
+            >{t.slidePanelLeft}</button>
             <button
               className={`theme-pill-btn${slidePanelLayout === 'bottom' ? ' active' : ''}`}
               onClick={() => handleLayoutChange('bottom')}
               title="Bottom horizontal filmstrip"
-            >▄ Bottom</button>
+            >{t.slidePanelBottom}</button>
           </div>
         </div>
       </div>
 
       {/* ── AI Credits ── */}
       <div className="profile-section">
-        <h3>AI Credits</h3>
+        <h3>{t.aiCreditsTitle}</h3>
         {subLoading ? (
-          <div className="profile-credits-loading">Loading…</div>
+          <div className="profile-credits-loading">{t.loadingStr}</div>
         ) : (
           <div className="profile-credits-row">
             <div className="profile-credits-value">{creditsRemaining ?? 0}</div>
-            <div className="profile-credits-label">credits remaining</div>
+            <div className="profile-credits-label">{t.creditsRemaining}</div>
             {plan && plan !== 'free' && <div className="profile-plan-badge">{plan}</div>}
           </div>
         )}
@@ -231,20 +272,20 @@ export function ProfilePage() {
       {/* ── Account Info ── */}
       {!profileLoading && profile && (
         <div className="profile-section profile-section--muted">
-          <h3>Account Info</h3>
+          <h3>{t.accountInfo}</h3>
           <div className="profile-info-grid">
-            <span>Email</span>
+            <span>{t.emailLabel}</span>
             <span>{profile.email}</span>
 
-            <span>Sign-ins</span>
+            <span>{t.signInsLabel}</span>
             <span>{profile.signInCount ?? '—'}</span>
 
-            <span>Platform</span>
+            <span>{t.platformLabel}</span>
             <span>{profile.platform ?? '—'}</span>
 
             {profile.lastSeen?.toDate && (
               <>
-                <span>Last seen</span>
+                <span>{t.lastSeenLabel}</span>
                 <span>{(profile.lastSeen.toDate() as Date).toLocaleString()}</span>
               </>
             )}
@@ -258,6 +299,26 @@ export function ProfilePage() {
         onClose={() => setShowAvatarPicker(false)}
         onSelect={emoji => { setGameAvatar(emoji); if (user) void saveUserPrefs(user.uid, { gameAvatar: emoji }) }}
       />
+      
+      {isSwitchingLanguage && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.2)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          zIndex: 99999,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          opacity: 1, transition: 'opacity 0.2s ease',
+        }}>
+          <div className="app-loading-spinner" style={{ 
+            width: '50px', height: '50px', 
+            border: '4px solid rgba(255, 255, 255, 0.3)', 
+            borderTop: '4px solid #ffffff', 
+            borderRadius: '50%', 
+            animation: 'spin 1s linear infinite' 
+          }} />
+        </div>
+      )}
     </section>
   )
 }

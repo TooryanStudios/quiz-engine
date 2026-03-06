@@ -96,7 +96,7 @@ export function MasterAdminPage() {
   const creators = Object.values(creatorMap).sort((a, b) => b.totalPlays - a.totalPlays)
 
   return (
-    <>
+    <div className="master-shell">
       <header className="master-header">
         <div className="master-header-top">
           <h1>👑 Master Admin</h1>
@@ -150,7 +150,7 @@ export function MasterAdminPage() {
         {activeTab === 'creators'   && <CreatorsTab   creators={creators} users={usersData.users} />}
         {activeTab === 'users'      && <UsersTab      users={usersData.users} quizzes={quizzesData.quizzes} sessions={sessions.sessions} dark={dark} hasMore={usersData.hasMore} loadingMore={usersData.loadingMore} onLoadMore={usersData.loadMore} error={usersData.error} />}
       </main>
-    </>
+    </div>
   )
 }
 
