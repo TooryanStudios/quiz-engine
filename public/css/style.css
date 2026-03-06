@@ -220,6 +220,14 @@ body.question-only .host-controls {
   display: none !important;
 }
 
+body.question-only .host-hud-bar {
+  display: none !important;
+}
+
+body.question-only .host-question-body {
+  margin-top: 20px !important;
+}
+
 /* ═══════════════════════════════════════════
    Universal Containers & Sizing
 ═══════════════════════════════════════════ */
@@ -901,6 +909,261 @@ h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-dim); }
 
 .btn-skip { background: #7c3aed; }
 .btn-end { background: #b91c1c; }
+
+/* ═══════════════════════════════════════════
+   Host HUD Bar — Fixed top gameplay header
+═══════════════════════════════════════════ */
+
+/* View overrides so the card can scroll under the fixed bar */
+.host-question-view.active {
+  padding: 0 12px 32px !important;     /* side padding; bottom for comfortable scroll */
+  justify-content: flex-start !important;
+  align-items: center !important;
+}
+
+/* The fixed bar itself */
+.host-hud-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  /* Safe-area padding for notch / status bar */
+  padding: max(env(safe-area-inset-top, 0px), 10px) 14px 10px;
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.25);
+}
+
+[data-theme="light"] .host-hud-bar {
+  border-bottom-color: rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.10);
+}
+
+/* ── Main row: left controls | center timer | right controls ── */
+.hud-main-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.hud-side {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 96px;
+  flex-shrink: 0;
+}
+
+.hud-side-right {
+  justify-content: flex-end;
+}
+
+/* ── Icon buttons ── */
+.hud-icon-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.18s, transform 0.15s, border-color 0.18s;
+  padding: 0;
+}
+
+.hud-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  transform: scale(1.08);
+}
+
+.hud-icon-btn:active {
+  transform: scale(0.92);
+}
+
+[data-theme="light"] .hud-icon-btn {
+  border-color: rgba(0, 0, 0, 0.13);
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.hud-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+  flex-shrink: 0;
+}
+
+/* Pause button — teal when running, orange when paused */
+.hud-btn-pause {
+  border-color: rgba(45, 212, 191, 0.40);
+  color: var(--success);
+}
+.hud-btn-pause[data-paused="true"] {
+  border-color: rgba(249, 115, 22, 0.45);
+  color: #f97316;
+}
+
+/* Skip toggle icon visibility */
+#btn-pause-resume .hud-icon-pause { display: block; }
+#btn-pause-resume .hud-icon-play  { display: none; }
+#btn-pause-resume[data-paused="true"] .hud-icon-pause { display: none; }
+#btn-pause-resume[data-paused="true"] .hud-icon-play  { display: block; }
+
+/* Skip — purple */
+.hud-btn-skip {
+  border-color: rgba(124, 58, 237, 0.38);
+  color: #a78bfa;
+}
+.hud-btn-skip:hover { background: rgba(124, 58, 237, 0.14); }
+
+/* End — red */
+.hud-btn-end {
+  border-color: rgba(185, 28, 28, 0.45);
+  color: #f87171;
+}
+.hud-btn-end:hover { background: rgba(185, 28, 28, 0.16); }
+
+/* ── Center column: large timer + PIN below ── */
+.hud-center-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.hud-timer {
+  width: 72px !important;
+  height: 72px !important;
+}
+.hud-timer::before {
+  width: 54px !important;
+  height: 54px !important;
+}
+.hud-timer .timer-count {
+  font-size: 1.3rem !important;
+  font-weight: 900 !important;
+}
+
+.hud-pin-text {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+/* ── Answer counter ── */
+.hud-answer-count {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--success);
+  white-space: nowrap;
+  text-align: center;
+  line-height: 1.2;
+}
+
+/* ── Meta row: Q X/Y · Mode · Score ── */
+.hud-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: nowrap;
+}
+
+.hud-q-num {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.hud-mode-tag {
+  font-size: 0.67rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  padding: 2px 7px;
+  background: rgba(136, 146, 164, 0.14);
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.hud-score-val {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: var(--accent);
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* ── Progress timeline dots ── */
+.hud-progress-track {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 8px;
+}
+
+.hud-progress-dot {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.10);
+  transition: background 0.3s, transform 0.2s;
+}
+
+[data-theme="light"] .hud-progress-dot {
+  background: rgba(0, 0, 0, 0.10);
+}
+
+.hud-progress-dot.done {
+  background: var(--success);
+}
+
+.hud-progress-dot.current {
+  background: var(--accent);
+  transform: scaleY(1.7);
+  border-radius: 3px;
+}
+
+/* ── Question card body (sits below fixed HUD) ── */
+.host-question-body {
+  /* fallback margin; JS sync keeps this accurate */
+  margin-top: 180px;
+  width: 100%;
+  max-width: 700px;
+  align-self: center;
+  flex-shrink: 0;
+}
+
+/* Responsive tweaks */
+@media (max-width: 480px) {
+  .hud-icon-btn   { width: 40px; height: 40px; }
+  .hud-icon       { width: 16px; height: 16px; }
+  .hud-timer      { width: 62px !important; height: 62px !important; }
+  .hud-timer::before { width: 46px !important; height: 46px !important; }
+  .hud-timer .timer-count { font-size: 1.1rem !important; }
+  .hud-side       { min-width: 82px; }
+  .host-question-body { margin-top: 165px; }
+}
+
+@media (max-width: 360px) {
+  .hud-side       { min-width: 70px; }
+  .hud-icon-btn   { width: 36px; height: 36px; }
+  .host-question-body { margin-top: 158px; }
+}
 
 /* ═══════════════════════════════════════════
    Kick Button

@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=129" />
+  <link rel="stylesheet" href="/css/style.css?v=130" />
   <!-- Prevent browser zoom (Ctrl+scroll, Ctrl+±, pinch) -->
   <script>
     // 1. Prevent Ctrl+Wheel (mouse zoom)
@@ -427,28 +427,69 @@
   <!-- ═══════════════════════════════════════════
        VIEW: Question — Host sees question + live counter
   ═══════════════════════════════════════════ -->
-  <div id="view-host-question" class="view">
-    <div class="question-layout" id="host-question-layout">
-      <div class="question-header">
-        <span class="q-progress" id="host-q-progress">Q 1 / 8</span>
-        <span class="difficulty-tag" id="host-q-difficulty">Classic</span>
-        <span class="difficulty-tag" id="host-q-room-pin">PIN: ------</span>
-        <div class="timer-ring" id="host-timer-ring">
-          <span class="timer-count" id="host-timer-count">30</span>
+  <div id="view-host-question" class="view host-question-view">
+
+    <!-- ── Fixed HUD bar (header) ── -->
+    <div class="host-hud-bar" id="host-hud-bar">
+
+      <!-- Main row: pause/skip | centered timer+PIN | answers/end -->
+      <div class="hud-main-row">
+
+        <!-- Left: Pause + Skip icon buttons -->
+        <div class="hud-side hud-side-left">
+          <button class="hud-icon-btn hud-btn-pause" id="btn-pause-resume" data-paused="false" aria-label="Pause" title="Pause">
+            <!-- Pause bars (shown when running) -->
+            <svg class="hud-icon hud-icon-pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <rect x="5" y="3" width="5" height="18" rx="1.5"/>
+              <rect x="14" y="3" width="5" height="18" rx="1.5"/>
+            </svg>
+            <!-- Play triangle (shown when paused) -->
+            <svg class="hud-icon hud-icon-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <polygon points="5,2 22,12 5,22"/>
+            </svg>
+          </button>
+          <button class="hud-icon-btn hud-btn-skip" id="btn-skip" aria-label="Skip question" title="Skip question">
+            <svg class="hud-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <polygon points="4,3 14,12 4,21"/>
+              <rect x="16" y="3" width="4" height="18" rx="1.5"/>
+            </svg>
+          </button>
         </div>
-        <span class="answer-counter" id="host-answer-counter">0 / 0 answered</span>
-        <div class="universal-score-container" style="margin-right: 15px;">
-          <span class="score-badge player-score-badge" style="background: var(--primary-color);">
-            <span class="score-count universal-score-count">0 pts</span>
-          </span>
+
+        <!-- Center: big timer ring + PIN below -->
+        <div class="hud-center-col">
+          <div class="timer-ring hud-timer" id="host-timer-ring">
+            <span class="timer-count" id="host-timer-count">30</span>
+          </div>
+          <span class="hud-pin-text" id="host-q-room-pin">PIN: ------</span>
         </div>
+
+        <!-- Right: answer counter + End Game icon button -->
+        <div class="hud-side hud-side-right">
+          <span class="hud-answer-count" id="host-answer-counter">0/0</span>
+          <button class="hud-icon-btn hud-btn-end" id="btn-end-game" aria-label="End game" title="End game">
+            <svg class="hud-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="3"/>
+            </svg>
+          </button>
+        </div>
+
+      </div><!-- /hud-main-row -->
+
+      <!-- Meta row: Q X/Y · mode tag · score -->
+      <div class="hud-meta-row">
+        <span class="hud-q-num" id="host-q-progress">Q 1 / 8</span>
+        <span class="hud-mode-tag" id="host-q-difficulty">CLASSIC</span>
+        <span class="universal-score-count hud-score-val">0 pts</span>
       </div>
-      <!-- Host controls -->
-      <div class="host-controls">
-        <button class="btn btn-host-ctrl" id="btn-pause-resume">⏸️ Pause</button>
-        <button class="btn btn-host-ctrl btn-skip" id="btn-skip">⏩ Skip</button>
-        <button class="btn btn-host-ctrl btn-end" id="btn-end-game">🛑 End Game</button>
-      </div>
+
+      <!-- Progress timeline (dots render by JS) -->
+      <div class="hud-progress-track" id="host-progress-track"></div>
+
+    </div><!-- /host-hud-bar -->
+
+    <!-- ── Question card (scrolls below fixed HUD) ── -->
+    <div class="question-layout host-question-body" id="host-question-layout">
       <div class="question-text-box">
         <p class="question-text" id="host-question-text">Loading question…</p>
       </div>
@@ -462,8 +503,9 @@
       <div class="options-grid" id="host-options-grid">
         <!-- 4 option cards injected by game.js -->
       </div>
-    </div>
-  </div>
+    </div><!-- /host-question-body -->
+
+  </div><!-- /view-host-question -->
 
   <!-- ═══════════════════════════════════════════
        VIEW: Question — Player sees question + answer buttons
@@ -808,6 +850,6 @@
   <!-- Load Socket.io client from the server (auto-served by socket.io) -->
   <script src="/socket.io/socket.io.js"></script>
   <!-- Main game logic (ES6 module) -->
-  <script type="module" src="/js/game.js?v=128"></script>
+  <script type="module" src="/js/game.js?v=130"></script>
 </body>
 </html>

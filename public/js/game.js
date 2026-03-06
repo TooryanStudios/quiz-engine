@@ -1646,6 +1646,44 @@ function clearQuestionMedia() {
   });
 }
 
+// ── Host HUD helpers ───────────────────────────────────────────────────────
+
+/** Render the progress-dot timeline inside #host-progress-track.
+ *  currentIndex = 0-based index of the question now being shown.
+ *  total        = total number of questions in the set.
+ */
+function renderHostProgressTrack(currentIndex, total) {
+  const track = document.getElementById('host-progress-track');
+  if (!track || !total || total <= 0) return;
+  const dots = [];
+  for (let i = 0; i < total; i++) {
+    const dot = document.createElement('div');
+    let cls = 'hud-progress-dot';
+    if (i < currentIndex)   cls += ' done';
+    else if (i === currentIndex) cls += ' current';
+    dot.className = cls;
+    dots.push(dot);
+  }
+  track.replaceChildren(...dots);
+}
+
+/** Keep the host question card correctly offset below the fixed HUD bar. */
+function syncHudOffset() {
+  const bar  = document.getElementById('host-hud-bar');
+  const body = document.getElementById('host-question-layout');
+  if (!bar || !body) return;
+  const h = bar.getBoundingClientRect().height;
+  if (h > 0) body.style.marginTop = (h + 12) + 'px';
+}
+
+// Observe HUD bar height changes and window resize
+if (typeof ResizeObserver !== 'undefined') {
+  const _hudBar = document.getElementById('host-hud-bar');
+  if (_hudBar) new ResizeObserver(syncHudOffset).observe(_hudBar);
+}
+window.addEventListener('resize', syncHudOffset);
+window.addEventListener('orientationchange', () => setTimeout(syncHudOffset, 150));
+
 // ── Host view: shows question + non-interactive options/items ──────────
 // Note: Helper functions (safeGet, safeSetDisplay, hideConnectionChip, etc.) 
 // are now imported from utils/dom.js
@@ -1669,13 +1707,15 @@ function renderHostQuestion(data) {
     if (hProg) hProg.textContent = `Q ${(data.questionIndex || 0) + 1} / ${data.total || '?'}`;
     if (hText) hText.textContent = q.text || 'Question text missing';
     renderQuestionMedia(q.media || null, 'host-question-text');
-    if (hAns) hAns.textContent = '0 / 0 answered';
+    if (hAns) hAns.textContent = `0 / ${data.total || 0}`;
 
     const pauseBtn = safeGet('btn-pause-resume');
     if (pauseBtn) {
-      pauseBtn.textContent = '⏸️ Pause';
       pauseBtn.dataset.paused = 'false';
     }
+
+    renderHostProgressTrack((data.questionIndex || 0), data.total || 0);
+    syncHudOffset();
 
     const grid = safeGet('host-options-grid');
     const hostBossPanel = safeGet('host-boss-panel');
@@ -1710,11 +1750,13 @@ function renderHostQuestion(data) {
     }
 
     showView('view-host-question');
+    requestAnimationFrame(syncHudOffset);
     if (window.__dbgLog) window.__dbgLog('renderHost: DONE (' + q.type + ')');
   } catch (err) {
     console.error('renderHostQuestion failed:', err);
     if (window.__dbgLog) window.__dbgLog('CRASH: renderHost: ' + err.message);
     showView('view-host-question');
+    requestAnimationFrame(syncHudOffset);
   }
 }
 
@@ -2876,6 +2918,29 @@ window.getGameThemes = async () => {
 };
 
 (async () => {
+  // ── Fast path: admin app embedded resolved tokens in the URL as ?t=<base64> ──
+  const urlTokensRaw = queryParams.get('t');
+  if (urlTokensRaw) {
+    try {
+      const tokens = JSON.parse(atob(urlTokensRaw));
+      if (tokens && typeof tokens === 'object' && Object.keys(tokens).length > 0) {
+        const themeId = themeQueryFromUrl || 'custom';
+        const bgColor = tokens['--bg'] || '';
+        const hex = bgColor.replace('#', '').trim();
+        let baseTheme = 'dark';
+        if (hex.length === 6) {
+          const r = parseInt(hex.slice(0, 2), 16);
+          const g = parseInt(hex.slice(2, 4), 16);
+          const b = parseInt(hex.slice(4, 6), 16);
+          if (!isNaN(r + g + b) && (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.5) baseTheme = 'light';
+        }
+        applyThemePayload({ id: themeId, name: themeId, baseTheme, tokens }, themeId);
+        await hydrateThemeSelect();
+        return;
+      }
+    } catch (_) { /* malformed – fall through to normal flow */ }
+  }
+
   const storedTheme = (() => {
     try { return localStorage.getItem(THEME_KEY); } catch (_) { return null; }
   })();
@@ -4194,7 +4259,7 @@ socket.on('game:paused', () => {
   stopClientTimer();
   Sounds.pause();
   const btn = document.getElementById('btn-pause-resume');
-  if (btn) { btn.textContent = '▶️ Resume'; btn.dataset.paused = 'true'; }
+  if (btn) { btn.dataset.paused = 'true'; }
   // Also update player-view pause button (solo mode)
   const pbtn = document.getElementById('btn-player-pause-resume');
   if (pbtn) { pbtn.textContent = '▶️ استئناف'; pbtn.dataset.paused = 'true'; }
@@ -4216,7 +4281,7 @@ socket.on('game:resumed', ({ timeRemaining }) => {
   document.getElementById('overlay-paused').style.display = 'none';
   document.getElementById('btn-overlay-resume').style.display = 'none';
   const btn = document.getElementById('btn-pause-resume');
-  if (btn) { btn.textContent = '⏸️ Pause'; btn.dataset.paused = 'false'; }
+  if (btn) { btn.dataset.paused = 'false'; }
   // Also update player-view pause button (solo mode)
   const pbtn2 = document.getElementById('btn-player-pause-resume');
   if (pbtn2) { pbtn2.textContent = '⏸️ إيقاف'; pbtn2.dataset.paused = 'false'; }
@@ -4259,7 +4324,7 @@ socket.on('game:resumed', ({ timeRemaining }) => {
 /** HOST: Live answer count update */
 socket.on('question:answer_update', ({ answered, total }) => {
   const el = document.getElementById('host-answer-counter');
-  if (el) el.textContent = `${answered} / ${total} answered`;
+  if (el) el.textContent = `${answered}/${total}`;
 });
 
 /** PLAYER: Server acknowledged answer */
