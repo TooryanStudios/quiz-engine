@@ -571,22 +571,30 @@ app.get('/api/themes/:themeId', async (req, res) => {
   if (!themeId) return res.status(400).json({ error: 'Missing themeId' });
 
   try {
+    const pickThemeFromDoc = (docData) => {
+      const themes = Array.isArray(docData?.themes) ? docData.themes : [];
+      return themes.find((t) => t && t.id === themeId && t.enabled !== false) || null;
+    };
+
     // 1. Try Admin SDK (fast path — works when service account is for qyan-om)
     const db = getDbSafe();
     if (db) {
-      const docSnap = await db.collection('platform_settings').doc('theme_editor').get();
-      if (docSnap.exists) {
-        const docData = docSnap.data() || {};
-        const themes = Array.isArray(docData.themes) ? docData.themes : [];
-        const theme = themes.find((t) => t && t.id === themeId && t.enabled !== false);
-        if (theme && theme.tokens) {
-          return res.json({
-            id: theme.id,
-            name: theme.name || theme.id,
-            baseTheme: guessBaseTheme(theme.tokens.bg),
-            tokens: themeTokensToCssVars(theme.tokens),
-          });
-        }
+      // Source of truth used by editor app.
+      const primarySnap = await db.collection('platform_settings').doc('themes').get();
+      const legacySnap = primarySnap.exists
+        ? null
+        : await db.collection('platform_settings').doc('theme_editor').get();
+
+      const theme = pickThemeFromDoc(primarySnap.data() || {})
+        || pickThemeFromDoc((legacySnap && legacySnap.data()) || {});
+
+      if (theme && theme.tokens) {
+        return res.json({
+          id: theme.id,
+          name: theme.name || theme.id,
+          baseTheme: guessBaseTheme(theme.tokens.bg),
+          tokens: themeTokensToCssVars(theme.tokens),
+        });
       }
     }
 
@@ -594,21 +602,27 @@ app.get('/api/themes/:themeId', async (req, res) => {
     const apiKey = process.env.FIREBASE_REST_API_KEY;
     const projectId = process.env.FIREBASE_REST_PROJECT_ID;
     if (apiKey && projectId) {
-      const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/platform_settings/theme_editor?key=${encodeURIComponent(apiKey)}`;
-      const restRes = await fetch(url, { headers: { Accept: 'application/json' } });
-      if (restRes.ok) {
+      const primaryUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/platform_settings/themes?key=${encodeURIComponent(apiKey)}`;
+      const legacyUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/platform_settings/theme_editor?key=${encodeURIComponent(apiKey)}`;
+
+      const readThemeFromRestDoc = async (url) => {
+        const restRes = await fetch(url, { headers: { Accept: 'application/json' } });
+        if (!restRes.ok) return null;
         const rawDoc = await restRes.json();
         const docData = _firestoreDocToJs(rawDoc) || {};
-        const themes = Array.isArray(docData.themes) ? docData.themes : [];
-        const theme = themes.find((t) => t && t.id === themeId && t.enabled !== false);
-        if (theme && theme.tokens) {
-          return res.json({
-            id: theme.id,
-            name: theme.name || theme.id,
-            baseTheme: guessBaseTheme(theme.tokens.bg),
-            tokens: themeTokensToCssVars(theme.tokens),
-          });
-        }
+        return pickThemeFromDoc(docData);
+      };
+
+      const theme = await readThemeFromRestDoc(primaryUrl)
+        || await readThemeFromRestDoc(legacyUrl);
+
+      if (theme && theme.tokens) {
+        return res.json({
+          id: theme.id,
+          name: theme.name || theme.id,
+          baseTheme: guessBaseTheme(theme.tokens.bg),
+          tokens: themeTokensToCssVars(theme.tokens),
+        });
       }
     }
   } catch (err) {
@@ -2257,13 +2271,9 @@ io.on('connection', (socket) => {
           clearPinAliasesForTargetPin(existing.pin);
           rooms.delete(existing.pin);
         } else {
-          // Old host is still actively connected — genuine duplicate, reject.
-          socket.emit('room:error', {
-            message: 'هناك جلسة نشطة لهذا الكويز بالفعل. لا يمكن إنشاء جلسة أخرى.',
-            code: 'DUPLICATE_HOST',
-            existingPin: existing.pin,
-          });
-          return;
+          // Old host is still actively connected — allow a concurrent session.
+          // Multiple hosts can run the same quiz simultaneously (different rooms, different PINs).
+          console.log(`[Server] Allowing concurrent session for quiz "${quizSlug}" alongside existing PIN ${existing.pin}.`);
         }
       }
     }
