@@ -41,6 +41,7 @@ import { AiGeneratingOverlay } from '../components/editor/AiGeneratingOverlay'
 import { EditorUnifiedHeader } from '../components/editor/EditorUnifiedHeader'
 import { MiniGameConfigurationPanel } from '../components/editor/MiniGameConfigurationPanel'
 import { MixContentAddSection } from '../components/editor/MixContentAddSection'
+import { AddQuestionCtaSection } from '../components/editor/AddQuestionCtaSection'
 import { AddBlockPickerOverlay } from '../components/editor/AddBlockPickerOverlay'
 import { AiSelectionOverlay } from '../components/editor/AiSelectionOverlay'
 import QuestionSection from '../components/editor/QuestionSection'
@@ -78,6 +79,44 @@ const creatorStudioStarterQuestion: QuizQuestion = {
   duration: 30,
   creatorTask: 'draw',
 }
+
+const DEFAULT_TEMPLATE_QUESTIONS: QuizQuestion[] = [
+  {
+    type: 'single',
+    text: 'ما هي عاصمة المملكة العربية السعودية؟',
+    options: ['الرياض', 'جدة', 'الدمام', 'مكة'],
+    correctIndex: 0,
+    duration: 20,
+  },
+  {
+    type: 'single',
+    text: 'كم عدد كواكب المجموعة الشمسية؟',
+    options: ['7', '8', '9', '10'],
+    correctIndex: 1,
+    duration: 20,
+  },
+  {
+    type: 'single',
+    text: 'أي عنصر كيميائي رمزه O؟',
+    options: ['الهيدروجين', 'الأكسجين', 'النيتروجين', 'الكربون'],
+    correctIndex: 1,
+    duration: 20,
+  },
+  {
+    type: 'single',
+    text: 'من كتب رواية البؤساء؟',
+    options: ['فيكتور هوغو', 'تولستوي', 'نجيب محفوظ', 'غابرييل غارسيا ماركيز'],
+    correctIndex: 0,
+    duration: 20,
+  },
+  {
+    type: 'single',
+    text: 'ما هي نتيجة 9 × 7؟',
+    options: ['54', '63', '72', '79'],
+    correctIndex: 1,
+    duration: 20,
+  },
+]
 
 function normalizeQuestionType(value: unknown): QuestionType {
   if (typeof value !== 'string') return 'single'
@@ -693,6 +732,35 @@ export function QuizEditorPage() {
     setActiveQuestionIndex(questions.length)
   }
 
+  const loadDefaultTemplateQuestions = () => {
+    if (questions.length > 0) {
+      showDialog({
+        title: 'تحميل قالب افتراضي',
+        message: 'سيتم استبدال الأسئلة الحالية بالقالب الافتراضي. هل تريد المتابعة؟',
+        confirmText: 'تحميل القالب',
+        cancelText: 'إلغاء',
+        isDangerous: true,
+        onConfirm: () => {
+          const normalized = sanitizeQuestions(DEFAULT_TEMPLATE_QUESTIONS)
+          setQuestions(normalized)
+          setCollapsedQuestions(Array(normalized.length).fill(false))
+          setActiveQuestionIndex(0)
+          setHasUnsavedChanges(true)
+          hideDialog()
+          showToast({ message: '✅ تم تحميل قالب الأسئلة الافتراضي', type: 'success' })
+        },
+      })
+      return
+    }
+
+    const normalized = sanitizeQuestions(DEFAULT_TEMPLATE_QUESTIONS)
+    setQuestions(normalized)
+    setCollapsedQuestions(Array(normalized.length).fill(false))
+    setActiveQuestionIndex(0)
+    setHasUnsavedChanges(true)
+    showToast({ message: '✅ تم تحميل قالب الأسئلة الافتراضي', type: 'success' })
+  }
+
   const showAddQuestionDialog = (initialTab: 'questions' | 'minigames' = 'questions') => {
     const miniGames = Object.values(MINI_GAME_DEFINITIONS)
     
@@ -1155,6 +1223,92 @@ export function QuizEditorPage() {
     })
   }
 
+  const confirmDiscardAndRun = (onConfirm: () => void, title: string, message: string) => {
+    if (!hasUnsavedChanges) {
+      onConfirm()
+      return
+    }
+
+    showDialog({
+      title,
+      message,
+      confirmText: 'متابعة',
+      cancelText: 'إلغاء',
+      isDangerous: true,
+      onConfirm,
+    })
+  }
+
+  const resetEditorToFresh = () => {
+    const nextContentType: 'quiz' | 'mini-game' = isMiniGameContent ? 'mini-game' : 'quiz'
+    const targetPath = isMiniGameContent ? '/mini-game-editor' : '/editor'
+
+    newEditorInitializedRef.current = true
+    setLoading(false)
+    setQuizId(null)
+    setTitle('')
+    setSlug('')
+    setVisibility('private')
+    setApprovalStatus(undefined)
+    setGameModeId('')
+    setMiniGameConfig({})
+    setChallengePreset('classic')
+    setEnableScholarRole(false)
+    setRandomizeQuestions(false)
+    setDescription('')
+    setTempDescription('')
+    setQuestions([])
+    setCollapsedQuestions([])
+    setActiveQuestionIndex(0)
+    setTempTitle('')
+    setTempSlug('')
+    setTempVisibility('private')
+    setTempGameModeId('')
+    setTempChallenge('classic')
+    setTempEnableScholarRole(false)
+    setTempRandomizeQuestions(false)
+    setThemeId('default')
+    setTempThemeId('default')
+    setTempAllDuration(20)
+    setCoverImage(DEFAULT_COVER_IMAGE)
+    setTempCoverImage(DEFAULT_COVER_IMAGE)
+    setShowMiniGamePicker(false)
+    setShowMetadataDialog(false)
+    setShowContentTypePicker(false)
+    setShowAddBlockPicker(false)
+    setContentType(nextContentType)
+    setHasUnsavedChanges(false)
+    setStatus({ kind: 'idle' })
+
+    navigate(targetPath, { replace: true, state: { skipPicker: true, contentType: nextContentType } })
+  }
+
+  const handleCreateNewEditorItem = () => {
+    const targetLabel = isMiniGameContent ? 'لعبة جديدة' : 'اختبار جديد'
+    confirmDiscardAndRun(
+      resetEditorToFresh,
+      `فتح ${targetLabel}`,
+      'لديك تغييرات غير محفوظة. هل تريد المتابعة وفتح عنصر جديد؟',
+    )
+  }
+
+  const handleCloseEditor = () => {
+    const targetLabel = isMiniGameContent ? 'لعبة جديدة' : 'اختبار جديد'
+    confirmDiscardAndRun(
+      resetEditorToFresh,
+      'إغلاق المحرر',
+      `سيتم إغلاق المحتوى الحالي وفتح ${targetLabel} فارغ. هل تريد المتابعة؟`,
+    )
+  }
+
+  const handleOpenExistingContent = () => {
+    confirmDiscardAndRun(
+      () => navigate('/my-quizzes'),
+      'فتح محتوى موجود',
+      'لديك تغييرات غير محفوظة. هل تريد المتابعة وفتح قائمة المحتوى الحالي؟',
+    )
+  }
+
   const saveQuiz = async () => {
     if (!ownerId) {
       showStatus({ kind: 'error', msg: 'خطأ: يجب تسجيل الدخول أولاً.' })
@@ -1511,6 +1665,9 @@ export function QuizEditorPage() {
         onCloseDropdown={() => setShowToolbarDropdown(false)}
         onOpenContentTypePicker={() => setShowContentTypePicker(true)}
         onBack={() => navigate(-1)}
+        onOpenExisting={handleOpenExistingContent}
+        onCreateNew={handleCreateNewEditorItem}
+        onCloseEditor={handleCloseEditor}
         onOpenMetadata={openMetadataDialog}
         onPreviewQuiz={() => { if (quizId) window.open(`/preview/${quizId}`, '_blank') }}
         onCopyLink={() => { void copyEditorLink() }}
@@ -1553,6 +1710,19 @@ export function QuizEditorPage() {
 
             {/* Main editor area */}
             <div className="slide-editor-main">
+
+              {!isMiniGameContent && !quizId && questions.length === 0 && (
+                <AddQuestionCtaSection
+                  isMiniGameContent={isMiniGameContent}
+                  contentType={contentType}
+                  quizId={quizId}
+                  questionsCount={questions.length}
+                  gameModeId={gameModeId}
+                  onShowAddDialog={() => showAddQuestionDialog()}
+                  onLoadSamples={loadDefaultTemplateQuestions}
+                  onOpenExisting={handleOpenExistingContent}
+                />
+              )}
 
               <QuestionSection
                 quizId={quizId}

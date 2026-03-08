@@ -1,7 +1,7 @@
 const ISLAND_DICE_STYLE_ID = 'island-dice-runtime-style';
 const islandDiceViewState = {
-  host: { lastAnimatedSequence: -1 },
-  player: { lastAnimatedSequence: -1 },
+  host: { lastAnimatedSequence: -1, lastDiceSequence: -1 },
+  player: { lastAnimatedSequence: -1, lastDiceSequence: -1 },
 };
 
 function ensureIslandDiceStyles() {
@@ -12,16 +12,18 @@ function ensureIslandDiceStyles() {
   style.textContent = `
     .island-dice-shell {
       width: 100%;
-      max-width: 980px;
+      max-width: min(920px, 100%);
+      grid-column: 1 / -1;
       margin: 0 auto;
       display: grid;
       grid-template-rows: auto 1fr auto;
-      gap: 12px;
-      padding: 8px 10px 14px;
+      gap: 10px;
+      padding: 8px 8px 10px;
       border-radius: 16px;
       background: linear-gradient(180deg, rgba(29, 48, 110, 0.86), rgba(12, 24, 65, 0.94));
       border: 1px solid rgba(147, 197, 253, 0.24);
       box-shadow: 0 20px 38px rgba(2, 6, 23, 0.32);
+      overflow: hidden;
     }
 
     .island-dice-hud {
@@ -30,6 +32,79 @@ function ensureIslandDiceStyles() {
       justify-content: space-between;
       gap: 10px;
       flex-wrap: wrap;
+    }
+
+    .island-dice-turn-order {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+      scrollbar-width: thin;
+    }
+
+    .island-dice-turn-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: rgba(30, 41, 59, 0.64);
+      border: 1px solid rgba(148, 163, 184, 0.32);
+      color: #cbd5e1;
+      font-size: 0.78rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .island-dice-turn-pill.is-active {
+      background: rgba(251, 191, 36, 0.24);
+      border-color: rgba(251, 191, 36, 0.62);
+      color: #fef9c3;
+    }
+
+    .island-dice-progress-list {
+      display: grid;
+      gap: 6px;
+      padding: 6px 8px;
+      border-radius: 12px;
+      border: 1px solid rgba(148, 163, 184, 0.22);
+      background: rgba(15, 23, 42, 0.34);
+    }
+
+    .island-dice-progress-row {
+      display: grid;
+      grid-template-columns: minmax(110px, 1fr) minmax(120px, 3fr) auto;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.74rem;
+      color: #dbeafe;
+    }
+
+    .island-dice-progress-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 700;
+    }
+
+    .island-dice-progress-track {
+      position: relative;
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(30, 41, 59, 0.92);
+      overflow: hidden;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+    }
+
+    .island-dice-progress-fill {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #22c55e, #eab308);
+      min-width: 2px;
     }
 
     .island-dice-chip {
@@ -47,18 +122,18 @@ function ensureIslandDiceStyles() {
 
     .island-dice-board-wrap {
       position: relative;
-      min-height: 320px;
+      min-height: 270px;
       border-radius: 14px;
-      padding: 14px;
+      padding: 10px;
       background: radial-gradient(circle at 50% 30%, rgba(59, 130, 246, 0.2), rgba(12, 24, 65, 0.14) 58%, rgba(12, 24, 65, 0.02) 78%);
     }
 
     .island-dice-board {
       position: relative;
-      width: min(92vw, 680px);
-      height: min(58vw, 420px);
-      max-width: 680px;
-      max-height: 420px;
+      width: min(86vw, 560px);
+      height: min(46vw, 330px);
+      max-width: 560px;
+      max-height: 330px;
       margin: 0 auto;
       transform: perspective(900px) rotateX(28deg);
       transform-style: preserve-3d;
@@ -66,9 +141,9 @@ function ensureIslandDiceStyles() {
 
     .island-dice-tile {
       position: absolute;
-      width: 58px;
-      height: 58px;
-      border-radius: 14px;
+      width: 50px;
+      height: 50px;
+      border-radius: 12px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -88,13 +163,13 @@ function ensureIslandDiceStyles() {
 
     .island-dice-avatar {
       position: absolute;
-      width: 52px;
-      height: 52px;
+      width: 46px;
+      height: 46px;
       border-radius: 999px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.55rem;
+      font-size: 1.35rem;
       border: 2px solid rgba(255,255,255,0.85);
       background: rgba(15, 23, 42, 0.75);
       box-shadow: 0 10px 16px rgba(2, 6, 23, 0.4);
@@ -112,25 +187,84 @@ function ensureIslandDiceStyles() {
 
     .island-dice-controls {
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 14px;
+      gap: 10px;
       flex-wrap: wrap;
     }
 
-    .island-dice-roll-btn {
-      width: min(300px, 86vw);
-      height: 84px;
-      border: 0;
-      border-radius: 24px;
-      background: linear-gradient(180deg, #f59e0b, #ea580c);
-      color: #fff;
-      font-size: 1.2rem;
+    .island-dice-dice-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .island-die-cube {
+      width: 58px;
+      height: 58px;
+      border-radius: 14px;
+      background: linear-gradient(145deg, #fff 0%, #f1f5f9 100%);
+      border: 2px solid rgba(15, 23, 42, 0.14);
+      color: #0f172a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.55rem;
       font-weight: 900;
-      letter-spacing: 0.3px;
+      box-shadow: 0 8px 18px rgba(2, 6, 23, 0.24);
+      transform-style: preserve-3d;
+      transition: transform 0.2s ease;
+    }
+
+    .island-die-cube.rolling {
+      animation: islandDiceCubeRoll 0.78s cubic-bezier(.2,.82,.25,1);
+    }
+
+    .island-dice-sum-chip {
+      min-width: 58px;
+      height: 32px;
+      padding: 0 12px;
+      border-radius: 999px;
+      background: rgba(249, 115, 22, 0.22);
+      border: 1px solid rgba(251, 146, 60, 0.55);
+      color: #ffedd5;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      font-weight: 800;
+    }
+
+    .island-dice-roll-btn {
+      width: min(320px, 84vw);
+      height: 86px;
+      border: 0;
+      border-radius: 999px;
+      background: radial-gradient(circle at 50% 35%, #65e058, #20a13d 72%);
+      color: #fff;
+      font-size: 1.1rem;
+      font-weight: 800;
+      letter-spacing: 0.2px;
       cursor: pointer;
-      box-shadow: 0 16px 24px rgba(194, 65, 12, 0.35);
+      box-shadow: inset 0 -8px 18px rgba(21, 128, 61, 0.5), 0 10px 24px rgba(5, 46, 22, 0.42);
       transition: transform 0.12s ease, filter 0.18s ease, opacity 0.18s ease;
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .island-dice-roll-btn::before {
+      content: '';
+      position: absolute;
+      inset: 8px;
+      border-radius: 999px;
+      border: 2px solid rgba(255, 255, 255, 0.22);
+      pointer-events: none;
     }
 
     .island-dice-roll-btn:hover { filter: brightness(1.08); }
@@ -147,6 +281,58 @@ function ensureIslandDiceStyles() {
     }
 
     .island-dice-auto input { width: 16px; height: 16px; accent-color: #22c55e; }
+
+    @keyframes islandDiceCubeRoll {
+      0% { transform: rotateX(0deg) rotateY(0deg) scale(1); }
+      30% { transform: rotateX(180deg) rotateY(120deg) scale(1.08); }
+      65% { transform: rotateX(320deg) rotateY(255deg) scale(1.02); }
+      100% { transform: rotateX(360deg) rotateY(360deg) scale(1); }
+    }
+
+    @media (max-height: 860px) {
+      .island-dice-board-wrap { min-height: 230px; }
+      .island-dice-board {
+        width: min(82vw, 500px);
+        height: min(42vw, 280px);
+      }
+      .island-dice-roll-btn { height: 60px; }
+    }
+
+    @media (max-width: 680px) {
+      .island-dice-hud { gap: 8px; }
+      .island-dice-chip { font-size: 0.76rem; padding: 5px 8px; }
+      .island-dice-board {
+        width: min(92vw, 460px);
+        height: min(48vw, 250px);
+      }
+      .island-dice-tile {
+        width: 42px;
+        height: 42px;
+        font-size: 0.64rem;
+      }
+      .island-dice-avatar {
+        width: 38px;
+        height: 38px;
+        font-size: 1.15rem;
+      }
+      .island-dice-roll-btn {
+        width: min(260px, 84vw);
+        height: 66px;
+        border-radius: 18px;
+        font-size: 0.95rem;
+      }
+
+      .island-die-cube {
+        width: 48px;
+        height: 48px;
+        font-size: 1.2rem;
+      }
+
+      .island-dice-progress-row {
+        grid-template-columns: 1fr;
+        gap: 4px;
+      }
+    }
 
     @keyframes islandDicePulse {
       0%, 100% { transform: translate(-50%, -52%) translateZ(12px) scale(1); }
@@ -215,6 +401,10 @@ function renderIslandDiceView({ data, state, socket }) {
   const currentTurnId = boardState.turnPlayerId || null;
   const turnsTaken = Number(boardState.turnsTaken || 0);
   const totalTurns = Number(boardState.totalTurns || 0);
+  const targetCoins = Number(boardState.targetCoins || 0);
+  const lastRollByPlayer = (boardState.lastRollByPlayer && typeof boardState.lastRollByPlayer === 'object')
+    ? boardState.lastRollByPlayer
+    : {};
   const status = boardState.status || 'playing';
   const standings = Array.isArray(boardState.standings) ? boardState.standings : [];
   const winnerId = boardState.winnerId || null;
@@ -245,25 +435,67 @@ function renderIslandDiceView({ data, state, socket }) {
   const progressChip = document.createElement('div');
   progressChip.className = 'island-dice-chip';
   progressChip.textContent = totalTurns > 0 ? `Turns: ${turnsTaken}/${totalTurns}` : 'Turns: --';
+  const targetChip = document.createElement('div');
+  targetChip.className = 'island-dice-chip';
+  targetChip.textContent = targetCoins > 0 ? `Target: ${targetCoins} coins` : 'Target: --';
   hud.appendChild(coinChip);
   hud.appendChild(turnChip);
   hud.appendChild(progressChip);
+  hud.appendChild(targetChip);
 
   const boardWrap = document.createElement('div');
   boardWrap.className = 'island-dice-board-wrap';
   const boardEl = document.createElement('div');
   boardEl.className = 'island-dice-board';
 
-  const boardWidth = 680;
-  const boardHeight = 420;
+  const turnOrderRow = document.createElement('div');
+  turnOrderRow.className = 'island-dice-turn-order';
+  players.forEach((player) => {
+    const pill = document.createElement('div');
+    pill.className = `island-dice-turn-pill${player.id === currentTurnId ? ' is-active' : ''}`;
+    const botTag = player.isBot ? ' (CPU)' : '';
+    pill.textContent = `${player.avatar || '🎮'} ${player.nickname}${botTag}`;
+    turnOrderRow.appendChild(pill);
+  });
+
+  const progressList = document.createElement('div');
+  progressList.className = 'island-dice-progress-list';
+  const standingsByCoins = [...players].sort((a, b) => Number(b.coins || 0) - Number(a.coins || 0));
+  standingsByCoins.forEach((entry) => {
+    const row = document.createElement('div');
+    row.className = 'island-dice-progress-row';
+
+    const name = document.createElement('div');
+    name.className = 'island-dice-progress-name';
+    name.textContent = `${entry.avatar || '🎮'} ${entry.nickname}`;
+
+    const track = document.createElement('div');
+    track.className = 'island-dice-progress-track';
+    const fill = document.createElement('div');
+    fill.className = 'island-dice-progress-fill';
+    const ratio = targetCoins > 0 ? Math.min(100, Math.max(0, (Number(entry.coins || 0) / targetCoins) * 100)) : 0;
+    fill.style.width = `${ratio}%`;
+    track.appendChild(fill);
+
+    const value = document.createElement('div');
+    value.textContent = `${Number(entry.coins || 0)} / ${targetCoins || '--'}`;
+
+    row.appendChild(name);
+    row.appendChild(track);
+    row.appendChild(value);
+    progressList.appendChild(row);
+  });
+
+  const boardWidth = 560;
+  const boardHeight = 330;
 
   board.forEach((tile, index) => {
     const tileEl = document.createElement('div');
     const tileType = tile?.type || 'reward';
     tileEl.className = `island-dice-tile ${tileType}`;
     const pos = tileScreenPosition(index, boardSize, boardWidth, boardHeight);
-    tileEl.style.left = `${pos.left - 29}px`;
-    tileEl.style.top = `${pos.top - 29}px`;
+    tileEl.style.left = `${pos.left - 25}px`;
+    tileEl.style.top = `${pos.top - 25}px`;
     tileEl.textContent = tileType === 'reward' ? `+${Number(tile?.value || 0)}` : (tileType === 'mystery' ? '🎁' : '✨');
     boardEl.appendChild(tileEl);
   });
@@ -287,37 +519,66 @@ function renderIslandDiceView({ data, state, socket }) {
 
   const seq = Number(boardState.actionSequence || 0);
   const action = boardState.lastAction || null;
+  const actionRoll = Number(action?.roll || 0);
   const viewState = ctx.viewPrefix === 'host' ? islandDiceViewState.host : islandDiceViewState.player;
-  if (
-    action &&
-    Number.isFinite(action.roll) &&
-    Number(action.roll) > 0 &&
-    Number.isFinite(action.fromTile) &&
-    seq > Number(viewState.lastAnimatedSequence || -1)
-  ) {
-    const actorAvatar = avatarByPlayerId.get(action.actorId);
-    if (actorAvatar) {
-      animateHopPath({
-        avatarEl: actorAvatar,
-        fromTile: Number(action.fromTile),
-        steps: Number(action.roll),
-        boardSize,
-        boardWidth,
-        boardHeight,
-      });
-    }
-  }
-  viewState.lastAnimatedSequence = seq;
+  const isFreshMoveSequence = seq > Number(viewState.lastAnimatedSequence || -1);
+  const isFreshDiceSequence = seq > Number(viewState.lastDiceSequence || -1);
 
   boardWrap.appendChild(boardEl);
 
   const controls = document.createElement('div');
   controls.className = 'island-dice-controls';
 
+  const diceRow = document.createElement('div');
+  diceRow.className = 'island-dice-dice-row';
+
+  const diceOwners = players.slice(0, 2);
+  const dieByPlayerId = new Map();
+  const ensureOwner = (fallbackLabel, fallbackAvatar) => ({
+    id: fallbackLabel,
+    nickname: fallbackLabel,
+    avatar: fallbackAvatar,
+  });
+  while (diceOwners.length < 2) {
+    const label = diceOwners.length === 0 ? 'P1' : 'P2';
+    const avatar = diceOwners.length === 0 ? '🎮' : '🧠';
+    diceOwners.push(ensureOwner(label, avatar));
+  }
+
+  diceOwners.forEach((owner) => {
+    const dieWrap = document.createElement('div');
+    dieWrap.style.display = 'grid';
+    dieWrap.style.justifyItems = 'center';
+    dieWrap.style.gap = '4px';
+
+    const dieLabel = document.createElement('div');
+    dieLabel.style.fontSize = '0.7rem';
+    dieLabel.style.color = 'rgba(219, 234, 254, 0.92)';
+    dieLabel.style.fontWeight = '700';
+    dieLabel.textContent = `${owner.avatar || '🎲'} ${owner.nickname}`;
+
+    const dieEl = document.createElement('div');
+    dieEl.className = 'island-die-cube';
+    const persisted = Number(lastRollByPlayer[owner.id] || 1);
+    dieEl.textContent = String(Math.max(1, Math.min(6, persisted)));
+
+    dieByPlayerId.set(owner.id, dieEl);
+    dieWrap.appendChild(dieLabel);
+    dieWrap.appendChild(dieEl);
+    diceRow.appendChild(dieWrap);
+  });
+
+  const sumChip = document.createElement('div');
+  sumChip.className = 'island-dice-sum-chip';
+  sumChip.textContent = `Rolled: ${actionRoll > 0 ? actionRoll : '--'}`;
+  diceRow.appendChild(sumChip);
+
   const rollBtn = document.createElement('button');
   rollBtn.className = 'island-dice-roll-btn';
   rollBtn.type = 'button';
-  rollBtn.textContent = '🎲 Roll Dice';
+  const currentTurnPlayer = players.find((player) => player.id === currentTurnId);
+  const isCpuTurn = !!currentTurnPlayer?.isBot;
+  rollBtn.textContent = isCpuTurn ? 'CPU Rolling...' : '🎲 Roll Dice';
 
   const canRoll = status === 'playing' && !!myPlayer && myPlayer.id === currentTurnId;
   rollBtn.disabled = !canRoll;
@@ -351,8 +612,44 @@ function renderIslandDiceView({ data, state, socket }) {
   autoLabel.appendChild(autoCheckbox);
   autoLabel.appendChild(autoText);
 
+  controls.appendChild(diceRow);
   controls.appendChild(rollBtn);
   controls.appendChild(autoLabel);
+
+  const actionDieEl = action?.actorId ? dieByPlayerId.get(action.actorId) : null;
+  if (action && actionRoll > 0 && actionDieEl && isFreshDiceSequence) {
+    actionDieEl.classList.add('rolling');
+    setTimeout(() => {
+      actionDieEl.textContent = String(Math.max(1, Math.min(6, actionRoll)));
+      sumChip.textContent = `Rolled: ${actionRoll}`;
+      actionDieEl.classList.remove('rolling');
+    }, 760);
+    viewState.lastDiceSequence = seq;
+  }
+
+  if (
+    action &&
+    Number.isFinite(action.roll) &&
+    Number(action.roll) > 0 &&
+    Number.isFinite(action.fromTile) &&
+    isFreshMoveSequence
+  ) {
+    const actorAvatar = avatarByPlayerId.get(action.actorId);
+    if (actorAvatar) {
+      const moveDelayMs = isFreshDiceSequence ? 980 : 120;
+      setTimeout(() => {
+        animateHopPath({
+          avatarEl: actorAvatar,
+          fromTile: Number(action.fromTile),
+          steps: Number(action.roll),
+          boardSize,
+          boardWidth,
+          boardHeight,
+        });
+      }, moveDelayMs);
+    }
+    viewState.lastAnimatedSequence = seq;
+  }
 
   if (status === 'finished' && standings.length > 0) {
     const summary = document.createElement('div');
@@ -366,6 +663,8 @@ function renderIslandDiceView({ data, state, socket }) {
   }
 
   shell.appendChild(hud);
+  shell.appendChild(turnOrderRow);
+  shell.appendChild(progressList);
   shell.appendChild(boardWrap);
   shell.appendChild(controls);
 
@@ -374,7 +673,10 @@ function renderIslandDiceView({ data, state, socket }) {
 
   if (ctx.answerMsgEl) {
     const action = boardState.lastAction;
-    ctx.answerMsgEl.textContent = action?.message || 'Roll the dice and collect coins.';
+    const objective = targetCoins > 0 && totalTurns > 0
+      ? `Goal: first to ${targetCoins} coins, or highest after ${totalTurns} turns.`
+      : 'Goal: roll dice and collect coins.';
+    ctx.answerMsgEl.textContent = action?.message || objective;
   }
 
   return true;

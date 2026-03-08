@@ -30,6 +30,9 @@ type EditorUnifiedHeaderProps = {
   onCloseDropdown: () => void
   onOpenContentTypePicker: () => void
   onBack: () => void
+  onOpenExisting: () => void
+  onCreateNew: () => void
+  onCloseEditor: () => void
   onOpenMetadata: () => void
   onPreviewQuiz: () => void
   onCopyLink: () => void
@@ -65,6 +68,9 @@ export function EditorUnifiedHeader({
   onCloseDropdown,
   onOpenContentTypePicker,
   onBack,
+  onOpenExisting,
+  onCreateNew,
+  onCloseEditor,
   onOpenMetadata,
   onPreviewQuiz,
   onCopyLink,
@@ -170,6 +176,18 @@ export function EditorUnifiedHeader({
               إضافة +
             </button>
           )}
+
+          <button type="button" className="editor-header-btn" onClick={onCreateNew}>
+            ✨ جديد
+          </button>
+
+          <button type="button" className="editor-header-btn" onClick={onOpenExisting}>
+            📂 فتح
+          </button>
+
+          <button type="button" className="editor-header-btn" onClick={onCloseEditor}>
+            ❌ إغلاق
+          </button>
 
           <div className="editor-header-dropdown-wrap">
             <button

@@ -1889,8 +1889,9 @@ function sendMiniGameBlock(room, q, opts = {}) {
   const players = getPlayerList(room);
 
   let started = false;
+  let selfManagedTimer = false;
   if (typeof blockRuntime.startBlock === 'function') {
-    started = blockRuntime.startBlock({
+    const startResult = blockRuntime.startBlock({
       room,
       io,
       questionIndex,
@@ -1904,6 +1905,12 @@ function sendMiniGameBlock(room, q, opts = {}) {
         return handler.buildQuestionPayload({ room, q: qInput });
       },
     });
+    if (startResult && typeof startResult === 'object') {
+      started = startResult.started !== false;
+      selfManagedTimer = !!startResult.selfManagedTimer;
+    } else {
+      started = startResult;
+    }
   }
 
   if (started === false) {
@@ -1932,9 +1939,13 @@ function sendMiniGameBlock(room, q, opts = {}) {
   }
 
   // Block timer — auto-advance after duration regardless of mini-game state
-  room.questionTimer = setTimeout(() => {
-    endMiniGameBlock(room);
-  }, duration * 1000 + countdownExtraMs);
+  if (!selfManagedTimer) {
+    room.questionTimer = setTimeout(() => {
+      endMiniGameBlock(room);
+    }, duration * 1000 + countdownExtraMs);
+  } else {
+    room.questionTimer = null;
+  }
 }
 
 /**
@@ -2855,6 +2866,24 @@ io.on('connection', (socket) => {
     room.questions = doRandomize
       ? shuffleArray([...quizData.questions])
       : quizData.questions;
+
+    // Mini-game editor saves game-mode quizzes with no question list.
+    // In that case, synthesize a single mini-game block so gameplay starts
+    // instead of falling through to immediate end-of-round behavior.
+    if ((!Array.isArray(room.questions) || room.questions.length === 0) && room.gameMode) {
+      const fallbackDuration = Math.max(
+        15,
+        Number(room?.miniGameConfig?.gameDurationSec || room?.miniGameConfig?.defaultDuration || 60)
+      );
+      room.questions = [{
+        type: 'single',
+        text: room.gameMode,
+        duration: fallbackDuration,
+        miniGameBlockId: room.gameMode,
+        miniGameBlockConfig: {},
+      }];
+      console.log(`[Room ${room.pin}] Injected synthetic mini-game block for gameMode=${room.gameMode} (duration=${fallbackDuration}s)`);
+    }
 
     // Apply session question limit (host can choose a subset of questions)
     const limitNum = sessionQuestionLimit ? parseInt(sessionQuestionLimit, 10) : NaN;

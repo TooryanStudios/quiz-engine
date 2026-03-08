@@ -6,6 +6,7 @@ type AddQuestionCtaSectionProps = {
   gameModeId: string
   onShowAddDialog: () => void
   onLoadSamples: () => void
+  onOpenExisting: () => void
 }
 
 function AddQuestionCard({ gameModeId, onClick }: { gameModeId: string; onClick: () => void }) {
@@ -112,6 +113,56 @@ function LoadSamplesCard({ gameModeId, onClick }: { gameModeId: string; onClick:
   )
 }
 
+function OpenExistingCard({ onClick }: { onClick: () => void }) {
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '1rem',
+        padding: '2.5rem',
+        borderRadius: '16px',
+        border: '2px dashed var(--border-strong)',
+        backgroundColor: 'rgba(245, 158, 11, 0.08)',
+        color: 'var(--text-mid)',
+        cursor: 'pointer',
+        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        animation: 'slideUp 0.5s ease-out',
+      }}
+      onMouseEnter={(event) => {
+        event.currentTarget.style.borderColor = '#f59e0b'
+        event.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.14)'
+        event.currentTarget.style.transform = 'scale(1.01)'
+      }}
+      onMouseLeave={(event) => {
+        event.currentTarget.style.borderColor = 'var(--border-strong)'
+        event.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.08)'
+        event.currentTarget.style.transform = 'scale(1)'
+      }}
+    >
+      <div style={{
+        width: '48px',
+        height: '48px',
+        borderRadius: '50%',
+        backgroundColor: '#f59e0b',
+        color: '#fff',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '1.45rem',
+        boxShadow: '0 4px 15px rgba(245, 158, 11, 0.35)',
+      }}>📂</div>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem' }}>
+        <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-bright)' }}>فتح محتوى موجود</span>
+        <span style={{ fontSize: '0.82rem', opacity: 0.75 }}>افتح اختبارا او ميني جيم تم انشاؤه مسبقا</span>
+      </div>
+    </div>
+  )
+}
+
 export function AddQuestionCtaSection({
   isMiniGameContent,
   contentType,
@@ -120,6 +171,7 @@ export function AddQuestionCtaSection({
   gameModeId,
   onShowAddDialog,
   onLoadSamples,
+  onOpenExisting,
 }: AddQuestionCtaSectionProps) {
   if (contentType === 'mix') return null
 
@@ -129,12 +181,13 @@ export function AddQuestionCtaSection({
     return (
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+        gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
         gap: '1rem',
         marginBottom: '3rem',
       }}>
         <AddQuestionCard gameModeId={gameModeId} onClick={onShowAddDialog} />
         <LoadSamplesCard gameModeId={gameModeId} onClick={onLoadSamples} />
+        <OpenExistingCard onClick={onOpenExisting} />
       </div>
     )
   }

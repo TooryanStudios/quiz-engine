@@ -3,10 +3,13 @@
 const DEFAULT_BOARD_SIZE = 24;
 const MIN_BOARD_SIZE = 12;
 const MAX_BOARD_SIZE = 36;
-const MIN_ROLL = 1;
-const MAX_ROLL = 6;
-const DEFAULT_TARGET_COINS = 140;
-const DEFAULT_ROUNDS = 10;
+const DICE_SIDE_MIN = 1;
+const DICE_SIDE_MAX = 6;
+const CPU_PLAYER_ID = 'island-cpu-bot';
+const CPU_PLAYER_NICKNAME = 'CPU';
+const CPU_PLAYER_AVATAR = '🤖';
+const DEFAULT_TARGET_COINS = 220;
+const DEFAULT_ROUNDS = 14;
 const FINISH_DELAY_MS = 2200;
 
 function randomInt(min, max) {
@@ -31,7 +34,7 @@ function createBoardTile(index) {
   if (index % 3 === 0) {
     return { index, type: 'mystery', label: 'Mystery' };
   }
-  const rewardValues = [8, 10, 12, 15, 18, 20, 25];
+  const rewardValues = [5, 6, 8, 10, 12, 14, 16];
   return {
     index,
     type: 'reward',
@@ -60,6 +63,7 @@ function ensureRuntimeState(room) {
       turnsTaken: 0,
       status: 'playing',
       winnerId: null,
+      lastRollByPlayer: {},
       autoTimer: null,
       finishTimer: null,
     };
@@ -86,6 +90,7 @@ function getSortedStandings(runtimeState) {
       id: player.id,
       nickname: player.nickname,
       avatar: player.avatar || '🎮',
+      isBot: !!player.isBot,
       coins: Number(player.coins || 0),
       position: Number(player.position || 0),
     }));
@@ -111,14 +116,33 @@ function syncPlayers(room) {
     }
   }
 
+  const shouldUseCpu = connected.length === 1;
+  if (shouldUseCpu) {
+    if (!runtimeState.players[CPU_PLAYER_ID]) {
+      runtimeState.players[CPU_PLAYER_ID] = {
+        id: CPU_PLAYER_ID,
+        nickname: CPU_PLAYER_NICKNAME,
+        avatar: CPU_PLAYER_AVATAR,
+        position: 0,
+        coins: 0,
+        autoSpin: true,
+        isBot: true,
+      };
+    }
+  } else if (runtimeState.players[CPU_PLAYER_ID]) {
+    delete runtimeState.players[CPU_PLAYER_ID];
+  }
+
   const connectedIds = new Set(connected.map((player) => player.id));
   Object.keys(runtimeState.players).forEach((playerId) => {
+    if (playerId === CPU_PLAYER_ID) return;
     if (!connectedIds.has(playerId)) {
       delete runtimeState.players[playerId];
     }
   });
 
   const orderedIds = connected.map((player) => player.id).filter((id) => runtimeState.players[id]);
+  if (runtimeState.players[CPU_PLAYER_ID]) orderedIds.push(CPU_PLAYER_ID);
   if (!orderedIds.length) {
     runtimeState.turnPlayerId = null;
     runtimeState.turnIndex = 0;
@@ -151,11 +175,11 @@ function resolveTileEffect({ room, runtimeState, tile, playerState }) {
 
   if (tile.type === 'mystery') {
     const outcomes = [
-      { deltaCoins: 12, message: 'Mystery gift: +12 coins!' },
-      { deltaCoins: 18, message: 'Golden gift: +18 coins!' },
-      { deltaCoins: 25, message: 'Jackpot box! +25 coins!' },
-      { deltaCoins: -6, message: 'Tiny trap: -6 coins.' },
-      { deltaCoins: -12, message: 'Cursed chest: -12 coins.' },
+      { deltaCoins: 8, message: 'Mystery gift: +8 coins!' },
+      { deltaCoins: 12, message: 'Golden gift: +12 coins!' },
+      { deltaCoins: 16, message: 'Jackpot box! +16 coins!' },
+      { deltaCoins: -4, message: 'Tiny trap: -4 coins.' },
+      { deltaCoins: -8, message: 'Cursed chest: -8 coins.' },
       { deltaCoins: 0, message: 'Empty box. Better luck next turn.' },
     ];
     const pick = outcomes[randomInt(0, outcomes.length - 1)];
@@ -166,14 +190,14 @@ function resolveTileEffect({ room, runtimeState, tile, playerState }) {
   const others = allPlayers.filter((entry) => entry.id !== playerState.id);
 
   const coinRain = () => {
-    const bonus = 10;
+    const bonus = 8;
     return { deltaCoins: bonus, message: `Coin rain! +${bonus} coins.`, effectType: 'event' };
   };
 
   const stealFromLeader = () => {
-    if (!others.length) return { deltaCoins: 7, message: 'No rivals nearby. +7 coins instead.', effectType: 'event' };
+    if (!others.length) return { deltaCoins: 6, message: 'No rivals nearby. +6 coins instead.', effectType: 'event' };
     const leader = [...others].sort((a, b) => (b.coins || 0) - (a.coins || 0))[0];
-    const steal = Math.min(12, Math.max(0, Number(leader.coins || 0)));
+    const steal = Math.min(9, Math.max(0, Number(leader.coins || 0)));
     leader.coins = Math.max(0, Number(leader.coins || 0) - steal);
     return {
       deltaCoins: steal,
@@ -216,6 +240,35 @@ function nextTurn(room) {
   runtimeState.turnPlayerId = orderedIds[nextIndex];
 }
 
+function pickBotDie(runtimeState, playerState) {
+  const targetCoins = Number(runtimeState.targetCoins || DEFAULT_TARGET_COINS);
+  const turnsLeft = Math.max(0, Number(runtimeState.totalTurns || 0) - Number(runtimeState.turnsTaken || 0));
+  const others = Object.values(runtimeState.players).filter((entry) => entry.id !== playerState.id);
+  const leaderCoins = others.length
+    ? Math.max(...others.map((entry) => Number(entry.coins || 0)))
+    : Number(playerState.coins || 0);
+  const myCoins = Number(playerState.coins || 0);
+  const gapToLeader = leaderCoins - myCoins;
+  const gapToTarget = targetCoins - myCoins;
+
+  // Personality:
+  // - Aggressive when behind or near endgame.
+  // - Safer/steady when leading.
+  // - Balanced most of the match.
+  if (gapToTarget <= 10 || turnsLeft <= 4 || gapToLeader >= 26) {
+    const preferred = [4, 5, 5, 6, 6, 6];
+    return preferred[randomInt(0, preferred.length - 1)];
+  }
+
+  if (gapToLeader <= -18) {
+    const preferred = [1, 2, 2, 3, 3, 4];
+    return preferred[randomInt(0, preferred.length - 1)];
+  }
+
+  const preferred = [2, 3, 3, 4, 4, 5];
+  return preferred[randomInt(0, preferred.length - 1)];
+}
+
 function getPublicState(room, questionIndex = 0, total = 1, duration = 60) {
   const runtimeState = ensureRuntimeState(room);
   const { orderedIds, connected } = syncPlayers(room);
@@ -253,6 +306,7 @@ function getPublicState(room, questionIndex = 0, total = 1, duration = 60) {
         totalTurns: Number(runtimeState.totalTurns || DEFAULT_ROUNDS),
         status: runtimeState.status || 'playing',
         winnerId: runtimeState.winnerId || null,
+        lastRollByPlayer: runtimeState.lastRollByPlayer || {},
         standings,
       },
     },
@@ -285,12 +339,17 @@ function scheduleAutoSpin(room, io) {
   const runtimeState = ensureRuntimeState(room);
   if (runtimeState.status !== 'playing') return;
   const turnPlayer = runtimeState.players[runtimeState.turnPlayerId || ''];
-  if (!turnPlayer || !turnPlayer.autoSpin) return;
+  if (!turnPlayer) return;
 
   runtimeState.autoTimer = setTimeout(() => {
     runtimeState.autoTimer = null;
+    if (turnPlayer.isBot) {
+      performRoll(room, io, turnPlayer.id, 'cpu');
+      return;
+    }
+    if (!turnPlayer.autoSpin) return;
     performRoll(room, io, turnPlayer.id, 'auto');
-  }, 900);
+  }, turnPlayer.isBot ? 1100 : 900);
 }
 
 function finalizeBlockWithSummary(room, io, reason) {
@@ -350,7 +409,10 @@ function performRoll(room, io, actorId, source = 'manual') {
   const playerState = runtimeState.players[actorId];
   if (!playerState) return;
 
-  const rollValue = randomInt(MIN_ROLL, MAX_ROLL);
+  let rollValue = randomInt(DICE_SIDE_MIN, DICE_SIDE_MAX);
+  if (playerState.isBot) {
+    rollValue = pickBotDie(runtimeState, playerState);
+  }
   const fromTile = Number(playerState.position || 0);
   const boardSize = Number(runtimeState.boardSize || DEFAULT_BOARD_SIZE);
   const toTile = (fromTile + rollValue) % boardSize;
@@ -363,6 +425,10 @@ function performRoll(room, io, actorId, source = 'manual') {
   const finalTile = Number(playerState.position || toTile);
 
   runtimeState.turnsTaken = Number(runtimeState.turnsTaken || 0) + 1;
+  runtimeState.lastRollByPlayer = {
+    ...(runtimeState.lastRollByPlayer || {}),
+    [actorId]: rollValue,
+  };
 
   runtimeState.actionSequence = Number(runtimeState.actionSequence || 0) + 1;
   runtimeState.lastAction = {
@@ -410,19 +476,20 @@ function createIslandDiceAdventureRuntime() {
       );
       const targetCoins = clampInt(
         blockConfig?.targetCoins ?? room?.miniGameConfig?.islandTargetCoins,
-        40,
-        500,
+        80,
+        800,
         DEFAULT_TARGET_COINS,
       );
       const roundsLimit = clampInt(
         blockConfig?.roundLimit ?? room?.miniGameConfig?.islandRoundLimit,
-        3,
-        50,
+        6,
+        80,
         DEFAULT_ROUNDS,
       );
       const autoSpinDefault = !!(blockConfig?.autoSpinDefault ?? room?.miniGameConfig?.islandAutoSpinDefault);
 
-      const totalTurns = Math.max(1, roundsLimit * connected.length);
+      const participantCount = connected.length === 1 ? 2 : connected.length;
+      const totalTurns = Math.max(16, roundsLimit * participantCount);
 
       room.islandDice = {
         boardSize,
@@ -437,10 +504,11 @@ function createIslandDiceAdventureRuntime() {
         turnsTaken: 0,
         status: 'playing',
         winnerId: null,
+        lastRollByPlayer: {},
         lastAction: {
           actorId: null,
           roll: null,
-          message: `Welcome to Island Dice Adventure! First to ${targetCoins} coins wins.`,
+          message: `Collect coins and race! First to ${targetCoins} coins wins, or highest score after ${totalTurns} turns.`,
           at: Date.now(),
         },
         autoTimer: null,
@@ -450,12 +518,12 @@ function createIslandDiceAdventureRuntime() {
       syncPlayers(room);
       const runtimeState = ensureRuntimeState(room);
       Object.values(runtimeState.players).forEach((player) => {
-        player.autoSpin = autoSpinDefault;
+        player.autoSpin = player.isBot ? true : autoSpinDefault;
       });
 
       emitQuestionState(room, io, { questionIndex, total, duration });
       scheduleAutoSpin(room, io);
-      return true;
+      return { started: true, selfManagedTimer: true };
     },
 
     onPlayerAnswer({ room, io, player, answer }) {
@@ -466,7 +534,7 @@ function createIslandDiceAdventureRuntime() {
         const runtimeState = ensureRuntimeState(room);
         if (runtimeState.status !== 'playing') return true;
         const playerState = runtimeState.players[player.id];
-        if (!playerState) return true;
+        if (!playerState || playerState.isBot) return true;
 
         playerState.autoSpin = !!answer.enabled;
         runtimeState.actionSequence = Number(runtimeState.actionSequence || 0) + 1;
