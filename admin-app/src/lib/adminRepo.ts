@@ -87,10 +87,13 @@ export interface ThemePaletteTokens {
   headingFont?: string   // e.g. 'Tajawal', 'Fredoka One'
   bodyFont?: string
   // ── Background pattern ───────────────────────────────
-  bgPattern?: string     // 'none'|'dots'|'grid'|'stripes'|'dunes'|'custom'
+  bgPattern?: string     // 'none'|'dots'|'grid'|'stripes'|'dunes'
   bgPatternColor?: string
   bgPatternOpacity?: number  // 0–1
   bgImageUrl?: string
+  bgOverlayColor?: string    // hex color rendered above image/pattern
+  bgOverlayOpacity?: number  // 0–1 opacity of overlay
+  bgBlur?: number            // px blur applied to background image
   // ── Shape / geometry (free-form CSS values) ──────────
   cardRadius?: string    // e.g. '12px'
   btnRadius?: string
@@ -530,8 +533,14 @@ function normalizeThemeTokens(raw: unknown): ThemePaletteTokens {
   if (source.bgPattern !== undefined)     base.bgPattern     = normalizeOptStr(source.bgPattern)
   if (source.bgPatternColor !== undefined) base.bgPatternColor = optHex(source.bgPatternColor)
   if (source.bgPatternOpacity !== undefined) base.bgPatternOpacity = normalizeOpacity(source.bgPatternOpacity)
-  if (source.bgImageUrl !== undefined)    base.bgImageUrl    = normalizeOptStr(source.bgImageUrl)
-  if (source.cardRadius !== undefined)    base.cardRadius    = normalizeOptStr(source.cardRadius)
+  if (source.bgImageUrl !== undefined)         base.bgImageUrl         = normalizeOptStr(source.bgImageUrl)
+  if (source.bgOverlayColor !== undefined)      base.bgOverlayColor      = optHex(source.bgOverlayColor)
+  if (source.bgOverlayOpacity !== undefined)    base.bgOverlayOpacity    = normalizeOpacity(source.bgOverlayOpacity)
+  if (source.bgBlur !== undefined) {
+    const n = typeof source.bgBlur === 'number' ? source.bgBlur : parseFloat(String(source.bgBlur))
+    if (!isNaN(n) && n >= 0) base.bgBlur = Math.min(n, 40)
+  }
+  if (source.cardRadius !== undefined)          base.cardRadius          = normalizeOptStr(source.cardRadius)
   if (source.btnRadius !== undefined)     base.btnRadius     = normalizeOptStr(source.btnRadius)
   if (source.submitRadius !== undefined)  base.submitRadius  = normalizeOptStr(source.submitRadius)
   if (source.timerRadius !== undefined)   base.timerRadius   = normalizeOptStr(source.timerRadius)
@@ -567,6 +576,61 @@ function normalizeThemePacks(raw: unknown): ThemePackRecord[] {
   if (!normalized.length) return [...DEFAULT_THEME_SETTINGS.themes]
   if (!normalized.some((t) => t.enabled)) normalized[0] = { ...normalized[0], enabled: true }
   return normalized
+}
+
+// ── Token → CSS var conversion (mirrors server.js themeTokensToCssVars) ───────
+export function themeTokensToCssVars(tokens: ThemePaletteTokens): Record<string, string> {
+  const MAP: Partial<Record<keyof ThemePaletteTokens, string>> = {
+    bg: '--bg',
+    surface: '--surface',
+    surface2: '--surface-2',
+    accent: '--accent',
+    text: '--text',
+    textDim: '--text-dim',
+    success: '--success',
+    danger: '--danger',
+    warning: '--warning',
+    submitBg: '--submit-bg',
+    submitText: '--submit-text',
+    pauseBg: '--pause-bg',
+    pauseText: '--pause-text',
+    dangerBg: '--danger-bg',
+    dangerText: '--danger-text',
+    headingFont: '--heading-font',
+    bodyFont: '--body-font',
+    bgPattern: '--bg-pattern',
+    bgPatternColor: '--bg-pattern-color',
+    bgPatternOpacity: '--bg-pattern-opacity',
+    bgImageUrl: '--bg-image-url',
+    bgOverlayColor: '--bg-overlay-color',
+    bgOverlayOpacity: '--bg-overlay-opacity',
+    bgBlur: '--bg-blur',
+    cardRadius: '--card-radius',
+    btnRadius: '--btn-radius',
+    submitRadius: '--submit-radius',
+    timerRadius: '--timer-radius',
+  }
+  const result: Record<string, string> = {}
+  for (const [key, cssVar] of Object.entries(MAP) as [keyof ThemePaletteTokens, string][]) {
+    const val = tokens[key]
+    if (val !== undefined && val !== null && val !== '') {
+      result[cssVar] = String(val)
+    }
+  }
+  // Also wire cardRadius → --radius so existing game CSS (var(--radius)) picks it up
+  if (tokens.cardRadius) result['--radius'] = tokens.cardRadius
+  return result
+}
+
+export async function fetchCustomThemesOnce(): Promise<ThemePackRecord[]> {
+  try {
+    const snap = await getDoc(themeSettingsDoc)
+    if (!snap.exists()) return []
+    const data = snap.data() as ThemeEditorSettings
+    return Array.isArray(data.themes) ? data.themes.filter((t) => t && t.id && t.enabled !== false) : []
+  } catch {
+    return []
+  }
 }
 
 export function subscribeThemeEditorSettings(onData: (settings: ThemeEditorSettings) => void) {

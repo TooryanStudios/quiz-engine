@@ -54,6 +54,9 @@ export interface QuizDoc {
   visibility: 'public' | 'private'
   gameModeId?: string
   themeId?: string
+  /** Resolved CSS-var map for the theme — embedded at save time so the game
+   *  server can apply the theme without a separate Firestore lookup. */
+  resolvedThemeVars?: Record<string, string>
   miniGameConfig?: Record<string, unknown>
   priceTier?: 'free' | 'starter' | 'pro'
   challengePreset?: ChallengePreset

@@ -12,6 +12,8 @@ export class MatchRenderer extends BaseRenderer {
     super(questionData);
     this.drag = null;
     this.correctSparkleSlot = -1;
+    this.boundDragMove = this.onDragMove.bind(this);
+    this.boundDragEnd = this.onDragEnd.bind(this);
   }
 
   isLikelyImageSource(value) {
@@ -383,6 +385,12 @@ export class MatchRenderer extends BaseRenderer {
     if (!this.canSubmit()) return;
     e.preventDefault();
     
+    // Lock the player-question view from scrolling while dragging so the
+    // browser's edge-scroll behaviour doesn't move the view down and leave
+    // it scrolled when the next question loads.
+    const pqView = document.getElementById('view-player-question');
+    if (pqView) pqView.style.overflowY = 'hidden';
+
     const chip = e.currentTarget;
     const chipIdx = parseInt(chip.dataset.chipIdx);
     const fromSlot = parseInt(chip.dataset.inSlot);
@@ -428,8 +436,8 @@ export class MatchRenderer extends BaseRenderer {
       offsetY: e.clientY - rect.top
     };
     
-    document.addEventListener('pointermove', this.onDragMove.bind(this));
-    document.addEventListener('pointerup', this.onDragEnd.bind(this), { once: true });
+    document.addEventListener('pointermove', this.boundDragMove);
+    document.addEventListener('pointerup', this.boundDragEnd, { once: true });
   }
   
   /**
@@ -453,9 +461,13 @@ export class MatchRenderer extends BaseRenderer {
    * Handle drag end
    */
   onDragEnd(e) {
-    document.removeEventListener('pointermove', this.onDragMove.bind(this));
+    document.removeEventListener('pointermove', this.boundDragMove);
     if (!this.drag) return;
     
+    // Restore scroll on the view now that the drag is complete.
+    const pqView = document.getElementById('view-player-question');
+    if (pqView) pqView.style.overflowY = '';
+
     this.removeDragGhost();
     document.querySelectorAll('.match-dropzone').forEach(dz => 
       dz.classList.remove('match-dz-hover')
@@ -585,7 +597,12 @@ export class MatchRenderer extends BaseRenderer {
    */
   cleanup() {
     this.removeDragGhost();
-    document.removeEventListener('pointermove', this.onDragMove.bind(this));
-    document.removeEventListener('pointerup', this.onDragEnd.bind(this));
+    document.removeEventListener('pointermove', this.boundDragMove);
+    document.removeEventListener('pointerup', this.boundDragEnd);
+    // Restore view scroll in case cleanup is called during an active drag.
+    const pqView = document.getElementById('view-player-question');
+    if (pqView) pqView.style.overflowY = '';
+    const hintOverlay = document.getElementById('puzzle-hint-overlay');
+    if (hintOverlay) hintOverlay.remove();
   }
 }

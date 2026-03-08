@@ -146,7 +146,6 @@ export function PacksPage() {
       serverBase: SERVER_BASE,
       quizId: quiz.id,
       gameModeId: quiz.gameModeId,
-      themeId: quiz.themeId,
       ...authParams,
     })
     await guardedLaunchGame({
@@ -347,7 +346,11 @@ export function PacksPage() {
                   />
                   {/* Centered play button overlay */}
                   <a
-                    href={buildHostGameUrl({ serverBase: SERVER_BASE, quizId: q.id, gameModeId: q.gameModeId, themeId: q.themeId })}
+                    href={buildHostGameUrl({
+                      serverBase: SERVER_BASE,
+                      quizId: q.id,
+                      gameModeId: q.gameModeId,
+                    })}
                     target="_blank" rel="noopener noreferrer"
                     onClick={(e) => {
                       e.preventDefault()
@@ -471,7 +474,6 @@ export function PacksPage() {
                         onClick={() => navigator.clipboard?.writeText(buildPlayerGameUrl({
                           serverBase: SERVER_BASE,
                           quizId: q.id,
-                          themeId: q.themeId,
                         })).then(() => alert(isAr ? 'تم النسخ!' : 'Link copied!'))}
                         style={{ ...actionBtnStyle, width: 'auto', flex: 'none', padding: '0.4rem 0.55rem' }}
                         onMouseEnter={(e) => Object.assign(e.currentTarget.style, { ...actionBtnHover, width: 'auto', flex: 'none', padding: '0.4rem 0.55rem' })}

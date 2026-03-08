@@ -1,0 +1,19 @@
+<svg viewBox="0 0 1280 720" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="light" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#1A2A3A"/>
+      <stop offset="100%" stop-color="#050510"/>
+    </radialGradient>
+  </defs>
+  <rect width="1280" height="720" fill="url(#light)"/>
+  
+  <path d="M 0 0 L 200 0 L 150 300 Q 100 500 0 600 Z" fill="#11111A"/>
+  <path d="M 1280 0 L 900 0 L 1000 400 Q 1100 600 1280 720 Z" fill="#0D0D15"/>
+  <path d="M 0 720 Q 640 600 1280 720 Z" fill="#1C1C28"/>
+  
+  <circle cx="150" cy="650" r="20" fill="#00FA9A" opacity="0.3" filter="blur(5px)"/>
+  <circle cx="200" cy="680" r="15" fill="#00FA9A" opacity="0.3" filter="blur(5px)"/>
+  <circle cx="1100" cy="630" r="30" fill="#00FA9A" opacity="0.3" filter="blur(10px)"/>
+  
+  <polygon points="500,0 780,0 850,720 400,720" fill="#E6E6FA" opacity="0.05"/>
+</svg>

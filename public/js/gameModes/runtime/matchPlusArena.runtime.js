@@ -83,7 +83,6 @@ function normalizePuzzleQuestion(question) {
   if (!question.matchPlusInstruction || !String(question.matchPlusInstruction).trim()) {
     question.matchPlusInstruction = 'Arrange the pieces to complete the image.';
   }
-  question.text = '';
 
   // Ensure a puzzle image is set.
   // If matchPlusImage is empty, try to salvage one from the left-side image URLs

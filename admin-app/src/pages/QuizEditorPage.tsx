@@ -35,7 +35,7 @@ import {
   sanitizeQuestionBySchema,
 } from '../config/questionTypeSchemas'
 import { createQuiz, deleteQuiz, findQuizByOwnerAndSlug, getQuizById, incrementQuizPlayCount, updateQuiz } from '../lib/quizRepo'
-import { incrementPlatformStat, subscribeMiniGameSettings, subscribeQuestionTypeSettings } from '../lib/adminRepo'
+import { fetchCustomThemesOnce, incrementPlatformStat, subscribeMiniGameSettings, subscribeQuestionTypeSettings, THEME_PRESETS, themeTokensToCssVars } from '../lib/adminRepo'
 import { ImageCropDialog } from '../components/ImageCropDialog'
 import { AiGeneratingOverlay } from '../components/editor/AiGeneratingOverlay'
 import { EditorUnifiedHeader } from '../components/editor/EditorUnifiedHeader'
@@ -192,7 +192,6 @@ export function QuizEditorPage() {
   const [showAddBlockPicker, setShowAddBlockPicker] = useState(false)
   const [themeId, setThemeId] = useState<string>('default')
   const [tempThemeId, setTempThemeId] = useState<string>('default')
-
   // AI Feature States
   const [aiAction, setAiAction] = useState<'generate' | 'recheck' | null>(null)
   const [aiConflictData, setAiConflictData] = useState<{ questions: QuizQuestion[]; count: number } | null>(null)
@@ -604,10 +603,10 @@ export function QuizEditorPage() {
   }, [routeId, ownerId, isMiniGameContent])
 
   const shareSlug = tempSlug || ensureScopedSlug(titleToSlug(tempTitle) || 'quiz', ownerId)
+
   const shareUrl = buildPlayerGameUrl({
     serverBase: SERVER_BASE,
     quizId: shareSlug,
-    themeId,
   })
   const miniGameCards = useMemo(() => {
     return MINI_GAME_IDS.map((id) => {
@@ -1234,6 +1233,21 @@ export function QuizEditorPage() {
       : isMasterAdmin && visibility === 'public' ? 'approved'
       : visibility === 'private' && approvalStatus !== 'rejected' ? undefined
       : approvalStatus
+
+    // Resolve theme CSS vars to embed in the quiz doc so the game server can
+    // apply the theme without a separate Firestore lookup (server can't access
+    // platform_settings due to cross-project auth restrictions).
+    const normalizedThemeId = !themeId || themeId === 'default' ? 'default-dark' : themeId
+    let resolvedThemeVars: Record<string, string> | undefined
+    const builtinPreset = THEME_PRESETS.find((p) => p.key === normalizedThemeId)
+    if (builtinPreset) {
+      resolvedThemeVars = themeTokensToCssVars(builtinPreset.tokens)
+    } else {
+      const customThemes = await fetchCustomThemesOnce()
+      const customTheme = customThemes.find((t) => t.id === normalizedThemeId)
+      if (customTheme) resolvedThemeVars = themeTokensToCssVars(customTheme.tokens)
+    }
+
     const payload: QuizDoc = {
       ownerId,
       title,
@@ -1241,6 +1255,7 @@ export function QuizEditorPage() {
       visibility: effectiveVisibility,
       approvalStatus: effectiveApprovalStatus,
       themeId: themeId === 'default' ? 'default-dark' : themeId,
+      resolvedThemeVars,
       contentType: isMiniGameContent ? 'mini-game' : contentType,
       priceTier: requiresSubscription ? 'starter' : 'free',
       gameModeId: (isMiniGameContent || !!gameModeId) ? (gameModeId || undefined) : undefined,
@@ -1293,7 +1308,6 @@ export function QuizEditorPage() {
   const editorShareUrl = editorShareSlug ? buildPlayerGameUrl({
     serverBase: SERVER_BASE,
     quizId: editorShareSlug,
-    themeId,
   }) : ''
 
   const copyEditorLink = async () => {
@@ -1342,7 +1356,6 @@ export function QuizEditorPage() {
       serverBase: SERVER_BASE,
       quizId: quizIdToLaunch,
       gameModeId: isMiniGameContent ? (gameModeId || undefined) : undefined,
-      themeId: themeId === 'default' ? 'default-dark' : themeId,
       miniGameConfig: (isMiniGameContent && miniGameConfig && Object.keys(miniGameConfig).length > 0)
         ? miniGameConfig as Record<string, unknown>
         : undefined,

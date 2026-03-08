@@ -1,0 +1,64 @@
+body, html {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #000000;
+  overflow: hidden;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  color: white;
+  user-select: none;
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+#game-host {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  max-width: 1280px;
+  max-height: 720px;
+  aspect-ratio: 16 / 9;
+  background-color: #1a1a24;
+  overflow: hidden;
+}
+
+.scene-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.5s ease;
+}
+
+.scene-container.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.ui-btn {
+  padding: 10px 20px;
+  background-color: #333;
+  color: white;
+  border: 1px solid #555;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 1.2rem;
+  transition: background-color 0.2s, transform 0.1s;
+}
+
+.ui-btn:hover {
+  background-color: #555;
+}
+.ui-btn:active {
+  transform: scale(0.95);
+}

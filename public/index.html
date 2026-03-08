@@ -7,10 +7,12 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
+  <link rel="icon" type="image/jpeg" href="/images/QYan_logo_300x164.jpg" />
+  <link rel="apple-touch-icon" href="/images/QYan_logo_300x164.jpg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=130" />
+  <link rel="stylesheet" href="/css/style.css?v=149" />
   <!-- Prevent browser zoom (Ctrl+scroll, Ctrl+±, pinch) -->
   <script>
     // 1. Prevent Ctrl+Wheel (mouse zoom)
@@ -53,9 +55,6 @@
   </script>
 </head>
 <body>
-
-  <!-- Global mute toggle (always visible) -->
-  <button class="btn-mute" id="btn-mute" title="Toggle sound">🔊</button>
 
   <!-- ═══════════════════════════════════════════
        VIEW: Home — Choose Host or Player
@@ -246,6 +245,13 @@
         <button class="btn btn-secondary full-width" id="btn-copy-join-url">📋 Copy Join URL</button>
       </div>
 
+      <div class="lobby-play-mode-switch" dir="rtl">
+        <button class="lobby-mode-btn is-active" id="btn-lobby-mode-team" type="button">👥 اللعب مع فريق</button>
+        <button class="lobby-mode-btn" id="btn-lobby-mode-solo" type="button">⚡ اللعب الفردي السريع</button>
+      </div>
+
+      <div id="host-team-lobby-section">
+
       <div class="host-pin-qr-row">
         <div class="pin-display">
           <span class="host-quiz-title" id="host-quiz-title" style="display:none"></span>
@@ -273,20 +279,23 @@
       <!-- ── Player grid (placeholders fill → real cards as players join) ── -->
       <div id="host-as-player-section" class="host-as-player-section">
         <div class="host-as-player-header">
-          <span class="host-as-player-label" dir="rtl">اللاعبون</span>
           <span class="host-as-player-count" id="host-player-count">0</span>
         </div>
         <ul class="host-player-stage" id="host-player-list" aria-label="Players joined"></ul>
-        <p class="player-waiting-msg" id="player-waiting-msg">يجب انضمام لاعب واحد على الأقل للبدء</p>
+        <p class="player-waiting-msg" id="player-waiting-msg">في انتظار الاعبين</p>
       </div>
+
+      </div>
+
+      <label id="host-inline-join-toggle-row" class="host-inline-join-toggle" for="chk-host-as-player-inline" style="display:none">
+        <span class="host-inline-join-toggle-text">Add me as a player</span>
+        <input type="checkbox" id="chk-host-as-player-inline" />
+      </label>
 
       <!-- Start Game + Share -->
       <div class="start-game-row">
         <button class="btn btn-success" id="btn-start-game" disabled>
           🚀 ابدأ اللعبة
-        </button>
-        <button class="btn btn-secondary" id="btn-switch-game" type="button" title="Switch game">
-          🧩 اختر لعبة
         </button>
         <div class="share-url-section" id="share-url-section">
           <input type="text" id="share-url-input" readonly style="display:none" />
@@ -310,27 +319,6 @@
         </div>
       </div>
 
-      <!-- Solo Play -->
-      <button class="btn btn-solo" id="btn-solo-play" dir="rtl">
-        🎯 العب بنفسي
-      </button>
-
-      <!-- Preload Diagnostic Panel -->
-      <details class="preload-diag-panel" id="host-preload-diag">
-        <summary class="preload-diag-toggle">📊 Diagnostics</summary>
-        <div class="preload-diag-body">
-          <div class="preload-diag-row"><span class="preload-diag-label">Quiz</span><span class="preload-diag-value" id="diag-host-quiz">—</span></div>
-          <div class="preload-diag-row"><span class="preload-diag-label">Questions</span><span class="preload-diag-value" id="diag-host-questions">—</span></div>
-          <div class="preload-diag-row"><span class="preload-diag-label">Media Assets</span><span class="preload-diag-value" id="diag-host-media-total">—</span></div>
-          <div class="preload-diag-progress">
-            <div class="preload-diag-bar" id="diag-host-bar" style="width:0%"></div>
-          </div>
-          <div class="preload-diag-row"><span class="preload-diag-label">Loaded</span><span class="preload-diag-value" id="diag-host-loaded">0 / 0</span></div>
-          <div class="preload-diag-row"><span class="preload-diag-label">Failed</span><span class="preload-diag-value preload-diag-fail" id="diag-host-failed">0</span></div>
-          <div class="preload-diag-row"><span class="preload-diag-label">Status</span><span class="preload-diag-value" id="diag-host-status">Idle</span></div>
-          <ul class="preload-diag-log" id="diag-host-log"></ul>
-        </div>
-      </details>
 
       <div id="switch-game-dialog" class="switch-game-dialog" style="display:none" aria-hidden="true">
         <div class="switch-game-panel" role="dialog" aria-modal="true" aria-label="Choose game or quiz">
@@ -405,68 +393,31 @@
         <ul class="player-list" id="player-player-list"></ul>
       </div>
 
-      <!-- Preload Diagnostic Panel -->
-      <details class="preload-diag-panel" id="player-preload-diag">
-        <summary class="preload-diag-toggle">📊 Diagnostics</summary>
-        <div class="preload-diag-body">
-          <div class="preload-diag-row"><span class="preload-diag-label">Quiz</span><span class="preload-diag-value" id="diag-player-quiz">—</span></div>
-          <div class="preload-diag-row"><span class="preload-diag-label">Questions</span><span class="preload-diag-value" id="diag-player-questions">—</span></div>
-          <div class="preload-diag-row"><span class="preload-diag-label">Media Assets</span><span class="preload-diag-value" id="diag-player-media-total">—</span></div>
-          <div class="preload-diag-progress">
-            <div class="preload-diag-bar" id="diag-player-bar" style="width:0%"></div>
-          </div>
-          <div class="preload-diag-row"><span class="preload-diag-label">Loaded</span><span class="preload-diag-value" id="diag-player-loaded">0 / 0</span></div>
-          <div class="preload-diag-row"><span class="preload-diag-label">Failed</span><span class="preload-diag-value preload-diag-fail" id="diag-player-failed">0</span></div>
-          <div class="preload-diag-row"><span class="preload-diag-label">Status</span><span class="preload-diag-value" id="diag-player-status">Idle</span></div>
-          <ul class="preload-diag-log" id="diag-player-log"></ul>
-        </div>
-      </details>
     </div>
   </div>
 
   <!-- ═══════════════════════════════════════════
        VIEW: Question — Host sees question + live counter
   ═══════════════════════════════════════════ -->
-  <div id="view-host-question" class="view host-question-view">
+  <div id="view-host-question" class="view host-question-view" data-allow-scroll="true">
 
     <!-- ── Fixed HUD bar (header) ── -->
     <div class="host-hud-bar" id="host-hud-bar">
 
-      <!-- Main row: pause/skip | centered timer+PIN | answers/end -->
+      <!-- Main row: connection | center info | utility -->
       <div class="hud-main-row">
 
-        <!-- Left: Pause + Skip icon buttons -->
-        <div class="hud-side hud-side-left">
+        <!-- Left: pause/end controls (stacked) -->
+        <div class="hud-side hud-side-left hud-stack-controls">
           <button class="hud-icon-btn hud-btn-pause" id="btn-pause-resume" data-paused="false" aria-label="Pause" title="Pause">
-            <!-- Pause bars (shown when running) -->
             <svg class="hud-icon hud-icon-pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <rect x="5" y="3" width="5" height="18" rx="1.5"/>
               <rect x="14" y="3" width="5" height="18" rx="1.5"/>
             </svg>
-            <!-- Play triangle (shown when paused) -->
             <svg class="hud-icon hud-icon-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <polygon points="5,2 22,12 5,22"/>
             </svg>
           </button>
-          <button class="hud-icon-btn hud-btn-skip" id="btn-skip" aria-label="Skip question" title="Skip question">
-            <svg class="hud-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <polygon points="4,3 14,12 4,21"/>
-              <rect x="16" y="3" width="4" height="18" rx="1.5"/>
-            </svg>
-          </button>
-        </div>
-
-        <!-- Center: big timer ring + PIN below -->
-        <div class="hud-center-col">
-          <div class="timer-ring hud-timer" id="host-timer-ring">
-            <span class="timer-count" id="host-timer-count">30</span>
-          </div>
-          <span class="hud-pin-text" id="host-q-room-pin">PIN: ------</span>
-        </div>
-
-        <!-- Right: answer counter + End Game icon button -->
-        <div class="hud-side hud-side-right">
-          <span class="hud-answer-count" id="host-answer-counter">0/0</span>
           <button class="hud-icon-btn hud-btn-end" id="btn-end-game" aria-label="End game" title="End game">
             <svg class="hud-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <rect x="3" y="3" width="18" height="18" rx="3"/>
@@ -474,13 +425,36 @@
           </button>
         </div>
 
+        <!-- Center: ROOM -> timer -> points -->
+        <div class="hud-center-col">
+          <span class="hud-pin-text" id="host-q-room-pin">ROOM ------</span>
+          <div class="timer-ring hud-timer" id="host-timer-ring">
+            <span class="timer-count" id="host-timer-count">30</span>
+          </div>
+          <span class="universal-score-count hud-score-val hud-center-score">0 pts</span>
+        </div>
+
+        <!-- Right: connection/audio (stacked) -->
+        <div class="hud-side hud-side-right hud-stack-utility">
+          <span class="hud-conn-indicator" id="host-hud-connection" data-connection-chip data-state="warn" role="status" aria-label="Connection: connecting" title="Connecting"></span>
+          <button class="hud-icon-btn hud-audio-btn" id="btn-host-mute" data-mute-toggle aria-label="Toggle sound" title="Toggle sound">🔊</button>
+        </div>
+
       </div><!-- /hud-main-row -->
 
-      <!-- Meta row: Q X/Y · mode tag · score -->
+      <div class="hud-actions-row">
+        <button class="hud-icon-btn hud-btn-skip" id="btn-skip" aria-label="Skip question" title="Skip question">
+          <svg class="hud-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <polygon points="4,3 14,12 4,21"/>
+            <rect x="16" y="3" width="4" height="18" rx="1.5"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Meta row: progress counters -->
       <div class="hud-meta-row">
         <span class="hud-q-num" id="host-q-progress">Q 1 / 8</span>
-        <span class="hud-mode-tag" id="host-q-difficulty">CLASSIC</span>
-        <span class="universal-score-count hud-score-val">0 pts</span>
+        <span class="hud-answer-count" id="host-answer-counter">0/0</span>
       </div>
 
       <!-- Progress timeline (dots render by JS) -->
@@ -510,7 +484,53 @@
   <!-- ═══════════════════════════════════════════
        VIEW: Question — Player sees question + answer buttons
   ═══════════════════════════════════════════ -->
-  <div id="view-player-question" class="view">
+  <div id="view-player-question" class="view" data-allow-scroll="true">
+    <div class="solo-host-hud-bar" id="solo-host-hud-bar" style="display:none">
+      <div class="hud-main-row">
+        <div class="hud-side hud-side-left hud-stack-controls">
+          <button class="hud-icon-btn hud-btn-pause solo-host-only" id="btn-player-pause-resume" data-paused="false" aria-label="Pause" title="Pause">
+            <svg class="hud-icon hud-icon-pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <rect x="5" y="3" width="5" height="18" rx="1.5"/>
+              <rect x="14" y="3" width="5" height="18" rx="1.5"/>
+            </svg>
+            <svg class="hud-icon hud-icon-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <polygon points="5,2 22,12 5,22"/>
+            </svg>
+          </button>
+          <button class="hud-icon-btn hud-btn-end solo-host-only" id="btn-player-end-game" aria-label="End game" title="End game">
+            <svg class="hud-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="3"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="hud-center-col">
+          <span class="hud-pin-text" id="solo-host-room-pin">ROOM ------</span>
+          <div class="timer-ring hud-timer" id="solo-host-timer-ring">
+            <span class="timer-count" id="solo-host-timer-count">30</span>
+          </div>
+          <span class="score-badge player-score-badge" id="player-score-badge">
+            <span class="score-count universal-score-count">0 pts</span>
+          </span>
+        </div>
+
+        <div class="hud-side hud-side-right hud-stack-utility">
+          <span class="hud-conn-indicator" id="player-hud-connection" data-connection-chip data-state="warn" role="status" aria-label="Connection: connecting" title="Connecting"></span>
+          <button class="hud-icon-btn hud-audio-btn" id="btn-player-mute" data-mute-toggle aria-label="Toggle sound" title="Toggle sound">🔊</button>
+        </div>
+      </div>
+
+      <div class="hud-actions-row">
+      </div>
+
+      <div class="hud-meta-row">
+        <span class="hud-q-num" id="solo-host-q-progress">Q 1 / 8</span>
+        <span class="streak-badge" id="player-streak-badge" style="display:none">🔥 <span id="player-streak-count">0</span></span>
+        <span class="role-badge hud-role-chip" id="player-role-badge" style="display:none">Role: —</span>
+      </div>
+      <div class="hud-progress-track" id="player-progress-track"></div>
+    </div>
+
     <div class="question-layout" id="player-question-layout">
       <div class="question-header">
         <span class="q-progress" id="player-q-progress">Q 1 / 8</span>
@@ -519,19 +539,9 @@
         <div class="timer-ring" id="player-timer-ring">
           <span class="timer-count" id="player-timer-count">30</span>
         </div>
-        <div class="universal-score-container">
-          <span class="score-badge player-score-badge" id="player-score-badge">
-            <span class="score-count universal-score-count">0 pts</span>
-          </span>
-        </div>
-        <span class="streak-badge" id="player-streak-badge" style="display:none">🔥 <span id="player-streak-count">0</span></span>
-        <span class="role-badge" id="player-role-badge" style="display:none">Role: —</span>
       </div>
-      <!-- Host-as-player controls (solo mode) -->
-      <div class="host-controls player-host-controls" id="player-host-controls" style="display:none">
-        <button class="btn btn-host-ctrl" id="btn-player-pause-resume">⏸️ إيقاف</button>
-        <button class="btn btn-host-ctrl btn-end" id="btn-player-end-game">🛑 إنهاء اللعبة</button>
-      </div>
+      <!-- Host-as-player controls (legacy inline fallback) -->
+      <div class="host-controls player-host-controls" id="player-host-controls" style="display:none"></div>
       <div class="question-text-box">
         <p class="question-text" id="player-question-text">Loading question…</p>
       </div>
@@ -844,12 +854,17 @@
     </div>
   </div>
 
+  <div id="qr-lightbox" class="qr-lightbox" aria-hidden="true" style="display:none">
+    <button id="btn-qr-lightbox-close" class="qr-lightbox-close" type="button" aria-label="Close QR preview">✕</button>
+    <div id="qr-lightbox-content" class="qr-lightbox-content" role="dialog" aria-modal="true" aria-label="Large QR code preview"></div>
+  </div>
+
   <!-- ─── Scripts ─── -->
   <!-- Confetti for game over celebration (async — non-blocking) -->
   <script async src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
   <!-- Load Socket.io client from the server (auto-served by socket.io) -->
   <script src="/socket.io/socket.io.js"></script>
   <!-- Main game logic (ES6 module) -->
-  <script type="module" src="/js/game.js?v=130"></script>
+  <script type="module" src="/js/game.js?v=159"></script>
 </body>
 </html>

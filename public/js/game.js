@@ -26,6 +26,70 @@ const queryParams = new URLSearchParams(window.location.search);
 const quizSlugFromUrl = queryParams.get('quiz');
 const modeFromUrl     = queryParams.get('mode');
 const gameModeFromUrl = queryParams.get('gameMode');
+const DIAGNOSTICS_ENABLED = false;
+
+const IS_LOCAL_DEV_HOST = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+
+function enableLocalCssLiveReload() {
+  if (!IS_LOCAL_DEV_HOST) return;
+  if (queryParams.get('livecss') === '0') return;
+
+  let latestSignature = '';
+  let inFlight = false;
+
+  const getSignature = async () => {
+    const res = await fetch(`/css/style.css?live_sig=${Date.now()}`, {
+      cache: 'no-store',
+      method: 'HEAD',
+    });
+    if (!res.ok) return '';
+    const lastModified = res.headers.get('last-modified') || '';
+    const eTag = res.headers.get('etag') || '';
+    return `${lastModified}|${eTag}`;
+  };
+
+  const swapStylesheet = () => {
+    const currentLink = document.querySelector('link[rel="stylesheet"][href*="/css/style.css"]');
+    if (!(currentLink instanceof HTMLLinkElement)) {
+      window.location.reload();
+      return;
+    }
+
+    const nextLink = currentLink.cloneNode(true);
+    nextLink.href = `/css/style.css?live=${Date.now()}`;
+    nextLink.onload = () => {
+      currentLink.remove();
+      console.log('[livecss] applied updated style.css');
+    };
+    currentLink.parentNode?.insertBefore(nextLink, currentLink.nextSibling);
+  };
+
+  const tick = async () => {
+    if (inFlight) return;
+    inFlight = true;
+    try {
+      const signature = await getSignature();
+      if (!signature) return;
+      if (!latestSignature) {
+        latestSignature = signature;
+        return;
+      }
+      if (signature !== latestSignature) {
+        latestSignature = signature;
+        swapStylesheet();
+      }
+    } catch (_) {
+      // silent in polling loop
+    } finally {
+      inFlight = false;
+    }
+  };
+
+  void tick();
+  setInterval(tick, 1200);
+}
+
+enableLocalCssLiveReload();
 
 // Check both query params and localStorage for host credentials
 const hostUidFromUrl  = queryParams.get('hostUid') || localStorage.getItem('last_host_uid');
@@ -248,6 +312,7 @@ if (quizSlugFromUrl) {
 const _preloadCache = new Map(); // url -> Promise<void>
 
 function updatePreloadDiag(prefix, fields) {
+  if (!DIAGNOSTICS_ENABLED) return;
   const ids = {
     quiz: `diag-${prefix}-quiz`,
     questions: `diag-${prefix}-questions`,
@@ -275,6 +340,7 @@ function updatePreloadDiag(prefix, fields) {
 }
 
 function addPreloadLog(prefix, text, cls = '') {
+  if (!DIAGNOSTICS_ENABLED) return;
   const logEl = document.getElementById(`diag-${prefix}-log`);
   if (!logEl) return;
   const li = document.createElement('li');
@@ -565,6 +631,7 @@ function setDiagnoseField(id, value) {
 }
 
 function updateDiagnose(partial = {}) {
+  if (!DIAGNOSTICS_ENABLED) return;
   Object.assign(diagnoseState, partial);
   setDiagnoseField('diag-view', diagnoseState.view || '-');
   setDiagnoseField('diag-role', diagnoseState.role || state.role || '-');
@@ -574,6 +641,7 @@ function updateDiagnose(partial = {}) {
 }
 
 function markDiagEvent(name) {
+  if (!DIAGNOSTICS_ENABLED) return;
   updateDiagnose({ event: name, role: state.role || '-' });
   pushJoinDebugLog(`event: ${name}`);
 }
@@ -624,6 +692,7 @@ function printJoinDebugDialog() {
 }
 
 function pushJoinDebugLog(message) {
+  if (!DIAGNOSTICS_ENABLED) return;
   const { log } = getJoinDebugNodes();
   if (!log) return;
   const stamp = new Date().toLocaleTimeString();
@@ -792,6 +861,8 @@ function showView(viewId, options = {}) {
       document.documentElement.classList.add('gameplay-active');
       if (activeView) activeView.classList.add('gameplay-scroll-locked');
     }
+
+    updateThemeDiagNoteVisibility(viewId);
   } catch (err) {
     console.error('showView failed:', err);
     if (window.__dbgLog) window.__dbgLog('showView CRASH: ' + err.message);
@@ -885,6 +956,7 @@ function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
 
   if (isHostLobby) {
     state.hostLobbyPlayers = [...playersArr];
+    updateHostInlineJoinToggleVisibility(playersArr);
     const stageVariant = useHostPlayerStageVariant();
     applyHostPlayerStageVariantClass(listEl, stageVariant);
 
@@ -929,23 +1001,17 @@ function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
         waitingEl.style.display = 'block';
         waitingEl.style.color = 'var(--text-dim)';
         waitingEl.style.fontWeight = '400';
-        waitingEl.innerHTML = 'من الجيد وجود لاعب واحد على الأقل للبدء <br> <span style="font-size: 0.9em; opacity: 0.8;">أو <a href="#" id="inline-solo-play" style="color: #3b82f6; text-decoration: underline; cursor: pointer;">العب بنفسك</a></span>';
-        
-        const inlineSoloBtn = document.getElementById('inline-solo-play');
-        if (inlineSoloBtn) {
-          inlineSoloBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            const soloBtn = document.getElementById('btn-solo-play');
-            if (soloBtn) soloBtn.click();
-          });
-        }
+        waitingEl.dataset.state = 'waiting';
+        waitingEl.textContent = 'في انتظار الاعبين';
       } else if (gameModeFromUrl === 'xo-duel' && playersArr.length < 2) {
         waitingEl.style.display = 'block';
         waitingEl.style.color = '#f87171';
         waitingEl.style.fontWeight = '700';
+        waitingEl.dataset.state = 'alert';
         waitingEl.textContent = 'X O Duel يحتاج لاعبين متصلين على الأقل لبدء التحدي.';
       } else {
         waitingEl.style.display = 'none';
+        waitingEl.dataset.state = '';
       }
     }
   } else {
@@ -1158,24 +1224,129 @@ function applyModeInfo(data) {
     const wa = document.getElementById('share-whatsapp');
     const tg = document.getElementById('share-telegram');
     const tw = document.getElementById('share-twitter');
-    if (wa) wa.href = `https://wa.me/?text=${encodeURIComponent(_waText)}`;
+    if (wa) {
+      const waEncoded = encodeURIComponent(_waText);
+      const ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '';
+      const isMobileWa = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+      wa.href = isMobileWa
+        ? `https://api.whatsapp.com/send?text=${waEncoded}`
+        : `https://web.whatsapp.com/send?text=${waEncoded}`;
+    }
     if (tg) tg.href = `https://t.me/share/url?text=${encodeURIComponent(_tgText)}`;
     if (tw) tw.href = `https://x.com/intent/tweet?text=${encodeURIComponent(_twText)}`;
   }
 }
 
 let hostQrRenderRequestId = 0;
+
+function createHostQrPreviewNode(qrSourceNode) {
+  if (!qrSourceNode) return null;
+
+  const tagName = (qrSourceNode.tagName || '').toLowerCase();
+  if (tagName === 'svg') {
+    return qrSourceNode.cloneNode(true);
+  }
+
+  if (tagName === 'canvas') {
+    const img = document.createElement('img');
+    img.src = qrSourceNode.toDataURL('image/png');
+    img.alt = 'Join QR code';
+    return img;
+  }
+
+  return null;
+}
+
+function closeHostQrLightbox() {
+  const lightbox = document.getElementById('qr-lightbox');
+  const content = document.getElementById('qr-lightbox-content');
+  if (!lightbox || !content) return;
+
+  lightbox.classList.remove('open');
+  lightbox.style.display = 'none';
+  lightbox.setAttribute('aria-hidden', 'true');
+  content.innerHTML = '';
+}
+
+function openHostQrLightbox(qrWrap) {
+  const lightbox = document.getElementById('qr-lightbox');
+  const content = document.getElementById('qr-lightbox-content');
+  if (!lightbox || !content || !qrWrap) return;
+
+  const qrNode = qrWrap.querySelector('svg, canvas');
+  if (!qrNode) return;
+
+  const previewNode = createHostQrPreviewNode(qrNode);
+  if (!previewNode) return;
+
+  content.innerHTML = '';
+  content.appendChild(previewNode);
+  lightbox.classList.add('open');
+  lightbox.style.display = 'flex';
+  lightbox.setAttribute('aria-hidden', 'false');
+}
+
+function bindHostQrLightbox(qrWrap) {
+  if (!qrWrap) return;
+
+  const hasQr = !!qrWrap.querySelector('svg, canvas');
+  qrWrap.classList.toggle('is-clickable-qr', hasQr);
+
+  if (!hasQr) {
+    qrWrap.removeAttribute('role');
+    qrWrap.removeAttribute('tabindex');
+    qrWrap.removeAttribute('aria-label');
+    qrWrap.onclick = null;
+    qrWrap.onkeydown = null;
+    return;
+  }
+
+  qrWrap.setAttribute('role', 'button');
+  qrWrap.setAttribute('tabindex', '0');
+  qrWrap.setAttribute('aria-label', 'Open QR code preview');
+  qrWrap.onclick = () => openHostQrLightbox(qrWrap);
+  qrWrap.onkeydown = (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      openHostQrLightbox(qrWrap);
+    }
+  };
+}
+
+function initHostQrLightboxEvents() {
+  const lightbox = document.getElementById('qr-lightbox');
+  const closeBtn = document.getElementById('btn-qr-lightbox-close');
+  const content = document.getElementById('qr-lightbox-content');
+  if (!lightbox || !closeBtn || !content) return;
+
+  closeBtn.addEventListener('click', closeHostQrLightbox);
+  lightbox.addEventListener('click', (event) => {
+    if (!content.contains(event.target)) {
+      closeHostQrLightbox();
+    }
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && lightbox.classList.contains('open')) {
+      closeHostQrLightbox();
+    }
+  });
+}
+
+initHostQrLightboxEvents();
+
 function renderHostQrCode({ joinUrl, qrSvg, qrWrap }) {
   if (!qrWrap) return;
 
   const looksLikeSvg = typeof qrSvg === 'string' && qrSvg.includes('<svg');
   if (looksLikeSvg) {
     qrWrap.innerHTML = qrSvg;
+    bindHostQrLightbox(qrWrap);
     return;
   }
 
   if (!joinUrl) {
     qrWrap.innerHTML = '';
+    bindHostQrLightbox(qrWrap);
     return;
   }
 
@@ -1191,47 +1362,35 @@ function renderHostQrCode({ joinUrl, qrSvg, qrWrap }) {
       if (currentRequestId !== hostQrRenderRequestId) return;
       if (typeof svg !== 'string' || !svg.includes('<svg')) throw new Error('invalid SVG');
       qrWrap.innerHTML = svg;
+      bindHostQrLightbox(qrWrap);
     })
     .catch(() => {
       if (currentRequestId !== hostQrRenderRequestId) return;
       qrWrap.innerHTML = '<div style="font-size:0.78rem;opacity:0.75;padding:0.35rem 0.4rem;text-align:center;">QR unavailable الآن — شارك PIN يدويًا.</div>';
+      bindHostQrLightbox(qrWrap);
     });
 }
 
 function setConnectionStatus(kind, message) {
-  let el = document.getElementById('connection-status-chip');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'connection-status-chip';
-    el.style.position = 'fixed';
-    el.style.top = '12px';
-    el.style.left = '12px';
-    el.style.zIndex = '9999';
-    el.style.padding = '6px 10px';
-    el.style.borderRadius = '999px';
-    el.style.fontSize = '12px';
-    el.style.fontWeight = '700';
-    el.style.backdropFilter = 'blur(6px)';
-    el.style.border = '1px solid transparent';
-    document.body.appendChild(el);
-  }
-
-  if (kind === 'ok') {
-    el.style.background = 'rgba(16, 185, 129, 0.18)';
-    el.style.color = '#86efac';
-    el.style.borderColor = 'rgba(16, 185, 129, 0.4)';
-  } else if (kind === 'warn') {
-    el.style.background = 'rgba(245, 158, 11, 0.18)';
-    el.style.color = '#fcd34d';
-    el.style.borderColor = 'rgba(245, 158, 11, 0.4)';
-  } else {
-    el.style.background = 'rgba(239, 68, 68, 0.18)';
-    el.style.color = '#fca5a5';
-    el.style.borderColor = 'rgba(239, 68, 68, 0.4)';
-  }
-
-  el.textContent = message;
+  document.querySelectorAll('[data-connection-chip]').forEach((el) => {
+    el.dataset.state = kind;
+    if (el.classList.contains('hud-conn-indicator')) {
+      const label = message || (kind === 'ok' ? 'Connected' : 'Connection issue');
+      el.setAttribute('title', label);
+      el.setAttribute('aria-label', `Connection: ${label}`);
+      return;
+    }
+    el.textContent = message;
+  });
   updateDiagnose({ socket: `${kind}: ${message}` });
+}
+
+function syncMuteButtons() {
+  document.querySelectorAll('[data-mute-toggle]').forEach((btn) => {
+    btn.textContent = isMuted() ? '🔇' : '🔊';
+    btn.setAttribute('aria-label', isMuted() ? 'Unmute sound' : 'Mute sound');
+    btn.setAttribute('title', isMuted() ? 'Unmute sound' : 'Mute sound');
+  });
 }
 
 let hostReconnectCountdownTimer = null;
@@ -1652,8 +1811,8 @@ function clearQuestionMedia() {
  *  currentIndex = 0-based index of the question now being shown.
  *  total        = total number of questions in the set.
  */
-function renderHostProgressTrack(currentIndex, total) {
-  const track = document.getElementById('host-progress-track');
+function renderProgressTrack(trackId, currentIndex, total) {
+  const track = document.getElementById(trackId);
   if (!track || !total || total <= 0) return;
   const dots = [];
   for (let i = 0; i < total; i++) {
@@ -1667,29 +1826,70 @@ function renderHostProgressTrack(currentIndex, total) {
   track.replaceChildren(...dots);
 }
 
+function renderHostProgressTrack(currentIndex, total) {
+  renderProgressTrack('host-progress-track', currentIndex, total);
+}
+
+function renderPlayerProgressTrack(currentIndex, total) {
+  renderProgressTrack('player-progress-track', currentIndex, total);
+}
+
+function renderCompactProgressText(elementId, currentIndex, total) {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  el.textContent = `Q ${currentIndex + 1} / ${total || '?'}`;
+}
+
+function syncFixedHudOffset(barId, bodyId) {
+  const bar = document.getElementById(barId);
+  const body = document.getElementById(bodyId);
+  if (!bar || !body) return;
+  // Use rect.bottom so the top offset (e.g. 14px) is included in the calculation
+  const bottom = bar.getBoundingClientRect().bottom;
+  if (bottom > 0) body.style.marginTop = (bottom + 16) + 'px';
+}
+
 /** Keep the host question card correctly offset below the fixed HUD bar. */
 function syncHudOffset() {
-  const bar  = document.getElementById('host-hud-bar');
-  const body = document.getElementById('host-question-layout');
-  if (!bar || !body) return;
-  const h = bar.getBoundingClientRect().height;
-  if (h > 0) body.style.marginTop = (h + 12) + 'px';
+  syncFixedHudOffset('host-hud-bar', 'host-question-layout');
+}
+
+function syncSoloHostHudOffset() {
+  syncFixedHudOffset('solo-host-hud-bar', 'player-question-layout');
+}
+
+function setSoloHostQuestionMode(active, soloHost = false) {
+  const view = document.getElementById('view-player-question');
+  const bar = document.getElementById('solo-host-hud-bar');
+  if (view) {
+    view.classList.toggle('player-hud-mode', !!active);
+    view.classList.toggle('solo-host-mode', !!soloHost);
+  }
+  if (bar) bar.style.display = active ? 'flex' : 'none';
+  if (!active) {
+    const layout = document.getElementById('player-question-layout');
+    if (layout) layout.style.marginTop = '';
+  }
 }
 
 // Observe HUD bar height changes and window resize
 if (typeof ResizeObserver !== 'undefined') {
   const _hudBar = document.getElementById('host-hud-bar');
   if (_hudBar) new ResizeObserver(syncHudOffset).observe(_hudBar);
+  const _soloHudBar = document.getElementById('solo-host-hud-bar');
+  if (_soloHudBar) new ResizeObserver(syncSoloHostHudOffset).observe(_soloHudBar);
 }
 window.addEventListener('resize', syncHudOffset);
 window.addEventListener('orientationchange', () => setTimeout(syncHudOffset, 150));
+window.addEventListener('resize', syncSoloHostHudOffset);
+window.addEventListener('orientationchange', () => setTimeout(syncSoloHostHudOffset, 150));
 
 // ── Host view: shows question + non-interactive options/items ──────────
 // Note: Helper functions (safeGet, safeSetDisplay, hideConnectionChip, etc.) 
 // are now imported from utils/dom.js
 function renderHostQuestion(data) {
   try {
-    console.log('[v54] renderHostQuestion', JSON.stringify({type: data&&data.question&&data.question.type, qi: data&&data.questionIndex}).substring(0,80));
+    if (DIAGNOSTICS_ENABLED) console.log('[v54] renderHostQuestion', JSON.stringify({type: data&&data.question&&data.question.type, qi: data&&data.questionIndex}).substring(0,80));
     if (window.__dbgLog) window.__dbgLog('renderHostQ: ' + (data&&data.question ? data.question.type : 'NO-DATA'));
     if (!data || !data.question) {
       console.error('renderHostQuestion: Missing data', data);
@@ -1698,14 +1898,35 @@ function renderHostQuestion(data) {
     }
     
     hideConnectionChip();
+    setSoloHostQuestionMode(false);
     updateInGameRoomPin();
     const q = data.question;
+
+    // Reset scroll so question text is always at the top after tall questions.
+    const hqView = document.getElementById('view-host-question');
+    if (hqView) hqView.scrollTop = 0;
+
     const hProg = safeGet('host-q-progress');
     const hText = safeGet('host-question-text');
     const hAns = safeGet('host-answer-counter');
+
+    if (hText) {
+      hText.style.display = '';
+      hText.style.visibility = '';
+      hText.style.opacity = '';
+      hText.style.lineHeight = '';
+      hText.style.transform = '';
+      hText.style.filter = '';
+      const hWrapper = hText.parentElement;
+      if (hWrapper) {
+        hWrapper.style.display = '';
+        hWrapper.style.visibility = '';
+        hWrapper.style.opacity = '';
+      }
+    }
     
     if (hProg) hProg.textContent = `Q ${(data.questionIndex || 0) + 1} / ${data.total || '?'}`;
-    if (hText) hText.textContent = q.text || 'Question text missing';
+    if (hText) hText.textContent = q.text || '';
     renderQuestionMedia(q.media || null, 'host-question-text');
     if (hAns) hAns.textContent = `0 / ${data.total || 0}`;
 
@@ -1769,13 +1990,46 @@ function renderPlayerQuestion(data) {
     }
     
     hideConnectionChip();
+    const isSoloHost = state.role === 'host' && state.hostIsPlayer;
+    setSoloHostQuestionMode(true, isSoloHost);
     updateInGameRoomPin();
     markDiagEvent('render:player_question');
     const q = data.question;
+
+    // Defensive cleanup: match/puzzle interactions can leave floating artifacts
+    // when question transitions happen mid-drag.
+    document.getElementById('__dgh')?.remove();
+    document.getElementById('puzzle-hint-overlay')?.remove();
+
+    const playerLayout = safeGet('player-question-layout');
+    if (playerLayout) {
+      playerLayout.style.display = '';
+      playerLayout.style.visibility = '';
+      playerLayout.style.opacity = '';
+    }
+
     const qProg = safeGet('player-q-progress');
     if (qProg) qProg.textContent = `Q ${(data.questionIndex || 0) + 1} / ${data.total || '?'}`;
+    renderCompactProgressText('solo-host-q-progress', (data.questionIndex || 0), data.total || 0);
+    renderPlayerProgressTrack((data.questionIndex || 0), data.total || 0);
+    const soloPauseBtn = safeGet('btn-player-pause-resume');
+    if (soloPauseBtn) soloPauseBtn.dataset.paused = 'false';
     const qText = safeGet('player-question-text');
-    if (qText) qText.textContent = q.text || 'Question text missing';
+    if (qText) {
+      qText.style.display = '';
+      qText.style.visibility = '';
+      qText.style.opacity = '';
+      qText.style.lineHeight = '';
+      qText.style.transform = '';
+      qText.style.filter = '';
+      const qWrapper = qText.parentElement;
+      if (qWrapper) {
+        qWrapper.style.display = '';
+        qWrapper.style.visibility = '';
+        qWrapper.style.opacity = '';
+      }
+    }
+    if (qText) qText.textContent = q.text || '';
 
     renderQuestionMedia(q.media || null, 'player-question-text');
 
@@ -1815,9 +2069,11 @@ function renderPlayerQuestion(data) {
 
     const capturedQI = state.questionIndex;
     const playerTimerFn = () => {
+      const timerCountEl = safeGet(isSoloHost ? 'solo-host-timer-count' : 'player-timer-count');
+      const timerRingEl = safeGet(isSoloHost ? 'solo-host-timer-ring' : 'player-timer-ring');
       startClientTimer(data.duration,
-        safeGet('player-timer-count'),
-        safeGet('player-timer-ring'),
+        timerCountEl,
+        timerRingEl,
         () => {
           // ── Time's up — auto-submit if player hasn't answered ──
           if (!state.hasAnswered) {
@@ -1855,10 +2111,19 @@ function renderPlayerQuestion(data) {
     // Show host controls if host is playing as player (solo mode)
     const phc = safeGet('player-host-controls');
     if (phc) {
-      phc.style.display = (state.role === 'host' && state.hostIsPlayer) ? 'flex' : 'none';
+      phc.style.display = 'none';
     }
 
     showView('view-player-question');
+    // Scroll the view back to top after layout is committed. rAF ensures this
+    // fires after the browser has performed the reflow triggered by showView +
+    // renderer changes, so the scroll position is reliably reset even when the
+    // previous question (match/puzzle) had scrolled the container down.
+    requestAnimationFrame(() => {
+      const pqView = document.getElementById('view-player-question');
+      if (pqView) pqView.scrollTop = 0;
+    });
+    if (isSoloHost) requestAnimationFrame(syncSoloHostHudOffset);
     if (window.__dbgLog) window.__dbgLog('renderPlayer: DONE (' + q.type + ')');
   } catch (err) {
     console.error('renderPlayerQuestion failed:', err);
@@ -1866,7 +2131,7 @@ function renderPlayerQuestion(data) {
     if (window.__dbgLog) window.__dbgLog('CRASH: renderPlayer: ' + err.message);
     showView('view-player-question');
     const ansMsg = safeGet('player-answered-msg');
-    if (ansMsg) ansMsg.textContent = 'تعذر تحميل السؤال بالكامل. راجع لوحة Diagnose.';
+    if (ansMsg) ansMsg.textContent = 'تعذر تحميل السؤال بالكامل.';
   }
 }
 
@@ -2239,14 +2504,19 @@ function updateDifficultyDisplay() {
   
   const playerQDiff = document.getElementById('player-q-difficulty');
   if (playerQDiff) playerQDiff.textContent = tag;
+
+  const soloHostQDiff = document.getElementById('solo-host-q-difficulty');
+  if (soloHostQDiff) soloHostQDiff.textContent = tag;
 }
 
 function updateInGameRoomPin(pinValue = state.pin) {
   const displayPin = pinValue ? String(pinValue) : '------';
   const hostBadge = document.getElementById('host-q-room-pin');
-  if (hostBadge) hostBadge.textContent = `PIN: ${displayPin}`;
+  if (hostBadge) hostBadge.textContent = `ROOM ${displayPin}`;
   const playerBadge = document.getElementById('player-q-room-pin');
-  if (playerBadge) playerBadge.textContent = `PIN: ${displayPin}`;
+  if (playerBadge) playerBadge.textContent = `ROOM ${displayPin}`;
+  const soloHostBadge = document.getElementById('solo-host-room-pin');
+  if (soloHostBadge) soloHostBadge.textContent = `ROOM ${displayPin}`;
 }
 
 function setFrozenState(active, message) {
@@ -2573,6 +2843,96 @@ const themeQueryFromUrl = queryParams.get('theme');
 let themeManifestCache = null;
 let activeThemeId = null;
 let activeThemeVarKeys = [];
+let activeThemeSource = 'unknown';
+let activeThemeTokenSignature = '00000000';
+let activeThemePattern = 'none';
+let activeThemeHasImage = false;
+// Set to true when server pushes a resolved theme — prevents the startup IIFE
+// from overwriting it with a stale localStorage/default theme.
+let serverPushedTheme = false;
+// Stores the last theme payload pushed by the server so it can be re-applied
+// if the startup IIFE's loadThemeById overwrites it mid-flight.
+let lastServerThemePayload = null;
+// When true, room:created has been received but we're holding on view-host-loading
+// until room:theme arrives so the lobby is revealed with the correct theme already applied.
+let holdLobbyForTheme = false;
+let holdLobbyTimeoutId = null;
+function releaseLobbyHold() {
+  if (!holdLobbyForTheme) return;
+  holdLobbyForTheme = false;
+  if (holdLobbyTimeoutId) { clearTimeout(holdLobbyTimeoutId); holdLobbyTimeoutId = null; }
+  setLobbyPlayMode('team');
+  showView('view-host-lobby');
+}
+
+function computeThemeTokenSignature(tokens) {
+  const entries = Object.entries(tokens || {}).sort(([a], [b]) => a.localeCompare(b));
+  const payload = entries.map(([k, v]) => `${k}:${String(v)}`).join('|');
+  let hash = 5381;
+  for (let i = 0; i < payload.length; i++) {
+    hash = ((hash << 5) + hash) + payload.charCodeAt(i);
+    hash >>>= 0;
+  }
+  return hash.toString(16).padStart(8, '0').slice(-8);
+}
+
+function ensureThemeDiagNote() {
+  if (!DIAGNOSTICS_ENABLED) return null;
+  let el = document.getElementById('theme-diag-note');
+  if (el) return el;
+  el = document.createElement('div');
+  el.id = 'theme-diag-note';
+  el.setAttribute('aria-live', 'polite');
+  Object.assign(el.style, {
+    position: 'fixed',
+    left: '10px',
+    bottom: '10px',
+    zIndex: '9800',
+    display: 'none',
+    maxWidth: '78vw',
+    padding: '6px 10px',
+    borderRadius: '10px',
+    border: '1px solid rgba(45,212,191,0.5)',
+    background: 'rgba(2,6,23,0.78)',
+    color: '#99f6e4',
+    fontSize: '11px',
+    fontWeight: '700',
+    letterSpacing: '0.2px',
+    backdropFilter: 'blur(6px)',
+    pointerEvents: 'none',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  });
+  document.body.appendChild(el);
+  return el;
+}
+
+function updateThemeDiagNote() {
+  const el = ensureThemeDiagNote();
+  if (!el) return;
+  const id = activeThemeId || 'unknown';
+  const source = activeThemeSource || 'unknown';
+  const signature = activeThemeTokenSignature || '00000000';
+  const pattern = activeThemePattern || 'none';
+  const hasImage = activeThemeHasImage ? 'yes' : 'no';
+  // Read live computed bg-image var from the root to expose actual applied value
+  const root = document.documentElement;
+  const liveBgImage = root.style.getPropertyValue('--app-bg-image') || '';
+  const bgSnippet = liveBgImage.length > 40 ? liveBgImage.slice(0, 40) + '…' : (liveBgImage || 'none');
+  const rawImgUrl = root.style.getPropertyValue('--bg-image-url') || '';
+  const urlSnippet = rawImgUrl.length > 0 ? rawImgUrl.slice(0, 32) + '…' : 'empty';
+  el.textContent = `🎨 THEME_DIAG_v20260307 • id:${id} • src:${source} • pat:${pattern} • img:${hasImage} • bg:${bgSnippet} • sig:${signature}`;
+  el.title = `Theme=${id} | Source=${source} | Pattern=${pattern} | Image=${hasImage} | BgImage=${liveBgImage} | ImgUrl=${rawImgUrl} | Signature=${signature}`;
+}
+
+function updateThemeDiagNoteVisibility(viewId) {
+  const el = ensureThemeDiagNote();
+  if (!el) return;
+  const currentViewId = viewId || document.querySelector('.view.active')?.id || '';
+  const gameplayViews = new Set(['view-host-question', 'view-player-question', 'view-leaderboard', 'view-question-result', 'view-game-over']);
+  el.style.display = gameplayViews.has(currentViewId) ? 'block' : 'none';
+}
 
 function normalizeRuntimeThemeId(themeId) {
   if (typeof themeId !== 'string') return null;
@@ -2650,6 +3010,7 @@ function applyThemeBgPattern(root, tokens) {
   const rawOp      = tokens['--bg-pattern-opacity'];
   const op         = rawOp !== undefined ? parseFloat(rawOp) : 0.25;
   const bgImageUrl = tokens['--bg-image-url']      || '';
+  const hasImage   = !!(typeof bgImageUrl === 'string' && bgImageUrl.trim());
 
   let bgImage = 'none';
   let bgSize  = 'cover';
@@ -2657,54 +3018,94 @@ function applyThemeBgPattern(root, tokens) {
   let bgPos   = 'center center';
 
   switch (pattern) {
-    case 'dots':
-      bgImage  = `radial-gradient(circle, ${_hexAlpha(pc, op)} 1.5px, transparent 1.5px)`;
-      bgSize   = '22px 22px';
-      bgRepeat = 'repeat';
+    case 'dots': {
+      const patGrad = `radial-gradient(circle, ${_hexAlpha(pc, op)} 1.5px, transparent 1.5px)`;
+      if (hasImage) {
+        // image on top, pattern rendered behind
+        bgImage  = `url(${JSON.stringify(bgImageUrl)}), ${patGrad}`;
+        bgSize   = `auto 100%, 22px 22px`;
+        bgRepeat = `no-repeat, repeat`;
+        bgPos    = 'center bottom, center center';
+      } else {
+        bgImage  = patGrad;
+        bgSize   = '22px 22px';
+        bgRepeat = 'repeat';
+      }
       break;
-    case 'grid':
-      bgImage = [
+    }
+    case 'grid': {
+      const patGrad = [
         `linear-gradient(${_hexAlpha(pc, op)} 1px, transparent 1px)`,
         `linear-gradient(90deg, ${_hexAlpha(pc, op)} 1px, transparent 1px)`,
       ].join(', ');
-      bgSize   = '24px 24px';
-      bgRepeat = 'repeat';
+      if (hasImage) {
+        bgImage  = `url(${JSON.stringify(bgImageUrl)}), ${patGrad}`;
+        bgSize   = `auto 100%, 24px 24px`;
+        bgRepeat = `no-repeat, repeat`;
+        bgPos    = 'center bottom, center center';
+      } else {
+        bgImage  = patGrad;
+        bgSize   = '24px 24px';
+        bgRepeat = 'repeat';
+      }
       break;
-    case 'stripes':
-      bgImage  = `repeating-linear-gradient(45deg, transparent, transparent 10px, ${_hexAlpha(pc, op)} 10px, ${_hexAlpha(pc, op)} 11px)`;
-      bgRepeat = 'repeat';
+    }
+    case 'stripes': {
+      const patGrad = `repeating-linear-gradient(45deg, transparent, transparent 10px, ${_hexAlpha(pc, op)} 10px, ${_hexAlpha(pc, op)} 11px)`;
+      if (hasImage) {
+        bgImage  = `url(${JSON.stringify(bgImageUrl)}), ${patGrad}`;
+        bgSize   = `auto 100%, auto`;
+        bgRepeat = `no-repeat, repeat`;
+        bgPos    = 'center bottom, center center';
+      } else {
+        bgImage  = patGrad;
+        bgRepeat = 'repeat';
+      }
       break;
+    }
     case 'dunes': {
-      const bg = tokens['--bg'] || 'transparent';
       const c1 = _hexAlpha(pc, op * 0.5);
       const c2 = _hexAlpha(pc, op);
-      // Dunes uses a full gradient override — expressed as bg-image over solid --bg
-      bgImage  = `linear-gradient(180deg, transparent 0%, transparent 55%, ${c1} 80%, ${c2} 100%)`;
-      bgRepeat = 'no-repeat';
-      bgSize   = '100% 100%';
+      const patGrad = `linear-gradient(180deg, transparent 0%, transparent 55%, ${c1} 80%, ${c2} 100%)`;
+      if (hasImage) {
+        bgImage  = `url(${JSON.stringify(bgImageUrl)}), ${patGrad}`;
+        bgSize   = `auto 100%, 100% 100%`;
+        bgRepeat = `no-repeat, no-repeat`;
+        bgPos    = 'center bottom, center center';
+      } else {
+        bgImage  = patGrad;
+        bgRepeat = 'no-repeat';
+        bgSize   = '100% 100%';
+      }
       break;
     }
     case 'custom':
-      if (bgImageUrl) {
-        bgImage = `url(${JSON.stringify(bgImageUrl)})`;
-        bgSize  = 'cover';
-      }
-      break;
     default:
+      // No pattern — image only (or neither)
       if (bgImageUrl) {
         bgImage = `url(${JSON.stringify(bgImageUrl)})`;
-        bgSize  = 'cover';
+        bgSize  = 'auto 100%';
+        bgPos   = 'center bottom';
       }
       break;
   }
 
   // Set via CSS vars so they integrate with the body background shorthands in style.css
   // and are tracked in activeThemeVarKeys for cleanup on next theme load.
+  const rawBlur = tokens['--bg-blur'];
+  const blurPx = rawBlur !== undefined ? Math.min(Math.max(parseFloat(rawBlur) || 0, 0), 40) : 0;
+  const overlayColor = tokens['--bg-overlay-color'] || 'transparent';
+  const rawOverlayOp = tokens['--bg-overlay-opacity'];
+  const overlayOp = rawOverlayOp !== undefined ? Math.min(Math.max(parseFloat(rawOverlayOp) || 0, 0), 1) : 0;
+
   const appVars = {
     '--app-bg-image':    bgImage,
     '--app-bg-size':     bgSize,
     '--app-bg-repeat':   bgRepeat,
     '--app-bg-position': bgPos,
+    '--app-bg-blur':     `${blurPx}px`,
+    '--app-overlay-color':   overlayColor,
+    '--app-overlay-opacity': String(overlayOp),
   };
   Object.entries(appVars).forEach(([name, value]) => {
     root.style.setProperty(name, value);
@@ -2712,7 +3113,7 @@ function applyThemeBgPattern(root, tokens) {
   });
 }
 
-function applyThemePayload(themePayload, themeIdFromManifest = null) {
+function applyThemePayload(themePayload, themeIdFromManifest = null, source = 'unknown') {
   const root = document.documentElement;
   const themeId = themeIdFromManifest || themePayload?.id || 'dark';
   const baseTheme = themePayload?.baseTheme === 'light' ? 'light' : 'dark';
@@ -2769,6 +3170,12 @@ function applyThemePayload(themePayload, themeIdFromManifest = null) {
   }
 
   activeThemeId = themeId;
+  activeThemeSource = source;
+  activeThemeTokenSignature = computeThemeTokenSignature(tokens);
+  activeThemePattern = String(tokens['--bg-pattern'] || 'none');
+  activeThemeHasImage = !!String(tokens['--bg-image-url'] || '').trim();
+  updateThemeDiagNote();
+  updateThemeDiagNoteVisibility();
   if (hostThemeSelect && hostThemeSelect.value !== themeId) {
     hostThemeSelect.value = themeId;
   }
@@ -2830,7 +3237,7 @@ async function loadThemeById(themeId, { silent = false } = {}) {
         if (apiRes.ok) {
           const dynamicPayload = await apiRes.json();
           if (dynamicPayload && typeof dynamicPayload.tokens === 'object') {
-            applyThemePayload(dynamicPayload, resolvedId);
+            applyThemePayload(dynamicPayload, resolvedId, 'api-theme');
             return resolvedId;
           }
         }
@@ -2847,7 +3254,7 @@ async function loadThemeById(themeId, { silent = false } = {}) {
     const response = await fetch(entry.file, { cache: 'no-store' });
     if (!response.ok) throw new Error(`Theme file load failed: ${response.status}`);
     const payload = await response.json();
-    applyThemePayload(payload, entry.id);
+    applyThemePayload(payload, entry.id, 'manifest-file');
     return entry.id;
   } catch (error) {
     if (!silent) console.error('[theme] failed to load theme', themeId, error);
@@ -2934,7 +3341,7 @@ window.getGameThemes = async () => {
           const b = parseInt(hex.slice(4, 6), 16);
           if (!isNaN(r + g + b) && (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.5) baseTheme = 'light';
         }
-        applyThemePayload({ id: themeId, name: themeId, baseTheme, tokens }, themeId);
+        applyThemePayload({ id: themeId, name: themeId, baseTheme, tokens }, themeId, 'url-tokens');
         await hydrateThemeSelect();
         return;
       }
@@ -2945,11 +3352,28 @@ window.getGameThemes = async () => {
     try { return localStorage.getItem(THEME_KEY); } catch (_) { return null; }
   })();
   let initialThemeId = normalizeRuntimeThemeId(themeQueryFromUrl) || null;
+  if (DIAGNOSTICS_ENABLED) console.log(`[theme-diag] IIFE start | themeQueryFromUrl=${themeQueryFromUrl} | storedTheme=${storedTheme} | serverPushedTheme=${serverPushedTheme}`);
 
   if (!initialThemeId) {
     try {
       const initialQuizInfo = await initialQuizInfoPromise;
       initialThemeId = normalizeRuntimeThemeId(initialQuizInfo?.themeId) || null;
+      if (DIAGNOSTICS_ENABLED) console.log(`[theme-diag] quizInfo resolved | quizInfo.themeId=${initialQuizInfo?.themeId} | initialThemeId=${initialThemeId}`);
+      const startupThemeVars = (initialQuizInfo && typeof initialQuizInfo.resolvedThemeVars === 'object')
+        ? initialQuizInfo.resolvedThemeVars
+        : null;
+      if (startupThemeVars && Object.keys(startupThemeVars).length > 0) {
+        const startupPayload = {
+          id: initialThemeId || initialQuizInfo?.themeId || 'quiz-theme',
+          name: initialQuizInfo?.themeId || initialThemeId || 'quiz-theme',
+          baseTheme: 'dark',
+          tokens: startupThemeVars,
+        };
+        serverPushedTheme = true;
+        lastServerThemePayload = startupPayload;
+        if (DIAGNOSTICS_ENABLED) console.log(`[theme-diag] applying startup resolvedThemeVars (${Object.keys(startupThemeVars).length} vars)`);
+        applyThemePayload(startupPayload, startupPayload.id || null, 'quiz-info-startup');
+      }
     } catch (_) {
       initialThemeId = null;
     }
@@ -2959,7 +3383,22 @@ window.getGameThemes = async () => {
     initialThemeId = normalizeRuntimeThemeId(storedTheme) || 'dark';
   }
 
-  await loadThemeById(initialThemeId);
+  if (DIAGNOSTICS_ENABLED) console.log(`[theme-diag] before loadTheme | finalInitialThemeId=${initialThemeId} | serverPushedTheme=${serverPushedTheme}`);
+  // Don't overwrite a theme that the server already pushed
+  if (!serverPushedTheme) {
+    if (DIAGNOSTICS_ENABLED) console.log(`[theme-diag] calling loadThemeById("${initialThemeId}")`);
+    await loadThemeById(initialThemeId);
+    if (DIAGNOSTICS_ENABLED) console.log(`[theme-diag] loadThemeById done | activeThemeId=${activeThemeId} | serverPushedTheme=${serverPushedTheme}`);
+    // Race guard: room:theme may have arrived DURING the async loadThemeById call
+    // (which falls back to dark if the theme lacks a static manifest entry).
+    // Re-apply the server payload now to win the race.
+    if (serverPushedTheme && lastServerThemePayload) {
+      if (DIAGNOSTICS_ENABLED) console.log(`[theme-diag] race-guard re-apply: server payload id=${lastServerThemePayload.id}`);
+      applyThemePayload(lastServerThemePayload, lastServerThemePayload.id || null, 'server-push-reapply');
+    }
+  } else {
+    if (DIAGNOSTICS_ENABLED) console.log(`[theme-diag] skipped loadThemeById — server already pushed theme`);
+  }
   await hydrateThemeSelect();
 })();
 
@@ -3187,8 +3626,32 @@ if (switchGameDialog) {
 
 // Host-as-Player toggle
 const chkHostAsPlayer = document.getElementById('chk-host-as-player');
+const chkHostAsPlayerInline = document.getElementById('chk-host-as-player-inline');
 const hostPlayerForm  = document.getElementById('host-player-form');
 const hostAsPlayerSection = document.getElementById('host-as-player-section');
+
+function setHostAsPlayerCheckboxes(checked) {
+  const next = !!checked;
+  if (chkHostAsPlayer && chkHostAsPlayer.checked !== next) chkHostAsPlayer.checked = next;
+  if (chkHostAsPlayerInline && chkHostAsPlayerInline.checked !== next) chkHostAsPlayerInline.checked = next;
+}
+
+function updateHostInlineJoinToggleVisibility(players = []) {
+  const hostInlineJoinToggleRow = document.getElementById('host-inline-join-toggle-row');
+  if (!hostInlineJoinToggleRow) return;
+  const count = Array.isArray(players) ? players.length : 0;
+  hostInlineJoinToggleRow.style.display = (state.role === 'host' && count >= 1 && getLobbyPlayMode() === 'team') ? 'grid' : 'none';
+}
+
+function handleHostAsPlayerCheckboxToggle(checked) {
+  setHostAsPlayerCheckboxes(checked);
+  if (checked) {
+    if (!state.hostIsPlayer) openHostJoinDialog();
+  } else {
+    closeHostJoinDialog();
+    if (state.hostIsPlayer) socket.emit('host:join_as_player', { nickname: '' });
+  }
+}
 
 // ── Host "Join as Player" dialog ──
 let _hostJoinAvatar = state.avatar || '🎮';
@@ -3302,7 +3765,7 @@ function openHostJoinDialog() {
 
   cancelBtn.addEventListener('click', () => {
     overlay.remove();
-    if (chkHostAsPlayer) chkHostAsPlayer.checked = false;
+    setHostAsPlayerCheckboxes(false);
   });
 
   // Enter key submits
@@ -3316,7 +3779,7 @@ function openHostJoinDialog() {
 
   overlay.appendChild(dialog);
   overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) { overlay.remove(); if (chkHostAsPlayer) chkHostAsPlayer.checked = false; }
+    if (e.target === overlay) { overlay.remove(); setHostAsPlayerCheckboxes(false); }
   });
   document.body.appendChild(overlay);
 
@@ -3331,12 +3794,13 @@ function closeHostJoinDialog() {
 
 if (chkHostAsPlayer) {
   chkHostAsPlayer.addEventListener('change', () => {
-    if (chkHostAsPlayer.checked) {
-      if (!state.hostIsPlayer) openHostJoinDialog();
-    } else {
-      closeHostJoinDialog();
-      if (state.hostIsPlayer) socket.emit('host:join_as_player', { nickname: '' });
-    }
+    handleHostAsPlayerCheckboxToggle(chkHostAsPlayer.checked);
+  });
+}
+
+if (chkHostAsPlayerInline) {
+  chkHostAsPlayerInline.addEventListener('change', () => {
+    handleHostAsPlayerCheckboxToggle(chkHostAsPlayerInline.checked);
   });
 }
 
@@ -3349,67 +3813,94 @@ function getSessionOptions() {
   return { sessionRandomize: randomize, sessionQuestionLimit: questionLimit };
 }
 
+const hostLobbyView = document.getElementById('view-host-lobby');
+const lobbyModeTeamBtn = document.getElementById('btn-lobby-mode-team');
+const lobbyModeSoloBtn = document.getElementById('btn-lobby-mode-solo');
+
+function setLobbyPlayMode(mode) {
+  const normalized = mode === 'solo' ? 'solo' : 'team';
+  if (hostLobbyView) hostLobbyView.setAttribute('data-lobby-play-mode', normalized);
+  if (lobbyModeTeamBtn) lobbyModeTeamBtn.classList.toggle('is-active', normalized === 'team');
+  if (lobbyModeSoloBtn) lobbyModeSoloBtn.classList.toggle('is-active', normalized === 'solo');
+
+  refreshHostStartButton(state.hostLobbyPlayers || []);
+  updateHostInlineJoinToggleVisibility(state.hostLobbyPlayers || []);
+}
+
+function getLobbyPlayMode() {
+  return hostLobbyView?.getAttribute('data-lobby-play-mode') === 'solo' ? 'solo' : 'team';
+}
+
+function refreshHostStartButton(players) {
+  const startBtn = document.getElementById('btn-start-game');
+  if (!startBtn) return;
+
+  const mode = getLobbyPlayMode();
+  if (mode === 'solo') {
+    startBtn.disabled = !!soloAutoStarting;
+    startBtn.textContent = soloAutoStarting ? '⏳ جاري التحضير...' : '▶️ ابدأ اللعب الفردي';
+    return;
+  }
+
+  const count = Array.isArray(players) ? players.length : 0;
+  startBtn.disabled = !!soloAutoStarting || count === 0;
+  startBtn.textContent = '🚀 ابدأ اللعبة';
+}
+
+function triggerSoloPlay({ fromAuto = false } = {}) {
+  if (soloAutoStarting) return;
+  setLobbyPlayMode('solo');
+  soloAutoStarting = true;
+  if (!fromAuto) Sounds.click();
+  refreshHostStartButton(state.hostLobbyPlayers || []);
+
+  // Generate a solo nickname
+  const soloNick = hostNameFromUrl || 'المضيف';
+  const soloAvatar = state.avatar || '🎮';
+
+  // Listen for join confirmation, then auto-start
+  const onJoined = ({ joined }) => {
+    if (joined) {
+      enableKeepAwake();
+      socket.emit('host:start', { ...getSessionOptions(), ...getHostAuthPayload() });
+    } else {
+      soloAutoStarting = false;
+      refreshHostStartButton(state.hostLobbyPlayers || []);
+    }
+    socket.off('host:joined_as_player', onJoined);
+  };
+  socket.on('host:joined_as_player', onJoined);
+
+  socket.emit('host:join_as_player', { nickname: soloNick, avatar: soloAvatar });
+}
+
 document.getElementById('btn-start-game').addEventListener('click', () => {
+  if (getLobbyPlayMode() === 'solo') {
+    triggerSoloPlay({ fromAuto: false });
+    return;
+  }
   soloAutoStarting = false;
   const btn = document.getElementById('btn-start-game');
   btn.disabled = true;
   btn.textContent = '⏳ جاري التحضير...';
-  // Disable solo button to prevent double-click confusion
-  if (soloPlayBtn) soloPlayBtn.disabled = true;
   enableKeepAwake();
   Sounds.click();
   socket.emit('host:start', { ...getSessionOptions(), ...getHostAuthPayload() });
 });
 
-// Solo Play — auto-join as player, then start once confirmed
-const soloPlayBtn = document.getElementById('btn-solo-play');
-if (soloPlayBtn) {
-  soloPlayBtn.addEventListener('click', () => {
-    soloAutoStarting = true;
-    Sounds.click();
-    soloPlayBtn.disabled = true;
-    soloPlayBtn.textContent = '⏳ جاري التحضير...';
-    // Disable start game button to prevent double-click confusion
-    const startBtn = document.getElementById('btn-start-game');
-    if (startBtn) startBtn.disabled = true;
-
-    // Generate a solo nickname
-    const soloNick = hostNameFromUrl || 'المضيف';
-    const soloAvatar = state.avatar || '🎮';
-
-    // Listen for join confirmation, then auto-start
-    const onJoined = ({ joined }) => {
-      if (joined) {
-        enableKeepAwake();
-        socket.emit('host:start', { ...getSessionOptions(), ...getHostAuthPayload() });
-      } else {
-        soloAutoStarting = false;
-        soloPlayBtn.disabled = false;
-        soloPlayBtn.textContent = '🎯 العب بنفسي';
-        // Re-enable start game button on failure
-        const startBtn = document.getElementById('btn-start-game');
-        if (startBtn) startBtn.disabled = false;
-      }
-      socket.off('host:joined_as_player', onJoined);
-    };
-    socket.on('host:joined_as_player', onJoined);
-
-    socket.emit('host:join_as_player', { nickname: soloNick, avatar: soloAvatar });
+if (lobbyModeTeamBtn) {
+  lobbyModeTeamBtn.addEventListener('click', () => {
+    setLobbyPlayMode('team');
   });
 }
 
-/** Update solo button visibility based on player count */
-function updateSoloButtonVisibility(players) {
-  if (!soloPlayBtn) return;
-  const realCount = players.filter(p => !p.isHost).length;
-  if (realCount > 0) {
-    soloPlayBtn.classList.add('hidden');
-  } else {
-    soloPlayBtn.classList.remove('hidden');
-    soloPlayBtn.disabled = false;
-    soloPlayBtn.textContent = '🎯 العب بنفسي';
-  }
+if (lobbyModeSoloBtn) {
+  lobbyModeSoloBtn.addEventListener('click', () => {
+    setLobbyPlayMode('solo');
+  });
 }
+
+setLobbyPlayMode('team');
 
 document.getElementById('btn-copy-join-url').addEventListener('click', async () => {
   Sounds.click();
@@ -3510,10 +4001,13 @@ document.getElementById('btn-role-action').addEventListener('click', () => {
 });
 
 // Mute toggle
-document.getElementById('btn-mute').addEventListener('click', () => {
-  setMuted(!isMuted());
-  document.getElementById('btn-mute').textContent = isMuted() ? '🔇' : '🔊';
+document.querySelectorAll('[data-mute-toggle]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    setMuted(!isMuted());
+    syncMuteButtons();
+  });
 });
+syncMuteButtons();
 
 // ── Post-Game Vote Buttons ──────────────────
 // Each vote button emits a socket vote and marks itself selected
@@ -3587,11 +4081,18 @@ socket.on('room:created', ({ pin, reclaimed, ...modeInfo }) => {
     const hostPinEl = document.getElementById('host-pin');
     if (hostPinEl) hostPinEl.textContent = pin;
     applyModeInfo(modeInfo);
-    
-    // Safety check: if host was stuck in the "Preparing..." screen, they must see the lobby.
+
+    // Safety check: if host was on loading screen, keep loading for quiz launches
+    // until room:theme arrives (same behavior as fresh create path).
     const currentView = document.querySelector('.view-active');
     if (!currentView || currentView.id === 'view-host-loading' || currentView.id === 'view-host-launch') {
-      showView('view-host-lobby');
+      if (quizSlugFromUrl) {
+        holdLobbyForTheme = true;
+        setConnectionStatus('warn', 'Loading quiz theme…');
+        if (DIAGNOSTICS_ENABLED) console.log(`[theme-diag] room:created reclaimed | pin=${pin} | keep loading until room:theme arrives`);
+      } else {
+        showView('view-host-lobby');
+      }
     }
     return;
   }
@@ -3611,7 +4112,16 @@ socket.on('room:created', ({ pin, reclaimed, ...modeInfo }) => {
   if (refreshBtn) refreshBtn.disabled = false;
 
   applyModeInfo(modeInfo);
-  showView('view-host-lobby');
+  if (quizSlugFromUrl) {
+    if (DIAGNOSTICS_ENABLED) console.log(`[theme-diag] room:created | pin=${pin} | keep loading until room:theme arrives`);
+    // True loading mode: do not reveal host lobby until the server emits
+    // room:theme for this room.
+    holdLobbyForTheme = true;
+    setConnectionStatus('warn', 'Loading quiz theme…');
+  } else {
+    // Non-quiz host flow: no remote quiz theme to wait for.
+    showView('view-host-lobby');
+  }
 });
 
 /** HOST: PIN refreshed successfully */
@@ -3633,6 +4143,20 @@ socket.on('room:pin_refreshed', ({ pin, ...modeInfo }) => {
 /** HOST: Mode updated (local/global) */
 socket.on('room:mode', (modeInfo) => {
   applyModeInfo(modeInfo);
+});
+
+/** HOST: Theme resolved from quiz data — pushed by server after quiz loads */
+socket.on('room:theme', (themePayload) => {
+  if (DIAGNOSTICS_ENABLED) console.log(`[theme-diag] room:theme received | id=${themePayload?.id} | hasTokens=${!!(themePayload?.tokens && Object.keys(themePayload.tokens).length > 0)} | holdLobbyForTheme=${holdLobbyForTheme}`);
+  if (themePayload && themePayload.tokens && Object.keys(themePayload.tokens).length > 0) {
+    serverPushedTheme = true;
+    lastServerThemePayload = themePayload;
+    applyThemePayload(themePayload, themePayload.id || null, 'server-push');
+    // If we were holding the lobby waiting for the theme, release it now.
+    releaseLobbyHold();
+  } else {
+    if (DIAGNOSTICS_ENABLED) console.warn(`[theme-diag] room:theme payload invalid or empty — not applying`, themePayload);
+  }
 });
 
 // Track whether this is the initial connect or a mid-session reconnect
@@ -3712,6 +4236,7 @@ socket.on('room:joined', (data) => {
     const nickname = data?.nickname;
     const avatar = data?.avatar;
     const players = data?.players;
+    const themePayload = data?.themePayload;
 
     markDiagEvent('room:joined');
     pushJoinDebugLog(`room:joined success players=${Array.isArray(players) ? players.length : 0}`);
@@ -3753,6 +4278,14 @@ socket.on('room:joined', (data) => {
     }
     
     if (window.__dbgLog) window.__dbgLog('room:joined -> showView(view-player-lobby)');
+
+    // Apply theme received from server (resolved from quiz data server-side)
+    if (themePayload && themePayload.tokens && Object.keys(themePayload.tokens).length > 0) {
+      serverPushedTheme = true;
+      lastServerThemePayload = themePayload;
+      applyThemePayload(themePayload, themePayload.id || null, 'server-push');
+    }
+
     showView('view-player-lobby');
 
     // Trigger media preloading for the player
@@ -3777,16 +4310,13 @@ socket.on('room:player_joined', ({ players }) => {
       if (listEl && countEl) {
         renderPlayerList(players, listEl, countEl, true);
       }
-      const startBtn = document.getElementById('btn-start-game');
-      if (startBtn) startBtn.disabled = soloAutoStarting || players.length === 0;
+      refreshHostStartButton(players);
 
       // Disable refresh once real players are in
       const realCount = players.filter(p => !p.isHost).length;
       const refreshBtn = document.getElementById('btn-refresh-pin');
       if (refreshBtn) refreshBtn.disabled = realCount > 0;
 
-      // Show/hide solo button
-      updateSoloButtonVisibility(players);
     } else {
       const listEl = document.getElementById('player-player-list');
       const countEl = document.getElementById('player-player-count');
@@ -3961,15 +4491,14 @@ socket.on('host:joined_as_player', ({ joined, nickname, avatar }) => {
   state.hostIsPlayer = !!joined;
   closeHostJoinDialog();
   const statusEl = document.getElementById('host-as-player-status');
-  const chk = document.getElementById('chk-host-as-player');
   const hostAsPlayerBlock = document.getElementById('host-as-player-section');
   if (joined) {
     if (statusEl) statusEl.textContent = `\u2705 Playing as "${nickname}"`;
-    if (chk) chk.checked = true;
+    setHostAsPlayerCheckboxes(true);
     if (hostAsPlayerBlock) hostAsPlayerBlock.classList.add('join-enabled');
   } else {
     if (statusEl) statusEl.textContent = '';
-    if (chk) chk.checked = false;
+    setHostAsPlayerCheckboxes(false);
     if (hostAsPlayerBlock) hostAsPlayerBlock.classList.remove('join-enabled');
   }
 });
@@ -4003,8 +4532,7 @@ socket.on('room:error', ({ message, code }) => {
     // Reset start button if it was in loading state
     const startBtn = document.getElementById('btn-start-game');
     if (startBtn) {
-      startBtn.disabled = false;
-      startBtn.textContent = '🚀 ابدأ اللعبة';
+      refreshHostStartButton(state.hostLobbyPlayers || []);
     }
 
     if (code === 'XO_DUEL_NOT_ENOUGH_PLAYERS') {
@@ -4013,6 +4541,7 @@ socket.on('room:error', ({ message, code }) => {
         waitingEl.style.display = 'block';
         waitingEl.style.color = '#f87171';
         waitingEl.style.fontWeight = '700';
+        waitingEl.dataset.state = 'alert';
         waitingEl.textContent = message;
       }
       return;
@@ -4055,8 +4584,12 @@ socket.on('host:state_sync', (payload = {}) => {
 
   const startBtn = document.getElementById('btn-start-game');
   if (startBtn) {
-    startBtn.disabled = soloAutoStarting || roomState !== 'lobby' || players.length === 0;
-    startBtn.textContent = '🚀 ابدأ اللعبة';
+    if (roomState !== 'lobby') {
+      startBtn.disabled = true;
+      startBtn.textContent = '🚀 ابدأ اللعبة';
+    } else {
+      refreshHostStartButton(players);
+    }
   }
 
   if (roomState === 'lobby') {
@@ -4228,7 +4761,7 @@ socket.on('game:question', (data) => {
     dismissFinalQuestionOverlay();
 
     // If host is also playing, show the player (interactive) question view
-    console.log('[v54] game:question fired, state.role=' + state.role + ', hostIsPlayer=' + state.hostIsPlayer + ', qi=' + data.questionIndex); if (window.__dbgLog) window.__dbgLog('game:Q role=' + state.role + ' qi=' + data.questionIndex);
+    if (DIAGNOSTICS_ENABLED) console.log('[v54] game:question fired, state.role=' + state.role + ', hostIsPlayer=' + state.hostIsPlayer + ', qi=' + data.questionIndex); if (window.__dbgLog) window.__dbgLog('game:Q role=' + state.role + ' qi=' + data.questionIndex);
     const isHostOnly = state.role === 'host' && !state.hostIsPlayer;
     renderQuestion(data, isHostOnly);
   } catch (err) {
@@ -4262,7 +4795,7 @@ socket.on('game:paused', () => {
   if (btn) { btn.dataset.paused = 'true'; }
   // Also update player-view pause button (solo mode)
   const pbtn = document.getElementById('btn-player-pause-resume');
-  if (pbtn) { pbtn.textContent = '▶️ استئناف'; pbtn.dataset.paused = 'true'; }
+  if (pbtn) { pbtn.dataset.paused = 'true'; }
   const overlay = document.getElementById('overlay-paused');
   const overlayBtn = document.getElementById('btn-overlay-resume');
   if (state.role === 'host') {
@@ -4284,15 +4817,16 @@ socket.on('game:resumed', ({ timeRemaining }) => {
   if (btn) { btn.dataset.paused = 'false'; }
   // Also update player-view pause button (solo mode)
   const pbtn2 = document.getElementById('btn-player-pause-resume');
-  if (pbtn2) { pbtn2.textContent = '⏸️ إيقاف'; pbtn2.dataset.paused = 'false'; }
+  if (pbtn2) { pbtn2.dataset.paused = 'false'; }
   // Restart client timer with remaining seconds
   state.questionStartTime = Date.now() - ((state.questionDuration - timeRemaining) * 1000);
   const isHost = state.role === 'host';
+  const isSoloHost = state.role === 'host' && state.hostIsPlayer;
   const resumedQI = state.questionIndex;
   startClientTimer(
     timeRemaining,
-    document.getElementById(isHost ? 'host-timer-count' : 'player-timer-count'),
-    document.getElementById(isHost ? 'host-timer-ring' : 'player-timer-ring'),
+    document.getElementById(isHost ? (isSoloHost ? 'solo-host-timer-count' : 'host-timer-count') : 'player-timer-count'),
+    document.getElementById(isHost ? (isSoloHost ? 'solo-host-timer-ring' : 'host-timer-ring') : 'player-timer-ring'),
     () => {
       if (!isHost || state.hostIsPlayer) {
         if (!state.hasAnswered) {
@@ -4600,8 +5134,7 @@ socket.on('room:reset', ({ players, modeInfo, hostIsPlayer }) => {
   updatePlayerScoreUI();
   document.getElementById('overlay-paused').style.display = 'none';
   // Reset the host-as-player UI for the fresh session
-  const chkReset = document.getElementById('chk-host-as-player');
-  if (chkReset) chkReset.checked = state.hostIsPlayer;
+  setHostAsPlayerCheckboxes(state.hostIsPlayer);
   const formReset = document.getElementById('host-player-form');
   if (formReset) formReset.style.display = state.hostIsPlayer ? 'flex' : 'none';
   const hostAsPlayerBlockReset = document.getElementById('host-as-player-section');
@@ -4614,13 +5147,14 @@ socket.on('room:reset', ({ players, modeInfo, hostIsPlayer }) => {
 
   if (state.role === 'host') {
     if (modeInfo) applyModeInfo(modeInfo);
+    updateHostInlineJoinToggleVisibility(players || []);
     const listEl = document.getElementById('host-player-list');
     const countEl = document.getElementById('host-player-count');
     if (listEl && countEl) {
       renderPlayerList(players || [], listEl, countEl, true);
     }
     const startBtn = document.getElementById('btn-start-game');
-    if (startBtn) startBtn.disabled = soloAutoStarting || !(players && players.length > 0);
+    if (startBtn) refreshHostStartButton(players || []);
     showView('view-host-lobby');
   } else {
     const listEl = document.getElementById('player-player-list');
@@ -4870,4 +5404,4 @@ window._qState = state;
 window._renderHostQuestion = renderHostQuestion;
 window._renderPlayerQuestion = renderPlayerQuestion;
 window._showView = showView;
-console.log('[game.js v56] Debug surface ready: window._qState, window._renderHostQuestion');
+if (DIAGNOSTICS_ENABLED) console.log('[game.js v56] Debug surface ready: window._qState, window._renderHostQuestion');

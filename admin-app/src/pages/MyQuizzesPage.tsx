@@ -254,7 +254,11 @@ export function MyQuizzesPage() {
                     className="hero-img"
                   />
                   <a
-                    href={buildHostGameUrl({ serverBase: SERVER_BASE, quizId: q.id, gameModeId: q.gameModeId, themeId: q.themeId })}
+                    href={buildHostGameUrl({
+                      serverBase: SERVER_BASE,
+                      quizId: q.id,
+                      gameModeId: q.gameModeId,
+                    })}
                     target="_blank" rel="noopener noreferrer"
                     onClick={(e) => { e.preventDefault(); vfx.floatText(t.playLabel, e.clientX, e.clientY); window.open(e.currentTarget.href, '_blank') }}
                     className="play-overlay"
@@ -287,7 +291,6 @@ export function MyQuizzesPage() {
                       navigator.clipboard.writeText(buildPlayerGameUrl({
                         serverBase: SERVER_BASE,
                         quizId: q.id,
-                        themeId: q.themeId,
                       }))
                       showToast({ message: t.linkCopied, type: 'success' })
                       incrementShareCount(q.id).catch(console.error)

@@ -1,7 +1,6 @@
-import { type CSSProperties, type ReactNode, useEffect } from 'react'
-import { type ThemePaletteTokens } from '../../lib/adminRepo'
+import { useEffect, useMemo } from 'react'
+import { type ThemePaletteTokens, themeTokensToCssVars } from '../../lib/adminRepo'
 
-// ── Google Font loader ────────────────────────────────────────────────────────
 export function loadGoogleFont(name: string) {
   if (!name) return
   const id = `gfont-${name.replace(/\s+/g, '-').toLowerCase()}`
@@ -13,7 +12,6 @@ export function loadGoogleFont(name: string) {
   document.head.appendChild(link)
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
 function hexToRgb(hex: string): [number, number, number] {
   const h = hex.replace('#', '')
   return [
@@ -32,222 +30,325 @@ function hexAlpha(hex: string, alpha: number): string {
   }
 }
 
-export function getPatternStyle(t: ThemePaletteTokens): CSSProperties {
-  const pc = t.bgPatternColor ?? t.surface2
-  const op = t.bgPatternOpacity ?? 0.25
-  switch (t.bgPattern) {
-    case 'dots':
-      return {
-        background: t.bg,
-        backgroundImage: `radial-gradient(circle, ${hexAlpha(pc, op)} 1.5px, transparent 1.5px)`,
-        backgroundSize: '22px 22px',
+function guessBaseTheme(bgColor?: string): 'light' | 'dark' {
+  if (!bgColor) return 'dark'
+  const hex = bgColor.replace('#', '').trim()
+  if (hex.length !== 6) return 'dark'
+  const r = parseInt(hex.slice(0, 2), 16)
+  const g = parseInt(hex.slice(2, 4), 16)
+  const b = parseInt(hex.slice(4, 6), 16)
+  if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) return 'dark'
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+  return luminance > 0.5 ? 'light' : 'dark'
+}
+
+function getRuntimeBaseUrl(): string {
+  const isLocal = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
+  if (isLocal) return import.meta.env.VITE_LOCAL_GAME_URL || 'http://localhost:3001'
+  return import.meta.env.VITE_API_BASE_URL || 'https://play.qyan.app'
+}
+
+function buildBgVars(t: ThemePaletteTokens): Record<string, string> {
+  const pattern = t.bgPattern || 'none'
+  const patternColor = t.bgPatternColor || t.surface2
+  const opacity = t.bgPatternOpacity ?? 0.25
+  const imageUrl = t.bgImageUrl || ''
+  const hasImage = !!imageUrl
+  const blurPx = Math.min(Math.max(t.bgBlur ?? 0, 0), 40)
+  const overlayColor = t.bgOverlayColor || 'transparent'
+  const overlayOpacity = Math.min(Math.max(t.bgOverlayOpacity ?? 0, 0), 1)
+
+  let bgImage = 'none'
+  let bgSize = 'cover'
+  let bgRepeat = 'no-repeat'
+  let bgPosition = 'center center'
+
+  switch (pattern) {
+    case 'dots': {
+      const patGrad = `radial-gradient(circle, ${hexAlpha(patternColor, opacity)} 1.5px, transparent 1.5px)`
+      if (hasImage) {
+        // image on top, pattern behind
+        bgImage = `url("${imageUrl}"), ${patGrad}`
+        bgSize = `auto 100%, 22px 22px`
+        bgRepeat = `no-repeat, repeat`
+        bgPosition = 'center bottom, center center'
+      } else {
+        bgImage = patGrad
+        bgSize = '22px 22px'
+        bgRepeat = 'repeat'
       }
-    case 'grid':
-      return {
-        background: t.bg,
-        backgroundImage: `linear-gradient(${hexAlpha(pc, op)} 1px, transparent 1px), linear-gradient(90deg, ${hexAlpha(pc, op)} 1px, transparent 1px)`,
-        backgroundSize: '24px 24px',
+      break
+    }
+    case 'grid': {
+      const patGrad = `linear-gradient(${hexAlpha(patternColor, opacity)} 1px, transparent 1px), linear-gradient(90deg, ${hexAlpha(patternColor, opacity)} 1px, transparent 1px)`
+      if (hasImage) {
+        bgImage = `url("${imageUrl}"), ${patGrad}`
+        bgSize = `auto 100%, 24px 24px`
+        bgRepeat = `no-repeat, repeat`
+        bgPosition = 'center bottom, center center'
+      } else {
+        bgImage = patGrad
+        bgSize = '24px 24px'
+        bgRepeat = 'repeat'
       }
-    case 'stripes':
-      return {
-        background: t.bg,
-        backgroundImage: `repeating-linear-gradient(45deg, transparent, transparent 10px, ${hexAlpha(pc, op)} 10px, ${hexAlpha(pc, op)} 11px)`,
+      break
+    }
+    case 'stripes': {
+      const patGrad = `repeating-linear-gradient(45deg, transparent, transparent 10px, ${hexAlpha(patternColor, opacity)} 10px, ${hexAlpha(patternColor, opacity)} 11px)`
+      if (hasImage) {
+        bgImage = `url("${imageUrl}"), ${patGrad}`
+        bgSize = `auto 100%, auto`
+        bgRepeat = `no-repeat, repeat`
+        bgPosition = 'center bottom, center center'
+      } else {
+        bgImage = patGrad
+        bgRepeat = 'repeat'
       }
+      break
+    }
     case 'dunes': {
-      const c1 = hexAlpha(pc, op * 0.5)
-      const c2 = hexAlpha(pc, op)
-      return { background: `linear-gradient(180deg, ${t.bg} 0%, ${t.bg} 55%, ${c1} 80%, ${c2} 100%)` }
+      const patGrad = `linear-gradient(180deg, transparent 0%, transparent 55%, ${hexAlpha(patternColor, opacity * 0.5)} 80%, ${hexAlpha(patternColor, opacity)} 100%)`
+      if (hasImage) {
+        bgImage = `url("${imageUrl}"), ${patGrad}`
+        bgSize = `auto 100%, 100% 100%`
+        bgRepeat = `no-repeat, no-repeat`
+        bgPosition = 'center bottom, center center'
+      } else {
+        bgImage = patGrad
+        bgSize = '100% 100%'
+        bgRepeat = 'no-repeat'
+      }
+      break
     }
     case 'custom':
-      if (t.bgImageUrl) return { background: `${t.bg} url("${t.bgImageUrl}") center / cover no-repeat` }
-      return { background: t.bg }
+      // legacy: treat same as default (image only)
+      if (imageUrl) {
+        bgImage = `url("${imageUrl}")`
+        bgSize = 'auto 100%'
+        bgRepeat = 'no-repeat'
+        bgPosition = 'center bottom'
+      }
+      break
     default:
-      return { background: t.bg }
+      if (imageUrl) {
+        bgImage = `url("${imageUrl}")`
+        bgSize = 'auto 100%'
+        bgRepeat = 'no-repeat'
+        bgPosition = 'center bottom'
+      }
+      break
+  }
+
+  return {
+    '--app-bg-image': bgImage,
+    '--app-bg-size': bgSize,
+    '--app-bg-repeat': bgRepeat,
+    '--app-bg-position': bgPosition,
+    '--app-bg-blur': `${blurPx}px`,
+    '--app-overlay-color': overlayColor,
+    '--app-overlay-opacity': String(overlayOpacity),
   }
 }
 
-function fontStyle(t: ThemePaletteTokens, heading = false): CSSProperties {
-  const font = heading ? t.headingFont : t.bodyFont
-  return font ? { fontFamily: `'${font}', sans-serif` } : {}
+export type PreviewTabId = 'mcq' | 'drag' | 'tf' | 'open' | 'order'
+
+function getQuestionBodyHtml(tab: PreviewTabId): string {
+  if (tab === 'drag') {
+    return `
+      <div id="player-match-container" class="match-container" style="display:block">
+        <div class="match-dnd-layout">
+          <div class="match-dnd-slots">
+            <div class="match-dnd-row"><div class="match-dnd-label">الهجرة النبوية</div><div class="match-dropzone match-dz-empty"><span class="match-drop-hint">drop here</span></div></div>
+            <div class="match-dnd-row"><div class="match-dnd-label">فتح مكة</div><div class="match-dropzone match-dz-filled"><span class="match-chip in-slot opt-cyan">السنة الثامنة هجري</span></div></div>
+            <div class="match-dnd-row"><div class="match-dnd-label">معركة بدر</div><div class="match-dropzone match-dz-empty"><span class="match-drop-hint">drop here</span></div></div>
+          </div>
+          <div class="match-dnd-pool">
+            <span class="match-pool-label">Drag to match</span>
+            <span class="match-chip in-pool opt-violet">السنة الثانية هجري</span>
+            <span class="match-chip in-pool opt-amber">السنة الثالثة هجري</span>
+          </div>
+        </div>
+      </div>
+    `
+  }
+
+  if (tab === 'tf') {
+    return `
+      <div class="options-grid" id="player-options-grid">
+        <button class="option-btn opt-emerald">✓ صحيح</button>
+        <button class="option-btn opt-amber">✗ خطأ</button>
+      </div>
+    `
+  }
+
+  if (tab === 'open') {
+    return `
+      <div id="player-type-container" class="type-container" style="display:block">
+        <input id="player-type-input" type="text" value="إبراهيم عليه السلام" readonly />
+      </div>
+    `
+  }
+
+  if (tab === 'order') {
+    return `
+      <div id="player-order-container" class="order-container" style="display:block">
+        <ol class="order-list" id="order-list">
+          <li class="order-item"><span class="order-num">1</span><span class="order-label">الهجرة النبوية</span><span class="order-drag-handle">⠿</span></li>
+          <li class="order-item"><span class="order-num">2</span><span class="order-label">معركة بدر</span><span class="order-drag-handle">⠿</span></li>
+          <li class="order-item"><span class="order-num">3</span><span class="order-label">غزوة أحد</span><span class="order-drag-handle">⠿</span></li>
+        </ol>
+      </div>
+    `
+  }
+
+  return `
+    <div class="options-grid" id="player-options-grid">
+      <button class="option-btn opt-violet"><span class="opt-icon">A</span><span class="opt-text">كيلوغرام (kg)</span></button>
+      <button class="option-btn opt-cyan"><span class="opt-icon">B</span><span class="opt-text">نيوتن (N)</span></button>
+      <button class="option-btn opt-amber"><span class="opt-icon">C</span><span class="opt-text">جرام (g)</span></button>
+      <button class="option-btn opt-emerald"><span class="opt-icon">D</span><span class="opt-text">لتر (L)</span></button>
+    </div>
+  `
 }
 
-// ── Shared wrapper ─────────────────────────────────────────────────────────────
-function PreviewShell({ t, children }: { t: ThemePaletteTokens; children: ReactNode }) {
+function buildRuntimePreviewDocument(t: ThemePaletteTokens, tab: PreviewTabId): string {
+  const runtimeBase = getRuntimeBaseUrl()
+  const baseTheme = guessBaseTheme(t.bg)
+
+  const vars = {
+    ...themeTokensToCssVars(t),
+    ...buildBgVars(t),
+  }
+  if (!vars['--radius'] && t.cardRadius) vars['--radius'] = t.cardRadius
+
+  const varCss = Object.entries(vars)
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .map(([name, value]) => `${name}:${String(value)};`)
+    .join('')
+
+  const promptByTab: Record<PreviewTabId, string> = {
+    mcq: 'ما هي الوحدة المستخدمة لقياس الوزن؟',
+    drag: 'طابق كل حدث بالتاريخ المناسب له',
+    tf: 'الأرض هي الكوكب الأقرب للشمس',
+    open: 'ما اسم النبي الذي بنى الكعبة مع ابنه؟',
+    order: 'رتّب الأحداث زمنياً من الأقدم إلى الأحدث',
+  }
+
+  return `<!doctype html>
+<html data-theme="${baseTheme}" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="${runtimeBase}/css/style.css" />
+  <style>
+    :root { ${varCss} }
+    html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+    body {
+      display: block !important;
+      min-height: auto !important;
+      background: var(--bg) !important;
+      background-image: var(--app-bg-image, none) !important;
+      background-size: var(--app-bg-size, cover) !important;
+      background-repeat: var(--app-bg-repeat, no-repeat) !important;
+      background-position: var(--app-bg-position, center center) !important;
+    }
+    #preview-wrap { height: 100%; padding: 10px; }
+    #view-player-question { display: flex !important; min-height: 100% !important; padding: 0 6px 10px !important; justify-content: flex-start !important; align-items: center !important; }
+    #view-player-question .solo-host-hud-bar { display: flex !important; }
+    #player-question-layout { margin-top: 168px !important; width: var(--gameplay-shell-width) !important; max-width: var(--gameplay-shell-width) !important; }
+    #player-question-layout .question-header { display: none !important; }
+    #btn-submit-answer { display: inline-flex !important; }
+  </style>
+</head>
+<body>
+  <div id="preview-wrap">
+    <div id="view-player-question" class="view active player-hud-mode solo-host-mode" data-allow-scroll="true">
+      <div class="solo-host-hud-bar" id="solo-host-hud-bar">
+        <div class="hud-main-row">
+          <div class="hud-side hud-side-left hud-stack-controls">
+            <button class="hud-icon-btn hud-btn-pause" data-paused="false" aria-label="Pause"><span class="hud-icon">II</span></button>
+            <button class="hud-icon-btn hud-btn-end" aria-label="End"><span class="hud-icon">■</span></button>
+          </div>
+          <div class="hud-center-col">
+            <span class="hud-pin-text">ROOM 712883</span>
+            <div class="timer-ring hud-timer" id="solo-host-timer-ring" style="--timer-pct:0.65"><span class="timer-count">19</span></div>
+            <span class="score-badge player-score-badge"><span class="score-count universal-score-count">0 pts</span></span>
+          </div>
+          <div class="hud-side hud-side-right hud-stack-utility">
+            <span class="hud-conn-indicator" data-state="ok" role="status" aria-label="Connected"></span>
+            <button class="hud-icon-btn hud-audio-btn" aria-label="Audio">🔊</button>
+          </div>
+        </div>
+        <div class="hud-meta-row"><span class="hud-q-num">Q 4 / 10</span></div>
+        <div class="hud-progress-track" id="player-progress-track">
+          <div class="hud-progress-dot done"></div>
+          <div class="hud-progress-dot done"></div>
+          <div class="hud-progress-dot done"></div>
+          <div class="hud-progress-dot current"></div>
+          <div class="hud-progress-dot"></div>
+          <div class="hud-progress-dot"></div>
+          <div class="hud-progress-dot"></div>
+          <div class="hud-progress-dot"></div>
+          <div class="hud-progress-dot"></div>
+          <div class="hud-progress-dot"></div>
+        </div>
+      </div>
+
+      <div class="question-layout" id="player-question-layout">
+        <div class="question-text-box">
+          <p class="question-text" id="player-question-text">${promptByTab[tab]}</p>
+        </div>
+        ${getQuestionBodyHtml(tab)}
+        <button id="btn-submit-answer" class="btn btn-success full-width">✔ تأكيد الإجابة</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`
+}
+
+function RuntimePreviewFrame({ t, tab }: { t: ThemePaletteTokens; tab: PreviewTabId }) {
   useEffect(() => {
     if (t.headingFont) loadGoogleFont(t.headingFont)
     if (t.bodyFont && t.bodyFont !== t.headingFont) loadGoogleFont(t.bodyFont)
   }, [t.headingFont, t.bodyFont])
 
-  const cr = t.cardRadius ?? '12px'
-  const br = t.btnRadius ?? '10px'
+  const srcDoc = useMemo(() => buildRuntimePreviewDocument(t, tab), [t, tab])
 
   return (
-    <div style={{ ...getPatternStyle(t), color: t.text, padding: '0.9rem', borderRadius: cr, minHeight: '480px', display: 'flex', flexDirection: 'column', gap: '0.6rem', ...fontStyle(t), position: 'relative', overflow: 'hidden' }}>
-      {/* Header bar */}
-      <div style={{ background: hexAlpha(t.surface2, 0.85), borderRadius: br, padding: '0.4rem 0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-        <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-          <div style={{ background: hexAlpha(t.surface, 0.6), borderRadius: '6px', padding: '0.2rem 0.5rem', fontSize: '0.65rem', fontWeight: 700, color: t.textDim }}>Demo</div>
-          <span style={{ fontSize: '0.65rem', color: t.textDim }}>Q 3 / 10 · CLASSIC</span>
-        </div>
-        <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
-          <div style={{ background: t.accent, borderRadius: t.timerRadius ?? '50%', width: '30px', height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 800, color: '#fff' }}>18</div>
-          <span style={{ color: hexAlpha(t.accent, 0.7), fontSize: '0.65rem' }}>0 pts</span>
-        </div>
-      </div>
-      {children}
-      {/* Buttons row */}
-      <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
-          <button type="button" style={{ background: t.pauseBg ?? t.success, color: t.pauseText ?? '#fff', border: 0, borderRadius: br, padding: '0.55rem 0', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer', ...fontStyle(t) }}>
-            ⏸ Pause
-          </button>
-          <button type="button" style={{ background: t.dangerBg ?? '#c0392b', color: t.dangerText ?? '#fff', border: 0, borderRadius: br, padding: '0.55rem 0', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer', ...fontStyle(t) }}>
-            ■ End Game
-          </button>
-        </div>
-        <button type="button" style={{ width: '100%', background: t.submitBg ?? t.accent, color: t.submitText ?? '#fff', border: 0, borderRadius: t.submitRadius ?? '14px', padding: '0.65rem', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', ...fontStyle(t, true) }}>
-          ✓ تأكيد الإجابة
-        </button>
-      </div>
-    </div>
+    <iframe
+      title={`runtime-preview-${tab}`}
+      srcDoc={srcDoc}
+      style={{ width: '100%', height: '560px', border: 0, display: 'block' }}
+    />
   )
 }
 
-// ── MCQ Preview ────────────────────────────────────────────────────────────────
 export function PreviewMCQ({ t }: { t: ThemePaletteTokens }) {
-  const choices = ['مكة المكرمة', 'المدينة المنورة', 'القدس', 'دمشق']
-  const correct = 1
-  const cr = t.cardRadius ?? '12px'
-  return (
-    <PreviewShell t={t}>
-      <div style={{ background: t.surface, borderRadius: cr, border: `1.5px solid ${t.surface2}`, padding: '0.75rem 1rem', textAlign: 'center', fontWeight: 700, fontSize: '0.88rem', ...fontStyle(t, true) }}>
-        ما هي عاصمة المملكة العربية السعودية؟
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
-        {choices.map((c, i) => (
-          <button key={c} type="button" style={{
-            background: i === correct ? hexAlpha(t.success, 0.25) : t.surface,
-            color: t.text,
-            border: `2px solid ${i === correct ? t.success : t.surface2}`,
-            borderRadius: cr,
-            padding: '0.55rem 0.5rem',
-            fontWeight: i === correct ? 700 : 500,
-            fontSize: '0.78rem',
-            cursor: 'pointer',
-            textAlign: 'center',
-            ...fontStyle(t),
-          }}>
-            {c}
-          </button>
-        ))}
-      </div>
-    </PreviewShell>
-  )
+  return <RuntimePreviewFrame t={t} tab="mcq" />
 }
 
-// ── Drag-to-Match Preview ──────────────────────────────────────────────────────
 export function PreviewDragMatch({ t }: { t: ThemePaletteTokens }) {
-  const cr = t.cardRadius ?? '12px'
-  const zones = ['الهجرة النبوية', 'فتح مكة', 'معركة بدر', 'غزوة أحد']
-  const chips = ['السنة الثالثة هجري', 'السنة الثامنة هجري', 'السنة الثانية هجري']
-  return (
-    <PreviewShell t={t}>
-      <div style={{ background: t.surface, borderRadius: cr, border: `1.5px solid ${t.surface2}`, padding: '0.65rem 1rem', textAlign: 'center', fontWeight: 700, fontSize: '0.85rem', ...fontStyle(t, true) }}>
-        طابق كل حدث بتاريخه الهجري التقريبي
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', flex: 1 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-          {zones.map(z => (
-            <div key={z}>
-              <div style={{ fontSize: '0.6rem', color: t.textDim, marginBottom: '2px', textAlign: 'right', paddingRight: '2px', ...fontStyle(t) }}>{z}</div>
-              <div style={{ border: `1.5px dashed ${t.surface2}`, borderRadius: '6px', minHeight: '28px', background: hexAlpha(t.surface, 0.6) }} />
-            </div>
-          ))}
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', paddingTop: '18px' }}>
-          {chips.map(chip => (
-            <div key={chip} style={{ background: t.accent, color: '#fff', borderRadius: '6px', padding: '0.35rem 0.5rem', textAlign: 'center', fontSize: '0.67rem', fontWeight: 600, cursor: 'grab', ...fontStyle(t) }}>{chip}</div>
-          ))}
-        </div>
-      </div>
-    </PreviewShell>
-  )
+  return <RuntimePreviewFrame t={t} tab="drag" />
 }
 
-// ── True/False Preview ─────────────────────────────────────────────────────────
 export function PreviewTrueFalse({ t }: { t: ThemePaletteTokens }) {
-  const cr = t.cardRadius ?? '12px'
-  return (
-    <PreviewShell t={t}>
-      <div style={{ background: t.surface, borderRadius: cr, border: `1.5px solid ${t.surface2}`, padding: '0.75rem 1rem', textAlign: 'center', fontWeight: 700, fontSize: '0.88rem', ...fontStyle(t, true) }}>
-        الأرض هي الكوكب الأقرب إلى الشمس في المجموعة الشمسية
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', flex: 1 }}>
-        <button type="button" style={{ background: hexAlpha(t.success, 0.2), border: `2px solid ${t.success}`, borderRadius: cr, padding: '1rem 0', fontWeight: 800, fontSize: '1.1rem', cursor: 'pointer', color: t.text, ...fontStyle(t, true) }}>
-          ✓ صحيح
-        </button>
-        <button type="button" style={{ background: hexAlpha(t.danger ?? '#c0392b', 0.15), border: `2px solid ${t.danger ?? '#c0392b'}`, borderRadius: cr, padding: '1rem 0', fontWeight: 800, fontSize: '1.1rem', cursor: 'pointer', color: t.text, ...fontStyle(t, true) }}>
-          ✗ خطأ
-        </button>
-      </div>
-    </PreviewShell>
-  )
+  return <RuntimePreviewFrame t={t} tab="tf" />
 }
 
-// ── Open-text Preview ──────────────────────────────────────────────────────────
 export function PreviewOpenText({ t }: { t: ThemePaletteTokens }) {
-  const cr = t.cardRadius ?? '12px'
-  return (
-    <PreviewShell t={t}>
-      <div style={{ background: t.surface, borderRadius: cr, border: `1.5px solid ${t.surface2}`, padding: '0.75rem 1rem', textAlign: 'center', fontWeight: 700, fontSize: '0.88rem', ...fontStyle(t, true) }}>
-        ما هو اسم النبي الذي بنى الكعبة مع ابنه؟
-      </div>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-        <textarea
-          readOnly
-          value="إبراهيم عليه السلام"
-          rows={3}
-          style={{ background: t.surface, border: `2px solid ${t.accent}`, borderRadius: cr, color: t.text, padding: '0.65rem', fontSize: '0.85rem', resize: 'none', outline: 'none', textAlign: 'right', ...fontStyle(t) }}
-        />
-        <div style={{ display: 'flex', gap: '0.4rem' }}>
-          {['الأنبياء', 'القرآن', 'التاريخ'].map(hint => (
-            <span key={hint} style={{ background: hexAlpha(t.accent, 0.18), color: t.accent, border: `1px solid ${hexAlpha(t.accent, 0.4)}`, borderRadius: '999px', padding: '0.2rem 0.55rem', fontSize: '0.68rem', fontWeight: 600, ...fontStyle(t) }}>{hint}</span>
-          ))}
-        </div>
-      </div>
-    </PreviewShell>
-  )
+  return <RuntimePreviewFrame t={t} tab="open" />
 }
 
-// ── Ordering Preview ───────────────────────────────────────────────────────────
 export function PreviewOrdering({ t }: { t: ThemePaletteTokens }) {
-  const cr = t.cardRadius ?? '12px'
-  const items = ['الهجرة النبوية', 'فتح مكة', 'معركة بدر', 'غزوة أحد']
-  return (
-    <PreviewShell t={t}>
-      <div style={{ background: t.surface, borderRadius: cr, border: `1.5px solid ${t.surface2}`, padding: '0.65rem 1rem', textAlign: 'center', fontWeight: 700, fontSize: '0.85rem', ...fontStyle(t, true) }}>
-        رتّب الأحداث التالية زمنياً من الأقدم إلى الأحدث
-      </div>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-        {items.map((item, i) => (
-          <div key={item} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: t.surface, border: `1.5px solid ${t.surface2}`, borderRadius: '8px', padding: '0.4rem 0.65rem' }}>
-            <span style={{ background: hexAlpha(t.accent, 0.2), color: t.accent, borderRadius: '50%', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 800, flexShrink: 0 }}>{i + 1}</span>
-            <span style={{ flex: 1, textAlign: 'right', fontSize: '0.78rem', fontWeight: 600, ...fontStyle(t) }}>{item}</span>
-            <span style={{ color: t.textDim, fontSize: '0.7rem', cursor: 'grab' }}>⠿</span>
-          </div>
-        ))}
-      </div>
-    </PreviewShell>
-  )
+  return <RuntimePreviewFrame t={t} tab="order" />
 }
 
-// ── Export map ─────────────────────────────────────────────────────────────────
 export const PREVIEW_TABS = [
-  { id: 'mcq',   label: 'MCQ',      component: PreviewMCQ },
-  { id: 'drag',  label: 'Drag',     component: PreviewDragMatch },
-  { id: 'tf',    label: 'True/False', component: PreviewTrueFalse },
-  { id: 'open',  label: 'Open Text', component: PreviewOpenText },
+  { id: 'mcq', label: 'MCQ', component: PreviewMCQ },
+  { id: 'drag', label: 'Drag', component: PreviewDragMatch },
+  { id: 'tf', label: 'True/False', component: PreviewTrueFalse },
+  { id: 'open', label: 'Open Text', component: PreviewOpenText },
   { id: 'order', label: 'Ordering', component: PreviewOrdering },
 ] as const
 
-export type PreviewTabId = typeof PREVIEW_TABS[number]['id']

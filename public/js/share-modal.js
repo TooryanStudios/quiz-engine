@@ -1,6 +1,10 @@
 (function(){
 	'use strict';
 
+	function safeCall(fn){
+		try { fn(); } catch (_err) {}
+	}
+
 	function onSafe(target, eventName, handler){
 		if (!target || typeof target.addEventListener !== 'function') return;
 		target.addEventListener(eventName, handler);
@@ -31,9 +35,23 @@
 		onSafe(document, 'click', onDocumentClick);
 	}
 
+	function bootWithRetry(attempt){
+		safeCall(function(){
+			var trigger = document.getElementById('btn-share-menu');
+			var panel = document.getElementById('share-actions');
+			if (trigger && panel) {
+				boot();
+				return;
+			}
+			if ((attempt || 0) < 10) {
+				setTimeout(function(){ bootWithRetry((attempt || 0) + 1); }, 120);
+			}
+		});
+	}
+
 	if (document.readyState === 'loading') {
-		onSafe(document, 'DOMContentLoaded', boot);
+		onSafe(document, 'DOMContentLoaded', function(){ bootWithRetry(0); });
 	} else {
-		boot();
+		bootWithRetry(0);
 	}
 })();

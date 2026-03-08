@@ -29,7 +29,6 @@ const BG_PATTERNS = [
   { value: 'grid', label: '# Grid lines' },
   { value: 'stripes', label: '/ Diagonal stripes' },
   { value: 'dunes', label: '〜 Desert dunes' },
-  { value: 'custom', label: '🖼 Custom image URL' },
 ]
 
 interface Props {
@@ -380,14 +379,23 @@ export function ThemeEditorTab({ themes, updatedAt, onSave }: Props) {
 
             {/* 4. Background */}
             <EditorSection title="🖼 Background & Pattern" open={openSections.background} toggle={() => toggleSection('background')}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {/* Background image — always visible, independent of pattern */}
+                <BgImageUploader
+                  value={t.bgImageUrl}
+                  onChange={url => patch({ bgImageUrl: url || undefined })}
+                  inputStyle={inputStyle}
+                  labelStyle={labelStyle}
+                />
+                <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '0.1rem 0' }} />
+                {/* Pattern overlay — rendered behind the background image */}
                 <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                  <span style={labelStyle}>Pattern type</span>
+                  <span style={labelStyle}>Pattern overlay <span style={{ fontWeight: 400, opacity: 0.6, fontSize: '0.67rem' }}>(drawn behind image)</span></span>
                   <select value={t.bgPattern ?? 'none'} onChange={e => patch({ bgPattern: e.target.value })} style={{ ...inputStyle, cursor: 'pointer' }}>
                     {BG_PATTERNS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                   </select>
                 </label>
-                {(t.bgPattern && t.bgPattern !== 'none' && t.bgPattern !== 'custom') && (
+                {(t.bgPattern && t.bgPattern !== 'none') && (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem', alignItems: 'end' }}>
                     <ColorField label="Pattern color" value={t.bgPatternColor ?? t.surface2} onChange={v => patch({ bgPatternColor: v })} optional />
                     <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
@@ -398,14 +406,29 @@ export function ThemeEditorTab({ themes, updatedAt, onSave }: Props) {
                     </label>
                   </div>
                 )}
-                {t.bgPattern === 'custom' && (
-                  <BgImageUploader
-                    value={t.bgImageUrl}
-                    onChange={url => patch({ bgImageUrl: url || undefined })}
-                    inputStyle={inputStyle}
-                    labelStyle={labelStyle}
-                  />
-                )}
+                <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '0.1rem 0' }} />
+                {/* Overlay */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem', alignItems: 'end' }}>
+                  <ColorField label="Overlay color" value={t.bgOverlayColor ?? '#000000'} onChange={v => patch({ bgOverlayColor: v })} optional />
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    <span style={labelStyle}>Overlay opacity ({Math.round((t.bgOverlayOpacity ?? 0) * 100)}%)</span>
+                    <input type="range" min={0} max={1} step={0.05} value={t.bgOverlayOpacity ?? 0}
+                      onChange={e => patch({ bgOverlayOpacity: parseFloat(e.target.value) })}
+                      style={{ width: '100%', accentColor: '#e94560' }} />
+                  </label>
+                </div>
+                {/* Blur */}
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <span style={labelStyle}>
+                    Background blur ({t.bgBlur ?? 0}px)
+                    <span style={{ fontWeight: 400, opacity: 0.55, fontSize: '0.67rem', marginLeft: '0.3rem' }}>
+                      ⚠ &gt;6px may impact mobile performance
+                    </span>
+                  </span>
+                  <input type="range" min={0} max={20} step={1} value={t.bgBlur ?? 0}
+                    onChange={e => patch({ bgBlur: parseFloat(e.target.value) })}
+                    style={{ width: '100%', accentColor: '#e94560' }} />
+                </label>
               </div>
             </EditorSection>
 

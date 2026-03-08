@@ -220,7 +220,6 @@ export function DashboardPage() {
       serverBase: SERVER_BASE,
       quizId: quiz.id,
       gameModeId: quiz.gameModeId,
-      themeId: quiz.themeId,
       ...authParams,
     })
     await guardedLaunchGame({
@@ -537,7 +536,11 @@ export function DashboardPage() {
                   />
                   {/* Centered play button overlay */}
                   <a
-                    href={buildHostGameUrl({ serverBase: SERVER_BASE, quizId: q.id, gameModeId: q.gameModeId, themeId: q.themeId })}
+                    href={buildHostGameUrl({
+                      serverBase: SERVER_BASE,
+                      quizId: q.id,
+                      gameModeId: q.gameModeId,
+                    })}
                     target="_blank" rel="noopener noreferrer"
                     onClick={(e) => {
                       e.preventDefault()
@@ -736,7 +739,6 @@ export function DashboardPage() {
                       navigator.clipboard?.writeText(buildPlayerGameUrl({
                         serverBase: SERVER_BASE,
                         quizId: q.id,
-                        themeId: q.themeId,
                       }))
                         .then(() => {
                           showToast({ message: isAr ? 'تم نسخ الرابط!' : 'Link copied!', type: 'success' })

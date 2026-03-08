@@ -11,7 +11,6 @@ export function buildHostGameUrl(params: {
   serverBase: string
   quizId: string
   gameModeId?: string
-  themeId?: string
   launchCode?: string
   hostUid?: string
   hostToken?: string
@@ -43,9 +42,8 @@ export function buildHostGameUrl(params: {
     query.set('hostName', params.hostName)
   }
 
-  if (params.themeId) {
-    query.set('theme', params.themeId)
-  }
+  // NOTE: Theme is resolved server-side from quiz data (quizData.themeId).
+  // Hosts receive tokens via socket (room:theme), players via room:joined payload.
 
   if (params.miniGameConfig && typeof params.miniGameConfig === 'object' && Object.keys(params.miniGameConfig).length > 0) {
     try {
@@ -60,15 +58,13 @@ export function buildHostGameUrl(params: {
 export function buildPlayerGameUrl(params: {
   serverBase: string
   quizId: string
-  themeId?: string
 }): string {
   const query = new URLSearchParams({
     quiz: params.quizId,
   })
 
-  if (params.themeId) {
-    query.set('theme', params.themeId)
-  }
+  // NOTE: Theme is resolved server-side from quiz data (quizData.themeId).
+  // Players receive tokens via room:joined payload.
 
   const path = isLocalGameHost(params.serverBase) ? '/' : '/player'
   return `${params.serverBase}${path}?${query.toString()}`

@@ -29,7 +29,8 @@ export function startClientTimer(duration, countEl, ringEl, onEnd) {
 
     if (ringEl) {
       const progress = (remaining / duration) * 100;
-      ringEl.style.setProperty('--progress', progress);
+      ringEl.style.setProperty('--progress', String(progress));
+      ringEl.style.setProperty('--timer-pct', String(progress / 100));
 
       if (remaining <= 5) {
         ringEl.classList.add('timer-urgent');

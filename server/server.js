@@ -1,5 +1,9 @@
 'use strict';
 
+// Load .env file if present (local development). Silently ignored in production
+// (Render/etc.) where env vars are injected by the platform.
+require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
+
 // ── Process-level crash guards ──────────────────────────────────────────────
 // Prevent an unhandled exception / rejected promise from killing the process.
 // Socket.io handlers that throw synchronously are already isolated per-event,
@@ -475,6 +479,7 @@ app.get('/api/quiz-info/:slug', async (req, res) => {
           title: data.title || slug,
           questionCount: questions.length,
           themeId: typeof data.themeId === 'string' ? data.themeId : null,
+          resolvedThemeVars: (data.resolvedThemeVars && typeof data.resolvedThemeVars === 'object') ? data.resolvedThemeVars : null,
           mediaAssets,
           updatedAt,
         });
@@ -496,6 +501,7 @@ app.get('/api/quiz-info/:slug', async (req, res) => {
         title: restData.title || slug,
         questionCount: questions.length,
         themeId: typeof restData.themeId === 'string' ? restData.themeId : null,
+        resolvedThemeVars: (restData.resolvedThemeVars && typeof restData.resolvedThemeVars === 'object') ? restData.resolvedThemeVars : null,
         mediaAssets,
         updatedAt: restData.updatedAt || null,
       });
@@ -532,6 +538,9 @@ function themeTokensToCssVars(tokens) {
     bgPatternColor: '--bg-pattern-color',
     bgPatternOpacity: '--bg-pattern-opacity',
     bgImageUrl: '--bg-image-url',
+    bgOverlayColor: '--bg-overlay-color',
+    bgOverlayOpacity: '--bg-overlay-opacity',
+    bgBlur: '--bg-blur',
     cardRadius: '--card-radius',
     btnRadius: '--btn-radius',
     submitRadius: '--submit-radius',
@@ -564,72 +573,177 @@ function guessBaseTheme(bgColor) {
   return luminance > 0.5 ? 'light' : 'dark';
 }
 
+// Resolve a theme by ID from Firestore, returns { id, name, baseTheme, tokens } or null.
+// Built-in preset themes — must stay in sync with THEME_PRESETS in admin-app/src/lib/adminRepo.ts
+const BUILT_IN_THEME_PRESETS = [
+  {
+    id: 'default-dark',
+    name: '🌑 Default Dark',
+    tokens: { bg: '#1a1a2e', surface: '#16213e', surface2: '#0f3460', accent: '#e94560', text: '#eaeaea', textDim: '#8892a4', success: '#2dd4bf' },
+  },
+  {
+    id: 'default-light',
+    name: '☀️ Default Light',
+    tokens: { bg: '#f1f5f9', surface: '#ffffff', surface2: '#e2e8f0', accent: '#e94560', text: '#0f172a', textDim: '#475569', success: '#0d9488' },
+  },
+  {
+    id: 'warm-sand',
+    name: '🏜️ Warm Sand',
+    tokens: {
+      bg: '#e8c98a', surface: '#fef6e4', surface2: '#c9a96e',
+      accent: '#9b6ecf', text: '#2d1b0e', textDim: '#7a5230', success: '#2d6a4f',
+      danger: '#c0392b', warning: '#e67e22',
+      submitBg: '#c0392b', submitText: '#ffffff',
+      pauseBg: '#2d6a4f', pauseText: '#ffffff',
+      dangerBg: '#a83232', dangerText: '#ffffff',
+      headingFont: 'Tajawal', bodyFont: 'Tajawal',
+      bgPattern: 'dunes', bgPatternColor: '#c9a96e', bgPatternOpacity: 0.3,
+      cardRadius: '12px', btnRadius: '10px', submitRadius: '14px', timerRadius: '50%',
+    },
+  },
+  {
+    id: 'ocean',
+    name: '🌊 Ocean',
+    tokens: { bg: '#0a2342', surface: '#123560', surface2: '#1a4a7a', accent: '#00b4d8', text: '#e0f4ff', textDim: '#7ec8e3', success: '#06d6a0' },
+  },
+  {
+    id: 'forest',
+    name: '🌿 Forest',
+    tokens: { bg: '#0d2614', surface: '#132e1a', surface2: '#1e4a28', accent: '#52b788', text: '#d8f3dc', textDim: '#74c69d', success: '#f4a261' },
+  },
+];
+
+// In-memory cache of custom themes from Firestore — avoids repeated round-trips
+const _themeCache = { themes: [], fetchedAt: 0 };
+const THEME_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+async function _getAdminAccessToken() {
+  try {
+    const credential = admin.app().options.credential;
+    if (credential && typeof credential.getAccessToken === 'function') {
+      const result = await credential.getAccessToken();
+      return result?.access_token || null;
+    }
+  } catch (_) {}
+  return null;
+}
+
+async function _fetchAllCustomThemes() {
+  const projectId = process.env.FIREBASE_REST_PROJECT_ID || process.env.FIREBASE_PROJECT_ID;
+  if (!projectId) return [];
+
+  const parseThemesFromDocData = (docData) => {
+    const arr = Array.isArray(docData?.themes) ? docData.themes : [];
+    return arr.filter((t) => t && t.id && t.tokens);
+  };
+
+  // Path 1: Admin SDK (correct project only, bypasses security rules)
+  const db = getDbSafe();
+  if (db) {
+    try {
+      const snap = await db.collection('platform_settings').doc('themes').get();
+      if (snap.exists) {
+        const themes = parseThemesFromDocData(snap.data());
+        if (themes.length > 0) {
+          console.log(`[Themes] Loaded ${themes.length} custom themes via Admin SDK`);
+          return themes;
+        }
+      }
+    } catch (_) {}
+  }
+
+  // Path 2: Authenticated REST (uses service account OAuth2 access token)
+  const accessToken = await _getAdminAccessToken();
+  if (accessToken) {
+    for (const docName of ['themes', 'theme_editor']) {
+      try {
+        const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/platform_settings/${docName}`;
+        const r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' } });
+        if (r.ok) {
+          const themes = parseThemesFromDocData(_firestoreDocToJs(await r.json()) || {});
+          if (themes.length > 0) {
+            console.log(`[Themes] Loaded ${themes.length} custom themes via authenticated REST (${docName})`);
+            return themes;
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
+  // Path 3: Unauthenticated REST (only works if security rules allow public read)
+  const apiKey = process.env.FIREBASE_REST_API_KEY;
+  if (apiKey) {
+    for (const docName of ['themes', 'theme_editor']) {
+      try {
+        const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/platform_settings/${docName}?key=${encodeURIComponent(apiKey)}`;
+        const r = await fetch(url, { headers: { Accept: 'application/json' } });
+        if (r.ok) {
+          const themes = parseThemesFromDocData(_firestoreDocToJs(await r.json()) || {});
+          if (themes.length > 0) {
+            console.log(`[Themes] Loaded ${themes.length} custom themes via unauthenticated REST (${docName})`);
+            return themes;
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
+  console.warn('[Themes] Could not load custom themes from Firestore');
+  return [];
+}
+
+async function _ensureThemeCache() {
+  if (_themeCache.themes.length > 0 && (Date.now() - _themeCache.fetchedAt) < THEME_CACHE_TTL_MS) {
+    return _themeCache.themes;
+  }
+  const themes = await _fetchAllCustomThemes();
+  _themeCache.themes = themes;
+  _themeCache.fetchedAt = Date.now();
+  return themes;
+}
+
+async function resolveThemeById(themeId) {
+  if (!themeId || typeof themeId !== 'string') return null;
+
+  // Normalize 'default' alias
+  if (themeId === 'default') themeId = 'default-dark';
+
+  // 1. Check built-in presets first (no Firestore round-trip needed)
+  const preset = BUILT_IN_THEME_PRESETS.find((p) => p.id === themeId);
+  if (preset) {
+    return { id: preset.id, name: preset.name, baseTheme: guessBaseTheme(preset.tokens.bg), tokens: themeTokensToCssVars(preset.tokens) };
+  }
+
+  // 2. Check custom theme cache
+  try {
+    const allThemes = await _ensureThemeCache();
+    const theme = allThemes.find((t) => t.id === themeId && t.enabled !== false);
+    if (theme && theme.tokens) {
+      return { id: theme.id, name: theme.name || theme.id, baseTheme: guessBaseTheme(theme.tokens.bg), tokens: themeTokensToCssVars(theme.tokens) };
+    }
+  } catch (err) {
+    console.warn('[resolveThemeById] Cache lookup failed:', err.message);
+  }
+
+  return null;
+}
+
+// Pre-warm the theme cache at startup
+void _ensureThemeCache();
+
+
 // Dynamic theme API — resolves a Firestore-managed theme by ID and returns
 // it in the same { id, name, baseTheme, tokens } shape as static theme.json files.
 app.get('/api/themes/:themeId', async (req, res) => {
   const themeId = (req.params.themeId || '').trim();
   if (!themeId) return res.status(400).json({ error: 'Missing themeId' });
-
   try {
-    const pickThemeFromDoc = (docData) => {
-      const themes = Array.isArray(docData?.themes) ? docData.themes : [];
-      return themes.find((t) => t && t.id === themeId && t.enabled !== false) || null;
-    };
-
-    // 1. Try Admin SDK (fast path — works when service account is for qyan-om)
-    const db = getDbSafe();
-    if (db) {
-      // Source of truth used by editor app.
-      const primarySnap = await db.collection('platform_settings').doc('themes').get();
-      const legacySnap = primarySnap.exists
-        ? null
-        : await db.collection('platform_settings').doc('theme_editor').get();
-
-      const theme = pickThemeFromDoc(primarySnap.data() || {})
-        || pickThemeFromDoc((legacySnap && legacySnap.data()) || {});
-
-      if (theme && theme.tokens) {
-        return res.json({
-          id: theme.id,
-          name: theme.name || theme.id,
-          baseTheme: guessBaseTheme(theme.tokens.bg),
-          tokens: themeTokensToCssVars(theme.tokens),
-        });
-      }
-    }
-
-    // 2. REST API fallback (Render deployment: server may point to different project)
-    const apiKey = process.env.FIREBASE_REST_API_KEY;
-    const projectId = process.env.FIREBASE_REST_PROJECT_ID;
-    if (apiKey && projectId) {
-      const primaryUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/platform_settings/themes?key=${encodeURIComponent(apiKey)}`;
-      const legacyUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/platform_settings/theme_editor?key=${encodeURIComponent(apiKey)}`;
-
-      const readThemeFromRestDoc = async (url) => {
-        const restRes = await fetch(url, { headers: { Accept: 'application/json' } });
-        if (!restRes.ok) return null;
-        const rawDoc = await restRes.json();
-        const docData = _firestoreDocToJs(rawDoc) || {};
-        return pickThemeFromDoc(docData);
-      };
-
-      const theme = await readThemeFromRestDoc(primaryUrl)
-        || await readThemeFromRestDoc(legacyUrl);
-
-      if (theme && theme.tokens) {
-        return res.json({
-          id: theme.id,
-          name: theme.name || theme.id,
-          baseTheme: guessBaseTheme(theme.tokens.bg),
-          tokens: themeTokensToCssVars(theme.tokens),
-        });
-      }
-    }
+    const theme = await resolveThemeById(themeId);
+    if (theme) return res.json(theme);
   } catch (err) {
     console.error('[/api/themes] Error:', err.message);
     return res.status(500).json({ error: 'Failed to load theme' });
   }
-
   res.status(404).json({ error: 'Theme not found', themeId });
 });
 
@@ -1221,6 +1335,7 @@ async function getQuizDataFromRestApi(quizId) {
         priceTier: normalizePriceTier(data.priceTier),
         questions: data.questions,
         themeId: typeof data.themeId === 'string' ? data.themeId : null,
+        resolvedThemeVars: (data.resolvedThemeVars && typeof data.resolvedThemeVars === 'object') ? data.resolvedThemeVars : null,
         gameModeId: typeof data.gameModeId === 'string' ? data.gameModeId : null,
         miniGameConfig: (data.miniGameConfig && typeof data.miniGameConfig === 'object') ? data.miniGameConfig : {},
         challengePreset: data.challengePreset || 'classic',
@@ -1288,6 +1403,7 @@ async function getQuizData(quizSlug) {
                 title: data.title || null,
                 questions: data.questions,
                 themeId: typeof data.themeId === 'string' ? data.themeId : null,
+                resolvedThemeVars: (data.resolvedThemeVars && typeof data.resolvedThemeVars === 'object') ? data.resolvedThemeVars : null,
                 gameModeId: typeof data.gameModeId === 'string' ? data.gameModeId : null,
                 miniGameConfig: (data.miniGameConfig && typeof data.miniGameConfig === 'object') ? data.miniGameConfig : {},
                 challengePreset: data.challengePreset || 'classic',
@@ -1311,6 +1427,7 @@ async function getQuizData(quizSlug) {
               title: data.title || null,
               questions: data.questions,
               themeId: typeof data.themeId === 'string' ? data.themeId : null,
+              resolvedThemeVars: (data.resolvedThemeVars && typeof data.resolvedThemeVars === 'object') ? data.resolvedThemeVars : null,
               gameModeId: typeof data.gameModeId === 'string' ? data.gameModeId : null,
               miniGameConfig: (data.miniGameConfig && typeof data.miniGameConfig === 'object') ? data.miniGameConfig : {},
               challengePreset: data.challengePreset || 'classic',
@@ -1398,6 +1515,7 @@ async function refreshQuestions(quizSlug) {
   return {
     questions: finalQuestions,
     themeId: typeof remote?.themeId === 'string' ? remote.themeId : null,
+    resolvedThemeVars: (remote?.resolvedThemeVars && typeof remote.resolvedThemeVars === 'object') ? remote.resolvedThemeVars : null,
     gameModeId: typeof remote?.gameModeId === 'string' ? remote.gameModeId : null,
     miniGameConfig: (remote?.miniGameConfig && typeof remote.miniGameConfig === 'object') ? remote.miniGameConfig : {},
     challengePreset: remote?.challengePreset || 'classic',
@@ -2229,12 +2347,11 @@ io.on('connection', (socket) => {
       if (existing) {
         const oldSocket = io.sockets.sockets.get(existing.hostSocketId);
         // A room is reclaimable when:
-        //   (a) old socket is gone,
-        //   (b) room is in its host-disconnect grace period,
-        //   (c) game hasn't started yet (lobby/starting), OR
-        //   (d) client signals this is a reconnect (fast reconnect where old socket still lives)
-        const isStale = !oldSocket || existing.hostDisconnected || isReconnect === true
-                     || existing.state === 'lobby' || existing.state === 'starting';
+        //   (a) old socket is gone (page refresh / network drop),
+        //   (b) room is in its host-disconnect grace period, OR
+        //   (c) client explicitly signals this is a reconnect (fast reconnect where old socket still lives)
+        // NOTE: lobby/starting state alone is NOT enough — a different host should get a brand-new room.
+        const isStale = !oldSocket || existing.hostDisconnected || isReconnect === true;
 
         if (isStale) {
           // Clear any pending host-disconnect timer
@@ -2260,6 +2377,45 @@ io.on('connection', (socket) => {
             console.log(`[Room ${existing.pin}] Host RECLAIMED room for quiz "${quizSlug}" — same PIN preserved.`);
             const modePayload = await buildRoomModePayload(existing);
             socket.emit('room:created', { pin: existing.pin, ...modePayload, reclaimed: true });
+
+            // Recompute theme from the latest quiz data to avoid showing a stale
+            // previous-theme flash when the quiz theme was changed recently.
+            (async () => {
+              try {
+                let reclaimedThemePayload = null;
+
+                if (quizSlug) {
+                  const latestQuizData = await refreshQuestions(quizSlug).catch(() => null);
+                  if (latestQuizData) existing.preloadedQuizData = latestQuizData;
+
+                  const latestThemeVars = latestQuizData?.resolvedThemeVars;
+                  const latestThemeId = latestQuizData?.themeId || null;
+
+                  if (latestThemeVars && typeof latestThemeVars === 'object' && Object.keys(latestThemeVars).length > 0) {
+                    reclaimedThemePayload = {
+                      id: latestThemeId || 'quiz-theme',
+                      name: latestThemeId || 'theme',
+                      baseTheme: 'dark',
+                      tokens: latestThemeVars,
+                    };
+                  } else if (latestThemeId) {
+                    reclaimedThemePayload = await resolveThemeById(latestThemeId).catch(() => null);
+                  }
+                }
+
+                if (!reclaimedThemePayload) {
+                  reclaimedThemePayload = await resolveThemeById('default-dark').catch(() => null);
+                }
+
+                if (reclaimedThemePayload) {
+                  existing.themePayload = reclaimedThemePayload;
+                  socket.emit('room:theme', reclaimedThemePayload);
+                  console.log(`[Room ${existing.pin}] room:theme emitted to reclaimed host (fresh)`);
+                }
+              } catch (err) {
+                console.warn(`[Room ${existing.pin}] Failed to emit fresh reclaimed theme:`, err?.message || err);
+              }
+            })();
             return;
           }
 
@@ -2316,11 +2472,68 @@ io.on('connection', (socket) => {
     const modePayload = await buildRoomModePayload(room);
     socket.emit('room:created', { pin, ...modePayload });
 
-    // Preload quiz data in the background so host:start has near-zero Firestore latency
+    const emitRoomThemeToCurrentHost = (payload) => {
+      if (!payload || !payload.tokens) return false;
+      const liveHostSocket = io.sockets.sockets.get(room.hostSocketId);
+      if (liveHostSocket) {
+        liveHostSocket.emit('room:theme', payload);
+        return true;
+      }
+      return false;
+    };
+
+    // Preload quiz data in the background so host:start has near-zero Firestore latency.
+    // Once loaded, read themeId from the quiz itself and push to host via room:theme.
     if (quizSlug) {
       refreshQuestions(quizSlug)
-        .then(data => { if (rooms.has(pin)) room.preloadedQuizData = data; })
+        .then(async (data) => {
+          if (!rooms.has(pin)) return;
+          room.preloadedQuizData = data;
+          const quizThemeId = data?.themeId || null;
+          const resolvedThemeVars = data?.resolvedThemeVars;
+          console.log(`[Room ${pin}] Quiz themeId="${quizThemeId}" resolvedThemeVars=${resolvedThemeVars ? 'yes' : 'no'}`);
+
+          let emittedThemePayload = null;
+
+          // Use embedded CSS vars if saved in quiz doc (fastest path, no extra Firestore call)
+          if (resolvedThemeVars && typeof resolvedThemeVars === 'object' && Object.keys(resolvedThemeVars).length > 0) {
+            const themePayload = { id: quizThemeId || 'quiz-theme', name: quizThemeId || 'theme', baseTheme: 'dark', tokens: resolvedThemeVars };
+            room.themePayload = themePayload;
+            emitRoomThemeToCurrentHost(themePayload);
+            emittedThemePayload = themePayload;
+            console.log(`[Room ${pin}] room:theme emitted from resolvedThemeVars (${Object.keys(resolvedThemeVars).length} vars)`);
+          } else if (quizThemeId) {
+            // Fallback: resolve via built-in presets or theme cache
+            const themePayload = await resolveThemeById(quizThemeId).catch((e) => { console.warn('[resolveThemeById] error:', e.message); return null; });
+            console.log(`[Room ${pin}] resolveThemeById("${quizThemeId}") → ${themePayload ? 'found tokens' : 'null (not found)'}`);
+            if (themePayload) {
+              room.themePayload = themePayload;
+              emitRoomThemeToCurrentHost(themePayload);
+              emittedThemePayload = themePayload;
+            }
+          }
+
+          // Absolute fallback: always emit a concrete theme so host loading can
+          // finish without revealing the lobby on a stale/default visual state.
+          if (!emittedThemePayload) {
+            const fallbackTheme = await resolveThemeById('default-dark').catch(() => null);
+            if (fallbackTheme) {
+              room.themePayload = fallbackTheme;
+              emitRoomThemeToCurrentHost(fallbackTheme);
+              console.log(`[Room ${pin}] room:theme emitted fallback default-dark`);
+            }
+          }
+        })
         .catch(() => {});
+    } else {
+      // No quiz slug path: still emit a deterministic default theme so the host
+      // client can complete its loading gate consistently.
+      const fallbackTheme = await resolveThemeById('default-dark').catch(() => null);
+      if (fallbackTheme) {
+        room.themePayload = fallbackTheme;
+        emitRoomThemeToCurrentHost(fallbackTheme);
+        console.log(`[Room ${pin}] room:theme emitted default-dark (no quizSlug)`);
+      }
     }
     } catch (error) {
       console.error('[host:create] failed:', error?.message || error);
@@ -2506,13 +2719,14 @@ io.on('connection', (socket) => {
 
     console.log(`[Room ${room.pin}] Player joined: ${cleanNickname} (${socket.id})`);
 
-    // Confirm to the joining player
+    // Confirm to the joining player — include theme if already resolved
     socket.emit('room:joined', {
       pin: room.pin,
       nickname: player.nickname,
       avatar: player.avatar,
       players: getPlayerList(room),
       quizSlug: room.quizSlug || null,
+      ...(room.themePayload ? { themePayload: room.themePayload } : {}),
     });
 
     // Notify everyone in the room (including host) about the updated player list
