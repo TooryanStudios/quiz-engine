@@ -4,6 +4,7 @@ import { xoDuelRuntime } from './xoDuel.runtime.js?v=122';
 import { gearMachineRuntime } from './gearMachine.runtime.js?v=122';
 import { creatorStudioRuntime } from './creatorStudio.runtime.js?v=122';
 import { matchPlusArenaRuntime } from './matchPlusArena.runtime.js?v=134';
+import { islandDiceAdventureRuntime } from './islandDiceAdventure.runtime.js?v=159';
 
 const EMPTY_RUNTIME = Object.freeze({});
 
@@ -13,6 +14,7 @@ const MODE_RUNTIME_REGISTRY = {
   'gear-machine': gearMachineRuntime,
   'creator-studio': creatorStudioRuntime,
   'match-plus-arena': matchPlusArenaRuntime,
+  'island-dice-adventure': islandDiceAdventureRuntime,
   'runtime-example': runtimeExampleRuntime,
 };
 

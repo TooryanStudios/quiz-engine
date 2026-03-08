@@ -15,6 +15,7 @@ export const MINI_GAME_IDS = [
   'creative-constraint-quiz',
   'alliance-betrayal-mode',
   'match-plus-arena',
+  'island-dice-adventure',
 ] as const
 
 export type MiniGameId = typeof MINI_GAME_IDS[number]
@@ -157,6 +158,14 @@ export const MINI_GAME_DEFINITIONS: Record<MiniGameId, MiniGameDefinition> = {
     defaultArabicName: 'ساحة المطابقة بلس',
     description: 'ميني جيم مطابقة متعدد الأنماط (إيموجي/نص/صور/ألغاز).',
     howToPlay: 'اختر نمط الجولة ثم اسحب العناصر للمطابقة الصحيحة بأسرع وقت.',
+  },
+  'island-dice-adventure': {
+    id: 'island-dice-adventure',
+    icon: '🎲',
+    defaultEnglishName: 'Island Dice Adventure',
+    defaultArabicName: 'مغامرة نرد الجزيرة',
+    description: 'لوحة دائرية 2.5D بحركة قفز وجمع عملات عبر النرد.',
+    howToPlay: 'في دورك اضغط زر النرد، تحرك على البلاطات، واجمع أكبر عدد من العملات.',
   },
 }
 

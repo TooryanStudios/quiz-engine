@@ -84,6 +84,8 @@ export function MiniGameConfigurationPanel({
             }
             const policy = POLICY_LABELS[gameModeId] || { type: 'per-round', label: 'Duration per round (seconds)' }
             const selfManaged = policy.type === 'self'
+            const hideGenericTiming = gameModeId === 'island-dice-adventure'
+            if (hideGenericTiming) return null
             return (
               <div style={{ padding: '0.75rem 0.85rem', borderRadius: '10px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', marginBottom: '0.5rem' }}>
                 <div style={{ display: 'grid', gap: '0.65rem', gridTemplateColumns: '1fr 1fr 1fr', alignItems: 'end' }}>
@@ -126,6 +128,72 @@ export function MiniGameConfigurationPanel({
               </div>
             )
           })()}
+
+          {gameModeId === 'island-dice-adventure' && (
+            <div style={{ display: 'grid', gap: '0.65rem', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
+              <div>
+                <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>
+                  🧭 Board Size
+                </label>
+                <input
+                  type="number"
+                  min={12}
+                  max={36}
+                  step={1}
+                  value={Number(miniGameConfig.islandBoardSize) || 24}
+                  onChange={(e) => onUpdateMiniGameConfig({ islandBoardSize: Number(e.target.value) })}
+                  style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', color: 'var(--text)' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>
+                  🪙 Target Coins
+                </label>
+                <input
+                  type="number"
+                  min={40}
+                  max={500}
+                  step={5}
+                  value={Number(miniGameConfig.islandTargetCoins) || 140}
+                  onChange={(e) => onUpdateMiniGameConfig({ islandTargetCoins: Number(e.target.value) })}
+                  style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', color: 'var(--text)' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.8rem', color: 'var(--text-mid)', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>
+                  🔁 Round Limit
+                </label>
+                <input
+                  type="number"
+                  min={3}
+                  max={50}
+                  step={1}
+                  value={Number(miniGameConfig.islandRoundLimit) || 10}
+                  onChange={(e) => onUpdateMiniGameConfig({ islandRoundLimit: Number(e.target.value) })}
+                  style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)', color: 'var(--text)' }}
+                />
+              </div>
+
+              <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '0.55rem', paddingTop: '0.2rem' }}>
+                <input
+                  id="island-auto-spin-default"
+                  type="checkbox"
+                  checked={Boolean(miniGameConfig.islandAutoSpinDefault)}
+                  onChange={(e) => onUpdateMiniGameConfig({ islandAutoSpinDefault: e.target.checked })}
+                  style={{ width: '16px', height: '16px', accentColor: '#22c55e' }}
+                />
+                <label htmlFor="island-auto-spin-default" style={{ fontSize: '0.84rem', color: 'var(--text)', fontWeight: 700 }}>
+                  Enable auto-spin by default
+                </label>
+              </div>
+
+              <div style={{ gridColumn: '1 / -1', fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.45 }}>
+                Runtime reads these keys from miniGameConfig: <code>islandBoardSize</code>, <code>islandTargetCoins</code>, <code>islandRoundLimit</code>, <code>islandAutoSpinDefault</code>.
+              </div>
+            </div>
+          )}
 
           {gameModeId === 'match-plus-arena' && (
             <div style={{ display: 'grid', gap: '0.65rem', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
@@ -237,7 +305,7 @@ export function MiniGameConfigurationPanel({
             </div>
           )}
 
-          {gameModeId !== 'match-plus-arena' && gameModeId !== 'xo-duel' && gameModeId !== 'gear-machine' && (
+          {gameModeId !== 'match-plus-arena' && gameModeId !== 'xo-duel' && gameModeId !== 'gear-machine' && gameModeId !== 'island-dice-adventure' && (
             <div style={{ padding: '0.7rem 0.8rem', borderRadius: '10px', border: '1px solid var(--border-strong)', background: 'var(--bg-surface)' }}>
               <p style={{ margin: 0, color: 'var(--text)', fontWeight: 700 }}>Dedicated UI ready</p>
               <p style={{ margin: '0.25rem 0 0', color: 'var(--text-mid)', fontSize: '0.82rem' }}>
