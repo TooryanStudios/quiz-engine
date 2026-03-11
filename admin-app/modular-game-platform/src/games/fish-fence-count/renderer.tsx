@@ -428,9 +428,6 @@ function createCandidateLevel(levelId: number, difficulty: CreatorDifficulty): L
     const insideFromY3 = sampleUnique(y3CageCells, Math.min(remainingInside, y3CageCells.length));
     const insideCells = [...insideFromY4, ...insideFromY3];
 
-    // Available y=4 cage slots for outside fish to slide into
-    const insideCellKeys = new Set(insideCells.map((c) => tileKey(c.x, c.y)));
-
     // Obstacles: avoid row y=4 (keep entry path clear) and cage cells
     const forbiddenForObs = new Set<string>([
         ...cageSafeCells.map((c) => tileKey(c.x, c.y)),
