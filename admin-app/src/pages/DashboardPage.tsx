@@ -1,16 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import './DashboardPage.css'
 import { auth } from '../lib/firebase'
-import { cancelPublishRequest, incrementQuizPlayCount, incrementShareCount, listPublicQuizzes, requestPublicVisibility, subscribeMyQuizzes, updateQuiz } from '../lib/quizRepo'
-import { getCoverFromQuestions, isNewContent } from '../lib/utils'
+import { incrementQuizPlayCount, listFeaturedQuizzes, listPublicQuizzes, subscribeMyQuizzes } from '../lib/quizRepo'
+import { getBestCoverImage } from '../lib/utils'
 import { incrementPlatformStat } from '../lib/adminRepo'
 import { guardedLaunchGame } from '../lib/gameLaunch'
-import { buildHostGameUrl, buildPlayerGameUrl } from '../lib/gameModeUrl'
+import { buildHostGameUrl } from '../lib/gameModeUrl'
 import { getHostLaunchAuthParams } from '../lib/hostLaunchAuth'
 import type { QuizDoc } from '../types/quiz'
-import { useTheme } from '../lib/useTheme'
-import placeholderImg from '../assets/QYan_logo_300x164.jpg'
 import { useToast } from '../lib/ToastContext'
 import { useSubscription } from '../lib/useSubscription'
 import { useDialog } from '../lib/DialogContext'
@@ -18,175 +16,92 @@ import { useUserPrefs } from '../lib/UserPrefsContext'
 
 type QuizItem = QuizDoc & { id: string }
 
-function getEditorPath(item: QuizItem): string {
-  const isMiniGame = item.contentType === 'mini-game' || !!item.gameModeId
-  return isMiniGame ? `/mini-game-editor/${item.id}` : `/editor/${item.id}`
-}
-
 const IS_LOCAL_DEV = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
 const SERVER_BASE = IS_LOCAL_DEV
   ? (import.meta.env.VITE_LOCAL_GAME_URL || 'http://localhost:3001')
   : (import.meta.env.VITE_API_BASE_URL || 'https://play.qyan.app')
 
-// ── helpers ───────────────────────────────────────────────────────────────────
-
-/** Map tag/title keywords to an emoji icon */
-function pickEmoji(tags: string[], title: string): string {
-  const text = [...tags, title].join(' ').toLowerCase()
-  if (/(geo|جغراف|world|عالم|map|خريطة)/.test(text)) return '🗺️'
-  if (/(sport|رياض|كرة|ball|أولمب)/.test(text)) return '⚽'
-  if (/(science|علوم|tech|تكنول|physics|chem)/.test(text)) return '⚗️'
-  if (/(history|تاريخ|islam|إسلام|arab|عرب)/.test(text)) return '📜'
-  if (/(nature|طبيعة|animal|حيوان|plant|نبات)/.test(text)) return '🌿'
-  if (/(culture|ثقافة|art|فن|music|موسيق|general|عام)/.test(text)) return '🎨'
-  if (/(math|رياضيات|number|عدد)/.test(text)) return '🔢'
-  if (/(food|طعام|cook|طبخ)/.test(text)) return '🍕'
-  if (/(movie|film|سينما|cinema)/.test(text)) return '🎬'
-  if (/(music|موسيقى|song|أغنية)/.test(text)) return '🎵'
-  return '🧠'
-}
-
-/** Pick a gradient by hashing the quiz title */
-/** Preset → label + colour */
-function presetBadge(preset?: string) {
-  if (preset === 'easy') return { label: 'سهل', color: '#16a34a' }
-  if (preset === 'hard') return { label: 'صعب', color: '#dc2626' }
-  return { label: 'عادي', color: '#2563eb' }
-}
-
-// ── component ─────────────────────────────────────────────────────────────────
-
 export function DashboardPage() {
-  const [quizzes, setQuizzes] = useState<QuizItem[]>([])
+  const [myQuizzes, setMyQuizzes] = useState<QuizItem[]>([])
+  const [publicLibrary, setPublicLibrary] = useState<QuizItem[]>([])
+  const [featuredLibrary, setFeaturedLibrary] = useState<QuizItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [hoveredId, setHoveredId] = useState<string | null>(null)
-  const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
-  const [updatingId, setUpdatingId] = useState<string | null>(null)
-  const visibleCount = 6
-  const menuRef = useRef<HTMLDivElement>(null)
-  const [publicLibrary, setPublicLibrary] = useState<(QuizDoc & { id: string })[]>([])
   const [publicLoading, setPublicLoading] = useState(true)
+  const [visibleCount, setVisibleCount] = useState(6)
+
   const { showToast } = useToast()
   const { show: showDialog } = useDialog()
   const { isSubscribed } = useSubscription()
-  const appTheme = useTheme()
-  const dark = appTheme === 'dark'
   const { language } = useUserPrefs()
-  
   const isAr = language === 'ar'
+  const displayName = auth.currentUser?.displayName?.trim()
+  const fallbackName = auth.currentUser?.email?.split('@')[0] || 'Player'
+  const userName = displayName && displayName.length > 0 ? displayName : fallbackName
+  const isMorning = new Date().getHours() < 12
+  const timeGreeting = isAr
+    ? (isMorning ? `صباح الخير ${userName}` : `مساء الخير ${userName}`)
+    : (isMorning ? `Good morning ${userName}` : `Good evening ${userName}`)
+
   const t = {
-    greeting: isAr ? (new Date().getHours() < 12 ? 'صباح الخير' : 'مساء الخير') : (new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening'),
-    newQuiz: isAr ? 'اختبار جديد' : 'New Quiz',
-    newMiniGame: isAr ? 'لعبة مصغرة جديدة' : 'New Mini Game',
-    totalQuizzes: isAr ? 'إجمالي الاختبارات' : 'Total Quizzes',
-    questions: isAr ? 'الأسئلة' : 'Questions',
-    public: isAr ? 'عام' : 'Public',
-    private: isAr ? 'خاص' : 'Private',
-    libTitle: isAr ? 'مكتبة الأسئلة' : 'Packs Library',
-    libDesc: isAr ? 'اختبارات عامة منشورة للجميع' : 'Public quizzes available to everyone',
-    viewAllStr: isAr ? 'استعراض الكل ›' : 'View all ›',
-    quickActions: isAr ? 'إجراءات سريعة' : 'Quick Actions',
-    quizEditor: isAr ? 'محرر الاختبارات' : 'Quiz Editor',
-    billing: isAr ? 'الاشتراك' : 'Billing',
-    recentlyUpdated: isAr ? 'آخر التحديثات' : 'Recently Updated',
-    noQuizzes: isAr ? 'لا توجد اختبارات بعد' : 'No quizzes yet',
-    createFirst: isAr ? 'أنشئ أول اختبار لك الآن' : 'Create your first quiz now',
-    questionsWord: isAr ? 'أسئلة' : 'questions',
-    questionWord: isAr ? 'سؤال' : 'question',
-    myQuizzes: isAr ? 'اختباراتي' : 'My Quizzes',
-    play: isAr ? 'العب' : 'Play',
-    visibility: isAr ? 'الرؤية' : 'Visibility',
-    pending: isAr ? 'في الانتظار 🕐' : 'Pending 🕐',
-    pubReq: isAr ? 'طلب نشر 🌐' : 'Publish Request 🌐',
-    newBadge: isAr ? 'جديد' : 'NEW',
-    dateLocale: isAr ? 'ar-EG' : 'en-US',
-    quizzesCountStr: (count: number) => isAr ? `${count} اختبار${count !== 1 ? 'ات' : ''}` : `${count} quiz${count !== 1 ? 'zes' : ''}`,
-    viewAllQuizzes: (count: number) => isAr ? `استعراض جميع الـ ${count} اختبارات ←` : `View all ${count} quizzes →`
+    actionsTitle: isAr ? 'ابدأ الآن' : 'Start Now',
+    topFeatured: isAr ? 'المميّز من الإدارة' : 'Admin Featured',
+    moreGames: isAr ? 'ألعاب أكثر' : 'More Games',
+    availableGames: isAr ? 'الألعاب المتاحة' : 'Available Games',
+    playNow: isAr ? 'العب الآن' : 'Play Now',
+    browseAll: isAr ? 'تصفح المكتبة' : 'Browse Library',
+    createMiniGame: isAr ? 'إنشاء لعبة أو اختبار' : 'Create Game Or Quiz',
+    noGames: isAr ? 'لا توجد ألعاب متاحة بعد.' : 'No games available yet.',
+    createFirst: isAr ? 'أنشئ أول لعبة صغيرة للبدء.' : 'Create your first mini-game to begin.',
+    noFeatured: isAr ? 'لم يتم اختيار لعبة مميزة من قبل الإدارة بعد.' : 'No featured game selected by master admin yet.',
+    miniGameLabel: isAr ? 'لعبة مصغرة' : 'Mini Game',
+    quizGameLabel: isAr ? 'لعبة اختبار' : 'Quiz Game',
+    loadMore: isAr ? 'تحميل المزيد' : 'Load More',
+    exploreMore: isAr ? 'استكشاف المزيد' : 'Explore More',
+    subscriptionTitle: isAr ? 'اشتراك مطلوب' : 'Subscription Required',
+    subscriptionBody: isAr ? 'هذا الاختبار محتوى مميز. يرجى ترقية حسابك لبدء التشغيل.' : 'This quiz is premium content. Please upgrade your account to launch it.',
+    upgradeNow: isAr ? 'ترقية الآن' : 'Upgrade now',
+    cancel: isAr ? 'إلغاء' : 'Cancel',
+    serverUnavailable: isAr ? 'خادم اللعبة غير متوفر مؤقتاً. يرجى المحاولة بعد قليل.' : 'Game server is temporarily unavailable. Please try again in a moment.',
+    popupBlocked: isAr ? 'تم حظر النافذة المنبثقة. يرجى السماح بالنوافذ المنبثقة ثم المحاولة مرة أخرى.' : 'Popup was blocked. Please allow popups and try again.',
   }
 
   useEffect(() => {
     listPublicQuizzes()
       .then((list) => {
         const toMs = (ts: any) => ts?.toMillis?.() ?? (ts?.seconds ? ts.seconds * 1000 : 0)
-        setPublicLibrary([...list].sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt)).slice(0, 6))
+        const sorted = [...list].sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt))
+        setPublicLibrary(sorted as QuizItem[])
       })
-      .catch(() => {})
+      .catch(() => setPublicLibrary([]))
       .finally(() => setPublicLoading(false))
   }, [])
 
   useEffect(() => {
-    const uid = auth.currentUser?.uid
-    if (!uid) { setLoading(false); return }
-    const unsub = subscribeMyQuizzes(
-      uid,
-      (list) => {
-        const sorted = [...list].sort((a, b) => {
-          const toMs = (ts: any) => ts?.toMillis?.() ?? (ts?.seconds ? ts.seconds * 1000 : 0)
-          return toMs(b.createdAt) - toMs(a.createdAt) // newest first
-        })
-        setQuizzes(sorted as QuizItem[])
-        setLoading(false)
-      },
-      (err) => { console.error(err); setLoading(false) }
-    )
-    return unsub
+    listFeaturedQuizzes()
+      .then((list) => setFeaturedLibrary(list as QuizItem[]))
+      .catch(() => setFeaturedLibrary([]))
   }, [])
 
-  // Close menu when clicking outside
   useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpenId(null)
-      }
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [])
-
-  async function handleVisibilityChange(quiz: QuizItem, newVis: 'public' | 'private') {
-    setMenuOpenId(null)
-    const masterEmail = import.meta.env.VITE_MASTER_EMAIL as string | undefined
-    const isMasterAdmin = !!masterEmail && auth.currentUser?.email === masterEmail
-
-    if (newVis === 'private') {
-      // If already private with no pending request, nothing to do
-      if (quiz.visibility === 'private' && !quiz.approvalStatus) return
-      const ok = quiz.approvalStatus === 'pending'
-        ? window.confirm(`إلغاء طلب النشر لـ "${quiz.title}"؟`)
-        : window.confirm(`Make "${quiz.title}" private?\n\nIt will no longer appear in the Public Library.`)
-      if (!ok) return
-      setUpdatingId(quiz.id)
-      try {
-        await cancelPublishRequest(quiz.id)
-        setQuizzes((prev) => prev.map((q) => q.id === quiz.id ? { ...q, visibility: 'private', approvalStatus: undefined } : q))
-      } catch {
-        alert('Failed to update. Please try again.')
-      } finally {
-        setUpdatingId(null)
-      }
+    const uid = auth.currentUser?.uid
+    if (!uid) {
+      setLoading(false)
       return
     }
 
-    // Requesting public
-    if (quiz.approvalStatus === 'pending') return // already pending, ignore
-    if (quiz.visibility === 'public') return // already public
+    const unsub = subscribeMyQuizzes(
+      uid,
+      (list) => {
+        const toMs = (ts: any) => ts?.toMillis?.() ?? (ts?.seconds ? ts.seconds * 1000 : 0)
+        const sorted = [...list].sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt))
+        setMyQuizzes(sorted as QuizItem[])
+        setLoading(false)
+      },
+      () => setLoading(false),
+    )
 
-    setUpdatingId(quiz.id)
-    try {
-      if (isMasterAdmin) {
-        await updateQuiz(quiz.id, { visibility: 'public', approvalStatus: 'approved' })
-        setQuizzes((prev) => prev.map((q) => q.id === quiz.id ? { ...q, visibility: 'public', approvalStatus: 'approved' } : q))
-      } else {
-        await requestPublicVisibility(quiz.id)
-        setQuizzes((prev) => prev.map((q) => q.id === quiz.id ? { ...q, approvalStatus: 'pending' } : q))
-        showToast({ message: '🕐 تم إرسال طلب النشر، سينظر المشرف فيه قريباً.', type: 'info' })
-      }
-    } catch {
-      alert('Failed to submit request. Please try again.')
-    } finally {
-      setUpdatingId(null)
-    }
-  }
+    return unsub
+  }, [])
 
   function requiresSubscription(quiz: QuizItem) {
     return quiz.priceTier === 'starter' || quiz.priceTier === 'pro'
@@ -195,10 +110,10 @@ export function DashboardPage() {
   async function handleLaunchGame(quiz: QuizItem) {
     if (requiresSubscription(quiz) && !isSubscribed) {
       showDialog({
-        title: '🔒 Subscription Required',
-        message: 'This quiz is a premium quiz. Please upgrade your account to launch it.',
-        confirmText: 'Upgrade now',
-        cancelText: 'Cancel',
+        title: t.subscriptionTitle,
+        message: t.subscriptionBody,
+        confirmText: t.upgradeNow,
+        cancelText: t.cancel,
         onConfirm: () => {
           window.location.assign('/billing')
         },
@@ -206,9 +121,6 @@ export function DashboardPage() {
       return
     }
 
-    // Open the window NOW — synchronously inside the user-gesture — before any
-    // async work.  Mobile browsers (iOS Safari) will block window.open() if it
-    // happens after an await.
     const preOpenedTab = window.open('', '_blank')
 
     const authParams = await getHostLaunchAuthParams({
@@ -222,19 +134,20 @@ export function DashboardPage() {
       gameModeId: quiz.gameModeId,
       ...authParams,
     })
+
     await guardedLaunchGame({
       serverBase: SERVER_BASE,
       gameUrl,
       preOpenedTab,
       onUnavailable: () => {
         showToast({
-          message: 'Game server is temporarily unavailable. Please try again in a moment.',
+          message: t.serverUnavailable,
           type: 'error',
         })
       },
       onPopupBlocked: () => {
         showToast({
-          message: 'Popup was blocked. Please allow popups and try again.',
+          message: t.popupBlocked,
           type: 'info',
         })
       },
@@ -245,545 +158,226 @@ export function DashboardPage() {
     })
   }
 
-  // ── Dashboard derived data ─────────────────────────────────────────────────
-  const authUser = auth.currentUser
-  const displayName = authUser?.displayName || authUser?.email?.split('@')[0] || 'there'
-  const dateStr = new Date().toLocaleDateString(t.dateLocale, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
-  const totalQuestions = quizzes.reduce((sum, q) => sum + (q.questions?.length ?? 0), 0)
-  const publicCount = quizzes.filter(q => q.visibility === 'public').length
-  const privateCount = quizzes.filter(q => q.visibility === 'private').length
-  const recentQuizzes = [...quizzes]
-    .sort((a, b) => {
-      const ta = (a.updatedAt as { seconds: number } | null)?.seconds ?? 0
-      const tb = (b.updatedAt as { seconds: number } | null)?.seconds ?? 0
-      return tb - ta
+  const allGames = useMemo(() => {
+    const merged = [...publicLibrary, ...myQuizzes]
+    const seen = new Set<string>()
+    const unique = merged.filter((quiz) => {
+      if (seen.has(quiz.id)) return false
+      seen.add(quiz.id)
+      return true
     })
-    .slice(0, 4)
+
+    return unique.sort((a, b) => {
+      const playsA = a.totalPlays ?? 0
+      const playsB = b.totalPlays ?? 0
+      if (playsA !== playsB) return playsB - playsA
+      const toMs = (ts: any) => ts?.toMillis?.() ?? (ts?.seconds ? ts.seconds * 1000 : 0)
+      return toMs(b.createdAt) - toMs(a.createdAt)
+    })
+  }, [myQuizzes, publicLibrary])
+
+  const featuredSorted = useMemo(() => {
+    const toMs = (ts: any) => ts?.toMillis?.() ?? (ts?.seconds ? ts.seconds * 1000 : 0)
+    return [...featuredLibrary].sort((a, b) => {
+      const pa = a.featuredPriority ?? 100
+      const pb = b.featuredPriority ?? 100
+      if (pa !== pb) return pa - pb
+      return toMs(b.updatedAt) - toMs(a.updatedAt)
+    })
+  }, [featuredLibrary])
+
+  const topFeaturedGame = featuredSorted[0]
+  const sideFeaturedGames = featuredSorted.slice(1, 3)
+  const featuredIds = useMemo(
+    () => new Set([topFeaturedGame, ...sideFeaturedGames].filter((q): q is QuizItem => Boolean(q)).map((q) => q.id)),
+    [topFeaturedGame, sideFeaturedGames],
+  )
+  const remainingGames = useMemo(() => allGames.filter((q) => !featuredIds.has(q.id)), [allGames, featuredIds])
+  const visibleGames = remainingGames.slice(0, visibleCount)
+  const canLoadMore = visibleCount < remainingGames.length
 
   return (
-    <div className="dashboard-container">
-      {/* ── Welcome banner ── */}
-      <div className="dashboard-header">
-        <div>
-          <h2 className="dashboard-header-title">
-            {t.greeting}, {displayName} 👋
-          </h2>
-          <p className="dashboard-header-date">{dateStr}</p>
+    <div className="dashboard-container gameplay-first-dashboard">
+      <section className="gameplay-action-panel">
+        <h3 className="gameplay-action-title">{timeGreeting}</h3>
+        <p className="gameplay-action-subtitle">{t.actionsTitle}</p>
+        <div className="gameplay-action-buttons">
+          <Link to="/mini-game-editor" className="dashboard-btn dashboard-btn-primary gameplay-action-btn">{t.createMiniGame}</Link>
+          <Link to="/packs" className="dashboard-btn dashboard-btn-secondary gameplay-action-btn">{t.browseAll}</Link>
         </div>
-        <div className="dashboard-header-actions">
-        <Link to="/editor" style={{ textDecoration: 'none' }}>
-          <button className="dashboard-btn dashboard-btn-primary">
-            <span>＋</span> {t.newQuiz}
-          </button>
-        </Link>
-        <Link to="/mini-game-editor" style={{ textDecoration: 'none' }}>
-          <button className="dashboard-btn dashboard-btn-secondary">
-            <span>🎮</span> {t.newMiniGame}
-          </button>
-        </Link>
-        </div>
-      </div>
+      </section>
 
-      {/* ── Stats row ── */}
-      <div className="dashboard-stats-grid">
-        {([
-          { icon: '📋', value: loading ? '—' : String(quizzes.length), label: t.totalQuizzes, accent: '#2563eb', bg: 'rgba(37,99,235,0.12)' },
-          { icon: '❓', value: loading ? '—' : String(totalQuestions), label: t.questions, accent: '#7c3aed', bg: 'rgba(124,58,237,0.12)' },
-          { icon: '🌐', value: loading ? '—' : String(publicCount), label: t.public, accent: '#059669', bg: 'rgba(5,150,105,0.12)' },
-          { icon: '🔒', value: loading ? '—' : String(privateCount), label: t.private, accent: '#d97706', bg: 'rgba(217,119,6,0.12)' },
-        ] as const).map((sc) => (
-          <div key={sc.label} className="stat-card">
-            <div className="stat-icon-bg" style={{ background: sc.bg }}>{sc.icon}</div>
-            <div className="stat-value">{sc.value}</div>
-            <div className="stat-label">{sc.label}</div>
-            <div className="stat-accent-bar" style={{ background: sc.accent }} />
+      {(loading || publicLoading || topFeaturedGame) && (
+        <section className="dashboard-section gameplay-top-feature-wrap">
+          <div className="dashboard-section-header gameplay-featured-header">
+            <h3 className="dashboard-section-title">{t.topFeatured}</h3>
           </div>
-        ))}
-      </div>
 
-      {/* ── Public Library Preview ── */}
-      <div className="dashboard-section">
-        <div className="dashboard-section-header">
-          <div>
-            <h3 className="dashboard-section-title">📚 {t.libTitle}</h3>
-            <p className="dashboard-section-desc">{t.libDesc}</p>
-          </div>
-          <Link to="/packs" style={{ textDecoration: 'none' }}>
-            <button className="dashboard-link-btn">{t.viewAllStr}</button>
-          </Link>
-        </div>
-
-        {publicLoading ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '0.75rem' }}>
-            {[1,2,3,4,5,6].map(i => (
-              <div key={i} style={{ height: 120, borderRadius: 12, background: 'linear-gradient(90deg, var(--bg-deep) 25%, var(--border) 50%, var(--bg-deep) 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.5s infinite' }} />
-            ))}
-          </div>
-        ) : publicLibrary.length === 0 ? null : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '0.75rem' }}>
-            {publicLibrary.map((q) => {
-              const cover = (q as any).coverImage || getCoverFromQuestions((q as any).questions ?? [])
-              const emoji = pickEmoji((q as any).tags ?? [], q.title)
-              return (
-                <div key={(q as any).id} className="pub-card" onClick={() => handleLaunchGame(q as QuizItem)}>
-                  {/* Thumbnail with play button */}
-                  <div className="pub-cover" style={{ background: cover ? `url(${cover}) center/cover no-repeat` : 'linear-gradient(135deg, #1e40af33, #7c3aed33)', fontSize: '2rem' }}>
-                    {!cover && emoji}
-                    {/* Play button overlay */}
-                    <div className="pub-play-overlay">
-                      <div className="pub-play-btn">▶</div>
-                    </div>
-                  </div>
-                  {/* Info — clicking navigates to packs */}
-                  <Link to="/packs" style={{ textDecoration: 'none' }} onClick={(e) => e.stopPropagation()}>
-                    <div className="pub-info">
-                      <div className="pub-title">{q.title}</div>
-                      <div className="pub-meta">
-                        {(q as any).questions?.length ?? 0} {t.questionsWord}
-                      </div>
-                    </div>
-                  </Link>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* ── Quick Actions + Recently Updated ── */}
-      <div className="dashboard-mid-grid">
-        {/* Quick Actions */}
-        <div className="activity-list-container">
-          <div className="activity-list-title">{t.quickActions}</div>
-          <div className="activity-list">
-            {([
-              { icon: '＋', label: t.newQuiz, to: '/editor', primary: true },
-              { icon: '🎮', label: t.newMiniGame, to: '/mini-game-editor', primary: false },
-              { icon: '✏️', label: t.quizEditor, to: '/editor', primary: false },
-              { icon: '📦', label: t.libTitle, to: '/packs', primary: false },
-              { icon: '💳', label: t.billing, to: '/billing', primary: false },
-            ] as const).map((qa) => (
-              <Link key={qa.label} to={qa.to} style={{ textDecoration: 'none' }}>
-                <div className={`activity-item ${qa.primary ? 'primary' : ''}`}>
-                  <span style={{ width: 20, textAlign: 'center', flexShrink: 0 }}>{qa.icon}</span>
-                  <span style={{ flex: 1 }}>{qa.label}</span>
-                  <span style={{ fontSize: '0.7rem', opacity: 0.4 }}>›</span>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </div>
-
-        {/* Recently Updated */}
-        <div className="activity-list-container">
-          <div className="activity-list-title">{t.recentlyUpdated}</div>
-          {loading ? (
-            <div className="activity-list">
-              {[1,2,3].map(i => (
-                <div key={i} className="shimmer-card" style={{ height: 50 }} />
-              ))}
-            </div>
-          ) : recentQuizzes.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>{t.noQuizzes}</div>
-          ) : (
-            <div className="activity-list">
-              {recentQuizzes.map((q) => {
-                const emoji = pickEmoji(q.tags ?? [], q.title)
-                const badge = presetBadge(q.challengePreset)
-                return (
-                  <div key={q.id} className="activity-item compact">
-                    <span style={{ fontSize: '1.25rem', flexShrink: 0 }}>{emoji}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                        <div className="activity-item-title">
-                          {q.title}
-                        </div>
-                        {isNewContent(q.createdAt) && (
-                          <span className="badge-new">{t.newBadge}</span>
-                        )}
-                      </div>
-                      <div className="activity-item-meta">
-                        {q.questions?.length ?? 0} {t.questionsWord}
-                        &nbsp;&middot;&nbsp;<span style={{ color: badge.color }}>{badge.label}</span>
-                        &nbsp;&middot;&nbsp;{q.visibility === 'public' ? `🌐 ${t.public}` : `🔒 ${t.private}`}
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: '0.3rem', flexShrink: 0 }}>
-                      <Link to={`/preview/${q.id}`} title="Preview" style={{ textDecoration: 'none' }}>
-                        <button className="icon-btn-small">👁️</button>
-                      </Link>
-                      <Link to={getEditorPath(q)} title="Edit" style={{ textDecoration: 'none' }}>
-                        <button className="icon-btn-small primary">✏️</button>
-                      </Link>
-                    </div>
-                  </div>
-                )
-              })}
+          {(loading || publicLoading) && (
+            <div className="gameplay-top-feature-shell">
+              <div className="shimmer-card gameplay-top-feature-shimmer" />
             </div>
           )}
-        </div>
-      </div>
 
-      {/* ── My Quizzes ── */}
-      <div className="dashboard-section-header" style={{ marginTop: '2.5rem' }}>
-        <div>
-          <h3 className="dashboard-section-title">{t.myQuizzes}</h3>
-          <p className="dashboard-section-desc">
-            {loading ? '...' : t.quizzesCountStr(quizzes.length)}
-          </p>
-        </div>
-        {quizzes.length > 0 && (
-          <Link to="/my-quizzes" style={{ textDecoration: 'none' }}>
-            <button className="dashboard-link-btn outlined">
-              {t.viewAllStr}
-            </button>
-          </Link>
-        )}
-      </div>
-
-      {/* ── Loading skeleton ── */}
-      {loading && (
-        <div className="dashboard-grid">
-          {[1,2,3,4,5,6].map((i) => (
-            <div key={i} className="shimmer-card quiz-card-shimmer" />
-          ))}
-        </div>
-      )}
-
-      {/* ── Empty state ── */}
-      {!loading && quizzes.length === 0 && (
-        <div className="empty-state-container">
-          <div className="empty-state-icon">📋</div>
-          <h3 className="empty-state-title">{t.noQuizzes}</h3>
-          <p className="empty-state-desc">{t.createFirst}</p>
-          <Link to="/editor" style={{ textDecoration: 'none' }}>
-            <button className="dashboard-btn dashboard-btn-primary" style={{ padding: '0.75rem 2rem' }}>
-              <span>＋</span> {t.newQuiz}
-            </button>
-          </Link>
-        </div>
-      )}
-
-      {/* ── Card grid ── */}
-      {!loading && quizzes.length > 0 && (
-        <>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-            gap: '1rem',
-          }}>
-            {quizzes.slice(0, visibleCount).map((q) => {
-            const coverImg = q.coverImage || getCoverFromQuestions(q.questions ?? [])
-            const badge = presetBadge(q.challengePreset)
-            const isHovered = hoveredId === q.id
-
-            const aBtnStyle: React.CSSProperties = {
-              width: '100%', padding: '0.78rem 0.5rem', borderRadius: '7px',
-              background: dark ? '#1e293b' : '#f1f5f9',
-              color: dark ? '#94a3b8' : '#475569',
-              fontSize: '0.75rem', fontWeight: 600,
-              border: `1px solid ${dark ? '#273549' : '#e2e8f0'}`,
-              cursor: 'pointer', transition: 'background 0.15s, color 0.15s',
-            }
-            const aBtnPrimary: React.CSSProperties = {
-              ...aBtnStyle,
-              background: dark ? '#1e3a5f' : '#dbeafe',
-              color: dark ? '#93c5fd' : '#1d4ed8',
-              border: `1px solid ${dark ? '#1e4a7a' : '#bfdbfe'}`,
-            }
+          {!loading && !publicLoading && topFeaturedGame && (() => {
+            const coverImage = getBestCoverImage(topFeaturedGame.coverImage, topFeaturedGame.questions ?? [])
 
             return (
-              <div
-                key={q.id}
-                onMouseEnter={() => setHoveredId(q.id)}
-                onMouseLeave={() => { setHoveredId(null); if (menuOpenId !== q.id) setMenuOpenId(null) }}
-                style={{
-                  borderRadius: '14px',
-                  background: dark ? '#0f172a' : '#ffffff',
-                  border: `1px solid ${isHovered ? (dark ? '#334155' : '#cbd5e1') : (dark ? '#1e293b' : '#e2e8f0')}`,
-                  boxShadow: isHovered ? (dark ? '0 12px 32px rgba(0,0,0,0.5)' : '0 8px 24px rgba(0,0,0,0.1)') : (dark ? '0 2px 8px rgba(0,0,0,0.3)' : '0 1px 4px rgba(0,0,0,0.06)'),
-                  transform: isHovered ? 'translateY(-3px)' : 'translateY(0)',
-                  transition: 'transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  cursor: 'pointer',
-                  position: 'relative',
-                }}
-              >
-                {/* Cover image / gradient hero */}
-                <div style={{
-                  height: '120px',
-                  position: 'relative',
-                  overflow: 'hidden',
-                  background: coverImg ? '#000' : '#0f172a',
-                  flexShrink: 0,
-                  borderRadius: '13px 13px 0 0',
-                }}>
-                  <img
-                    src={coverImg || placeholderImg}
-                    alt={q.title}
-                    onError={(e) => { 
-                      ;(e.currentTarget as HTMLImageElement).src = placeholderImg
-                    }}
-                    style={{
-                      width: '100%', height: '100%',
-                      objectFit: coverImg ? 'cover' : 'contain',
-                      opacity: isHovered ? 0.95 : coverImg ? 0.75 : 0.85,
-                      transition: 'opacity 0.3s, transform 0.4s',
-                      transform: isHovered ? 'scale(1.05)' : 'scale(1)',
-                      padding: coverImg ? 0 : '16px',
-                    }}
-                  />
-                  {/* Centered play button overlay */}
-                  <a
-                    href={buildHostGameUrl({
-                      serverBase: SERVER_BASE,
-                      quizId: q.id,
-                      gameModeId: q.gameModeId,
-                    })}
-                    target="_blank" rel="noopener noreferrer"
-                    onClick={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      void handleLaunchGame(q)
-                    }}
-                    style={{
-                      position: 'absolute',
-                      top: '50%', left: '50%',
-                      transform: isHovered ? 'translate(-50%, -50%) scale(1)' : 'translate(-50%, -50%) scale(0.8)',
-                      opacity: isHovered ? 1 : 0,
-                      transition: 'opacity 0.2s, transform 0.2s',
-                      padding: '0.55rem 1.3rem',
-                      borderRadius: '10px',
-                      whiteSpace: 'nowrap',
-                      background: 'rgba(22,163,74,0.9)', backdropFilter: 'blur(4px)',
-                      border: '2px solid rgba(255,255,255,0.5)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem',
-                      color: '#fff', fontSize: '0.92rem', fontWeight: 700,
-                      textDecoration: 'none', zIndex: 5,
-                      boxShadow: '0 4px 14px rgba(0,0,0,0.5)',
-                    }}
-                  >
-                    &#9654; {t.play}
-                  </a>
-                  {/* Subtle bottom fade */}
-                  <div style={{
-                    position: 'absolute', inset: 0,
-                    background: dark
-                      ? 'linear-gradient(to top, rgba(15,23,42,0.9) 0%, transparent 60%)'
-                      : 'linear-gradient(to top, rgba(255,255,255,0.85) 0%, transparent 55%)',
-                    pointerEvents: 'none',
-                  }} />
-                  {/* Owner avatar */}
-                  {(() => {
-                    const photoURL = auth.currentUser?.photoURL ?? null
-                    const dName = auth.currentUser?.displayName || auth.currentUser?.email || q.ownerId
-                    const initials = dName.slice(0, 2).toUpperCase()
-                    const hue = q.ownerId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360
-                    const avBg = `hsl(${hue}, 55%, 40%)`
-                    return (
-                      <div style={{
-                        position: 'absolute', top: '6px', left: '6px',
-                        width: '28px', height: '28px', borderRadius: '50%',
-                        background: avBg, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: '0.6rem', fontWeight: 700, color: '#fff',
-                        border: '2px solid rgba(255,255,255,0.25)',
-                        boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
-                        overflow: 'hidden',
-                        zIndex: 6,
-                      }}>
-                        {initials}
-                        {photoURL && (
-                          <img 
-                            src={photoURL} 
-                            alt="" 
-                            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
-                            style={{
-                              position: 'absolute', inset: 0,
-                              width: '100%', height: '100%',
-                              objectFit: 'cover',
-                            }} 
-                          />
-                        )}
-                      </div>
-                    )
-                  })()}
-                  {/* Preset badge — shown on hover only */}
-                  {badge.label !== 'Custom' && (
-                    <div style={{
-                      position: 'absolute', top: '6px', right: '6px',
-                      background: badge.color, color: '#fff',
-                      fontSize: '0.62rem', fontWeight: 700,
-                      padding: '2px 7px', borderRadius: '999px',
-                      opacity: isHovered ? 1 : 0.6,
-                      transition: 'opacity 0.2s',
-                    }}>
-                      {badge.label}
-                    </div>
-                  )}
-                  {/* NEW badge — bottom-right of cover */}
-                  {isNewContent(q.createdAt) && (
-                    <div style={{
-                      position: 'absolute', bottom: '6px', right: '6px',
-                      background: 'linear-gradient(135deg,#10b981,#059669)',
-                      color: '#fff', fontSize: '0.58rem', fontWeight: 800,
-                      padding: '2px 6px', borderRadius: '4px',
-                      textTransform: 'uppercase', letterSpacing: '0.06em',
-                      boxShadow: '0 1px 4px rgba(0,0,0,0.4)', zIndex: 7,
-                    }}>{t.newBadge}</div>
-                  )}
-                </div>
-
-                {/* Three-dot menu — card-level to avoid hero clip */}
-                <div
-                  style={{ position: 'absolute', top: '6px', right: '6px', zIndex: 10 }}
-                  ref={menuOpenId === q.id ? menuRef : undefined}
+              <div className="gameplay-curated-layout">
+                <article
+                  className="gameplay-top-feature-card gameplay-top-feature-hero"
+                  onClick={() => { void handleLaunchGame(topFeaturedGame) }}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      void handleLaunchGame(topFeaturedGame)
+                    }
+                  }}
                 >
-                    <div style={{ opacity: isHovered ? 1 : 0, transition: 'opacity 0.15s' }}>
-                      <button
-                        title="More options"
-                        onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === q.id ? null : q.id) }}
-                        disabled={updatingId === q.id}
-                        style={{
-                          background: dark ? 'rgba(15,23,42,0.8)' : 'rgba(255,255,255,0.88)', backdropFilter: 'blur(6px)',
-                          border: `1px solid ${dark ? '#334155' : '#cbd5e1'}`, color: dark ? '#94a3b8' : '#475569',
-                          fontSize: '0.85rem', padding: '3px 7px', cursor: 'pointer',
-                          borderRadius: '6px', lineHeight: 1,
-                          opacity: updatingId === q.id ? 0.4 : 1,
+                  <div
+                    className="gameplay-top-feature-media"
+                    style={coverImage ? { backgroundColor: '#0f172a', backgroundImage: `url("${coverImage}")` } : { backgroundColor: '#0f172a' }}
+                  />
+                  <div className="gameplay-featured-overlay" />
+                  <div className="gameplay-top-feature-border" />
+                  <div className="gameplay-top-feature-content">
+                    <p className="gameplay-featured-tag">{topFeaturedGame.gameModeId ? t.miniGameLabel : t.quizGameLabel}</p>
+                    <h4 className="gameplay-featured-title">{topFeaturedGame.title}</h4>
+                    <button
+                      className="gameplay-featured-play gameplay-featured-play-fire gameplay-featured-play-xl"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        void handleLaunchGame(topFeaturedGame)
+                      }}
+                    >
+                      {t.playNow}
+                    </button>
+                  </div>
+                </article>
+
+                <div className="gameplay-side-stack">
+                  {sideFeaturedGames.map((quiz) => {
+                    const sideCover = getBestCoverImage(quiz.coverImage, quiz.questions ?? [])
+                    const sideFallback = '#0f172a'
+
+                    return (
+                      <article
+                        key={quiz.id}
+                        className="gameplay-featured-card gameplay-side-card"
+                        onClick={() => { void handleLaunchGame(quiz) }}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            void handleLaunchGame(quiz)
+                          }
                         }}
                       >
-                        {updatingId === q.id ? '…' : '⋯'}
-                      </button>
-                  </div>
-                  {menuOpenId === q.id && (
-                      <div style={{
-                        position: 'absolute', top: '100%', right: 0, zIndex: 50,
-                        background: dark ? '#1e293b' : '#ffffff',
-                        border: `1px solid ${dark ? '#334155' : '#e2e8f0'}`,
-                        borderRadius: '10px', minWidth: '160px',
-                        boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-                        overflow: 'hidden', marginTop: '4px',
-                      }}>
-                        <div style={{ padding: '6px 10px', fontSize: '0.62rem', color: dark ? '#64748b' : '#94a3b8', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                          {t.visibility}
+                        <div
+                          className="gameplay-featured-media"
+                          style={sideCover ? { backgroundColor: sideFallback, backgroundImage: `url("${sideCover}")` } : { backgroundColor: sideFallback }}
+                        />
+                        <div className="gameplay-featured-overlay" />
+                        <div className="gameplay-featured-content gameplay-featured-content-center">
+                          <p className="gameplay-featured-tag">{quiz.gameModeId ? t.miniGameLabel : t.quizGameLabel}</p>
+                          <h4 className="gameplay-featured-title">{quiz.title}</h4>
+                          <button
+                            className="gameplay-featured-play gameplay-featured-play-lg"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              void handleLaunchGame(quiz)
+                            }}
+                          >
+                            {t.playNow}
+                          </button>
                         </div>
-                        {(['public', 'private'] as const).map((v) => {
-                          const isActive = v === 'public'
-                            ? (q.visibility === 'public' || q.approvalStatus === 'pending')
-                            : (q.visibility === 'private' && !q.approvalStatus)
-                          const label = v === 'public'
-                            ? (q.approvalStatus === 'pending' ? t.pending : q.visibility === 'public' ? t.public : t.pubReq)
-                            : `${t.private} 🔒`
-                          return (
-                            <button
-                              key={v}
-                              onClick={(e) => { e.stopPropagation(); handleVisibilityChange(q, v) }}
-                              style={{
-                                width: '100%', display: 'flex', alignItems: 'center', gap: '0.5rem',
-                                padding: '8px 12px', background: isActive ? (dark ? '#0f172a' : '#f1f5f9') : 'transparent',
-                                border: 'none', color: isActive ? (dark ? '#f1f5f9' : '#0f172a') : (dark ? '#94a3b8' : '#64748b'),
-                                fontSize: '0.8rem', cursor: 'pointer', textAlign: 'left',
-                                transition: 'background 0.15s',
-                              }}
-                              onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = dark ? '#273549' : '#f8fafc' }}
-                              onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = 'transparent' }}
-                            >
-                              <span style={{ flex: 1 }}>{label}</span>
-                              {isActive && <span style={{ fontSize: '0.7rem', color: '#2563eb' }}>✓</span>}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    )}
-                </div>
-
-                {/* Card body — title + count only */}
-                <div style={{ padding: '0.65rem 0.8rem 0.5rem', textAlign: 'center' }}>
-                  <div style={{
-                    fontSize: '0.875rem', fontWeight: 400, color: 'var(--text-bright)', lineHeight: 1.4,
-                    display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-                    marginBottom: '0.25rem',
-                  }}>
-                    {q.title}
-                  </div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-mid)', fontWeight: 500 }}>
-                    {q.questions?.length ?? 0} {t.questionWord}
-                  </div>
-                </div>
-
-                {/* Hover action bar */}
-                <div style={{
-                  display: 'flex', gap: '0.4rem',
-                  padding: '0 0.7rem 0.7rem',
-                  opacity: isHovered ? 1 : 0,
-                  transform: isHovered ? 'translateY(0)' : 'translateY(4px)',
-                  transition: 'opacity 0.18s ease, transform 0.18s ease',
-                  pointerEvents: isHovered ? 'auto' : 'none',
-                }}>
-                  <Link to={`/preview/${q.id}`} style={{ textDecoration: 'none', flex: 1 }}>
-                    <button style={aBtnStyle}
-                      onMouseEnter={(e) => Object.assign(e.currentTarget.style, { background: dark ? '#273549' : '#e2e8f0', color: dark ? '#e2e8f0' : '#0f172a' })}
-                      onMouseLeave={(e) => Object.assign(e.currentTarget.style, { background: dark ? '#1e293b' : '#f1f5f9', color: dark ? '#94a3b8' : '#475569' })}
-                    >{isAr ? 'معاينة' : 'Preview'}</button>
-                  </Link>
-                  <Link to={getEditorPath(q)} style={{ textDecoration: 'none', flex: 1 }}>
-                    <button style={aBtnPrimary}
-                      onMouseEnter={(e) => Object.assign(e.currentTarget.style, { background: '#1d4ed8', color: '#fff', borderColor: '#2563eb' })}
-                    onMouseLeave={(e) => Object.assign(e.currentTarget.style, { background: dark ? '#1e3a5f' : '#dbeafe', color: dark ? '#93c5fd' : '#1d4ed8', borderColor: dark ? '#1e4a7a' : '#bfdbfe' })}
-                    >{isAr ? 'تعديل' : 'Edit'}</button>
-                  </Link>
-                  <button
-                    title={isAr ? 'نسخ رابط الاختبار' : 'Copy link'}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      navigator.clipboard?.writeText(buildPlayerGameUrl({
-                        serverBase: SERVER_BASE,
-                        quizId: q.id,
-                      }))
-                        .then(() => {
-                          showToast({ message: isAr ? 'تم نسخ الرابط!' : 'Link copied!', type: 'success' })
-                          incrementShareCount(q.id).catch(console.error)
-                        })
-                    }}
-                    style={{ ...aBtnStyle, width: 'auto', flex: 'none', padding: '0.38rem 0.55rem' }}
-                    onMouseEnter={(e) => Object.assign(e.currentTarget.style, { background: dark ? '#273549' : '#e2e8f0', color: dark ? '#e2e8f0' : '#0f172a' })}
-                    onMouseLeave={(e) => Object.assign(e.currentTarget.style, { background: dark ? '#1e293b' : '#f1f5f9', color: dark ? '#94a3b8' : '#475569' })}
-                  >🔗</button>
+                      </article>
+                    )
+                  })}
                 </div>
               </div>
             )
-          })}
-          </div>
-          {visibleCount < quizzes.length && (
-            <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
-              <Link to="/my-quizzes" style={{ textDecoration: 'none' }}>
-                <button
-                  style={{
-                    padding: '0.65rem 2.25rem', borderRadius: '10px', fontSize: '0.875rem', fontWeight: 700,
-                    background: 'linear-gradient(135deg, #2563eb, #7c3aed)',
-                    color: '#fff', border: 'none',
-                    cursor: 'pointer', transition: 'opacity 0.15s, transform 0.15s',
-                    boxShadow: '0 4px 14px rgba(37,99,235,0.4)',
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.85'; e.currentTarget.style.transform = 'translateY(-1px)' }}
-                  onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(0)' }}
-                >
-                  {t.viewAllQuizzes(quizzes.length)}
-                </button>
-              </Link>
-            </div>
-          )}
-        </>
+          })()}
+        </section>
       )}
 
-      <style>{`
-        @keyframes shimmer {
-          0% { background-position: -200% 0; }
-          100% { background-position: 200% 0; }
-        }
-        .pub-card:hover .pub-play-btn { transform: scale(1.18); }
+      {!loading && !publicLoading && allGames.length === 0 && (
+        <div className="empty-state-container" style={{ margin: '2rem 0' }}>
+          <h3 className="empty-state-title">{t.noGames}</h3>
+          <p className="empty-state-desc">{t.createFirst}</p>
+          <Link to="/mini-game-editor" className="dashboard-btn dashboard-btn-primary">{t.createMiniGame}</Link>
+        </div>
+      )}
 
-      `}</style>
+      {!loading && !publicLoading && visibleGames.length > 0 && (
+        <section className="dashboard-section gameplay-featured-wrap">
+          <div className="dashboard-section-header gameplay-featured-header">
+            <h3 className="dashboard-section-title">{topFeaturedGame ? t.moreGames : t.availableGames}</h3>
+          </div>
+
+          <div className="gameplay-featured-grid gameplay-vertical-grid">
+              {visibleGames.map((quiz) => {
+                const coverImage = getBestCoverImage(quiz.coverImage, quiz.questions ?? [])
+                const fallbackGradient = '#0f172a'
+
+                return (
+                  <article
+                    key={quiz.id}
+                    className="gameplay-featured-card gameplay-regular-card"
+                    onClick={() => { void handleLaunchGame(quiz) }}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        void handleLaunchGame(quiz)
+                      }
+                    }}
+                  >
+                    <div
+                      className="gameplay-featured-media"
+                      style={coverImage ? { backgroundColor: fallbackGradient, backgroundImage: `url("${coverImage}")` } : { backgroundColor: fallbackGradient }}
+                    />
+                    <div className="gameplay-featured-overlay" />
+                    <div className="gameplay-featured-content">
+                      <p className="gameplay-featured-tag">{quiz.gameModeId ? t.miniGameLabel : t.quizGameLabel}</p>
+                      <h4 className="gameplay-featured-title">{quiz.title}</h4>
+                      <button
+                        className="gameplay-featured-play gameplay-featured-play-lg"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          void handleLaunchGame(quiz)
+                        }}
+                      >
+                        {t.playNow}
+                      </button>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+
+          {remainingGames.length > 0 && (
+            <div className="gameplay-more-actions">
+              {canLoadMore ? (
+                <button
+                  className="dashboard-btn dashboard-btn-secondary gameplay-load-more"
+                  onClick={() => setVisibleCount((prev) => prev + 6)}
+                >
+                  {t.loadMore}
+                </button>
+              ) : (
+                <Link to="/packs" className="dashboard-btn dashboard-btn-primary gameplay-load-more-link">
+                  {t.exploreMore}
+                </Link>
+              )}
+            </div>
+          )}
+        </section>
+      )}
     </div>
   )
 }

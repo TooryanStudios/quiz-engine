@@ -1,10 +1,11 @@
-import React, { useState } from "react";
-import { useGame } from "../hooks/use-game";
-import type { GameAction } from "../core/types";
-import "./play.css";
+import React from 'react';
+import { useGame } from '../hooks/use-game';
+import type { GameAction, GameState } from '../core/types';
+import './play.css';
 
 interface PlayProps {
     gameId: string;
+    onStateChange?: (gameState: GameState) => void;
     theme?: {
         bg: string;
         surface: string;
@@ -16,13 +17,15 @@ interface PlayProps {
     };
 }
 
-const Play: React.FC<PlayProps> = ({ gameId, theme }) => {
+const Play: React.FC<PlayProps> = ({ gameId, onStateChange, theme }) => {
     const { game, loading, error } = useGame(gameId);
-    const [gameState, setGameState] = useState<any>(null);
+    const [gameState, setGameState] = React.useState<GameState | null>(null);
 
-    // Apply theme variables
     const themeStyle = React.useMemo(() => {
-        if (!theme) return {};
+        if (!theme) {
+            return {};
+        }
+
         return {
             '--theme-bg': theme.bg,
             '--theme-surface': theme.surface,
@@ -35,115 +38,113 @@ const Play: React.FC<PlayProps> = ({ gameId, theme }) => {
     }, [theme]);
 
     React.useEffect(() => {
-        if (game && !gameState) {
-            setGameState(game.logic.createInitialState());
+        if (!game) {
+            setGameState(null);
+            return;
         }
-    }, [game, gameState]);
 
-    if (loading) return <div style={{ padding: "2rem" }}>Loading game module...</div>;
-    if (error || !game) return <div style={{ padding: "2rem" }}>{error ?? "Game not found."}</div>;
-    if (!gameState) return <div style={{ padding: "2rem" }}>Waiting for game logic...</div>;
+        setGameState(game.logic.createInitialState());
+    }, [game]);
 
-    const dispatch = (action: Partial<GameAction>) => {
-        const fullAction = {
-            type: action.type || "start",
-            actorId: "player-1",
-            ...action
-        } as GameAction;
-        const nextState = game.logic.applyAction(gameState, fullAction);
-        setGameState(nextState);
-    };
+    React.useEffect(() => {
+        if (!gameState || !onStateChange) {
+            return;
+        }
+
+        onStateChange(gameState);
+    }, [gameState, onStateChange]);
+
+    const dispatch = React.useCallback(
+        (action: Partial<GameAction>) => {
+            if (!game) {
+                return;
+            }
+
+            const fullAction: GameAction = {
+                type: action.type ?? 'start',
+                actorId: action.actorId ?? 'player-1',
+                success: action.success,
+                note: action.note,
+            };
+
+            setGameState((previousState) => {
+                if (!previousState) {
+                    return previousState;
+                }
+
+                return game.logic.applyAction(previousState, fullAction);
+            });
+        },
+        [game],
+    );
+
+    if (loading) {
+        return <div style={{ padding: '2rem' }}>Loading game module...</div>;
+    }
+
+    if (error || !game) {
+        return <div style={{ padding: '2rem' }}>{error ?? 'Game not found.'}</div>;
+    }
+
+    if (!gameState) {
+        return <div style={{ padding: '2rem' }}>Preparing runtime...</div>;
+    }
+
+    if (game.render) {
+        const CustomGameRenderer = game.render;
+        return <CustomGameRenderer game={game} gameState={gameState} dispatch={dispatch} />;
+    }
 
     return (
-        <div className="retro-quiz-container" dir="rtl" style={themeStyle}>
+        <div className="retro-quiz-container" style={themeStyle}>
             <header className="retro-header">
                 <div className="badge-server">Server connected</div>
                 <div className="hub-center">
-                    <div className="badge-points">
-                        <span role="img" aria-label="Coins">??</span> {gameState.score || 0} pts
-                    </div>
+                    <div className="badge-points">Score: {gameState.score}</div>
                     <div className="status-row">
-                        <span style={{ fontWeight: "bold" }}>Demo</span>
-                        <div className="timer-circle">18</div>
-                        <div style={{ lineHeight: "1.2", textAlign: "center" }}>
-                            <div style={{ fontSize: "0.8rem", fontWeight: "bold" }}>
-                                Q {gameState.round || 1} / {gameState.totalRounds || 20}
+                        <span>Round</span>
+                        <div className="timer-circle">{gameState.round}</div>
+                        <div style={{ lineHeight: '1.2', textAlign: 'center' }}>
+                            <div style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>
+                                {gameState.round} / {gameState.totalRounds}
                             </div>
-                            <div style={{ fontSize: "0.7rem", color: "#666" }}>CLASSIC</div>
+                            <div style={{ fontSize: '0.7rem', color: '#666' }}>CLASSIC</div>
                         </div>
-                        <div className="hearts">??????????</div>
                     </div>
-                    <div className="pin-badge">PIN: 124800</div>
-                </div>
-                <div>
-                   <button style={{ background: "#73c5c1", border: "3px solid #5c4c3e", borderRadius: "50%", width: "40px", height: "40px", color: "white", fontWeight: "bold", fontSize: "1.2rem", cursor: "pointer" }}>??</button>
+                    <div className="pin-badge">Game: {game.name}</div>
                 </div>
             </header>
 
             <div className="question-card">
                 <div className="question-card-inner">
-                    <span className="calendar-icon">?? 17</span>
-                    <h2 className="question-text">
-                        {game.logic.getObjective(gameState) || "???? ?? ??? ??????? ?????? ????????"}
-                    </h2>
+                    <h2 className="question-text">{game.logic.getObjective(gameState)}</h2>
+                    <p style={{ marginTop: '0.75rem' }}>{game.description}</p>
                 </div>
             </div>
 
-            <div className="play-area">
-                <div className="drop-zones">
-                    <div style={{ textAlign: "center", fontWeight: "bold", color: "#5c4c3e" }}>?????? ???????</div>
-                    <div className="drop-zone">drop here</div>
-                    
-                    <div style={{ textAlign: "center", fontWeight: "bold", color: "#5c4c3e" }}>??? ???</div>
-                    <div className="drop-zone drop-zone-filled">
-                        <span className="zone-label">????? ?????? ????</span>
-                    </div>
-
-                    <div style={{ textAlign: "center", fontWeight: "bold", color: "#5c4c3e" }}>????? ???</div>
-                    <div className="drop-zone">drop here</div>
-
-                    <div style={{ textAlign: "center", fontWeight: "bold", color: "#5c4c3e" }}>???? ???</div>
-                    <div className="drop-zone">drop here</div>
-                </div>
-
-                <div className="drag-items">
-                    <div style={{ textAlign: "right", fontWeight: "bold", color: "#8c7f6b", fontSize: "1.2rem", paddingBottom: "1rem" }}>
-                        Drag to Match ?
-                    </div>
-                    <div className="drag-item">????? ??????? ????</div>
-                    <div className="drag-item">????? ??????? ????</div>
-                    <div className="drag-item">????? ??????? ????</div>
-                </div>
-            </div>
-
-            <div className="actions-row">
-                <button className="btn-retro btn-pause" onClick={() => dispatch({ type: "hint" })}>
-                    || Pause
+            <div className="actions-row" style={{ marginBottom: '1rem' }}>
+                <button className="btn-retro btn-pause" onClick={() => dispatch({ type: 'hint' })}>
+                    Hint
                 </button>
-                <button className="btn-retro btn-end" onClick={() => dispatch({ type: "reset" })}>
-                    � End Game
+                <button className="btn-retro btn-submit" onClick={() => dispatch({ type: 'submit', success: true })}>
+                    Submit Success
+                </button>
+                <button className="btn-retro btn-end" onClick={() => dispatch({ type: 'advance' })}>
+                    Next Round
+                </button>
+                <button className="btn-retro btn-end" onClick={() => dispatch({ type: 'reset' })}>
+                    Reset
                 </button>
             </div>
 
-            <div style={{ display: "flex", justifyContent: "center", marginTop: "20px", paddingBottom: "40px" }}>
-                <button 
-                    className="btn-retro btn-submit"
-                    onClick={() => dispatch({ type: "submit", success: true })}
-                >
-                    ????? ??????? ?
-                </button>
+            <div style={{ maxWidth: 860, margin: '0 auto', background: '#fff8ea', borderRadius: 8, padding: '1rem' }}>
+                <strong>Recent Events</strong>
+                <ul>
+                    {gameState.activityLog.slice(-8).map((line, idx) => (
+                        <li key={`${line}-${idx}`}>{line}</li>
+                    ))}
+                </ul>
             </div>
-
-            <div className="shop-icon">
-                <span style={{ fontSize: "2rem", marginBottom: "-5px" }}>??</span>
-                <span style={{ fontSize: "0.6rem" }}>SHOP /</span>
-                <span style={{ fontSize: "0.6rem" }}>PALETTES</span>
-            </div>
-            
-            {/* Fake minimalist pixel cacti for the background */}
-            <div style={{ position: "absolute", bottom: "20%", left: "5%", color: "#659c6b", fontSize: "4rem", opacity: 0.6 }}>??</div>
-            <div style={{ position: "absolute", bottom: "5%", left: "15%", color: "#659c6b", fontSize: "6rem", opacity: 0.8 }}>??</div>
-            <div style={{ position: "absolute", bottom: "15%", right: "10%", color: "#659c6b", fontSize: "5rem", opacity: 0.7 }}>??</div>
         </div>
     );
 };

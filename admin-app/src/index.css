@@ -60,26 +60,19 @@
 
 html {
   font-size: 90%;
-  overflow: hidden;
-  overscroll-behavior: none;
-  touch-action: none;
   height: 100%;
 }
 
 body {
   margin: 0;
   min-width: 320px;
+  min-height: 100%;
   height: 100%;
   background: var(--bg-page);
   color: var(--text);
   font-family: inherit;
   text-align: start;
   transition: background 0.2s ease, color 0.2s ease;
-  /* Lock the viewport — prevents panning, dragging outside, and iOS rubber-banding */
-  overflow: hidden;
-  overscroll-behavior: none;
-  touch-action: none;
-  position: fixed;
   width: 100%;
 }
 
@@ -107,7 +100,9 @@ textarea::placeholder {
   width: 100%;
   height: 100vh;
   height: 100dvh;
-  overflow: hidden;
+  /* clip instead of hidden: prevents scroll-container creation so nested
+     overflow-x:auto children can scroll freely on iOS/Android */
+  overflow: clip;
   position: relative;
 }
 

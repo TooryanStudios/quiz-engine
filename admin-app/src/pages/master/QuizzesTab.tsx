@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react'
 import type { QuizDoc } from '../../types/quiz'
 import { thStyle, tdStyle } from './masterShared'
-import { approveQuiz, rejectQuiz } from '../../lib/adminRepo'
+import { approveQuiz, rejectQuiz, setQuizFeatured } from '../../lib/adminRepo'
 
 interface Props {
   quizzes: (QuizDoc & { id: string })[]
@@ -53,6 +53,18 @@ const actionBtnBase: React.CSSProperties = {
   transition: 'opacity 0.15s',
 }
 
+const FEATURED_SLOTS = [
+  { value: 1, label: 'Hero' },
+  { value: 2, label: 'Side A' },
+  { value: 3, label: 'Side B' },
+  { value: 4, label: 'Curated 1' },
+  { value: 5, label: 'Curated 2' },
+  { value: 6, label: 'Curated 3' },
+  { value: 7, label: 'Curated 4' },
+  { value: 8, label: 'Curated 5' },
+  { value: 9, label: 'Curated 6' },
+]
+
 export function QuizzesTab({ quizzes, hasMore, loadingMore, onLoadMore }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('plays')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
@@ -76,6 +88,20 @@ export function QuizzesTab({ quizzes, hasMore, loadingMore, onLoadMore }: Props)
   async function handleReject(id: string) {
     setActionLoading(id + ':reject')
     try { await rejectQuiz(id) } finally { setActionLoading(null) }
+  }
+
+  async function handleSetFeatured(id: string, featured: boolean) {
+    setActionLoading(id + (featured ? ':feature' : ':unfeature'))
+    try { await setQuizFeatured(id, featured) } finally { setActionLoading(null) }
+  }
+
+  async function handleSetFeaturedSlot(id: string, slot: number | null) {
+    setActionLoading(id + ':slot')
+    try {
+      await setQuizFeatured(id, slot !== null, slot ?? undefined)
+    } finally {
+      setActionLoading(null)
+    }
   }
 
   const pendingCount = useMemo(
@@ -133,6 +159,19 @@ export function QuizzesTab({ quizzes, hasMore, loadingMore, onLoadMore }: Props)
 
   return (
     <div>
+      <div style={{
+        marginBottom: '0.75rem',
+        border: '1px solid var(--border)',
+        borderRadius: '8px',
+        padding: '0.55rem 0.7rem',
+        background: 'var(--bg-deep)',
+        color: 'var(--text-mid)',
+        fontSize: '0.74rem',
+        fontWeight: 600,
+      }}>
+        Featured slots are configured here in the `Featured` column: set `Hero`, `Side A`, `Side B`, or `Curated 1-6` for public quizzes.
+      </div>
+
       {/* Filter + Sort controls */}
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.75rem', alignItems: 'center' }}>
         <button
@@ -164,7 +203,7 @@ export function QuizzesTab({ quizzes, hasMore, loadingMore, onLoadMore }: Props)
       </div>
 
       <div className="master-scroll-table">
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
+        <table style={{ width: 'max-content', borderCollapse: 'collapse', minWidth: 920 }}>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)', background: 'var(--bg-deep)' }}>
               <th style={thStyle}>#</th>
@@ -173,6 +212,7 @@ export function QuizzesTab({ quizzes, hasMore, loadingMore, onLoadMore }: Props)
               </th>
               <th style={thStyle}>Owner</th>
               <th style={thStyle}>Visibility</th>
+              <th style={{ ...thStyle, textAlign: 'center' }}>Featured</th>
               <th style={{ ...thStyle, textAlign: 'right', cursor: 'pointer' }} onClick={() => handleSort('plays')}>
                 Plays{arrow('plays')}
               </th>
@@ -188,7 +228,7 @@ export function QuizzesTab({ quizzes, hasMore, loadingMore, onLoadMore }: Props)
           <tbody>
             {sorted.length === 0 && (
               <tr>
-                <td colSpan={8} style={{ ...tdStyle, color: 'var(--text-muted)', textAlign: 'center', padding: '1.5rem' }}>
+                <td colSpan={9} style={{ ...tdStyle, color: 'var(--text-muted)', textAlign: 'center', padding: '1.5rem' }}>
                   {filter === 'pending' ? 'No quizzes pending approval.' : 'No quizzes found.'}
                 </td>
               </tr>
@@ -207,6 +247,35 @@ export function QuizzesTab({ quizzes, hasMore, loadingMore, onLoadMore }: Props)
                     <small style={{ fontFamily: 'monospace', fontSize: '0.72rem' }}>{q.ownerId}</small>
                   </td>
                   <td style={tdStyle}>{visibilityBadge(q)}</td>
+                  <td style={{ ...tdStyle, textAlign: 'center' }}>
+                    {q.visibility !== 'public' && (
+                      <span style={{ color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.72rem' }}>Public only</span>
+                    )}
+                    {q.visibility === 'public' && (
+                      <select
+                        disabled={actionLoading !== null}
+                        value={q.featured ? String(q.featuredPriority ?? 100) : ''}
+                        onChange={(event) => {
+                          const next = event.target.value
+                          void handleSetFeaturedSlot(q.id, next ? Number(next) : null)
+                        }}
+                        style={{
+                          background: 'var(--bg-surface)',
+                          color: 'var(--text)',
+                          border: '1px solid var(--border)',
+                          borderRadius: '6px',
+                          fontSize: '0.72rem',
+                          padding: '0.2rem 0.35rem',
+                          minWidth: 108,
+                        }}
+                      >
+                        <option value="">None</option>
+                        {FEATURED_SLOTS.map((slot) => (
+                          <option key={slot.value} value={String(slot.value)}>{slot.label}</option>
+                        ))}
+                      </select>
+                    )}
+                  </td>
                   <td style={{ ...tdStyle, textAlign: 'right', fontWeight: plays > 0 ? 700 : 400, color: plays > 0 ? 'var(--accent, #7c3aed)' : 'var(--text-muted)' }}>
                     {plays > 0 ? plays.toLocaleString() : '—'}
                   </td>
@@ -256,6 +325,24 @@ export function QuizzesTab({ quizzes, hasMore, loadingMore, onLoadMore }: Props)
                         style={{ ...actionBtnBase, background: 'transparent', color: '#22c55e', border: '1px solid #22c55e', opacity: actionLoading === q.id + ':approve' ? 0.6 : 1 }}
                       >
                         {actionLoading === q.id + ':approve' ? '…' : 'Approve'}
+                      </button>
+                    )}
+                    {q.visibility === 'public' && (
+                      <button
+                        disabled={actionLoading !== null}
+                        onClick={() => void handleSetFeatured(q.id, !q.featured)}
+                        style={{
+                          ...actionBtnBase,
+                          marginLeft: '0.35rem',
+                          background: 'transparent',
+                          color: q.featured ? '#f59e0b' : 'var(--text-dim)',
+                          border: `1px solid ${q.featured ? '#f59e0b' : 'var(--border)'}`,
+                          opacity: actionLoading === q.id + ':feature' || actionLoading === q.id + ':unfeature' ? 0.6 : 1,
+                        }}
+                      >
+                        {actionLoading === q.id + ':feature' || actionLoading === q.id + ':unfeature'
+                          ? '…'
+                          : q.featured ? 'Clear Feature' : 'Quick Feature'}
                       </button>
                     )}
                   </td>

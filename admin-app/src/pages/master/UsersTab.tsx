@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { setUserStatus, type UserProfile, type GameSession } from '../../lib/adminRepo'
+import { addCreditsToUser, setUserStatus, type UserProfile, type GameSession } from '../../lib/adminRepo'
 import { useDialog } from '../../lib/DialogContext'
+import { useToast } from '../../lib/ToastContext'
 import type { QuizDoc } from '../../types/quiz'
 import { formatLastSeen, formatJoinDate } from './masterShared'
 
@@ -18,6 +19,7 @@ interface Props {
 }
 
 type StatusFilter = 'all' | 'active' | 'blocked' | 'deleted'
+type DisplayMode = 'clean' | 'detailed'
 
 const loadMoreBtnStyle: React.CSSProperties = {
   padding: '0.45rem 1.5rem',
@@ -46,6 +48,7 @@ const menuItemStyle = (color: string): React.CSSProperties => ({
 export function UsersTab({ users, quizzes, sessions, dark, hasMore, loadingMore, onLoadMore, error }: Props) {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [displayMode, setDisplayMode] = useState<DisplayMode>('clean')
 
   // Per-user arrays — zero extra Firestore reads, all derived from already-loaded data
   const quizzesByOwner = quizzes.reduce<Record<string, (QuizDoc & { id: string })[]>>((acc, q) => {
@@ -124,6 +127,39 @@ export function UsersTab({ users, quizzes, sessions, dark, hasMore, loadingMore,
             {key !== 'all' && ` (${users.filter(u => u.status === key).length})`}
           </button>
         ))}
+        <div style={{ width: 1, height: '1.5rem', background: 'var(--border)', margin: '0 0.25rem' }} />
+        <button
+          onClick={() => setDisplayMode('clean')}
+          style={{
+            padding: '0.35rem 0.7rem',
+            borderRadius: '5px',
+            border: 'none',
+            cursor: 'pointer',
+            fontWeight: 600,
+            fontSize: '0.72rem',
+            background: displayMode === 'clean' ? '#2563eb' : (dark ? '#1e293b' : '#e2e8f0'),
+            color: displayMode === 'clean' ? '#fff' : 'var(--text)',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Clean
+        </button>
+        <button
+          onClick={() => setDisplayMode('detailed')}
+          style={{
+            padding: '0.35rem 0.7rem',
+            borderRadius: '5px',
+            border: 'none',
+            cursor: 'pointer',
+            fontWeight: 600,
+            fontSize: '0.72rem',
+            background: displayMode === 'detailed' ? '#2563eb' : (dark ? '#1e293b' : '#e2e8f0'),
+            color: displayMode === 'detailed' ? '#fff' : 'var(--text)',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Detailed
+        </button>
         <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginLeft: 'auto' }}>
           {filtered.length} / {users.length}{authOnlyCount > 0 ? ` (${authOnlyCount} no profile)` : ''}
         </span>
@@ -150,6 +186,7 @@ export function UsersTab({ users, quizzes, sessions, dark, hasMore, loadingMore,
           userQuizzes={quizzesByOwner[u.uid] || []}
           userSessions={sessionsByHost[u.uid] || []}
           dark={dark}
+          mode={displayMode}
         />
       ))}
 
@@ -174,7 +211,7 @@ export function UsersTab({ users, quizzes, sessions, dark, hasMore, loadingMore,
 
 // ── User row ──────────────────────────────────────────────────────────────────
 
-function UserRow({ user: u, quizCount, totalPlays, totalPlayers, sessionsHosted, userQuizzes, userSessions }: {
+function UserRow({ user: u, quizCount, totalPlays, totalPlayers, sessionsHosted, userQuizzes, userSessions, mode }: {
   user: UserProfile
   quizCount: number
   totalPlays: number
@@ -183,13 +220,17 @@ function UserRow({ user: u, quizCount, totalPlays, totalPlayers, sessionsHosted,
   userQuizzes: (QuizDoc & { id: string })[]
   userSessions: GameSession[]
   dark: boolean
+  mode: DisplayMode
 }) {
   const { show } = useDialog()
+  const { showToast } = useToast()
   const [imgErr, setImgErr] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [expanded, setExpanded] = useState(false)
+  const [creditUpdating, setCreditUpdating] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const isAdmin = !!(MASTER_EMAIL && u.email === MASTER_EMAIL)
+  const isDetailed = mode === 'detailed'
 
   useEffect(() => {
     if (!menuOpen) return
@@ -223,6 +264,32 @@ function UserRow({ user: u, quizCount, totalPlays, totalPlayers, sessionsHosted,
     isDangerous: true,
     onConfirm: () => setUserStatus(u.uid, 'deleted'),
   })
+
+  function handleGrantCredits() {
+    const amountInput = window.prompt(`Grant credits to ${u.displayName || u.email || u.uid}.\nEnter credit amount:`)
+    if (!amountInput) return
+    const amount = Number(amountInput)
+    if (!Number.isFinite(amount) || amount <= 0) {
+      showToast({ message: 'Please enter a valid positive credit amount.', type: 'error' })
+      return
+    }
+    const amountInt = Math.floor(amount)
+    const reason = window.prompt('Optional reason (leave blank for manual grant):') || 'manual_admin_grant'
+
+    setCreditUpdating(true)
+    addCreditsToUser(u.uid, amountInt, reason)
+      .then((newBalance) => {
+        showToast({
+          message: `Added ${amountInt} credits to ${u.displayName || u.email || 'user'}. New balance: ${newBalance}.`,
+          type: 'success',
+        })
+      })
+      .catch((err: any) => {
+        const msg = typeof err?.message === 'string' ? err.message : 'Failed to add credits.'
+        showToast({ message: msg, type: 'error' })
+      })
+      .finally(() => setCreditUpdating(false))
+  }
 
   // Build per-quiz stats from already-loaded sessions
   const sessionsByQuizId = userSessions.reduce<Record<string, GameSession[]>>((acc, s) => {
@@ -306,7 +373,7 @@ function UserRow({ user: u, quizCount, totalPlays, totalPlayers, sessionsHosted,
         </div>
 
         {/* Expand button — only when user has quizzes or sessions */}
-        {hasActivity && (
+        {isDetailed && hasActivity && (
           <button
             onClick={() => setExpanded(o => !o)}
             title={expanded ? 'Hide activity breakdown' : 'Show quiz & session breakdown'}
@@ -321,6 +388,26 @@ function UserRow({ user: u, quizCount, totalPlays, totalPlayers, sessionsHosted,
             {expanded ? '▲' : '▼'}
           </button>
         )}
+
+        <button
+          onClick={handleGrantCredits}
+          disabled={creditUpdating}
+          title={isAdmin ? 'Add credits to your admin account' : 'Add credits to this user'}
+          style={{
+            border: '1px solid #f59e0b',
+            background: 'transparent',
+            color: '#f59e0b',
+            borderRadius: '7px',
+            fontSize: '0.72rem',
+            fontWeight: 700,
+            padding: '0.3rem 0.55rem',
+            cursor: creditUpdating ? 'default' : 'pointer',
+            opacity: creditUpdating ? 0.65 : 1,
+            flexShrink: 0,
+          }}
+        >
+          {creditUpdating ? 'Adding…' : '+ Credits'}
+        </button>
 
         {/* ⋮ dropdown menu — hidden for admin */}
         {!isAdmin && (
@@ -387,22 +474,29 @@ function UserRow({ user: u, quizCount, totalPlays, totalPlayers, sessionsHosted,
         </span>
 
         {/* Stats */}
-        <span title="Account join date" style={{ fontSize: '0.72rem', color: 'var(--text-muted)', flexShrink: 0 }}>
-          🗓️ {formatJoinDate(u.createdAt)}
-        </span>
-        <span title="Total sign-ins" style={{ fontSize: '0.72rem', color: 'var(--text-muted)', flexShrink: 0 }}>
-          🔑 {u.signInCount ?? 0} logins
-        </span>
-        <span title="Game sessions hosted" style={{ fontSize: '0.72rem', color: 'var(--text-muted)', flexShrink: 0 }}>
-          🎮 {sessionsHosted} sessions
-        </span>
         <span title="Quizzes created" style={{ fontSize: '0.72rem', color: 'var(--text-muted)', flexShrink: 0 }}>
-          📋 {quizCount} {quizCount === 1 ? 'quiz' : 'quizzes'}
+          📋 {quizCount} quizzes
         </span>
-        {totalPlays > 0 && (
-          <span title="Total times any of this user's quizzes were played" style={{ fontSize: '0.72rem', color: 'var(--text-muted)', flexShrink: 0 }}>
-            ▶️ {totalPlays} plays · 👥 {totalPlayers} players
-          </span>
+        <span title="Current wallet credits" style={{ fontSize: '0.72rem', color: 'var(--text-muted)', flexShrink: 0 }}>
+          💳 {typeof u.creditsRemaining === 'number' ? u.creditsRemaining : 0} credits
+        </span>
+        {isDetailed && (
+          <>
+            <span title="Account join date" style={{ fontSize: '0.72rem', color: 'var(--text-muted)', flexShrink: 0 }}>
+              🗓️ {formatJoinDate(u.createdAt)}
+            </span>
+            <span title="Total sign-ins" style={{ fontSize: '0.72rem', color: 'var(--text-muted)', flexShrink: 0 }}>
+              🔑 {u.signInCount ?? 0} logins
+            </span>
+            <span title="Game sessions hosted" style={{ fontSize: '0.72rem', color: 'var(--text-muted)', flexShrink: 0 }}>
+              🎮 {sessionsHosted} sessions
+            </span>
+            {totalPlays > 0 && (
+              <span title="Total times any of this user's quizzes were played" style={{ fontSize: '0.72rem', color: 'var(--text-muted)', flexShrink: 0 }}>
+                ▶️ {totalPlays} plays · 👥 {totalPlayers} players
+              </span>
+            )}
+          </>
         )}
         <span title="Last login" style={{ fontSize: '0.72rem', color: 'var(--text-muted)', flexShrink: 0 }}>
           🕐 {u._authOnly ? 'Never opened app' : formatLastSeen(u.lastSeen)}
@@ -411,13 +505,13 @@ function UserRow({ user: u, quizCount, totalPlays, totalPlayers, sessionsHosted,
     </div>
 
       {/* ── Expandable: per-quiz activity breakdown ── */}
-      {expanded && hasActivity && (
+      {isDetailed && expanded && hasActivity && (
         <div style={{ borderTop: '1px solid var(--border)', background: 'var(--bg-deep)', padding: '0.6rem 0.85rem' }}>
           <p style={{ margin: '0 0 0.5rem', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>
             Quiz Activity Breakdown
           </p>
           <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', touchAction: 'pan-x' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem', minWidth: 360 }}>
+            <table style={{ width: 'max-content', borderCollapse: 'collapse', fontSize: '0.75rem', minWidth: 360 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
                   <th style={{ textAlign: 'left',   padding: '0.28rem 0.5rem', color: 'var(--text-muted)', fontWeight: 700, whiteSpace: 'nowrap' }}>Quiz</th>

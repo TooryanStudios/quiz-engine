@@ -188,6 +188,8 @@ export interface UserProfile {
   slidePanelLayout?: 'left' | 'bottom'
   /** Cumulative gameplay points earned */
   points?: number
+  /** Wallet credits from entitlements/{uid}.creditsRemaining */
+  creditsRemaining?: number | null
 }
 
 export interface PageResult<T> {
@@ -208,13 +210,16 @@ const themeSettingsDoc = doc(db, 'platform_settings', 'themes')
 
 // ── Sessions ─────────────────────────────────────────────────────────────────
 
-export function subscribeAllSessions(onData: (result: PageResult<GameSession>) => void) {
+export function subscribeAllSessions(
+  onData: (result: PageResult<GameSession>) => void,
+  onError?: (err: Error) => void,
+) {
   const q = query(sessionsCol, orderBy('startedAt', 'desc'), limit(PAGE + 1))
   return onSnapshot(q, (snap) => {
     const hasMore = snap.docs.length > PAGE
     const docs = hasMore ? snap.docs.slice(0, PAGE) : snap.docs
     onData({ items: docs.map(d => ({ id: d.id, ...d.data() } as GameSession)), cursor: docs.at(-1) ?? null, hasMore })
-  })
+  }, onError)
 }
 
 export async function fetchMoreSessions(cursor: DocumentSnapshot): Promise<PageResult<GameSession>> {
@@ -226,13 +231,16 @@ export async function fetchMoreSessions(cursor: DocumentSnapshot): Promise<PageR
 
 // ── Quizzes ───────────────────────────────────────────────────────────────────
 
-export function subscribeAllQuizzes(onData: (result: PageResult<QuizDoc & { id: string }>) => void) {
+export function subscribeAllQuizzes(
+  onData: (result: PageResult<QuizDoc & { id: string }>) => void,
+  onError?: (err: Error) => void,
+) {
   const q = query(quizzesCol, orderBy('createdAt', 'desc'), limit(PAGE + 1))
   return onSnapshot(q, (snap) => {
     const hasMore = snap.docs.length > PAGE
     const docs = hasMore ? snap.docs.slice(0, PAGE) : snap.docs
     onData({ items: docs.map(d => ({ id: d.id, ...d.data() } as QuizDoc & { id: string })), cursor: docs.at(-1) ?? null, hasMore })
-  })
+  }, onError)
 }
 
 export async function fetchMoreQuizzes(cursor: DocumentSnapshot): Promise<PageResult<QuizDoc & { id: string }>> {
@@ -312,19 +320,28 @@ export async function recordUserActivity(uid: string, profile: {
   platform: 'mobile' | 'desktop'; createdAt: string
 }) {
   try {
-    const ref = doc(db, 'users', uid)
-    const snap = await getDoc(ref)
-    if (!snap.exists()) {
-      await setDoc(ref, { ...profile, status: 'active', signInCount: 1, lastSeen: serverTimestamp(), createdAt: serverTimestamp() })
-    } else {
-      await updateDoc(ref, { email: profile.email, displayName: profile.displayName, photoURL: profile.photoURL, platform: profile.platform, signInCount: increment(1), lastSeen: serverTimestamp() })
-    }
+    // Use a single write-only merge to avoid read listeners during auth bootstrap.
+    // This is more resilient when Firestore watch streams are unstable in dev.
+    await setDoc(doc(db, 'users', uid), {
+      email: profile.email,
+      displayName: profile.displayName,
+      photoURL: profile.photoURL,
+      platform: profile.platform,
+      status: 'active',
+      signInCount: increment(1),
+      lastSeen: serverTimestamp(),
+      // Keep as "last known account creation time" string from Auth metadata.
+      authCreatedAt: profile.createdAt || null,
+    }, { merge: true })
   } catch { /* non-critical */ }
 }
 
 // ── Platform stats ────────────────────────────────────────────────────────────
 
-export function subscribePlatformStats(onData: (stats: PlatformStats) => void) {
+export function subscribePlatformStats(
+  onData: (stats: PlatformStats) => void,
+  onError?: (err: Error) => void,
+) {
   return onSnapshot(statsDoc, (snap) => {
     const data = snap.data() || {}
     onData({
@@ -338,7 +355,7 @@ export function subscribePlatformStats(onData: (stats: PlatformStats) => void) {
       checkoutStarted:  data.checkoutStarted  || 0,
       voiceLabTests:    data.voiceLabTests    || 0,
     })
-  })
+  }, onError)
 }
 
 export async function incrementPlatformStat(field: keyof PlatformStats) {
@@ -673,6 +690,15 @@ export async function grantAdminClaim(): Promise<void> {
   await fn()
 }
 
+export async function addCreditsToUser(uid: string, amount: number, reason?: string): Promise<number> {
+  const fn = httpsCallable<{ uid: string; amount: number; reason?: string }, { uid: string; creditsRemaining: number }>(
+    functions,
+    'addUserCredits'
+  )
+  const result = await fn({ uid, amount, reason })
+  return result.data.creditsRemaining
+}
+
 // ── Total users count ─────────────────────────────────────────────────────────
 
 export async function getTotalUsersCount(): Promise<number> {
@@ -700,4 +726,16 @@ export async function rejectQuiz(id: string): Promise<void> {
     visibility: 'private',
     approvalStatus: 'rejected',
   })
+}
+
+export async function setQuizFeatured(id: string, featured: boolean, featuredPriority?: number): Promise<void> {
+  const payload: Record<string, unknown> = {
+    featured,
+  }
+  if (featured) {
+    payload.featuredPriority = typeof featuredPriority === 'number' ? featuredPriority : 100
+  } else {
+    payload.featuredPriority = null
+  }
+  await updateDoc(doc(db, 'quizzes', id), payload)
 }

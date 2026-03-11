@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { signOut } from 'firebase/auth'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { auth } from '../lib/firebase'
@@ -25,6 +25,7 @@ import { UsersTab }       from './master/UsersTab'
 import { QuestionTypesTab } from './master/QuestionTypesTab'
 import { MiniGamesTab } from './master/MiniGamesTab'
 import { ThemeEditorTab } from './master/ThemeEditorTab'
+import { FeaturedTab }    from './master/FeaturedTab'
 
 const BASE = import.meta.env.VITE_MASTER_PATH as string ?? '/admin-portal'
 
@@ -32,6 +33,7 @@ const TABS: { id: MasterTab; label: string; path: string }[] = [
   { id: 'overview',   label: '🏠 Overview',   path: 'dashboard' },
   { id: 'sessions',   label: '🎮 Sessions',   path: 'sessions' },
   { id: 'quizzes',    label: '📋 Content',    path: 'content' },
+  { id: 'featured',   label: '🌟 Featured',   path: 'featured' },
   { id: 'engagement', label: '📊 Engagement', path: 'engagement' },
   { id: 'questionTypes', label: '🧩 Question Types', path: 'question-types' },
   { id: 'miniGames', label: '🎮 Mini Games', path: 'mini-games' },
@@ -44,6 +46,7 @@ export function MasterAdminPage() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const dark = useTheme() === 'dark'
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
   // Derive active tab from the last URL segment: /admin-portal/users → 'users'
   const lastSegment = pathname.split('/').at(-1) ?? ''
@@ -55,6 +58,11 @@ export function MasterAdminPage() {
       navigate(`${BASE}/dashboard`, { replace: true })
     }
   }, [pathname, navigate])
+
+  useEffect(() => {
+    // Close mobile drawer after route changes.
+    setMobileNavOpen(false)
+  }, [pathname])
 
   // Each hook owns its own data fetching, subscriptions, and pagination.
   // To remove a section, delete the hook call and the matching tab entry above.
@@ -70,6 +78,7 @@ export function MasterAdminPage() {
   const totalPlays   = quizzesData.quizzes.reduce((s, q) => s + (q.totalPlays   || 0), 0)
   const totalPlayers = quizzesData.quizzes.reduce((s, q) => s + (q.totalPlayers || 0), 0)
   const totalShares  = quizzesData.quizzes.reduce((s, q) => s + (q.shareCount   || 0), 0)
+  const totalUsers = usersData.authUsers.length > 0 ? usersData.authUsers.length : usersData.users.length
 
   // Industry-standard: “new users” = accounts created in a rolling window (Auth creationTime)
   const now = Date.now()
@@ -99,6 +108,15 @@ export function MasterAdminPage() {
     <div className="master-shell">
       <header className="master-header">
         <div className="master-header-top">
+          <button
+            className="master-mobile-nav-toggle"
+            type="button"
+            aria-label="Open admin navigation"
+            aria-expanded={mobileNavOpen}
+            onClick={() => setMobileNavOpen(true)}
+          >
+            ☰
+          </button>
           <h1>👑 Master Admin</h1>
           <button className="master-signout-btn" onClick={() => { markSignOut(); void signOut(auth) }}>Sign Out</button>
         </div>
@@ -115,10 +133,43 @@ export function MasterAdminPage() {
         </nav>
       </header>
 
+      <div
+        className={`master-mobile-overlay${mobileNavOpen ? ' open' : ''}`}
+        onClick={() => setMobileNavOpen(false)}
+      />
+      <aside className={`master-mobile-drawer${mobileNavOpen ? ' open' : ''}`} aria-hidden={!mobileNavOpen}>
+        <div className="master-mobile-drawer-head">
+          <strong>Admin Sections</strong>
+          <button
+            type="button"
+            className="master-mobile-drawer-close"
+            aria-label="Close admin navigation"
+            onClick={() => setMobileNavOpen(false)}
+          >
+            ✕
+          </button>
+        </div>
+        <nav className="master-mobile-drawer-nav">
+          {TABS.map(t => (
+            <button
+              key={t.id}
+              className={`master-tab-btn${activeTab === t.id ? ' active' : ''}`}
+              onClick={() => {
+                navigate(`${BASE}/${t.path}`)
+                setMobileNavOpen(false)
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
+      </aside>
+
       <main className="master-content">
-        {activeTab === 'overview'   && <OverviewTab   quizzes={quizzesData.quizzes} totalPlays={totalPlays} totalPlayers={totalPlayers} totalShares={totalShares} newUsersLast24Hours={newUsersLast24Hours} />}
+        {activeTab === 'overview'   && <OverviewTab   quizzes={quizzesData.quizzes} totalPlays={totalPlays} totalPlayers={totalPlayers} totalShares={totalShares} totalUsers={totalUsers} newUsersLast24Hours={newUsersLast24Hours} />}
         {activeTab === 'sessions'   && <SessionsTab   sessions={sessions.sessions}   hasMore={sessions.hasMore}    loadingMore={sessions.loadingMore}    onLoadMore={sessions.loadMore} />}
         {activeTab === 'quizzes'    && <QuizzesTab    quizzes={quizzesData.quizzes}  hasMore={quizzesData.hasMore} loadingMore={quizzesData.loadingMore} onLoadMore={quizzesData.loadMore} />}
+        {activeTab === 'featured'   && <FeaturedTab   quizzes={quizzesData.quizzes} />}
         {activeTab === 'engagement' && <EngagementTab platformStats={platformStats} />}
         {activeTab === 'questionTypes' && (
           <QuestionTypesTab

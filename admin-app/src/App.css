@@ -4,7 +4,7 @@
   grid-template-columns: 220px 1fr;
   height: 100vh;
   height: 100dvh;
-  overflow: hidden;
+  overflow: clip;
   transition: grid-template-columns 0.25s ease;
   background: var(--bg-page);
 }
@@ -96,7 +96,11 @@
   flex-direction: column;
   gap: 2px;
   flex: 1;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-mid) transparent;
 }
 
 /* ── Nav link (desktop) ── */
@@ -109,7 +113,7 @@
   padding: 9px 10px;
   border-radius: 8px;
   font-size: 0.875rem;
-  font-weight: 500;
+  font-weight: 400; /* changed from 500 */
   white-space: nowrap;
   transition: background 0.15s, color 0.15s, padding 0.25s;
   border-left: 3px solid transparent;
@@ -124,7 +128,7 @@
   background: rgba(37,99,235,0.28);
   color: var(--text-bright);
   border-left-color: #3b82f6;
-  font-weight: 700;
+  font-weight: 400; /* changed from 700 */
 }
 
 /* RTL overrides — sidebar on right, active indicator on right edge */
@@ -410,10 +414,9 @@
   .admin-main {
     flex: 1;
     overflow-y: auto;
-    overflow-x: hidden;
+    overflow-x: clip;
     -webkit-overflow-scrolling: touch;
-    touch-action: pan-y;
-    overscroll-behavior: contain;
+    touch-action: auto;
     margin-top: 56px;
     padding-top: 16px;
     /* Ensure content clears the browser bottom bar + safe area (iOS notch etc.) */
@@ -608,6 +611,7 @@
     box-shadow: none;
     padding: 0;
     border: none;
+    overflow: hidden;
   }
 
   .mobile-nav-drawer.drawer-open {
@@ -615,10 +619,44 @@
     box-shadow: 2px 0 12px rgba(0,0,0,0.15);
   }
 
-  .mobile-nav-drawer > div:first-child {
+  .mobile-nav-content {
+    flex: 1;
+    position: relative;
+    min-height: 0;
     overflow-y: auto;
+    overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
     padding-bottom: 12px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-mid) transparent;
+  }
+
+  .mobile-nav-content::before,
+  .mobile-nav-content::after {
+    content: '';
+    position: sticky;
+    left: 0;
+    right: 0;
+    display: block;
+    height: 14px;
+    z-index: 2;
+    pointer-events: none;
+  }
+
+  .mobile-nav-content::before {
+    top: 0;
+    background: linear-gradient(to bottom, var(--bg-page), rgba(2, 6, 23, 0));
+  }
+
+  .mobile-nav-content::after {
+    bottom: 0;
+    margin-top: -14px;
+    background: linear-gradient(to top, var(--bg-page), rgba(2, 6, 23, 0));
+  }
+
+  .mobile-nav-divider,
+  .mobile-profile-section {
+    flex-shrink: 0;
   }
 
   .mobile-nav-link {
@@ -626,7 +664,7 @@
     text-decoration: none;
     padding: 14px 20px;
     font-size: 0.95rem;
-    font-weight: 500;
+    font-weight: 400; /* changed from 500 */
     border-bottom: none;
     transition: background 0.15s, color 0.15s;
     border-left: 3px solid transparent;
@@ -657,7 +695,7 @@
     color: var(--text-bright);
     background: rgba(37,99,235,0.12);
     border-left-color: #2563eb;
-    font-weight: 600;
+    font-weight: 400; /* changed from 600 */
   }
 
   [data-theme="light"] .mobile-nav-link.active {
@@ -672,9 +710,8 @@
   overflow-y: auto;
   height: 100vh;
   height: 100dvh;
-  touch-action: pan-y;
+  touch-action: auto;
   -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: var(--border-mid) transparent;
 }
@@ -986,7 +1023,7 @@ button:disabled {
   height: 100dvh;
   background: var(--bg-page);
   color: var(--text);
-  overflow: hidden;
+  overflow: clip;
 }
 
 .embedded-preview-shell {
@@ -999,7 +1036,9 @@ button:disabled {
   display: flex;
   flex-direction: row;
   height: 100%;
-  overflow: hidden;
+  /* clip: visually clips but does NOT create a scroll container,
+     so child overflow-x:auto tables can receive horizontal touch gestures */
+  overflow: clip;
 }
 
 .master-header {
@@ -1067,7 +1106,7 @@ button:disabled {
   background: transparent;
   color: var(--text-muted);
   font-size: 0.85rem;
-  font-weight: 600;
+  font-weight: 400; /* changed from 600 */
   cursor: pointer;
   white-space: nowrap;
   border-radius: 0 8px 8px 0;
@@ -1087,10 +1126,15 @@ button:disabled {
 .master-content {
   flex: 1;
   overflow-y: auto;
-  overflow-x: hidden;
-  overscroll-behavior: contain;
+  overflow-x: clip;
   padding: 1rem 1.25rem 2rem;
-  touch-action: pan-y;
+  touch-action: auto;
+}
+
+.master-mobile-nav-toggle,
+.master-mobile-overlay,
+.master-mobile-drawer {
+  display: none;
 }
 
 /* ── Mobile: flip to horizontal top-bar ──────────────────────────────────── */
@@ -1104,8 +1148,7 @@ button:disabled {
     flex-direction: column;
     border-right: none;
     border-bottom: 1px solid var(--border);
-    overflow-y: hidden;
-    overflow-x: hidden;
+    overflow: visible;
     padding: 0.5rem 0.75rem 0;
   }
 
@@ -1116,52 +1159,118 @@ button:disabled {
     padding: 0 0 0.45rem;
     border-bottom: none;
     margin-bottom: 0;
+    gap: 0.45rem;
   }
 
   .master-header-top h1 {
+    flex: 1;
     font-size: 0.9rem;
+    text-align: center;
   }
 
   .master-signout-btn {
     align-self: auto;
   }
 
+  .master-mobile-nav-toggle {
+    display: inline-flex;
+    width: 30px;
+    height: 30px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border-mid);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text);
+    font-size: 1rem;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
   .master-tab-bar {
-    flex-direction: row;
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: thin;
-    scrollbar-color: var(--border-mid) transparent;
-    gap: 0;
-    padding: 0;
-    flex: none;
-  }
-  .master-tab-bar::-webkit-scrollbar {
-    height: 2px;
-  }
-  .master-tab-bar::-webkit-scrollbar-thumb {
-    background: var(--border-mid);
-    border-radius: 1px;
+    display: none;
   }
 
-  .master-tab-btn {
-    width: auto;
-    text-align: center;
-    border-left: none;
-    border-bottom: 2px solid transparent;
-    border-radius: 6px 6px 0 0;
-    padding: 0.45rem 0.6rem;
-    font-size: 0.75rem;
-  }
-  .master-tab-btn:hover {
-    background: transparent;
+  .master-mobile-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(2, 6, 23, 0.5);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    z-index: 70;
   }
 
-  .master-tab-btn.active {
-    border-left-color: transparent;
-    border-bottom-color: #2563eb;
+  .master-mobile-overlay.open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .master-mobile-drawer {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(280px, 82vw);
+    background: var(--bg-surface);
+    border-right: 1px solid var(--border);
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.25);
+    transform: translateX(-102%);
+    transition: transform 0.22s ease;
+    z-index: 80;
+  }
+
+  .master-mobile-drawer.open {
+    transform: translateX(0);
+  }
+
+  .master-mobile-drawer-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.9rem 0.8rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-bright);
+    font-size: 0.85rem;
+    font-weight: 700;
+  }
+
+  .master-mobile-drawer-close {
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--border-mid);
+    border-radius: 8px;
     background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    font-size: 0.85rem;
+    line-height: 1;
+  }
+
+  .master-mobile-drawer-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.5rem;
+    overflow-y: auto;
+    flex: 1;
+  }
+
+  .master-mobile-drawer-nav .master-tab-btn {
+    width: 100%;
+    text-align: left;
+    border-left: 3px solid transparent;
+    border-bottom: none;
+    border-radius: 0 8px 8px 0;
+    padding: 0.55rem 0.75rem;
+    font-size: 0.82rem;
+  }
+
+  .master-mobile-drawer-nav .master-tab-btn.active {
+    border-left-color: #2563eb;
+    border-bottom-color: transparent;
+    background: rgba(37, 99, 235, 0.08);
   }
 
   .master-content {
@@ -1171,11 +1280,20 @@ button:disabled {
 
 .master-scroll-table {
   overflow-x: auto;
+  overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
   border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--bg-surface);
-  touch-action: pan-x pan-y;
+  /* Do not set touch-action here: let the browser decide based on scroll direction */
+}
+
+.master-scroll-table::-webkit-scrollbar {
+  height: 8px;
+}
+
+.master-scroll-table::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
 }
 
 .login-shell {

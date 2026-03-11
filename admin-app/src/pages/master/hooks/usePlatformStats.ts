@@ -15,6 +15,6 @@ const DEFAULT: PlatformStats = {
 
 export function usePlatformStats(): PlatformStats {
   const [stats, setStats] = useState<PlatformStats>(DEFAULT)
-  useEffect(() => subscribePlatformStats(setStats), [])
+  useEffect(() => subscribePlatformStats(setStats, () => setStats(DEFAULT)), [])
   return stats
 }

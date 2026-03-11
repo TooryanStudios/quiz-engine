@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { listGames, setGameEnabled } from '../core/game-loader';
 import { RegisteredGameSummary } from '../core/types';
 import Settings from './settings';
@@ -38,6 +39,12 @@ const Dashboard: React.FC = () => {
                                 </div>
                             </div>
                             <div className="game-actions">
+                                <Link
+                                    to={`/play/${game.id}`}
+                                    style={{ display: 'inline-block', marginBottom: '0.75rem' }}
+                                >
+                                    Open Player Test
+                                </Link>
                                 <Settings game={game} onToggle={onToggle} />
                             </div>
                         </div>

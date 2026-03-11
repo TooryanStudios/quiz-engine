@@ -293,6 +293,86 @@ export const grantAdminClaim = onCall({ region: 'us-central1' }, async (request)
   return { message: 'Admin claim granted. Sign out and back in to apply.' }
 })
 
+function assertMasterAdmin(request: { auth?: { token?: Record<string, unknown>; uid?: string } | null }) {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Must be signed in.')
+  }
+  const isClaimAdmin = request.auth.token?.['admin'] === true
+  const email = typeof request.auth.token?.['email'] === 'string' ? request.auth.token['email'] : ''
+  const isMasterEmail = !!email && email === masterEmailParam.value()
+  if (!isClaimAdmin && !isMasterEmail) {
+    throw new HttpsError('permission-denied', 'Not authorized.')
+  }
+}
+
+type AddUserCreditsRequest = {
+  uid: string
+  amount: number
+  reason?: string
+}
+
+type AddUserCreditsResponse = {
+  uid: string
+  creditsRemaining: number
+}
+
+export const addUserCredits = onCall<AddUserCreditsRequest, Promise<AddUserCreditsResponse>>(
+  { region: 'us-central1', cors: true },
+  async (request) => {
+    assertMasterAdmin(request)
+
+    const uid = typeof request.data?.uid === 'string' ? request.data.uid.trim() : ''
+    const amountRaw = request.data?.amount
+    const amount = typeof amountRaw === 'number' ? Math.floor(amountRaw) : Number(amountRaw)
+    const reason = typeof request.data?.reason === 'string' ? request.data.reason.trim() : 'manual_admin_grant'
+
+    if (!uid) {
+      throw new HttpsError('invalid-argument', 'uid is required.')
+    }
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) {
+      throw new HttpsError('invalid-argument', 'amount must be a positive integer up to 1,000,000.')
+    }
+
+    const ref = entitlementsRef(uid)
+    const creditsRemaining = await admin.firestore().runTransaction(async (tx) => {
+      const snap = await tx.get(ref)
+      let current = 0
+
+      if (!snap.exists) {
+        const doc: EntitlementsDoc = {
+          plan: 'free',
+          creditsRemaining: TRIAL_INITIAL_CREDITS,
+          trialGranted: true,
+          trialInitialCredits: TRIAL_INITIAL_CREDITS,
+          activePackIds: [],
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }
+        tx.set(ref, doc)
+        current = TRIAL_INITIAL_CREDITS
+      } else {
+        const data = snap.data() as Partial<EntitlementsDoc> & { creditsRemaining?: unknown }
+        current = typeof data.creditsRemaining === 'number' ? data.creditsRemaining : 0
+      }
+
+      const next = current + amount
+      tx.set(ref, {
+        creditsRemaining: next,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        lastAdminCreditGrant: {
+          amount,
+          reason,
+          byUid: request.auth?.uid ?? null,
+          at: admin.firestore.FieldValue.serverTimestamp(),
+        },
+      }, { merge: true })
+      return next
+    })
+
+    return { uid, creditsRemaining }
+  },
+)
+
 type GenerateCoverRequest = {
   title?: string
   quizSummary?: string

@@ -113,6 +113,7 @@ export const collaborativeGameFactory: CollaborativeGameFactory = {
             config: blueprint.config,
             controls: blueprint.controls,
             logic: this.createLogic(blueprint.objectives, blueprint.tuning),
+            render: blueprint.render,
         };
     },
     toActionLog,

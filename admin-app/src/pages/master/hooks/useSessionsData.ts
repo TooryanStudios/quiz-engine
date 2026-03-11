@@ -20,6 +20,9 @@ export function useSessionsData(): SessionsData {
       setSessions(items)
       cursor.current = c
       setHasMore(h)
+    }, () => {
+      setSessions([])
+      setHasMore(false)
     })
   }, [])
 

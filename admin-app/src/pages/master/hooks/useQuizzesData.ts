@@ -23,6 +23,9 @@ export function useQuizzesData(): QuizzesData {
       setQuizzes(items)
       cursor.current = c
       setHasMore(h)
+    }, () => {
+      setQuizzes([])
+      setHasMore(false)
     })
   }, [])
 

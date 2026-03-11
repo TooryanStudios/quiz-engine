@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { type DocumentSnapshot } from 'firebase/firestore'
+import { collection, documentId, onSnapshot, query, where } from 'firebase/firestore'
 import { subscribeAllUsers, fetchMoreUsers, fetchAuthUsers, type UserProfile, type AuthUserRecord } from '../../../lib/adminRepo'
+import { db } from '../../../lib/firebase'
 
 export interface UsersData {
   users: UserProfile[]
@@ -17,7 +19,50 @@ export function useUsersData(): UsersData {
   const [hasMore, setHasMore] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [creditsByUid, setCreditsByUid] = useState<Record<string, number | null>>({})
   const cursor = useRef<DocumentSnapshot | null>(null)
+
+  const knownUids = useMemo(() => {
+    const ids = new Set<string>()
+    for (const u of firestoreUsers) ids.add(u.uid)
+    for (const a of authUsers) ids.add(a.uid)
+    return Array.from(ids)
+  }, [firestoreUsers, authUsers])
+
+  // Keep a real-time credits map keyed by uid from entitlements/{uid}.
+  useEffect(() => {
+    if (knownUids.length === 0) {
+      setCreditsByUid({})
+      return
+    }
+
+    const chunkSize = 30
+    const chunks: string[][] = []
+    for (let i = 0; i < knownUids.length; i += chunkSize) {
+      chunks.push(knownUids.slice(i, i + chunkSize))
+    }
+
+    const unsubs = chunks.map((ids) => {
+      const q = query(collection(db, 'entitlements'), where(documentId(), 'in', ids))
+      return onSnapshot(q, (snap) => {
+        setCreditsByUid((prev) => {
+          const next = { ...prev }
+          for (const uid of ids) next[uid] = null
+          snap.forEach((d) => {
+            const val = d.data()?.creditsRemaining
+            next[d.id] = typeof val === 'number' ? val : null
+          })
+          return next
+        })
+      }, (err) => {
+        console.warn('[useUsersData] Entitlements credits watch failed:', err.message)
+      })
+    })
+
+    return () => {
+      for (const unsub of unsubs) unsub()
+    }
+  }, [knownUids])
 
   // Real-time Firestore subscription
   useEffect(() => {
@@ -67,12 +112,17 @@ export function useUsersData(): UsersData {
     // Fall back to pure Firestore list if Auth function isn't deployed yet
     const source = merged.length > 0 ? merged : firestoreUsers
 
-    return [...source].sort((a, b) => {
+    return source
+      .map((u) => ({
+        ...u,
+        creditsRemaining: creditsByUid[u.uid] ?? null,
+      }))
+      .sort((a, b) => {
       const ta = a.lastSeen?.toMillis?.() ?? 0
       const tb = b.lastSeen?.toMillis?.() ?? 0
       return tb - ta
     })
-  }, [firestoreUsers, authUsers])
+  }, [firestoreUsers, authUsers, creditsByUid])
 
   const loadMore = async () => {
     if (!cursor.current || loadingMore) return

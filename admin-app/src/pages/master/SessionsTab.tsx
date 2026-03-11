@@ -24,7 +24,7 @@ export function SessionsTab({ sessions, hasMore, loadingMore, onLoadMore }: Prop
   return (
     <div>
       <div className="master-scroll-table">
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 480 }}>
+        <table style={{ width: 'max-content', borderCollapse: 'collapse', minWidth: 480 }}>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)', background: 'var(--bg-deep)' }}>
               <th style={thStyle}>Date</th>

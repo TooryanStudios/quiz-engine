@@ -1,4 +1,10 @@
-import type { GameAction, GameConfig, GameLogic, GameModule } from '../../core/types';
+import type {
+    GameAction,
+    GameConfig,
+    GameLogic,
+    GameModule,
+    GameRenderer,
+} from '../../core/types';
 
 export interface ModeTuning {
     baseSubmitScore: number;
@@ -15,6 +21,7 @@ export interface GameBlueprint {
     controls: string[];
     objectives: string[];
     tuning: ModeTuning;
+    render?: GameRenderer;
 }
 
 export interface CollaborativeGameFactory {

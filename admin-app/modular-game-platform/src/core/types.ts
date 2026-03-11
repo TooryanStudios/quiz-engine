@@ -1,3 +1,5 @@
+import type { ComponentType } from 'react';
+
 export type CollaborationMode = 'team' | 'hybrid' | 'competitive';
 
 export interface GameConfig {
@@ -41,6 +43,14 @@ export interface GameLogic {
     getObjective: (state: GameState) => string;
 }
 
+export interface GameRendererProps {
+    game: GameModule;
+    gameState: GameState;
+    dispatch: (action: Partial<GameAction>) => void;
+}
+
+export type GameRenderer = ComponentType<GameRendererProps>;
+
 export interface GameModule {
     id: string;
     name: string;
@@ -50,6 +60,7 @@ export interface GameModule {
     config: GameConfig;
     controls: string[];
     logic: GameLogic;
+    render?: GameRenderer;
 }
 
 export interface GameRegistryEntry {

@@ -79,6 +79,20 @@ export const gameCatalog: GameRegistryEntry[] = [
         loader: () => import('./creative-constraint-quiz'),
     },
     {
+        id: 'html5-target-rush',
+        name: 'HTML5 Target Rush',
+        description: 'Arcade canvas click challenge built for live player testing.',
+        enabledByDefault: true,
+        loader: () => import('./html5-target-rush'),
+    },
+    {
+        id: 'fish-fence-count',
+        name: 'Fish Fence Count',
+        description: 'Count fish inside the fence while ignoring outside distractors.',
+        enabledByDefault: true,
+        loader: () => import('./fish-fence-count'),
+    },
+    {
         id: 'alliance-betrayal-mode',
         name: 'Alliance & Betrayal Mode',
         description: 'Temporary alliances and strategic endgame competition.',

@@ -160,14 +160,18 @@ function App() {
       // Track device type + always update user profile on sign-in
       if (u) {
         const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
-        // Always create/update profile so all users appear in admin panel
-        void recordUserActivity(u.uid, {
-          email: u.email || '',
-          displayName: u.displayName || '',
-          photoURL: u.photoURL || '',
-          platform: isMobile ? 'mobile' : 'desktop',
-          createdAt: u.metadata.creationTime || '',
-        })
+        // Avoid duplicate writes caused by effect replays in development StrictMode.
+        const activityKey = `_activityTracked:${u.uid}`
+        if (!sessionStorage.getItem(activityKey)) {
+          sessionStorage.setItem(activityKey, '1')
+          void recordUserActivity(u.uid, {
+            email: u.email || '',
+            displayName: u.displayName || '',
+            photoURL: u.photoURL || '',
+            platform: isMobile ? 'mobile' : 'desktop',
+            createdAt: u.metadata.creationTime || '',
+          })
+        }
         // Count device visits only once per browser session (not on every re-render)
         if (!sessionStorage.getItem('_deviceTracked')) {
           sessionStorage.setItem('_deviceTracked', '1')

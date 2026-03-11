@@ -7,6 +7,19 @@ function isLocalGameHost(serverBase: string): boolean {
   }
 }
 
+function buildLocalHtml5TestUrl(params: { quizId: string; gameModeId?: string }): string | null {
+  if (params.gameModeId !== 'html5-target-rush') {
+    return null
+  }
+
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  const query = new URLSearchParams({ quiz: params.quizId })
+  return `${window.location.origin}/play-test/html5-target-rush?${query.toString()}`
+}
+
 export function buildHostGameUrl(params: {
   serverBase: string
   quizId: string
@@ -17,6 +30,14 @@ export function buildHostGameUrl(params: {
   hostName?: string
   miniGameConfig?: Record<string, unknown>
 }): string {
+  const localHtml5Url = buildLocalHtml5TestUrl({
+    quizId: params.quizId,
+    gameModeId: params.gameModeId,
+  })
+  if (localHtml5Url) {
+    return localHtml5Url
+  }
+
   const query = new URLSearchParams({
     quiz: params.quizId,
     mode: 'host',

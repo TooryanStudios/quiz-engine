@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app'
 import { getAuth, GoogleAuthProvider } from 'firebase/auth'
-import { initializeFirestore, persistentLocalCache, persistentSingleTabManager } from 'firebase/firestore'
+import { initializeFirestore, memoryLocalCache, persistentLocalCache, persistentSingleTabManager } from 'firebase/firestore'
 import { getFunctions } from 'firebase/functions'
 import { getStorage } from 'firebase/storage'
 
@@ -16,12 +16,14 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig)
 
 export const auth = getAuth(app)
+const enablePersistentFirestore = import.meta.env.VITE_FIRESTORE_PERSISTENCE === '1'
+
 export const db = initializeFirestore(app, {
-  // persistentSingleTabManager uses a Service Worker which is fully supported
-  // on all mobile browsers. persistentMultipleTabManager uses SharedWorker,
-  // which is not supported on iOS Safari or many Android browsers and causes
-  // a 3-10 second delay during SDK initialization on mobile.
-  localCache: persistentLocalCache({ tabManager: persistentSingleTabManager(undefined) }),
+  // Default to memory cache to avoid IndexedDB/tab-sync assertion loops in development.
+  // Set VITE_FIRESTORE_PERSISTENCE=1 to opt into persistent cache.
+  localCache: enablePersistentFirestore
+    ? persistentLocalCache({ tabManager: persistentSingleTabManager(undefined) })
+    : memoryLocalCache(),
 })
 export const storage = getStorage(app)
 export const functions = getFunctions(app)

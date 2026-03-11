@@ -14,6 +14,7 @@ export const MINI_GAME_IDS = [
   'fact-or-fiction-lab',
   'creative-constraint-quiz',
   'alliance-betrayal-mode',
+  'html5-target-rush',
   'match-plus-arena',
   'island-dice-adventure',
 ] as const
@@ -150,6 +151,14 @@ export const MINI_GAME_DEFINITIONS: Record<MiniGameId, MiniGameDefinition> = {
     defaultArabicName: 'وضع التحالف والخيانة',
     description: 'تحالفات مؤقتة ومفاجآت تنافسية.',
     howToPlay: 'نسق مع فريقك مؤقتا ثم اختر لحظة الحسم المناسبة.',
+  },
+  'html5-target-rush': {
+    id: 'html5-target-rush',
+    icon: '🎯',
+    defaultEnglishName: 'HTML5 Target Rush',
+    defaultArabicName: 'اندفاع الهدف HTML5',
+    description: 'ميني جيم HTML5 سريع قائم على التصويب والسرعة.',
+    howToPlay: 'اضغط الهدف المتحرك بأسرع وقت وارفع نقاطك في لوحة الترتيب الحية.',
   },
   'match-plus-arena': {
     id: 'match-plus-arena',

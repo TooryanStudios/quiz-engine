@@ -69,6 +69,7 @@ export interface QuizDoc {
 
   // Dashboard
   featured?: boolean   // admin-pinned to the welcome strip
+  featuredPriority?: number // lower number appears first in dashboard featured layout
 
   // Rating (future)
   rating?: { total: number; count: number }

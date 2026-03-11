@@ -6,13 +6,15 @@ interface Props {
   totalPlays: number
   totalPlayers: number
   totalShares: number
+  totalUsers: number
   newUsersLast24Hours: number
 }
 
-export function OverviewTab({ quizzes, totalPlays, totalPlayers, totalShares, newUsersLast24Hours }: Props) {
+export function OverviewTab({ quizzes, totalPlays, totalPlayers, totalShares, totalUsers, newUsersLast24Hours }: Props) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '0.75rem' }}>
       <StatCard label="Total Quizzes"  value={quizzes.length} icon="📋" />
+      <StatCard label="Total Users" value={totalUsers} icon="👥" />
       <StatCard label="New Users (Last 24 Hours)" value={newUsersLast24Hours} icon="🆕" />
       <StatCard label="Total Plays"    value={totalPlays}     icon="🎮" />
       <StatCard label="Total Players"  value={totalPlayers}   icon="👥" />
