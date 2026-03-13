@@ -688,8 +688,9 @@
 
   [dir="rtl"] .mobile-nav-link {
     direction: rtl;
-    justify-content: flex-end;
+    justify-content: flex-start;
     text-align: right;
+    flex-direction: row-reverse;
     border-left: none;
     border-right: 3px solid transparent;
     padding-left: 8px;
@@ -697,8 +698,8 @@
   }
 
   [dir="rtl"] .mobile-nav-drawer .mobile-nav-link-icon {
-    margin-right: 0.6rem;
-    margin-left: 0;
+    margin-right: 0;
+    margin-left: 0.6rem;
   }
 
   .mobile-nav-link:hover {
