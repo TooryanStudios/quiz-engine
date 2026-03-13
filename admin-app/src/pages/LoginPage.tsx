@@ -226,11 +226,13 @@ export function LoginPage() {
             <button className={`lp-theme-btn${theme === 'dark' ? ' active' : ''}`} onClick={() => setTheme('dark')}>🌙</button>
             <button className={`lp-theme-btn${theme === 'light' ? ' active' : ''}`} onClick={() => setTheme('light')}>☀️</button>
           </div>
-          <span style={{ fontSize: '0.65rem', opacity: 0.25, marginTop: '0.25rem' }}>
-            Build: {new Date().toISOString().replace('T', ' ').slice(0, 19)} UTC
-          </span>
         </div>
       </div>
+      </div>
+
+      {/* Build stamp at bottom of page */}
+      <div className="lp-build-stamp">
+        Build: {new Date().toISOString().replace('T', ' ').slice(0, 19)} UTC
       </div>
 
       <style>{`
@@ -463,6 +465,18 @@ export function LoginPage() {
         }
         .lp-theme-btn.active { opacity: 1; border-color: rgba(167,139,250,0.7); }
         .lp-theme-btn:hover { opacity: 0.8; }
+
+        .lp-build-stamp {
+          position: fixed;
+          bottom: 12px;
+          left: 50%;
+          transform: translateX(-50%);
+          font-size: 0.65rem;
+          opacity: 0.25;
+          color: rgba(255,255,255,0.5);
+          pointer-events: none;
+          z-index: 1;
+        }
 
         /* Light mode */
         .lp-bg--light { background: #f0eeff; }
