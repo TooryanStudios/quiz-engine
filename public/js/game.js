@@ -1568,9 +1568,11 @@ function openAvatarPicker(currentAvatar, onSelect) {
     maxHeight: '72vh',
     boxSizing: 'border-box',
     overflowY: 'auto',
+    WebkitOverflowScrolling: 'touch',
     display: 'grid',
     gridTemplateColumns: 'repeat(5, 1fr)',
     gap: '6px',
+    gridAutoRows: 'minmax(0, 1fr)',
   });
 
   AVATARS.forEach((emoji) => {
