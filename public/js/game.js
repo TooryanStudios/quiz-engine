@@ -929,14 +929,26 @@ function runCoachTour(steps, options = {}) {
   Object.assign(spotlight.style, {
     position: 'fixed',
     borderRadius: '14px',
-    border: '2px solid rgba(99,102,241,0.95)',
-    boxShadow: '0 0 0 9999px rgba(2,6,23,0.22), 0 0 0 6px rgba(129,140,248,0.26)',
+    padding: '3px',
+    background: 'linear-gradient(45deg, #6366f1, #8b5cf6, #ec4899, #f59e0b, #10b981, #06b6d4, #6366f1)',
+    backgroundSize: '400% 400%',
+    animation: 'gradientShift 3s ease infinite',
+    boxShadow: '0 0 0 9999px rgba(2,6,23,0.22), 0 0 20px rgba(139,92,246,0.4), 0 0 40px rgba(236,72,153,0.3)',
     pointerEvents: 'none',
     opacity: '0',
     transform: 'translateZ(0) scale(0.985)',
     willChange: 'transform, opacity',
     transition: `transform ${enterDuration} ease, opacity ${enterDuration} ease`,
   });
+
+  const spotlightInner = document.createElement('div');
+  Object.assign(spotlightInner.style, {
+    width: '100%',
+    height: '100%',
+    background: 'var(--bg, #1a1a2e)',
+    borderRadius: '11px',
+  });
+  spotlight.appendChild(spotlightInner);
 
   const bubble = document.createElement('div');
   bubble.dataset.coachTourBubble = '1';
