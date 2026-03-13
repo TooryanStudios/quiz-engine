@@ -333,27 +333,7 @@ const QuestionSection: React.FC<QuestionSectionProps> = ({
                     onUpdateQuestion={(patch) => onUpdateQuestion(index, patch)}
                     onUploadPairImage={onUploadPairImage}
                     onUploadMatchPlusImage={() => {
-                      const input = document.createElement('input')
-                      input.type = 'file'
-                      input.accept = 'image/*'
-                      input.onchange = async (event) => {
-                        const file = (event.target as HTMLInputElement).files?.[0]
-                        if (!file) return
-                        try {
-                          onShowToast({ message: '⏳ جاري رفع الصورة...', type: 'info' })
-                          const ext = file.name.split('.').pop() || 'jpg'
-                          const storagePath = `match-plus-puzzle/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
-                          const storageRef = ref(storage, storagePath)
-                          await uploadBytes(storageRef, file)
-                          const url = await getDownloadURL(storageRef)
-                          onUpdateQuestion(index, { matchPlusImage: url })
-                          onShowToast({ message: '✅ تم رفع الصورة بنجاح', type: 'success' })
-                        } catch (err) {
-                          console.error('Puzzle image upload failed', err)
-                          onShowToast({ message: '❌ فشل رفع الصورة', type: 'error' })
-                        }
-                      }
-                      input.click()
+                      onOpenMiniGamePuzzleCropPicker({ kind: 'block', questionIndex: index })
                     }}
                   />
                 )}

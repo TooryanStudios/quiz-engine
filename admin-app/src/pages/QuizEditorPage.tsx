@@ -226,6 +226,8 @@ export function QuizEditorPage() {
   const [showCropDialog, setShowCropDialog] = useState(false)
   const [uploadingMiniGameImage, setUploadingMiniGameImage] = useState(false)
   const [puzzleCropTarget, setPuzzleCropTarget] = useState<{ kind: 'default' } | { kind: 'block'; questionIndex: number } | { kind: 'pair'; questionIndex: number; pairIndex?: number }>({ kind: 'default' })
+  const [cropTarget, setCropTarget] = useState<'cover' | 'pair' | 'puzzle' | null>(null)
+  const [cropPairInfo, setCropPairInfo] = useState<{ questionIndex: number; pairIndex: number; side: 'left' | 'right' } | null>(null)
   const [showContentTypePicker, setShowContentTypePicker] = useState(false)
   const [contentType, setContentType] = useState<'quiz' | 'mini-game' | 'mix'>('quiz')
   const [showAddBlockPicker, setShowAddBlockPicker] = useState(false)
@@ -288,33 +290,43 @@ export function QuizEditorPage() {
       const file = (event.target as HTMLInputElement).files?.[0]
       if (!file) return
 
-      const key = `${questionIndex}:${pairIndex}:${side}`
-      setUploadingPairImageKey(key)
-      try {
-        const ext = file.name.split('.').pop() || 'jpg'
-        const path = `quiz-match-plus/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
-        const storageRef = ref(storage, path)
-        await uploadBytes(storageRef, file)
-        const url = await getDownloadURL(storageRef)
-
-        const targetQuestion = questions[questionIndex]
-        if (!targetQuestion || !Array.isArray(targetQuestion.pairs)) return
-
-        const nextPairs = [...targetQuestion.pairs]
-        nextPairs[pairIndex] = {
-          ...nextPairs[pairIndex],
-          [side]: url,
-        }
-        updateQuestion(questionIndex, { pairs: nextPairs })
-        showToast({ message: '✅ تم رفع الصورة بنجاح', type: 'success' })
-      } catch (error) {
-        console.error('Pair image upload failed', error)
-        showToast({ message: '❌ فشل رفع الصورة', type: 'error' })
-      } finally {
-        setUploadingPairImageKey(null)
-      }
+      const localUrl = URL.createObjectURL(file)
+      setCropImageSrc(localUrl)
+      setCropTarget('pair')
+      setCropPairInfo({ questionIndex, pairIndex, side })
+      setShowCropDialog(true)
     }
     input.click()
+  }
+
+  const handlePairCropConfirm = async (blob: Blob) => {
+    if (!cropPairInfo) return
+    const { questionIndex, pairIndex, side } = cropPairInfo
+    const key = `${questionIndex}:${pairIndex}:${side}`
+    setUploadingPairImageKey(key)
+    try {
+      const path = `quiz-match-plus/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
+      const storageRef = ref(storage, path)
+      await uploadBytes(storageRef, blob, { contentType: 'image/jpeg' })
+      const url = await getDownloadURL(storageRef)
+
+      const targetQuestion = questions[questionIndex]
+      if (!targetQuestion || !Array.isArray(targetQuestion.pairs)) return
+
+      const nextPairs = [...targetQuestion.pairs]
+      nextPairs[pairIndex] = {
+        ...nextPairs[pairIndex],
+        [side]: url,
+      }
+      updateQuestion(questionIndex, { pairs: nextPairs })
+      showToast({ message: '✅ تم رفع الصورة بنجاح', type: 'success' })
+      closeCropDialog()
+    } catch (error) {
+      console.error('Pair image upload failed', error)
+      showToast({ message: '❌ فشل رفع الصورة', type: 'error' })
+    } finally {
+      setUploadingPairImageKey(null)
+    }
   }
 
   const openMiniGamePuzzleCropPicker = (target: { kind: 'default' } | { kind: 'block'; questionIndex: number } | { kind: 'pair'; questionIndex: number; pairIndex?: number }) => {
@@ -339,6 +351,8 @@ export function QuizEditorPage() {
     }
     setCropImageSrc(null)
     setShowCropDialog(false)
+    setCropTarget(null)
+    setCropPairInfo(null)
   }
 
   const pickMiniGamePuzzleImage = () => {
@@ -978,26 +992,34 @@ export function QuizEditorPage() {
       const file = (e.target as HTMLInputElement).files?.[0]
       if (!file) return
 
-      setUploadingCover(true)
-      try {
-        const uid = auth.currentUser?.uid
-        const ext = file.name.split('.').pop() || 'jpg'
-        const path = uid
-          ? `quiz-covers/uploads/${uid}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
-          : `quiz-covers/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
-        const storageRef = ref(storage, path)
-        await uploadBytes(storageRef, file)
-        const url = await getDownloadURL(storageRef)
-        setTempCoverImage(url)
-      } catch (err) {
-        console.error('Cover upload failed', err)
-        showToast({ message: '❌ فشل رفع صورة الغلاف', type: 'error' })
-      } finally {
-        setUploadingCover(false)
-      }
+      const localUrl = URL.createObjectURL(file)
+      setCropImageSrc(localUrl)
+      setCropTarget('cover')
+      setShowCropDialog(true)
     }
 
     inp.click()
+  }
+
+  const handleCoverCropConfirm = async (blob: Blob) => {
+    setUploadingCover(true)
+    try {
+      const uid = auth.currentUser?.uid
+      const path = uid
+        ? `quiz-covers/uploads/${uid}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
+        : `quiz-covers/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
+      const storageRef = ref(storage, path)
+      await uploadBytes(storageRef, blob, { contentType: 'image/jpeg' })
+      const url = await getDownloadURL(storageRef)
+      setTempCoverImage(url)
+      showToast({ message: '✅ تم رفع صورة الغلاف بنجاح', type: 'success' })
+      closeCropDialog()
+    } catch (err) {
+      console.error('Cover upload failed', err)
+      showToast({ message: '❌ فشل رفع صورة الغلاف', type: 'error' })
+    } finally {
+      setUploadingCover(false)
+    }
   }
 
   const openCoverAssetsLibrary = () => {
@@ -1815,10 +1837,25 @@ export function QuizEditorPage() {
       <ImageCropDialog
         isOpen={showCropDialog}
         imageSrc={cropImageSrc}
-        title="Crop Puzzle Image"
-        ratioPresets={[{ id: 'square', label: 'Square 1:1', ratio: 1 }]}
+        title={cropTarget === 'cover' ? 'قص صورة الغلاف' : cropTarget === 'pair' ? 'قص الصورة' : 'قص صورة البازل'}
+        ratioPresets={
+          cropTarget === 'cover'
+            ? [
+                { id: '16:9', label: '16:9 (Landscape)', ratio: 16 / 9 },
+                { id: '4:3', label: '4:3', ratio: 4 / 3 },
+                { id: 'square', label: 'Square 1:1', ratio: 1 },
+                { id: '3:4', label: '3:4 (Portrait)', ratio: 3 / 4 },
+              ]
+            : [{ id: 'square', label: 'Square 1:1', ratio: 1 }]
+        }
         onClose={closeCropDialog}
-        onConfirm={handleMiniGamePuzzleCropConfirm}
+        onConfirm={
+          cropTarget === 'cover'
+            ? handleCoverCropConfirm
+            : cropTarget === 'pair'
+            ? handlePairCropConfirm
+            : handleMiniGamePuzzleCropConfirm
+        }
       />
 
       <AIFeaturesDialog
