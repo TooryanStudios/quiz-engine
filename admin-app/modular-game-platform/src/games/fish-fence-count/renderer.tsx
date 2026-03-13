@@ -772,7 +772,6 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
         cageBlockedSet.forEach((item) => combined.add(item));
         return combined;
     }, [cageBlockedSet, obstacleSet]);
-    const fishOccupiedSet = React.useMemo(() => new Set(fishList.map((f) => tileKey(f.x, f.y))), [fishList]);
     const fence = React.useMemo(() => buildFence(level), [level]);
 
     const previewMode = builderOpen && builderLivePreview;
