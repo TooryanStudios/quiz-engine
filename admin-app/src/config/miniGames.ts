@@ -17,6 +17,7 @@ export const MINI_GAME_IDS = [
   'html5-target-rush',
   'match-plus-arena',
   'island-dice-adventure',
+  'fish-fence-count',
 ] as const
 
 export type MiniGameId = typeof MINI_GAME_IDS[number]
@@ -175,6 +176,14 @@ export const MINI_GAME_DEFINITIONS: Record<MiniGameId, MiniGameDefinition> = {
     defaultArabicName: 'مغامرة نرد الجزيرة',
     description: 'لوحة دائرية 2.5D بحركة قفز وجمع عملات عبر النرد.',
     howToPlay: 'في دورك اضغط زر النرد، تحرك على البلاطات، واجمع أكبر عدد من العملات.',
+  },
+  'fish-fence-count': {
+    id: 'fish-fence-count',
+    icon: '🐟',
+    defaultEnglishName: 'Fish Fence Count',
+    defaultArabicName: 'عد السمك في السياج',
+    description: 'عدد السمك داخل السياج مع تجاهل المشتتات الخارجية.',
+    howToPlay: 'ركز على السمك داخل المنطقة المحددة فقط واحسبها بدقة.',
   },
 }
 

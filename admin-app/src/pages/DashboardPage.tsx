@@ -44,7 +44,7 @@ export function DashboardPage() {
 
   const t = {
     actionsTitle: isAr ? 'ابدأ الآن' : 'Start Now',
-    topFeatured: isAr ? 'المميّز من الإدارة' : 'Admin Featured',
+    topFeatured: isAr ? 'المحتوى المميز حالياً 🔥' : 'Admin Featured 🔥',
     moreGames: isAr ? 'ألعاب أكثر' : 'More Games',
     availableGames: isAr ? 'الألعاب المتاحة' : 'Available Games',
     playNow: isAr ? 'العب الآن' : 'Play Now',
@@ -118,6 +118,13 @@ export function DashboardPage() {
           window.location.assign('/billing')
         },
       })
+      return
+    }
+
+    // Check if this is a mini-game that can be played in the same tab
+    if (quiz.gameModeId) {
+      // Navigate to the modular-game-platform for mini-games
+      window.location.href = `/play/${quiz.gameModeId}`
       return
     }
 

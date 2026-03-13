@@ -1097,6 +1097,12 @@
     width: min(96%, 240px);
     min-height: 50px;
   }
+
+  .gameplay-featured-content {
+    padding: 1rem 1rem 2.5rem;
+    justify-content: center;
+    gap: 1rem;
+  }
 }
 
 @media (max-width: 520px) {
