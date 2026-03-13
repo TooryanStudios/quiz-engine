@@ -1563,17 +1563,40 @@ function openAvatarPicker(currentAvatar, onSelect) {
     background: 'var(--surface, #1e1e2e)',
     border: '1px solid rgba(255,255,255,0.1)',
     borderRadius: '18px',
-    padding: '14px',
-    width: 'min(340px, 90vw)',
-    maxHeight: '72vh',
+    padding: '16px',
+    width: 'min(360px, 92vw)',
+    maxHeight: '70vh',
     boxSizing: 'border-box',
     overflowY: 'auto',
+    overflowX: 'hidden',
     WebkitOverflowScrolling: 'touch',
     display: 'grid',
     gridTemplateColumns: 'repeat(5, 1fr)',
-    gap: '6px',
-    gridAutoRows: 'minmax(0, 1fr)',
+    gap: '10px',
+    gridAutoRows: 'auto',
+    scrollbarWidth: 'thin',
+    scrollbarColor: 'rgba(124,58,237,0.5) rgba(255,255,255,0.05)',
   });
+
+  // Custom scrollbar for webkit browsers
+  const style = document.createElement('style');
+  style.textContent = `
+    #avatar-inline-overlay > div::-webkit-scrollbar {
+      width: 8px;
+    }
+    #avatar-inline-overlay > div::-webkit-scrollbar-track {
+      background: rgba(255,255,255,0.05);
+      border-radius: 10px;
+    }
+    #avatar-inline-overlay > div::-webkit-scrollbar-thumb {
+      background: rgba(124,58,237,0.5);
+      border-radius: 10px;
+    }
+    #avatar-inline-overlay > div::-webkit-scrollbar-thumb:hover {
+      background: rgba(124,58,237,0.7);
+    }
+  `;
+  document.head.appendChild(style);
 
   AVATARS.forEach((emoji) => {
     const btn = document.createElement('button');
@@ -1581,23 +1604,39 @@ function openAvatarPicker(currentAvatar, onSelect) {
     btn.textContent = emoji;
     const isCurrent = emoji === currentAvatar;
     Object.assign(btn.style, {
-      fontSize: '1.6rem',
-      padding: '0',
+      fontSize: '1.8rem',
+      padding: '12px',
       margin: '0',
-      border: isCurrent ? '2px solid #7c3aed' : '2px solid transparent',
-      borderRadius: '12px',
-      background: isCurrent ? 'rgba(124,58,237,0.15)' : 'rgba(255,255,255,0.04)',
+      border: isCurrent ? '2px solid #7c3aed' : '2px solid rgba(255,255,255,0.08)',
+      borderRadius: '14px',
+      background: isCurrent ? 'rgba(124,58,237,0.2)' : 'rgba(255,255,255,0.04)',
       cursor: 'pointer',
       touchAction: 'manipulation',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
       width: '100%',
-      aspectRatio: '1',
+      height: '56px',
+      minHeight: '56px',
       boxSizing: 'border-box',
-      transition: 'none',
+      transition: 'transform 0.15s ease, background 0.15s ease, border-color 0.15s ease',
       WebkitTapHighlightColor: 'transparent',
-      minWidth: '0',
+    });
+
+    btn.addEventListener('mouseenter', () => {
+      if (!isCurrent) {
+        btn.style.transform = 'scale(1.08)';
+        btn.style.background = 'rgba(255,255,255,0.1)';
+        btn.style.borderColor = 'rgba(124,58,237,0.4)';
+      }
+    });
+
+    btn.addEventListener('mouseleave', () => {
+      btn.style.transform = 'scale(1)';
+      if (!isCurrent) {
+        btn.style.background = 'rgba(255,255,255,0.04)';
+        btn.style.borderColor = 'rgba(255,255,255,0.08)';
+      }
     });
 
     btn.addEventListener('click', (e) => {
@@ -1614,8 +1653,18 @@ function openAvatarPicker(currentAvatar, onSelect) {
 
   // Tap backdrop to close (no selection)
   overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) overlay.remove();
+    if (e.target === overlay) {
+      overlay.remove();
+      style.remove();
+    }
   });
+
+  // Remove style when overlay is removed
+  const originalRemove = overlay.remove.bind(overlay);
+  overlay.remove = function() {
+    style.remove();
+    originalRemove();
+  };
 
   document.body.appendChild(overlay);
 }
