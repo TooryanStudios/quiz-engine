@@ -96,7 +96,36 @@ const hostUidFromUrl  = queryParams.get('hostUid') || localStorage.getItem('last
 const hostTokenFromUrl = queryParams.get('hostToken') || localStorage.getItem('last_host_token');
 const hostLaunchCodeFromUrl = queryParams.get('hostLaunchCode');
 const hostNameFromUrl = queryParams.get('hostName');
+const hostAvatarFromUrl = queryParams.get('hostAvatar') || null;
+const preferredHostName = (hostNameFromUrl || '').trim();
+const preferredHostAvatar = (hostAvatarFromUrl || '').trim();
+let hostProfileName = preferredHostName || '';
+let hostProfileAvatar = preferredHostAvatar || '';
 let initialQuizInfoPromise = Promise.resolve(null);
+
+function getHostLobbyPlayerProfile() {
+  const hostPlayer = Array.isArray(state.hostLobbyPlayers)
+    ? state.hostLobbyPlayers.find((p) => p && p.isHost)
+    : null;
+  return {
+    nickname: (hostPlayer?.nickname || '').trim(),
+    avatar: (hostPlayer?.avatar || '').trim(),
+  };
+}
+
+function resolveHostProfile() {
+  const live = getHostLobbyPlayerProfile();
+  const nickname = (hostProfileName || live.nickname || preferredHostName || state.nickname || 'Host').trim();
+  const avatar = (hostProfileAvatar || live.avatar || preferredHostAvatar || state.avatar || '🎮').trim() || '🎮';
+  return { nickname, avatar };
+}
+
+function persistHostProfile({ nickname, avatar }) {
+  const nextName = (nickname || '').trim();
+  const nextAvatar = (avatar || '').trim();
+  if (nextName) hostProfileName = nextName;
+  if (nextAvatar) hostProfileAvatar = nextAvatar;
+}
 
 // Persist credentials if they are in the URL
 if (queryParams.get('hostUid')) localStorage.setItem('last_host_uid', queryParams.get('hostUid'));
@@ -111,6 +140,8 @@ const miniGameConfigFromUrl = (() => {
     return (parsed && typeof parsed === 'object') ? parsed : null;
   } catch (_) { return null; }
 })();
+
+const isMiniGameSession = !!(miniGameConfigFromUrl || (gameModeFromUrl && gameModeFromUrl !== 'classic' && gameModeFromUrl !== 'quiz'));
 
 const isAutoHostLaunch = !!(quizSlugFromUrl && modeFromUrl === 'host');
 
@@ -189,6 +220,10 @@ const questionMirror = window.opener || null;
 const PIN_MAX_LENGTH = 6;
 const HOST_RECONNECT_GRACE_MS = 60000;
 let soloAutoStarting = false;
+const HOST_QUICK_GUIDE_DISMISSED_KEY = 'qyan:hostQuickGuideDismissed:v1';
+let hasShownHostQuickGuideThisSession = false;
+const PLAYER_QUICK_GUIDE_DISMISSED_KEY = 'qyan:playerQuickGuideDismissed:v1';
+let hasShownPlayerQuickGuideThisSession = false;
 
 // Global scroll/pinch blocker — prevents iOS rubber-band and page scroll
 // during all gameplay views. Uses { passive: false } so preventDefault works.
@@ -248,17 +283,35 @@ let rejoinAttempt = false; // true while an auto-rejoin is in flight
 // ─────────────────────────────────────────────
 // Predefined Avatar Set
 // ─────────────────────────────────────────────
-const AVATARS = ['🦁','🐯','🦊','🐼','🐨','🐸','🦄','🦖','🦜','🕺','🤖','👾','🎃','🧙','🦸','🐇','⚡','🔥','🎮','🏆'];
+const AVATARS = [
+  '🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐸','🐵','🐔','🐧','🦆','🦉','🦋','🐢',
+  '🦖','🦄','🐺','🦜','🦔','🐙','🦈','🦩','🦢','🦚','🚀','👾','🤖','👻','🎃','🧙','🦸','🐉','🌟','💫',
+  '✨','🔮','🎩','🪄','🧝','🧞','🐲','🌙','🌠','🛸','🔥','💧','⚡','❄️','🌊','🌪️','🌈','☀️','🌺','🌸',
+  '🍀','🌿','💥','🌋','🌍','🪸','☄️','⭐','🎮','🕹️','🎲','🏆','🥇','💎','🎯','🎳','⚽','🎸','🚂','🪀',
+  '🧲','🧸','🎭','🥊','🏅','🎵','🎪','🥁','🎨','📚','🧠','🚴','🏄','🏁','🎯','🛰️','🪐','⚙️','🧩','🥳',
+];
 
 const hostQuizTitleEl = document.getElementById('host-quiz-title');
+function normalizeHostTitleTopic(text) {
+  const raw = String(text || '')
+    .replace(/^📋\s*/, '')
+    .replace(/^🆔\s*/, '')
+    .replace(/[-_]+/g, ' ')
+    .trim();
+  return raw;
+}
+
 function setHostQuizTitle(text) {
   if (!hostQuizTitleEl) return;
-  if (!text) {
+  const topic = normalizeHostTitleTopic(text);
+  if (!topic) {
     hostQuizTitleEl.style.display = 'none';
     hostQuizTitleEl.textContent = '';
     return;
   }
-  hostQuizTitleEl.textContent = text;
+  hostQuizTitleEl.textContent = isMiniGameSession
+    ? `لعبة مصغرة عن ${topic}`
+    : `تحدي معلومات عن ${topic}`;
   hostQuizTitleEl.style.display = 'block';
 }
 
@@ -270,7 +323,7 @@ if (quizSlugFromUrl) {
   setHostQuizTitle(quizSlugFromUrl);
   const setText = (text) => {
     if (!isAutoHostLaunch && el)  { el.textContent = text; el.style.display = 'block'; }
-    setHostQuizTitle(text.replace(/^📋\s*/, '').replace(/^🆔\s*/, ''));
+    setHostQuizTitle(text);
     // intentionally not shown on player join screen
   };
   setText(`🆔 ${quizSlugFromUrl}`);
@@ -786,6 +839,427 @@ function normalizeViewDom() {
   }
 }
 
+function shouldShowHostQuickGuide() {
+  if (hasShownHostQuickGuideThisSession) return false;
+  try {
+    return localStorage.getItem(HOST_QUICK_GUIDE_DISMISSED_KEY) !== '1';
+  } catch (_) {
+    return true;
+  }
+}
+
+function shouldShowPlayerQuickGuide() {
+  if (hasShownPlayerQuickGuideThisSession) return false;
+  try {
+    return localStorage.getItem(PLAYER_QUICK_GUIDE_DISMISSED_KEY) !== '1';
+  } catch (_) {
+    return true;
+  }
+}
+
+function closeCoachTour(options = {}) {
+  const existing = document.getElementById('coach-tour-overlay');
+  if (!existing) return;
+
+  const immediate = !!options.immediate;
+  if (immediate) {
+    existing.remove();
+    return;
+  }
+
+  if (existing.dataset.closing === '1') return;
+  existing.dataset.closing = '1';
+  existing.style.pointerEvents = 'none';
+  existing.style.opacity = '0';
+
+  const dim = existing.querySelector('[data-coach-tour-dim="1"]');
+  if (dim) dim.style.opacity = '0';
+
+  const spotlight = existing.querySelector('[data-coach-tour-spotlight="1"]');
+  if (spotlight) {
+    spotlight.style.opacity = '0';
+    spotlight.style.transform = 'translateZ(0) scale(0.985)';
+  }
+
+  const bubble = existing.querySelector('[data-coach-tour-bubble="1"]');
+  if (bubble) {
+    bubble.style.opacity = '0';
+    bubble.style.transform = 'translate3d(0, 8px, 0) scale(0.985)';
+  }
+
+  setTimeout(() => {
+    if (existing.isConnected) existing.remove();
+  }, 190);
+}
+
+function runCoachTour(steps, options = {}) {
+  if (!Array.isArray(steps) || steps.length === 0) return;
+  closeCoachTour({ immediate: true });
+
+  const reducedMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const enterDuration = reducedMotion ? '1ms' : '180ms';
+
+  const dismissKey = options.dismissKey || null;
+  const onFinish = typeof options.onFinish === 'function' ? options.onFinish : null;
+  let currentIndex = 0;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'coach-tour-overlay';
+  Object.assign(overlay.style, {
+    position: 'fixed',
+    inset: '0',
+    zIndex: '130000',
+    pointerEvents: 'auto',
+    opacity: '0',
+    transition: `opacity ${enterDuration} ease`,
+  });
+
+  const dim = document.createElement('div');
+  dim.dataset.coachTourDim = '1';
+  Object.assign(dim.style, {
+    position: 'absolute',
+    inset: '0',
+    background: 'rgba(2,6,23,0.18)',
+    opacity: '0',
+    transition: `opacity ${enterDuration} ease`,
+  });
+
+  const spotlight = document.createElement('div');
+  spotlight.dataset.coachTourSpotlight = '1';
+  Object.assign(spotlight.style, {
+    position: 'fixed',
+    borderRadius: '14px',
+    border: '2px solid rgba(99,102,241,0.95)',
+    boxShadow: '0 0 0 9999px rgba(2,6,23,0.22), 0 0 0 6px rgba(129,140,248,0.26)',
+    pointerEvents: 'none',
+    opacity: '0',
+    transform: 'translateZ(0) scale(0.985)',
+    willChange: 'transform, opacity',
+    transition: `transform ${enterDuration} ease, opacity ${enterDuration} ease`,
+  });
+
+  const bubble = document.createElement('div');
+  bubble.dataset.coachTourBubble = '1';
+  bubble.setAttribute('dir', 'rtl');
+  Object.assign(bubble.style, {
+    position: 'fixed',
+    width: 'min(340px, 88vw)',
+    background: 'var(--surface, #111827)',
+    color: 'var(--text, #e2e8f0)',
+    border: '1px solid rgba(148,163,184,0.3)',
+    borderRadius: '14px',
+    boxShadow: '0 18px 45px rgba(2,6,23,0.5)',
+    padding: '12px 12px 10px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    opacity: '0',
+    transform: 'translate3d(0, 8px, 0) scale(0.985)',
+    willChange: 'transform, opacity',
+    transition: `transform ${enterDuration} ease, opacity ${enterDuration} ease`,
+  });
+
+  const stepBadge = document.createElement('div');
+  Object.assign(stepBadge.style, {
+    fontSize: '0.76rem',
+    color: '#93c5fd',
+    fontWeight: '800',
+    letterSpacing: '0.2px',
+    textAlign: 'right',
+  });
+
+  const titleEl = document.createElement('div');
+  Object.assign(titleEl.style, { fontSize: '0.96rem', fontWeight: '800', textAlign: 'right' });
+
+  const bodyEl = document.createElement('div');
+  Object.assign(bodyEl.style, {
+    fontSize: '0.84rem',
+    lineHeight: '1.45',
+    color: 'var(--text-dim, #94a3b8)',
+    textAlign: 'right',
+    direction: 'rtl',
+    unicodeBidi: 'plaintext',
+  });
+
+  const actions = document.createElement('div');
+  Object.assign(actions.style, { display: 'flex', gap: '6px', marginTop: '2px', alignItems: 'center' });
+
+  const neverBtn = document.createElement('button');
+  neverBtn.type = 'button';
+  neverBtn.textContent = 'لا تعرضها مجددًا';
+  Object.assign(neverBtn.style, {
+    border: '1px solid rgba(148,163,184,0.32)',
+    background: 'transparent',
+    color: 'var(--text-dim, #94a3b8)',
+    borderRadius: '8px',
+    padding: '6px 8px',
+    fontSize: '0.76rem',
+    fontWeight: '700',
+    cursor: 'pointer',
+  });
+
+  const skipBtn = document.createElement('button');
+  skipBtn.type = 'button';
+  skipBtn.textContent = 'تخطي';
+  Object.assign(skipBtn.style, {
+    border: 'none',
+    background: 'rgba(148,163,184,0.2)',
+    color: 'var(--text, #e2e8f0)',
+    borderRadius: '8px',
+    padding: '6px 10px',
+    fontSize: '0.76rem',
+    fontWeight: '800',
+    cursor: 'pointer',
+  });
+
+  const nextBtn = document.createElement('button');
+  nextBtn.type = 'button';
+  nextBtn.textContent = 'التالي';
+  Object.assign(nextBtn.style, {
+    marginInlineStart: 'auto',
+    border: 'none',
+    background: '#6366f1',
+    color: '#fff',
+    borderRadius: '8px',
+    padding: '6px 10px',
+    fontSize: '0.76rem',
+    fontWeight: '800',
+    cursor: 'pointer',
+  });
+
+  let onEsc = null;
+  let onViewportChange = null;
+
+  const finish = ({ remember = false } = {}) => {
+    if (onEsc) window.removeEventListener('keydown', onEsc);
+    if (onViewportChange) {
+      window.removeEventListener('resize', onViewportChange);
+      window.removeEventListener('orientationchange', onViewportChange);
+    }
+    if (remember && dismissKey) {
+      try { localStorage.setItem(dismissKey, '1'); } catch (_) {}
+    }
+    closeCoachTour();
+    if (onFinish) onFinish();
+  };
+
+  const moveToStep = () => {
+    if (currentIndex >= steps.length) {
+      finish();
+      return;
+    }
+
+    const step = steps[currentIndex];
+    const target = document.querySelector(step.selector);
+    if (!target || target.offsetParent === null) {
+      currentIndex += 1;
+      moveToStep();
+      return;
+    }
+
+    if (typeof target.scrollIntoView === 'function') {
+      target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' });
+    }
+
+    const rect = target.getBoundingClientRect();
+    const viewportPadding = 8;
+    const margin = 7;
+
+    const spotLeft = Math.max(viewportPadding, rect.left - margin);
+    const spotTop = Math.max(viewportPadding, rect.top - margin);
+    const spotRight = Math.min(window.innerWidth - viewportPadding, rect.right + margin);
+    const spotBottom = Math.min(window.innerHeight - viewportPadding, rect.bottom + margin);
+    spotlight.style.left = `${spotLeft}px`;
+    spotlight.style.top = `${spotTop}px`;
+    spotlight.style.width = `${Math.max(36, spotRight - spotLeft)}px`;
+    spotlight.style.height = `${Math.max(36, spotBottom - spotTop)}px`;
+
+    stepBadge.textContent = `الخطوة ${currentIndex + 1} من ${steps.length}`;
+    titleEl.textContent = step.title || 'إرشاد سريع';
+    bodyEl.textContent = step.body || '';
+    nextBtn.textContent = (currentIndex === steps.length - 1) ? 'تم' : 'التالي';
+
+    const activeView = document.querySelector('.view.active');
+    const activeCard = target.closest('.card') || activeView?.querySelector('.card');
+    const containerRect = activeCard
+      ? activeCard.getBoundingClientRect()
+      : { left: viewportPadding, top: viewportPadding, right: window.innerWidth - viewportPadding, bottom: window.innerHeight - viewportPadding };
+    const containerPadding = 10;
+    const minLeft = Math.max(viewportPadding, (containerRect.left || viewportPadding) + containerPadding);
+    const maxRight = Math.min(window.innerWidth - viewportPadding, (containerRect.right || (window.innerWidth - viewportPadding)) - containerPadding);
+    const minTop = Math.max(viewportPadding, (containerRect.top || viewportPadding) + containerPadding);
+    const maxBottom = Math.min(window.innerHeight - viewportPadding, (containerRect.bottom || (window.innerHeight - viewportPadding)) - containerPadding);
+
+    const bubbleWidth = Math.min(340, Math.max(220, maxRight - minLeft));
+    bubble.style.width = `${bubbleWidth}px`;
+    bubble.style.maxHeight = `${Math.max(120, maxBottom - minTop)}px`;
+    bubble.style.overflowY = 'auto';
+
+    const bubbleRect = bubble.getBoundingClientRect();
+    const bubbleHeight = bubbleRect.height;
+    const measuredWidth = bubbleRect.width || bubbleWidth;
+
+    let bubbleLeft = rect.left + (rect.width / 2) - (measuredWidth / 2);
+    bubbleLeft = Math.max(
+      minLeft,
+      Math.min(maxRight - measuredWidth, bubbleLeft)
+    );
+
+    const belowTop = rect.bottom + 12;
+    const aboveTop = rect.top - bubbleHeight - 12;
+    let bubbleTop;
+    if (belowTop + bubbleHeight <= maxBottom) {
+      bubbleTop = belowTop;
+    } else if (aboveTop >= minTop) {
+      bubbleTop = aboveTop;
+    } else {
+      bubbleTop = Math.max(
+        minTop,
+        Math.min(maxBottom - bubbleHeight, belowTop)
+      );
+    }
+
+    bubble.style.left = `${bubbleLeft}px`;
+    bubble.style.top = `${bubbleTop}px`;
+  };
+
+  nextBtn.addEventListener('click', () => {
+    currentIndex += 1;
+    moveToStep();
+  });
+  skipBtn.addEventListener('click', () => finish());
+  neverBtn.addEventListener('click', () => finish({ remember: true }));
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay || e.target === dim) finish();
+  });
+
+  onEsc = (e) => {
+    if (e.key !== 'Escape') return;
+    window.removeEventListener('keydown', onEsc);
+    finish();
+  };
+  window.addEventListener('keydown', onEsc);
+  onViewportChange = () => moveToStep();
+  window.addEventListener('resize', onViewportChange);
+  window.addEventListener('orientationchange', onViewportChange);
+
+  bubble.appendChild(stepBadge);
+  bubble.appendChild(titleEl);
+  bubble.appendChild(bodyEl);
+  actions.appendChild(nextBtn);
+  actions.appendChild(skipBtn);
+  actions.appendChild(neverBtn);
+  bubble.appendChild(actions);
+
+  overlay.appendChild(dim);
+  overlay.appendChild(spotlight);
+  overlay.appendChild(bubble);
+  document.body.appendChild(overlay);
+
+  moveToStep();
+
+  requestAnimationFrame(() => {
+    overlay.style.opacity = '1';
+    dim.style.opacity = '1';
+    spotlight.style.opacity = '1';
+    spotlight.style.transform = 'translateZ(0) scale(1)';
+    bubble.style.opacity = '1';
+    bubble.style.transform = 'translate3d(0, 0, 0) scale(1)';
+  });
+}
+
+function closeHostQuickGuide() {
+  closeCoachTour();
+}
+
+function closePlayerQuickGuide() {
+  closeCoachTour();
+}
+
+function openHostQuickGuide({ force = false } = {}) {
+  if (!force && !shouldShowHostQuickGuide()) return;
+  runCoachTour([
+    {
+      selector: '#btn-lobby-mode-team',
+      title: 'اللعب الجماعي',
+      body: 'اختر هذا الخيار إذا تريد اللعب مع أكثر من لاعب.',
+    },
+    {
+      selector: '#btn-lobby-mode-solo',
+      title: 'اللعب الفردي',
+      body: 'هذا الخيار يبدأ اللعب الفردي مباشرة بدون انتظار.',
+    },
+    {
+      selector: '#share-url-section',
+      title: 'مشاركة الدعوة',
+      body: 'شارك الرابط أو رمز الغرفة أو رمز الاستجابة السريعة (QR) ليتمكن الآخرون من الانضمام.',
+    },
+    {
+      selector: '#host-inline-join-toggle-row',
+      title: 'انضم كمضيف',
+      body: 'فعّل هذا الخيار إذا تريد أن تضيف نفسك كلاعب داخل نفس الجلسة.',
+    },
+    {
+      selector: '#btn-start-game',
+      title: 'ابدأ اللعبة',
+      body: 'بعد انضمام اللاعبين، اضغط ابدأ اللعبة للانطلاق.',
+    },
+  ], {
+    dismissKey: HOST_QUICK_GUIDE_DISMISSED_KEY,
+    onFinish: () => { hasShownHostQuickGuideThisSession = true; },
+  });
+}
+
+function openPlayerQuickGuide({ force = false } = {}) {
+  if (!force && !shouldShowPlayerQuickGuide()) return;
+  runCoachTour([
+    {
+      selector: '#input-pin',
+      title: 'رمز الغرفة',
+      body: 'أدخل رمز الغرفة الذي يشاركه المضيف، أو استخدم الرابط أو رمز الاستجابة السريعة (QR) مباشرة.',
+    },
+    {
+      selector: '#input-nickname',
+      title: 'اسمك في اللعبة',
+      body: 'اكتب الاسم الذي سيظهر للاعبين أثناء المباراة.',
+    },
+    {
+      selector: '#join-avatar-btn',
+      title: 'الأفاتار',
+      body: 'اضغط هنا لتغيير الأفاتار قبل الانضمام.',
+    },
+    {
+      selector: '#form-join button[type="submit"]',
+      title: 'انضم للعبة',
+      body: 'بعد تعبئة البيانات اضغط انضم للعبة ثم انتظر بدء المضيف.',
+    },
+  ], {
+    dismissKey: PLAYER_QUICK_GUIDE_DISMISSED_KEY,
+    onFinish: () => { hasShownPlayerQuickGuideThisSession = true; },
+  });
+}
+
+const btnHelpHostTour = document.getElementById('btn-help-host-tour');
+if (btnHelpHostTour) {
+  btnHelpHostTour.addEventListener('click', () => {
+    openHostQuickGuide({ force: true });
+  });
+}
+
+const btnHelpPlayerTour = document.getElementById('btn-help-player-tour');
+if (btnHelpPlayerTour) {
+  btnHelpPlayerTour.addEventListener('click', () => {
+    openPlayerQuickGuide({ force: true });
+  });
+}
+
+const btnHelpPlayerLobbyTour = document.getElementById('btn-help-player-lobby-tour');
+if (btnHelpPlayerLobbyTour) {
+  btnHelpPlayerLobbyTour.addEventListener('click', () => {
+    openPlayerQuickGuide({ force: true });
+  });
+}
+
 function showView(viewId, options = {}) {
   try {
     normalizeViewDom();
@@ -864,6 +1338,23 @@ function showView(viewId, options = {}) {
     }
 
     updateThemeDiagNoteVisibility(viewId);
+    updateLobbyBgDiagnostic(viewId);
+
+    if (viewId === 'view-host-lobby' && state.role === 'host') {
+      setTimeout(() => {
+        if (document.querySelector('.view.active')?.id === 'view-host-lobby') {
+          openHostQuickGuide();
+        }
+      }, 180);
+    }
+
+    if (viewId === 'view-player-join') {
+      setTimeout(() => {
+        if (document.querySelector('.view.active')?.id === 'view-player-join') {
+          openPlayerQuickGuide();
+        }
+      }, 180);
+    }
   } catch (err) {
     console.error('showView failed:', err);
     if (window.__dbgLog) window.__dbgLog('showView CRASH: ' + err.message);
@@ -996,6 +1487,15 @@ function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
         socket.emit('host:kick', { playerId: btn.dataset.id });
       });
     });
+    listEl.querySelectorAll('.player-stage-card.is-host-player').forEach((cardEl) => {
+      cardEl.style.cursor = 'pointer';
+      cardEl.title = 'Edit your host player name/avatar';
+      cardEl.addEventListener('click', () => {
+        if (state.role !== 'host' || !state.hostIsPlayer) return;
+        Sounds.click();
+        openHostJoinDialog();
+      });
+    });
     if (kickHint) kickHint.style.display = playersArr.length > 0 ? 'block' : 'none';
     if (waitingEl) {
       if (playersArr.length === 0) {
@@ -1026,8 +1526,6 @@ function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
 // Avatar Picker — Inline overlay (bypasses old modal)
 // ─────────────────────────────────────────────
 function openAvatarPicker(currentAvatar, onSelect) {
-    showError('join-error', `⚠️ ${message}`);
-
   // Remove any existing picker overlay
   const old = document.getElementById('avatar-inline-overlay');
   if (old) old.remove();
@@ -1042,7 +1540,7 @@ function openAvatarPicker(currentAvatar, onSelect) {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: '100000',
+    zIndex: '200000',
     padding: '16px',
     backdropFilter: 'blur(4px)',
   });
@@ -1055,8 +1553,9 @@ function openAvatarPicker(currentAvatar, onSelect) {
     borderRadius: '18px',
     padding: '14px',
     width: 'min(340px, 90vw)',
+    maxHeight: '72vh',
     boxSizing: 'border-box',
-    overflow: 'hidden',
+    overflowY: 'auto',
     display: 'grid',
     gridTemplateColumns: 'repeat(5, 1fr)',
     gap: '6px',
@@ -1157,7 +1656,7 @@ function applyModeInfo(data) {
   const qrWrap    = document.getElementById('host-qr-canvas');
 
   if (indicator) {
-    indicator.textContent = mode === 'local' ? 'Local' : 'Global';
+    indicator.textContent = mode === 'local' ? 'محلي' : 'الويب العالمي';
   }
 
   if (localBtn && globalBtn) {
@@ -1845,9 +2344,18 @@ function syncFixedHudOffset(barId, bodyId) {
   const bar = document.getElementById(barId);
   const body = document.getElementById(bodyId);
   if (!bar || !body) return;
-  // Use rect.bottom so the top offset (e.g. 14px) is included in the calculation
+  const barStyle = window.getComputedStyle(bar);
+
+  // In player-hud-mode, HUD is in normal flow (position:relative), so using
+  // viewport bottom would create a huge artificial gap.
+  if (barStyle.position !== 'fixed') {
+    body.style.marginTop = '8px';
+    return;
+  }
+
+  // Fixed HUD mode: offset question body below the floating header.
   const bottom = bar.getBoundingClientRect().bottom;
-  if (bottom > 0) body.style.marginTop = (bottom + 16) + 'px';
+  if (bottom > 0) body.style.marginTop = (bottom + 12) + 'px';
 }
 
 /** Keep the host question card correctly offset below the fixed HUD bar. */
@@ -2205,6 +2713,24 @@ function showQuestionResult(data) {
     return false;
   };
 
+  const normalizeAnswerTextList = (values) => {
+    if (!Array.isArray(values)) return [];
+    return values
+      .map((value) => (typeof value === 'string' ? value.trim() : String(value ?? '').trim()))
+      .filter((value) => {
+        if (!value) return false;
+        const lower = value.toLowerCase();
+        return lower !== 'undefined' && lower !== 'null';
+      });
+  };
+
+  const normalizeAnswerText = (value) => {
+    const raw = typeof value === 'string' ? value.trim() : String(value ?? '').trim();
+    if (!raw) return '';
+    const lower = raw.toLowerCase();
+    return lower === 'undefined' || lower === 'null' ? '' : raw;
+  };
+
   const renderPuzzleResultValue = (value) => {
     const image = typeof data?.matchPlusImage === 'string' ? data.matchPlusImage.trim() : '';
     const parsedGrid = Number(data?.matchPlusGridSize);
@@ -2248,7 +2774,7 @@ function showQuestionResult(data) {
 
   if (type === 'boss' || data.boss) {
     labelEl.textContent  = '⚔️ Boss Battle Result';
-    answerEl.textContent = `${data.correctOption || ''}`;
+    answerEl.textContent = normalizeAnswerText(data.correctOption);
 
     if (data.boss) {
       bossStatusText = data.boss.defeated
@@ -2287,10 +2813,10 @@ function showQuestionResult(data) {
     ).join('');
   } else if (Array.isArray(data.acceptedAnswers)) {
     labelEl.textContent  = '✅ الإجابات المقبولة';
-    answerEl.textContent = (data.acceptedAnswers || []).join('، ');
+    answerEl.textContent = normalizeAnswerTextList(data.acceptedAnswers).join('، ');
   } else if (Array.isArray(data.correctIndices)) {
     labelEl.textContent  = '✅ الإجابات الصحيحة';
-    answerEl.textContent = (data.correctOptions || []).join('، ');
+    answerEl.textContent = normalizeAnswerTextList(data.correctOptions).join('، ');
 
     const grid = document.getElementById('player-options-grid');
     grid.querySelectorAll('.option-btn').forEach((btn, i) => {
@@ -2304,7 +2830,7 @@ function showQuestionResult(data) {
     });
   } else {
     labelEl.textContent   = '✅ الإجابة الصحيحة';
-    answerEl.textContent  = data.correctOption;
+    answerEl.textContent  = normalizeAnswerText(data.correctOption);
 
     // Animate options grid
     const grid = document.getElementById('player-options-grid');
@@ -2724,6 +3250,7 @@ document.getElementById('btn-save-profile').addEventListener('click', () => {
 // Host Lobby — Back button
 const hostMenuBtn = document.getElementById('btn-back-from-host-lobby');
 const hostHomeMenu = document.getElementById('host-home-menu');
+const hostHomeMenuBackdrop = document.getElementById('host-home-menu-backdrop');
 const shareUrlSection = document.getElementById('share-url-section');
 const shareMenuBtn    = document.getElementById('btn-share-menu');
 const shareActions    = document.getElementById('share-actions');
@@ -2769,7 +3296,25 @@ if (refreshPinBtn) {
 }
 
 function closeHostHomeMenu() {
-  if (hostHomeMenu) hostHomeMenu.style.display = 'none';
+  if (hostHomeMenu) {
+    hostHomeMenu.style.display = 'none';
+    hostHomeMenu.style.transform = '';
+  }
+  if (hostHomeMenuBackdrop) hostHomeMenuBackdrop.style.display = 'none';
+  if (hostMenuBtn) hostMenuBtn.setAttribute('aria-expanded', 'false');
+}
+
+function fitHostHomeMenuDialog() {
+  if (!hostHomeMenu || hostHomeMenu.style.display === 'none') return;
+  const availableW = Math.max(240, window.innerWidth - 24);
+  const availableH = Math.max(320, window.innerHeight - 24);
+
+  hostHomeMenu.style.transform = 'scale(1)';
+  const menuRect = hostHomeMenu.getBoundingClientRect();
+  const scaleX = availableW / Math.max(1, menuRect.width);
+  const scaleY = availableH / Math.max(1, menuRect.height);
+  const scale = Math.min(1, scaleX, scaleY);
+  hostHomeMenu.style.transform = `scale(${Math.max(0.78, scale).toFixed(3)})`;
 }
 
 function resetHostRoomConnection() {
@@ -2783,8 +3328,16 @@ if (hostMenuBtn) {
   hostMenuBtn.addEventListener('click', (e) => {
     Sounds.click();
     e.stopPropagation();
-    if (!hostHomeMenu) return;
-    hostHomeMenu.style.display = hostHomeMenu.style.display === 'none' ? 'flex' : 'none';
+    if (!hostHomeMenu || !hostHomeMenuBackdrop) return;
+    const isClosed = hostHomeMenu.style.display === 'none' || hostHomeMenuBackdrop.style.display === 'none';
+    if (isClosed) {
+      hostHomeMenuBackdrop.style.display = 'flex';
+      hostHomeMenu.style.display = 'flex';
+      hostMenuBtn.setAttribute('aria-expanded', 'true');
+      requestAnimationFrame(() => fitHostHomeMenuDialog());
+    } else {
+      closeHostHomeMenu();
+    }
   });
 }
 
@@ -2827,9 +3380,29 @@ try {
 }
 
 document.addEventListener('click', (e) => {
-  if (!hostHomeMenu || hostHomeMenu.style.display === 'none') return;
+  if (!hostHomeMenu || !hostHomeMenuBackdrop || hostHomeMenuBackdrop.style.display === 'none') return;
   if (hostHomeMenu.contains(e.target) || hostMenuBtn?.contains(e.target)) return;
   closeHostHomeMenu();
+});
+
+if (hostHomeMenuBackdrop) {
+  hostHomeMenuBackdrop.addEventListener('click', (e) => {
+    if (e.target === hostHomeMenuBackdrop) closeHostHomeMenu();
+  });
+}
+
+window.addEventListener('resize', () => {
+  if (hostHomeMenuBackdrop?.style.display !== 'none') fitHostHomeMenuDialog();
+});
+
+window.addEventListener('orientationchange', () => {
+  if (hostHomeMenuBackdrop?.style.display !== 'none') fitHostHomeMenuDialog();
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && hostHomeMenuBackdrop?.style.display !== 'none') {
+    closeHostHomeMenu();
+  }
 });
 
 // Theme system (file-based manifest + theme files)
@@ -2864,6 +3437,16 @@ function releaseLobbyHold() {
   if (holdLobbyTimeoutId) { clearTimeout(holdLobbyTimeoutId); holdLobbyTimeoutId = null; }
   setLobbyPlayMode('team');
   showView('view-host-lobby');
+  // Auto-join host as player when launched from admin app
+  if (isAutoHostLaunch && !state.hostIsPlayer) {
+    const profile = resolveHostProfile();
+    const nickname = profile.nickname || 'Host';
+    const avatar = profile.avatar || '🎮';
+    persistHostProfile({ nickname, avatar });
+    setHostAsPlayerCheckboxes(true);
+    state.avatar = avatar;
+    socket.emit('host:join_as_player', { nickname, avatar });
+  }
 }
 
 function computeThemeTokenSignature(tokens) {
@@ -2935,6 +3518,46 @@ function updateThemeDiagNoteVisibility(viewId) {
   el.style.display = gameplayViews.has(currentViewId) ? 'block' : 'none';
 }
 
+function updateLobbyBgDiagnostic(viewId) {
+  const panel = document.getElementById('lobby-bg-diag');
+  const line = document.getElementById('lobby-bg-diag-line');
+  const urlLine = document.getElementById('lobby-bg-diag-url');
+  const preview = document.getElementById('lobby-bg-diag-preview');
+  if (!panel || !line || !urlLine || !preview) return;
+
+  const currentViewId = viewId || document.querySelector('.view.active')?.id || '';
+  if (currentViewId !== 'view-host-lobby') {
+    panel.style.display = 'none';
+    return;
+  }
+
+  panel.style.display = 'grid';
+
+  const root = document.documentElement;
+  const rawLobbyUrl = (root.style.getPropertyValue('--lobby-bg-image-url') || '').trim();
+  const rawGlobalUrl = (root.style.getPropertyValue('--bg-image-url') || '').trim();
+  const rawLobbyBgImage = (root.style.getPropertyValue('--lobby-bg-image') || '').trim();
+  const rawBlur = (root.style.getPropertyValue('--app-bg-blur') || '0px').trim();
+
+  const source = rawLobbyUrl
+    ? 'lobby-token'
+    : (rawGlobalUrl ? 'global-fallback' : 'none');
+  const live = rawLobbyBgImage || 'none';
+  const shortLive = live.length > 62 ? `${live.slice(0, 62)}...` : live;
+  const shownUrl = rawLobbyUrl || rawGlobalUrl || '(empty)';
+  const shortUrl = shownUrl.length > 88 ? `${shownUrl.slice(0, 88)}...` : shownUrl;
+
+  line.textContent = `src:${source} | live:${shortLive} | blur:${rawBlur || '0px'}`;
+  urlLine.textContent = `url: ${shortUrl}`;
+  panel.title = `source=${source} | lobbyUrl=${rawLobbyUrl || '-'} | globalUrl=${rawGlobalUrl || '-'} | live=${live}`;
+
+  if (live && live !== 'none') {
+    preview.style.backgroundImage = live;
+    preview.style.backgroundSize = 'cover';
+  } else {
+    preview.style.backgroundImage = 'none';
+  }
+}
 function normalizeRuntimeThemeId(themeId) {
   if (typeof themeId !== 'string') return null;
   const normalized = themeId.trim().toLowerCase();
@@ -3098,6 +3721,13 @@ function applyThemeBgPattern(root, tokens) {
   const overlayColor = tokens['--bg-overlay-color'] || 'transparent';
   const rawOverlayOp = tokens['--bg-overlay-opacity'];
   const overlayOp = rawOverlayOp !== undefined ? Math.min(Math.max(parseFloat(rawOverlayOp) || 0, 0), 1) : 0;
+  const lobbyBgImageUrl = tokens['--lobby-bg-image-url'] || tokens['--bg-image-url'] || '';
+  const hasLobbyImage = !!(typeof lobbyBgImageUrl === 'string' && lobbyBgImageUrl.trim());
+  // Combine gradient overlay + image into a single CSS var to avoid the "none, url(...)"
+  // multi-layer edge case where the first 'none' layer can suppress rendering in some browsers.
+  const lobbyBgImage = hasLobbyImage
+    ? `linear-gradient(180deg, rgba(0,0,0,0.12), rgba(0,0,0,0.2)), url(${JSON.stringify(lobbyBgImageUrl)})`
+    : 'none';
 
   const appVars = {
     '--app-bg-image':    bgImage,
@@ -3107,6 +3737,7 @@ function applyThemeBgPattern(root, tokens) {
     '--app-bg-blur':     `${blurPx}px`,
     '--app-overlay-color':   overlayColor,
     '--app-overlay-opacity': String(overlayOp),
+    '--lobby-bg-image': lobbyBgImage,
   };
   Object.entries(appVars).forEach(([name, value]) => {
     root.style.setProperty(name, value);
@@ -3176,6 +3807,7 @@ function applyThemePayload(themePayload, themeIdFromManifest = null, source = 'u
   activeThemePattern = String(tokens['--bg-pattern'] || 'none');
   activeThemeHasImage = !!String(tokens['--bg-image-url'] || '').trim();
   updateThemeDiagNote();
+    updateLobbyBgDiagnostic();
   updateThemeDiagNoteVisibility();
   if (hostThemeSelect && hostThemeSelect.value !== themeId) {
     hostThemeSelect.value = themeId;
@@ -3628,40 +4260,62 @@ if (switchGameDialog) {
 // Host-as-Player toggle
 const chkHostAsPlayer = document.getElementById('chk-host-as-player');
 const chkHostAsPlayerInline = document.getElementById('chk-host-as-player-inline');
+const hostInlineJoinMain = document.getElementById('host-inline-join-main');
+const hostInlineJoinSub = document.getElementById('host-inline-join-sub');
 const hostPlayerForm  = document.getElementById('host-player-form');
 const hostAsPlayerSection = document.getElementById('host-as-player-section');
+
+function updateHostInlineJoinCopy(checked) {
+  if (hostInlineJoinMain) {
+    hostInlineJoinMain.textContent = checked
+      ? 'مضيف + لاعب'
+      : 'أضفني كلاعب';
+  }
+  if (hostInlineJoinSub) {
+    hostInlineJoinSub.textContent = checked
+      ? 'الآن ستكون لاعباً أيضاً.'
+      : 'حالياً ستكون المضيف فقط.';
+  }
+}
 
 function setHostAsPlayerCheckboxes(checked) {
   const next = !!checked;
   if (chkHostAsPlayer && chkHostAsPlayer.checked !== next) chkHostAsPlayer.checked = next;
   if (chkHostAsPlayerInline && chkHostAsPlayerInline.checked !== next) chkHostAsPlayerInline.checked = next;
+  updateHostInlineJoinCopy(next);
 }
 
 function updateHostInlineJoinToggleVisibility(players = []) {
   const hostInlineJoinToggleRow = document.getElementById('host-inline-join-toggle-row');
   if (!hostInlineJoinToggleRow) return;
-  const count = Array.isArray(players) ? players.length : 0;
-  hostInlineJoinToggleRow.style.display = (state.role === 'host' && count >= 1 && getLobbyPlayMode() === 'team') ? 'grid' : 'none';
+  hostInlineJoinToggleRow.style.display = (state.role === 'host' && getLobbyPlayMode() === 'team') ? 'grid' : 'none';
 }
 
 function handleHostAsPlayerCheckboxToggle(checked) {
   setHostAsPlayerCheckboxes(checked);
   if (checked) {
-    if (!state.hostIsPlayer) openHostJoinDialog();
+    if (!state.hostIsPlayer) {
+      const profile = resolveHostProfile();
+      const nickname = profile.nickname;
+      const avatar = profile.avatar;
+      persistHostProfile({ nickname, avatar });
+      state.avatar = avatar;
+      socket.emit('host:join_as_player', { nickname, avatar });
+    }
   } else {
     closeHostJoinDialog();
     if (state.hostIsPlayer) socket.emit('host:join_as_player', { nickname: '' });
   }
 }
 
-// ── Host "Join as Player" dialog ──
+// ── Host player profile edit dialog ──
 let _hostJoinAvatar = state.avatar || '🎮';
 
 function openHostJoinDialog() {
   const old = document.getElementById('host-join-dialog-overlay');
   if (old) old.remove();
 
-  _hostJoinAvatar = state.avatar || '🎮';
+  _hostJoinAvatar = resolveHostProfile().avatar;
 
   const overlay = document.createElement('div');
   overlay.id = 'host-join-dialog-overlay';
@@ -3680,9 +4334,9 @@ function openHostJoinDialog() {
 
   // Title
   const title = document.createElement('h3');
-  title.textContent = 'Join as Player';
+  title.textContent = 'تعديل بيانات اللاعب المضيف';
   Object.assign(title.style, {
-    margin: '0', fontSize: '1.1rem', fontWeight: '700',
+    margin: '0', fontSize: '1.1rem', fontWeight: '400',
     color: 'var(--text, #e2e8f0)', textAlign: 'center',
   });
   dialog.appendChild(title);
@@ -3708,7 +4362,7 @@ function openHostJoinDialog() {
     });
   });
   const avatarHint = document.createElement('span');
-  avatarHint.textContent = 'Tap to change avatar';
+  avatarHint.textContent = 'اضغط لتغيير الصورة الرمزية';
   Object.assign(avatarHint.style, { fontSize: '0.8rem', color: 'var(--text-dim, #94a3b8)' });
   avatarRow.appendChild(avatarBtn);
   avatarRow.appendChild(avatarHint);
@@ -3718,8 +4372,8 @@ function openHostJoinDialog() {
   const input = document.createElement('input');
   input.type = 'text';
   input.maxLength = 20;
-  input.placeholder = 'Your nickname…';
-  input.value = hostNameFromUrl || '';
+  input.placeholder = 'اكتب اسم اللاعب';
+  input.value = resolveHostProfile().nickname || '';
   Object.assign(input.style, {
     padding: '12px 14px', fontSize: '1rem', borderRadius: '12px',
     border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.06)',
@@ -3739,17 +4393,17 @@ function openHostJoinDialog() {
   Object.assign(btns.style, { display: 'flex', gap: '10px' });
 
   const joinBtn = document.createElement('button');
-  joinBtn.textContent = '✅ Join Game';
+  joinBtn.textContent = 'حفظ';
   Object.assign(joinBtn.style, {
-    flex: '1', padding: '12px', fontSize: '0.95rem', fontWeight: '700',
+    flex: '1', padding: '12px', fontSize: '0.95rem', fontWeight: '400',
     borderRadius: '12px', border: 'none', background: '#7c3aed', color: '#fff',
     cursor: 'pointer', touchAction: 'manipulation',
   });
 
   const cancelBtn = document.createElement('button');
-  cancelBtn.textContent = 'Cancel';
+  cancelBtn.textContent = 'إلغاء';
   Object.assign(cancelBtn.style, {
-    padding: '12px 18px', fontSize: '0.95rem', fontWeight: '600',
+    padding: '12px 18px', fontSize: '0.95rem', fontWeight: '400',
     borderRadius: '12px', border: '1px solid rgba(255,255,255,0.15)',
     background: 'transparent', color: 'var(--text-dim, #94a3b8)',
     cursor: 'pointer', touchAction: 'manipulation',
@@ -3757,16 +4411,36 @@ function openHostJoinDialog() {
 
   joinBtn.addEventListener('click', () => {
     const nickname = input.value.trim();
-    if (!nickname) { errorEl.textContent = '⚠️ Please enter a nickname.'; return; }
+    if (!nickname) { errorEl.textContent = 'يرجى كتابة اسم اللاعب.'; return; }
     Sounds.click();
+    persistHostProfile({ nickname, avatar: _hostJoinAvatar });
     state.avatar = _hostJoinAvatar;
+
+    // While host is already joined as player, update profile only (do not re-join).
+    if (state.hostIsPlayer) {
+      socket.emit('player:update_profile', { nickname, avatar: _hostJoinAvatar });
+
+      // Optimistic UI update while waiting for server push.
+      if (Array.isArray(state.hostLobbyPlayers)) {
+        state.hostLobbyPlayers = state.hostLobbyPlayers.map((p) => {
+          if (!p || !p.isHost) return p;
+          return { ...p, nickname, avatar: _hostJoinAvatar };
+        });
+        rerenderHostPlayerStage();
+      }
+
+      overlay.remove();
+      setHostAsPlayerCheckboxes(true);
+      return;
+    }
+
     socket.emit('host:join_as_player', { nickname, avatar: _hostJoinAvatar });
     overlay.remove();
   });
 
   cancelBtn.addEventListener('click', () => {
     overlay.remove();
-    setHostAsPlayerCheckboxes(false);
+    setHostAsPlayerCheckboxes(!!state.hostIsPlayer);
   });
 
   // Enter key submits
@@ -3780,7 +4454,10 @@ function openHostJoinDialog() {
 
   overlay.appendChild(dialog);
   overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) { overlay.remove(); setHostAsPlayerCheckboxes(false); }
+    if (e.target === overlay) {
+      overlay.remove();
+      setHostAsPlayerCheckboxes(!!state.hostIsPlayer);
+    }
   });
   document.body.appendChild(overlay);
 
@@ -3817,6 +4494,25 @@ function getSessionOptions() {
 const hostLobbyView = document.getElementById('view-host-lobby');
 const lobbyModeTeamBtn = document.getElementById('btn-lobby-mode-team');
 const lobbyModeSoloBtn = document.getElementById('btn-lobby-mode-solo');
+const btnToggleHostInviteDetails = document.getElementById('btn-toggle-host-invite-details');
+const hostInviteDetails = document.getElementById('host-invite-details');
+
+function setHostInviteDetailsCollapsed(collapsed) {
+  if (!hostInviteDetails || !btnToggleHostInviteDetails) return;
+  const next = !!collapsed;
+  hostInviteDetails.classList.toggle('is-collapsed', next);
+  btnToggleHostInviteDetails.setAttribute('aria-expanded', next ? 'false' : 'true');
+  btnToggleHostInviteDetails.textContent = next
+    ? '▸ إظهار رمز الغرفة ورمز الاستجابة السريعة'
+    : '▾ إخفاء رمز الغرفة ورمز الاستجابة السريعة';
+}
+
+if (btnToggleHostInviteDetails) {
+  btnToggleHostInviteDetails.addEventListener('click', () => {
+    const isCollapsed = hostInviteDetails?.classList.contains('is-collapsed');
+    setHostInviteDetailsCollapsed(!isCollapsed);
+  });
+}
 
 function setLobbyPlayMode(mode) {
   const normalized = mode === 'solo' ? 'solo' : 'team';
@@ -3855,9 +4551,17 @@ function triggerSoloPlay({ fromAuto = false } = {}) {
   if (!fromAuto) Sounds.click();
   refreshHostStartButton(state.hostLobbyPlayers || []);
 
+  // If host is already joined as a player, start immediately.
+  if (state.hostIsPlayer) {
+    enableKeepAwake();
+    socket.emit('host:start', { ...getSessionOptions(), ...getHostAuthPayload() });
+    return;
+  }
+
   // Generate a solo nickname
-  const soloNick = hostNameFromUrl || 'المضيف';
-  const soloAvatar = state.avatar || '🎮';
+  const soloProfile = resolveHostProfile();
+  const soloNick = soloProfile.nickname || 'Host';
+  const soloAvatar = soloProfile.avatar || '🎮';
 
   // Listen for join confirmation, then auto-start
   const onJoined = ({ joined }) => {
@@ -3897,11 +4601,12 @@ if (lobbyModeTeamBtn) {
 
 if (lobbyModeSoloBtn) {
   lobbyModeSoloBtn.addEventListener('click', () => {
-    setLobbyPlayMode('solo');
+    triggerSoloPlay({ fromAuto: true });
   });
 }
 
 setLobbyPlayMode('team');
+setHostInviteDetailsCollapsed(true);
 
 document.getElementById('btn-copy-join-url').addEventListener('click', async () => {
   Sounds.click();
@@ -4494,6 +5199,7 @@ socket.on('host:joined_as_player', ({ joined, nickname, avatar }) => {
   const statusEl = document.getElementById('host-as-player-status');
   const hostAsPlayerBlock = document.getElementById('host-as-player-section');
   if (joined) {
+    persistHostProfile({ nickname, avatar });
     if (statusEl) statusEl.textContent = `\u2705 Playing as "${nickname}"`;
     setHostAsPlayerCheckboxes(true);
     if (hostAsPlayerBlock) hostAsPlayerBlock.classList.add('join-enabled');

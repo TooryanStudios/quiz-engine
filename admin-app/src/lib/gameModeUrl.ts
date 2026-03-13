@@ -28,6 +28,7 @@ export function buildHostGameUrl(params: {
   hostUid?: string
   hostToken?: string
   hostName?: string
+  hostAvatar?: string
   miniGameConfig?: Record<string, unknown>
 }): string {
   const localHtml5Url = buildLocalHtml5TestUrl({
@@ -61,6 +62,10 @@ export function buildHostGameUrl(params: {
 
   if (params.hostName) {
     query.set('hostName', params.hostName)
+  }
+
+  if (params.hostAvatar) {
+    query.set('hostAvatar', params.hostAvatar)
   }
 
   // NOTE: Theme is resolved server-side from quiz data (quizData.themeId).

@@ -104,11 +104,12 @@ function EditorSection({ title, open, toggle, children }: { title: string; open:
 }
 
 // ── Background image uploader (URL or file upload) ──────────────────────────
-function BgImageUploader({ value, onChange, inputStyle, labelStyle }: {
+function BgImageUploader({ value, onChange, inputStyle, labelStyle, label }: {
   value?: string
   onChange: (url: string) => void
   inputStyle: CSSProperties
   labelStyle: CSSProperties
+  label?: string
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
@@ -143,7 +144,7 @@ function BgImageUploader({ value, onChange, inputStyle, labelStyle }: {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-      <span style={labelStyle}>Background image</span>
+      <span style={labelStyle}>{label ?? 'Background image'}</span>
       {/* URL input */}
       <input
         type="url"
@@ -353,6 +354,10 @@ export function ThemeEditorTab({ themes, updatedAt, onSave }: Props) {
                 <ColorField label="Success (correct)" value={t.success} onChange={v => patch({ success: v })} />
                 <ColorField label="Danger (wrong)" value={t.danger ?? '#c0392b'} onChange={v => patch({ danger: v })} optional />
                 <ColorField label="Warning (timer)" value={t.warning ?? '#e67e22'} onChange={v => patch({ warning: v })} optional />
+                <ColorField label="Lobby text" value={t.lobbyText ?? t.text} onChange={v => patch({ lobbyText: v })} optional />
+                <ColorField label="Lobby text dim" value={t.lobbyTextDim ?? t.textDim} onChange={v => patch({ lobbyTextDim: v })} optional />
+                <ColorField label="Final text" value={t.finalText ?? t.text} onChange={v => patch({ finalText: v })} optional />
+                <ColorField label="Final text dim" value={t.finalTextDim ?? t.textDim} onChange={v => patch({ finalTextDim: v })} optional />
               </div>
             </EditorSection>
 
@@ -386,6 +391,14 @@ export function ThemeEditorTab({ themes, updatedAt, onSave }: Props) {
                   onChange={url => patch({ bgImageUrl: url || undefined })}
                   inputStyle={inputStyle}
                   labelStyle={labelStyle}
+                  label="App background image"
+                />
+                <BgImageUploader
+                  value={t.lobbyBgImageUrl}
+                  onChange={url => patch({ lobbyBgImageUrl: url || undefined })}
+                  inputStyle={inputStyle}
+                  labelStyle={labelStyle}
+                  label="Lobby dialog background image"
                 />
                 <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '0.1rem 0' }} />
                 {/* Pattern overlay — rendered behind the background image */}

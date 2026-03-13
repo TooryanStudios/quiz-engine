@@ -76,6 +76,11 @@ export interface ThemePaletteTokens {
   // ── Extended state colors ─────────────────────────────
   danger?: string        // destructive / wrong-answer highlight
   warning?: string       // timer-low / warning state
+  // ── Context-specific text colors ──────────────────────
+  lobbyText?: string     // host lobby prominent text
+  lobbyTextDim?: string  // host lobby secondary/helper text
+  finalText?: string     // final-result/leaderboard prominent text
+  finalTextDim?: string  // final-result/leaderboard secondary text
   // ── Button overrides ─────────────────────────────────
   submitBg?: string      // Submit / confirm button background
   submitText?: string    // Submit button label color
@@ -91,6 +96,7 @@ export interface ThemePaletteTokens {
   bgPatternColor?: string
   bgPatternOpacity?: number  // 0–1
   bgImageUrl?: string
+  lobbyBgImageUrl?: string
   bgOverlayColor?: string    // hex color rendered above image/pattern
   bgOverlayOpacity?: number  // 0–1 opacity of overlay
   bgBlur?: number            // px blur applied to background image
@@ -539,6 +545,10 @@ function normalizeThemeTokens(raw: unknown): ThemePaletteTokens {
   const optHex = (v: unknown) => { const h = normalizeHex(v, ''); return h || undefined }
   if (source.danger !== undefined)        base.danger        = optHex(source.danger)
   if (source.warning !== undefined)       base.warning       = optHex(source.warning)
+  if (source.lobbyText !== undefined)     base.lobbyText     = optHex(source.lobbyText)
+  if (source.lobbyTextDim !== undefined)  base.lobbyTextDim  = optHex(source.lobbyTextDim)
+  if (source.finalText !== undefined)     base.finalText     = optHex(source.finalText)
+  if (source.finalTextDim !== undefined)  base.finalTextDim  = optHex(source.finalTextDim)
   if (source.submitBg !== undefined)      base.submitBg      = optHex(source.submitBg)
   if (source.submitText !== undefined)    base.submitText    = optHex(source.submitText)
   if (source.pauseBg !== undefined)       base.pauseBg       = optHex(source.pauseBg)
@@ -551,6 +561,7 @@ function normalizeThemeTokens(raw: unknown): ThemePaletteTokens {
   if (source.bgPatternColor !== undefined) base.bgPatternColor = optHex(source.bgPatternColor)
   if (source.bgPatternOpacity !== undefined) base.bgPatternOpacity = normalizeOpacity(source.bgPatternOpacity)
   if (source.bgImageUrl !== undefined)         base.bgImageUrl         = normalizeOptStr(source.bgImageUrl)
+  if (source.lobbyBgImageUrl !== undefined)    base.lobbyBgImageUrl    = normalizeOptStr(source.lobbyBgImageUrl)
   if (source.bgOverlayColor !== undefined)      base.bgOverlayColor      = optHex(source.bgOverlayColor)
   if (source.bgOverlayOpacity !== undefined)    base.bgOverlayOpacity    = normalizeOpacity(source.bgOverlayOpacity)
   if (source.bgBlur !== undefined) {
@@ -607,6 +618,10 @@ export function themeTokensToCssVars(tokens: ThemePaletteTokens): Record<string,
     success: '--success',
     danger: '--danger',
     warning: '--warning',
+    lobbyText: '--lobby-text',
+    lobbyTextDim: '--lobby-text-dim',
+    finalText: '--final-text',
+    finalTextDim: '--final-text-dim',
     submitBg: '--submit-bg',
     submitText: '--submit-text',
     pauseBg: '--pause-bg',
@@ -619,6 +634,7 @@ export function themeTokensToCssVars(tokens: ThemePaletteTokens): Record<string,
     bgPatternColor: '--bg-pattern-color',
     bgPatternOpacity: '--bg-pattern-opacity',
     bgImageUrl: '--bg-image-url',
+    lobbyBgImageUrl: '--lobby-bg-image-url',
     bgOverlayColor: '--bg-overlay-color',
     bgOverlayOpacity: '--bg-overlay-opacity',
     bgBlur: '--bg-blur',

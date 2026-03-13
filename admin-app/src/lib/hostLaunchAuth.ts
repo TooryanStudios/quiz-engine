@@ -1,4 +1,5 @@
 import type { User } from 'firebase/auth'
+import { loadUserPrefs } from './adminRepo'
 
 type HostLaunchAuthParams = {
   serverBase: string
@@ -10,13 +11,17 @@ type HostLaunchAuthResult = {
   hostUid?: string
   hostToken?: string
   hostName?: string
+  hostAvatar?: string
 }
 
 export async function getHostLaunchAuthParams(params: HostLaunchAuthParams): Promise<HostLaunchAuthResult> {
   const { serverBase, currentUser } = params
   if (!currentUser) return {}
 
-  const hostName = currentUser.displayName || undefined
+  const prefs = await loadUserPrefs(currentUser.uid).catch(() => null)
+  const profileName = prefs?.gameDisplayName?.trim()
+  const hostName = profileName && profileName.length > 0 ? profileName : undefined
+  const hostAvatar = prefs?.gameAvatar?.trim() || undefined
 
   let hostToken: string | undefined
   try {
@@ -26,7 +31,7 @@ export async function getHostLaunchAuthParams(params: HostLaunchAuthParams): Pro
   }
 
   if (!hostToken) {
-    return { hostUid: currentUser.uid, hostName }
+    return { hostUid: currentUser.uid, hostName, hostAvatar }
   }
 
   try {
@@ -42,7 +47,7 @@ export async function getHostLaunchAuthParams(params: HostLaunchAuthParams): Pro
     if (response.ok) {
       const data = await response.json() as { launchCode?: string }
       if (data?.launchCode && typeof data.launchCode === 'string') {
-        return { launchCode: data.launchCode, hostName }
+        return { launchCode: data.launchCode, hostName, hostAvatar }
       }
     }
   } catch {
@@ -53,5 +58,6 @@ export async function getHostLaunchAuthParams(params: HostLaunchAuthParams): Pro
     hostUid: currentUser.uid,
     hostToken,
     hostName,
+    hostAvatar,
   }
 }

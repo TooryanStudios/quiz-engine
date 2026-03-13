@@ -112,4 +112,20 @@ export class BaseRenderer {
       btn.textContent = text;
     }
   }
+
+  /**
+   * Build a sanitized list of renderable options while keeping the original
+   * answer indices from the quiz payload.
+   */
+  getRenderableOptions() {
+    const source = Array.isArray(this.question?.options) ? this.question.options : [];
+    return source
+      .map((value, originalIndex) => {
+        const text = typeof value === 'string' ? value.trim() : String(value ?? '').trim();
+        const lower = text.toLowerCase();
+        const isValid = !!text && lower !== 'undefined' && lower !== 'null';
+        return isValid ? { text, originalIndex } : null;
+      })
+      .filter(Boolean);
+  }
 }

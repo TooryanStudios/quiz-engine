@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Link, Route, Routes, useParams } from 'react-router-dom';
+import { BrowserRouter as Router, Link, Navigate, Route, Routes, useParams } from 'react-router-dom';
 import Dashboard from './admin/dashboard';
 import Play from './gameplay/play';
 import SessionRuntimePage from './runtime/session-runtime-page';
@@ -27,26 +27,7 @@ const App = () => {
                     <Route path="/play/:gameId" element={<PlayRoute />} />
                     <Route path="/runtime" element={<SessionRuntimePage />} />
                     <Route path="/runtime/:roomCode" element={<SessionRuntimePage />} />
-                    <Route path="/" element={
-                        <div style={{ textAlign: 'center', padding: '5rem' }}>
-                            <h1>Modular Game Platform v1.0</h1>
-                            <p>Ready to collaborate and solve puzzles?</p>
-                            <div style={{ marginTop: '2rem' }}>
-                                <Link to="/play/clue-chain" className="btn btn-primary" style={{ padding: '1rem 3rem', fontSize: '1.2rem', textDecoration: 'none', marginRight: '1rem', display: 'inline-block' }}>
-                                    Launch Classic
-                                </Link>
-                                <Link to="/play/html5-target-rush" className="btn btn-primary" style={{ padding: '1rem 3rem', fontSize: '1.2rem', textDecoration: 'none', display: 'inline-block' }}>
-                                    Launch HTML5 Test
-                                </Link>
-                                <Link to="/play/fish-fence-count" className="btn btn-primary" style={{ padding: '1rem 3rem', fontSize: '1.2rem', textDecoration: 'none', marginLeft: '1rem', display: 'inline-block' }}>
-                                    Launch Fish Fence
-                                </Link>
-                                <Link to="/runtime" className="btn btn-primary" style={{ padding: '1rem 3rem', fontSize: '1.2rem', textDecoration: 'none', marginLeft: '1rem', display: 'inline-block' }}>
-                                    Launch Multiplayer Runtime
-                                </Link>
-                            </div>
-                        </div>
-                    } />
+                    <Route path="/" element={<Navigate to="/play/fish-fence-count" replace />} />
                 </Routes>
             </div>
         </Router>

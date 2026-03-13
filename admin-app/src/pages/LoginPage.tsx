@@ -1,4 +1,4 @@
-import { signInWithPopup, signInWithRedirect } from 'firebase/auth'
+import { signInWithPopup, signInWithRedirect, getRedirectResult } from 'firebase/auth'
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { auth, googleProvider } from '../lib/firebase'
@@ -22,6 +22,45 @@ export function LoginPage() {
   const wasSignedOut = !!(location.state as { signedOut?: boolean } | null)?.signedOut
   const [showBanner, setShowBanner] = useState(wasSignedOut)
   const [tagIdx, setTagIdx] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+
+    // When using signInWithRedirect (iOS/Safari-safe), Firebase completes auth by
+    // redirecting back to the app. We must consume the result on load.
+    void (async () => {
+      try {
+        setLoading(true)
+        const result = await getRedirectResult(auth)
+        if (cancelled) return
+        if (result?.user) {
+          navigate('/dashboard', { replace: true })
+        }
+      } catch (err: unknown) {
+        if (cancelled) return
+        const code = typeof err === 'object' && err !== null && 'code' in err
+          ? String((err as { code?: string }).code)
+          : ''
+
+        if (code === 'auth/unauthorized-domain') {
+          setError(
+            isLocalDevHost
+              ? 'Localhost غير مضاف في Firebase Authorized Domains. أضف localhost و 127.0.0.1 من Firebase Console > Authentication > Settings > Authorized domains.'
+              : 'هذا الدومين غير مصرح به في Firebase Authentication. أضفه إلى Authorized domains.'
+          )
+          return
+        }
+
+        if (err instanceof Error) setError(err.message)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [navigate, isLocalDevHost])
 
   useEffect(() => {
     if (!wasSignedOut) return

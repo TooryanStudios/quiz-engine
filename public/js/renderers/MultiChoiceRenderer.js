@@ -15,17 +15,17 @@ export class MultiChoiceRenderer extends BaseRenderer {
     if (!grid) return;
     
     const { escapeHtml, OPTION_COLORS, OPTION_ICONS, Sounds } = this.utils;
-    const options = this.question.options || [];
+    const options = this.getRenderableOptions();
     
     // Build option buttons
     grid.innerHTML = options.map((opt, i) =>
       `<button
         class="option-btn ${OPTION_COLORS[i]} stagger-${i + 1}"
-        data-index="${i}"
-        aria-label="Option ${i + 1}: ${escapeHtml(opt)}"
+        data-index="${opt.originalIndex}"
+        aria-label="Option ${i + 1}: ${escapeHtml(opt.text)}"
       >
         <span class="opt-icon">${OPTION_ICONS[i]}</span>
-        <span class="opt-text">${escapeHtml(opt)}</span>
+        <span class="opt-text">${escapeHtml(opt.text)}</span>
       </button>`
     ).join('');
     
@@ -73,12 +73,12 @@ export class MultiChoiceRenderer extends BaseRenderer {
     if (!grid) return;
     
     const { escapeHtml, OPTION_COLORS, OPTION_ICONS } = this.utils;
-    const options = this.question.options || [];
+    const options = this.getRenderableOptions();
     
     grid.innerHTML = options.map((opt, i) =>
       `<div class="option-card ${OPTION_COLORS[i]} stagger-${i + 1}">
         <span class="opt-icon">${OPTION_ICONS[i]}</span>
-        <span class="opt-text">${escapeHtml(opt)}</span>
+        <span class="opt-text">${escapeHtml(opt.text)}</span>
       </div>`
     ).join('');
   }

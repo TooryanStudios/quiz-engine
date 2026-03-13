@@ -51,6 +51,79 @@
     padding: 0.42rem 0.75rem;
 }
 
+.builder-panel {
+    max-width: 1200px;
+    margin: 0 auto 1rem;
+    background: rgba(255, 255, 255, 0.86);
+    border: 1px solid #78aacb;
+    border-radius: 14px;
+    padding: 0.75rem;
+    display: grid;
+    gap: 0.75rem;
+}
+
+.builder-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.builder-controls label {
+    display: inline-flex;
+    gap: 0.35rem;
+    align-items: center;
+    font-weight: 700;
+    color: #174866;
+}
+
+.builder-door-edge-label {
+    font-weight: 700;
+    color: #0d3958;
+    background: #e8f4ff;
+    border: 1px solid #8ab6d5;
+    border-radius: 999px;
+    padding: 0.3rem 0.6rem;
+}
+
+.builder-input {
+    border: 1px solid #6ea3c7;
+    border-radius: 8px;
+    padding: 0.35rem 0.5rem;
+    background: #ffffff;
+    color: #0f3652;
+}
+
+.builder-input-sm {
+    width: 72px;
+}
+
+.builder-grid {
+    width: 100%;
+    max-height: 360px;
+    border: 1px solid #85b3d1;
+    border-radius: 10px;
+}
+
+.builder-actor-text {
+    fill: #ffffff;
+    font-size: 9px;
+    font-weight: 800;
+    pointer-events: none;
+}
+
+.builder-json {
+    width: 100%;
+    min-height: 120px;
+    border: 1px solid #6ea3c7;
+    border-radius: 10px;
+    padding: 0.5rem;
+    font-family: Consolas, 'Courier New', monospace;
+    font-size: 12px;
+    color: #123a55;
+    background: #f5fbff;
+}
+
 .ui-pill {
     text-decoration: none;
     border: 1px solid #4d8eb6;
@@ -407,5 +480,9 @@
 
     .level-list-strip {
         margin-bottom: 0.75rem;
+    }
+
+    .builder-controls {
+        align-items: flex-start;
     }
 }

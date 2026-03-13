@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=149" />
+  <link rel="stylesheet" href="/css/style.css?v=150" />
   <!-- Prevent browser zoom (Ctrl+scroll, Ctrl+±, pinch) -->
   <script>
     // 1. Prevent Ctrl+Wheel (mouse zoom)
@@ -93,6 +93,9 @@
   ═══════════════════════════════════════════ -->
   <div id="view-player-join" class="view">
     <div class="card center-card" dir="rtl">
+      <div class="coach-help-row">
+        <button type="button" id="btn-help-player-tour" class="coach-help-btn" aria-label="Show help" title="Show help">?</button>
+      </div>
       <div style="display:flex;align-items:center;justify-content:center;width:100%;margin-bottom:0.25rem;">
         <img class="studio-logo" src="/images/QYan_logo_300x164.jpg" alt="QYan logo" style="height:48px;width:auto;margin:0;" />
       </div>
@@ -146,79 +149,48 @@
     <div class="card host-lobby-card">
       <div class="lobby-header">
         <div class="lobby-mode-corner">
-          <span class="mode-indicator" id="mode-indicator">🌐 Global</span>
+          <span class="mode-indicator" id="mode-indicator">🌐 الويب العالمي</span>
           <span class="mode-warning" id="mode-warning" style="display:none"></span>
-          <!-- Refresh PIN -->
-          <button class="btn-refresh-pin" id="btn-refresh-pin" title="Generate new PIN" aria-label="Refresh PIN">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
-          </button>
           <!-- Burger — all controls live inside -->
           <div class="anim-preset-anchor" id="host-burger-anchor">
-            <button class="btn-mode-icon" id="btn-back-from-host-lobby" title="Menu" aria-label="Menu">
+            <button class="btn-mode-icon" id="btn-back-from-host-lobby" title="القائمة" aria-label="القائمة">
               <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path d="M3 5.75A.75.75 0 0 1 3.75 5h12.5a.75.75 0 0 1 0 1.5H3.75A.75.75 0 0 1 3 5.75Zm0 4.25a.75.75 0 0 1 .75-.75h12.5a.75.75 0 0 1 0 1.5H3.75A.75.75 0 0 1 3 10Zm0 4.25a.75.75 0 0 1 .75-.75h12.5a.75.75 0 0 1 0 1.5H3.75a.75.75 0 0 1-.75-.75Z"/></svg>
             </button>
-            <div class="host-home-menu" id="host-home-menu" style="display:none">
+            <div class="host-home-menu-backdrop" id="host-home-menu-backdrop" style="display:none">
+            <div class="host-home-menu" id="host-home-menu" role="dialog" aria-modal="true" aria-label="قائمة المضيف" style="display:none">
 
               <!-- Mode -->
-              <div class="burger-section-label">Connection Mode</div>
+              <div class="burger-section-label">وضع الاتصال</div>
               <div class="burger-mode-row">
                 <button class="burger-mode-btn" id="btn-mode-local">
                   <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path d="M2.94 7.5a11.98 11.98 0 0 1 14.12 0l-1.18 1.56a9.98 9.98 0 0 0-11.76 0L2.94 7.5Zm2.35 3.1a7.98 7.98 0 0 1 9.42 0l-1.18 1.56a5.98 5.98 0 0 0-7.06 0L5.29 10.6Zm2.35 3.1a3.98 3.98 0 0 1 4.72 0L11.18 15.25a1.98 1.98 0 0 0-2.36 0L7.64 13.7ZM10 16.5a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4Z"/></svg>
-                  Local LAN
+                  محلي (LAN)
                 </button>
                 <button class="burger-mode-btn" id="btn-mode-global">
                   <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path d="M10 1.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17Zm6.61 7.5h-2.15a12.76 12.76 0 0 0-1.15-4.02A6.54 6.54 0 0 1 16.6 9Zm-6.61-5.2c.7 0 1.84 1.6 2.36 5.2H7.64c.52-3.6 1.66-5.2 2.36-5.2ZM3.39 11h2.15c.16 1.43.55 2.82 1.15 4.02A6.54 6.54 0 0 1 3.39 11Zm2.15-2H3.39a6.54 6.54 0 0 1 3.3-4.02A12.76 12.76 0 0 0 5.54 9Zm1.99 0h4.94A15.7 15.7 0 0 0 11.3 4.1c1.55.52 2.8 2.33 3.23 4.9H7.53Zm6.97 2c-.43 2.57-1.68 4.38-3.23 4.9.6-1.2 1-2.59 1.16-4.9h2.07Zm-6.97 0h4.94c-.51 3.6-1.66 5.2-2.36 5.2-.7 0-1.84-1.6-2.36-5.2Z"/></svg>
-                  Global Web
+                  الويب العالمي
                 </button>
               </div>
 
-              <!-- Theme toggle -->
-              <button class="host-home-menu-btn burger-theme-row" id="btn-theme-toggle">
-                <span class="burger-theme-icons">
-                  <svg id="icon-theme-moon" viewBox="0 0 20 20" fill="currentColor" width="15" height="15"><path d="M17.293 13.293A8 8 0 0 1 6.707 2.707a8.001 8.001 0 1 0 10.586 10.586z"/></svg>
-                  <svg id="icon-theme-sun" viewBox="0 0 20 20" fill="currentColor" width="15" height="15" style="display:none"><path d="M10 2a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1Zm4.22 1.78a1 1 0 0 1 1.415 1.414l-.707.707a1 1 0 0 1-1.414-1.414l.707-.707ZM18 9a1 1 0 1 1 0 2h-1a1 1 0 1 1 0-2h1Zm-2.78 5.78a1 1 0 0 1-1.414 1.414l-.707-.707a1 1 0 0 1 1.414-1.414l.707.707ZM10 17a1 1 0 0 1-1-1v-1a1 1 0 1 1 2 0v1a1 1 0 0 1-1 1Zm-5.78-2.22a1 1 0 0 1 0-1.414l.707-.707a1 1 0 0 1 1.414 1.414l-.707.707a1 1 0 0 1-1.414 0ZM3 11a1 1 0 1 1 0-2h1a1 1 0 1 1 0 2H3Zm1.22-6.78a1 1 0 0 1 1.414 0l.707.707A1 1 0 0 1 4.927 6.34l-.707-.707a1 1 0 0 1 0-1.414ZM10 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg>
-                </span>
-                <span class="host-menu-item-title" id="theme-toggle-label">Switch to Light</span>
-              </button>
-              <div class="host-home-menu-toggle burger-theme-picker-row">
-                <span class="host-menu-item-title">Theme Pack</span>
-                <span class="host-menu-item-desc">Choose from file-based themes</span>
-                <select id="host-theme-select" class="host-theme-select" aria-label="Select theme"></select>
-                <button type="button" id="btn-theme-refresh" class="host-theme-refresh-btn" aria-label="Refresh themes" title="Refresh themes">↻</button>
-              </div>
               <div class="burger-divider"></div>
 
-              <!-- Room / session actions -->
-              <button class="host-home-menu-btn" id="btn-home-menu-host">
-                <span class="host-menu-item-title">Host</span>
-                <span class="host-menu-item-desc">Start a fresh host room on this device</span>
-              </button>
-              <button class="host-home-menu-btn" id="btn-home-menu-player">
-                <span class="host-menu-item-title">Player</span>
-                <span class="host-menu-item-desc">Switch this device to player join mode</span>
-              </button>
-              <label class="host-home-menu-toggle" for="chk-host-as-player">
-                <span class="host-menu-item-title">Join as player too</span>
-                <span class="host-menu-item-desc">Play from this host device in the same room</span>
-                <input type="checkbox" id="chk-host-as-player" />
-              </label>
-              <div class="burger-divider"></div>
-              <div class="burger-section-label">Session Options</div>
+              <div class="burger-section-label">خيارات الجلسة</div>
               <label class="host-home-menu-toggle" for="chk-randomize-questions">
-                <span class="host-menu-item-title">Randomize Questions</span>
-                <span class="host-menu-item-desc">Shuffle question order each session</span>
+                <span class="host-menu-item-title">ترتيب عشوائي للأسئلة</span>
+                <span class="host-menu-item-desc">بدّل ترتيب الأسئلة في كل جلسة</span>
                 <input type="checkbox" id="chk-randomize-questions" />
               </label>
               <div class="host-home-menu-toggle burger-qcount-row">
                 <div>
-                  <span class="host-menu-item-title">Questions to play</span>
-                  <span class="host-menu-item-desc" style="display:block">Leave blank to play all</span>
+                  <span class="host-menu-item-title">عدد الأسئلة للعب</span>
+                  <span class="host-menu-item-desc" style="display:block">اتركه فارغاً للعب جميع الأسئلة</span>
                 </div>
                 <div class="burger-qcount-right">
-                  <input type="number" id="input-question-limit" min="1" max="999" value="" placeholder="All" />
+                  <input type="number" id="input-question-limit" min="1" max="999" value="" placeholder="الكل" />
                   <span id="burger-qcount-of-label">/ —</span>
                 </div>
               </div>
+            </div>
             </div>
           </div>
           <!-- Hidden select keeps game.js API intact -->
@@ -231,6 +203,7 @@
         </div>
         <!-- Logo — right side of header -->
         <div class="host-header-logo">
+          <button type="button" id="btn-help-host-tour" class="host-help-text-btn" title="ساعدني" aria-label="ساعدني">ساعدني</button>
           <a href="https://qyan-om.web.app/dashboard" target="_blank" rel="noopener noreferrer">
             <img class="studio-logo" src="/images/QYan_logo_300x164.jpg" alt="QYan logo" />
           </a>
@@ -250,12 +223,29 @@
         <button class="lobby-mode-btn" id="btn-lobby-mode-solo" type="button">⚡ اللعب الفردي</button>
       </div>
 
+      <div id="lobby-bg-diag" class="lobby-bg-diag" dir="ltr" aria-live="polite">
+        <div class="lobby-bg-diag-head">Lobby BG DIAG</div>
+        <div id="lobby-bg-diag-line" class="lobby-bg-diag-line">waiting…</div>
+        <div id="lobby-bg-diag-url" class="lobby-bg-diag-url">url: -</div>
+        <div id="lobby-bg-diag-preview" class="lobby-bg-diag-preview" role="img" aria-label="Lobby background diagnostic preview"></div>
+      </div>
+
       <div id="host-team-lobby-section">
+
+      <button type="button" id="btn-toggle-host-invite-details" class="host-invite-toggle-btn" aria-expanded="false">
+        ▸ إظهار رمز الغرفة ورمز الاستجابة السريعة
+      </button>
+
+      <div id="host-invite-details" class="host-invite-details is-collapsed">
 
       <div class="host-pin-qr-row">
         <div class="pin-display">
-          <span class="host-quiz-title" id="host-quiz-title" style="display:none"></span>
-          <span class="pin-label">Room PIN</span>
+          <div class="pin-label-row">
+            <span class="pin-label">Room PIN</span>
+            <button class="btn-refresh-pin" id="btn-refresh-pin" title="Generate new PIN" aria-label="Refresh PIN">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+            </button>
+          </div>
           <span class="pin-code" id="host-pin">------</span>
           <div id="host-room-health" class="host-room-health is-warn" aria-live="polite">
             <span class="host-room-health-label" id="host-room-health-label">⏳ Connecting…</span>
@@ -268,6 +258,12 @@
             <div id="host-qr-canvas"></div>
           </div>
         </div>
+      </div>
+
+      </div>
+
+      <div class="host-quiz-title-row" dir="rtl">
+        <span class="host-quiz-title" id="host-quiz-title" style="display:none"></span>
       </div>
 
       <!-- ── Rejoin requests from previously kicked players ── -->
@@ -287,19 +283,17 @@
 
       </div>
 
-      <label id="host-inline-join-toggle-row" class="host-inline-join-toggle" for="chk-host-as-player-inline" style="display:none">
-        <span class="host-inline-join-toggle-text">Add me as a player</span>
-        <input type="checkbox" id="chk-host-as-player-inline" />
-      </label>
-
-      <!-- Start Game + Share -->
-      <div class="start-game-row">
-        <button class="btn btn-success" id="btn-start-game" disabled>
-          🚀 ابدأ اللعبة
-        </button>
+      <div class="host-inline-tools-row">
+        <label id="host-inline-join-toggle-row" class="host-inline-join-toggle" for="chk-host-as-player-inline" style="display:none">
+          <span class="host-inline-join-toggle-text">
+            <strong class="host-inline-join-main" id="host-inline-join-main">أضفني كلاعب</strong>
+            <small class="host-inline-join-sub" id="host-inline-join-sub">حالياً ستكون المضيف فقط.</small>
+          </span>
+          <input type="checkbox" id="chk-host-as-player-inline" />
+        </label>
         <div class="share-url-section" id="share-url-section">
           <input type="text" id="share-url-input" readonly style="display:none" />
-          <button class="share-trigger-btn" id="btn-share-menu" title="Share invite link" aria-label="Share" aria-expanded="false">
+          <button class="share-trigger-btn" id="btn-share-menu" title="مشاركة رابط الدعوة" aria-label="مشاركة" aria-expanded="false">
             <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path d="M13 4.5a2.5 2.5 0 1 1 5 0 2.5 2.5 0 0 1-5 0Zm0 11a2.5 2.5 0 1 1 5 0 2.5 2.5 0 0 1-5 0ZM2 10a2.5 2.5 0 1 1 5 0 2.5 2.5 0 0 1-5 0Zm10.53-3.613a.75.75 0 0 0-.749-1.3l-5.25 3a.75.75 0 0 0 .749 1.3l5.25-3Zm-.749 6.226a.75.75 0 0 0 .75-1.3l-5.25-3a.75.75 0 0 0-.75 1.3l5.25 3Z"/></svg>
           </button>
           <div class="share-actions" id="share-actions" aria-hidden="true">
@@ -317,6 +311,13 @@
             </a>
           </div>
         </div>
+      </div>
+
+      <!-- Start Game -->
+      <div class="start-game-row">
+        <button class="btn btn-success" id="btn-start-game" disabled>
+          🚀 ابدأ اللعبة
+        </button>
       </div>
 
 
@@ -357,6 +358,9 @@
   ═══════════════════════════════════════════ -->
   <div id="view-player-lobby" class="view">
     <div class="card lobby-card">
+      <div class="coach-help-row">
+        <button type="button" id="btn-help-player-lobby-tour" class="coach-help-btn" aria-label="Show help" title="Show help">?</button>
+      </div>
       <img class="studio-logo" src="/images/QYan_logo_300x164.jpg" alt="QYan logo" />
       <div class="pin-display">
         <span class="pin-label">Room PIN</span>
@@ -865,6 +869,6 @@
   <!-- Load Socket.io client from the server (auto-served by socket.io) -->
   <script src="/socket.io/socket.io.js"></script>
   <!-- Main game logic (ES6 module) -->
-  <script type="module" src="/js/game.js?v=159"></script>
+  <script type="module" src="/js/game.js?v=161"></script>
 </body>
 </html>
