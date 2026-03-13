@@ -1028,7 +1028,6 @@ function runCoachTour(steps, options = {}) {
   nextBtn.type = 'button';
   nextBtn.textContent = 'التالي';
   Object.assign(nextBtn.style, {
-    marginInlineStart: 'auto',
     border: 'none',
     background: '#6366f1',
     color: '#fff',
@@ -1158,9 +1157,9 @@ function runCoachTour(steps, options = {}) {
   bubble.appendChild(stepBadge);
   bubble.appendChild(titleEl);
   bubble.appendChild(bodyEl);
-  actions.appendChild(nextBtn);
-  actions.appendChild(skipBtn);
   actions.appendChild(neverBtn);
+  actions.appendChild(skipBtn);
+  actions.appendChild(nextBtn);
   bubble.appendChild(actions);
 
   overlay.appendChild(dim);
