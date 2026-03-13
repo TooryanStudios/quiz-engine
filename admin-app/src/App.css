@@ -530,6 +530,11 @@
     overflow: hidden;
   }
 
+  [dir="rtl"] .header-profile-dropdown {
+    left: auto;
+    right: 0;
+  }
+
   .header-profile-action {
     width: 100%;
     border: none;
@@ -540,6 +545,10 @@
     font-size: 0.82rem;
     font-weight: 600;
     cursor: pointer;
+  }
+
+  [dir="rtl"] .header-profile-action {
+    text-align: right;
   }
 
   .header-profile-action:hover {
