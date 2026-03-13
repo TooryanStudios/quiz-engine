@@ -680,22 +680,35 @@
 .gameplay-top-feature-card {
   position: relative;
   border-radius: 22px;
-  overflow: hidden;
   width: 100%;
   max-width: 780px;
   margin: 0 auto;
   min-height: clamp(220px, 24vw, 280px);
   cursor: pointer;
-  border: 1px solid var(--border);
+  padding: 3px;
+  background: linear-gradient(45deg, #6366f1, #8b5cf6, #ec4899, #f59e0b, #10b981, #06b6d4, #6366f1);
+  background-size: 400% 400%;
+  animation: gradientShift 3s ease infinite;
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
+}
+
+.gameplay-top-feature-card::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  background: var(--bg-surface);
+  border-radius: 19px;
+  z-index: 0;
 }
 
 .gameplay-top-feature-media {
   position: absolute;
-  inset: 0;
+  inset: 3px;
   background-size: cover;
   background-repeat: no-repeat;
   background-position: center;
+  border-radius: 19px;
+  z-index: 1;
 }
 
 .gameplay-top-feature-card:hover .gameplay-top-feature-media {
@@ -704,15 +717,15 @@
 
 .gameplay-top-feature-border {
   position: absolute;
-  inset: 0;
-  border-radius: 22px;
-  border: 2px solid rgba(255, 255, 255, 0.24);
+  inset: 3px;
+  border-radius: 19px;
   pointer-events: none;
+  z-index: 1;
 }
 
 .gameplay-top-feature-content {
   position: relative;
-  z-index: 2;
+  z-index: 3;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -770,8 +783,10 @@
 
 .gameplay-featured-overlay {
   position: absolute;
-  inset: 0;
+  inset: 3px;
   background: linear-gradient(to top, rgba(10, 14, 27, 0.94) 20%, rgba(10, 14, 27, 0.22) 65%);
+  border-radius: 19px;
+  z-index: 2;
 }
 
 .gameplay-featured-content {
@@ -862,6 +877,18 @@
   }
   50% {
     box-shadow: 0 12px 32px rgba(236, 72, 153, 0.5);
+  }
+}
+
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
   }
 }
 
