@@ -743,27 +743,17 @@
   min-height: 0;
   border-radius: 18px;
   overflow: hidden;
+  border: 1px solid var(--border);
   cursor: pointer;
-  padding: 3px;
-  background: linear-gradient(45deg, #6366f1, #8b5cf6, #ec4899, #f59e0b, #10b981, #06b6d4, #6366f1);
-  background-size: 400% 400%;
-  animation: gradientShift 3s ease infinite;
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.2), 0 0 20px rgba(139,92,246,0.4), 0 0 40px rgba(236,72,153,0.3);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.gameplay-featured-card::before {
-  content: '';
-  position: absolute;
-  inset: 3px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.2);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
   background: var(--bg-surface);
-  border-radius: 15px;
-  z-index: 0;
 }
 
 .gameplay-featured-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.3), 0 0 30px rgba(139,92,246,0.6), 0 0 60px rgba(236,72,153,0.4);
+  border-color: var(--border-strong);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.3);
 }
 
 .gameplay-featured-media {
@@ -872,18 +862,6 @@
   }
   50% {
     box-shadow: 0 12px 32px rgba(236, 72, 153, 0.5);
-  }
-}
-
-@keyframes gradientShift {
-  0% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-  100% {
-    background-position: 0% 50%;
   }
 }
 
