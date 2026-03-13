@@ -844,7 +844,6 @@
   cursor: pointer;
   box-shadow: 0 8px 24px rgba(239, 68, 68, 0.38);
   transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
-  animation: ctaPulse 1.9s ease-in-out infinite;
 }
 
 .gameplay-featured-play:hover {
