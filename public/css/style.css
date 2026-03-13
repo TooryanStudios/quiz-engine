@@ -2101,20 +2101,27 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
 }
 
 #view-host-lobby .host-help-text-btn {
-  border: 1px solid color-mix(in srgb, var(--text-dim, #94a3b8) 45%, transparent);
-  background: color-mix(in srgb, var(--surface-2, #1f2937) 80%, transparent);
-  color: var(--text, #e2e8f0);
+  border: 1px solid rgba(129, 140, 248, 0.5);
+  background: rgba(99, 102, 241, 0.15);
+  color: #e0e7ff;
   border-radius: 12px;
-  padding: 6px 10px;
-  font-size: 0.72rem;
-  font-weight: 400;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
   cursor: pointer;
-  transition: transform 0.12s ease, filter 0.12s ease;
+  transition: transform 0.12s ease, background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.15);
 }
 
 #view-host-lobby .host-help-text-btn:hover {
-  filter: brightness(1.04);
+  background: rgba(99, 102, 241, 0.25);
+  border-color: rgba(129, 140, 248, 0.75);
   transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+}
+
+#view-host-lobby .host-help-text-btn:active {
+  transform: translateY(0);
 }
 
 #view-host-lobby .host-header-logo .studio-logo {
@@ -2301,7 +2308,7 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   width: 100%;
   display: flex;
   justify-content: flex-start;
-  margin-bottom: 4px;
+  margin-bottom: 8px;
 }
 
 .coach-help-btn {
@@ -2325,6 +2332,31 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   transform: translateY(-1px);
   background: rgba(99, 102, 241, 0.3);
   border-color: rgba(129, 140, 248, 0.7);
+}
+
+/* Help text button styling for player join view */
+#view-player-join .host-help-text-btn {
+  border: 1px solid rgba(129, 140, 248, 0.5);
+  background: rgba(99, 102, 241, 0.15);
+  color: #e0e7ff;
+  border-radius: 12px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.15);
+}
+
+#view-player-join .host-help-text-btn:hover {
+  background: rgba(99, 102, 241, 0.25);
+  border-color: rgba(129, 140, 248, 0.75);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+}
+
+#view-player-join .host-help-text-btn:active {
+  transform: translateY(0);
 }
 
 .start-game-row #btn-start-game {
