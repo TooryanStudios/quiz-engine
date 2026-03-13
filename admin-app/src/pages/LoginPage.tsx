@@ -226,6 +226,9 @@ export function LoginPage() {
             <button className={`lp-theme-btn${theme === 'dark' ? ' active' : ''}`} onClick={() => setTheme('dark')}>🌙</button>
             <button className={`lp-theme-btn${theme === 'light' ? ' active' : ''}`} onClick={() => setTheme('light')}>☀️</button>
           </div>
+          <span style={{ fontSize: '0.65rem', opacity: 0.25, marginTop: '0.25rem' }}>
+            Build: {new Date().toISOString().replace('T', ' ').slice(0, 19)} UTC
+          </span>
         </div>
       </div>
       </div>
