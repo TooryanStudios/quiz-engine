@@ -33,8 +33,27 @@ export function LoginPage() {
         setLoading(true)
         const result = await getRedirectResult(auth)
         if (cancelled) return
+        
+        // Only navigate if we got a fresh redirect result (not null)
+        // This prevents the loop where getRedirectResult returns cached data
         if (result?.user) {
-          navigate('/dashboard', { replace: true })
+          // Use setTimeout to ensure navigation happens after current render cycle
+          setTimeout(() => {
+            if (!cancelled) {
+              navigate('/dashboard', { replace: true })
+            }
+          }, 0)
+        } else {
+          // No redirect result, but check if user is already signed in
+          // This handles the case where user refreshes after successful login
+          const currentUser = auth.currentUser
+          if (currentUser) {
+            setTimeout(() => {
+              if (!cancelled) {
+                navigate('/dashboard', { replace: true })
+              }
+            }, 0)
+          }
         }
       } catch (err: unknown) {
         if (cancelled) return
