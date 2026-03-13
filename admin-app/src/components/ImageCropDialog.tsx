@@ -177,7 +177,7 @@ export function ImageCropDialog({
             <label style={{ color: 'var(--text-mid)', fontSize: '0.78rem', fontWeight: 700 }}>Zoom</label>
             <input
               type="range"
-              min={1}
+              min={0.5}
               max={3}
               step={0.01}
               value={zoom}
