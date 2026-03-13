@@ -1340,21 +1340,22 @@ function showView(viewId, options = {}) {
     updateThemeDiagNoteVisibility(viewId);
     updateLobbyBgDiagnostic(viewId);
 
-    if (viewId === 'view-host-lobby' && state.role === 'host') {
-      setTimeout(() => {
-        if (document.querySelector('.view.active')?.id === 'view-host-lobby') {
-          openHostQuickGuide();
-        }
-      }, 180);
-    }
+    // Auto-show tutorial disabled - users can click Help button instead
+    // if (viewId === 'view-host-lobby' && state.role === 'host') {
+    //   setTimeout(() => {
+    //     if (document.querySelector('.view.active')?.id === 'view-host-lobby') {
+    //       openHostQuickGuide();
+    //     }
+    //   }, 180);
+    // }
 
-    if (viewId === 'view-player-join') {
-      setTimeout(() => {
-        if (document.querySelector('.view.active')?.id === 'view-player-join') {
-          openPlayerQuickGuide();
-        }
-      }, 180);
-    }
+    // if (viewId === 'view-player-join') {
+    //   setTimeout(() => {
+    //     if (document.querySelector('.view.active')?.id === 'view-player-join') {
+    //       openPlayerQuickGuide();
+    //     }
+    //   }, 180);
+    // }
   } catch (err) {
     console.error('showView failed:', err);
     if (window.__dbgLog) window.__dbgLog('showView CRASH: ' + err.message);
@@ -6000,6 +6001,12 @@ socket.on('host:join_request', ({ socketId, nickname, avatar }) => {
 socket.on('room:closed', ({ message }) => {
   clearGameSession();
   stopClientTimer();
+  
+  // Clean up floating dialogs when session ends
+  const liveBanner = document.getElementById('join-request-live-banner');
+  if (liveBanner) liveBanner.remove();
+  closeCoachTour();
+  
   document.getElementById('room-closed-msg').textContent = message;
   showView('view-room-closed');
 });
