@@ -45,7 +45,7 @@ function createLoopState(canvasWidth: number, canvasHeight: number): LoopState {
     };
 }
 
-const Html5TargetRushRenderer: React.FC<GameRendererProps> = ({ gameState, dispatch }) => {
+const Html5TargetRushRenderer: React.FC<GameRendererProps> = ({ gameState, dispatch, isEmbed }) => {
     const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
     const frameRef = React.useRef<number | null>(null);
     const stateRef = React.useRef<LoopState | null>(null);
@@ -239,13 +239,15 @@ const Html5TargetRushRenderer: React.FC<GameRendererProps> = ({ gameState, dispa
 
     return (
         <div className="target-rush-page">
-            <div className="target-rush-topbar">
-                <div>
-                    <h2>Target Rush</h2>
-                    <p>Tap or click the moving target before time runs out.</p>
+            {!isEmbed && (
+                <div className="target-rush-topbar">
+                    <div>
+                        <h2>Target Rush</h2>
+                        <p>Tap or click the moving target before time runs out.</p>
+                    </div>
+                    <button className="target-rush-reset" onClick={resetRuntime}>Restart</button>
                 </div>
-                <button className="target-rush-reset" onClick={resetRuntime}>Restart</button>
-            </div>
+            )}
 
             <div className="target-rush-hud">
                 <div className="stat-card">

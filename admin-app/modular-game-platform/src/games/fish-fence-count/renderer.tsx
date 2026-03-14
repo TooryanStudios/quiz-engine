@@ -1215,101 +1215,68 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
     }, [cageDoorOpen, dispatch, fishList, level.id, levelCompleteOpen, levelOverlayOpen, timeLeftSec]);
 
     const onFishClick = (fishId: number) => {
-        if (failed || levelCompleteOpen || levelOverlayOpen) {
-            return;
+    if (failed || levelCompleteOpen || levelOverlayOpen) {
+        return;
+    }
+
+    setFishList((previous) => {
+        const moving = previous.find((fish) => fish.id === fishId);
+        if (!moving || moving.settled) {
+            if (moving?.settled) {
+                setMessage(`Actor ${moving.id} is already inside cage and cannot be moved out.`);
+            }
+            return previous;
         }
 
-        setFishList((previous) => {
-            const moving = previous.find((fish) => fish.id === fishId);
-            if (!moving || moving.settled) {
-                if (moving?.settled) {
-                    setMessage(`Actor ${moving.id} is already inside cage and cannot be moved out.`);
-                }
-                return previous;
+        const target = slideFish(moving, level, staticBlockedSet, previous, fence, cageDoorOpen);
+        if (target.x === moving.x && target.y === moving.y) {
+            setMessage(`Actor ${moving.id} cannot move; front cell is blocked.`);
+            return previous;
+        }
+
+        const nextFish = previous.map((fish) => {
+            if (fish.id !== fishId) {
+                return fish;
             }
-
-            const target = slideFish(moving, level, staticBlockedSet, previous, fence, cageDoorOpen);
-            if (target.x === moving.x && target.y === moving.y) {
-                setMessage(`Actor ${moving.id} cannot move; front cell is blocked.`);
-                return previous;
-            }
-
-            const nextFish = previous.map((fish) => {
-                if (fish.id !== fishId) {
-                    return fish;
-                }
-                const safe = cageSafeSet.has(tileKey(target.x, target.y));
-                return { ...fish, x: target.x, y: target.y, settled: safe };
-            });
-
-            const movedFish = nextFish.find((fish) => fish.id === fishId);
-            if (movedFish?.settled) {
-                setMessage(`Actor ${movedFish.id} entered cage.`);
-            } else {
-                setMessage(`Actor ${fishId} stopped at cell (${target.x}, ${target.y}) before a blocker.`);
-            }
-
-            if (allSettled(nextFish)) {
-                dispatch({ type: 'submit', success: true, note: `Level ${level.id} complete` });
-                setMessage('All actors are inside the cage area.');
-                setLevelCompleteOpen(true);
-                if (!createdLevel && levelIndex < playableLevels.length - 1) {
-                    dispatch({ type: 'advance', note: `Advance to level ${level.id + 1}` });
-                }
-                return nextFish;
-            }
-
-            if (!hasUsefulMoves(level, staticBlockedSet, nextFish, fence, cageDoorOpen)) {
-                setFailed(true);
-                setMessage('No useful moves remain. This move order locked the puzzle.');
-                dispatch({ type: 'submit', success: false, note: `Level ${level.id} locked` });
-            }
-
-            return nextFish;
+            const safe = cageSafeSet.has(tileKey(target.x, target.y));
+            return { ...fish, x: target.x, y: target.y, settled: safe };
         });
-    };
+
+        const movedFish = nextFish.find((fish) => fish.id === fishId);
+        if (movedFish?.settled) {
+            setMessage(`Actor ${movedFish.id} entered cage.`);
+        } else {
+            setMessage(`Actor ${fishId} stopped at cell (${target.x}, ${target.y}) before a blocker.`);
+        }
+
+        if (allSettled(nextFish)) {
+            dispatch({ type: 'submit', success: true, note: `Level ${level.id} complete` });
+            setMessage('All actors are inside the cage area.');
+            setLevelCompleteOpen(true);
+            if (!createdLevel && levelIndex < playableLevels.length - 1) {
+                dispatch({ type: 'advance', note: `Advance to level ${level.id + 1}` });
+            }
+            return nextFish;
+        }
+
+        if (!hasUsefulMoves(level, staticBlockedSet, nextFish, fence, cageDoorOpen)) {
+            setFailed(true);
+            setMessage('No useful moves remain. This move order locked the puzzle.');
+            dispatch({ type: 'submit', success: false, note: `Level ${level.id} locked` });
+        }
+
+        return nextFish;
+    });
+};
 
     const whaleProgress = Math.max(0, Math.min(100, 100 - (timeLeftSec / level.timeLimitSec) * 100));
     const rescued = fishList.filter((fish) => fish.settled).length;
-
-    const openDoor = () => {
-        setCageDoorOpen(true);
-        setMessage('Door opened. Outside actors can now enter through the doorway.');
-    };
-
-    const closeDoor = () => {
-        setCageDoorOpen(false);
-        setMessage('Door closed. Actors cannot pass through cage walls.');
-    };
-
-    const toggleBuilder = () => {
-        if (!builderOpen) {
-            const source = createdLevel ?? playableLevels[levelIndex];
-            if (source) {
-                hydrateBuilderFromLevel(source);
-            }
-        }
-        const nextOpen = !builderOpen;
-        setBuilderOpen(nextOpen);
-        if (typeof window !== 'undefined') {
-            const url = new URL(window.location.href);
-            if (nextOpen) {
-                url.searchParams.set('builder', '');
-            } else {
-                url.searchParams.delete('builder');
-            }
-            const normalized = `${url.pathname}${url.search ? url.search.replace(/=$/, '') : ''}${url.hash}`;
-            window.history.replaceState({}, '', normalized);
-        }
-    };
 
     const onBuilderCellClick = (x: number, y: number, shiftKey = false) => {
         if (x < 0 || y < 0 || x >= builderWidth || y >= builderHeight) {
             return;
         }
-
         const key = tileKey(x, y);
-
         if (builderTool === 'select') {
             const actor = builderActors.find((item) => item.x === x && item.y === y);
             if (actor) {
@@ -1627,6 +1594,37 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
     const goNextLevel = () => {
         const next = levelIndex >= playableLevels.length - 1 ? 0 : levelIndex + 1;
         jumpToLevel(next);
+    };
+
+    const toggleBuilder = () => {
+        if (!builderOpen) {
+            const source = createdLevel ?? playableLevels[levelIndex];
+            if (source) {
+                hydrateBuilderFromLevel(source);
+            }
+        }
+        const nextOpen = !builderOpen;
+        setBuilderOpen(nextOpen);
+        if (typeof window !== 'undefined') {
+            const url = new URL(window.location.href);
+            if (nextOpen) {
+                url.searchParams.set('builder', '');
+            } else {
+                url.searchParams.delete('builder');
+            }
+            const normalized = `${url.pathname}${url.search ? url.search.replace(/=$/, '') : ''}${url.hash}`;
+            window.history.replaceState({}, '', normalized);
+        }
+    };
+
+    const openDoor = () => {
+        setCageDoorOpen(true);
+        setMessage('Door opened manually.');
+    };
+
+    const closeDoor = () => {
+        setCageDoorOpen(false);
+        setMessage('Door closed manually.');
     };
 
     return (
