@@ -1,0 +1,45 @@
+name: Deploy to HostGator
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: admin-app/package-lock.json
+        
+    - name: Install dependencies
+      run: |
+        cd admin-app
+        npm ci
+        
+    - name: Build project
+      run: |
+        cd admin-app
+        npm run build
+        
+    - name: Deploy to HostGator via FTP
+      uses: SamKirkland/FTP-Deploy-Action@4.3.0
+      with:
+        server: ${{ secrets.HOSTGATOR_FTP_SERVER }}
+        username: ${{ secrets.HOSTGATOR_FTP_USERNAME }}
+        password: ${{ secrets.HOSTGATOR_FTP_PASSWORD }}
+        local-dir: admin-app/dist/
+        server-dir: /public_html/  # or your target directory
+        exclude: |
+          **/.git*
+          **/node_modules/**
+          **/.env*

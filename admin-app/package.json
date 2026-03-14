@@ -7,6 +7,10 @@
     "dev": "vite",
     "dev:games": "vite --open /game-modes",
     "build": "tsc -b && vite build",
+    "stamp-build": "node ./scripts/stamp-build.mjs",
+    "build:deploy": "npm run stamp-build && npm run build",
+    "deploy:hosting": "npm run build:deploy && firebase deploy --project qyan-om --only hosting",
+    "deploy:hostgator": "npm run build && node deploy-to-hostgator.js",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -28,6 +32,7 @@
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
+    "ftp-deploy": "^2.4.6",
     "globals": "^16.5.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.48.0",

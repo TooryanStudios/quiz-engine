@@ -136,15 +136,6 @@ const Play: React.FC<PlayProps> = ({ gameId, onStateChange, theme }) => {
                     Reset
                 </button>
             </div>
-
-            <div style={{ maxWidth: 860, margin: '0 auto', background: '#fff8ea', borderRadius: 8, padding: '1rem' }}>
-                <strong>Recent Events</strong>
-                <ul>
-                    {gameState.activityLog.slice(-8).map((line, idx) => (
-                        <li key={`${line}-${idx}`}>{line}</li>
-                    ))}
-                </ul>
-            </div>
         </div>
     );
 };

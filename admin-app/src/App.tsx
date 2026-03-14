@@ -60,6 +60,7 @@ function RequireAdmin({ user, children }: { user: User | null; children: ReactEl
 }
 
 function App() {
+  const redirectPendingKey = 'qyan:authRedirectPending'
   const [user, setUser] = useState<User | null | undefined>(undefined)
   const navigate = useNavigate()
   const location = useLocation()
@@ -104,19 +105,15 @@ function App() {
   }, [language])
 
   useEffect(() => {
-    // Safety timeout: if Firebase auth hasn't resolved in 4 s, treat as
-    // unauthenticated so the user lands on /login instead of staring at a spinner.
-    const authTimeout = setTimeout(() => {
-      setUser((prev) => {
-        if (prev === undefined) {
-          if (!allowUnauthedLocalPlayTest) {
-            navigate('/login', { replace: true, state: { signedOut: consumeSignOut() } })
-            return null
-          }
-        }
-        return prev
-      })
-    }, 4000)
+    const redirectStartedAt = Number(localStorage.getItem(redirectPendingKey) || '0')
+    const redirectStillPending = redirectStartedAt > 0 && Date.now() - redirectStartedAt < 60000
+    const authTimeoutMs = redirectStillPending ? 30000 : 12000
+
+    // Safety timeout: if Firebase auth is unusually slow (common on first Safari visit),
+    // stop waiting state but do not force navigation from here to avoid auth race loops.
+    const authTimeout = window.setTimeout(() => {
+      setUser((prev) => (prev === undefined ? null : prev))
+    }, authTimeoutMs)
 
     const unsub = onAuthStateChanged(auth, (u) => {
       clearTimeout(authTimeout)
@@ -125,8 +122,12 @@ function App() {
       // Persist a cheap hint so future app loads know whether to show the
       // spinner (likely returning session) or skip straight to login.
       if (u) {
+        localStorage.removeItem(redirectPendingKey)
         localStorage.setItem('qyan:session', '1')
       } else {
+        if (!redirectStillPending) {
+          localStorage.removeItem(redirectPendingKey)
+        }
         localStorage.removeItem('qyan:session')
       }
 
@@ -503,8 +504,13 @@ function App() {
                             `mobile-nav-link${(end ? location.pathname === to : location.pathname.startsWith(to)) ? ' active' : ''}`
                           }
                         >
-                          <span className="mobile-nav-link-icon">{icon}</span>
-                          {label}
+                          <span
+                            className="mobile-nav-link-row"
+                            style={{ justifyContent: 'flex-start' }}
+                          >
+                            <span className="mobile-nav-link-icon">{icon}</span>
+                            <span className="mobile-nav-link-label">{label}</span>
+                          </span>
                         </NavLink>
                       )
                     })}
@@ -515,37 +521,47 @@ function App() {
                           to="/game-modes"
                           className={({ isActive }) => `mobile-nav-link${isActive ? ' active' : ''}`}
                           style={{ borderTop: '1px solid var(--border)', marginTop: '0.5rem', paddingTop: '0.5rem' }}>
-                          <span className="mobile-nav-link-icon">🧩</span>
-                          {isAr ? 'أوضاع اللعب' : 'Game Modes'}
+                          <span className="mobile-nav-link-row" style={{ justifyContent: 'flex-start' }}>
+                            <span className="mobile-nav-link-icon">🧩</span>
+                            <span className="mobile-nav-link-label">{isAr ? 'أوضاع اللعب' : 'Game Modes'}</span>
+                          </span>
                         </NavLink>
                         <NavLink
                           to="/voice-lab"
                           className={({ isActive }) => `mobile-nav-link${isActive ? ' active' : ''}`}
                           style={{ marginTop: '0.5rem' }}>
-                          <span className="mobile-nav-link-icon">🎙️</span>
-                          {isAr ? 'مختبر الصوت' : 'Voice Lab'}
+                          <span className="mobile-nav-link-row" style={{ justifyContent: 'flex-start' }}>
+                            <span className="mobile-nav-link-icon">🎙️</span>
+                            <span className="mobile-nav-link-label">{isAr ? 'مختبر الصوت' : 'Voice Lab'}</span>
+                          </span>
                         </NavLink>
                         <NavLink
                           to="/ai-lab"
                           className={({ isActive }) => `mobile-nav-link${isActive ? ' active' : ''}`}
                           style={{ marginTop: '0.5rem' }}>
-                          <span className="mobile-nav-link-icon">🤖</span>
-                          {isAr ? 'مختبر الذكاء' : 'AI Lab'}
+                          <span className="mobile-nav-link-row" style={{ justifyContent: 'flex-start' }}>
+                            <span className="mobile-nav-link-icon">🤖</span>
+                            <span className="mobile-nav-link-label">{isAr ? 'مختبر الذكاء' : 'AI Lab'}</span>
+                          </span>
                         </NavLink>
                         <NavLink
                           to="/cover-gen-lab"
                           className={({ isActive }) => `mobile-nav-link${isActive ? ' active' : ''}`}
                           style={{ marginTop: '0.5rem' }}>
-                          <span className="mobile-nav-link-icon">🖼️</span>
-                          {isAr ? 'مختبر الغلاف' : 'Cover Lab'}
+                          <span className="mobile-nav-link-row" style={{ justifyContent: 'flex-start' }}>
+                            <span className="mobile-nav-link-icon">🖼️</span>
+                            <span className="mobile-nav-link-label">{isAr ? 'مختبر الغلاف' : 'Cover Lab'}</span>
+                          </span>
                         </NavLink>
                         <NavLink
                           to={`${MASTER_PATH}/dashboard`}
                           className={({ isActive }) => `mobile-nav-link${isActive ? ' active' : ''}`}
                           target="_blank"
                           rel="noopener noreferrer">
-                          <span className="mobile-nav-link-icon">👑</span>
-                          {isAr ? 'الإدارة ↗' : 'Admin ↗'}
+                          <span className="mobile-nav-link-row" style={{ justifyContent: 'flex-start' }}>
+                            <span className="mobile-nav-link-icon">👑</span>
+                            <span className="mobile-nav-link-label">{isAr ? 'الإدارة ↗' : 'Admin ↗'}</span>
+                          </span>
                         </NavLink>
                       </>
                     )}

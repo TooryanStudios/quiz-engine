@@ -39,6 +39,20 @@ type LevelSpec = {
         hinge?: 'left' | 'right' | 'top' | 'bottom';
         opensToward?: 'inward' | 'outward';
         edge?: EdgeSegment;
+        animationMs?: number;
+    };
+    doors?: Array<{
+        side: 'left' | 'right' | 'top' | 'bottom';
+        offset: number;
+        hinge?: 'left' | 'right' | 'top' | 'bottom';
+        opensToward?: 'inward' | 'outward';
+        edge?: EdgeSegment;
+    }>;
+    visuals?: {
+        cageLineThickness?: number;
+        hedgeJointDiameter?: number;
+        doorColor?: string;
+        doorThickness?: number;
     };
 };
 
@@ -55,7 +69,15 @@ type SearchState = {
     steps: number;
 };
 
-type BuilderTool = 'actor' | 'cage' | 'obstacle' | 'switch' | 'door-edge';
+type BuilderTool = 'select' | 'actor' | 'cage' | 'obstacle' | 'switch' | 'door-edge';
+
+type SelectedItem = 
+    | { type: 'actor'; id: number }
+    | { type: 'obstacle'; x: number; y: number }
+    | { type: 'cage'; x: number; y: number }
+    | { type: 'door'; doorIndex: number }
+    | { type: 'switch' }
+    | null;
 
 const TILE = 62;
 const TIMER_PAUSED_FOR_DEBUG = true;
@@ -89,6 +111,24 @@ function normalizeLevel(level: LevelSpec): LevelSpec {
             ...level.door,
             hinge: level.door.hinge ?? level.door.side,
             opensToward: level.door.opensToward ?? 'inward',
+            animationMs: level.door.animationMs ?? 450,
+        },
+        doors: level.doors?.map((door) => ({
+            ...door,
+            hinge: door.hinge ?? door.side,
+            opensToward: door.opensToward ?? 'inward',
+        })) ?? (level.door.edge ? [{
+            side: level.door.side,
+            offset: level.door.offset,
+            hinge: level.door.hinge ?? level.door.side,
+            opensToward: level.door.opensToward ?? 'inward',
+            edge: level.door.edge,
+        }] : []),
+        visuals: {
+            cageLineThickness: level.visuals?.cageLineThickness ?? 7,
+            hedgeJointDiameter: level.visuals?.hedgeJointDiameter ?? 16,
+            doorColor: level.visuals?.doorColor ?? '#ff7a00',
+            doorThickness: level.visuals?.doorThickness ?? 6,
         },
     };
 }
@@ -227,30 +267,84 @@ function legacyDoorEdge(level: LevelSpec, segments: EdgeSegment[]): EdgeSegment 
     return segments.some((segment) => edgeKey(segment) === candidateKey) ? candidate : null;
 }
 
-function buildFence(level: LevelSpec): { segments: EdgeSegment[]; wallSet: Set<string>; doorEdgeKey: string | null } {
+function buildFence(level: LevelSpec): { segments: EdgeSegment[]; wallSet: Set<string>; doorEdgeKeys: Set<string> } {
     const segments = level.wallSegments && level.wallSegments.length > 0
         ? level.wallSegments
         : boundarySegmentsFromCageCells(level.cageSafeCells);
-    const doorEdge = level.door.edge ?? legacyDoorEdge(level, segments);
+    const doorEdges = (level.doors && level.doors.length > 0
+        ? level.doors.map((door) => door.edge).filter((edge): edge is EdgeSegment => Boolean(edge))
+        : [level.door.edge ?? legacyDoorEdge(level, segments)].filter((edge): edge is EdgeSegment => Boolean(edge)));
 
     return {
         segments,
         wallSet: new Set(segments.map((segment) => edgeKey(segment))),
-        doorEdgeKey: doorEdge ? edgeKey(doorEdge) : null,
+        doorEdgeKeys: new Set(doorEdges.map((edge) => edgeKey(edge))),
     };
 }
 
-function edgeFromCellWithSide(x: number, y: number, side: 'left' | 'right' | 'top' | 'bottom'): EdgeSegment {
-    if (side === 'left') {
-        return { kind: 'v', x, y };
+function buildFenceWithMultipleDoors(cageCells: Tile[], doors: Array<{ edge: EdgeSegment; hinge: 'left' | 'right' | 'top' | 'bottom'; opensToward: 'inward' | 'outward' }>): { segments: EdgeSegment[]; wallSet: Set<string>; doorEdges: EdgeSegment[] } {
+    const segments = boundarySegmentsFromCageCells(cageCells);
+    const doorEdges = doors.map(d => d.edge);
+    
+    return {
+        segments,
+        wallSet: new Set(segments.map((segment) => edgeKey(segment))),
+        doorEdges,
+    };
+}
+
+function doorSwingVector(
+    side: 'left' | 'right' | 'top' | 'bottom',
+    opensToward: 'inward' | 'outward',
+): { dx: number; dy: number } {
+    switch (side) {
+        case 'left': return { dx: opensToward === 'inward' ? 1 : -1, dy: 0 };
+        case 'right': return { dx: opensToward === 'inward' ? -1 : 1, dy: 0 };
+        case 'top': return { dx: 0, dy: opensToward === 'inward' ? 1 : -1 };
+        case 'bottom': return { dx: 0, dy: opensToward === 'inward' ? -1 : 1 };
+        default: return { dx: 0, dy: 0 };
     }
-    if (side === 'right') {
-        return { kind: 'v', x: x + 1, y };
+}
+
+function getDoorLeafLine(
+    door: LevelSpec['door'],
+    tileSize: number,
+    progress: number,
+): { x1: number; y1: number; x2: number; y2: number } | null {
+    if (!door.edge) {
+        return null;
     }
-    if (side === 'top') {
-        return { kind: 'h', x, y };
+
+    const clamped = Math.max(0, Math.min(1, progress));
+    const swing = doorSwingVector(door.side, door.opensToward ?? 'inward');
+
+    if (door.edge.kind === 'v') {
+        const top = { x: door.edge.x * tileSize, y: door.edge.y * tileSize };
+        const bottom = { x: door.edge.x * tileSize, y: (door.edge.y + 1) * tileSize };
+        const hingeAtBottom = door.hinge === 'bottom';
+        const pivot = hingeAtBottom ? bottom : top;
+        const closedFree = hingeAtBottom ? top : bottom;
+        const openFree = { x: pivot.x + swing.dx * tileSize, y: pivot.y };
+        return {
+            x1: pivot.x,
+            y1: pivot.y,
+            x2: closedFree.x + (openFree.x - closedFree.x) * clamped,
+            y2: closedFree.y + (openFree.y - closedFree.y) * clamped,
+        };
     }
-    return { kind: 'h', x, y: y + 1 };
+
+    const left = { x: door.edge.x * tileSize, y: door.edge.y * tileSize };
+    const right = { x: (door.edge.x + 1) * tileSize, y: door.edge.y * tileSize };
+    const hingeAtRight = door.hinge === 'right';
+    const pivot = hingeAtRight ? right : left;
+    const closedFree = hingeAtRight ? left : right;
+    const openFree = { x: pivot.x, y: pivot.y + swing.dy * tileSize };
+    return {
+        x1: pivot.x,
+        y1: pivot.y,
+        x2: closedFree.x + (openFree.x - closedFree.x) * clamped,
+        y2: closedFree.y + (openFree.y - closedFree.y) * clamped,
+    };
 }
 
 function crossesClosedCageWall(
@@ -258,7 +352,7 @@ function crossesClosedCageWall(
     fromY: number,
     toX: number,
     toY: number,
-    fence: { wallSet: Set<string>; doorEdgeKey: string | null },
+    fence: { wallSet: Set<string>; doorEdgeKeys: Set<string> },
     doorOpen: boolean,
 ): boolean {
     const crossed = stepEdge(fromX, fromY, toX, toY);
@@ -269,7 +363,7 @@ function crossesClosedCageWall(
     if (!fence.wallSet.has(crossedKey)) {
         return false;
     }
-    if (doorOpen && fence.doorEdgeKey && fence.doorEdgeKey === crossedKey) {
+    if (doorOpen && fence.doorEdgeKeys.has(crossedKey)) {
         return false;
     }
     return true;
@@ -302,7 +396,7 @@ function slideFish(
     level: LevelSpec,
     staticBlocked: Set<string>,
     fishList: Fish[],
-    fence: { wallSet: Set<string>; doorEdgeKey: string | null },
+    fence: { wallSet: Set<string>; doorEdgeKeys: Set<string> },
     doorOpen: boolean,
 ): Tile {
     const { dx, dy } = dirVector(fish.dir);
@@ -333,7 +427,7 @@ function hasUsefulMoves(
     level: LevelSpec,
     staticBlocked: Set<string>,
     fishList: Fish[],
-    fence: { wallSet: Set<string>; doorEdgeKey: string | null },
+    fence: { wallSet: Set<string>; doorEdgeKeys: Set<string> },
     doorOpen: boolean,
 ): boolean {
     return fishList.some((fish) => {
@@ -660,6 +754,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
     const [failed, setFailed] = React.useState(false);
     const [muted, setMuted] = React.useState(false);
     const [cageDoorOpen, setCageDoorOpen] = React.useState(KEEP_DOOR_OPEN_FOR_NOW);
+    const [doorOpenProgress, setDoorOpenProgress] = React.useState(KEEP_DOOR_OPEN_FOR_NOW ? 1 : 0);
     const [createdLevel, setCreatedLevel] = React.useState<LevelSpec | null>(null);
     const [creatorInfo, setCreatorInfo] = React.useState('');
     const [creatorDifficulty, setCreatorDifficulty] = React.useState<CreatorDifficulty>('medium');
@@ -667,6 +762,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
     const [builderLivePreview, setBuilderLivePreview] = React.useState(true);
     const [builderTool, setBuilderTool] = React.useState<BuilderTool>('actor');
     const [builderDir, setBuilderDir] = React.useState<Direction>('right');
+    const [builderUpdateFlash, setBuilderUpdateFlash] = React.useState(false);
     const [builderTitle, setBuilderTitle] = React.useState('New Level');
     const [builderWidth, setBuilderWidth] = React.useState(10);
     const [builderHeight, setBuilderHeight] = React.useState(7);
@@ -675,13 +771,21 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
     const [builderObstacles, setBuilderObstacles] = React.useState<Tile[]>([]);
     const [builderCageCells, setBuilderCageCells] = React.useState<Tile[]>([]);
     const [builderCageDraft, setBuilderCageDraft] = React.useState<Set<string>>(new Set());
+    const [builderDoors, setBuilderDoors] = React.useState<Array<{
+        edge: EdgeSegment;
+        side: 'left' | 'right' | 'top' | 'bottom';
+        offset: number;
+        hinge: 'left' | 'right' | 'top' | 'bottom';
+        opensToward: 'inward' | 'outward';
+    }>>([]);
     const [builderDoorSide, setBuilderDoorSide] = React.useState<'left' | 'right' | 'top' | 'bottom'>('left');
     const [builderDoorOffset, setBuilderDoorOffset] = React.useState(0);
     const [builderDoorHinge, setBuilderDoorHinge] = React.useState<'left' | 'right' | 'top' | 'bottom'>('left');
     const [builderDoorOpensToward, setBuilderDoorOpensToward] = React.useState<'inward' | 'outward'>('inward');
-    const [builderDoorEdge, setBuilderDoorEdge] = React.useState<EdgeSegment | null>(null);
+    const [builderDoorAnimationMs, setBuilderDoorAnimationMs] = React.useState(450);
     const [builderSwitch, setBuilderSwitch] = React.useState<Tile>({ x: 0, y: 0 });
     const [builderJsonInput, setBuilderJsonInput] = React.useState('');
+    const [selectedItem, setSelectedItem] = React.useState<SelectedItem>(null);
 
     const safeBuilderOffsetMax = React.useMemo(
         () => (builderDoorSide === 'left' || builderDoorSide === 'right' ? Math.max(0, builderHeight - 1) : Math.max(0, builderWidth - 1)),
@@ -691,6 +795,30 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
     React.useEffect(() => {
         setBuilderDoorOffset((prev) => Math.max(0, Math.min(prev, safeBuilderOffsetMax)));
     }, [safeBuilderOffsetMax]);
+
+    React.useEffect(() => {
+        const target = cageDoorOpen ? 1 : 0;
+        const durationMs = Math.max(50, builderDoorAnimationMs);
+        let frameId = 0;
+        let startTime: number | null = null;
+        const initialProgress = doorOpenProgress;
+
+        const step = (timestamp: number) => {
+            if (startTime === null) {
+                startTime = timestamp;
+            }
+            const elapsed = timestamp - startTime;
+            const t = Math.max(0, Math.min(1, elapsed / durationMs));
+            const next = initialProgress + (target - initialProgress) * t;
+            setDoorOpenProgress(t >= 1 ? target : next);
+            if (t < 1) {
+                frameId = window.requestAnimationFrame(step);
+            }
+        };
+
+        frameId = window.requestAnimationFrame(step);
+        return () => window.cancelAnimationFrame(frameId);
+    }, [cageDoorOpen, builderDoorAnimationMs, doorOpenProgress]);
 
     const hydrateBuilderFromLevel = React.useCallback((sourceLevel: LevelSpec) => {
         const normalized = normalizeLevel(sourceLevel);
@@ -706,7 +834,32 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
         setBuilderDoorOffset(normalized.door.offset);
         setBuilderDoorHinge(normalized.door.hinge ?? normalized.door.side);
         setBuilderDoorOpensToward(normalized.door.opensToward ?? 'inward');
-        setBuilderDoorEdge(normalized.door.edge ?? null);
+        setBuilderDoorAnimationMs(normalized.door.animationMs ?? 450);
+        setBuilderDoors(
+            normalized.doors?.map((door) => ({
+                edge: door.edge ?? legacyDoorEdge(
+                    {
+                        ...normalized,
+                        door: {
+                            ...normalized.door,
+                            side: door.side,
+                            offset: door.offset,
+                            hinge: door.hinge ?? door.side,
+                            opensToward: door.opensToward ?? 'inward',
+                            edge: door.edge,
+                        },
+                    },
+                    normalized.wallSegments && normalized.wallSegments.length > 0
+                        ? normalized.wallSegments
+                        : boundarySegmentsFromCageCells(normalized.cageSafeCells),
+                ) ?? { kind: 'h', x: 0, y: 0 },
+                side: door.side,
+                offset: door.offset,
+                hinge: door.hinge ?? door.side,
+                opensToward: door.opensToward ?? 'inward',
+            })).filter((door) => door.edge.x >= 0)
+            ?? [],
+        );
         setBuilderSwitch(normalized.doorSwitchTile);
     }, []);
 
@@ -731,21 +884,28 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
             cageSafeCells: effectiveCageCells,
             doorSwitchTile: builderSwitch,
             door: {
-                side: builderDoorSide,
-                offset: builderDoorOffset,
-                hinge: builderDoorHinge,
-                opensToward: builderDoorOpensToward,
-                edge: builderDoorEdge ?? undefined,
+                side: builderDoors[0]?.side ?? builderDoorSide,
+                offset: builderDoors[0]?.offset ?? builderDoorOffset,
+                hinge: builderDoors[0]?.hinge ?? builderDoorHinge,
+                opensToward: builderDoors[0]?.opensToward ?? builderDoorOpensToward,
+                edge: builderDoors[0]?.edge ?? undefined,
+                animationMs: builderDoorAnimationMs,
             },
+            doors: builderDoors.map((door) => ({
+                side: door.side,
+                offset: door.offset,
+                hinge: door.hinge,
+                opensToward: door.opensToward,
+                edge: door.edge,
+            })),
         });
     }, [
         builderActors,
         builderCageCells,
         builderCageDraft,
-        builderDoorHinge,
-        builderDoorEdge,
+        builderDoors,
+        builderDoorAnimationMs,
         builderDoorOffset,
-        builderDoorOpensToward,
         builderDoorSide,
         builderHeight,
         builderObstacles,
@@ -791,11 +951,12 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
     const renderDoor = previewMode
         ? {
             ...level.door,
-            side: builderDoorSide,
-            offset: builderDoorOffset,
-            hinge: builderDoorHinge,
-            opensToward: builderDoorOpensToward,
-            edge: builderDoorEdge ?? undefined,
+            side: builderDoors[0]?.side ?? builderDoorSide,
+            offset: builderDoors[0]?.offset ?? builderDoorOffset,
+            hinge: builderDoors[0]?.hinge ?? builderDoorHinge,
+            opensToward: builderDoors[0]?.opensToward ?? builderDoorOpensToward,
+            edge: builderDoors[0]?.edge ?? undefined,
+            animationMs: builderDoorAnimationMs,
         }
         : level.door;
     const renderDoorSwitchTile = previewMode ? builderSwitch : level.doorSwitchTile;
@@ -827,7 +988,12 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
         ],
     );
 
-    const renderFence = React.useMemo(() => buildFence(renderLevelModel), [renderLevelModel]);
+    const renderFence = React.useMemo(() => {
+        if (previewMode && builderDoors.length > 0) {
+            return buildFenceWithMultipleDoors(renderCageCells, builderDoors);
+        }
+        return buildFence(renderLevelModel);
+    }, [renderLevelModel, previewMode, builderDoors, renderCageCells]);
     const renderObstacleSet = React.useMemo(() => new Set(renderObstacles.map((t) => tileKey(t.x, t.y))), [renderObstacles]);
     const renderCageBlockedSet = React.useMemo(
         () => new Set(renderCageBlockedCells.map((t) => tileKey(t.x, t.y))),
@@ -861,6 +1027,20 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
         setFailed(false);
         setCageDoorOpen(KEEP_DOOR_OPEN_FOR_NOW);
     }, [playableLevels]);
+
+    const playBuilderLevel = React.useCallback(() => {
+        const playable = buildLevelFromBuilder(level.id);
+        setCreatedLevel(playable);
+        setCreatorInfo('');
+        setFishList(buildFish(playable));
+        setTimeLeftSec(playable.timeLimitSec);
+        setLevelCompleteOpen(false);
+        setFailed(false);
+        setLevelOverlayOpen(false);
+        setBuilderOpen(false);
+        setCageDoorOpen(true);
+        setMessage(`Playing builder level ${playable.id}. Doors start open and will close when time runs out.`);
+    }, [buildLevelFromBuilder, level.id]);
 
     const onCreateLevel = React.useCallback(() => {
         const nextId = Math.max(playableLevels.length + 1, 50 + randomInt(0, 949));
@@ -897,14 +1077,24 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
     }, []);
 
     React.useEffect(() => {
-        if (levelOverlayOpen || levelCompleteOpen || failed || TIMER_PAUSED_FOR_DEBUG) {
+        if (levelOverlayOpen || levelCompleteOpen || TIMER_PAUSED_FOR_DEBUG) {
             return;
         }
 
         if (timeLeftSec <= 0) {
-            setFailed(true);
-            setMessage('Time over. Whale reached the pond.');
-            dispatch({ type: 'submit', success: false, note: 'Timer expired' });
+            if (cageDoorOpen) {
+                setCageDoorOpen(false);
+                const allInside = allSettled(fishList);
+                if (allInside) {
+                    dispatch({ type: 'submit', success: true, note: `Level ${level.id} complete on door close` });
+                    setMessage('Time finished. Doors closed with all actors safely inside.');
+                    setLevelCompleteOpen(true);
+                } else {
+                    setFailed(true);
+                    setMessage('Time finished. Doors closed and some actors were still outside.');
+                    dispatch({ type: 'submit', success: false, note: 'Timer expired with actors outside cage' });
+                }
+            }
             return;
         }
 
@@ -913,7 +1103,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
         }, 1000);
 
         return () => window.clearTimeout(tick);
-    }, [dispatch, failed, levelCompleteOpen, levelOverlayOpen, timeLeftSec]);
+    }, [cageDoorOpen, dispatch, fishList, level.id, levelCompleteOpen, levelOverlayOpen, timeLeftSec]);
 
     const onFishClick = (fishId: number) => {
         if (failed || levelCompleteOpen || levelOverlayOpen) {
@@ -997,16 +1187,49 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
         }
 
         const key = tileKey(x, y);
+
+        if (builderTool === 'select') {
+            const actor = builderActors.find((item) => item.x === x && item.y === y);
+            if (actor) {
+                setSelectedItem({ type: 'actor', id: actor.id });
+                setBuilderDir(actor.dir);
+                setMessage(`Selected actor ${actor.id} at (${x}, ${y})`);
+                return;
+            }
+
+            const isObstacle = builderObstacles.some((tile) => tile.x === x && tile.y === y);
+            if (isObstacle) {
+                setSelectedItem({ type: 'obstacle', x, y });
+                setMessage(`Selected obstacle at (${x}, ${y})`);
+                return;
+            }
+
+            const isCage = builderCageCells.some((tile) => tile.x === x && tile.y === y);
+            if (isCage) {
+                setSelectedItem({ type: 'cage', x, y });
+                setMessage(`Selected cage cell at (${x}, ${y})`);
+                return;
+            }
+
+            const isSwitch = builderSwitch.x === x && builderSwitch.y === y;
+            if (isSwitch) {
+                setSelectedItem({ type: 'switch' });
+                setMessage(`Selected door switch at (${x}, ${y})`);
+                return;
+            }
+
+            setSelectedItem(null);
+            setMessage('No item at this cell');
+            return;
+        }
+
         if (builderTool === 'switch') {
             setBuilderSwitch({ x, y });
+            setSelectedItem({ type: 'switch' });
             return;
         }
 
         if (builderTool === 'door-edge') {
-            const edge = edgeFromCellWithSide(x, y, builderDoorSide);
-            setBuilderDoorEdge(edge);
-            setBuilderDoorOffset(builderDoorSide === 'left' || builderDoorSide === 'right' ? y : x);
-            setMessage(`Door edge set at ${edge.kind}:${edge.x},${edge.y}.`);
             return;
         }
 
@@ -1045,6 +1268,92 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
 
     const removeBuilderActorAt = (x: number, y: number) => {
         setBuilderActors((previous) => previous.filter((item) => !(item.x === x && item.y === y)));
+    };
+
+    const deleteSelectedItem = () => {
+        if (!selectedItem) return;
+
+        if (selectedItem.type === 'actor') {
+            setBuilderActors((previous) => previous.filter((item) => item.id !== selectedItem.id));
+            setMessage(`Deleted actor ${selectedItem.id}`);
+        } else if (selectedItem.type === 'obstacle') {
+            setBuilderObstacles((previous) => previous.filter((tile) => !(tile.x === selectedItem.x && tile.y === selectedItem.y)));
+            setMessage(`Deleted obstacle at (${selectedItem.x}, ${selectedItem.y})`);
+        } else if (selectedItem.type === 'cage') {
+            setBuilderCageCells((previous) => previous.filter((tile) => !(tile.x === selectedItem.x && tile.y === selectedItem.y)));
+            setMessage(`Removed cage cell at (${selectedItem.x}, ${selectedItem.y})`);
+        } else if (selectedItem.type === 'door') {
+            setBuilderDoors((previous) => previous.filter((_, idx) => idx !== selectedItem.doorIndex));
+            setMessage('Removed door');
+        }
+
+        setSelectedItem(null);
+    };
+
+    const onEdgeClick = (edge: EdgeSegment) => {
+        if (builderTool === 'select') {
+            const doorIndex = builderDoors.findIndex(d => 
+                d.edge.kind === edge.kind && d.edge.x === edge.x && d.edge.y === edge.y
+            );
+            if (doorIndex >= 0) {
+                setSelectedItem({ type: 'door', doorIndex });
+                setMessage(`Selected door at ${edge.kind}:${edge.x},${edge.y}`);
+            }
+            return;
+        }
+
+        if (builderTool === 'door-edge') {
+            const existingIndex = builderDoors.findIndex(d => 
+                d.edge.kind === edge.kind && d.edge.x === edge.x && d.edge.y === edge.y
+            );
+            
+            if (existingIndex >= 0) {
+                setBuilderDoors((previous) => previous.filter((_, idx) => idx !== existingIndex));
+                setMessage('Removed door (double-click)');
+                setSelectedItem(null);
+            } else {
+                const newDoor: {
+                    edge: EdgeSegment;
+                    side: 'left' | 'right' | 'top' | 'bottom';
+                    offset: number;
+                    hinge: 'left' | 'right' | 'top' | 'bottom';
+                    opensToward: 'inward' | 'outward';
+                } = {
+                    edge,
+                    side: edge.kind === 'v' ? 'left' : 'top',
+                    offset: edge.kind === 'v' ? edge.y : edge.x,
+                    hinge: edge.kind === 'v' ? 'top' : 'left',
+                    opensToward: 'inward' as const,
+                };
+                setBuilderDoors((previous) => [...previous, newDoor]);
+                setSelectedItem({ type: 'door', doorIndex: builderDoors.length });
+                setMessage(`Added door at ${edge.kind}:${edge.x},${edge.y}`);
+            }
+        }
+    };
+
+    const updateDoorAtIndex = (
+        doorIndex: number,
+        updates: Partial<{
+            side: 'left' | 'right' | 'top' | 'bottom';
+            offset: number;
+            hinge: 'left' | 'right' | 'top' | 'bottom';
+            opensToward: 'inward' | 'outward';
+        }>,
+    ) => {
+        setBuilderDoors((previous) =>
+            previous.map((door, idx) => (idx === doorIndex ? { ...door, ...updates } : door)),
+        );
+    };
+
+    const updateSelectedActorDirection = (newDir: Direction) => {
+        if (selectedItem?.type === 'actor') {
+            setBuilderActors((previous) => 
+                previous.map((item) => item.id === selectedItem.id ? { ...item, dir: newDir } : item)
+            );
+            setBuilderDir(newDir);
+            setMessage(`Updated actor ${selectedItem.id} direction to ${newDir}`);
+        }
     };
 
     const applyCageFromSelection = () => {
@@ -1088,6 +1397,8 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
         setLevelCompleteOpen(false);
         setBuilderCageCells(updated.cageSafeCells);
         setBuilderCageDraft(new Set());
+        setBuilderUpdateFlash(true);
+        setTimeout(() => setBuilderUpdateFlash(false), 1500);
         setMessage(`Updated level ${updated.id} from builder.`);
     };
 
@@ -1186,143 +1497,469 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
             </div>
 
             {builderOpen && (
-                <section className="builder-panel">
-                    <div className="builder-controls">
-                        <strong>Level Builder</strong>
-                        <input
-                            className="builder-input"
-                            value={builderTitle}
-                            onChange={(event) => setBuilderTitle(event.target.value)}
-                            placeholder="Level title"
-                        />
-                        <label>
-                            W
-                            <input className="builder-input builder-input-sm" type="number" value={builderWidth} min={4} max={24} onChange={(event) => setBuilderWidth(Number(event.target.value) || 4)} />
-                        </label>
-                        <label>
-                            H
-                            <input className="builder-input builder-input-sm" type="number" value={builderHeight} min={4} max={24} onChange={(event) => setBuilderHeight(Number(event.target.value) || 4)} />
-                        </label>
-                        <label>
-                            Time
-                            <input className="builder-input builder-input-sm" type="number" value={builderTime} min={30} max={999} onChange={(event) => setBuilderTime(Number(event.target.value) || 30)} />
-                        </label>
-
-                        <button className={`ui-pill ${builderTool === 'actor' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderTool('actor')}>Tool: Actor</button>
-                        <button className={`ui-pill ${builderTool === 'cage' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderTool('cage')}>Tool: Cage Select</button>
-                        <button className={`ui-pill ${builderTool === 'obstacle' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderTool('obstacle')}>Tool: Obstacle</button>
-                        <button className={`ui-pill ${builderTool === 'door-edge' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderTool('door-edge')}>Tool: Door Edge</button>
-                        <button className={`ui-pill ${builderTool === 'switch' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderTool('switch')}>Tool: Door Switch</button>
-
-                        <label>
-                            Direction
-                            <select className="builder-input" value={builderDir} onChange={(event) => setBuilderDir(event.target.value as Direction)}>
-                                <option value="up">Up</option>
-                                <option value="down">Down</option>
-                                <option value="left">Left</option>
-                                <option value="right">Right</option>
+                <>
+                    <div style={{ maxWidth: '1600px', margin: '0 auto 1rem', padding: '0 1rem' }}>
+                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', background: 'rgba(255, 255, 255, 0.98)', padding: '0.75rem', borderRadius: '12px', border: '2px solid #7aa5bf', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)' }}>
+                            <button className={`ui-pill ${builderUpdateFlash ? 'ui-pill-success' : ''}`} onClick={updateCurrentLevelFromBuilder} style={{ fontSize: '0.85rem', padding: '0.35rem 0.65rem' }}>
+                                {builderUpdateFlash ? '✅ Updated' : '💾 Update'}
+                            </button>
+                            <button className="ui-pill" onClick={saveBuilderAsNewLevel} style={{ fontSize: '0.85rem', padding: '0.35rem 0.65rem' }}>➕ Save New</button>
+                            <button className="ui-pill" onClick={playBuilderLevel} style={{ fontSize: '0.85rem', padding: '0.35rem 0.65rem' }}>▶️ Play</button>
+                            <button className="ui-pill" onClick={exportLevelsJson} style={{ fontSize: '0.85rem', padding: '0.35rem 0.65rem' }}>📤 Export</button>
+                            <button className="ui-pill" onClick={importLevelsJson} style={{ fontSize: '0.85rem', padding: '0.35rem 0.65rem' }}>📥 Import</button>
+                            <button className={`ui-pill ${builderLivePreview ? 'ui-pill-active' : ''}`} onClick={() => setBuilderLivePreview((prev) => !prev)} style={{ fontSize: '0.85rem', padding: '0.35rem 0.65rem' }}>
+                                {builderLivePreview ? '👁️ Preview' : '👁️ No Preview'}
+                            </button>
+                            <select className="builder-input" value={String(builderTime)} onChange={(event) => setBuilderTime(Number(event.target.value))} style={{ width: '120px', fontSize: '0.85rem', padding: '0.35rem 0.5rem' }}>
+                                <option value="10">10 sec</option>
+                                <option value="30">30 sec</option>
+                                <option value="60">60 sec</option>
+                                <option value="90">90 sec</option>
+                                <option value="120">120 sec</option>
+                                <option value="180">180 sec</option>
                             </select>
-                        </label>
+                            <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                <input
+                                    className="builder-input"
+                                    value={builderTitle}
+                                    onChange={(event) => setBuilderTitle(event.target.value)}
+                                    placeholder="Level title"
+                                    style={{ width: '200px', fontSize: '0.85rem', padding: '0.35rem 0.5rem' }}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                    <div className="builder-layout">
+                        <div className="builder-controls-panel">
+                        <div className="builder-section">
+                            <h3>🎨 Tools</h3>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                                <button className={`ui-pill ${builderTool === 'select' ? 'ui-pill-active' : ''}`} onClick={() => { setBuilderTool('select'); setSelectedItem(null); }}>👆 Select</button>
+                                <button className={`ui-pill ${builderTool === 'actor' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderTool('actor')}>🐟 Actor</button>
+                                <button className={`ui-pill ${builderTool === 'cage' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderTool('cage')}>🟩 Cage</button>
+                                <button className={`ui-pill ${builderTool === 'obstacle' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderTool('obstacle')}>🟫 Block</button>
+                                <button className={`ui-pill ${builderTool === 'door-edge' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderTool('door-edge')}>🚪 Door</button>
+                                <button className={`ui-pill ${builderTool === 'switch' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderTool('switch')}>🔘 Switch</button>
+                            </div>
+                            
+                            {builderTool === 'actor' && (
+                                <div className="builder-field" style={{ marginTop: '0.75rem' }}>
+                                    <label>Direction</label>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                                        <button className={`ui-pill ${builderDir === 'up' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderDir('up')}>⬆️ Up</button>
+                                        <button className={`ui-pill ${builderDir === 'down' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderDir('down')}>⬇️ Down</button>
+                                        <button className={`ui-pill ${builderDir === 'left' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderDir('left')}>⬅️ Left</button>
+                                        <button className={`ui-pill ${builderDir === 'right' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderDir('right')}>➡️ Right</button>
+                                    </div>
+                                </div>
+                            )}
 
-                        <button className="ui-pill" onClick={applyCageFromSelection}>Apply Cage ({builderCageDraft.size})</button>
-                        <span className="builder-door-edge-label">Cage Draft: {builderCageDraft.size} selected</span>
+                            {builderTool === 'cage' && (
+                                <div style={{ marginTop: '0.75rem' }}>
+                                    <button className="ui-pill" onClick={applyCageFromSelection} style={{ width: '100%' }}>✅ Apply Cage ({builderCageDraft.size})</button>
+                                    <span className="builder-hint">Click cells to select, then apply</span>
+                                </div>
+                            )}
+                        </div>
 
-                        <label>
-                            Door Side
-                            <select className="builder-input" value={builderDoorSide} onChange={(event) => setBuilderDoorSide(event.target.value as 'left' | 'right' | 'top' | 'bottom')}>
-                                <option value="left">Left</option>
-                                <option value="right">Right</option>
-                                <option value="top">Top</option>
-                                <option value="bottom">Bottom</option>
-                            </select>
-                        </label>
-                        <label>
-                            Door Offset
-                            <input className="builder-input builder-input-sm" type="number" value={builderDoorOffset} min={0} max={safeBuilderOffsetMax} onChange={(event) => setBuilderDoorOffset(Number(event.target.value) || 0)} />
-                        </label>
-                        <label>
-                            Hinge
-                            <select className="builder-input" value={builderDoorHinge} onChange={(event) => setBuilderDoorHinge(event.target.value as 'left' | 'right' | 'top' | 'bottom')}>
-                                <option value="left">Left</option>
-                                <option value="right">Right</option>
-                                <option value="top">Top</option>
-                                <option value="bottom">Bottom</option>
-                            </select>
-                        </label>
-                        <label>
-                            Opens
-                            <select className="builder-input" value={builderDoorOpensToward} onChange={(event) => setBuilderDoorOpensToward(event.target.value as 'inward' | 'outward')}>
-                                <option value="inward">Inward</option>
-                                <option value="outward">Outward</option>
-                            </select>
-                        </label>
-                        <span className="builder-door-edge-label">
-                            Door Edge: {builderDoorEdge ? `${builderDoorEdge.kind}:${builderDoorEdge.x},${builderDoorEdge.y}` : 'Auto from side+offset'}
-                        </span>
+                        {selectedItem && (
+                            <div className="builder-section" style={{ background: 'rgba(255, 248, 220, 0.98)', borderColor: '#d4a017' }}>
+                                <h3>✏️ Selected Item</h3>
+                                
+                                {selectedItem.type === 'actor' && (() => {
+                                    const actor = builderActors.find(a => a.id === selectedItem.id);
+                                    if (!actor) return null;
+                                    return (
+                                        <>
+                                            <div className="builder-hint" style={{ marginBottom: '0.75rem' }}>
+                                                Actor #{actor.id} at ({actor.x}, {actor.y})
+                                            </div>
+                                            <div className="builder-field">
+                                                <label>Direction</label>
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                                                    <button className={`ui-pill ${actor.dir === 'up' ? 'ui-pill-active' : ''}`} onClick={() => updateSelectedActorDirection('up')}>⬆️ Up</button>
+                                                    <button className={`ui-pill ${actor.dir === 'down' ? 'ui-pill-active' : ''}`} onClick={() => updateSelectedActorDirection('down')}>⬇️ Down</button>
+                                                    <button className={`ui-pill ${actor.dir === 'left' ? 'ui-pill-active' : ''}`} onClick={() => updateSelectedActorDirection('left')}>⬅️ Left</button>
+                                                    <button className={`ui-pill ${actor.dir === 'right' ? 'ui-pill-active' : ''}`} onClick={() => updateSelectedActorDirection('right')}>➡️ Right</button>
+                                                </div>
+                                            </div>
+                                            <button className="ui-pill" onClick={deleteSelectedItem} style={{ width: '100%', marginTop: '0.5rem', background: '#dc3545', color: '#fff', borderColor: '#dc3545' }}>🗑️ Delete Actor</button>
+                                        </>
+                                    );
+                                })()}
 
-                        <button className="ui-pill" onClick={updateCurrentLevelFromBuilder}>Update Current</button>
-                        <button className="ui-pill" onClick={saveBuilderAsNewLevel}>Save As New</button>
-                        <button className={`ui-pill ${builderLivePreview ? 'ui-pill-active' : ''}`} onClick={() => setBuilderLivePreview((prev) => !prev)}>
-                            Live Preview: {builderLivePreview ? 'ON' : 'OFF'}
-                        </button>
-                        <button className="ui-pill" onClick={exportLevelsJson}>Export JSON</button>
-                        <button className="ui-pill" onClick={importLevelsJson}>Import JSON</button>
+                                {selectedItem.type === 'obstacle' && (
+                                    <>
+                                        <div className="builder-hint" style={{ marginBottom: '0.75rem' }}>
+                                            Obstacle at ({selectedItem.x}, {selectedItem.y})
+                                        </div>
+                                        <button className="ui-pill" onClick={deleteSelectedItem} style={{ width: '100%', background: '#dc3545', color: '#fff', borderColor: '#dc3545' }}>🗑️ Delete Obstacle</button>
+                                    </>
+                                )}
+
+                                {selectedItem.type === 'cage' && (
+                                    <>
+                                        <div className="builder-hint" style={{ marginBottom: '0.75rem' }}>
+                                            Cage cell at ({selectedItem.x}, {selectedItem.y})
+                                        </div>
+                                        <button className="ui-pill" onClick={deleteSelectedItem} style={{ width: '100%', background: '#dc3545', color: '#fff', borderColor: '#dc3545' }}>🗑️ Remove from Cage</button>
+                                    </>
+                                )}
+
+                                {selectedItem.type === 'switch' && (
+                                    <>
+                                        <div className="builder-hint" style={{ marginBottom: '0.75rem' }}>
+                                            Door Switch at ({builderSwitch.x}, {builderSwitch.y})
+                                        </div>
+                                        <span className="builder-hint">Use Switch tool to relocate</span>
+                                    </>
+                                )}
+
+                                {selectedItem.type === 'door' && (() => {
+                                    const door = builderDoors[selectedItem.doorIndex];
+                                    if (!door) return null;
+                                    return (
+                                        <>
+                                            <div className="builder-hint" style={{ marginBottom: '0.75rem' }}>
+                                                Door at {door.edge.kind}:{door.edge.x},{door.edge.y}
+                                            </div>
+                                            <div className="builder-field-row">
+                                                <div className="builder-field">
+                                                    <label>Side</label>
+                                                    <select className="builder-input" value={door.side} onChange={(e) => updateDoorAtIndex(selectedItem.doorIndex, { side: e.target.value as 'left' | 'right' | 'top' | 'bottom' })}>
+                                                        <option value="left">⬅️ Left</option>
+                                                        <option value="right">➡️ Right</option>
+                                                        <option value="top">⬆️ Top</option>
+                                                        <option value="bottom">⬇️ Bottom</option>
+                                                    </select>
+                                                </div>
+                                                <div className="builder-field">
+                                                    <label>Offset</label>
+                                                    <input className="builder-input" type="number" value={door.offset} min={0} max={door.side === 'left' || door.side === 'right' ? Math.max(0, builderHeight - 1) : Math.max(0, builderWidth - 1)} onChange={(e) => updateDoorAtIndex(selectedItem.doorIndex, { offset: Math.max(0, Math.min(Number(e.target.value) || 0, door.side === 'left' || door.side === 'right' ? Math.max(0, builderHeight - 1) : Math.max(0, builderWidth - 1))) })} />
+                                                </div>
+                                            </div>
+                                            <div className="builder-field-row">
+                                                <div className="builder-field">
+                                                    <label>Hinge</label>
+                                                    <select className="builder-input" value={door.hinge} onChange={(e) => updateDoorAtIndex(selectedItem.doorIndex, { hinge: e.target.value as 'left' | 'right' | 'top' | 'bottom' })}>
+                                                        <option value="left">Left</option>
+                                                        <option value="right">Right</option>
+                                                        <option value="top">Top</option>
+                                                        <option value="bottom">Bottom</option>
+                                                    </select>
+                                                </div>
+                                                <div className="builder-field">
+                                                    <label>Opens</label>
+                                                    <select className="builder-input" value={door.opensToward} onChange={(e) => updateDoorAtIndex(selectedItem.doorIndex, { opensToward: e.target.value as 'inward' | 'outward' })}>
+                                                        <option value="inward">In</option>
+                                                        <option value="outward">Out</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <button className="ui-pill" onClick={deleteSelectedItem} style={{ width: '100%', marginTop: '0.5rem', background: '#dc3545', color: '#fff', borderColor: '#dc3545' }}>🗑️ Remove Door</button>
+                                        </>
+                                    );
+                                })()}
+                            </div>
+                        )}
+
+                        <div className="builder-section">
+                            <h3>🚪 Door Setup</h3>
+                            <span className="builder-hint">Select a door to edit its own side, offset, hinge, and opening direction.</span>
+                            <div className="builder-field-row" style={{ marginTop: '0.5rem' }}>
+                                <div className="builder-field">
+                                    <label>Anim Time (ms)</label>
+                                    <input
+                                        className="builder-input"
+                                        type="number"
+                                        value={builderDoorAnimationMs}
+                                        min={50}
+                                        step={50}
+                                        onChange={(event) => setBuilderDoorAnimationMs(Math.max(50, Number(event.target.value) || 50))}
+                                    />
+                                </div>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.5rem' }}>
+                                <button className="ui-pill" onClick={openDoor}>🔓 Open</button>
+                                <button className="ui-pill" onClick={closeDoor}>🔒 Close</button>
+                            </div>
+                            <span className="builder-hint">
+                                {builderDoors.length} door(s) placed
+                            </span>
+                        </div>
+
+                        <div className="builder-section">
+                            <h3>⚙️ Level Settings</h3>
+                            <div className="builder-field-row">
+                                <div className="builder-field">
+                                    <label>Width</label>
+                                    <input className="builder-input" type="number" value={builderWidth} min={4} max={24} onChange={(event) => setBuilderWidth(Number(event.target.value) || 4)} />
+                                </div>
+                                <div className="builder-field">
+                                    <label>Height</label>
+                                    <input className="builder-input" type="number" value={builderHeight} min={4} max={24} onChange={(event) => setBuilderHeight(Number(event.target.value) || 4)} />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="builder-section">
+                            <h3>� JSON Import</h3>
+                            <textarea
+                                className="builder-json"
+                                value={builderJsonInput}
+                                onChange={(event) => setBuilderJsonInput(event.target.value)}
+                                placeholder="Paste JSON here for import..."
+                                style={{ minHeight: '80px' }}
+                            />
+                        </div>
                     </div>
 
-                    <svg
-                        className="builder-grid"
-                        viewBox={`0 0 ${builderWidth * 34} ${builderHeight * 34}`}
-                        role="img"
-                        aria-label="Level builder grid"
-                    >
-                        <rect x={0} y={0} width={builderWidth * 34} height={builderHeight * 34} fill="#d9efff" rx={8} />
-                        {Array.from({ length: builderHeight }).flatMap((_, y) =>
-                            Array.from({ length: builderWidth }).map((__, x) => {
-                                const key = tileKey(x, y);
-                                const isCage = builderCageCells.some((tile) => tile.x === x && tile.y === y);
-                                const isDraft = builderCageDraft.has(key);
-                                const isObstacle = builderObstacles.some((tile) => tile.x === x && tile.y === y);
-                                const actor = builderActors.find((item) => item.x === x && item.y === y);
-                                const isSwitch = builderSwitch.x === x && builderSwitch.y === y;
+                    <div className="builder-grid-panel">
+                        <div className="builder-section">
+                            <h3>Builder Canvas</h3>
+                            <svg
+                                className="builder-grid"
+                                viewBox={`0 0 ${builderWidth * 34} ${builderHeight * 34}`}
+                                role="img"
+                                aria-label="Level builder grid"
+                            >
+                                <rect x={0} y={0} width={builderWidth * 34} height={builderHeight * 34} fill="#d9efff" rx={8} />
+                                {Array.from({ length: builderHeight }).flatMap((_, y) =>
+                                    Array.from({ length: builderWidth }).map((__, x) => {
+                                        const key = tileKey(x, y);
+                                        const isCage = builderCageCells.some((tile) => tile.x === x && tile.y === y);
+                                        const isDraft = builderCageDraft.has(key);
+                                        const isObstacle = builderObstacles.some((tile) => tile.x === x && tile.y === y);
+                                        const actor = builderActors.find((item) => item.x === x && item.y === y);
+                                        const isSwitch = builderSwitch.x === x && builderSwitch.y === y;
 
-                                return (
-                                    <g key={`builder-cell-${key}`} onClick={() => onBuilderCellClick(x, y)}>
-                                        <rect x={x * 34 + 1} y={y * 34 + 1} width={32} height={32} fill={isDraft ? '#9bd2ff' : isCage ? '#8be1a7' : '#ffffff'} stroke="#7aa5bf" strokeWidth={1} />
-                                        {isObstacle && <rect x={x * 34 + 7} y={y * 34 + 7} width={20} height={20} fill="#4a5d6d" rx={4} />}
-                                        {isSwitch && <circle cx={x * 34 + 17} cy={y * 34 + 17} r={6} fill="#20658f" />}
-                                        {actor && (
-                                            <g onContextMenu={(event) => {
-                                                event.preventDefault();
-                                                removeBuilderActorAt(x, y);
-                                            }}>
-                                                <circle cx={x * 34 + 17} cy={y * 34 + 17} r={8} fill="#8f4de2" />
-                                                <text x={x * 34 + 17} y={y * 34 + 21} textAnchor="middle" className="builder-actor-text">{actor.dir.slice(0, 1).toUpperCase()}</text>
+                                        const isSelected = selectedItem && (
+                                            (selectedItem.type === 'actor' && actor && actor.id === selectedItem.id) ||
+                                            (selectedItem.type === 'obstacle' && isObstacle && selectedItem.x === x && selectedItem.y === y) ||
+                                            (selectedItem.type === 'cage' && isCage && selectedItem.x === x && selectedItem.y === y) ||
+                                            (selectedItem.type === 'switch' && isSwitch)
+                                        );
+
+                                        return (
+                                            <g key={`builder-cell-${key}`} onClick={() => onBuilderCellClick(x, y)}>
+                                                <rect 
+                                                    x={x * 34 + 1} 
+                                                    y={y * 34 + 1} 
+                                                    width={32} 
+                                                    height={32} 
+                                                    fill={isDraft ? '#9bd2ff' : isCage ? '#8be1a7' : '#ffffff'} 
+                                                    stroke={isSelected ? '#ffa500' : '#7aa5bf'} 
+                                                    strokeWidth={isSelected ? 3 : 1} 
+                                                />
+                                                {isObstacle && <rect x={x * 34 + 7} y={y * 34 + 7} width={20} height={20} fill="#4a5d6d" rx={4} />}
+                                                {isSwitch && <circle cx={x * 34 + 17} cy={y * 34 + 17} r={6} fill="#20658f" />}
+                                                {actor && (
+                                                    <g 
+                                                        transform={`translate(${x * 34 + 17} ${y * 34 + 17}) rotate(${fishAngle(actor.dir)})`}
+                                                        onContextMenu={(event) => {
+                                                            event.preventDefault();
+                                                            removeBuilderActorAt(x, y);
+                                                        }}
+                                                    >
+                                                        <polygon points="-8,0 8,-5 8,5" fill="#8f4de2" stroke="#5d239f" strokeWidth="1.5" />
+                                                        <circle cx="-4" cy="0" r="2" fill="#ffffff" />
+                                                    </g>
+                                                )}
                                             </g>
+                                        );
+                                    }),
+                                )}
+                                {/* Render clickable edges for door placement */}
+                                {(builderTool === 'door-edge' || builderTool === 'select') && (
+                                    <>
+                                        {/* Horizontal edges */}
+                                        {Array.from({ length: builderHeight + 1 }).map((_, y) =>
+                                            Array.from({ length: builderWidth }).map((__, x) => {
+                                                const edge: EdgeSegment = { kind: 'h', x, y };
+                                                const hasDoor = builderDoors.some(d => d.edge.kind === 'h' && d.edge.x === x && d.edge.y === y);
+                                                if (!hasDoor && builderTool !== 'door-edge') return null;
+                                                return (
+                                                    <line
+                                                        key={`h-edge-${x}-${y}`}
+                                                        x1={x * 34}
+                                                        y1={y * 34}
+                                                        x2={(x + 1) * 34}
+                                                        y2={y * 34}
+                                                        stroke="transparent"
+                                                        strokeWidth={8}
+                                                        style={{ cursor: 'pointer' }}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            onEdgeClick(edge);
+                                                        }}
+                                                    />
+                                                );
+                                            })
                                         )}
-                                    </g>
-                                );
-                            }),
-                        )}
-                        {builderDoorEdge && (
-                            <line
-                                x1={(builderDoorEdge.kind === 'h' ? builderDoorEdge.x : builderDoorEdge.x) * 34}
-                                y1={(builderDoorEdge.kind === 'h' ? builderDoorEdge.y : builderDoorEdge.y) * 34}
-                                x2={(builderDoorEdge.kind === 'h' ? builderDoorEdge.x + 1 : builderDoorEdge.x) * 34}
-                                y2={(builderDoorEdge.kind === 'h' ? builderDoorEdge.y : builderDoorEdge.y + 1) * 34}
-                                stroke="#ff7a00"
-                                strokeWidth={4}
-                                strokeLinecap="round"
-                            />
-                        )}
-                    </svg>
+                                        {/* Vertical edges */}
+                                        {Array.from({ length: builderHeight }).map((_, y) =>
+                                            Array.from({ length: builderWidth + 1 }).map((__, x) => {
+                                                const edge: EdgeSegment = { kind: 'v', x, y };
+                                                const hasDoor = builderDoors.some(d => d.edge.kind === 'v' && d.edge.x === x && d.edge.y === y);
+                                                if (!hasDoor && builderTool !== 'door-edge') return null;
+                                                return (
+                                                    <line
+                                                        key={`v-edge-${x}-${y}`}
+                                                        x1={x * 34}
+                                                        y1={y * 34}
+                                                        x2={x * 34}
+                                                        y2={(y + 1) * 34}
+                                                        stroke="transparent"
+                                                        strokeWidth={8}
+                                                        style={{ cursor: 'pointer' }}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            onEdgeClick(edge);
+                                                        }}
+                                                    />
+                                                );
+                                            })
+                                        )}
+                                    </>
+                                )}
+                                {/* Render visible door lines */}
+                                {builderDoors.map((door, doorIndex) => {
+                                    const isSelected = selectedItem?.type === 'door' && selectedItem.doorIndex === doorIndex;
+                                    return (
+                                        <line
+                                            key={`door-${doorIndex}`}
+                                            x1={(door.edge.kind === 'h' ? door.edge.x : door.edge.x) * 34}
+                                            y1={(door.edge.kind === 'h' ? door.edge.y : door.edge.y) * 34}
+                                            x2={(door.edge.kind === 'h' ? door.edge.x + 1 : door.edge.x) * 34}
+                                            y2={(door.edge.kind === 'h' ? door.edge.y : door.edge.y + 1) * 34}
+                                            stroke={isSelected ? '#ffa500' : '#ff7a00'}
+                                            strokeWidth={isSelected ? 6 : 4}
+                                            strokeLinecap="round"
+                                            pointerEvents="none"
+                                        />
+                                    );
+                                })}
+                            </svg>
+                        </div>
+                    </div>
 
-                    <textarea
-                        className="builder-json"
-                        value={builderJsonInput}
-                        onChange={(event) => setBuilderJsonInput(event.target.value)}
-                        placeholder="Paste levels JSON array here, then click Import JSON."
-                    />
-                </section>
+                    {builderLivePreview && (
+                        <div className="builder-preview-panel">
+                            <div className="builder-section">
+                                <h3>Live Preview</h3>
+                                <div className="preview-content">
+                                    <svg
+                                        className="rescue-board"
+                                        viewBox={`0 0 ${renderWidth * TILE} ${renderHeight * TILE}`}
+                                        role="img"
+                                        aria-label="Game board preview"
+                                    >
+                                        <rect x={0} y={0} width={renderWidth * TILE} height={renderHeight * TILE} fill="#e1f0ff" />
+
+                                        {Array.from({ length: renderHeight }).flatMap((_, y) =>
+                                            Array.from({ length: renderWidth }).map((__, x) => (
+                                                <rect key={`grid-${x}-${y}`} x={x * TILE} y={y * TILE} width={TILE} height={TILE} fill="none" stroke="#b8d9f2" strokeWidth={1} />
+                                            )),
+                                        )}
+
+                                        {renderObstacles.map((tile) => (
+                                            <rect key={`o-${tileKey(tile.x, tile.y)}`} x={tile.x * TILE + 10} y={tile.y * TILE + 10} width={TILE - 20} height={TILE - 20} rx={10} fill="#485f71" stroke="#1f2e3a" strokeWidth={2} />
+                                        ))}
+
+                                        {renderCageCells.map((tile) => (
+                                            <g key={`safe-${tileKey(tile.x, tile.y)}`}>
+                                                <rect x={tile.x * TILE + 6} y={tile.y * TILE + 6} width={TILE - 12} height={TILE - 12} rx={8} className="tile-cage-safe" />
+                                                <line x1={tile.x * TILE + 12} y1={tile.y * TILE + 12} x2={tile.x * TILE + TILE - 12} y2={tile.y * TILE + TILE - 12} className="tile-cage-safe-line" />
+                                            </g>
+                                        ))}
+
+                                        {renderFence.segments.map((segment) => {
+                                            const isDoorSegment = 'doorEdgeKeys' in renderFence
+                                                ? renderFence.doorEdgeKeys.has(edgeKey(segment))
+                                                : 'doorEdges' in renderFence && renderFence.doorEdges.some((door) => edgeKey(door) === edgeKey(segment));
+                                            if (isDoorSegment) {
+                                                return null;
+                                            }
+                                            const x1 = segment.kind === 'h' ? segment.x * TILE : segment.x * TILE;
+                                            const y1 = segment.kind === 'h' ? segment.y * TILE : segment.y * TILE;
+                                            const x2 = segment.kind === 'h' ? (segment.x + 1) * TILE : segment.x * TILE;
+                                            const y2 = segment.kind === 'h' ? segment.y * TILE : (segment.y + 1) * TILE;
+                                            return (
+                                                <line
+                                                    key={`wall-${edgeKey(segment)}`}
+                                                    x1={x1}
+                                                    y1={y1}
+                                                    x2={x2}
+                                                    y2={y2}
+                                                    className="cage-fence"
+                                                />
+                                            );
+                                        })}
+
+                                        {(previewMode
+                                            ? (builderDoors.length > 0 ? builderDoors : (renderDoor.edge ? [renderDoor] : []))
+                                            : ((level.doors && level.doors.length > 0 ? level.doors : (renderDoor.edge ? [renderDoor] : [])))
+                                        ).map((door, index) => {
+                                            let doorForLeaf: any;
+                                            if ('side' in door) {
+                                                doorForLeaf = door;
+                                            } else {
+                                                doorForLeaf = {
+                                                    side: builderDoorSide,
+                                                    offset: builderDoorOffset,
+                                                    hinge: (door as any).hinge,
+                                                    opensToward: (door as any).opensToward,
+                                                    edge: (door as any).edge
+                                                };
+                                            }
+                                            const doorLeaf = getDoorLeafLine(doorForLeaf, TILE, doorOpenProgress);
+                                            if (!doorLeaf) {
+                                                return null;
+                                            }
+                                            return (
+                                                <line
+                                                    key={`door-preview-${index}`}
+                                                    x1={doorLeaf.x1}
+                                                    y1={doorLeaf.y1}
+                                                    x2={doorLeaf.x2}
+                                                    y2={doorLeaf.y2}
+                                                    className={doorOpenProgress > 0.02 ? 'cage-door-open' : 'cage-door-closed'}
+                                                />
+                                            );
+                                        })}
+
+                                        <g
+                                            className="door-switch"
+                                            transform={`translate(${renderDoorSwitchTile.x * TILE + TILE * 0.5} ${renderDoorSwitchTile.y * TILE + TILE * 0.5})`}
+                                        >
+                                            <rect x={-22} y={-14} width={44} height={28} rx={8} className="door-switch-body" />
+                                            <circle cx={12} cy={0} r={6} className={cageDoorOpen ? 'door-switch-led-on' : 'door-switch-led-off'} />
+                                            <text x={-11} y={4} className="door-switch-label">SW</text>
+                                        </g>
+
+                                        <rect x={3} y={3} width={renderWidth * TILE - 6} height={renderHeight * TILE - 6} rx={12} fill="none" stroke="#8b3f1d" strokeWidth={7} />
+
+                                        {renderActors.map((fish) => {
+                                            const x = fish.x * TILE + TILE / 2;
+                                            const y = fish.y * TILE + TILE / 2;
+                                            return (
+                                                <g key={`fish-${fish.id}`} className={fish.settled ? 'fish settled' : 'fish'} transform={`translate(${x} ${y}) rotate(${fishAngle(fish.dir)})`}>
+                                                    <polygon points="-18,0 18,-12 18,12" fill={fish.settled ? '#48bb78' : '#8f4de2'} stroke={fish.settled ? '#2f855a' : '#5d239f'} strokeWidth={3} />
+                                                    <circle cx="-8" cy="0" r="5" fill="#ffffff" />
+                                                    <circle cx="-7" cy="0" r="2.5" fill="#1b1b1b" />
+                                                    <text x="0" y="5" textAnchor="middle" className="fish-index" fill="#ffffff" fontSize="14" fontWeight="bold" transform={`rotate(${-fishAngle(fish.dir)})`}>
+                                                        {fish.id}
+                                                    </text>
+                                                </g>
+                                            );
+                                        })}
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    </div>
+                </>
             )}
 
             <main className="rescue-stage">
@@ -1384,7 +2021,12 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                         ))}
 
                         {renderFence.segments.map((segment) => {
-                            const isDoorSegment = renderFence.doorEdgeKey === edgeKey(segment);
+                            const isDoorSegment = 'doorEdgeKeys' in renderFence
+                                ? renderFence.doorEdgeKeys.has(edgeKey(segment))
+                                : 'doorEdges' in renderFence && renderFence.doorEdges.some((door) => edgeKey(door) === edgeKey(segment));
+                            if (isDoorSegment) {
+                                return null;
+                            }
                             const x1 = segment.kind === 'h' ? segment.x * TILE : segment.x * TILE;
                             const y1 = segment.kind === 'h' ? segment.y * TILE : segment.y * TILE;
                             const x2 = segment.kind === 'h' ? (segment.x + 1) * TILE : segment.x * TILE;
@@ -1396,7 +2038,39 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                                     y1={y1}
                                     x2={x2}
                                     y2={y2}
-                                    className={isDoorSegment ? (cageDoorOpen ? 'cage-door-open' : 'cage-door-closed') : 'cage-fence'}
+                                    className="cage-fence"
+                                />
+                            );
+                        })}
+
+                        {(previewMode
+                            ? (builderDoors.length > 0 ? builderDoors : (renderDoor.edge ? [renderDoor] : []))
+                            : ((level.doors && level.doors.length > 0 ? level.doors : (renderDoor.edge ? [renderDoor] : [])))
+                        ).map((door, index) => {
+                            let doorForLeaf: any;
+                            if ('side' in door) {
+                                doorForLeaf = door;
+                            } else {
+                                doorForLeaf = {
+                                    side: builderDoorSide,
+                                    offset: builderDoorOffset,
+                                    hinge: (door as any).hinge,
+                                    opensToward: (door as any).opensToward,
+                                    edge: (door as any).edge
+                                };
+                            }
+                            const doorLeaf = getDoorLeafLine(doorForLeaf, TILE, doorOpenProgress);
+                            if (!doorLeaf) {
+                                return null;
+                            }
+                            return (
+                                <line
+                                    key={`door-preview-${index}`}
+                                    x1={doorLeaf.x1}
+                                    y1={doorLeaf.y1}
+                                    x2={doorLeaf.x2}
+                                    y2={doorLeaf.y2}
+                                    className={doorOpenProgress > 0.02 ? 'cage-door-open' : 'cage-door-closed'}
                                 />
                             );
                         })}
@@ -1434,12 +2108,10 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                             const y = fish.y * TILE + TILE / 2;
                             return (
                                 <g key={`fish-${fish.id}`} className={fish.settled ? 'fish settled' : 'fish'} transform={`translate(${x} ${y}) rotate(${fishAngle(fish.dir)})`} onClick={previewMode ? undefined : () => onFishClick(fish.id)}>
-                                    <ellipse cx={0} cy={0} rx={17} ry={12} fill="#8f4de2" stroke="#5d239f" strokeWidth={2} />
-                                    <polygon points="17,0 28,-8 28,8" fill="#af85f0" stroke="#5d239f" strokeWidth={2} />
-                                    <circle cx={-5} cy={-3} r={4} fill="#ffffff" />
-                                    <circle cx={-4} cy={-3} r={1.9} fill="#1b1b1b" />
-                                    <path d="M -9 8 L -2 5" stroke="#5d239f" strokeWidth={2} strokeLinecap="round" />
-                                    <text x="0" y="5" textAnchor="middle" className="fish-index" transform={`rotate(${-fishAngle(fish.dir)})`}>
+                                    <polygon points="-18,0 18,-12 18,12" fill={fish.settled ? '#48bb78' : '#8f4de2'} stroke={fish.settled ? '#2f855a' : '#5d239f'} strokeWidth={3} />
+                                    <circle cx="-8" cy="0" r="5" fill="#ffffff" />
+                                    <circle cx="-7" cy="0" r="2.5" fill="#1b1b1b" />
+                                    <text x="0" y="5" textAnchor="middle" className="fish-index" fill="#ffffff" fontSize="14" fontWeight="bold" transform={`rotate(${-fishAngle(fish.dir)})`}>
                                         {fish.id}
                                     </text>
                                 </g>
@@ -1530,20 +2202,6 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                 </div>
             )}
 
-            {failed && (
-                <div className="overlay">
-                    <div className="modal-card">
-                        <h3>Mission Failed</h3>
-                        <p>No useful moves remain, or timer expired.</p>
-                        <div className="modal-grid">
-                            <button onClick={() => createdLevel ? onCreateLevel() : resetLevel(levelIndex)}>
-                                {createdLevel ? 'Create New Valid Level' : 'Retry Level'}
-                            </button>
-                            <button onClick={() => resetLevel(0)}>Back to Campaign</button>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 };

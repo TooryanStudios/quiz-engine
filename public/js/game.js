@@ -5324,7 +5324,16 @@ socket.on('room:error', ({ message, code }) => {
   } else if (state.role === 'player') {
     showError('join-error', `⚠️ ${message}`);
   } else {
-    alert(`Server error: ${message}`);
+    const waitingEl = document.getElementById('player-waiting-msg');
+    if (waitingEl) {
+      waitingEl.style.display = 'block';
+      waitingEl.style.color = '#f87171';
+      waitingEl.style.fontWeight = '700';
+      waitingEl.dataset.state = 'alert';
+      waitingEl.textContent = message ? `⚠️ ${message}` : '⚠️ Server reported a room error';
+    } else {
+      showError('join-error', `⚠️ ${message || 'Server reported a room error'}`);
+    }
   }
 });
 

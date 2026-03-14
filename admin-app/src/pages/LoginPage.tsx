@@ -1,8 +1,9 @@
-import { signInWithPopup, signInWithRedirect, getRedirectResult } from 'firebase/auth'
-import { useState, useEffect } from 'react'
+import { signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged } from 'firebase/auth'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { auth, googleProvider } from '../lib/firebase'
+import { auth, authReady, googleProvider } from '../lib/firebase'
 import { useToast } from '../lib/ToastContext'
+import { BUILD_NUMBER, BUILD_TIME_UTC } from '../buildInfo'
 
 const TAGLINES = [
   'أنشئ اختباراتك في ثوانٍ ⚡',
@@ -12,6 +13,7 @@ const TAGLINES = [
 ]
 
 export function LoginPage() {
+  const redirectPendingKey = 'qyan:authRedirectPending'
   const navigate = useNavigate()
   const location = useLocation()
   const { showToast, hideToast } = useToast()
@@ -22,41 +24,46 @@ export function LoginPage() {
   const wasSignedOut = !!(location.state as { signedOut?: boolean } | null)?.signedOut
   const [showBanner, setShowBanner] = useState(wasSignedOut)
   const [tagIdx, setTagIdx] = useState(0)
+  const hasNavigatedRef = useRef(false)
 
   useEffect(() => {
     let cancelled = false
+    const navigateToDashboard = () => {
+      if (cancelled || hasNavigatedRef.current) return
+      hasNavigatedRef.current = true
+      localStorage.removeItem(redirectPendingKey)
+      navigate('/dashboard', { replace: true })
+    }
+
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        navigateToDashboard()
+      }
+    })
 
     // When using signInWithRedirect (iOS/Safari-safe), Firebase completes auth by
     // redirecting back to the app. We must consume the result on load.
+    const redirectStartedAt = Number(localStorage.getItem(redirectPendingKey) || '0')
+    const redirectStillPending = redirectStartedAt > 0 && Date.now() - redirectStartedAt < 60000
+
     void (async () => {
       try {
-        setLoading(true)
+        await authReady
+        if (redirectStillPending) setLoading(true)
         const result = await getRedirectResult(auth)
         if (cancelled) return
         
-        // Only navigate if we got a fresh redirect result (not null)
-        // This prevents the loop where getRedirectResult returns cached data
         if (result?.user) {
-          // Use setTimeout to ensure navigation happens after current render cycle
-          setTimeout(() => {
-            if (!cancelled) {
-              navigate('/dashboard', { replace: true })
-            }
-          }, 0)
+          navigateToDashboard()
         } else {
-          // No redirect result, but check if user is already signed in
-          // This handles the case where user refreshes after successful login
           const currentUser = auth.currentUser
           if (currentUser) {
-            setTimeout(() => {
-              if (!cancelled) {
-                navigate('/dashboard', { replace: true })
-              }
-            }, 0)
+            navigateToDashboard()
           }
         }
       } catch (err: unknown) {
         if (cancelled) return
+        localStorage.removeItem(redirectPendingKey)
         const code = typeof err === 'object' && err !== null && 'code' in err
           ? String((err as { code?: string }).code)
           : ''
@@ -72,12 +79,13 @@ export function LoginPage() {
 
         if (err instanceof Error) setError(err.message)
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled && redirectStillPending) setLoading(false)
       }
     })()
 
     return () => {
       cancelled = true
+      unsub()
     }
   }, [navigate, isLocalDevHost])
 
@@ -101,20 +109,12 @@ export function LoginPage() {
     setError('')
     setLoading(true)
 
-    // Mobile browsers almost always block popups because the async wrapper
-    // breaks the direct user-gesture chain. Skip the popup attempt entirely
-    // on mobile and go straight to redirect — saves 1-2 sec per login.
-    const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
-    if (isMobile) {
-      await signInWithRedirect(auth, googleProvider)
-      return // page will reload after redirect; finally block still runs
-    }
-
     const hintTimer = setTimeout(() => {
       showToast({ message: 'إذا لم تفتح نافذة جوجل، يرجى التأكد من السماح بالنوافذ المنبثقة (Pop-ups) للموقع أو الانتظار قليلاً.', type: 'info', durationMs: 10000 })
     }, 4000)
 
     try {
+      await authReady
       await signInWithPopup(auth, googleProvider)
       clearTimeout(hintTimer)
       hideToast()
@@ -126,6 +126,7 @@ export function LoginPage() {
         ? String((err as { code?: string }).code) : ''
       if (code === 'auth/popup-blocked' || code === 'auth/cancelled-popup-request') {
         showToast({ message: 'Popup was blocked. Redirecting…', type: 'info', durationMs: 3000 })
+        localStorage.setItem(redirectPendingKey, String(Date.now()))
         await signInWithRedirect(auth, googleProvider)
         return
       }
@@ -232,7 +233,7 @@ export function LoginPage() {
 
       {/* Build stamp at bottom of page */}
       <div className="lp-build-stamp">
-        Build: {new Date().toISOString().replace('T', ' ').slice(0, 19)} UTC
+        Build: {BUILD_NUMBER} · {BUILD_TIME_UTC}
       </div>
 
       <style>{`
