@@ -22,6 +22,7 @@ type Fish = {
 type LevelSpec = {
     id: number;
     title: string;
+    premium?: boolean;
     timeLimitSec: number;
     width: number;
     height: number;
@@ -79,8 +80,34 @@ type SelectedItem =
     | { type: 'switch' }
     | null;
 
+type ConcreteSelectedItem = Exclude<SelectedItem, null>;
+
+function selectedItemKey(item: ConcreteSelectedItem): string {
+    if (item.type === 'actor') return `actor:${item.id}`;
+    if (item.type === 'obstacle') return `obstacle:${item.x},${item.y}`;
+    if (item.type === 'cage') return `cage:${item.x},${item.y}`;
+    if (item.type === 'door') return `door:${item.doorIndex}`;
+    return 'switch';
+}
+
+function isActorSelectedItem(item: ConcreteSelectedItem): item is Extract<ConcreteSelectedItem, { type: 'actor' }> {
+    return item.type === 'actor';
+}
+
+function isObstacleSelectedItem(item: ConcreteSelectedItem): item is Extract<ConcreteSelectedItem, { type: 'obstacle' }> {
+    return item.type === 'obstacle';
+}
+
+function isCageSelectedItem(item: ConcreteSelectedItem): item is Extract<ConcreteSelectedItem, { type: 'cage' }> {
+    return item.type === 'cage';
+}
+
+function isDoorSelectedItem(item: ConcreteSelectedItem): item is Extract<ConcreteSelectedItem, { type: 'door' }> {
+    return item.type === 'door';
+}
+
 const TILE = 62;
-const TIMER_PAUSED_FOR_DEBUG = true;
+const TIMER_PAUSED_FOR_DEBUG = false;
 const KEEP_DOOR_OPEN_FOR_NOW = true;
 const ALLOW_MANUAL_SWITCH_TOGGLE = true;
 const ENABLE_LEVEL_SELECTOR = false;
@@ -105,6 +132,7 @@ function normalizeLevel(level: LevelSpec): LevelSpec {
 
     return {
         ...level,
+        premium: level.premium ?? false,
         actors,
         fish: actors,
         door: {
@@ -732,7 +760,7 @@ function createValidGeneratedLevel(
     return { level: fallback, validation, attempts: maxAttempts };
 }
 
-const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispatch }) => {
+const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispatch, isEmbed }) => {
     const [editableLevels, setEditableLevels] = React.useState<LevelSpec[]>(() => loadLevelsFromStorage());
     const playableLevels = editableLevels.length > 0 ? editableLevels : LEVELS.map(normalizeLevel);
     const validations = React.useMemo(
@@ -758,9 +786,14 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
     const [createdLevel, setCreatedLevel] = React.useState<LevelSpec | null>(null);
     const [creatorInfo, setCreatorInfo] = React.useState('');
     const [creatorDifficulty, setCreatorDifficulty] = React.useState<CreatorDifficulty>('medium');
-    const [builderOpen, setBuilderOpen] = React.useState(false);
+    const [builderOpen, setBuilderOpen] = React.useState(() => {
+        if (typeof window === 'undefined') {
+            return false;
+        }
+        return new URLSearchParams(window.location.search).has('builder');
+    });
     const [builderLivePreview, setBuilderLivePreview] = React.useState(true);
-    const [builderTool, setBuilderTool] = React.useState<BuilderTool>('actor');
+    const [builderTool, setBuilderTool] = React.useState<BuilderTool>('select');
     const [builderDir, setBuilderDir] = React.useState<Direction>('right');
     const [builderUpdateFlash, setBuilderUpdateFlash] = React.useState(false);
     const [builderTitle, setBuilderTitle] = React.useState('New Level');
@@ -783,9 +816,14 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
     const [builderDoorHinge, setBuilderDoorHinge] = React.useState<'left' | 'right' | 'top' | 'bottom'>('left');
     const [builderDoorOpensToward, setBuilderDoorOpensToward] = React.useState<'inward' | 'outward'>('inward');
     const [builderDoorAnimationMs, setBuilderDoorAnimationMs] = React.useState(450);
+    const [builderCageLineThickness, setBuilderCageLineThickness] = React.useState(7);
+    const [builderHedgeJointDiameter, setBuilderHedgeJointDiameter] = React.useState(16);
+    const [builderDoorColor, setBuilderDoorColor] = React.useState('#ff7a00');
+    const [builderDoorThickness, setBuilderDoorThickness] = React.useState(6);
     const [builderSwitch, setBuilderSwitch] = React.useState<Tile>({ x: 0, y: 0 });
     const [builderJsonInput, setBuilderJsonInput] = React.useState('');
     const [selectedItem, setSelectedItem] = React.useState<SelectedItem>(null);
+    const [selectedItems, setSelectedItems] = React.useState<ConcreteSelectedItem[]>([]);
 
     const safeBuilderOffsetMax = React.useMemo(
         () => (builderDoorSide === 'left' || builderDoorSide === 'right' ? Math.max(0, builderHeight - 1) : Math.max(0, builderWidth - 1)),
@@ -795,6 +833,27 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
     React.useEffect(() => {
         setBuilderDoorOffset((prev) => Math.max(0, Math.min(prev, safeBuilderOffsetMax)));
     }, [safeBuilderOffsetMax]);
+
+    const clearSelection = React.useCallback(() => {
+        setSelectedItem(null);
+        setSelectedItems([]);
+    }, []);
+
+    const selectSingleItem = React.useCallback((item: ConcreteSelectedItem | null) => {
+        setSelectedItem(item);
+        setSelectedItems(item ? [item] : []);
+    }, []);
+
+    const toggleMultiSelectedItem = React.useCallback((item: ConcreteSelectedItem) => {
+        setSelectedItems((previous) => {
+            const exists = previous.some((entry) => selectedItemKey(entry) === selectedItemKey(item));
+            const next = exists
+                ? previous.filter((entry) => selectedItemKey(entry) !== selectedItemKey(item))
+                : [...previous, item];
+            setSelectedItem(next.length === 1 ? next[0] : null);
+            return next;
+        });
+    }, []);
 
     React.useEffect(() => {
         const target = cageDoorOpen ? 1 : 0;
@@ -835,6 +894,10 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
         setBuilderDoorHinge(normalized.door.hinge ?? normalized.door.side);
         setBuilderDoorOpensToward(normalized.door.opensToward ?? 'inward');
         setBuilderDoorAnimationMs(normalized.door.animationMs ?? 450);
+        setBuilderCageLineThickness(normalized.visuals?.cageLineThickness ?? 7);
+        setBuilderHedgeJointDiameter(normalized.visuals?.hedgeJointDiameter ?? 16);
+        setBuilderDoorColor(normalized.visuals?.doorColor ?? '#ff7a00');
+        setBuilderDoorThickness(normalized.visuals?.doorThickness ?? 6);
         setBuilderDoors(
             normalized.doors?.map((door) => ({
                 edge: door.edge ?? legacyDoorEdge(
@@ -864,11 +927,17 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
     }, []);
 
     const buildLevelFromBuilder = React.useCallback((id: number): LevelSpec => {
-        const effectiveCageCells = builderCageDraft.size > 0
-            ? [...builderCageDraft].map((key) => {
-                const [x, y] = key.split(',').map((value) => Number(value));
-                return { x, y };
-            })
+        const draftCells = [...builderCageDraft].map((key) => {
+            const [x, y] = key.split(',').map((value) => Number(value));
+            return { x, y };
+        });
+        const effectiveCageCells = draftCells.length > 0
+            ? (() => {
+                const merged = new Map<string, Tile>();
+                builderCageCells.forEach((tile) => merged.set(tileKey(tile.x, tile.y), tile));
+                draftCells.forEach((tile) => merged.set(tileKey(tile.x, tile.y), tile));
+                return [...merged.values()];
+            })()
             : builderCageCells;
 
         const actors = builderActors.map((item, idx) => ({ ...item, id: idx + 1 }));
@@ -898,15 +967,25 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                 opensToward: door.opensToward,
                 edge: door.edge,
             })),
+            visuals: {
+                cageLineThickness: builderCageLineThickness,
+                hedgeJointDiameter: builderHedgeJointDiameter,
+                doorColor: builderDoorColor,
+                doorThickness: builderDoorThickness,
+            },
         });
     }, [
         builderActors,
         builderCageCells,
         builderCageDraft,
         builderDoors,
+        builderCageLineThickness,
         builderDoorAnimationMs,
+        builderDoorColor,
+        builderDoorThickness,
         builderDoorOffset,
         builderDoorSide,
+        builderHedgeJointDiameter,
         builderHeight,
         builderObstacles,
         builderSwitch,
@@ -939,10 +1018,14 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
         if (builderCageDraft.size === 0) {
             return builderCageCells;
         }
-        return [...builderCageDraft].map((key) => {
+        const draftCells = [...builderCageDraft].map((key) => {
             const [x, y] = key.split(',').map((value) => Number(value));
             return { x, y };
         });
+        const merged = new Map<string, Tile>();
+        builderCageCells.forEach((tile) => merged.set(tileKey(tile.x, tile.y), tile));
+        draftCells.forEach((tile) => merged.set(tileKey(tile.x, tile.y), tile));
+        return [...merged.values()];
     }, [builderCageCells, builderCageDraft]);
 
     const renderWidth = previewMode ? Math.max(4, builderWidth) : level.width;
@@ -959,9 +1042,32 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
             animationMs: builderDoorAnimationMs,
         }
         : level.door;
+    const renderVisuals = previewMode
+        ? {
+            cageLineThickness: builderCageLineThickness,
+            hedgeJointDiameter: builderHedgeJointDiameter,
+            doorColor: builderDoorColor,
+            doorThickness: builderDoorThickness,
+        }
+        : {
+            cageLineThickness: level.visuals?.cageLineThickness ?? 7,
+            hedgeJointDiameter: level.visuals?.hedgeJointDiameter ?? 16,
+            doorColor: level.visuals?.doorColor ?? '#ff7a00',
+            doorThickness: level.visuals?.doorThickness ?? 6,
+        };
     const renderDoorSwitchTile = previewMode ? builderSwitch : level.doorSwitchTile;
     const renderObstacles = previewMode ? builderObstacles : level.obstacles;
     const renderCageBlockedCells = previewMode ? [] : level.cageBlockedCells;
+
+    React.useEffect(() => {
+        if (!builderOpen) {
+            return;
+        }
+        const source = createdLevel ?? playableLevels[levelIndex];
+        if (source) {
+            hydrateBuilderFromLevel(source);
+        }
+    }, [builderOpen, createdLevel, hydrateBuilderFromLevel, levelIndex, playableLevels]);
 
     const renderLevelModel = React.useMemo(
         () => ({
@@ -1026,7 +1132,10 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
         setLevelCompleteOpen(false);
         setFailed(false);
         setCageDoorOpen(KEEP_DOOR_OPEN_FOR_NOW);
-    }, [playableLevels]);
+        if (builderOpen) {
+            hydrateBuilderFromLevel(nextLevel);
+        }
+    }, [builderOpen, hydrateBuilderFromLevel, playableLevels]);
 
     const playBuilderLevel = React.useCallback(() => {
         const playable = buildLevelFromBuilder(level.id);
@@ -1174,14 +1283,27 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
     };
 
     const toggleBuilder = () => {
-        const source = createdLevel ?? playableLevels[levelIndex];
-        if (source) {
-            hydrateBuilderFromLevel(source);
+        if (!builderOpen) {
+            const source = createdLevel ?? playableLevels[levelIndex];
+            if (source) {
+                hydrateBuilderFromLevel(source);
+            }
         }
-        setBuilderOpen((prev) => !prev);
+        const nextOpen = !builderOpen;
+        setBuilderOpen(nextOpen);
+        if (typeof window !== 'undefined') {
+            const url = new URL(window.location.href);
+            if (nextOpen) {
+                url.searchParams.set('builder', '');
+            } else {
+                url.searchParams.delete('builder');
+            }
+            const normalized = `${url.pathname}${url.search ? url.search.replace(/=$/, '') : ''}${url.hash}`;
+            window.history.replaceState({}, '', normalized);
+        }
     };
 
-    const onBuilderCellClick = (x: number, y: number) => {
+    const onBuilderCellClick = (x: number, y: number, shiftKey = false) => {
         if (x < 0 || y < 0 || x >= builderWidth || y >= builderHeight) {
             return;
         }
@@ -1191,41 +1313,67 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
         if (builderTool === 'select') {
             const actor = builderActors.find((item) => item.x === x && item.y === y);
             if (actor) {
-                setSelectedItem({ type: 'actor', id: actor.id });
-                setBuilderDir(actor.dir);
-                setMessage(`Selected actor ${actor.id} at (${x}, ${y})`);
+                const nextSelection: ConcreteSelectedItem = { type: 'actor', id: actor.id };
+                if (shiftKey) {
+                    toggleMultiSelectedItem(nextSelection);
+                    setMessage(`Toggled actor ${actor.id} in selection.`);
+                } else {
+                    selectSingleItem(nextSelection);
+                    setBuilderDir(actor.dir);
+                    setMessage(`Selected actor ${actor.id} at (${x}, ${y})`);
+                }
                 return;
             }
 
             const isObstacle = builderObstacles.some((tile) => tile.x === x && tile.y === y);
             if (isObstacle) {
-                setSelectedItem({ type: 'obstacle', x, y });
-                setMessage(`Selected obstacle at (${x}, ${y})`);
+                const nextSelection: ConcreteSelectedItem = { type: 'obstacle', x, y };
+                if (shiftKey) {
+                    toggleMultiSelectedItem(nextSelection);
+                    setMessage(`Toggled obstacle at (${x}, ${y}) in selection.`);
+                } else {
+                    selectSingleItem(nextSelection);
+                    setMessage(`Selected obstacle at (${x}, ${y})`);
+                }
                 return;
             }
 
             const isCage = builderCageCells.some((tile) => tile.x === x && tile.y === y);
             if (isCage) {
-                setSelectedItem({ type: 'cage', x, y });
-                setMessage(`Selected cage cell at (${x}, ${y})`);
+                const nextSelection: ConcreteSelectedItem = { type: 'cage', x, y };
+                if (shiftKey) {
+                    toggleMultiSelectedItem(nextSelection);
+                    setMessage(`Toggled cage cell at (${x}, ${y}) in selection.`);
+                } else {
+                    selectSingleItem(nextSelection);
+                    setMessage(`Selected cage cell at (${x}, ${y})`);
+                }
                 return;
             }
 
             const isSwitch = builderSwitch.x === x && builderSwitch.y === y;
             if (isSwitch) {
-                setSelectedItem({ type: 'switch' });
-                setMessage(`Selected door switch at (${x}, ${y})`);
+                const nextSelection: ConcreteSelectedItem = { type: 'switch' };
+                if (shiftKey) {
+                    toggleMultiSelectedItem(nextSelection);
+                    setMessage(`Toggled door switch at (${x}, ${y}) in selection.`);
+                } else {
+                    selectSingleItem(nextSelection);
+                    setMessage(`Selected door switch at (${x}, ${y})`);
+                }
                 return;
             }
 
-            setSelectedItem(null);
-            setMessage('No item at this cell');
+            if (!shiftKey) {
+                clearSelection();
+                setMessage('No item at this cell');
+            }
             return;
         }
 
         if (builderTool === 'switch') {
             setBuilderSwitch({ x, y });
-            setSelectedItem({ type: 'switch' });
+            selectSingleItem({ type: 'switch' });
             return;
         }
 
@@ -1271,33 +1419,47 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
     };
 
     const deleteSelectedItem = () => {
-        if (!selectedItem) return;
+        const targets = selectedItems.length > 0
+            ? selectedItems
+            : (selectedItem ? [selectedItem as ConcreteSelectedItem] : []);
+        if (targets.length === 0) return;
 
-        if (selectedItem.type === 'actor') {
-            setBuilderActors((previous) => previous.filter((item) => item.id !== selectedItem.id));
-            setMessage(`Deleted actor ${selectedItem.id}`);
-        } else if (selectedItem.type === 'obstacle') {
-            setBuilderObstacles((previous) => previous.filter((tile) => !(tile.x === selectedItem.x && tile.y === selectedItem.y)));
-            setMessage(`Deleted obstacle at (${selectedItem.x}, ${selectedItem.y})`);
-        } else if (selectedItem.type === 'cage') {
-            setBuilderCageCells((previous) => previous.filter((tile) => !(tile.x === selectedItem.x && tile.y === selectedItem.y)));
-            setMessage(`Removed cage cell at (${selectedItem.x}, ${selectedItem.y})`);
-        } else if (selectedItem.type === 'door') {
-            setBuilderDoors((previous) => previous.filter((_, idx) => idx !== selectedItem.doorIndex));
-            setMessage('Removed door');
+        const actorIds = new Set(targets.filter(isActorSelectedItem).map((item) => item.id));
+        const obstacleKeys = new Set(targets.filter(isObstacleSelectedItem).map((item) => `${item.x},${item.y}`));
+        const cageKeys = new Set(targets.filter(isCageSelectedItem).map((item) => `${item.x},${item.y}`));
+        const doorIndexes = new Set(targets.filter(isDoorSelectedItem).map((item) => item.doorIndex));
+
+        if (actorIds.size > 0) {
+            setBuilderActors((previous) => previous.filter((item) => !actorIds.has(item.id)));
+        }
+        if (obstacleKeys.size > 0) {
+            setBuilderObstacles((previous) => previous.filter((tile) => !obstacleKeys.has(`${tile.x},${tile.y}`)));
+        }
+        if (cageKeys.size > 0) {
+            setBuilderCageCells((previous) => previous.filter((tile) => !cageKeys.has(`${tile.x},${tile.y}`)));
+        }
+        if (doorIndexes.size > 0) {
+            setBuilderDoors((previous) => previous.filter((_, idx) => !doorIndexes.has(idx)));
         }
 
-        setSelectedItem(null);
+        clearSelection();
+        setMessage(targets.length > 1 ? `Deleted ${targets.length} selected item(s).` : 'Deleted selected item.');
     };
 
-    const onEdgeClick = (edge: EdgeSegment) => {
+    const onEdgeClick = (edge: EdgeSegment, shiftKey = false) => {
         if (builderTool === 'select') {
             const doorIndex = builderDoors.findIndex(d => 
                 d.edge.kind === edge.kind && d.edge.x === edge.x && d.edge.y === edge.y
             );
             if (doorIndex >= 0) {
-                setSelectedItem({ type: 'door', doorIndex });
-                setMessage(`Selected door at ${edge.kind}:${edge.x},${edge.y}`);
+                const nextSelection: ConcreteSelectedItem = { type: 'door', doorIndex };
+                if (shiftKey) {
+                    toggleMultiSelectedItem(nextSelection);
+                    setMessage(`Toggled door at ${edge.kind}:${edge.x},${edge.y} in selection.`);
+                } else {
+                    selectSingleItem(nextSelection);
+                    setMessage(`Selected door at ${edge.kind}:${edge.x},${edge.y}`);
+                }
             }
             return;
         }
@@ -1310,7 +1472,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
             if (existingIndex >= 0) {
                 setBuilderDoors((previous) => previous.filter((_, idx) => idx !== existingIndex));
                 setMessage('Removed door (double-click)');
-                setSelectedItem(null);
+                clearSelection();
             } else {
                 const newDoor: {
                     edge: EdgeSegment;
@@ -1326,7 +1488,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                     opensToward: 'inward' as const,
                 };
                 setBuilderDoors((previous) => [...previous, newDoor]);
-                setSelectedItem({ type: 'door', doorIndex: builderDoors.length });
+                selectSingleItem({ type: 'door', doorIndex: builderDoors.length });
                 setMessage(`Added door at ${edge.kind}:${edge.x},${edge.y}`);
             }
         }
@@ -1361,9 +1523,14 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
             const [x, y] = key.split(',').map((value) => Number(value));
             return { x, y };
         });
-        setBuilderCageCells(selected);
+        setBuilderCageCells((previous) => {
+            const merged = new Map<string, Tile>();
+            previous.forEach((tile) => merged.set(tileKey(tile.x, tile.y), tile));
+            selected.forEach((tile) => merged.set(tileKey(tile.x, tile.y), tile));
+            return [...merged.values()];
+        });
         setBuilderCageDraft(new Set());
-        setMessage(`Cage updated with ${selected.length} cell(s).`);
+        setMessage(`Added ${selected.length} cage cell(s) to the current cage.`);
     };
 
     const saveBuilderAsNewLevel = () => {
@@ -1440,7 +1607,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
             setLevelCompleteOpen(false);
             setMessage(`Imported ${next.length} level(s) from JSON.`);
         } catch {
-            setMessage('Import failed: invalid JSON format.');
+            setMessage('Import failed: Invalid JSON.');
         }
     };
 
@@ -1464,39 +1631,43 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
 
     return (
         <div className="rescue-page">
-            <header className="rescue-topbar">
-                <div className="rescue-level">Level {level.id}: {level.title}</div>
-                <div className="rescue-top-controls">
-                    <Link to="/" className="ui-pill">Home</Link>
-                    <button className="ui-pill" onClick={() => resetLevel(levelIndex)}>Restart</button>
-                    <button className="ui-pill" onClick={() => setMuted((value) => !value)}>{muted ? 'Sound Off' : 'Sound On'}</button>
-                    <button className="ui-pill" onClick={openDoor}>Open Door</button>
-                    <button className="ui-pill" onClick={closeDoor}>Close Door</button>
-                    <button className={`ui-pill ${creatorDifficulty === 'easy' ? 'ui-pill-active' : ''}`} onClick={() => setCreatorDifficulty('easy')}>Easy</button>
-                    <button className={`ui-pill ${creatorDifficulty === 'medium' ? 'ui-pill-active' : ''}`} onClick={() => setCreatorDifficulty('medium')}>Medium</button>
-                    <button className={`ui-pill ${creatorDifficulty === 'hard' ? 'ui-pill-active' : ''}`} onClick={() => setCreatorDifficulty('hard')}>Hard</button>
-                    <button className="ui-pill" onClick={onCreateLevel}>Create Valid Level</button>
-                    <button className={`ui-pill ${builderOpen ? 'ui-pill-active' : ''}`} onClick={toggleBuilder}>{builderOpen ? 'Hide Builder' : 'Open Builder'}</button>
-                    <span className="ui-pill">Door: {cageDoorOpen ? 'Open' : 'Closed'}</span>
+            {!isEmbed && (
+                <header className="rescue-topbar">
+                    <div className="rescue-level">Level {level.id}: {level.title}</div>
+                    <div className="rescue-top-controls">
+                        <Link to="/" className="ui-pill">Home</Link>
+                        <button className="ui-pill" onClick={() => resetLevel(levelIndex)}>Restart</button>
+                        <button className="ui-pill" onClick={() => setMuted((value) => !value)}>{muted ? 'Sound Off' : 'Sound On'}</button>
+                        <button className="ui-pill" onClick={openDoor}>Open Door</button>
+                        <button className="ui-pill" onClick={closeDoor}>Close Door</button>
+                        <button className={`ui-pill ${creatorDifficulty === 'easy' ? 'ui-pill-active' : ''}`} onClick={() => setCreatorDifficulty('easy')}>Easy</button>
+                        <button className={`ui-pill ${creatorDifficulty === 'medium' ? 'ui-pill-active' : ''}`} onClick={() => setCreatorDifficulty('medium')}>Medium</button>
+                        <button className={`ui-pill ${creatorDifficulty === 'hard' ? 'ui-pill-active' : ''}`} onClick={() => setCreatorDifficulty('hard')}>Hard</button>
+                        <button className="ui-pill" onClick={onCreateLevel}>Create Valid Level</button>
+                        <button className={`ui-pill ${builderOpen ? 'ui-pill-active' : ''}`} onClick={toggleBuilder}>{builderOpen ? 'Hide Builder' : 'Open Builder'}</button>
+                        <span className="ui-pill">Door: {cageDoorOpen ? 'Open' : 'Closed'}</span>
+                    </div>
+                </header>
+            )}
+
+            {!isEmbed && (
+                <div className="level-list-strip">
+                    <div className="level-list-label">Level List</div>
+                    <button className="ui-pill" onClick={goPrevLevel}>Prev</button>
+                    {playableLevels.map((item, idx) => (
+                        <button
+                            key={`jump-${item.id}`}
+                            className={`ui-pill ${!createdLevel && idx === levelIndex ? 'ui-pill-active' : ''}`}
+                            onClick={() => jumpToLevel(idx)}
+                        >
+                            {item.id}
+                        </button>
+                    ))}
+                    <button className="ui-pill" onClick={goNextLevel}>Next</button>
                 </div>
-            </header>
+            )}
 
-            <div className="level-list-strip">
-                <div className="level-list-label">Level List</div>
-                <button className="ui-pill" onClick={goPrevLevel}>Prev</button>
-                {playableLevels.map((item, idx) => (
-                    <button
-                        key={`jump-${item.id}`}
-                        className={`ui-pill ${!createdLevel && idx === levelIndex ? 'ui-pill-active' : ''}`}
-                        onClick={() => jumpToLevel(idx)}
-                    >
-                        {item.id}
-                    </button>
-                ))}
-                <button className="ui-pill" onClick={goNextLevel}>Next</button>
-            </div>
-
-            {builderOpen && (
+            {builderOpen && !isEmbed && (
                 <>
                     <div style={{ maxWidth: '1600px', margin: '0 auto 1rem', padding: '0 1rem' }}>
                         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', background: 'rgba(255, 255, 255, 0.98)', padding: '0.75rem', borderRadius: '12px', border: '2px solid #7aa5bf', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)' }}>
@@ -1534,7 +1705,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                         <div className="builder-section">
                             <h3>🎨 Tools</h3>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                                <button className={`ui-pill ${builderTool === 'select' ? 'ui-pill-active' : ''}`} onClick={() => { setBuilderTool('select'); setSelectedItem(null); }}>👆 Select</button>
+                                <button className={`ui-pill ${builderTool === 'select' ? 'ui-pill-active' : ''}`} onClick={() => { setBuilderTool('select'); clearSelection(); }}>👆 Select</button>
                                 <button className={`ui-pill ${builderTool === 'actor' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderTool('actor')}>🐟 Actor</button>
                                 <button className={`ui-pill ${builderTool === 'cage' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderTool('cage')}>🟩 Cage</button>
                                 <button className={`ui-pill ${builderTool === 'obstacle' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderTool('obstacle')}>🟫 Block</button>
@@ -1562,11 +1733,19 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                             )}
                         </div>
 
-                        {selectedItem && (
+                        {selectedItems.length > 0 && (
                             <div className="builder-section" style={{ background: 'rgba(255, 248, 220, 0.98)', borderColor: '#d4a017' }}>
                                 <h3>✏️ Selected Item</h3>
-                                
-                                {selectedItem.type === 'actor' && (() => {
+                                {selectedItems.length > 1 && (
+                                    <>
+                                        <div className="builder-hint" style={{ marginBottom: '0.75rem' }}>
+                                            {selectedItems.length} items selected
+                                        </div>
+                                        <button className="ui-pill" onClick={deleteSelectedItem} style={{ width: '100%', background: '#dc3545', color: '#fff', borderColor: '#dc3545' }}>🗑️ Delete Selected Items</button>
+                                    </>
+                                )}
+
+                                {selectedItems.length === 1 && selectedItem?.type === 'actor' && (() => {
                                     const actor = builderActors.find(a => a.id === selectedItem.id);
                                     if (!actor) return null;
                                     return (
@@ -1576,11 +1755,44 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                                             </div>
                                             <div className="builder-field">
                                                 <label>Direction</label>
-                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                                                    <button className={`ui-pill ${actor.dir === 'up' ? 'ui-pill-active' : ''}`} onClick={() => updateSelectedActorDirection('up')}>⬆️ Up</button>
-                                                    <button className={`ui-pill ${actor.dir === 'down' ? 'ui-pill-active' : ''}`} onClick={() => updateSelectedActorDirection('down')}>⬇️ Down</button>
-                                                    <button className={`ui-pill ${actor.dir === 'left' ? 'ui-pill-active' : ''}`} onClick={() => updateSelectedActorDirection('left')}>⬅️ Left</button>
-                                                    <button className={`ui-pill ${actor.dir === 'right' ? 'ui-pill-active' : ''}`} onClick={() => updateSelectedActorDirection('right')}>➡️ Right</button>
+                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.35rem', maxWidth: '180px' }}>
+                                                    <div />
+                                                    <button
+                                                        className={`ui-pill ${actor.dir === 'up' ? 'ui-pill-active' : ''}`}
+                                                        onClick={() => updateSelectedActorDirection('up')}
+                                                        style={{ aspectRatio: '1 / 1', minHeight: '42px', padding: 0, fontSize: '1.15rem' }}
+                                                        aria-label="Set actor direction up"
+                                                    >
+                                                        ↑
+                                                    </button>
+                                                    <div />
+                                                    <button
+                                                        className={`ui-pill ${actor.dir === 'left' ? 'ui-pill-active' : ''}`}
+                                                        onClick={() => updateSelectedActorDirection('left')}
+                                                        style={{ aspectRatio: '1 / 1', minHeight: '42px', padding: 0, fontSize: '1.15rem' }}
+                                                        aria-label="Set actor direction left"
+                                                    >
+                                                        ←
+                                                    </button>
+                                                    <div style={{ border: '1px solid #c8dbe8', borderRadius: '999px', background: '#f4fbff' }} />
+                                                    <button
+                                                        className={`ui-pill ${actor.dir === 'right' ? 'ui-pill-active' : ''}`}
+                                                        onClick={() => updateSelectedActorDirection('right')}
+                                                        style={{ aspectRatio: '1 / 1', minHeight: '42px', padding: 0, fontSize: '1.15rem' }}
+                                                        aria-label="Set actor direction right"
+                                                    >
+                                                        →
+                                                    </button>
+                                                    <div />
+                                                    <button
+                                                        className={`ui-pill ${actor.dir === 'down' ? 'ui-pill-active' : ''}`}
+                                                        onClick={() => updateSelectedActorDirection('down')}
+                                                        style={{ aspectRatio: '1 / 1', minHeight: '42px', padding: 0, fontSize: '1.15rem' }}
+                                                        aria-label="Set actor direction down"
+                                                    >
+                                                        ↓
+                                                    </button>
+                                                    <div />
                                                 </div>
                                             </div>
                                             <button className="ui-pill" onClick={deleteSelectedItem} style={{ width: '100%', marginTop: '0.5rem', background: '#dc3545', color: '#fff', borderColor: '#dc3545' }}>🗑️ Delete Actor</button>
@@ -1588,7 +1800,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                                     );
                                 })()}
 
-                                {selectedItem.type === 'obstacle' && (
+                                {selectedItems.length === 1 && selectedItem?.type === 'obstacle' && (
                                     <>
                                         <div className="builder-hint" style={{ marginBottom: '0.75rem' }}>
                                             Obstacle at ({selectedItem.x}, {selectedItem.y})
@@ -1597,7 +1809,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                                     </>
                                 )}
 
-                                {selectedItem.type === 'cage' && (
+                                {selectedItems.length === 1 && selectedItem?.type === 'cage' && (
                                     <>
                                         <div className="builder-hint" style={{ marginBottom: '0.75rem' }}>
                                             Cage cell at ({selectedItem.x}, {selectedItem.y})
@@ -1606,7 +1818,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                                     </>
                                 )}
 
-                                {selectedItem.type === 'switch' && (
+                                {selectedItems.length === 1 && selectedItem?.type === 'switch' && (
                                     <>
                                         <div className="builder-hint" style={{ marginBottom: '0.75rem' }}>
                                             Door Switch at ({builderSwitch.x}, {builderSwitch.y})
@@ -1615,7 +1827,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                                     </>
                                 )}
 
-                                {selectedItem.type === 'door' && (() => {
+                                {selectedItems.length === 1 && selectedItem?.type === 'door' && (() => {
                                     const door = builderDoors[selectedItem.doorIndex];
                                     if (!door) return null;
                                     return (
@@ -1689,6 +1901,30 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                         </div>
 
                         <div className="builder-section">
+                            <h3>🎨 Visual Style</h3>
+                            <div className="builder-field-row">
+                                <div className="builder-field">
+                                    <label>Joint Diameter</label>
+                                    <input className="builder-input" type="number" value={builderHedgeJointDiameter} min={6} max={30} onChange={(event) => setBuilderHedgeJointDiameter(Math.max(6, Number(event.target.value) || 6))} />
+                                </div>
+                                <div className="builder-field">
+                                    <label>Cage Thickness</label>
+                                    <input className="builder-input" type="number" value={builderCageLineThickness} min={2} max={20} onChange={(event) => setBuilderCageLineThickness(Math.max(2, Number(event.target.value) || 2))} />
+                                </div>
+                            </div>
+                            <div className="builder-field-row">
+                                <div className="builder-field">
+                                    <label>Door Color</label>
+                                    <input className="builder-input" type="color" value={builderDoorColor} onChange={(event) => setBuilderDoorColor(event.target.value)} />
+                                </div>
+                                <div className="builder-field">
+                                    <label>Door Thickness</label>
+                                    <input className="builder-input" type="number" value={builderDoorThickness} min={2} max={20} onChange={(event) => setBuilderDoorThickness(Math.max(2, Number(event.target.value) || 2))} />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="builder-section">
                             <h3>⚙️ Level Settings</h3>
                             <div className="builder-field-row">
                                 <div className="builder-field">
@@ -1733,15 +1969,15 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                                         const actor = builderActors.find((item) => item.x === x && item.y === y);
                                         const isSwitch = builderSwitch.x === x && builderSwitch.y === y;
 
-                                        const isSelected = selectedItem && (
-                                            (selectedItem.type === 'actor' && actor && actor.id === selectedItem.id) ||
-                                            (selectedItem.type === 'obstacle' && isObstacle && selectedItem.x === x && selectedItem.y === y) ||
-                                            (selectedItem.type === 'cage' && isCage && selectedItem.x === x && selectedItem.y === y) ||
-                                            (selectedItem.type === 'switch' && isSwitch)
+                                        const isSelected = selectedItems.some((item) =>
+                                            (item.type === 'actor' && actor && actor.id === item.id) ||
+                                            (item.type === 'obstacle' && isObstacle && item.x === x && item.y === y) ||
+                                            (item.type === 'cage' && isCage && item.x === x && item.y === y) ||
+                                            (item.type === 'switch' && isSwitch)
                                         );
 
                                         return (
-                                            <g key={`builder-cell-${key}`} onClick={() => onBuilderCellClick(x, y)}>
+                                            <g key={`builder-cell-${key}`} onClick={(event) => onBuilderCellClick(x, y, event.shiftKey)}>
                                                 <rect 
                                                     x={x * 34 + 1} 
                                                     y={y * 34 + 1} 
@@ -1824,7 +2060,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                                 )}
                                 {/* Render visible door lines */}
                                 {builderDoors.map((door, doorIndex) => {
-                                    const isSelected = selectedItem?.type === 'door' && selectedItem.doorIndex === doorIndex;
+                                    const isSelected = selectedItems.some((item) => item.type === 'door' && item.doorIndex === doorIndex);
                                     return (
                                         <line
                                             key={`door-${doorIndex}`}
@@ -1832,8 +2068,8 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                                             y1={(door.edge.kind === 'h' ? door.edge.y : door.edge.y) * 34}
                                             x2={(door.edge.kind === 'h' ? door.edge.x + 1 : door.edge.x) * 34}
                                             y2={(door.edge.kind === 'h' ? door.edge.y : door.edge.y + 1) * 34}
-                                            stroke={isSelected ? '#ffa500' : '#ff7a00'}
-                                            strokeWidth={isSelected ? 6 : 4}
+                                            stroke={isSelected ? '#ffa500' : builderDoorColor}
+                                            strokeWidth={isSelected ? Math.max(builderDoorThickness + 2, 4) : builderDoorThickness}
                                             strokeLinecap="round"
                                             pointerEvents="none"
                                         />
@@ -1869,7 +2105,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                                         {renderCageCells.map((tile) => (
                                             <g key={`safe-${tileKey(tile.x, tile.y)}`}>
                                                 <rect x={tile.x * TILE + 6} y={tile.y * TILE + 6} width={TILE - 12} height={TILE - 12} rx={8} className="tile-cage-safe" />
-                                                <line x1={tile.x * TILE + 12} y1={tile.y * TILE + 12} x2={tile.x * TILE + TILE - 12} y2={tile.y * TILE + TILE - 12} className="tile-cage-safe-line" />
+                                                <line x1={tile.x * TILE + 12} y1={tile.y * TILE + 12} x2={tile.x * TILE + TILE - 12} y2={tile.y * TILE + TILE - 12} className="tile-cage-safe-line" strokeWidth={Math.max(1.5, renderVisuals.cageLineThickness * 0.35)} />
                                             </g>
                                         ))}
 
@@ -1892,6 +2128,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                                                     x2={x2}
                                                     y2={y2}
                                                     className="cage-fence"
+                                                    strokeWidth={renderVisuals.cageLineThickness}
                                                 />
                                             );
                                         })}
@@ -1924,6 +2161,8 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                                                     x2={doorLeaf.x2}
                                                     y2={doorLeaf.y2}
                                                     className={doorOpenProgress > 0.02 ? 'cage-door-open' : 'cage-door-closed'}
+                                                    stroke={renderVisuals.doorColor}
+                                                    strokeWidth={renderVisuals.doorThickness}
                                                 />
                                             );
                                         })}
@@ -1937,19 +2176,28 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                                             <text x={-11} y={4} className="door-switch-label">SW</text>
                                         </g>
 
-                                        <rect x={3} y={3} width={renderWidth * TILE - 6} height={renderHeight * TILE - 6} rx={12} fill="none" stroke="#8b3f1d" strokeWidth={7} />
+                                        {[...new Set(
+                                            renderFence.segments.flatMap((segment) => {
+                                                if (segment.kind === 'h') {
+                                                    return [`${segment.x},${segment.y}`, `${segment.x + 1},${segment.y}`];
+                                                }
+                                                return [`${segment.x},${segment.y}`, `${segment.x},${segment.y + 1}`];
+                                            }),
+                                        )].map((pointKey) => {
+                                            const [px, py] = pointKey.split(',').map((value) => Number(value));
+                                            return <circle key={`preview-cage-pole-${pointKey}`} cx={px * TILE} cy={py * TILE} r={renderVisuals.hedgeJointDiameter / 2} className="cage-pole" />;
+                                        })}
+
+                                        <rect x={3} y={3} width={renderWidth * TILE - 6} height={renderHeight * TILE - 6} rx={12} fill="none" stroke="#8b3f1d" strokeWidth={renderVisuals.cageLineThickness} />
 
                                         {renderActors.map((fish) => {
                                             const x = fish.x * TILE + TILE / 2;
                                             const y = fish.y * TILE + TILE / 2;
                                             return (
-                                                <g key={`fish-${fish.id}`} className={fish.settled ? 'fish settled' : 'fish'} transform={`translate(${x} ${y}) rotate(${fishAngle(fish.dir)})`}>
+                                                <g key={`${createdLevel ? `created-${createdLevel.id}` : `level-${level.id}`}-fish-${fish.id}`} className={fish.settled ? 'fish settled' : 'fish'} transform={`translate(${x} ${y}) rotate(${fishAngle(fish.dir)})`}>
                                                     <polygon points="-18,0 18,-12 18,12" fill={fish.settled ? '#48bb78' : '#8f4de2'} stroke={fish.settled ? '#2f855a' : '#5d239f'} strokeWidth={3} />
                                                     <circle cx="-8" cy="0" r="5" fill="#ffffff" />
                                                     <circle cx="-7" cy="0" r="2.5" fill="#1b1b1b" />
-                                                    <text x="0" y="5" textAnchor="middle" className="fish-index" fill="#ffffff" fontSize="14" fontWeight="bold" transform={`rotate(${-fishAngle(fish.dir)})`}>
-                                                        {fish.id}
-                                                    </text>
                                                 </g>
                                             );
                                         })}
@@ -1974,23 +2222,8 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                 </aside>
 
                 <section className="board-panel">
-                    <svg className="rescue-board" viewBox={`0 0 ${renderWidth * TILE} ${renderHeight * TILE}`} role="img" aria-label="Actor cage puzzle board">
+                    <svg key={`board-${createdLevel ? `created-${createdLevel.id}` : `level-${level.id}`}`} className="rescue-board" viewBox={`0 0 ${renderWidth * TILE} ${renderHeight * TILE}`} role="img" aria-label="Actor cage puzzle board">
                         <rect x={0} y={0} width={renderWidth * TILE} height={renderHeight * TILE} fill="#0c8fd4" rx={14} />
-
-                        {Array.from({ length: renderWidth + 1 }).map((_, idx) => (
-                            <line key={`gv-${idx}`} x1={idx * TILE} y1={0} x2={idx * TILE} y2={renderHeight * TILE} stroke="#0f699f" strokeOpacity={0.58} strokeWidth={2} />
-                        ))}
-                        {Array.from({ length: renderHeight + 1 }).map((_, idx) => (
-                            <line key={`gh-${idx}`} x1={0} y1={idx * TILE} x2={renderWidth * TILE} y2={idx * TILE} stroke="#0f699f" strokeOpacity={0.58} strokeWidth={2} />
-                        ))}
-
-                        {Array.from({ length: renderHeight }).flatMap((_, y) =>
-                            Array.from({ length: renderWidth }).map((__, x) => (
-                                <text key={`cell-id-${x}-${y}`} x={x * TILE + 6} y={y * TILE + 14} className="cell-index">
-                                    {y * renderWidth + x + 1}
-                                </text>
-                            )),
-                        )}
 
                         {Array.from({ length: renderHeight }).flatMap((_, y) =>
                             Array.from({ length: renderWidth }).map((__, x) => {
@@ -2016,7 +2249,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                         {renderCageCells.map((tile) => (
                             <g key={`safe-${tileKey(tile.x, tile.y)}`}>
                                 <rect x={tile.x * TILE + 6} y={tile.y * TILE + 6} width={TILE - 12} height={TILE - 12} rx={8} className="tile-cage-safe" />
-                                <line x1={tile.x * TILE + 12} y1={tile.y * TILE + 12} x2={tile.x * TILE + TILE - 12} y2={tile.y * TILE + TILE - 12} className="tile-cage-safe-line" />
+                                <line x1={tile.x * TILE + 12} y1={tile.y * TILE + 12} x2={tile.x * TILE + TILE - 12} y2={tile.y * TILE + TILE - 12} className="tile-cage-safe-line" strokeWidth={Math.max(1.5, renderVisuals.cageLineThickness * 0.35)} />
                             </g>
                         ))}
 
@@ -2039,6 +2272,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                                     x2={x2}
                                     y2={y2}
                                     className="cage-fence"
+                                    strokeWidth={renderVisuals.cageLineThickness}
                                 />
                             );
                         })}
@@ -2071,6 +2305,8 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                                     x2={doorLeaf.x2}
                                     y2={doorLeaf.y2}
                                     className={doorOpenProgress > 0.02 ? 'cage-door-open' : 'cage-door-closed'}
+                                    stroke={renderVisuals.doorColor}
+                                    strokeWidth={renderVisuals.doorThickness}
                                 />
                             );
                         })}
@@ -2094,7 +2330,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                             }),
                         )].map((pointKey) => {
                             const [px, py] = pointKey.split(',').map((value) => Number(value));
-                            return <circle key={`cage-pole-${pointKey}`} cx={px * TILE} cy={py * TILE} r={8} className="cage-pole" />;
+                            return <circle key={`cage-pole-${pointKey}`} cx={px * TILE} cy={py * TILE} r={renderVisuals.hedgeJointDiameter / 2} className="cage-pole" />;
                         })}
 
                         {renderObstacles.map((tile) => (
@@ -2107,13 +2343,10 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                             const x = fish.x * TILE + TILE / 2;
                             const y = fish.y * TILE + TILE / 2;
                             return (
-                                <g key={`fish-${fish.id}`} className={fish.settled ? 'fish settled' : 'fish'} transform={`translate(${x} ${y}) rotate(${fishAngle(fish.dir)})`} onClick={previewMode ? undefined : () => onFishClick(fish.id)}>
+                                <g key={`${createdLevel ? `created-${createdLevel.id}` : `level-${level.id}`}-fish-${fish.id}`} className={fish.settled ? 'fish settled' : 'fish'} transform={`translate(${x} ${y}) rotate(${fishAngle(fish.dir)})`} onClick={previewMode ? undefined : () => onFishClick(fish.id)}>
                                     <polygon points="-18,0 18,-12 18,12" fill={fish.settled ? '#48bb78' : '#8f4de2'} stroke={fish.settled ? '#2f855a' : '#5d239f'} strokeWidth={3} />
                                     <circle cx="-8" cy="0" r="5" fill="#ffffff" />
                                     <circle cx="-7" cy="0" r="2.5" fill="#1b1b1b" />
-                                    <text x="0" y="5" textAnchor="middle" className="fish-index" fill="#ffffff" fontSize="14" fontWeight="bold" transform={`rotate(${-fishAngle(fish.dir)})`}>
-                                        {fish.id}
-                                    </text>
                                 </g>
                             );
                         })}

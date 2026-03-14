@@ -416,6 +416,21 @@ export function QuizEditorPage() {
     })
   }
 
+  const ensureSignedInForAi = () => {
+    if (auth.currentUser?.uid) return true
+    showDialog({
+      title: '🔐 Sign-In Required',
+      message: 'To use AI quiz creation, please sign in first.',
+      confirmText: 'Sign in',
+      cancelText: 'Cancel',
+      onConfirm: () => {
+        const returnTo = `${location.pathname}${location.search}`
+        navigate('/login', { state: { returnTo } })
+      },
+    })
+    return false
+  }
+
   useEffect(() => {
     return subscribeQuestionTypeSettings((settings) => {
       setEnabledQuestionTypeIds(settings.enabledQuestionTypeIds)
@@ -844,6 +859,8 @@ export function QuizEditorPage() {
   }
 
   const handleGenerateAI = async () => {
+    if (!ensureSignedInForAi()) return
+
     if (!aiPrompt.trim() && aiContextFiles.length === 0) {
       showToast({ message: '⚠️ يرجى كتابة وصف للاختبار أو تحميل ملف', type: 'error' });
       return;
@@ -1696,8 +1713,16 @@ export function QuizEditorPage() {
         onShareLink={() => { void shareEditorLink() }}
         onDeleteQuiz={handleDeleteQuiz}
         onAddQuestion={() => showAddQuestionDialog()}
-        onGenerateAI={() => { setAiAction('generate'); void incrementPlatformStat('aiGenerateClicks') }}
-        onRecheckAI={() => { setAiAction('recheck'); void incrementPlatformStat('aiRecheckClicks') }}
+        onGenerateAI={() => {
+          if (!ensureSignedInForAi()) return
+          setAiAction('generate')
+          void incrementPlatformStat('aiGenerateClicks')
+        }}
+        onRecheckAI={() => {
+          if (!ensureSignedInForAi()) return
+          setAiAction('recheck')
+          void incrementPlatformStat('aiRecheckClicks')
+        }}
         isGeneratingAI={isGeneratingAi && aiGeneratingMode === 'generate'}
         isRecheckingAI={isGeneratingAi && aiGeneratingMode === 'recheck'}
         onSave={() => { void saveQuiz() }}
@@ -1712,6 +1737,7 @@ export function QuizEditorPage() {
           onOpenMetadata={openMetadataDialog}
           onUpdateMiniGameConfig={updateMiniGameConfig}
           onPickMiniGamePuzzleImage={pickMiniGamePuzzleImage}
+          onPlayMiniGame={quizId ? () => { void launchGameFromEditor(quizId) } : undefined}
         />
       ) : (
         <>
@@ -1879,3 +1905,4 @@ export function QuizEditorPage() {
     </div>
   )
 }
+

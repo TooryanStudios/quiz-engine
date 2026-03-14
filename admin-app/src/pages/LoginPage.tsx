@@ -25,6 +25,13 @@ export function LoginPage() {
   const [showBanner, setShowBanner] = useState(wasSignedOut)
   const [tagIdx, setTagIdx] = useState(0)
   const hasNavigatedRef = useRef(false)
+  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo
+  const getPostLoginPath = () => {
+    if (typeof returnTo === 'string' && returnTo.startsWith('/')) {
+      return returnTo
+    }
+    return '/dashboard'
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -32,7 +39,7 @@ export function LoginPage() {
       if (cancelled || hasNavigatedRef.current) return
       hasNavigatedRef.current = true
       localStorage.removeItem(redirectPendingKey)
-      navigate('/dashboard', { replace: true })
+      navigate(getPostLoginPath(), { replace: true })
     }
 
     const unsub = onAuthStateChanged(auth, (user) => {
@@ -118,7 +125,7 @@ export function LoginPage() {
       await signInWithPopup(auth, googleProvider)
       clearTimeout(hintTimer)
       hideToast()
-      navigate('/dashboard', { replace: true })
+      navigate(getPostLoginPath(), { replace: true })
     } catch (err: unknown) {
       clearTimeout(hintTimer)
       hideToast()

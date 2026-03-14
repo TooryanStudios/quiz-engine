@@ -1,7 +1,7 @@
 import { onAuthStateChanged, signOut } from 'firebase/auth'
 import type { User } from 'firebase/auth'
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
-import { markSignOut, consumeSignOut } from './lib/signOutState'
+import { markSignOut } from './lib/signOutState'
 import type { ReactElement } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import './App.css'
@@ -49,7 +49,7 @@ function getNav(isAr: boolean) {
 }
 
 function RequireAuth({ user, children }: { user: User | null; children: ReactElement }) {
-  if (!user) return <Navigate to="/login" replace />
+  if (!user) return <Navigate to="/dashboard" replace />
   return children
 }
 
@@ -134,8 +134,6 @@ function App() {
       // Keep initial navigation fast; never block UI on network calls.
       if (u && window.location.pathname === '/login') {
         navigate('/dashboard', { replace: true })
-      } else if (!u && window.location.pathname !== '/login' && !(isLocalDevHost && (window.location.pathname === '/play-test' || window.location.pathname.startsWith('/play-test/')))) {
-        navigate('/login', { replace: true, state: { signedOut: consumeSignOut() } })
       }
 
       // Ensure admin claim in background (master only), without delaying render.
@@ -217,11 +215,8 @@ function App() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
-  // No session hint → skip spinner and go straight to login for first-time / logged-out visitors.
-  const hasSessionHint = localStorage.getItem('qyan:session') === '1'
-
   if (user === undefined && !allowUnauthedLocalPlayTest) {
-    if (isLoginPage || !hasSessionHint) {
+    if (isLoginPage) {
       return (
         <ToastProvider>
           <DialogProvider>
@@ -236,17 +231,6 @@ function App() {
       )
     }
 
-    return (
-      <div className="app-loading-screen">
-        <img src={logoImg} alt="QYan" className="app-loading-logo" />
-        <div className="app-loading-spinner" />
-      </div>
-    )
-  }
-
-  // While Firebase has resolved but user is null and we're not yet on /login,
-  // show the login page for that frame — prevents the authenticated sidebar flash.
-  if (user === null && !isLoginPage && !allowUnauthedLocalPlayTest) {
     return (
       <div className="app-loading-screen">
         <img src={logoImg} alt="QYan" className="app-loading-logo" />
@@ -610,9 +594,9 @@ function App() {
                 </div>
               }>
               <Routes>
-                <Route path="/" element={<Navigate to={user ? '/dashboard' : '/login'} replace />} />
+                <Route path="/" element={<Navigate to="/dashboard" replace />} />
                 <Route path="/login" element={<LoginPage />} />
-                <Route path="/dashboard" element={<RequireAuth user={user ?? null}><DashboardPage /></RequireAuth>} />
+                <Route path="/dashboard" element={<DashboardPage />} />
                 <Route path="/editor" element={<RequireAuth user={user ?? null}><QuizEditorPage /></RequireAuth>} />
                 <Route path="/editor/:id" element={<RequireAuth user={user ?? null}><QuizEditorPage /></RequireAuth>} />
                 <Route path="/mini-game-editor" element={<RequireAuth user={user ?? null}><QuizEditorPage /></RequireAuth>} />

@@ -5,6 +5,7 @@ import './play.css';
 
 interface PlayProps {
     gameId: string;
+    isEmbed?: boolean;
     onStateChange?: (gameState: GameState) => void;
     theme?: {
         bg: string;
@@ -17,7 +18,7 @@ interface PlayProps {
     };
 }
 
-const Play: React.FC<PlayProps> = ({ gameId, onStateChange, theme }) => {
+const Play: React.FC<PlayProps> = ({ gameId, isEmbed, onStateChange, theme }) => {
     const { game, loading, error } = useGame(gameId);
     const [gameState, setGameState] = React.useState<GameState | null>(null);
 
@@ -92,11 +93,15 @@ const Play: React.FC<PlayProps> = ({ gameId, onStateChange, theme }) => {
 
     if (game.render) {
         const CustomGameRenderer = game.render;
-        return <CustomGameRenderer game={game} gameState={gameState} dispatch={dispatch} />;
+        return (
+            <div className={`retro-quiz-container ${isEmbed ? 'is-embed' : ''}`} style={themeStyle}>
+                <CustomGameRenderer game={game} gameState={gameState} dispatch={dispatch} isEmbed={isEmbed} />
+            </div>
+        );
     }
 
     return (
-        <div className="retro-quiz-container" style={themeStyle}>
+        <div className={`retro-quiz-container ${isEmbed ? 'is-embed' : ''}`} style={themeStyle}>
             <header className="retro-header">
                 <div className="badge-server">Server connected</div>
                 <div className="hub-center">

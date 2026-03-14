@@ -643,6 +643,36 @@
   /* Tighten action row */
   .editor-header-actions {
     gap: 0.25rem;
+    display: inline-flex;
+    flex-wrap: nowrap;
+    min-width: max-content;
+    padding-bottom: 2px;
+  }
+
+  .editor-header-right {
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-gutter: stable;
+  }
+
+  .editor-header-right::-webkit-scrollbar {
+    height: 6px;
+  }
+
+  .editor-header-right::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, var(--text-muted) 45%, transparent);
+    border-radius: 999px;
+  }
+
+  .editor-header-btn,
+  .editor-header-add-btn,
+  .editor-header-settings-btn,
+  .editor-header-save-btn,
+  .editor-header-play-btn {
+    flex: 0 0 auto;
   }
 
   /* Save button: icon only */

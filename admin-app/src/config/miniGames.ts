@@ -180,10 +180,10 @@ export const MINI_GAME_DEFINITIONS: Record<MiniGameId, MiniGameDefinition> = {
   'fish-fence-count': {
     id: 'fish-fence-count',
     icon: '🐟',
-    defaultEnglishName: 'Fish Fence Count',
-    defaultArabicName: 'عد السمك في السياج',
-    description: 'عدد السمك داخل السياج مع تجاهل المشتتات الخارجية.',
-    howToPlay: 'ركز على السمك داخل المنطقة المحددة فقط واحسبها بدقة.',
+    defaultEnglishName: 'Fish Rescue Cage',
+    defaultArabicName: 'إنقاذ السمك داخل القفص',
+    description: 'لغز تحريك بصري: حرّك السمك في اتجاهاته الثابتة حتى يدخل منطقة الأمان قبل انتهاء الوقت.',
+    howToPlay: 'اضغط على السمكة لتحريكها في اتجاهها الحالي حتى تصطدم بعائق أو سياج، وأنقذ جميع السمك داخل القفص قبل إغلاق الباب.',
   },
 }
 

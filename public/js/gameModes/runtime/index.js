@@ -5,6 +5,7 @@ import { gearMachineRuntime } from './gearMachine.runtime.js?v=122';
 import { creatorStudioRuntime } from './creatorStudio.runtime.js?v=122';
 import { matchPlusArenaRuntime } from './matchPlusArena.runtime.js?v=134';
 import { islandDiceAdventureRuntime } from './islandDiceAdventure.runtime.js?v=159';
+import { fishFenceCountRuntime } from './fishFenceCount.runtime.js?v=1';
 
 const EMPTY_RUNTIME = Object.freeze({});
 
@@ -15,6 +16,7 @@ const MODE_RUNTIME_REGISTRY = {
   'creator-studio': creatorStudioRuntime,
   'match-plus-arena': matchPlusArenaRuntime,
   'island-dice-adventure': islandDiceAdventureRuntime,
+  'fish-fence-count': fishFenceCountRuntime,
   'runtime-example': runtimeExampleRuntime,
 };
 

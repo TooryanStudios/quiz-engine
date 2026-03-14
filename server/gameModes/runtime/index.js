@@ -7,6 +7,7 @@ const { createGearMachineRuntime } = require('./gearMachine.runtime');
 const { createCreatorStudioRuntime } = require('./creatorStudio.runtime');
 const { createMatchPlusArenaRuntime } = require('./matchPlusArena.runtime');
 const { createIslandDiceAdventureRuntime } = require('./islandDiceAdventure.runtime');
+const { createFishFenceCountRuntime } = require('./fishFenceCount.runtime');
 
 const EMPTY_RUNTIME = Object.freeze({});
 
@@ -25,13 +26,14 @@ function createGameModeRuntime(modeId) {
   if (normalizedModeId === 'creator-studio') return createCreatorStudioRuntime();
   if (normalizedModeId === 'match-plus-arena') return createMatchPlusArenaRuntime();
   if (normalizedModeId === 'island-dice-adventure') return createIslandDiceAdventureRuntime();
+  if (normalizedModeId === 'fish-fence-count') return createFishFenceCountRuntime();
   if (normalizedModeId === 'runtime-example') return createRuntimeExampleRuntime();
 
   return EMPTY_RUNTIME;
 }
 
 function listRegisteredGameModes() {
-  return ['puzzle-relay', 'xo-duel', 'gear-machine', 'creator-studio', 'match-plus-arena', 'island-dice-adventure', 'runtime-example'];
+  return ['puzzle-relay', 'xo-duel', 'gear-machine', 'creator-studio', 'match-plus-arena', 'island-dice-adventure', 'fish-fence-count', 'runtime-example'];
 }
 
 module.exports = {

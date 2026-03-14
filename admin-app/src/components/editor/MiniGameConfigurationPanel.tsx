@@ -13,6 +13,7 @@ type MiniGameConfigurationPanelProps = {
   onOpenMetadata: () => void
   onUpdateMiniGameConfig: (patch: Record<string, unknown>) => void
   onPickMiniGamePuzzleImage: () => void
+  onPlayMiniGame?: () => void
 }
 
 export function MiniGameConfigurationPanel({
@@ -23,6 +24,7 @@ export function MiniGameConfigurationPanel({
   onOpenMetadata,
   onUpdateMiniGameConfig,
   onPickMiniGamePuzzleImage,
+  onPlayMiniGame,
 }: MiniGameConfigurationPanelProps) {
   const selectedMiniGame = miniGameCards.find((game) => game.id === gameModeId)
 
@@ -41,21 +43,40 @@ export function MiniGameConfigurationPanel({
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-strong)' }}>
         <h3 style={{ margin: 0, color: 'var(--text-bright)', fontSize: '1rem' }}>🎮 Mini Game Configuration</h3>
-        <button
-          type="button"
-          onClick={onOpenMetadata}
-          style={{
-            border: '1px solid var(--border-strong)',
-            borderRadius: '8px',
-            background: 'var(--bg-surface)',
-            color: 'var(--text)',
-            padding: '0.35rem 0.6rem',
-            cursor: 'pointer',
-            fontWeight: 700,
-          }}
-        >
-          ⚙️ Change Mini Game
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          {gameModeId && onPlayMiniGame && (
+            <button
+              type="button"
+              onClick={onPlayMiniGame}
+              style={{
+                border: '1px solid #22c55e',
+                borderRadius: '8px',
+                background: '#22c55e',
+                color: '#ffffff',
+                padding: '0.35rem 0.6rem',
+                cursor: 'pointer',
+                fontWeight: 700,
+              }}
+            >
+              ▶️ Play
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onOpenMetadata}
+            style={{
+              border: '1px solid var(--border-strong)',
+              borderRadius: '8px',
+              background: 'var(--bg-surface)',
+              color: 'var(--text)',
+              padding: '0.35rem 0.6rem',
+              cursor: 'pointer',
+              fontWeight: 700,
+            }}
+          >
+            ⚙️ Change Mini Game
+          </button>
+        </div>
       </div>
 
       {!gameModeId ? (
