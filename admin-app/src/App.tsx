@@ -28,6 +28,7 @@ const VoiceLabPage    = lazy(() => import('./pages/VoiceLabPage').then(m => ({ d
 const AILabPage       = lazy(() => import('./pages/AILabPage'))
 const CoverGenLabPage = lazy(() => import('./pages/CoverGenLabPage'))
 const PlayTestPage    = lazy(() => import('./pages/PlayTestPage'))
+const GameEmbedPage   = lazy(() => import('./pages/GameEmbedPage'))
 
 const MASTER_EMAIL = import.meta.env.VITE_MASTER_EMAIL as string | undefined
 const MASTER_PATH  = import.meta.env.VITE_MASTER_PATH  as string | undefined
@@ -74,7 +75,7 @@ function App() {
     () => 'light'
   )
   const [language, setLanguage] = useState<'ar' | 'en'>(
-    () => (localStorage.getItem('quizAdminLang') as 'ar' | 'en') || 'ar'
+    () => 'ar'
   )
   const isAr = language === 'ar'
   const [slidePanelLayout, setSlidePanelLayout] = useState<'left' | 'bottom'>(
@@ -85,10 +86,15 @@ function App() {
     localStorage.removeItem('qyan:session')
     void signOut(auth)
   }, [])
+  const handleGuestSignIn = useCallback(() => {
+    const returnTo = `${location.pathname}${location.search}`
+    navigate('/login', { state: { returnTo } })
+  }, [location.pathname, location.search, navigate])
 
   const isLoginPage   = location.pathname === '/login'
   const isMasterPage  = MASTER_PATH ? location.pathname.startsWith(MASTER_PATH) : false
   const isEmbeddedPreview = location.pathname.startsWith('/preview/') && new URLSearchParams(location.search).get('embedded') === '1'
+  const isGameEmbed = location.pathname.startsWith('/embed')
   const allowUnauthedLocalPlayTest = isLocalDevHost && isLocalPlayTestPath
 
   // Apply theme to document element
@@ -235,6 +241,11 @@ function App() {
       <div className="app-loading-screen">
         <img src={logoImg} alt="QYan" className="app-loading-logo" />
         <div className="app-loading-spinner" />
+        <p className="app-loading-note">
+          {isAr
+            ? 'نقوم بتحميل ألعاب واختبارات مجانية لك الآن. يمكنك اللعب بدون تسجيل، وتسجيل الدخول يمنحك تجربة أفضل.'
+            : 'We are loading free quizzes and games for you. No registration is required to play, and signing in gives you a better experience.'}
+        </p>
       </div>
     )
   }
@@ -277,12 +288,40 @@ function App() {
                   </div>
                 }>
                   <Routes>
-                    <Route path="/preview/:id" element={<RequireAuth user={user ?? null}><QuizPreviewPage /></RequireAuth>} />
+                    <Route path="/preview" element={<QuizPreviewPage />} />
+                    <Route path="/preview/:id" element={<QuizPreviewPage />} />
                   </Routes>
                 </Suspense>
               </ErrorBoundary>
               <Dialog />
               <VFXContainer />
+            </div>
+          </DialogProvider>
+        </ToastProvider>
+      </UserPrefsContext.Provider>
+    )
+  }
+
+  // ── Embedded Game — no sidebar, no shell chrome ──
+  if (isGameEmbed) {
+    return (
+      <UserPrefsContext.Provider value={{ language, setLanguage, theme, setTheme, slidePanelLayout, setSlidePanelLayout }}>
+        <ToastProvider>
+          <DialogProvider>
+            <div className="master-admin-standalone embedded-preview-shell">
+              <ErrorBoundary>
+                <Suspense fallback={
+                  <div className="app-loading-screen">
+                    <img src={logoImg} alt="QYan" className="app-loading-logo" />
+                    <div className="app-loading-spinner" />
+                  </div>
+                }>
+                  <Routes>
+                    <Route path="/embed/:gameId" element={<GameEmbedPage />} />
+                  </Routes>
+                </Suspense>
+              </ErrorBoundary>
+              <Dialog />
             </div>
           </DialogProvider>
         </ToastProvider>
@@ -341,13 +380,23 @@ function App() {
                 )}
 
                 <h1 className="sidebar-brand">Q<span>Yan</span> Gaming</h1>
-                <button
-                  className="sidebar-collapse-btn"
-                  onClick={() => setSidebarCollapsed((c) => !c)}
-                  title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                >
-                  {sidebarCollapsed ? '›' : '‹'}
-                </button>
+                {user ? (
+                  <button
+                    className="sidebar-collapse-btn"
+                    onClick={() => setSidebarCollapsed((c) => !c)}
+                    title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                  >
+                    {sidebarCollapsed ? '›' : '‹'}
+                  </button>
+                ) : (
+                  <button
+                    className="sidebar-auth-btn"
+                    onClick={handleGuestSignIn}
+                    type="button"
+                  >
+                    {isAr ? 'تسجيل الدخول / إنشاء حساب' : 'Sign In / Sign Up'}
+                  </button>
+                )}
               </div>
 
               {/* Desktop nav */}
@@ -597,14 +646,15 @@ function App() {
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/dashboard" element={<DashboardPage />} />
-                <Route path="/editor" element={<RequireAuth user={user ?? null}><QuizEditorPage /></RequireAuth>} />
-                <Route path="/editor/:id" element={<RequireAuth user={user ?? null}><QuizEditorPage /></RequireAuth>} />
-                <Route path="/mini-game-editor" element={<RequireAuth user={user ?? null}><QuizEditorPage /></RequireAuth>} />
-                <Route path="/mini-game-editor/:id" element={<RequireAuth user={user ?? null}><QuizEditorPage /></RequireAuth>} />
+                <Route path="/editor" element={<QuizEditorPage />} />
+                <Route path="/editor/:id" element={<QuizEditorPage />} />
+                <Route path="/mini-game-editor" element={<QuizEditorPage />} />
+                <Route path="/mini-game-editor/:id" element={<QuizEditorPage />} />
                 <Route path="/game-modes" element={<RequireAdmin user={user ?? null}><GameModesPage /></RequireAdmin>} />
                 <Route path="/play-test" element={allowUnauthedLocalPlayTest ? <PlayTestPage /> : <RequireAdmin user={user ?? null}><PlayTestPage /></RequireAdmin>} />
                 <Route path="/play-test/:gameId" element={allowUnauthedLocalPlayTest ? <PlayTestPage /> : <RequireAdmin user={user ?? null}><PlayTestPage /></RequireAdmin>} />
-                <Route path="/preview/:id" element={<RequireAuth user={user ?? null}><QuizPreviewPage /></RequireAuth>} />
+                <Route path="/preview" element={<QuizPreviewPage />} />
+                <Route path="/preview/:id" element={<QuizPreviewPage />} />
                 <Route path="/packs" element={<RequireAuth user={user ?? null}><PacksPage /></RequireAuth>} />
                 <Route path="/my-quizzes" element={<RequireAuth user={user ?? null}><MyQuizzesPage /></RequireAuth>} />
                 <Route path="/voice-lab" element={<RequireAdmin user={user ?? null}><VoiceLabPage /></RequireAdmin>} />

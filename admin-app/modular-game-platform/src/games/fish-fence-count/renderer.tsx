@@ -2209,17 +2209,27 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
             )}
 
             <main className="rescue-stage">
-                <aside className="whale-lane" aria-hidden="true">
-                    <div className="whale-body">
-                        <div className="whale-eye" />
-                        <div className="whale-fin" />
-                    </div>
-                    <div className="bubble b1" />
-                    <div className="bubble b2" />
-                    <div className="bubble b3" />
-                </aside>
-
                 <section className="board-panel">
+                    <aside className="whale-lane" aria-hidden="true">
+                        <div className="whale-body">
+                            <div className="whale-eye" />
+                            <div className="whale-fin" />
+                        </div>
+                        <div className="bubble b1" />
+                        <div className="bubble b2" />
+                        <div className="bubble b3" />
+                        
+                        <footer className="rescue-footer">
+                            <div className="timer-row">
+                                <span>Whale Arrival</span>
+                                <strong>{TIMER_PAUSED_FOR_DEBUG ? 'Paused' : `${timeLeftSec}s`}</strong>
+                            </div>
+                            <div className="timer-track" role="progressbar" aria-valuenow={Math.round(whaleProgress)} aria-valuemin={0} aria-valuemax={100}>
+                                <div className="timer-fill" style={{ width: `${TIMER_PAUSED_FOR_DEBUG ? 0 : whaleProgress}%` }} />
+                            </div>
+                        </footer>
+                    </aside>
+
                     <svg key={`board-${createdLevel ? `created-${createdLevel.id}` : `level-${level.id}`}`} className="rescue-board" viewBox={`0 0 ${renderWidth * TILE} ${renderHeight * TILE}`} role="img" aria-label="Actor cage puzzle board">
                         <rect x={0} y={0} width={renderWidth * TILE} height={renderHeight * TILE} fill="#0c8fd4" rx={14} />
 
@@ -2361,16 +2371,6 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                     </div>
                 </section>
             </main>
-
-            <footer className="rescue-footer">
-                <div className="timer-row">
-                    <span>Whale Arrival</span>
-                    <strong>{TIMER_PAUSED_FOR_DEBUG ? 'Paused (debug)' : `${timeLeftSec}s`}</strong>
-                </div>
-                <div className="timer-track" role="progressbar" aria-valuenow={Math.round(whaleProgress)} aria-valuemin={0} aria-valuemax={100}>
-                    <div className="timer-fill" style={{ width: `${TIMER_PAUSED_FOR_DEBUG ? 0 : whaleProgress}%` }} />
-                </div>
-            </footer>
 
             {ENABLE_LEVEL_SELECTOR && levelOverlayOpen && (
                 <div className="overlay">
