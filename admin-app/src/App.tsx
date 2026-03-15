@@ -653,6 +653,8 @@ function App() {
                 <Route path="/game-modes" element={<RequireAdmin user={user ?? null}><GameModesPage /></RequireAdmin>} />
                 <Route path="/play-test" element={allowUnauthedLocalPlayTest ? <PlayTestPage /> : <RequireAdmin user={user ?? null}><PlayTestPage /></RequireAdmin>} />
                 <Route path="/play-test/:gameId" element={allowUnauthedLocalPlayTest ? <PlayTestPage /> : <RequireAdmin user={user ?? null}><PlayTestPage /></RequireAdmin>} />
+                <Route path="/play" element={<GameEmbedPage />} />
+                <Route path="/play/:gameId" element={<GameEmbedPage />} />
                 <Route path="/preview" element={<QuizPreviewPage />} />
                 <Route path="/preview/:id" element={<QuizPreviewPage />} />
                 <Route path="/packs" element={<RequireAuth user={user ?? null}><PacksPage /></RequireAuth>} />
