@@ -301,6 +301,24 @@ function normalizeHostTitleTopic(text) {
   return raw;
 }
 
+function isLikelyOpaqueQuizId(topic) {
+  const value = String(topic || '').trim();
+  if (!value) return false;
+  if (/\s/.test(value)) return false;
+  return /^[A-Za-z0-9_-]{10,}$/.test(value);
+}
+
+function formatMiniGameDisplayName(modeId) {
+  const value = String(modeId || '').trim().toLowerCase();
+  if (!value) return '';
+  if (value === 'xo-duel') return 'X O Duel';
+  return value
+    .split('-')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
 function setHostQuizTitle(text) {
   if (!hostQuizTitleEl) return;
   const topic = normalizeHostTitleTopic(text);
@@ -309,9 +327,16 @@ function setHostQuizTitle(text) {
     hostQuizTitleEl.textContent = '';
     return;
   }
-  hostQuizTitleEl.textContent = isMiniGameSession
-    ? `لعبة مصغرة عن ${topic}`
-    : `تحدي معلومات عن ${topic}`;
+  if (isMiniGameSession) {
+    if (isLikelyOpaqueQuizId(topic)) {
+      const modeLabel = formatMiniGameDisplayName(gameModeFromUrl);
+      hostQuizTitleEl.textContent = modeLabel ? `لعبة مصغرة: ${modeLabel}` : 'لعبة مصغرة';
+    } else {
+      hostQuizTitleEl.textContent = `لعبة مصغرة عن ${topic}`;
+    }
+  } else {
+    hostQuizTitleEl.textContent = `تحدي معلومات عن ${topic}`;
+  }
   hostQuizTitleEl.style.display = 'block';
 }
 
@@ -1521,7 +1546,10 @@ function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
         waitingEl.style.color = '#f87171';
         waitingEl.style.fontWeight = '700';
         waitingEl.dataset.state = 'alert';
-        waitingEl.textContent = 'X O Duel يحتاج لاعبين متصلين على الأقل لبدء التحدي.';
+        const hostAddedAsPlayer = !!state.hostIsPlayer;
+        waitingEl.textContent = hostAddedAsPlayer
+          ? 'X O Duel يحتاج لاعب إضافي لبدء تحدي.'
+          : 'X O Duel يحتاج لاعبين متصلين على الأقل لبدء التحدي.';
       } else {
         waitingEl.style.display = 'none';
         waitingEl.dataset.state = '';

@@ -11,7 +11,8 @@
   --theme-success: #9655a2;
 
   background-color: var(--theme-bg);
-  min-height: 100vh;
+  min-height: 100%;
+  height: 100%;
   padding: 1rem;
   font-family: 'Tajawal', sans-serif;
   position: relative;

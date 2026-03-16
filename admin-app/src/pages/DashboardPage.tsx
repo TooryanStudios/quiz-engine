@@ -34,31 +34,43 @@ export function DashboardPage() {
   const { isSubscribed } = useSubscription()
   const { language } = useUserPrefs()
   const isAr = language === 'ar'
+  const isGuest = !auth.currentUser
   const displayName = auth.currentUser?.displayName?.trim()
-  const fallbackName = auth.currentUser?.email?.split('@')[0] || 'Player'
-  const userName = displayName && displayName.length > 0 ? displayName : fallbackName
-  const isMorning = new Date().getHours() < 12
+  const fallbackName = auth.currentUser?.email?.split('@')[0] || ''
+  const signedInName = isGuest ? '' : (displayName && displayName.length > 0 ? displayName : fallbackName)
+  const greetingNameSuffix = signedInName ? ` ${signedInName}` : ''
+  const currentHour = new Date().getHours()
+  const isMorning = currentHour < 12
+  const isAfternoon = currentHour >= 12 && currentHour < 18
   const timeGreeting = isAr
-    ? (isMorning ? `صباح الخير ${userName}` : `مساء الخير ${userName}`)
-    : (isMorning ? `Good morning ${userName}` : `Good evening ${userName}`)
+    ? `${isMorning ? 'صباح الخير' : 'مساء الخير'}${greetingNameSuffix}`
+    : `${isMorning ? 'Good morning' : isAfternoon ? 'Good afternoon' : 'Good evening'}${greetingNameSuffix}`
 
   const t = {
+    introBadge: isAr ? '' : 'An Omani Mini-Games Learning Platform',
+    introTitle: isAr ? 'مرحباً بك في QYan' : 'Welcome to QYan',
+    introBody: isAr
+      ? 'هذه منصة تعليمية عُمانية للألعاب المصغرة والمسابقات التفاعلية. اللعب مجاني وآمن ولا يحتاج أي تسجيل.'
+      : 'This is an Omani platform for mini-games and interactive competitions. Playing is free, secure, and does not require registration.',
+    introHint: isAr
+      ? 'لإنشاء إختبارات أو مسابقات يرجى تسجيل الدخول.'
+      : 'To create challenges or interactive competitions, please sign in.',
     actionsTitle: isAr ? 'ابدأ الآن' : 'Start Now',
-    topFeatured: isAr ? 'المحتوى المميز حالياً 🔥' : 'Admin Featured 🔥',
+    topFeatured: isAr ? 'المحتوى المميز حالياً 🔥' : 'Currently Featured Content 🔥',
     moreGames: isAr ? 'ألعاب أكثر' : 'More Games',
     availableGames: isAr ? 'الألعاب المتاحة' : 'Available Games',
     playNow: isAr ? 'العب الآن' : 'Play Now',
     browseAll: isAr ? 'تصفح المكتبة' : 'Browse Library',
-    createMiniGame: isAr ? 'إنشاء لعبة أو اختبار' : 'Create Game Or Quiz',
+    createMiniGame: isAr ? 'إنشاء لعبة أو اختبار' : 'Create Game Or Challenge',
     noGames: isAr ? 'لا توجد ألعاب متاحة بعد.' : 'No games available yet.',
     createFirst: isAr ? 'أنشئ أول لعبة صغيرة للبدء.' : 'Create your first mini-game to begin.',
-    noFeatured: isAr ? 'لم يتم اختيار لعبة مميزة من قبل الإدارة بعد.' : 'No featured game selected by master admin yet.',
+    noFeatured: isAr ? 'لم يتم اختيار محتوى مميز بعد.' : 'No featured content has been selected yet.',
     miniGameLabel: isAr ? 'لعبة مصغرة' : 'Mini Game',
-    quizGameLabel: isAr ? 'لعبة اختبار' : 'Quiz Game',
+    quizGameLabel: isAr ? 'لعبة اختبار' : 'Challenge Game',
     loadMore: isAr ? 'تحميل المزيد' : 'Load More',
     exploreMore: isAr ? 'استكشاف المزيد' : 'Explore More',
     subscriptionTitle: isAr ? 'اشتراك مطلوب' : 'Subscription Required',
-    subscriptionBody: isAr ? 'هذا الاختبار محتوى مميز. يرجى ترقية حسابك لبدء التشغيل.' : 'This quiz is premium content. Please upgrade your account to launch it.',
+    subscriptionBody: isAr ? 'هذا الاختبار محتوى مميز. يرجى ترقية حسابك لبدء التشغيل.' : 'This challenge is premium content. Please upgrade your account to launch it.',
     upgradeNow: isAr ? 'ترقية الآن' : 'Upgrade now',
     cancel: isAr ? 'إلغاء' : 'Cancel',
     serverUnavailable: isAr ? 'خادم اللعبة غير متوفر مؤقتاً. يرجى المحاولة بعد قليل.' : 'Game server is temporarily unavailable. Please try again in a moment.',
@@ -118,13 +130,6 @@ export function DashboardPage() {
           window.location.assign('/billing')
         },
       })
-      return
-    }
-
-    // Check if this is a mini-game that can be played in the same tab
-    if (quiz.gameModeId) {
-      // Navigate to the modular-game-platform for mini-games
-      window.location.href = `/play/${quiz.gameModeId}`
       return
     }
 
@@ -205,11 +210,18 @@ export function DashboardPage() {
 
   return (
     <div className="dashboard-container gameplay-first-dashboard">
+      <section className="dashboard-intro-banner">
+        {t.introBadge && <p className="dashboard-intro-badge">{t.introBadge}</p>}
+        <h2 className="dashboard-intro-title">{t.introTitle}</h2>
+        <p className="dashboard-intro-body">{t.introBody}</p>
+        {isGuest && <p className="dashboard-intro-hint">{t.introHint}</p>}
+      </section>
+
       <section className="gameplay-action-panel">
         <h3 className="gameplay-action-title">{timeGreeting}</h3>
         <p className="gameplay-action-subtitle">{t.actionsTitle}</p>
         <div className="gameplay-action-buttons">
-          <Link to="/mini-game-editor" className="dashboard-btn dashboard-btn-primary gameplay-action-btn">{t.createMiniGame}</Link>
+          <Link to="/editor" className="dashboard-btn dashboard-btn-primary gameplay-action-btn">{t.createMiniGame}</Link>
           <Link to="/packs" className="dashboard-btn dashboard-btn-secondary gameplay-action-btn">{t.browseAll}</Link>
         </div>
       </section>

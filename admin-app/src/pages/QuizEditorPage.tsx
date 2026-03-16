@@ -64,6 +64,7 @@ const SERVER_BASE = IS_LOCAL_DEV
   ? (import.meta.env.VITE_LOCAL_GAME_URL || 'http://localhost:3001')
   : (import.meta.env.VITE_API_BASE_URL || 'https://play.qyan.app')
 const DEFAULT_COVER_IMAGE = placeholderImg
+const GUEST_PREVIEW_DRAFT_KEY = 'qyan:guestPreviewDraft'
 
 const starterQuestion: QuizQuestion = {
   type: 'single',
@@ -420,7 +421,7 @@ export function QuizEditorPage() {
     if (auth.currentUser?.uid) return true
     showDialog({
       title: '🔐 Sign-In Required',
-      message: 'To use AI quiz creation, please sign in first.',
+      message: 'To use AI challenge creation, please sign in first.',
       confirmText: 'Sign in',
       cancelText: 'Cancel',
       onConfirm: () => {
@@ -554,7 +555,7 @@ export function QuizEditorPage() {
     }
     const nextTitle = tempTitle.trim()
     const normalizedTitle = nextTitle.toLowerCase()
-    const isDefaultTitle = normalizedTitle === 'new quiz' || nextTitle === 'اختبار جديد'
+    const isDefaultTitle = normalizedTitle === 'new quiz' || normalizedTitle === 'new challenge' || nextTitle === 'اختبار جديد'
     if (!nextTitle || isDefaultTitle) {
       showStatus({ kind: 'error', msg: 'يرجى إدخال اسم مميز للاختبار قبل الحفظ.' })
       return
@@ -606,7 +607,7 @@ export function QuizEditorPage() {
       // /editor and /mini-game-editor) must NOT overwrite a title the user already typed.
       if (!newEditorInitializedRef.current) {
         newEditorInitializedRef.current = true
-        const defaultTitle = isMiniGameContent ? 'New Mini Game' : 'New Quiz'
+        const defaultTitle = isMiniGameContent ? 'New Mini Game' : 'New Challenge'
         const defaultSlug = ensureScopedSlug(isMiniGameContent ? 'new-mini-game' : 'new-quiz', ownerId)
         setTitle(defaultTitle)
         setSlug(defaultSlug)
@@ -1220,7 +1221,7 @@ export function QuizEditorPage() {
     }
   }, [tempCoverImage, showMetadataDialog])
 
-  if (loading) return <section className="panel"><p>Loading quiz...</p></section>
+  if (loading) return <section className="panel"><p>Loading challenge...</p></section>
 
   const removeQuestion = (index: number) => {
     showDialog({
@@ -1245,15 +1246,15 @@ export function QuizEditorPage() {
   const handleDeleteQuiz = () => {
     if (!quizId) return
     showDialog({
-      title: 'Delete Quiz?',
-      message: 'This will permanently delete the quiz and all its questions. This cannot be undone.',
+      title: 'Delete Challenge?',
+      message: 'This will permanently delete the challenge and all its questions. This cannot be undone.',
       confirmText: 'Yes, delete it',
       cancelText: 'Cancel',
       isDangerous: true,
       onConfirm: async () => {
         try {
           await deleteQuiz(quizId)
-          showToast({ message: 'Quiz deleted', type: 'success' })
+          showToast({ message: 'Challenge deleted', type: 'success' })
           navigate('/dashboard')
         } catch (err) {
           showToast({ message: `Failed to delete: ${(err as Error).message}`, type: 'error' })
@@ -1356,7 +1357,7 @@ export function QuizEditorPage() {
 
     if (!quizId) {
       const normalizedTitle = title.trim().toLowerCase()
-      const missingOrDefaultTitle = !title.trim() || normalizedTitle === 'new quiz' || title.trim() === 'اختبار جديد'
+      const missingOrDefaultTitle = !title.trim() || normalizedTitle === 'new quiz' || normalizedTitle === 'new challenge' || title.trim() === 'اختبار جديد'
       if (missingOrDefaultTitle) {
         setSaveAfterMetadata(true)
         openMetadataDialog()
@@ -1368,15 +1369,15 @@ export function QuizEditorPage() {
     // If all questions deleted in quiz mode and quiz already exists → offer to delete the whole record
     if (questions.length === 0 && quizId && !isMiniGameContent) {
       showDialog({
-        title: 'Delete Quiz?',
-        message: 'There are no questions left. Do you want to permanently delete this quiz?',
+        title: 'Delete Challenge?',
+        message: 'There are no questions left. Do you want to permanently delete this challenge?',
         confirmText: 'Yes, delete it',
         cancelText: 'Keep it',
         isDangerous: true,
         onConfirm: async () => {
           try {
             await deleteQuiz(quizId)
-            showToast({ message: 'Quiz deleted', type: 'success' })
+            showToast({ message: 'Challenge deleted', type: 'success' })
             navigate('/dashboard')
           } catch (err) {
             showToast({ message: `Failed to delete: ${(err as Error).message}`, type: 'error' })
@@ -1535,7 +1536,7 @@ export function QuizEditorPage() {
 
   const launchGameFromEditor = async (quizIdToLaunch: string) => {
     if (requiresSubscription && !isSubscribed) {
-      openUpgradeDialog('This quiz contains premium question types. Please upgrade your account to launch it.')
+      openUpgradeDialog('This challenge contains premium question types. Please upgrade your account to launch it.')
       return
     }
 
@@ -1575,6 +1576,25 @@ export function QuizEditorPage() {
         void incrementQuizPlayCount(quizIdToLaunch)
       },
     })
+  }
+
+  const openPreviewQuiz = () => {
+    if (quizId) {
+      window.open(`/preview/${quizId}`, '_blank')
+      return
+    }
+
+    const guestDraft: QuizDoc = {
+      ownerId: 'guest',
+      title: title.trim() || 'Preview Quiz',
+      slug: slug.trim() || 'guest-preview',
+      visibility,
+      challengePreset,
+      tags: ['preview'],
+      questions,
+    }
+    sessionStorage.setItem(GUEST_PREVIEW_DRAFT_KEY, JSON.stringify(guestDraft))
+    window.open('/preview', '_blank')
   }
 
   const questionTypeOptions = enabledQuestionTypeIds.length > 0
@@ -1708,7 +1728,7 @@ export function QuizEditorPage() {
         onCreateNew={handleCreateNewEditorItem}
         onCloseEditor={handleCloseEditor}
         onOpenMetadata={openMetadataDialog}
-        onPreviewQuiz={() => { if (quizId) window.open(`/preview/${quizId}`, '_blank') }}
+        onPreviewQuiz={openPreviewQuiz}
         onCopyLink={() => { void copyEditorLink() }}
         onShareLink={() => { void shareEditorLink() }}
         onDeleteQuiz={handleDeleteQuiz}

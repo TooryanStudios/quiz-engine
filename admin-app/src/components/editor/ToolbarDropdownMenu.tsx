@@ -49,13 +49,11 @@ export function ToolbarDropdownMenu({
 
       <div className="editor-toolbar-dropdown-section">الرابط</div>
 
-      {hasQuiz && (
-        <button
-          type="button"
-          onClick={() => { onPreviewQuiz(); onClose() }}
-          className="editor-toolbar-dropdown-item"
-        >👁️ <span>معاينة الاختبار</span></button>
-      )}
+      <button
+        type="button"
+        onClick={() => { onPreviewQuiz(); onClose() }}
+        className="editor-toolbar-dropdown-item"
+      >👁️ <span>معاينة الاختبار</span></button>
 
       <button
         type="button"

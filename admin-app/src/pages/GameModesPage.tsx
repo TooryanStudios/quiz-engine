@@ -186,9 +186,9 @@ export function GameModesPage() {
 
     const payload: QuizDoc = {
       ownerId,
-      title: `${loadedGame.name} Test Quiz`,
+      title: `${loadedGame.name} Test Challenge`,
       slug,
-      description: `Dedicated test quiz for ${loadedGame.name}`,
+      description: `Dedicated test challenge for ${loadedGame.name}`,
       visibility: 'private', // Firestore rules allow read:true so game server reads all quizzes regardless of visibility
       challengePreset: 'classic',
       randomizeQuestions: false,
@@ -201,11 +201,11 @@ export function GameModesPage() {
     setCreatingTestQuiz(true)
     try {
       const id = await createQuiz(payload)
-      showToast({ message: `Created test quiz for ${loadedGame.name}`, type: 'success' })
+      showToast({ message: `Created test challenge for ${loadedGame.name}`, type: 'success' })
       navigate(`/mini-game-editor/${id}`)
     } catch (e) {
       showToast({
-        message: e instanceof Error ? `Failed to create test quiz: ${e.message}` : 'Failed to create test quiz.',
+        message: e instanceof Error ? `Failed to create test challenge: ${e.message}` : 'Failed to create test challenge.',
         type: 'error',
       })
     } finally {
@@ -430,7 +430,7 @@ export function GameModesPage() {
                 disabled={creatingTestQuiz}
                 onClick={() => { void createDedicatedTestQuiz() }}
               >
-                {creatingTestQuiz ? 'Creating Test Quiz...' : 'Create Test Quiz in Editor'}
+                {creatingTestQuiz ? 'Creating Test Challenge...' : 'Create Test Challenge in Editor'}
               </button>
             </div>
 

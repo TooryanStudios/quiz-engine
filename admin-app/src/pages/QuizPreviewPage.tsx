@@ -5,6 +5,8 @@ import type { QuizDoc, QuizQuestion } from '../types/quiz'
 import { getQuestionTypePreviewMeta } from '../config/questionTypeSchemas'
 import { useUserPrefs } from '../lib/UserPrefsContext'
 
+const GUEST_PREVIEW_DRAFT_KEY = 'qyan:guestPreviewDraft'
+
 // ── Theme tokens ─────────────────────────────────────────────────────────────
 
 type Theme = 'dark' | 'light'
@@ -333,11 +335,27 @@ export function QuizPreviewPage() {
   }
 
   useEffect(() => {
-    if (!id) return
-    getQuizById(id)
-      .then((data) => setQuiz(data))
-      .catch(console.error)
-      .finally(() => setLoading(false))
+    if (id) {
+      getQuizById(id)
+        .then((data) => setQuiz(data))
+        .catch(console.error)
+        .finally(() => setLoading(false))
+      return
+    }
+
+    try {
+      const rawDraft = sessionStorage.getItem(GUEST_PREVIEW_DRAFT_KEY)
+      if (rawDraft) {
+        const parsed = JSON.parse(rawDraft) as QuizDoc
+        if (parsed && Array.isArray(parsed.questions)) {
+          setQuiz(parsed)
+        }
+      }
+    } catch {
+      setQuiz(null)
+    } finally {
+      setLoading(false)
+    }
   }, [id])
 
   const preset = presetLabel(quiz?.challengePreset)
@@ -388,7 +406,7 @@ export function QuizPreviewPage() {
                 <button onClick={() => navigate('/dashboard')} style={tk.backBtn as React.CSSProperties}>
                   ← العودة
                 </button>
-                <Link to={`/editor/${id}`} style={{ textDecoration: 'none' }}>
+                <Link to={id ? `/editor/${id}` : '/editor'} style={{ textDecoration: 'none' }}>
                   <button style={{
                     background: 'linear-gradient(135deg,#2563eb,#7c3aed)', border: 'none', color: '#fff',
                     padding: '0.45rem 1rem', borderRadius: '8px', cursor: 'pointer',

@@ -40,9 +40,9 @@ if (!MASTER_EMAIL || !MASTER_PATH) {
 function getNav(isAr: boolean) {
   return [
     { to: '/dashboard',        icon: '🏠', label: isAr ? 'الرئيسية' : 'Dashboard', end: true },
-    { to: '/editor',           icon: '✏️',  label: isAr ? 'محرر الأسئلة' : 'Quiz Editor' },
+    { to: '/editor',           icon: '✏️',  label: isAr ? 'محرر الأسئلة' : 'Challenge Editor' },
     { to: '/mini-game-editor', icon: '🎮', label: isAr ? 'محرر الألعاب' : 'Game Editor' },
-    { to: '/my-quizzes',       icon: '📚', label: isAr ? 'اختباراتي' : 'My Quizzes' },
+    { to: '/my-quizzes',       icon: '📚', label: isAr ? 'اختباراتي' : 'My Challenges' },
     { to: '/packs',            icon: '📦', label: isAr ? 'المكتبة' : 'Library' },
     { to: '/billing',          icon: '💳', label: isAr ? 'الاشتراك' : 'Billing' },
     { to: '/profile',          icon: '👤', label: isAr ? 'الملف الشخصي' : 'Profile' },
@@ -244,7 +244,7 @@ function App() {
         <p className="app-loading-note">
           {isAr
             ? 'نقوم بتحميل ألعاب واختبارات مجانية لك الآن. يمكنك اللعب بدون تسجيل، وتسجيل الدخول يمنحك تجربة أفضل.'
-            : 'We are loading free quizzes and games for you. No registration is required to play, and signing in gives you a better experience.'}
+            : 'We are loading free challenges and games for you. No registration is required to play, and signing in gives you a better experience.'}
         </p>
       </div>
     )

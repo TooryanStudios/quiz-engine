@@ -10,7 +10,7 @@ interface Suggestion {
 }
 
 /**
- * AI Lab Page - Testing AI Document & Image OCR to Quiz Conversion
+ * AI Lab Page - Testing AI Document & Image OCR to Challenge Conversion
  */
 const AILabPage: React.FC = () => {
   const { showToast } = useToast();
@@ -123,7 +123,7 @@ Respond ONLY with a JSON object in this format:
     <div className="p-6 max-w-4xl mx-auto">
       <h1 className="text-2xl font-bold mb-4">🧪 AI Lab</h1>
       <p className="text-gray-600 mb-8">
-        Upload images or documents containing text, and AI will analyze them and suggest quiz questions automatically.
+        Upload images or documents containing text, and AI will analyze them and suggest challenge questions automatically.
       </p>
 
       <div className="bg-white p-6 rounded-xl border-2 border-dashed border-gray-300 text-center mb-6">
@@ -199,7 +199,7 @@ Respond ONLY with a JSON object in this format:
 
             <h3 className="font-black text-blue-900 text-xl mb-6 flex items-center gap-3">
               <span className="bg-blue-600 text-white w-8 h-8 rounded-lg flex items-center justify-center text-sm shadow-md">Q</span>
-              Curated Quiz Questions
+              Curated Challenge Questions
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">

@@ -619,6 +619,46 @@
   gap: 1rem;
 }
 
+.dashboard-intro-banner {
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 1rem 1.05rem;
+  background:
+    radial-gradient(120% 120% at 100% 0%, color-mix(in oklab, #3b82f6 26%, transparent) 0%, transparent 55%),
+    radial-gradient(120% 120% at 0% 100%, color-mix(in oklab, #10b981 22%, transparent) 0%, transparent 58%),
+    var(--bg-surface);
+}
+
+.dashboard-intro-badge {
+  margin: 0 0 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.dashboard-intro-title {
+  margin: 0 0 0.45rem;
+  font-size: 1.24rem;
+  font-weight: 800;
+  color: var(--text-bright);
+}
+
+.dashboard-intro-body {
+  margin: 0;
+  font-size: 0.96rem;
+  line-height: 1.65;
+  color: var(--text);
+}
+
+.dashboard-intro-hint {
+  margin: 0.45rem 0 0;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
 .gameplay-action-panel {
   border: 1px solid var(--border);
   border-radius: 18px;
@@ -1105,7 +1145,7 @@
 
 @media (max-width: 768px) {
   .gameplay-top-feature-hero {
-    aspect-ratio: 10 / 14;
+    aspect-ratio: 5 / 3;
   }
 
   .gameplay-side-card {

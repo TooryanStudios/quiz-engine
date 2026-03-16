@@ -88,10 +88,17 @@ function buildRoleLegendHTML(xo = {}, activePlayerId = null, currentSocketId = n
   const players = Array.isArray(xo.players) ? xo.players : [];
 
   if (xo.needsPlayers) {
+    const hostAddedAsPlayer = !!xo.hostIsPlayer;
+    const waitingText = hostAddedAsPlayer
+      ? 'X O Duel يحتاج لاعب إضافي لبدء تحدي.'
+      : 'X O Duel يحتاج لاعبين متصلين على الأقل لبدء التحدي.';
+    const waitingHint = hostAddedAsPlayer
+      ? 'بانضمام لاعب واحد إضافي يمكن بدء التحدي.'
+      : 'يمكن للمضيف الانضمام كلاعب لبدء التحدي.';
     return `
       <div style="font-size:0.82rem; color:#f87171; text-align:center; padding:1rem; background:rgba(239, 68, 68, 0.08); border:1px dashed rgba(248, 113, 113, 0.4); border-radius:14px; margin:1.2rem auto; max-width:300px; font-weight:700; line-height:1.4;">
-        ⚠️ X O Duel يحتاج لاعبين متصلين على الأقل.
-        <div style="font-size:0.75rem; opacity:0.8; margin-top:0.3rem; font-weight:500;">يمكن للمضيف الانضمام كلاعب لبدء التحدي.</div>
+        ⚠️ ${waitingText}
+        <div style="font-size:0.75rem; opacity:0.8; margin-top:0.3rem; font-weight:500;">${waitingHint}</div>
       </div>
     `;
   }
