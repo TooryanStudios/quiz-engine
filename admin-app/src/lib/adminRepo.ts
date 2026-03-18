@@ -192,6 +192,8 @@ export interface UserProfile {
   gameAvatar?: string
   /** Editor slide panel layout preference */
   slidePanelLayout?: 'left' | 'bottom'
+  /** Prefer showing the slide panel (true) vs stacked cards (false) */
+  slidePanelEnabled?: boolean
   /** Cumulative gameplay points earned */
   points?: number
   /** Wallet credits from entitlements/{uid}.creditsRemaining */
@@ -296,7 +298,7 @@ export async function setUserStatus(uid: string, status: 'active' | 'blocked' | 
 /** Save user preference + gameplay identity fields to Firestore. */
 export async function saveUserPrefs(
   uid: string,
-  prefs: Partial<Pick<UserProfile, 'language' | 'theme' | 'gameDisplayName' | 'gameAvatar' | 'slidePanelLayout'>>
+  prefs: Partial<Pick<UserProfile, 'language' | 'theme' | 'gameDisplayName' | 'gameAvatar' | 'slidePanelLayout' | 'slidePanelEnabled'>>
 ): Promise<void> {
   await setDoc(doc(db, 'users', uid), prefs, { merge: true })
 }
@@ -304,7 +306,7 @@ export async function saveUserPrefs(
 /** One-shot load of user preference fields on login. Returns null when no doc exists yet. */
 export async function loadUserPrefs(
   uid: string
-): Promise<Pick<UserProfile, 'language' | 'theme' | 'gameDisplayName' | 'gameAvatar' | 'slidePanelLayout'> | null> {
+): Promise<Pick<UserProfile, 'language' | 'theme' | 'gameDisplayName' | 'gameAvatar' | 'slidePanelLayout' | 'slidePanelEnabled'> | null> {
   try {
     const snap = await getDoc(doc(db, 'users', uid))
     if (!snap.exists()) return null
@@ -315,6 +317,7 @@ export async function loadUserPrefs(
       gameDisplayName: d.gameDisplayName ?? undefined,
       gameAvatar: d.gameAvatar ?? undefined,
       slidePanelLayout: d.slidePanelLayout ?? undefined,
+      slidePanelEnabled: d.slidePanelEnabled ?? undefined,
     }
   } catch { return null }
 }

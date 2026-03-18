@@ -18,6 +18,7 @@ export const MINI_GAME_IDS = [
   'match-plus-arena',
   'island-dice-adventure',
   'fish-fence-count',
+  'lights-skill-game',
 ] as const
 
 export type MiniGameId = typeof MINI_GAME_IDS[number]
@@ -184,6 +185,14 @@ export const MINI_GAME_DEFINITIONS: Record<MiniGameId, MiniGameDefinition> = {
     defaultArabicName: 'إنقاذ السمك داخل القفص',
     description: 'لغز تحريك بصري: حرّك السمك في اتجاهاته الثابتة حتى يدخل منطقة الأمان قبل انتهاء الوقت.',
     howToPlay: 'اضغط على السمكة لتحريكها في اتجاهها الحالي حتى تصطدم بعائق أو سياج، وأنقذ جميع السمك داخل القفص قبل إغلاق الباب.',
+  },
+  'lights-skill-game': {
+    id: 'lights-skill-game',
+    icon: '💡',
+    defaultEnglishName: 'Lights Skill Game',
+    defaultArabicName: 'لعبة الأضواء',
+    description: 'ابنِ مسار الضوء عبر تدوير القطع الكهربائية لإضاءة كل الخانات قبل انتهاء الوقت.',
+    howToPlay: 'دوّر القطع لإكمال الدائرة الكهربائية، أشعل كل الأضواء، وحرّك بسرعة عبر المراحل المختلفة.',
   },
 }
 

@@ -48,6 +48,7 @@ export interface GameRendererProps {
     gameState: GameState;
     dispatch: (action: Partial<GameAction>) => void;
     isEmbed?: boolean;
+    standalone?: boolean;
 }
 
 export type GameRenderer = ComponentType<GameRendererProps>;

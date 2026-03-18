@@ -3,6 +3,9 @@ type MetadataAiSectionProps = {
   aiPrompt: string
   isGenerating: boolean
   generateActionActive: boolean
+  questionCountOptions: number[]
+  creditCostPerQuestion: number
+  creditsRemaining?: number | null
   onQuestionCountChange: (count: number) => void
   onPromptChange: (value: string) => void
   onGenerate: () => void
@@ -13,11 +16,18 @@ export function MetadataAiSection({
   aiPrompt,
   isGenerating,
   generateActionActive,
+  questionCountOptions,
+  creditCostPerQuestion,
+  creditsRemaining,
   onQuestionCountChange,
   onPromptChange,
   onGenerate,
 }: MetadataAiSectionProps) {
   const disabled = generateActionActive || !aiPrompt.trim() || isGenerating
+  const totalCredits = aiQuestionCount * creditCostPerQuestion
+  const projectedBalance = typeof creditsRemaining === 'number'
+    ? Math.max(creditsRemaining - totalCredits, 0)
+    : null
 
   return (
     <div style={{
@@ -31,8 +41,8 @@ export function MetadataAiSection({
         ✨ إنشاء الأسئلة بالذكاء الاصطناعي
       </label>
 
-      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
-        {[3, 5, 8, 10, 15].map(num => (
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+        {questionCountOptions.map(num => (
           <button
             key={num}
             type="button"
@@ -52,6 +62,14 @@ export function MetadataAiSection({
             {num} أسئلة
           </button>
         ))}
+      </div>
+      <div style={{ fontSize: '0.78rem', color: 'var(--text-mid)', marginBottom: '1rem', display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
+        <span>💳 سيتم خصم {totalCredits} نقطة عند التوليد.</span>
+        {typeof creditsRemaining === 'number' && (
+          <span>
+            رصيد نقاطك الحالي: {creditsRemaining} → بعد الخصم تقريبًا: {projectedBalance}
+          </span>
+        )}
       </div>
 
       <div style={{ display: 'flex', gap: '0.6rem' }}>

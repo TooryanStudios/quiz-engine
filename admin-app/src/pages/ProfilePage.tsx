@@ -9,7 +9,16 @@ import { AvatarPickerDialog } from '../components/AvatarPickerDialog'
 import './ProfilePage.css'
 
 export function ProfilePage() {
-  const { language, setLanguage, theme, setTheme, slidePanelLayout, setSlidePanelLayout } = useUserPrefs()
+  const {
+    language,
+    setLanguage,
+    theme,
+    setTheme,
+    slidePanelLayout,
+    setSlidePanelLayout,
+    slidePanelEnabled,
+    setSlidePanelEnabled,
+  } = useUserPrefs()
   const { creditsRemaining, plan, loading: subLoading } = useSubscription()
   const isAr = language === 'ar'
 
@@ -30,9 +39,13 @@ export function ProfilePage() {
     dark: isAr ? '🌙 داكن' : '🌙 Dark',
     light: isAr ? '☀️ فاتح' : '☀️ Light',
     languageLabel: isAr ? 'اللغة' : 'Language',
-    slidePanelLabel: isAr ? 'لوحة التمرير' : 'Slide Panel',
+    slidePanelLabel: isAr ? 'لوحة الشرائح' : 'Slide Panel',
     slidePanelLeft: isAr ? '▐ يسار' : '▐ Left',
     slidePanelBottom: isAr ? '▄ أسفل' : '▄ Bottom',
+    slidePanelVisibilityLabel: isAr ? 'طريقة عرض الأسئلة' : 'Question View Mode',
+    slidePanelShow: isAr ? 'إظهار الشريط' : 'Show strip',
+    slidePanelHide: isAr ? 'إخفاء الشريط' : 'Hide strip',
+    slidePanelVisibilityDesc: isAr ? 'عند إخفاء الشريط ستظهر جميع البطاقات في عرض واحد يمكن سحبه بالكامل.' : 'When hidden, all question cards are stacked in one scrollable view.',
     aiCreditsTitle: isAr ? 'رصيد الذكاء الاصطناعي' : 'AI Credits',
     loadingStr: isAr ? 'جاري التحميل...' : 'Loading...',
     creditsRemaining: isAr ? 'رصيد متبقي' : 'credits remaining',
@@ -119,9 +132,17 @@ export function ProfilePage() {
   }
 
   function handleLayoutChange(l: 'left' | 'bottom') {
+    if (!slidePanelEnabled) return
     setSlidePanelLayout(l)
     localStorage.setItem('qyan:slidePanelLayout', l)
     if (user) void saveUserPrefs(user.uid, { slidePanelLayout: l })
+  }
+
+  function handleSlidePanelEnabledChange(enabled: boolean) {
+    if (enabled === slidePanelEnabled) return
+    setSlidePanelEnabled(enabled)
+    localStorage.setItem('qyan:slidePanelEnabled', enabled ? 'true' : 'false')
+    if (user) void saveUserPrefs(user.uid, { slidePanelEnabled: enabled })
   }
 
   const avatarEmoji = gameAvatar
@@ -245,14 +266,37 @@ export function ProfilePage() {
               className={`theme-pill-btn${slidePanelLayout === 'left' ? ' active' : ''}`}
               onClick={() => handleLayoutChange('left')}
               title="Left vertical strip"
+              disabled={!slidePanelEnabled}
+              style={!slidePanelEnabled ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}
             >{t.slidePanelLeft}</button>
             <button
               className={`theme-pill-btn${slidePanelLayout === 'bottom' ? ' active' : ''}`}
               onClick={() => handleLayoutChange('bottom')}
               title="Bottom horizontal filmstrip"
+              disabled={!slidePanelEnabled}
+              style={!slidePanelEnabled ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}
             >{t.slidePanelBottom}</button>
           </div>
         </div>
+
+        <div className="profile-toggle-row">
+          <span>{t.slidePanelVisibilityLabel}</span>
+          <div className="theme-pill">
+            <button
+              className={`theme-pill-btn${slidePanelEnabled ? ' active' : ''}`}
+              onClick={() => handleSlidePanelEnabledChange(true)}
+              title={t.slidePanelShow}
+            >{t.slidePanelShow}</button>
+            <button
+              className={`theme-pill-btn${!slidePanelEnabled ? ' active' : ''}`}
+              onClick={() => handleSlidePanelEnabledChange(false)}
+              title={t.slidePanelHide}
+            >{t.slidePanelHide}</button>
+          </div>
+        </div>
+        <p className="profile-section-desc" style={{ marginTop: '-0.25rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+          {t.slidePanelVisibilityDesc}
+        </p>
       </div>
 
       {/* ── AI Credits ── */}

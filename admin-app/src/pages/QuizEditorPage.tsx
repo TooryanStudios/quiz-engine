@@ -65,6 +65,8 @@ const SERVER_BASE = IS_LOCAL_DEV
   : (import.meta.env.VITE_API_BASE_URL || 'https://play.qyan.app')
 const DEFAULT_COVER_IMAGE = placeholderImg
 const GUEST_PREVIEW_DRAFT_KEY = 'qyan:guestPreviewDraft'
+const AI_QUESTION_COUNT_OPTIONS = [5, 10, 15, 20, 25, 30, 35, 40]
+const AI_CREDIT_COST_PER_QUESTION = 1
 
 const starterQuestion: QuizQuestion = {
   type: 'single',
@@ -80,44 +82,6 @@ const creatorStudioStarterQuestion: QuizQuestion = {
   duration: 30,
   creatorTask: 'draw',
 }
-
-const DEFAULT_TEMPLATE_QUESTIONS: QuizQuestion[] = [
-  {
-    type: 'single',
-    text: 'ما هي عاصمة المملكة العربية السعودية؟',
-    options: ['الرياض', 'جدة', 'الدمام', 'مكة'],
-    correctIndex: 0,
-    duration: 20,
-  },
-  {
-    type: 'single',
-    text: 'كم عدد كواكب المجموعة الشمسية؟',
-    options: ['7', '8', '9', '10'],
-    correctIndex: 1,
-    duration: 20,
-  },
-  {
-    type: 'single',
-    text: 'أي عنصر كيميائي رمزه O؟',
-    options: ['الهيدروجين', 'الأكسجين', 'النيتروجين', 'الكربون'],
-    correctIndex: 1,
-    duration: 20,
-  },
-  {
-    type: 'single',
-    text: 'من كتب رواية البؤساء؟',
-    options: ['فيكتور هوغو', 'تولستوي', 'نجيب محفوظ', 'غابرييل غارسيا ماركيز'],
-    correctIndex: 0,
-    duration: 20,
-  },
-  {
-    type: 'single',
-    text: 'ما هي نتيجة 9 × 7؟',
-    options: ['54', '63', '72', '79'],
-    correctIndex: 1,
-    duration: 20,
-  },
-]
 
 function normalizeQuestionType(value: unknown): QuestionType {
   if (typeof value !== 'string') return 'single'
@@ -176,7 +140,7 @@ export function QuizEditorPage() {
   const location = useLocation()
   const { show: showDialog, hide: hideDialog } = useDialog()
   const { showToast } = useToast()
-  const { isSubscribed } = useSubscription()
+  const { isSubscribed, creditsRemaining } = useSubscription()
   // Always points to the latest saveQuiz closure so setTimeout callbacks never use stale state
   const saveQuizRef = useRef<() => Promise<void>>(() => Promise.resolve())
   // Tracks whether the no-ID (new quiz) initialization has already run so that navigating
@@ -199,8 +163,9 @@ export function QuizEditorPage() {
   const [description, setDescription] = useState('')
   const [tempDescription, setTempDescription] = useState('')
   const [activeQuestionIndex, setActiveQuestionIndex] = useState(0)
-  const { slidePanelLayout } = useUserPrefs()
-  const slidePanel = useSlidePanel({ visible: true, orientation: window.innerWidth < 768 ? 'bottom' : slidePanelLayout })
+  const { slidePanelLayout, slidePanelEnabled } = useUserPrefs()
+  const initialOrientation = typeof window !== 'undefined' && window.innerWidth < 768 ? 'bottom' : slidePanelLayout
+  const slidePanel = useSlidePanel({ visible: slidePanelEnabled, orientation: initialOrientation })
   const [tempVisibility, setTempVisibility] = useState<'public' | 'private'>('private')
   const [tempGameModeId, setTempGameModeId] = useState<string>('')
   const [tempChallenge, setTempChallenge] = useState<ChallengePreset>('classic')
@@ -634,9 +599,12 @@ export function QuizEditorPage() {
     getQuizById(routeId)
       .then((data) => {
         if (!data) { showStatus({ kind: 'error', msg: 'لم يُعثر على الاختبار.' }); return }
-        // Auto-redirect: if this quiz has a gameModeId but we're on /editor/:id, switch to /mini-game-editor/:id
         if (!isMiniGameContent && data.gameModeId) {
-          navigate(`/mini-game-editor/${routeId}`, { replace: true })
+          setQuizId(null)
+          setQuestions([])
+          setCollapsedQuestions([])
+          setHasUnsavedChanges(false)
+          navigate('/editor', { replace: true })
           return
         }
         setTitle(data.title)
@@ -762,35 +730,6 @@ export function QuizEditorPage() {
     setActiveQuestionIndex(questions.length)
   }
 
-  const loadDefaultTemplateQuestions = () => {
-    if (questions.length > 0) {
-      showDialog({
-        title: 'تحميل قالب افتراضي',
-        message: 'سيتم استبدال الأسئلة الحالية بالقالب الافتراضي. هل تريد المتابعة؟',
-        confirmText: 'تحميل القالب',
-        cancelText: 'إلغاء',
-        isDangerous: true,
-        onConfirm: () => {
-          const normalized = sanitizeQuestions(DEFAULT_TEMPLATE_QUESTIONS)
-          setQuestions(normalized)
-          setCollapsedQuestions(Array(normalized.length).fill(false))
-          setActiveQuestionIndex(0)
-          setHasUnsavedChanges(true)
-          hideDialog()
-          showToast({ message: '✅ تم تحميل قالب الأسئلة الافتراضي', type: 'success' })
-        },
-      })
-      return
-    }
-
-    const normalized = sanitizeQuestions(DEFAULT_TEMPLATE_QUESTIONS)
-    setQuestions(normalized)
-    setCollapsedQuestions(Array(normalized.length).fill(false))
-    setActiveQuestionIndex(0)
-    setHasUnsavedChanges(true)
-    showToast({ message: '✅ تم تحميل قالب الأسئلة الافتراضي', type: 'success' })
-  }
-
   const showAddQuestionDialog = (initialTab: 'questions' | 'minigames' = 'questions') => {
     const miniGames = Object.values(MINI_GAME_DEFINITIONS)
     
@@ -857,6 +796,12 @@ export function QuizEditorPage() {
     setAiSuggestedTitle('');
     setHasUnsavedChanges(true);
     showToast({ message: `✅ تم إضافة ${selectedQuestions.length} سؤال بنجاح`, type: 'success' });
+  }
+
+  const openAiGenerateDialog = () => {
+    if (!ensureSignedInForAi()) return
+    setAiAction('generate')
+    void incrementPlatformStat('aiGenerateClicks')
   }
 
   const handleGenerateAI = async () => {
@@ -1157,6 +1102,10 @@ export function QuizEditorPage() {
     return () => window.removeEventListener('resize', handleResize)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slidePanelLayout])
+
+  useEffect(() => {
+    slidePanel.setVisible(slidePanelEnabled)
+  }, [slidePanelEnabled, slidePanel])
 
   useEffect(() => {
     if (!showMetadataDialog) return
@@ -1654,6 +1603,9 @@ export function QuizEditorPage() {
           aiPrompt={aiPrompt}
           isGeneratingAi={isGeneratingAi}
           aiAction={aiAction}
+          questionCountOptions={AI_QUESTION_COUNT_OPTIONS}
+          creditCostPerQuestion={AI_CREDIT_COST_PER_QUESTION}
+          creditsRemaining={creditsRemaining}
           onQuestionCountChange={setAiQuestionCount}
           onPromptChange={setAiPrompt}
           onGenerateAi={handleGenerateAI}
@@ -1733,11 +1685,7 @@ export function QuizEditorPage() {
         onShareLink={() => { void shareEditorLink() }}
         onDeleteQuiz={handleDeleteQuiz}
         onAddQuestion={() => showAddQuestionDialog()}
-        onGenerateAI={() => {
-          if (!ensureSignedInForAi()) return
-          setAiAction('generate')
-          void incrementPlatformStat('aiGenerateClicks')
-        }}
+        onGenerateAI={openAiGenerateDialog}
         onRecheckAI={() => {
           if (!ensureSignedInForAi()) return
           setAiAction('recheck')
@@ -1765,7 +1713,7 @@ export function QuizEditorPage() {
           <div className={`slide-editor-shell${slidePanel.orientation === 'bottom' ? ' slide-editor-shell--bottom' : ''}`}>
 
             {/* Left thumbnail panel */}
-            {slidePanel.visible && slidePanel.orientation === 'left' && questions.length > 0 && (
+            {slidePanelEnabled && slidePanel.visible && slidePanel.orientation === 'left' && questions.length > 0 && (
               <SlidePanel
                 questions={questions}
                 activeIndex={activeQuestionIndex}
@@ -1781,14 +1729,14 @@ export function QuizEditorPage() {
 
               {!isMiniGameContent && !quizId && questions.length === 0 && (
                 <AddQuestionCtaSection
-                  isMiniGameContent={isMiniGameContent}
+                  isMiniGameContent={false}
                   contentType={contentType}
                   quizId={quizId}
                   questionsCount={questions.length}
                   gameModeId={gameModeId}
                   onShowAddDialog={() => showAddQuestionDialog()}
-                  onLoadSamples={loadDefaultTemplateQuestions}
-                  onOpenExisting={handleOpenExistingContent}
+                  onShowAiDialog={openAiGenerateDialog}
+                  isGeneratingAi={isGeneratingAi && aiGeneratingMode === 'generate'}
                 />
               )}
 
@@ -1823,7 +1771,7 @@ export function QuizEditorPage() {
                 isPremiumQuestionType={isPremiumQuestionType}
                 quizTitle={title}
                 quizDescription={description}
-                activeIndex={activeQuestionIndex}
+                activeIndex={slidePanelEnabled && slidePanel.visible ? activeQuestionIndex : undefined}
               />
 
               <MixContentAddSection
@@ -1835,7 +1783,7 @@ export function QuizEditorPage() {
             </div>{/* /slide-editor-main */}
 
             {/* Bottom thumbnail panel */}
-            {slidePanel.visible && slidePanel.orientation === 'bottom' && questions.length > 0 && (
+            {slidePanelEnabled && slidePanel.visible && slidePanel.orientation === 'bottom' && questions.length > 0 && (
               <SlidePanel
                 questions={questions}
                 activeIndex={activeQuestionIndex}
@@ -1909,6 +1857,9 @@ export function QuizEditorPage() {
         isNarrowScreen={isNarrowScreen}
         aiPrompt={aiPrompt}
         aiQuestionCount={aiQuestionCount}
+        questionCountOptions={AI_QUESTION_COUNT_OPTIONS}
+        creditCostPerQuestion={AI_CREDIT_COST_PER_QUESTION}
+        creditsRemaining={creditsRemaining}
         isGeneratingAi={isGeneratingAi}
         isUploadingAiFile={isUploadingAiFile}
         aiContextFiles={aiContextFiles}

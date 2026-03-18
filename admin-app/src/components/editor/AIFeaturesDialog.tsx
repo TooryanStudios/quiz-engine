@@ -7,6 +7,9 @@ type AIFeaturesDialogProps = {
   isNarrowScreen: boolean
   aiPrompt: string
   aiQuestionCount: number
+  questionCountOptions: number[]
+  creditCostPerQuestion: number
+  creditsRemaining?: number | null
   isGeneratingAi: boolean
   isUploadingAiFile: boolean
   aiContextFiles: Array<{ name: string; type: string; data: string }>
@@ -24,6 +27,9 @@ export function AIFeaturesDialog({
   isNarrowScreen,
   aiPrompt,
   aiQuestionCount,
+  questionCountOptions,
+  creditCostPerQuestion,
+  creditsRemaining,
   isGeneratingAi,
   isUploadingAiFile,
   aiContextFiles,
@@ -38,6 +44,10 @@ export function AIFeaturesDialog({
   if (!aiAction) return null
 
   const generationDisabled = aiAction === 'generate' && !aiPrompt.trim() && aiContextFiles.length === 0
+  const totalCredits = aiQuestionCount * creditCostPerQuestion
+  const projectedBalance = typeof creditsRemaining === 'number'
+    ? Math.max(creditsRemaining - totalCredits, 0)
+    : null
 
   return (
     <div style={{
@@ -50,13 +60,13 @@ export function AIFeaturesDialog({
     }}>
       <div style={{
         background: 'var(--bg-surface)', border: '1px solid var(--border-strong)',
-        borderRadius: '24px', width: '90%', maxWidth: '540px',
+        borderRadius: '16px', width: '90%', maxWidth: '540px',
         boxShadow: '0 20px 50px rgba(0,0,0,0.5)', overflow: 'hidden',
         position: 'relative',
         display: 'flex', flexDirection: 'column',
         maxHeight: 'calc(100dvh - 2rem)',
       }}>
-        <div style={{ padding: '1.25rem 1.5rem', background: 'linear-gradient(135deg, #7c3aed, #db2777)', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', direction: 'rtl', flexShrink: 0 }}>
+        <div style={{ padding: '1.1rem 1.5rem', background: 'linear-gradient(135deg, #7c3aed, #db2777)', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', direction: 'rtl', flexShrink: 0, borderTopLeftRadius: '16px', borderTopRightRadius: '16px' }}>
           <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800 }}>
             {aiAction === 'generate' ? '✨ توليد أسئلة بالذكاء الاصطناعي' : '🛡️ تدقيق ذكي ومراجعة الأسئلة'}
           </h2>
@@ -87,36 +97,7 @@ export function AIFeaturesDialog({
                 />
               </div>
 
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, display: 'block', marginBottom: '0.5rem', textTransform: 'uppercase' }}>
-                  عدد الأسئلة
-                </label>
-                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  {[3, 5, 8, 10, 15].map((count) => (
-                    <button
-                      key={count}
-                      type="button"
-                      onClick={() => onQuestionCountChange(count)}
-                      disabled={isGeneratingAi}
-                      style={{
-                        padding: '0.4rem 0.8rem',
-                        borderRadius: '20px',
-                        border: '1px solid ' + (aiQuestionCount === count ? 'var(--text-bright)' : 'var(--border-strong)'),
-                        background: aiQuestionCount === count ? 'var(--text-bright)' : 'var(--bg-deep)',
-                        color: aiQuestionCount === count ? 'var(--bg-deep)' : 'var(--text-mid)',
-                        fontSize: '0.75rem',
-                        fontWeight: 700,
-                        cursor: isGeneratingAi ? 'not-allowed' : 'pointer',
-                        opacity: isGeneratingAi ? 0.6 : 1,
-                      }}
-                    >
-                      {count} أسئلة
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.8rem', alignItems: 'center', marginBottom: '2rem' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.8rem', alignItems: 'center', marginBottom: '1.5rem' }}>
                 <label
                   style={{
                     flex: 1, minWidth: '150px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.6rem',
@@ -157,6 +138,41 @@ export function AIFeaturesDialog({
                   ))}
                 </div>
               )}
+
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, display: 'block', marginBottom: '0.5rem', textTransform: 'uppercase' }}>
+                  عدد الأسئلة
+                </label>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  {questionCountOptions.map((count) => (
+                    <button
+                      key={count}
+                      type="button"
+                      onClick={() => onQuestionCountChange(count)}
+                      disabled={isGeneratingAi}
+                      style={{
+                        padding: '0.4rem 0.8rem',
+                        borderRadius: '20px',
+                        border: '1px solid ' + (aiQuestionCount === count ? 'var(--text-bright)' : 'var(--border-strong)'),
+                        background: aiQuestionCount === count ? 'var(--text-bright)' : 'var(--bg-deep)',
+                        color: aiQuestionCount === count ? 'var(--bg-deep)' : 'var(--text-mid)',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        cursor: isGeneratingAi ? 'not-allowed' : 'pointer',
+                        opacity: isGeneratingAi ? 0.6 : 1,
+                      }}
+                    >
+                      {count} أسئلة
+                    </button>
+                  ))}
+                </div>
+                <div style={{ marginTop: '0.65rem', fontSize: '0.78rem', color: 'var(--text-mid)', display: 'flex', flexWrap: 'wrap', gap: '0.6rem' }}>
+                  <span>💳 سيتم خصم {totalCredits} نقطة عند التوليد.</span>
+                  {typeof creditsRemaining === 'number' && (
+                    <span>رصيد نقاطك الحالي: {creditsRemaining} → المتوقع بعد الخصم: {projectedBalance}</span>
+                  )}
+                </div>
+              </div>
             </>
           ) : (
             <>
@@ -179,52 +195,57 @@ export function AIFeaturesDialog({
           )}
         </div>
 
-        <div style={{ padding: isNarrowScreen ? '0.75rem 1.25rem' : '1rem 2rem', borderTop: '1px solid var(--border-strong)', background: 'var(--bg-surface)', flexShrink: 0, borderBottomLeftRadius: '24px', borderBottomRightRadius: '24px', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-          <button
-            onClick={onGenerate}
-            disabled={isGeneratingAi || generationDisabled}
-            style={{
-              width: '100%', padding: '1.1rem 1rem', borderRadius: '14px', border: 'none',
-              background: generationDisabled ? 'var(--bg-deep)' : 'linear-gradient(135deg, #7c3aed, #db2777)',
-              color: generationDisabled ? 'var(--text-muted)' : '#fff',
-              fontSize: '1.1rem', fontWeight: 800, cursor: isGeneratingAi ? 'wait' : (generationDisabled ? 'not-allowed' : 'pointer'), transition: 'all 0.2s',
-              boxShadow: generationDisabled ? 'none' : '0 4px 15px rgba(124, 58, 237, 0.4)',
-              opacity: isGeneratingAi ? 0.7 : 1,
-              letterSpacing: '0.3px',
-            }}
-            onMouseEnter={(event) => {
-              if (!isGeneratingAi && !generationDisabled) {
-                event.currentTarget.style.transform = 'translateY(-2px)'
-                event.currentTarget.style.boxShadow = '0 6px 20px rgba(124, 58, 237, 0.5)'
-              }
-            }}
-            onMouseLeave={(event) => {
-              event.currentTarget.style.transform = 'translateY(0)'
-              if (!generationDisabled) {
-                event.currentTarget.style.boxShadow = '0 4px 15px rgba(124, 58, 237, 0.4)'
-              }
-            }}
-          >
-            {isGeneratingAi ? '⏳ جاري التوليد...' : (aiAction === 'generate' ? '🚀 ابدأ التوليد' : '🛡️ ابدأ التدقيق')}
-          </button>
-          <button
-            onClick={onClose}
-            disabled={isGeneratingAi}
-            style={{
-              width: '100%', padding: '0.75rem 1rem', borderRadius: '12px',
-              border: '1px solid var(--border-strong)',
-              background: 'transparent',
-              color: 'var(--text-mid)',
-              fontSize: '0.95rem', fontWeight: 600,
-              cursor: isGeneratingAi ? 'not-allowed' : 'pointer',
-              opacity: isGeneratingAi ? 0.4 : 1,
-              transition: 'all 0.2s',
-            }}
-            onMouseEnter={(event) => { if (!isGeneratingAi) event.currentTarget.style.background = 'var(--bg-deep)' }}
-            onMouseLeave={(event) => { event.currentTarget.style.background = 'transparent' }}
-          >
-            ✕ إلغاء
-          </button>
+        <div style={{ padding: isNarrowScreen ? '0.75rem 1.25rem' : '1rem 2rem', borderTop: '1px solid var(--border-strong)', background: 'var(--bg-surface)', flexShrink: 0, borderBottomLeftRadius: '16px', borderBottomRightRadius: '16px', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+          <div style={{ display: 'flex', flexDirection: isNarrowScreen ? 'column-reverse' : 'row', gap: '0.75rem' }}>
+            <button
+              onClick={onClose}
+              disabled={isGeneratingAi}
+              style={{
+                flex: isNarrowScreen ? 'unset' : 1,
+                padding: '1rem 1rem',
+                borderRadius: '10px',
+                border: '1px solid var(--border-strong)',
+                background: 'transparent',
+                color: 'var(--text-mid)',
+                fontSize: '1rem',
+                fontWeight: 600,
+                cursor: isGeneratingAi ? 'not-allowed' : 'pointer',
+                opacity: isGeneratingAi ? 0.4 : 1,
+              }}
+            >
+              ✕ إلغاء
+            </button>
+
+            <button
+              onClick={onGenerate}
+              disabled={isGeneratingAi || generationDisabled}
+              style={{
+                flex: 1,
+                padding: '1rem 1rem',
+                borderRadius: '10px',
+                border: 'none',
+                background: generationDisabled ? 'var(--bg-deep)' : 'linear-gradient(135deg, #7c3aed, #db2777)',
+                color: generationDisabled ? 'var(--text-muted)' : '#fff',
+                fontSize: '1rem',
+                fontWeight: 800,
+                cursor: isGeneratingAi ? 'wait' : (generationDisabled ? 'not-allowed' : 'pointer'),
+                transition: 'all 0.2s',
+                boxShadow: generationDisabled ? 'none' : '0 4px 12px rgba(124, 58, 237, 0.35)',
+                opacity: isGeneratingAi ? 0.75 : 1,
+                textAlign: 'center',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.4rem',
+              }}
+            >
+              {isGeneratingAi
+                ? <><span className="ai-spinner" /> جارٍ التوليد...</>
+                : (aiAction === 'generate'
+                  ? `🚀 ابدأ التوليد (${totalCredits} نقطة)`
+                  : '🛡️ ابدأ التدقيق')}
+            </button>
+          </div>
         </div>
       </div>
     </div>

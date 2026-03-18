@@ -5,8 +5,8 @@ type AddQuestionCtaSectionProps = {
   questionsCount: number
   gameModeId: string
   onShowAddDialog: () => void
-  onLoadSamples: () => void
-  onOpenExisting: () => void
+  onShowAiDialog: () => void
+  isGeneratingAi?: boolean
 }
 
 function AddQuestionCard({ gameModeId, onClick }: { gameModeId: string; onClick: () => void }) {
@@ -63,60 +63,10 @@ function AddQuestionCard({ gameModeId, onClick }: { gameModeId: string; onClick:
   )
 }
 
-function LoadSamplesCard({ gameModeId, onClick }: { gameModeId: string; onClick: () => void }) {
+function AiQuestionCard({ onClick, isGenerating }: { onClick: () => void; isGenerating?: boolean }) {
   return (
     <div
-      onClick={onClick}
-      style={{
-        display: gameModeId === 'match-plus-arena' ? 'none' : 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '1rem',
-        padding: '2.5rem',
-        borderRadius: '16px',
-        border: '2px dashed var(--border-strong)',
-        backgroundColor: 'rgba(16, 185, 129, 0.06)',
-        color: 'var(--text-mid)',
-        cursor: 'pointer',
-        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-        animation: 'slideUp 0.55s ease-out',
-      }}
-      onMouseEnter={(event) => {
-        event.currentTarget.style.borderColor = '#10b981'
-        event.currentTarget.style.backgroundColor = 'rgba(16, 185, 129, 0.12)'
-        event.currentTarget.style.transform = 'scale(1.01)'
-      }}
-      onMouseLeave={(event) => {
-        event.currentTarget.style.borderColor = 'var(--border-strong)'
-        event.currentTarget.style.backgroundColor = 'rgba(16, 185, 129, 0.06)'
-        event.currentTarget.style.transform = 'scale(1)'
-      }}
-    >
-      <div style={{
-        width: '48px',
-        height: '48px',
-        borderRadius: '50%',
-        backgroundColor: '#10b981',
-        color: '#fff',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: '1.45rem',
-        boxShadow: '0 4px 15px rgba(16, 185, 129, 0.35)',
-      }}>🧪</div>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem' }}>
-        <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-bright)' }}>تحميل عينات جاهزة</span>
-        <span style={{ fontSize: '0.82rem', opacity: 0.75 }}>ابدأ بسرعة بقالب أسئلة متكامل وجاهز للتعديل</span>
-      </div>
-    </div>
-  )
-}
-
-function OpenExistingCard({ onClick }: { onClick: () => void }) {
-  return (
-    <div
-      onClick={onClick}
+      onClick={isGenerating ? undefined : onClick}
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -125,21 +75,21 @@ function OpenExistingCard({ onClick }: { onClick: () => void }) {
         gap: '1rem',
         padding: '2.5rem',
         borderRadius: '16px',
-        border: '2px dashed var(--border-strong)',
-        backgroundColor: 'rgba(245, 158, 11, 0.08)',
-        color: 'var(--text-mid)',
-        cursor: 'pointer',
+        border: '2px dashed rgba(124, 58, 237, 0.45)',
+        background: 'linear-gradient(135deg, rgba(124,58,237,0.12), rgba(219,39,119,0.15))',
+        color: 'var(--text-bright)',
+        cursor: isGenerating ? 'not-allowed' : 'pointer',
         transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-        animation: 'slideUp 0.5s ease-out',
+        animation: 'slideUp 0.6s ease-out',
+        opacity: isGenerating ? 0.8 : 1,
       }}
       onMouseEnter={(event) => {
-        event.currentTarget.style.borderColor = '#f59e0b'
-        event.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.14)'
+        if (isGenerating) return
+        event.currentTarget.style.borderColor = 'rgba(219,39,119,0.8)'
         event.currentTarget.style.transform = 'scale(1.01)'
       }}
       onMouseLeave={(event) => {
-        event.currentTarget.style.borderColor = 'var(--border-strong)'
-        event.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.08)'
+        event.currentTarget.style.borderColor = 'rgba(124, 58, 237, 0.45)'
         event.currentTarget.style.transform = 'scale(1)'
       }}
     >
@@ -147,17 +97,21 @@ function OpenExistingCard({ onClick }: { onClick: () => void }) {
         width: '48px',
         height: '48px',
         borderRadius: '50%',
-        backgroundColor: '#f59e0b',
+        background: 'linear-gradient(135deg, #7c3aed, #db2777)',
         color: '#fff',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontSize: '1.45rem',
-        boxShadow: '0 4px 15px rgba(245, 158, 11, 0.35)',
-      }}>📂</div>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem' }}>
-        <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-bright)' }}>فتح محتوى موجود</span>
-        <span style={{ fontSize: '0.82rem', opacity: 0.75 }}>افتح اختبارا او ميني جيم تم انشاؤه مسبقا</span>
+        fontSize: '1.8rem',
+        boxShadow: '0 6px 18px rgba(124, 58, 237, 0.45)',
+      }}>✨</div>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem', textAlign: 'center' }}>
+        <span style={{ fontSize: '1.1rem', fontWeight: 800 }}>
+          {isGenerating ? '⏳ يتم التوليد...' : 'إنشاء سؤال بالذكاء الاصطناعي'}
+        </span>
+        <span style={{ fontSize: '0.82rem', opacity: 0.8, color: 'var(--text-mid)' }}>
+          حرّر وصفًا قصيرًا ودع الذكاء الاصطناعي يقترح الأسئلة والإجابات
+        </span>
       </div>
     </div>
   )
@@ -170,8 +124,8 @@ export function AddQuestionCtaSection({
   questionsCount,
   gameModeId,
   onShowAddDialog,
-  onLoadSamples,
-  onOpenExisting,
+  onShowAiDialog,
+  isGeneratingAi,
 }: AddQuestionCtaSectionProps) {
   if (contentType === 'mix') return null
 
@@ -180,14 +134,20 @@ export function AddQuestionCtaSection({
   if (isFirstEmptyState) {
     return (
       <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-        gap: '1rem',
+        display: 'flex',
+        justifyContent: 'center',
         marginBottom: '3rem',
       }}>
-        <AddQuestionCard gameModeId={gameModeId} onClick={onShowAddDialog} />
-        <LoadSamplesCard gameModeId={gameModeId} onClick={onLoadSamples} />
-        <OpenExistingCard onClick={onOpenExisting} />
+        <div style={{
+          width: '100%',
+          maxWidth: 780,
+          display: 'grid',
+          gap: '1.25rem',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+        }}>
+          <AddQuestionCard gameModeId={gameModeId} onClick={onShowAddDialog} />
+          <AiQuestionCard onClick={onShowAiDialog} isGenerating={isGeneratingAi} />
+        </div>
       </div>
     )
   }

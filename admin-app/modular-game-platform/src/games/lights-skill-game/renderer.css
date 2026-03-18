@@ -1,0 +1,17 @@
+.lights-skill-game-standalone {
+    position: fixed;
+    inset: 0;
+    margin: 0;
+    padding: 0;
+    background: #030915;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.lights-skill-game-standalone iframe {
+    border: none;
+    width: min(100vw, 900px);
+    height: 100vh;
+    background: transparent;
+}

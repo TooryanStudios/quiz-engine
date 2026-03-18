@@ -177,18 +177,6 @@ export function EditorUnifiedHeader({
             </button>
           )}
 
-          <button type="button" className="editor-header-btn" onClick={onCreateNew}>
-            ✨ جديد
-          </button>
-
-          <button type="button" className="editor-header-btn" onClick={onOpenExisting}>
-            📂 فتح
-          </button>
-
-          <button type="button" className="editor-header-btn" onClick={onCloseEditor}>
-            ❌ إغلاق
-          </button>
-
           <div className="editor-header-dropdown-wrap">
             <button
               ref={settingsBtnRef}
@@ -208,6 +196,10 @@ export function EditorUnifiedHeader({
                 onCopyLink={onCopyLink}
                 onShareLink={onShareLink}
                 onDeleteQuiz={onDeleteQuiz}
+                onCreateNew={onCreateNew}
+                onOpenExisting={onOpenExisting}
+                onCloseEditor={onCloseEditor}
+                onRecheckAI={onRecheckAI}
               />
             )}
           </div>

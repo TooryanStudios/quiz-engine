@@ -35,6 +35,9 @@ type MetadataDialogContentProps = {
   aiPrompt: string
   isGeneratingAi: boolean
   aiAction: 'generate' | 'recheck' | null
+  questionCountOptions: number[]
+  creditCostPerQuestion: number
+  creditsRemaining?: number | null
   onQuestionCountChange: (value: number) => void
   onPromptChange: (value: string) => void
   onGenerateAi: () => void
@@ -99,6 +102,9 @@ export function MetadataDialogContent({
   aiPrompt,
   isGeneratingAi,
   aiAction,
+  questionCountOptions,
+  creditCostPerQuestion,
+  creditsRemaining,
   onQuestionCountChange,
   onPromptChange,
   onGenerateAi,
@@ -158,6 +164,9 @@ export function MetadataDialogContent({
         aiPrompt={aiPrompt}
         isGenerating={isGeneratingAi}
         generateActionActive={aiAction === 'generate'}
+        questionCountOptions={questionCountOptions}
+        creditCostPerQuestion={creditCostPerQuestion}
+        creditsRemaining={creditsRemaining}
         onQuestionCountChange={onQuestionCountChange}
         onPromptChange={onPromptChange}
         onGenerate={onGenerateAi}

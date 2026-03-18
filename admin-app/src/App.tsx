@@ -81,6 +81,11 @@ function App() {
   const [slidePanelLayout, setSlidePanelLayout] = useState<'left' | 'bottom'>(
     () => (localStorage.getItem('qyan:slidePanelLayout') as 'left' | 'bottom') || 'left'
   )
+  const [slidePanelEnabled, setSlidePanelEnabled] = useState<boolean>(() => {
+    const stored = localStorage.getItem('qyan:slidePanelEnabled')
+    if (stored === null) return true
+    return stored !== 'false'
+  })
   const handleSignOut = useCallback(() => {
     markSignOut()
     localStorage.removeItem('qyan:session')
@@ -109,6 +114,10 @@ function App() {
     document.documentElement.setAttribute('lang', language)
     localStorage.setItem('quizAdminLang', language)
   }, [language])
+
+  useEffect(() => {
+    localStorage.setItem('qyan:slidePanelEnabled', slidePanelEnabled ? 'true' : 'false')
+  }, [slidePanelEnabled])
 
   useEffect(() => {
     const redirectStartedAt = Number(localStorage.getItem(redirectPendingKey) || '0')
@@ -187,6 +196,7 @@ function App() {
           if (prefs?.language) setLanguage(prefs.language)
           if (prefs?.theme) setTheme(prefs.theme)
           if (prefs?.slidePanelLayout) setSlidePanelLayout(prefs.slidePanelLayout)
+          if (typeof prefs?.slidePanelEnabled === 'boolean') setSlidePanelEnabled(prefs.slidePanelEnabled)
         })
       }
     })
@@ -274,9 +284,20 @@ function App() {
   }
 
   // ── Embedded Preview — no sidebar, no shell chrome ──
+  const userPrefsValue = {
+    language,
+    setLanguage,
+    theme,
+    setTheme,
+    slidePanelLayout,
+    setSlidePanelLayout,
+    slidePanelEnabled,
+    setSlidePanelEnabled,
+  }
+
   if (isEmbeddedPreview) {
     return (
-      <UserPrefsContext.Provider value={{ language, setLanguage, theme, setTheme, slidePanelLayout, setSlidePanelLayout }}>
+      <UserPrefsContext.Provider value={userPrefsValue}>
         <ToastProvider>
           <DialogProvider>
             <div className="master-admin-standalone embedded-preview-shell">
@@ -305,7 +326,7 @@ function App() {
   // ── Embedded Game — no sidebar, no shell chrome ──
   if (isGameEmbed) {
     return (
-      <UserPrefsContext.Provider value={{ language, setLanguage, theme, setTheme, slidePanelLayout, setSlidePanelLayout }}>
+      <UserPrefsContext.Provider value={userPrefsValue}>
         <ToastProvider>
           <DialogProvider>
             <div className="master-admin-standalone embedded-preview-shell">
@@ -330,7 +351,7 @@ function App() {
   }
 
   return (
-    <UserPrefsContext.Provider value={{ language, setLanguage, theme, setTheme, slidePanelLayout, setSlidePanelLayout }}>
+    <UserPrefsContext.Provider value={userPrefsValue}>
     <ToastProvider>
       <DialogProvider>
         <div className={isLoginPage ? 'login-shell' : `admin-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>

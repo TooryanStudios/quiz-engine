@@ -6,6 +6,7 @@ import './play.css';
 interface PlayProps {
     gameId: string;
     isEmbed?: boolean;
+    standalone?: boolean;
     onStateChange?: (gameState: GameState) => void;
     theme?: {
         bg: string;
@@ -18,12 +19,12 @@ interface PlayProps {
     };
 }
 
-const Play: React.FC<PlayProps> = ({ gameId, isEmbed, onStateChange, theme }) => {
+const Play: React.FC<PlayProps> = ({ gameId, isEmbed, standalone, onStateChange, theme }) => {
     const { game, loading, error } = useGame(gameId);
     const [gameState, setGameState] = React.useState<GameState | null>(null);
 
     const themeStyle = React.useMemo(() => {
-        if (!theme) {
+        if (!theme || standalone) {
             return {};
         }
 
@@ -93,20 +94,59 @@ const Play: React.FC<PlayProps> = ({ gameId, isEmbed, onStateChange, theme }) =>
 
     if (game.render) {
         const CustomGameRenderer = game.render;
+        if (standalone) {
+            return (
+                <CustomGameRenderer
+                    game={game}
+                    gameState={gameState}
+                    dispatch={dispatch}
+                    isEmbed={isEmbed}
+                    standalone
+                />
+            );
+        }
         return (
-            <div className={`retro-quiz-container ${isEmbed ? 'is-embed' : ''}`} style={themeStyle}>
-                <CustomGameRenderer game={game} gameState={gameState} dispatch={dispatch} isEmbed={isEmbed} />
+            <div
+                className={`retro-quiz-container ${isEmbed ? 'is-embed' : ''}`}
+                style={themeStyle}
+            >
+                <CustomGameRenderer
+                    game={game}
+                    gameState={gameState}
+                    dispatch={dispatch}
+                    isEmbed={isEmbed}
+                />
+            </div>
+        );
+    }
+
+    if (standalone) {
+        return (
+            <div className="standalone-game-container">
+                <div className="standalone-game-card">
+                    <h2>{game.name}</h2>
+                    <p>{game.logic.getObjective(gameState)}</p>
+                    <p className="standalone-subtext">Score {gameState.score} · Round {gameState.round}/{gameState.totalRounds}</p>
+                    <div className="standalone-actions">
+                        <button onClick={() => dispatch({ type: 'reset' })}>Restart</button>
+                        <button onClick={() => dispatch({ type: 'advance' })}>Skip Round</button>
+                    </div>
+                </div>
             </div>
         );
     }
 
     return (
         <div className={`retro-quiz-container ${isEmbed ? 'is-embed' : ''}`} style={themeStyle}>
+            {/* retro-quiz-container */}
             <header className="retro-header">
+                {/* retro-header */}
                 <div className="badge-server">Server connected</div>
                 <div className="hub-center">
+                    {/* hub-center */}
                     <div className="badge-points">Score: {gameState.score}</div>
                     <div className="status-row">
+                        {/* status-row */}
                         <span>Round</span>
                         <div className="timer-circle">{gameState.round}</div>
                         <div style={{ lineHeight: '1.2', textAlign: 'center' }}>
@@ -121,13 +161,16 @@ const Play: React.FC<PlayProps> = ({ gameId, isEmbed, onStateChange, theme }) =>
             </header>
 
             <div className="question-card">
+                {/* question-card */}
                 <div className="question-card-inner">
+                    {/* question-card-inner */}
                     <h2 className="question-text">{game.logic.getObjective(gameState)}</h2>
                     <p style={{ marginTop: '0.75rem' }}>{game.description}</p>
                 </div>
             </div>
 
             <div className="actions-row" style={{ marginBottom: '1rem' }}>
+                {/* actions-row */}
                 <button className="btn-retro btn-pause" onClick={() => dispatch({ type: 'hint' })}>
                     Hint
                 </button>
@@ -143,6 +186,7 @@ const Play: React.FC<PlayProps> = ({ gameId, isEmbed, onStateChange, theme }) =>
             </div>
         </div>
     );
-};
+}
+;
 
 export default Play;

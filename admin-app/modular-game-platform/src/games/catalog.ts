@@ -86,6 +86,13 @@ export const gameCatalog: GameRegistryEntry[] = [
         loader: () => import('./html5-target-rush'),
     },
     {
+        id: 'lights-skill-game',
+        name: 'Lights Skill Game',
+        description: 'Imported HTML5 puzzle where you rotate conduits to light every tile.',
+        enabledByDefault: true,
+        loader: () => import('./lights-skill-game'),
+    },
+    {
         id: 'fish-fence-count',
         name: 'Fish Fence Count',
         description: 'Count fish inside the fence while ignoring outside distractors.',

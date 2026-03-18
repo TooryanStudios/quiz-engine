@@ -1,0 +1,90 @@
+{
+  "winPanel": {
+    "background": {
+      "type": "video",
+      "url": "./sprites/ba5aa73d88e980cd712a6ad1216260a4_720w.mp4",
+      "position": {
+        "x": -5,
+        "y": 0
+      },
+      "scale": {
+        "x": 1.09,
+        "y": 1.09
+      },
+      "alpha": 0.7,
+      "loop": true,
+      "muted": false,
+      "autoplay": true
+    },
+    "messagePanel": {
+      "sprite": "msg_box",
+      "position": {
+        "x": "CANVAS_WIDTH_HALF",
+        "y": "CANVAS_HEIGHT_HALF"
+      },
+      "centered": true
+    },
+    "congratsText": {
+      "position": {
+        "offsetY": -200
+      },
+      "width": 500,
+      "height": 200,
+      "fontSize": 30,
+      "color": "PRIMARY_FONT_COLOUR",
+      "font": "PRIMARY_FONT"
+    },
+    "scoreText": {
+      "position": {
+        "offsetY": -160
+      },
+      "fontSize": 26
+    },
+    "stars": {
+      "position": {
+        "offsetY": -55
+      },
+      "spacing": 60
+    },
+    "buttons": {
+      "exit": {
+        "position": {
+          "offsetX": -100,
+          "offsetY": 150
+        }
+      },
+      "next": {
+        "position": {
+          "offsetX": 100,
+          "offsetY": 150
+        }
+      }
+    }
+  },
+  "endPanel": {
+    "background": {
+      "type": "image",
+      "url": "./sprites/bg_end_panel.png",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "scale": {
+        "x": 1,
+        "y": 1
+      }
+    }
+  },
+  "helpPanel": {
+    "background": {
+      "type": "image",
+      "url": "./sprites/msg_box.png"
+    }
+  },
+  "notes": {
+    "backgroundTypes": "Supported values: 'video', 'image', 'none'",
+    "positionValues": "Use numeric values for absolute positioning, or 'CANVAS_WIDTH_HALF', 'CANVAS_HEIGHT_HALF' for centered",
+    "videoFormats": "Supported: .mp4, .webm, .ogg",
+    "imageFormats": "Supported: .png, .jpg, .jpeg, .gif"
+  }
+}

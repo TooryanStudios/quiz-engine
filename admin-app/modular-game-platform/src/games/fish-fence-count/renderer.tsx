@@ -760,6 +760,10 @@ function createValidGeneratedLevel(
     return { level: fallback, validation, attempts: maxAttempts };
 }
 
+const ConditionalWrapper: React.FC<{ condition: boolean; wrapper: (children: React.ReactNode) => JSX.Element; children: React.ReactNode }> = ({ condition, wrapper, children }) => {
+    return condition ? wrapper(children) : <>{children}</>;
+};
+
 const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispatch, isEmbed }) => {
     const [editableLevels, setEditableLevels] = React.useState<LevelSpec[]>(() => loadLevelsFromStorage());
     const playableLevels = editableLevels.length > 0 ? editableLevels : LEVELS.map(normalizeLevel);
@@ -779,6 +783,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
     const [message, setMessage] = React.useState('Tap an actor in sequence. It slides until blocked.');
     const [levelOverlayOpen, setLevelOverlayOpen] = React.useState(ENABLE_LEVEL_SELECTOR);
     const [levelCompleteOpen, setLevelCompleteOpen] = React.useState(false);
+    const [svgPreviewOpen, setSvgPreviewOpen] = React.useState(false);
     const [failed, setFailed] = React.useState(false);
     const [muted, setMuted] = React.useState(false);
     const [cageDoorOpen, setCageDoorOpen] = React.useState(KEEP_DOOR_OPEN_FOR_NOW);
@@ -1627,8 +1632,221 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
         setMessage('Door closed manually.');
     };
 
+    const showLabels = !isEmbed;
+
+    const renderWhaleLane = (showLabel: boolean) => (
+        <aside className="whale-lane" aria-hidden="true">
+            {showLabel && (
+                <div className="container-label whale-lane-label" aria-hidden="true">.whale-lane</div>
+            )}
+            <div className="whale-body">
+                <div className="whale-eye" />
+                <div className="whale-fin" />
+            </div>
+            <div className="bubble b1" />
+            <div className="bubble b2" />
+            <div className="bubble b3" />
+
+            <footer className="rescue-footer">
+                <div className="timer-row">
+                    <span>Whale Arrival</span>
+                    <strong>{TIMER_PAUSED_FOR_DEBUG ? 'Paused' : `${timeLeftSec}s`}</strong>
+                </div>
+                <div className="timer-track" role="progressbar" aria-valuenow={Math.round(whaleProgress)} aria-valuemin={0} aria-valuemax={100}>
+                    <div className="timer-fill" style={{ width: `${TIMER_PAUSED_FOR_DEBUG ? 0 : whaleProgress}%` }} />
+                </div>
+            </footer>
+        </aside>
+    );
+
+    const renderRescueBoard = (showLabel: boolean, instanceId = 'main') => {
+        const boardKey = `${instanceId}-${createdLevel ? `created-${createdLevel.id}` : `level-${level.id}`}`;
+        const boardSvg = (
+            <svg key={`board-${boardKey}`} className="rescue-board" viewBox={`0 0 ${renderWidth * TILE} ${renderHeight * TILE}`} role="img" aria-label="Actor cage puzzle board">
+                <rect x={0} y={0} width={renderWidth * TILE} height={renderHeight * TILE} fill="#068ad0" rx={18} />
+
+                {Array.from({ length: renderHeight }).flatMap((_, y) =>
+                    Array.from({ length: renderWidth }).map((__, x) => {
+                        const key = tileKey(x, y);
+                        if (!renderOccupiedSet.has(key) && !renderStaticBlockedSet.has(key)) {
+                            return null;
+                        }
+
+                        return (
+                            <rect
+                                key={`occ-${key}`}
+                                x={x * TILE + 4}
+                                y={y * TILE + 4}
+                                width={TILE - 8}
+                                height={TILE - 8}
+                                rx={8}
+                                className={renderCageBlockedSet.has(key) ? 'tile-cage-block' : renderObstacleSet.has(key) ? 'tile-occupied-obstacle' : 'tile-occupied-fish'}
+                            />
+                        );
+                    }),
+                )}
+
+                {renderCageCells.map((tile) => (
+                    <g key={`safe-${tileKey(tile.x, tile.y)}`}>
+                        <rect x={tile.x * TILE + 6} y={tile.y * TILE + 6} width={TILE - 12} height={TILE - 12} rx={8} className="tile-cage-safe" />
+                        <line x1={tile.x * TILE + 12} y1={tile.y * TILE + 12} x2={tile.x * TILE + TILE - 12} y2={tile.y * TILE + TILE - 12} className="tile-cage-safe-line" strokeWidth={Math.max(1.5, renderVisuals.cageLineThickness * 0.35)} />
+                    </g>
+                ))}
+
+                {renderFence.segments.map((segment) => {
+                    const isDoorSegment = 'doorEdgeKeys' in renderFence
+                        ? renderFence.doorEdgeKeys.has(edgeKey(segment))
+                        : 'doorEdges' in renderFence && renderFence.doorEdges.some((door) => edgeKey(door) === edgeKey(segment));
+                    if (isDoorSegment) {
+                        return null;
+                    }
+                    const x1 = segment.kind === 'h' ? segment.x * TILE : segment.x * TILE;
+                    const y1 = segment.kind === 'h' ? segment.y * TILE : segment.y * TILE;
+                    const x2 = segment.kind === 'h' ? (segment.x + 1) * TILE : segment.x * TILE;
+                    const y2 = segment.kind === 'h' ? segment.y * TILE : (segment.y + 1) * TILE;
+                    return (
+                        <line
+                            key={`wall-${edgeKey(segment)}`}
+                            x1={x1}
+                            y1={y1}
+                            x2={x2}
+                            y2={y2}
+                            className="cage-fence"
+                            strokeWidth={renderVisuals.cageLineThickness}
+                        />
+                    );
+                })}
+
+                {(previewMode
+                    ? (builderDoors.length > 0 ? builderDoors : (renderDoor.edge ? [renderDoor] : []))
+                    : ((level.doors && level.doors.length > 0 ? level.doors : (renderDoor.edge ? [renderDoor] : [])))
+                ).map((door, index) => {
+                    let doorForLeaf: any;
+                    if ('side' in door) {
+                        doorForLeaf = door;
+                    } else {
+                        doorForLeaf = {
+                            side: builderDoorSide,
+                            offset: builderDoorOffset,
+                            hinge: (door as any).hinge,
+                            opensToward: (door as any).opensToward,
+                            edge: (door as any).edge
+                        };
+                    }
+                    const doorLeaf = getDoorLeafLine(doorForLeaf, TILE, doorOpenProgress);
+                    if (!doorLeaf) {
+                        return null;
+                    }
+                    return (
+                        <line
+                            key={`door-preview-${index}`}
+                            x1={doorLeaf.x1}
+                            y1={doorLeaf.y1}
+                            x2={doorLeaf.x2}
+                            y2={doorLeaf.y2}
+                            className={doorOpenProgress > 0.02 ? 'cage-door-open' : 'cage-door-closed'}
+                            stroke={renderVisuals.doorColor}
+                            strokeWidth={renderVisuals.doorThickness}
+                        />
+                    );
+                })}
+
+                <g
+                    className="door-switch"
+                    onClick={onDoorSwitchClick}
+                    transform={`translate(${renderDoorSwitchTile.x * TILE + TILE * 0.5} ${renderDoorSwitchTile.y * TILE + TILE * 0.5})`}
+                >
+                    <rect x={-22} y={-14} width={44} height={28} rx={8} className="door-switch-body" />
+                    <circle cx={12} cy={0} r={6} className={cageDoorOpen ? 'door-switch-led-on' : 'door-switch-led-off'} />
+                    <text x={-11} y={4} className="door-switch-label">SW</text>
+                </g>
+
+                {[...new Set(
+                    renderFence.segments.flatMap((segment) => {
+                        if (segment.kind === 'h') {
+                            return [`${segment.x},${segment.y}`, `${segment.x + 1},${segment.y}`];
+                        }
+                        return [`${segment.x},${segment.y}`, `${segment.x},${segment.y + 1}`];
+                    }),
+                )].map((pointKey) => {
+                    const [px, py] = pointKey.split(',').map((value) => Number(value));
+                    return <circle key={`cage-pole-${pointKey}`} cx={px * TILE} cy={py * TILE} r={renderVisuals.hedgeJointDiameter / 2} className="cage-pole" />;
+                })}
+
+                {renderObstacles.map((tile) => (
+                    <rect key={`o-${tileKey(tile.x, tile.y)}`} x={tile.x * TILE + 10} y={tile.y * TILE + 10} width={TILE - 20} height={TILE - 20} rx={10} fill="#485f71" stroke="#1f2e3a" strokeWidth={2} />
+                ))}
+
+                <rect x={3} y={3} width={renderWidth * TILE - 6} height={renderHeight * TILE - 6} rx={12} fill="none" stroke="#8b3f1d" strokeWidth={7} />
+
+                {renderActors.map((fish) => {
+                    const x = fish.x * TILE + TILE / 2;
+                    const y = fish.y * TILE + TILE / 2;
+                    return (
+                        <g key={`${createdLevel ? `created-${createdLevel.id}` : `level-${level.id}`}-fish-${fish.id}`} className={fish.settled ? 'fish settled' : 'fish'} transform={`translate(${x} ${y}) rotate(${fishAngle(fish.dir)})`} onClick={previewMode ? undefined : () => onFishClick(fish.id)}>
+                            <polygon points="-18,0 18,-12 18,12" fill={fish.settled ? '#48bb78' : '#8f4de2'} stroke={fish.settled ? '#2f855a' : '#5d239f'} strokeWidth={3} />
+                            <circle cx="-8" cy="0" r="5" fill="#ffffff" />
+                            <circle cx="-7" cy="0" r="2.5" fill="#1b1b1b" />
+                        </g>
+                    );
+                })}
+            </svg>
+        );
+
+        if (!showLabel) {
+            return boardSvg;
+        }
+
+        return (
+            <div className="rescue-board-standalone">
+                <div className="container-label rescue-board-label" aria-hidden="true">.rescue-board</div>
+                {boardSvg}
+            </div>
+        );
+    };
+
+    const renderBoardMessage = (showLabel: boolean) => (
+        <div className="board-message">
+            {showLabel && <div className="container-label" aria-hidden="true">.board-message</div>}
+            {message}
+        </div>
+    );
+
+    const renderBoardMeta = (showLabel: boolean) => (
+        <div className="board-meta">
+            {showLabel && <div className="container-label" aria-hidden="true">.board-meta</div>}
+            <span>Inside Cage: {rescued}/{fishList.length}</span>
+            <span>Cage Door: {cageDoorOpen ? 'Open' : 'Closed'}</span>
+            <span>Validator: {levelValidation.solvable ? `OK (${levelValidation.minSteps} steps)` : 'Invalid'}</span>
+            <span>Guide: {levelValidation.solutionActions.slice(0, 8).join(' -> ') || 'n/a'}</span>
+            {creatorInfo && <span>{creatorInfo}</span>}
+            <span>Round Score: {gameState.score}</span>
+        </div>
+    );
+
+    const boardPanelSection = (
+        <section className="board-panel">
+            {renderWhaleLane(showLabels)}
+            {renderRescueBoard(showLabels, 'panel')}
+            {renderBoardMessage(showLabels)}
+            {renderBoardMeta(showLabels)}
+        </section>
+    );
+
+    const embedBoardFullScreen = isEmbed ? (
+        <div className="embed-board-fullscreen" aria-label="Game board">
+            {renderRescueBoard(false, 'embed-full')}
+            <button className="ui-pill embed-svg-button" onClick={() => setSvgPreviewOpen(true)}>
+                Open board SVG
+            </button>
+        </div>
+    ) : null;
+
     return (
-        <div className="rescue-page">
+        <div className={`rescue-page${isEmbed ? ' rescue-page-embed' : ''}`}>
+            {showLabels && (
+                <div className="container-label container-label-page" aria-hidden="true">.rescue-page (embed)</div>
+            )}
             {!isEmbed && (
                 <header className="rescue-topbar">
                     <div className="rescue-level">Level {level.id}: {level.title}</div>
@@ -1876,30 +2094,6 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                         <div className="builder-section">
                             <h3>🚪 Door Setup</h3>
                             <span className="builder-hint">Select a door to edit its own side, offset, hinge, and opening direction.</span>
-                            <div className="builder-field-row" style={{ marginTop: '0.5rem' }}>
-                                <div className="builder-field">
-                                    <label>Anim Time (ms)</label>
-                                    <input
-                                        className="builder-input"
-                                        type="number"
-                                        value={builderDoorAnimationMs}
-                                        min={50}
-                                        step={50}
-                                        onChange={(event) => setBuilderDoorAnimationMs(Math.max(50, Number(event.target.value) || 50))}
-                                    />
-                                </div>
-                            </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.5rem' }}>
-                                <button className="ui-pill" onClick={openDoor}>🔓 Open</button>
-                                <button className="ui-pill" onClick={closeDoor}>🔒 Close</button>
-                            </div>
-                            <span className="builder-hint">
-                                {builderDoors.length} door(s) placed
-                            </span>
-                        </div>
-
-                        <div className="builder-section">
-                            <h3>🎨 Visual Style</h3>
                             <div className="builder-field-row">
                                 <div className="builder-field">
                                     <label>Joint Diameter</label>
@@ -2082,302 +2276,36 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                             <div className="builder-section">
                                 <h3>Live Preview</h3>
                                 <div className="preview-content">
-                                    <svg
-                                        className="rescue-board"
-                                        viewBox={`0 0 ${renderWidth * TILE} ${renderHeight * TILE}`}
-                                        role="img"
-                                        aria-label="Game board preview"
-                                    >
-                                        <rect x={0} y={0} width={renderWidth * TILE} height={renderHeight * TILE} fill="#e1f0ff" />
-
-                                        {Array.from({ length: renderHeight }).flatMap((_, y) =>
-                                            Array.from({ length: renderWidth }).map((__, x) => (
-                                                <rect key={`grid-${x}-${y}`} x={x * TILE} y={y * TILE} width={TILE} height={TILE} fill="none" stroke="#b8d9f2" strokeWidth={1} />
-                                            )),
-                                        )}
-
-                                        {renderObstacles.map((tile) => (
-                                            <rect key={`o-${tileKey(tile.x, tile.y)}`} x={tile.x * TILE + 10} y={tile.y * TILE + 10} width={TILE - 20} height={TILE - 20} rx={10} fill="#485f71" stroke="#1f2e3a" strokeWidth={2} />
-                                        ))}
-
-                                        {renderCageCells.map((tile) => (
-                                            <g key={`safe-${tileKey(tile.x, tile.y)}`}>
-                                                <rect x={tile.x * TILE + 6} y={tile.y * TILE + 6} width={TILE - 12} height={TILE - 12} rx={8} className="tile-cage-safe" />
-                                                <line x1={tile.x * TILE + 12} y1={tile.y * TILE + 12} x2={tile.x * TILE + TILE - 12} y2={tile.y * TILE + TILE - 12} className="tile-cage-safe-line" strokeWidth={Math.max(1.5, renderVisuals.cageLineThickness * 0.35)} />
-                                            </g>
-                                        ))}
-
-                                        {renderFence.segments.map((segment) => {
-                                            const isDoorSegment = 'doorEdgeKeys' in renderFence
-                                                ? renderFence.doorEdgeKeys.has(edgeKey(segment))
-                                                : 'doorEdges' in renderFence && renderFence.doorEdges.some((door) => edgeKey(door) === edgeKey(segment));
-                                            if (isDoorSegment) {
-                                                return null;
-                                            }
-                                            const x1 = segment.kind === 'h' ? segment.x * TILE : segment.x * TILE;
-                                            const y1 = segment.kind === 'h' ? segment.y * TILE : segment.y * TILE;
-                                            const x2 = segment.kind === 'h' ? (segment.x + 1) * TILE : segment.x * TILE;
-                                            const y2 = segment.kind === 'h' ? segment.y * TILE : (segment.y + 1) * TILE;
-                                            return (
-                                                <line
-                                                    key={`wall-${edgeKey(segment)}`}
-                                                    x1={x1}
-                                                    y1={y1}
-                                                    x2={x2}
-                                                    y2={y2}
-                                                    className="cage-fence"
-                                                    strokeWidth={renderVisuals.cageLineThickness}
-                                                />
-                                            );
-                                        })}
-
-                                        {(previewMode
-                                            ? (builderDoors.length > 0 ? builderDoors : (renderDoor.edge ? [renderDoor] : []))
-                                            : ((level.doors && level.doors.length > 0 ? level.doors : (renderDoor.edge ? [renderDoor] : [])))
-                                        ).map((door, index) => {
-                                            let doorForLeaf: any;
-                                            if ('side' in door) {
-                                                doorForLeaf = door;
-                                            } else {
-                                                doorForLeaf = {
-                                                    side: builderDoorSide,
-                                                    offset: builderDoorOffset,
-                                                    hinge: (door as any).hinge,
-                                                    opensToward: (door as any).opensToward,
-                                                    edge: (door as any).edge
-                                                };
-                                            }
-                                            const doorLeaf = getDoorLeafLine(doorForLeaf, TILE, doorOpenProgress);
-                                            if (!doorLeaf) {
-                                                return null;
-                                            }
-                                            return (
-                                                <line
-                                                    key={`door-preview-${index}`}
-                                                    x1={doorLeaf.x1}
-                                                    y1={doorLeaf.y1}
-                                                    x2={doorLeaf.x2}
-                                                    y2={doorLeaf.y2}
-                                                    className={doorOpenProgress > 0.02 ? 'cage-door-open' : 'cage-door-closed'}
-                                                    stroke={renderVisuals.doorColor}
-                                                    strokeWidth={renderVisuals.doorThickness}
-                                                />
-                                            );
-                                        })}
-
-                                        <g
-                                            className="door-switch"
-                                            transform={`translate(${renderDoorSwitchTile.x * TILE + TILE * 0.5} ${renderDoorSwitchTile.y * TILE + TILE * 0.5})`}
-                                        >
-                                            <rect x={-22} y={-14} width={44} height={28} rx={8} className="door-switch-body" />
-                                            <circle cx={12} cy={0} r={6} className={cageDoorOpen ? 'door-switch-led-on' : 'door-switch-led-off'} />
-                                            <text x={-11} y={4} className="door-switch-label">SW</text>
-                                        </g>
-
-                                        {[...new Set(
-                                            renderFence.segments.flatMap((segment) => {
-                                                if (segment.kind === 'h') {
-                                                    return [`${segment.x},${segment.y}`, `${segment.x + 1},${segment.y}`];
-                                                }
-                                                return [`${segment.x},${segment.y}`, `${segment.x},${segment.y + 1}`];
-                                            }),
-                                        )].map((pointKey) => {
-                                            const [px, py] = pointKey.split(',').map((value) => Number(value));
-                                            return <circle key={`preview-cage-pole-${pointKey}`} cx={px * TILE} cy={py * TILE} r={renderVisuals.hedgeJointDiameter / 2} className="cage-pole" />;
-                                        })}
-
-                                        <rect x={3} y={3} width={renderWidth * TILE - 6} height={renderHeight * TILE - 6} rx={12} fill="none" stroke="#8b3f1d" strokeWidth={renderVisuals.cageLineThickness} />
-
-                                        {renderActors.map((fish) => {
-                                            const x = fish.x * TILE + TILE / 2;
-                                            const y = fish.y * TILE + TILE / 2;
-                                            return (
-                                                <g key={`${createdLevel ? `created-${createdLevel.id}` : `level-${level.id}`}-fish-${fish.id}`} className={fish.settled ? 'fish settled' : 'fish'} transform={`translate(${x} ${y}) rotate(${fishAngle(fish.dir)})`}>
-                                                    <polygon points="-18,0 18,-12 18,12" fill={fish.settled ? '#48bb78' : '#8f4de2'} stroke={fish.settled ? '#2f855a' : '#5d239f'} strokeWidth={3} />
-                                                    <circle cx="-8" cy="0" r="5" fill="#ffffff" />
-                                                    <circle cx="-7" cy="0" r="2.5" fill="#1b1b1b" />
-                                                </g>
-                                            );
-                                        })}
-                                    </svg>
+                                    {renderRescueBoard(false, 'preview-live')}
                                 </div>
                             </div>
                         </div>
                     )}
-                    </div>
+                </div>
                 </>
             )}
 
-            <main className="rescue-stage">
-                <section className="board-panel">
-                    <aside className="whale-lane" aria-hidden="true">
-                        <div className="whale-body">
-                            <div className="whale-eye" />
-                            <div className="whale-fin" />
-                        </div>
-                        <div className="bubble b1" />
-                        <div className="bubble b2" />
-                        <div className="bubble b3" />
-                        
-                        <footer className="rescue-footer">
-                            <div className="timer-row">
-                                <span>Whale Arrival</span>
-                                <strong>{TIMER_PAUSED_FOR_DEBUG ? 'Paused' : `${timeLeftSec}s`}</strong>
-                            </div>
-                            <div className="timer-track" role="progressbar" aria-valuenow={Math.round(whaleProgress)} aria-valuemin={0} aria-valuemax={100}>
-                                <div className="timer-fill" style={{ width: `${TIMER_PAUSED_FOR_DEBUG ? 0 : whaleProgress}%` }} />
-                            </div>
-                        </footer>
-                    </aside>
-
-                    <svg key={`board-${createdLevel ? `created-${createdLevel.id}` : `level-${level.id}`}`} className="rescue-board" viewBox={`0 0 ${renderWidth * TILE} ${renderHeight * TILE}`} role="img" aria-label="Actor cage puzzle board">
-                        <rect x={0} y={0} width={renderWidth * TILE} height={renderHeight * TILE} fill="#0c8fd4" rx={14} />
-
-                        {Array.from({ length: renderHeight }).flatMap((_, y) =>
-                            Array.from({ length: renderWidth }).map((__, x) => {
-                                const key = tileKey(x, y);
-                                if (!renderOccupiedSet.has(key) && !renderStaticBlockedSet.has(key)) {
-                                    return null;
-                                }
-
-                                return (
-                                    <rect
-                                        key={`occ-${key}`}
-                                        x={x * TILE + 4}
-                                        y={y * TILE + 4}
-                                        width={TILE - 8}
-                                        height={TILE - 8}
-                                        rx={8}
-                                        className={renderCageBlockedSet.has(key) ? 'tile-cage-block' : renderObstacleSet.has(key) ? 'tile-occupied-obstacle' : 'tile-occupied-fish'}
-                                    />
-                                );
-                            }),
-                        )}
-
-                        {renderCageCells.map((tile) => (
-                            <g key={`safe-${tileKey(tile.x, tile.y)}`}>
-                                <rect x={tile.x * TILE + 6} y={tile.y * TILE + 6} width={TILE - 12} height={TILE - 12} rx={8} className="tile-cage-safe" />
-                                <line x1={tile.x * TILE + 12} y1={tile.y * TILE + 12} x2={tile.x * TILE + TILE - 12} y2={tile.y * TILE + TILE - 12} className="tile-cage-safe-line" strokeWidth={Math.max(1.5, renderVisuals.cageLineThickness * 0.35)} />
-                            </g>
-                        ))}
-
-                        {renderFence.segments.map((segment) => {
-                            const isDoorSegment = 'doorEdgeKeys' in renderFence
-                                ? renderFence.doorEdgeKeys.has(edgeKey(segment))
-                                : 'doorEdges' in renderFence && renderFence.doorEdges.some((door) => edgeKey(door) === edgeKey(segment));
-                            if (isDoorSegment) {
-                                return null;
-                            }
-                            const x1 = segment.kind === 'h' ? segment.x * TILE : segment.x * TILE;
-                            const y1 = segment.kind === 'h' ? segment.y * TILE : segment.y * TILE;
-                            const x2 = segment.kind === 'h' ? (segment.x + 1) * TILE : segment.x * TILE;
-                            const y2 = segment.kind === 'h' ? segment.y * TILE : (segment.y + 1) * TILE;
-                            return (
-                                <line
-                                    key={`wall-${edgeKey(segment)}`}
-                                    x1={x1}
-                                    y1={y1}
-                                    x2={x2}
-                                    y2={y2}
-                                    className="cage-fence"
-                                    strokeWidth={renderVisuals.cageLineThickness}
-                                />
-                            );
-                        })}
-
-                        {(previewMode
-                            ? (builderDoors.length > 0 ? builderDoors : (renderDoor.edge ? [renderDoor] : []))
-                            : ((level.doors && level.doors.length > 0 ? level.doors : (renderDoor.edge ? [renderDoor] : [])))
-                        ).map((door, index) => {
-                            let doorForLeaf: any;
-                            if ('side' in door) {
-                                doorForLeaf = door;
-                            } else {
-                                doorForLeaf = {
-                                    side: builderDoorSide,
-                                    offset: builderDoorOffset,
-                                    hinge: (door as any).hinge,
-                                    opensToward: (door as any).opensToward,
-                                    edge: (door as any).edge
-                                };
-                            }
-                            const doorLeaf = getDoorLeafLine(doorForLeaf, TILE, doorOpenProgress);
-                            if (!doorLeaf) {
-                                return null;
-                            }
-                            return (
-                                <line
-                                    key={`door-preview-${index}`}
-                                    x1={doorLeaf.x1}
-                                    y1={doorLeaf.y1}
-                                    x2={doorLeaf.x2}
-                                    y2={doorLeaf.y2}
-                                    className={doorOpenProgress > 0.02 ? 'cage-door-open' : 'cage-door-closed'}
-                                    stroke={renderVisuals.doorColor}
-                                    strokeWidth={renderVisuals.doorThickness}
-                                />
-                            );
-                        })}
-
-                        <g
-                            className="door-switch"
-                            onClick={onDoorSwitchClick}
-                            transform={`translate(${renderDoorSwitchTile.x * TILE + TILE * 0.5} ${renderDoorSwitchTile.y * TILE + TILE * 0.5})`}
-                        >
-                            <rect x={-22} y={-14} width={44} height={28} rx={8} className="door-switch-body" />
-                            <circle cx={12} cy={0} r={6} className={cageDoorOpen ? 'door-switch-led-on' : 'door-switch-led-off'} />
-                            <text x={-11} y={4} className="door-switch-label">SW</text>
-                        </g>
-
-                        {[...new Set(
-                            renderFence.segments.flatMap((segment) => {
-                                if (segment.kind === 'h') {
-                                    return [`${segment.x},${segment.y}`, `${segment.x + 1},${segment.y}`];
-                                }
-                                return [`${segment.x},${segment.y}`, `${segment.x},${segment.y + 1}`];
-                            }),
-                        )].map((pointKey) => {
-                            const [px, py] = pointKey.split(',').map((value) => Number(value));
-                            return <circle key={`cage-pole-${pointKey}`} cx={px * TILE} cy={py * TILE} r={renderVisuals.hedgeJointDiameter / 2} className="cage-pole" />;
-                        })}
-
-                        {renderObstacles.map((tile) => (
-                            <rect key={`o-${tileKey(tile.x, tile.y)}`} x={tile.x * TILE + 10} y={tile.y * TILE + 10} width={TILE - 20} height={TILE - 20} rx={10} fill="#485f71" stroke="#1f2e3a" strokeWidth={2} />
-                        ))}
-
-                        <rect x={3} y={3} width={renderWidth * TILE - 6} height={renderHeight * TILE - 6} rx={12} fill="none" stroke="#8b3f1d" strokeWidth={7} />
-
-                        {renderActors.map((fish) => {
-                            const x = fish.x * TILE + TILE / 2;
-                            const y = fish.y * TILE + TILE / 2;
-                            return (
-                                <g key={`${createdLevel ? `created-${createdLevel.id}` : `level-${level.id}`}-fish-${fish.id}`} className={fish.settled ? 'fish settled' : 'fish'} transform={`translate(${x} ${y}) rotate(${fishAngle(fish.dir)})`} onClick={previewMode ? undefined : () => onFishClick(fish.id)}>
-                                    <polygon points="-18,0 18,-12 18,12" fill={fish.settled ? '#48bb78' : '#8f4de2'} stroke={fish.settled ? '#2f855a' : '#5d239f'} strokeWidth={3} />
-                                    <circle cx="-8" cy="0" r="5" fill="#ffffff" />
-                                    <circle cx="-7" cy="0" r="2.5" fill="#1b1b1b" />
-                                </g>
-                            );
-                        })}
-                    </svg>
-
-                    <div className="board-message">{message}</div>
-                    <div className="board-meta">
-                        <span>Inside Cage: {rescued}/{fishList.length}</span>
-                        <span>Cage Door: {cageDoorOpen ? 'Open' : 'Closed'}</span>
-                        <span>Validator: {levelValidation.solvable ? `OK (${levelValidation.minSteps} steps)` : 'Invalid'}</span>
-                        <span>Guide: {levelValidation.solutionActions.slice(0, 8).join(' -> ') || 'n/a'}</span>
-                        {creatorInfo && <span>{creatorInfo}</span>}
-                        <span>Round Score: {gameState.score}</span>
-                    </div>
-                </section>
-            </main>
+            {isEmbed ? (
+                embedBoardFullScreen
+            ) : (
+                <ConditionalWrapper 
+                    condition={!isEmbed} 
+                    wrapper={(children) => <main className="rescue-stage">{children}</main>}
+                >
+                    {/* ConditionalWrapper/rescue-stage */}
+                    {boardPanelSection}
+                </ConditionalWrapper>
+            )}
 
             {ENABLE_LEVEL_SELECTOR && levelOverlayOpen && (
                 <div className="overlay">
+                    {/* overlay */}
                     <div className="modal-card">
+                        {/* modal-card */}
                         <h3>Select Level</h3>
                         <p>Green cells are cage blockers. Actors stop before any occupied or blocked cell.</p>
                         <div className="modal-grid">
+                            {/* modal-grid */}
                             {playableLevels.map((item, idx) => {
                                 const validation = validations[idx];
                                 return (
@@ -2400,11 +2328,14 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
 
             {levelCompleteOpen && (
                 <div className="overlay">
+                    {/* overlay */}
                     <div className="modal-card">
+                        {/* modal-card */}
                         <h3>{createdLevel ? 'Generated Level Complete' : levelIndex < playableLevels.length - 1 ? 'Level Complete' : 'Mission Complete'}</h3>
                         <p>{createdLevel ? 'Validated generated level solved successfully.' : levelIndex < playableLevels.length - 1 ? 'All actors are inside. Continue to next level.' : 'All actors are inside in every level.'}</p>
                         {correctedLevelIds.length > 0 && <p>Auto-corrected levels: {correctedLevelIds.join(', ')}</p>}
                         <div className="modal-grid">
+                            {/* modal-grid */}
                             {createdLevel ? (
                                 <button onClick={() => {
                                     onCreateLevel();

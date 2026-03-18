@@ -7,6 +7,8 @@ export interface UserPrefsContextValue {
   setTheme: (t: 'dark' | 'light') => void
   slidePanelLayout: 'left' | 'bottom'
   setSlidePanelLayout: (l: 'left' | 'bottom') => void
+  slidePanelEnabled: boolean
+  setSlidePanelEnabled: (enabled: boolean) => void
 }
 
 export const UserPrefsContext = createContext<UserPrefsContextValue>({
@@ -16,6 +18,8 @@ export const UserPrefsContext = createContext<UserPrefsContextValue>({
   setTheme: () => {},
   slidePanelLayout: 'left',
   setSlidePanelLayout: () => {},
+  slidePanelEnabled: true,
+  setSlidePanelEnabled: () => {},
 })
 
 export function useUserPrefs() {
