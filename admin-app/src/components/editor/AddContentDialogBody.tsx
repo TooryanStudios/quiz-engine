@@ -1,13 +1,9 @@
-import { useState } from 'react'
-import type { MiniGameDefinition } from '../../config/miniGames'
 import type { QuestionType } from '../../types/quiz'
 
 type AddContentDialogBodyProps = {
-  initialTab: 'questions' | 'minigames'
   questionTypeOptions: Array<{ label: string; value: string }>
-  miniGames: MiniGameDefinition[]
   onSelectQuestion: (type: QuestionType) => void
-  onSelectMiniGame: (id: string) => void
+  onSelectAi: () => void
 }
 
 interface QuestionTypeVisual {
@@ -76,79 +72,48 @@ const MINIGAME_ACCENT_COLORS = [
 ]
 
 export function AddContentDialogBody({
-  initialTab,
   questionTypeOptions,
-  miniGames,
   onSelectQuestion,
-  onSelectMiniGame,
+  onSelectAi,
 }: AddContentDialogBodyProps) {
-  const [activeTab, setActiveTab] = useState<'questions' | 'minigames'>(initialTab)
-
   return (
     <div className="add-content-dialog">
-      {/* Tab switcher */}
       <div className="add-content-tabs">
-        <button
-          className={`add-content-tab${activeTab === 'questions' ? ' add-content-tab--active' : ''}`}
-          onClick={() => setActiveTab('questions')}
-        >
+        <button className="add-content-tab add-content-tab--active" style={{ cursor: 'default' }}>
           ❓ أسئلة
         </button>
         <button
-          className={`add-content-tab${activeTab === 'minigames' ? ' add-content-tab--active' : ''}`}
-          onClick={() => setActiveTab('minigames')}
+          className="add-content-tab"
+          onClick={onSelectAi}
         >
-          🎮 ميني جيم
+          ✨ توليد ذكي
         </button>
       </div>
 
-      {/* Questions grid */}
-      {activeTab === 'questions' && (
-        <div className="add-content-grid">
-          {questionTypeOptions.map((opt) => {
-            const visual = QUESTION_TYPE_VISUALS[opt.value] ?? {
-              icon: '❓',
-              name: opt.label,
-              description: '',
-              accent: '#64748b',
-            }
-            return (
-              <button
-                key={opt.value}
-                className="add-content-card"
-                style={{ '--card-accent': visual.accent } as React.CSSProperties}
-                onClick={() => onSelectQuestion(opt.value as QuestionType)}
-              >
-                <div className="add-content-card__icon">{visual.icon}</div>
-                <div className="add-content-card__body">
-                  <div className="add-content-card__name">{visual.name}</div>
-                  <div className="add-content-card__desc">{visual.description}</div>
-                </div>
-              </button>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Mini-games grid */}
-      {activeTab === 'minigames' && (
-        <div className="add-content-grid add-content-grid--minigames">
-          {miniGames.map((miniGame, idx) => (
+      <div className="add-content-grid">
+        {questionTypeOptions.map((opt) => {
+          const visual = QUESTION_TYPE_VISUALS[opt.value] ?? {
+            icon: '❓',
+            name: opt.label,
+            description: '',
+            accent: '#64748b',
+          }
+          return (
             <button
-              key={miniGame.id}
+              key={opt.value}
               className="add-content-card"
-              style={{ '--card-accent': MINIGAME_ACCENT_COLORS[idx % MINIGAME_ACCENT_COLORS.length] } as React.CSSProperties}
-              onClick={() => onSelectMiniGame(miniGame.id)}
+              style={{ '--card-accent': visual.accent } as React.CSSProperties}
+              onClick={() => onSelectQuestion(opt.value as QuestionType)}
             >
-              <div className="add-content-card__icon">{miniGame.icon}</div>
+              <div className="add-content-card__icon">{visual.icon}</div>
               <div className="add-content-card__body">
-                <div className="add-content-card__name">{miniGame.defaultArabicName}</div>
-                <div className="add-content-card__desc">{miniGame.description}</div>
+                <div className="add-content-card__name">{visual.name}</div>
+                <div className="add-content-card__desc">{visual.description}</div>
               </div>
             </button>
-          ))}
-        </div>
-      )}
+          )
+        })}
+      </div>
     </div>
   )
 }

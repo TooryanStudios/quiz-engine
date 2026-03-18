@@ -730,16 +730,12 @@ export function QuizEditorPage() {
     setActiveQuestionIndex(questions.length)
   }
 
-  const showAddQuestionDialog = (initialTab: 'questions' | 'minigames' = 'questions') => {
-    const miniGames = Object.values(MINI_GAME_DEFINITIONS)
-    
+  const showAddQuestionDialog = () => {
     showDialog({
       title: 'إضافة محتوى جديد',
       message: (
         <AddContentDialogBody
-          initialTab={initialTab}
           questionTypeOptions={questionTypeOptions}
-          miniGames={miniGames}
           onSelectQuestion={(nextType) => {
             if (isPremiumQuestionType(nextType) && !isSubscribed) {
               openUpgradeDialog('This question type is premium. Please upgrade your account to use it.')
@@ -748,9 +744,9 @@ export function QuizEditorPage() {
             addQuestion(nextType)
             hideDialog()
           }}
-          onSelectMiniGame={(miniGameId) => {
-            addMiniGameBlock(miniGameId)
+          onSelectAi={() => {
             hideDialog()
+            openAiGenerateDialog()
           }}
         />
       ),
@@ -1777,7 +1773,7 @@ export function QuizEditorPage() {
               <MixContentAddSection
                 isVisible={contentType === 'mix'}
                 onAddQuestion={() => showAddQuestionDialog()}
-                onAddMiniGame={() => showAddQuestionDialog('minigames')}
+                onAddMiniGame={() => openAiGenerateDialog()}
               />
 
             </div>{/* /slide-editor-main */}
