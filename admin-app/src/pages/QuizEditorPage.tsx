@@ -58,7 +58,7 @@ import { SlidePanel } from '../components/editor/SlidePanel'
 import { useSlidePanel } from '../hooks/useSlidePanel'
 import { useUserPrefs } from '../lib/UserPrefsContext'
 import placeholderImg from '../assets/QYan_logo_300x164.jpg'
-import { OpenQuizDialog } from '../components/editor/OpenQuizDialog'
+// OpenQuizDialog integration pending
 
 const IS_LOCAL_DEV = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
 const SERVER_BASE = IS_LOCAL_DEV
@@ -207,7 +207,7 @@ export function QuizEditorPage() {
   const [aiSuggestedTitle, setAiSuggestedTitle] = useState<string>('')
   const [aiQuestionCount, setAiQuestionCount] = useState(10)
   const [showAiSelectionOverlay, setShowAiSelectionOverlay] = useState(false)
-  const [showToolbarDropdown, setShowToolbarDropdown] = useState(false)
+  // Toolbar dropdown state removed - EditorUnifiedHeader manages its own settings dialog
 
   const [aiPrompt, setAiPrompt] = useState('')
   const [aiContextFiles, setAiContextFiles] = useState<{ name: string; type: string; data: string }[]>([])
@@ -1278,15 +1278,6 @@ export function QuizEditorPage() {
     )
   }
 
-  const handleCloseEditor = () => {
-    const targetLabel = isMiniGameContent ? 'لعبة جديدة' : 'اختبار جديد'
-    confirmDiscardAndRun(
-      resetEditorToFresh,
-      'إغلاق المحرر',
-      `سيتم إغلاق المحتوى الحالي وفتح ${targetLabel} فارغ. هل تريد المتابعة؟`,
-    )
-  }
-
   const handleOpenExistingContent = () => {
     confirmDiscardAndRun(
       () => navigate('/my-quizzes'),
@@ -1666,16 +1657,12 @@ export function QuizEditorPage() {
         onPlayQuiz={(id) => { void launchGameFromEditor(id) }}
 
         // Toolbar Props
-        showToolbarDropdown={showToolbarDropdown}
         isSaving={status.kind === 'saving'}
         hasUnsavedChanges={hasUnsavedChanges}
-        onToggleDropdown={() => setShowToolbarDropdown((v) => !v)}
-        onCloseDropdown={() => setShowToolbarDropdown(false)}
         onOpenContentTypePicker={() => setShowContentTypePicker(true)}
         onBack={() => navigate(-1)}
         onOpenExisting={handleOpenExistingContent}
         onCreateNew={handleCreateNewEditorItem}
-        onCloseEditor={handleCloseEditor}
         onOpenMetadata={openMetadataDialog}
         onPreviewQuiz={openPreviewQuiz}
         onCopyLink={() => { void copyEditorLink() }}
@@ -1688,8 +1675,8 @@ export function QuizEditorPage() {
           setAiAction('recheck')
           void incrementPlatformStat('aiRecheckClicks')
         }}
-        isGeneratingAI={isGeneratingAi && aiGeneratingMode === 'generate'}
-        isRecheckingAI={isGeneratingAi && aiGeneratingMode === 'recheck'}
+        isGeneratingAI={aiAction === 'generate'}
+        isRecheckingAI={aiAction === 'recheck'}
         onSave={() => { void saveQuiz() }}
       />
 

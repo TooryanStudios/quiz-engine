@@ -783,7 +783,6 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
     const [message, setMessage] = React.useState('Tap an actor in sequence. It slides until blocked.');
     const [levelOverlayOpen, setLevelOverlayOpen] = React.useState(ENABLE_LEVEL_SELECTOR);
     const [levelCompleteOpen, setLevelCompleteOpen] = React.useState(false);
-    const [svgPreviewOpen, setSvgPreviewOpen] = React.useState(false);
     const [failed, setFailed] = React.useState(false);
     const [muted, setMuted] = React.useState(false);
     const [cageDoorOpen, setCageDoorOpen] = React.useState(KEEP_DOOR_OPEN_FOR_NOW);
@@ -1836,9 +1835,6 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
     const embedBoardFullScreen = isEmbed ? (
         <div className="embed-board-fullscreen" aria-label="Game board">
             {renderRescueBoard(false, 'embed-full')}
-            <button className="ui-pill embed-svg-button" onClick={() => setSvgPreviewOpen(true)}>
-                Open board SVG
-            </button>
         </div>
     ) : null;
 

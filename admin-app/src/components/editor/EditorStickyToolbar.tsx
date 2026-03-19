@@ -15,6 +15,9 @@ type EditorStickyToolbarProps = {
   onCloseDropdown: () => void
   onOpenContentTypePicker: () => void
   onBack: () => void
+  onCreateNew: () => void
+  onOpenExisting: () => void
+  onCloseEditor: () => void
   onOpenMetadata: () => void
   onPreviewQuiz: () => void
   onCopyLink: () => void
@@ -24,6 +27,8 @@ type EditorStickyToolbarProps = {
   onGenerateAI: () => void
   onRecheckAI: () => void
   onSave: () => void
+  isGeneratingAI?: boolean
+  isRecheckingAI?: boolean
 }
 
 export function EditorStickyToolbar({
@@ -38,6 +43,9 @@ export function EditorStickyToolbar({
   onCloseDropdown,
   onOpenContentTypePicker,
   onBack,
+  onCreateNew,
+  onOpenExisting,
+  onCloseEditor,
   onOpenMetadata,
   onPreviewQuiz,
   onCopyLink,
@@ -47,6 +55,8 @@ export function EditorStickyToolbar({
   onGenerateAI,
   onRecheckAI,
   onSave,
+  isGeneratingAI,
+  isRecheckingAI,
 }: EditorStickyToolbarProps) {
   return (
     <>
@@ -100,6 +110,13 @@ export function EditorStickyToolbar({
                 onCopyLink={onCopyLink}
                 onShareLink={onShareLink}
                 onDeleteQuiz={onDeleteQuiz}
+                onCreateNew={onCreateNew}
+                onOpenExisting={onOpenExisting}
+                onCloseEditor={onCloseEditor}
+                onGenerateAI={onGenerateAI}
+                onRecheckAI={onRecheckAI}
+                isGeneratingAI={isGeneratingAI}
+                isRecheckingAI={isRecheckingAI}
               />
             )}
           </div>
