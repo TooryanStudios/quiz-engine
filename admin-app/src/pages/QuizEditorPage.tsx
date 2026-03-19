@@ -406,6 +406,7 @@ export function QuizEditorPage() {
         />
       ),
       hideFooter: true,
+      showCloseButton: true,
     })
     return false
   }
@@ -838,6 +839,7 @@ export function QuizEditorPage() {
           />
         ),
         hideFooter: true,
+        showCloseButton: true,
       })
       return false
     }
@@ -982,6 +984,7 @@ export function QuizEditorPage() {
           />
         ),
         hideFooter: true,
+        showCloseButton: true,
       })
       return
     }
@@ -1034,6 +1037,7 @@ export function QuizEditorPage() {
           />
         ),
         hideFooter: true,
+        showCloseButton: true,
       })
       return
     }
@@ -1392,6 +1396,7 @@ export function QuizEditorPage() {
           />
         ),
         hideFooter: true,
+        showCloseButton: true,
       })
       return
     }

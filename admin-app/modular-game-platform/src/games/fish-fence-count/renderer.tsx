@@ -1814,12 +1814,12 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
     const renderBoardMeta = (showLabel: boolean) => (
         <div className="board-meta">
             {showLabel && <div className="container-label" aria-hidden="true">.board-meta</div>}
-            <span>Inside Cage: {rescued}/{fishList.length}</span>
-            <span>Cage Door: {cageDoorOpen ? 'Open' : 'Closed'}</span>
-            <span>Validator: {levelValidation.solvable ? `OK (${levelValidation.minSteps} steps)` : 'Invalid'}</span>
-            <span>Guide: {levelValidation.solutionActions.slice(0, 8).join(' -> ') || 'n/a'}</span>
+            <span>داخل القفص: {rescued}/{fishList.length}</span>
+            <span>باب القفص: {cageDoorOpen ? 'مفتوح' : 'مغلق'}</span>
+            <span>التحقق: {levelValidation.solvable ? `صحيح (${levelValidation.minSteps} خطوات)` : 'غير صالح'}</span>
+            <span>الدليل: {levelValidation.solutionActions.slice(0, 8).join(' -> ') || 'غير متاح'}</span>
             {creatorInfo && <span>{creatorInfo}</span>}
-            <span>Round Score: {gameState.score}</span>
+            <span>نقاط الجولة: {gameState.score}</span>
         </div>
     );
 

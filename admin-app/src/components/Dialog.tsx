@@ -62,17 +62,49 @@ export function Dialog() {
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <h2
-            style={{
-              marginTop: 0,
-              marginBottom: '1rem',
-              fontSize: '1.25em',
-              color: 'var(--text-bright)',
-              fontWeight: 800,
-            }}
-          >
-            {dialog.title}
-          </h2>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: '1.25em',
+                color: 'var(--text-bright)',
+                fontWeight: 800,
+              }}
+            >
+              {dialog.title}
+            </h2>
+            {dialog.showCloseButton && (
+              <button
+                onClick={handleCancel}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text-mid)',
+                  cursor: 'pointer',
+                  fontSize: '1.5rem',
+                  padding: '0.25rem',
+                  width: '32px',
+                  height: '32px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: '6px',
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255,255,255,0.1)'
+                  e.currentTarget.style.color = 'var(--text-bright)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent'
+                  e.currentTarget.style.color = 'var(--text-mid)'
+                }}
+                title="إغلاق"
+              >
+                ✕
+              </button>
+            )}
+          </div>
 
           {/* Message */}
           <div

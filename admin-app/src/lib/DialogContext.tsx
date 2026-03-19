@@ -10,6 +10,7 @@ export interface DialogOptions {
   onCancel?: () => void
   isDangerous?: boolean
   hideFooter?: boolean
+  showCloseButton?: boolean
 }
 
 interface DialogContextType {

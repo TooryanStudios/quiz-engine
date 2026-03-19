@@ -5,6 +5,9 @@ import { getBestCoverImage } from '../../lib/utils'
 
 interface Props {
   quizzes: (QuizDoc & { id: string })[]
+  hasMore: boolean
+  loadingMore: boolean
+  onLoadMore: () => void
 }
 
 const FEATURED_SLOTS = [
@@ -19,8 +22,9 @@ const FEATURED_SLOTS = [
   { value: 9, label: 'Curated (9)' },
 ]
 
-export function FeaturedTab({ quizzes }: Props) {
+export function FeaturedTab({ quizzes, hasMore, loadingMore, onLoadMore }: Props) {
   const [isSaving, setIsSaving] = useState(false)
+  const [isLoadingAll, setIsLoadingAll] = useState(false)
   
   // Selection Dialog State
   const [activeSlot, setActiveSlot] = useState<typeof FEATURED_SLOTS[0] | null>(null)
@@ -299,9 +303,56 @@ export function FeaturedTab({ quizzes }: Props) {
             <h3 style={{ marginTop: 0, marginBottom: '0.5rem', fontSize: '1.25rem', color: 'var(--text-bright)' }}>
               Assign to {activeSlot.label}
             </h3>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
               Search for a public game or quiz to feature in this slot.
             </p>
+
+            {hasMore && (
+              <div style={{
+                marginBottom: '1rem',
+                padding: '0.75rem',
+                background: 'rgba(245,158,11,0.1)',
+                border: '1px solid rgba(245,158,11,0.3)',
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '0.75rem'
+              }}>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-mid)' }}>
+                  <strong style={{ color: '#f59e0b' }}>⚠️ Not all quizzes loaded.</strong> Showing first {quizzes.length}. Click to load all.
+                </div>
+                <button
+                  disabled={isLoadingAll || loadingMore}
+                  onClick={async () => {
+                    setIsLoadingAll(true)
+                    try {
+                      while (hasMore) {
+                        await onLoadMore()
+                        // Small delay to prevent overwhelming Firestore
+                        await new Promise(resolve => setTimeout(resolve, 100))
+                      }
+                    } finally {
+                      setIsLoadingAll(false)
+                    }
+                  }}
+                  style={{
+                    padding: '0.4rem 0.9rem',
+                    background: '#f59e0b',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontWeight: 700,
+                    fontSize: '0.75rem',
+                    cursor: isLoadingAll || loadingMore ? 'default' : 'pointer',
+                    opacity: isLoadingAll || loadingMore ? 0.6 : 1,
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  {isLoadingAll ? 'Loading...' : 'Load All'}
+                </button>
+              </div>
+            )}
 
             <input
               autoFocus
@@ -329,7 +380,12 @@ export function FeaturedTab({ quizzes }: Props) {
               borderRadius: '8px',
               background: 'var(--bg-surface)'
             }}>
-              {searchResults.length === 0 ? (
+              {isLoadingAll ? (
+                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <div style={{ marginBottom: '0.5rem', fontSize: '1.5rem' }}>⏳</div>
+                  <div>Loading all quizzes...</div>
+                </div>
+              ) : searchResults.length === 0 ? (
                  <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                    No public quizzes found matching your search.
                  </div>

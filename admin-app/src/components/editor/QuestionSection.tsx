@@ -377,6 +377,7 @@ const QuestionSection: React.FC<QuestionSectionProps> = ({
                           />
                         ),
                         hideFooter: true,
+                        showCloseButton: true,
                       })
                       return
                     }
@@ -414,6 +415,7 @@ const QuestionSection: React.FC<QuestionSectionProps> = ({
                           />
                         ),
                         hideFooter: true,
+                        showCloseButton: true,
                       })
                       return
                     }
@@ -465,6 +467,7 @@ const QuestionSection: React.FC<QuestionSectionProps> = ({
                           />
                         ),
                         hideFooter: true,
+                        showCloseButton: true,
                       })
                       return
                     }

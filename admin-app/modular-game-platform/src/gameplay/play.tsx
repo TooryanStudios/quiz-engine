@@ -126,10 +126,10 @@ const Play: React.FC<PlayProps> = ({ gameId, isEmbed, standalone, onStateChange,
                 <div className="standalone-game-card">
                     <h2>{game.name}</h2>
                     <p>{game.logic.getObjective(gameState)}</p>
-                    <p className="standalone-subtext">Score {gameState.score} · Round {gameState.round}/{gameState.totalRounds}</p>
+                    <p className="standalone-subtext">النقاط {gameState.score} · الجولة {gameState.round}/{gameState.totalRounds}</p>
                     <div className="standalone-actions">
-                        <button onClick={() => dispatch({ type: 'reset' })}>Restart</button>
-                        <button onClick={() => dispatch({ type: 'advance' })}>Skip Round</button>
+                        <button onClick={() => dispatch({ type: 'reset' })}>إعادة تشغيل</button>
+                        <button onClick={() => dispatch({ type: 'advance' })}>تخطي الجولة</button>
                     </div>
                 </div>
             </div>
@@ -141,13 +141,13 @@ const Play: React.FC<PlayProps> = ({ gameId, isEmbed, standalone, onStateChange,
             {/* retro-quiz-container */}
             <header className="retro-header">
                 {/* retro-header */}
-                <div className="badge-server">Server connected</div>
+                <div className="badge-server">متصل بالخادم</div>
                 <div className="hub-center">
                     {/* hub-center */}
-                    <div className="badge-points">Score: {gameState.score}</div>
+                    <div className="badge-points">النقاط: {gameState.score}</div>
                     <div className="status-row">
                         {/* status-row */}
-                        <span>Round</span>
+                        <span>الجولة</span>
                         <div className="timer-circle">{gameState.round}</div>
                         <div style={{ lineHeight: '1.2', textAlign: 'center' }}>
                             <div style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>
@@ -156,7 +156,7 @@ const Play: React.FC<PlayProps> = ({ gameId, isEmbed, standalone, onStateChange,
                             <div style={{ fontSize: '0.7rem', color: '#666' }}>CLASSIC</div>
                         </div>
                     </div>
-                    <div className="pin-badge">Game: {game.name}</div>
+                    <div className="pin-badge">اللعبة: {game.name}</div>
                 </div>
             </header>
 
@@ -172,16 +172,16 @@ const Play: React.FC<PlayProps> = ({ gameId, isEmbed, standalone, onStateChange,
             <div className="actions-row" style={{ marginBottom: '1rem' }}>
                 {/* actions-row */}
                 <button className="btn-retro btn-pause" onClick={() => dispatch({ type: 'hint' })}>
-                    Hint
+                    تلميح
                 </button>
                 <button className="btn-retro btn-submit" onClick={() => dispatch({ type: 'submit', success: true })}>
-                    Submit Success
+                    إرسال النجاح
                 </button>
                 <button className="btn-retro btn-end" onClick={() => dispatch({ type: 'advance' })}>
-                    Next Round
+                    الجولة التالية
                 </button>
                 <button className="btn-retro btn-end" onClick={() => dispatch({ type: 'reset' })}>
-                    Reset
+                    إعادة تعيين
                 </button>
             </div>
         </div>

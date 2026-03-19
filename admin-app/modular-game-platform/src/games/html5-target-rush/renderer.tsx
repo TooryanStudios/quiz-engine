@@ -245,26 +245,26 @@ const Html5TargetRushRenderer: React.FC<GameRendererProps> = ({ gameState, dispa
                         <h2>Target Rush</h2>
                         <p>Tap or click the moving target before time runs out.</p>
                     </div>
-                    <button className="target-rush-reset" onClick={resetRuntime}>Restart</button>
+                    <button className="target-rush-reset" onClick={resetRuntime}>إعادة تشغيل</button>
                 </div>
             )}
 
             <div className="target-rush-hud">
                 <div className="stat-card">
                     <strong>{hud.timeLeftSec}s</strong>
-                    <span>Time Left</span>
+                    <span>الوقت المتبقي</span>
                 </div>
                 <div className="stat-card">
                     <strong>{hud.hits}</strong>
-                    <span>Local Hits</span>
+                    <span>الإصابات</span>
                 </div>
                 <div className="stat-card">
                     <strong>{accuracy}%</strong>
-                    <span>Accuracy</span>
+                    <span>الدقة</span>
                 </div>
                 <div className="stat-card">
                     <strong>{gameState.score}</strong>
-                    <span>Platform Score</span>
+                    <span>النقاط</span>
                 </div>
             </div>
 
@@ -275,9 +275,9 @@ const Html5TargetRushRenderer: React.FC<GameRendererProps> = ({ gameState, dispa
             />
 
             <div className="target-rush-meta">
-                <span>Round {gameState.round} / {gameState.totalRounds}</span>
-                <span>Hints used: {gameState.hintsUsed}</span>
-                <span>Running: {hud.running ? 'Yes' : 'No'}</span>
+                <span>الجولة {gameState.round} / {gameState.totalRounds}</span>
+                <span>التلميحات المستخدمة: {gameState.hintsUsed}</span>
+                <span>قيد التشغيل: {hud.running ? 'نعم' : 'لا'}</span>
             </div>
         </div>
     );
