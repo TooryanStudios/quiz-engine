@@ -87,10 +87,36 @@ function App() {
     return stored !== 'false'
   })
   const handleSignOut = useCallback(() => {
+    // Check if user is in editor with unsaved changes
+    const isInEditor = location.pathname === '/editor' || location.pathname === '/mini-game-editor'
+    const editorState = sessionStorage.getItem('qyan:editorState')
+    
+    if (isInEditor && editorState) {
+      try {
+        const state = JSON.parse(editorState)
+        if (state.hasUnsavedChanges) {
+          // Show warning dialog
+          const confirmed = window.confirm(
+            'لديك تغييرات غير محفوظة في المحرر. هل تريد تسجيل الخروج بدون حفظ؟\n\nسيتم حذف جميع البيانات غير المحفوظة.'
+          )
+          if (!confirmed) {
+            return
+          }
+          // Clear editor state
+          sessionStorage.removeItem('qyan:editorState')
+          sessionStorage.removeItem('qyan:editorQuizId')
+        }
+      } catch (e) {
+        console.error('Failed to parse editor state:', e)
+      }
+    }
+    
     markSignOut()
     localStorage.removeItem('qyan:session')
-    void signOut(auth)
-  }, [])
+    void signOut(auth).then(() => {
+      navigate('/dashboard')
+    })
+  }, [location.pathname, navigate])
   const handleGuestSignIn = useCallback(() => {
     const returnTo = `${location.pathname}${location.search}`
     navigate('/login', { state: { returnTo } })
@@ -400,7 +426,7 @@ function App() {
                   </div>
                 )}
 
-                <h1 className="sidebar-brand">Q<span>Yan</span> Gaming</h1>
+                <h1 className="sidebar-brand" onClick={() => navigate('/dashboard')} style={{ cursor: 'pointer' }}>Q<span>Yan</span> Gaming</h1>
                 {user ? (
                   <button
                     className="sidebar-collapse-btn"

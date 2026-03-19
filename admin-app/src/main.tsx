@@ -27,6 +27,17 @@ window.addEventListener('unhandledrejection', (event) => {
 
 window.addEventListener('load', () => {
   sessionStorage.removeItem(CHUNK_RELOAD_KEY)
+  
+  // Register service worker for caching
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' })
+      .then((registration) => {
+        console.log('[SW] Registered:', registration.scope)
+      })
+      .catch((error) => {
+        console.warn('[SW] Registration failed:', error)
+      })
+  }
 })
 
 createRoot(document.getElementById('root')!).render(

@@ -1,0 +1,17 @@
+{
+  "name": "QYan Gaming",
+  "short_name": "QYan",
+  "description": "تحدى أصدقاءك واختبر معلوماتك",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0e27",
+  "theme_color": "#7c3aed",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/images/QYan_logo_300x164.jpg",
+      "sizes": "300x164",
+      "type": "image/jpeg"
+    }
+  ]
+}

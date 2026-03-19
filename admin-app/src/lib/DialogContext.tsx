@@ -6,9 +6,10 @@ export interface DialogOptions {
   message: string | ReactNode
   confirmText?: string
   cancelText?: string
-  onConfirm: () => void | Promise<void>
+  onConfirm?: () => void | Promise<void>
   onCancel?: () => void
   isDangerous?: boolean
+  hideFooter?: boolean
 }
 
 interface DialogContextType {

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { ChallengePreset } from '../../types/quiz'
 import { CoverImageSection } from './CoverImageSection'
 import { MetadataAiSection } from './MetadataAiSection'
@@ -22,25 +23,15 @@ type MiniGameCard = {
 type MetadataDialogContentProps = {
   title: string
   description: string
-  shareUrl: string
   onTitleChange: (value: string) => void
   onDescriptionChange: (value: string) => void
-  onCopyShareUrl: () => void
-  onShareUrl: () => void
 
   tempThemeId: string
   onThemeIdChange: (value: string) => void
 
-  aiQuestionCount: number
-  aiPrompt: string
-  isGeneratingAi: boolean
-  aiAction: 'generate' | 'recheck' | null
-  questionCountOptions: number[]
-  creditCostPerQuestion: number
+  onOpenAiDialog: () => void
+  creditCostPerImage: number
   creditsRemaining?: number | null
-  onQuestionCountChange: (value: number) => void
-  onPromptChange: (value: string) => void
-  onGenerateAi: () => void
 
   tempVisibility: 'public' | 'private'
   approvalStatus: string | undefined
@@ -84,30 +75,18 @@ type MetadataDialogContentProps = {
   onCoverUrlChange: (value: string) => void
   onUploadCoverClick: () => void
   onGenerateCoverClick: () => void
-  onOpenCoverLibraryClick: () => void
   onUseDefaultCoverClick: () => void
 }
 
 export function MetadataDialogContent({
   title,
   description,
-  shareUrl,
   onTitleChange,
   onDescriptionChange,
-  onCopyShareUrl,
-  onShareUrl,
   tempThemeId,
   onThemeIdChange,
-  aiQuestionCount,
-  aiPrompt,
-  isGeneratingAi,
-  aiAction,
-  questionCountOptions,
-  creditCostPerQuestion,
-  creditsRemaining,
-  onQuestionCountChange,
-  onPromptChange,
-  onGenerateAi,
+  onOpenAiDialog,
+  creditCostPerImage,
   tempVisibility,
   approvalStatus,
   tempChallenge,
@@ -132,44 +111,26 @@ export function MetadataDialogContent({
   onApplyDurationToAll,
   tempCoverImage,
   defaultCoverImage,
-  coverPreviewChecking,
-  coverPreviewError,
   uploadingCover,
   isGeneratingCoverImage,
-  onCoverUrlChange,
   onUploadCoverClick,
   onGenerateCoverClick,
-  onOpenCoverLibraryClick,
   onUseDefaultCoverClick,
 }: MetadataDialogContentProps) {
+  const [showAdvanced, setShowAdvanced] = useState(false)
+
   return (
     <>
+      {/* Essential Settings - Always Visible */}
       <MetadataBasicInfoSection
         title={title}
         description={description}
-        shareUrl={shareUrl}
         onTitleChange={onTitleChange}
         onDescriptionChange={onDescriptionChange}
-        onCopyShareUrl={onCopyShareUrl}
-        onShareUrl={onShareUrl}
-      />
-
-      <MetadataThemeSection
-        selectedThemeId={tempThemeId}
-        onThemeChange={onThemeIdChange}
       />
 
       <MetadataAiSection
-        aiQuestionCount={aiQuestionCount}
-        aiPrompt={aiPrompt}
-        isGenerating={isGeneratingAi}
-        generateActionActive={aiAction === 'generate'}
-        questionCountOptions={questionCountOptions}
-        creditCostPerQuestion={creditCostPerQuestion}
-        creditsRemaining={creditsRemaining}
-        onQuestionCountChange={onQuestionCountChange}
-        onPromptChange={onPromptChange}
-        onGenerate={onGenerateAi}
+        onOpenAiDialog={onOpenAiDialog}
       />
 
       <MetadataPrivacyDifficultySection
@@ -194,32 +155,85 @@ export function MetadataDialogContent({
         />
       )}
 
-      <MetadataFlagsSection
-        tempRandomizeQuestions={tempRandomizeQuestions}
-        tempEnableScholarRole={tempEnableScholarRole}
-        onRandomizeChange={onRandomizeChange}
-        onScholarRoleChange={onScholarRoleChange}
-      />
-
-      <MetadataDurationSection
-        tempAllDuration={tempAllDuration}
-        onDurationChange={onDurationChange}
-        onApplyDuration={onApplyDurationToAll}
-      />
-
       <CoverImageSection
         tempCoverImage={tempCoverImage}
         defaultCoverImage={defaultCoverImage}
-        coverPreviewChecking={coverPreviewChecking}
-        coverPreviewError={coverPreviewError}
         uploadingCover={uploadingCover}
         isGeneratingCoverImage={isGeneratingCoverImage}
-        onCoverUrlChange={onCoverUrlChange}
+        creditCostPerImage={creditCostPerImage}
         onUploadClick={onUploadCoverClick}
-        onOpenLibraryClick={onOpenCoverLibraryClick}
         onGenerateClick={onGenerateCoverClick}
         onUseDefaultClick={onUseDefaultCoverClick}
       />
+
+      {/* Advanced Settings Toggle Button */}
+      <div style={{ marginTop: '1.5rem' }}>
+        <button
+          type="button"
+          onClick={() => setShowAdvanced(!showAdvanced)}
+          style={{
+            width: '100%',
+            padding: '0.75rem 1rem',
+            borderRadius: '10px',
+            border: '1px solid var(--border-strong)',
+            background: showAdvanced ? 'rgba(59, 130, 246, 0.1)' : 'var(--bg-surface)',
+            color: showAdvanced ? '#60a5fa' : 'var(--text-mid)',
+            fontSize: '0.9em',
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '0.5rem',
+            transition: 'all 0.2s',
+          }}
+          onMouseEnter={(e) => { 
+            if (!showAdvanced) e.currentTarget.style.background = 'var(--bg-hover)' 
+          }}
+          onMouseLeave={(e) => { 
+            if (!showAdvanced) e.currentTarget.style.background = 'var(--bg-surface)' 
+          }}
+        >
+          <span>{showAdvanced ? '▼' : '◀'}</span>
+          <span>⚙️ إعدادات متقدمة</span>
+        </button>
+      </div>
+
+      {/* Advanced Settings - Collapsible */}
+      {showAdvanced && (
+        <div style={{
+          marginTop: '1rem',
+          padding: '1rem',
+          borderRadius: '12px',
+          border: '1px solid var(--border-strong)',
+          background: 'var(--bg-deep)',
+          animation: 'fadeIn 0.3s ease-out',
+        }}>
+          <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+          
+          <MetadataThemeSection
+            selectedThemeId={tempThemeId}
+            onThemeChange={onThemeIdChange}
+          />
+
+          <div style={{ marginTop: '1rem' }}>
+            <MetadataFlagsSection
+              tempRandomizeQuestions={tempRandomizeQuestions}
+              tempEnableScholarRole={tempEnableScholarRole}
+              onRandomizeChange={onRandomizeChange}
+              onScholarRoleChange={onScholarRoleChange}
+            />
+          </div>
+
+          <div style={{ marginTop: '1rem' }}>
+            <MetadataDurationSection
+              tempAllDuration={tempAllDuration}
+              onDurationChange={onDurationChange}
+              onApplyDuration={onApplyDurationToAll}
+            />
+          </div>
+        </div>
+      )}
     </>
   )
 }

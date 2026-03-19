@@ -14,7 +14,7 @@ export function Dialog() {
   const handleConfirm = async () => {
     setLoading(true)
     try {
-      await dialog?.onConfirm()
+      await dialog?.onConfirm?.()
     } finally {
       setLoading(false)
       hide()
@@ -78,7 +78,7 @@ export function Dialog() {
           <div
             style={{
               marginTop: 0,
-              marginBottom: '1.5rem',
+              marginBottom: dialog.hideFooter ? 0 : '1.5rem',
               lineHeight: '1.5',
               color: 'var(--text-mid)',
             }}
@@ -87,57 +87,59 @@ export function Dialog() {
           </div>
 
           {/* Actions */}
-          <div
-            style={{
-              display: 'flex',
-              gap: '0.75rem',
-              justifyContent: 'flex-end',
-            }}
-          >
-            <button
-              onClick={handleCancel}
-              disabled={loading}
+          {!dialog.hideFooter && (
+            <div
               style={{
-                padding: '0.6rem 1.2rem',
-                borderRadius: '10px',
-                border: '1px solid var(--border-strong)',
-                backgroundColor: 'rgba(255,255,255,0.05)',
-                color: 'var(--text)',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                opacity: loading ? 0.6 : 1,
-                fontSize: '0.95em',
-                fontWeight: 600,
-                transition: 'all 0.2s',
+                display: 'flex',
+                gap: '0.75rem',
+                justifyContent: 'flex-end',
               }}
-              onMouseEnter={(e) => !loading && (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)')}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)')}
             >
-              {dialog.cancelText || 'إلغاء'}
-            </button>
-            <button
-              onClick={handleConfirm}
-              disabled={loading}
-              style={{
-                padding: '0.6rem 1.2rem',
-                borderRadius: '10px',
-                border: 'none',
-                backgroundColor: dialog.isDangerous ? '#ef4444' : 'var(--accent)',
-                color: '#fff',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                opacity: loading ? 0.6 : 1,
-                fontSize: '0.95em',
-                fontWeight: 700,
-                transition: 'all 0.2s',
-                boxShadow: dialog.isDangerous ? '0 4px 12px rgba(239, 68, 68, 0.2)' : '0 4px 12px rgba(124, 58, 237, 0.2)',
-              }}
-              onMouseEnter={(e) =>
-                !loading && (e.currentTarget.style.transform = 'translateY(-1px)')
-              }
-              onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateY(0)')}
-            >
-              {loading ? '⏳ ...' : dialog.confirmText || 'موافق'}
-            </button>
-          </div>
+              <button
+                onClick={handleCancel}
+                disabled={loading}
+                style={{
+                  padding: '0.6rem 1.2rem',
+                  borderRadius: '10px',
+                  border: '1px solid var(--border-strong)',
+                  backgroundColor: 'rgba(255,255,255,0.05)',
+                  color: 'var(--text)',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  opacity: loading ? 0.6 : 1,
+                  fontSize: '0.95em',
+                  fontWeight: 600,
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={(e) => !loading && (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)')}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)')}
+              >
+                {dialog.cancelText || 'إلغاء'}
+              </button>
+              <button
+                onClick={handleConfirm}
+                disabled={loading}
+                style={{
+                  padding: '0.6rem 1.2rem',
+                  borderRadius: '10px',
+                  border: 'none',
+                  backgroundColor: dialog.isDangerous ? '#ef4444' : 'var(--accent)',
+                  color: '#fff',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  opacity: loading ? 0.6 : 1,
+                  fontSize: '0.95em',
+                  fontWeight: 700,
+                  transition: 'all 0.2s',
+                  boxShadow: dialog.isDangerous ? '0 4px 12px rgba(239, 68, 68, 0.2)' : '0 4px 12px rgba(124, 58, 237, 0.2)',
+                }}
+                onMouseEnter={(e) =>
+                  !loading && (e.currentTarget.style.transform = 'translateY(-1px)')
+                }
+                onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateY(0)')}
+              >
+                {loading ? '⏳ ...' : dialog.confirmText || 'موافق'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

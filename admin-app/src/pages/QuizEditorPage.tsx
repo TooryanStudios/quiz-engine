@@ -6,6 +6,8 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { auth } from '../lib/firebase'
 import { useDialog } from '../lib/DialogContext'
 import { useToast } from '../lib/ToastContext'
+import { InlineLoginContent } from '../components/auth/InlineLoginContent'
+import { useGoogleSignIn } from '../hooks/useGoogleSignIn'
 import { useSubscription } from '../lib/useSubscription'
 import { guardedLaunchGame } from '../lib/gameLaunch'
 import { buildHostGameUrl, buildPlayerGameUrl } from '../lib/gameModeUrl'
@@ -53,7 +55,6 @@ import { ContentTypePickerOverlay } from '../components/editor/ContentTypePicker
 import { AIFeaturesDialog } from '../components/editor/AIFeaturesDialog'
 import { EditorAnimationKeyframes } from '../components/editor/EditorAnimationKeyframes'
 import { generateAndStoreAiCoverImage } from '../lib/ai/coverImage'
-import { CoverAssetsDialogBody } from '../components/editor/CoverAssetsDialogBody'
 import { SlidePanel } from '../components/editor/SlidePanel'
 import { useSlidePanel } from '../hooks/useSlidePanel'
 import { useUserPrefs } from '../lib/UserPrefsContext'
@@ -68,6 +69,7 @@ const DEFAULT_COVER_IMAGE = placeholderImg
 const GUEST_PREVIEW_DRAFT_KEY = 'qyan:guestPreviewDraft'
 const AI_QUESTION_COUNT_OPTIONS = [5, 10, 15, 20, 25, 30, 35, 40]
 const AI_CREDIT_COST_PER_QUESTION = 1
+const AI_CREDIT_COST_PER_IMAGE = 10
 
 const starterQuestion: QuizQuestion = {
   type: 'single',
@@ -141,6 +143,7 @@ export function QuizEditorPage() {
   const location = useLocation()
   const { show: showDialog, hide: hideDialog } = useDialog()
   const { showToast } = useToast()
+  const googleSignIn = useGoogleSignIn()
   const { isSubscribed, creditsRemaining } = useSubscription()
   // Always points to the latest saveQuiz closure so setTimeout callbacks never use stale state
   const saveQuizRef = useRef<() => Promise<void>>(() => Promise.resolve())
@@ -160,7 +163,7 @@ export function QuizEditorPage() {
   const [questions, setQuestions] = useState<QuizQuestion[]>([])
   const [showMetadataDialog, setShowMetadataDialog] = useState(false)
   const [tempTitle, setTempTitle] = useState('')
-  const [tempSlug, setTempSlug] = useState('')
+  const [, setTempSlug] = useState('')
   const [description, setDescription] = useState('')
   const [tempDescription, setTempDescription] = useState('')
   const [activeQuestionIndex, setActiveQuestionIndex] = useState(0)
@@ -386,14 +389,23 @@ export function QuizEditorPage() {
   const ensureSignedInForAi = () => {
     if (auth.currentUser?.uid) return true
     showDialog({
-      title: '🔐 Sign-In Required',
-      message: 'To use AI challenge creation, please sign in first.',
-      confirmText: 'Sign in',
-      cancelText: 'Cancel',
-      onConfirm: () => {
-        const returnTo = `${location.pathname}${location.search}`
-        navigate('/login', { state: { returnTo } })
-      },
+      title: '🔐 تسجيل الدخول مطلوب',
+      message: (
+        <InlineLoginContent
+          description="يجب تسجيل الدخول لاستخدام ميزات الذكاء الاصطناعي."
+          onGoogleSignIn={async () => {
+            await googleSignIn({
+              returnTo: `${location.pathname}${location.search}`,
+              skipNavigate: true,
+              onSuccess: () => {
+                hideDialog()
+                showToast({ message: '✅ تم تسجيل الدخول بنجاح', type: 'success' })
+              },
+            })
+          }}
+        />
+      ),
+      hideFooter: true,
     })
     return false
   }
@@ -597,9 +609,25 @@ export function QuizEditorPage() {
     }
     // Opening a real quiz by ID — allow re-initialization next time a new editor is opened
     newEditorInitializedRef.current = false
+    
     getQuizById(routeId)
       .then((data) => {
         if (!data) { showStatus({ kind: 'error', msg: 'لم يُعثر على الاختبار.' }); return }
+        
+        // Check if user owns this quiz (only for authenticated users trying to edit existing quizzes)
+        if (data.ownerId && auth.currentUser?.uid && data.ownerId !== auth.currentUser?.uid) {
+          showToast({ message: 'ليس لديك صلاحية لتحرير هذا الاختبار', type: 'error' })
+          navigate('/dashboard', { replace: true })
+          return
+        }
+        
+        // Guests cannot edit existing quizzes
+        if (data.ownerId && !auth.currentUser?.uid) {
+          showToast({ message: 'يجب تسجيل الدخول لتحرير الاختبارات المحفوظة', type: 'error' })
+          navigate('/dashboard', { replace: true })
+          return
+        }
+        
         if (!isMiniGameContent && data.gameModeId) {
           setQuizId(null)
           setQuestions([])
@@ -640,12 +668,6 @@ export function QuizEditorPage() {
       .finally(() => setLoading(false))
   }, [routeId, ownerId, isMiniGameContent])
 
-  const shareSlug = tempSlug || ensureScopedSlug(titleToSlug(tempTitle) || 'quiz', ownerId)
-
-  const shareUrl = buildPlayerGameUrl({
-    serverBase: SERVER_BASE,
-    quizId: shareSlug,
-  })
   const miniGameCards = useMemo(() => {
     return MINI_GAME_IDS.map((id) => {
       const definition = MINI_GAME_DEFINITIONS[id]
@@ -746,8 +768,8 @@ export function QuizEditorPage() {
             hideDialog()
           }}
           onSelectAi={() => {
-            hideDialog()
-            openAiGenerateDialog()
+            const opened = openAiGenerateDialog()
+            if (opened) hideDialog()
           }}
         />
       ),
@@ -796,9 +818,32 @@ export function QuizEditorPage() {
   }
 
   const openAiGenerateDialog = () => {
-    if (!ensureSignedInForAi()) return
+    // Don't set aiAction if user is not signed in - this prevents the dialog from opening and closing immediately
+    if (!auth.currentUser?.uid) {
+      showDialog({
+        title: '🔐 تسجيل الدخول مطلوب',
+        message: (
+          <InlineLoginContent
+            description="يجب تسجيل الدخول لاستخدام ميزات الذكاء الاصطناعي."
+            onGoogleSignIn={async () => {
+              await googleSignIn({
+                returnTo: `${location.pathname}${location.search}`,
+                skipNavigate: true,
+                onSuccess: () => {
+                  hideDialog()
+                  showToast({ message: '✅ تم تسجيل الدخول بنجاح', type: 'success' })
+                },
+              })
+            }}
+          />
+        ),
+        hideFooter: true,
+      })
+      return false
+    }
     setAiAction('generate')
     void incrementPlatformStat('aiGenerateClicks')
+    return true
   }
 
   const handleGenerateAI = async () => {
@@ -916,6 +961,30 @@ export function QuizEditorPage() {
 
   const handleGenerateCoverImage = async () => {
     if (isGeneratingCoverImage || uploadingCover) return
+    
+    // Guests cannot use AI features
+    if (!auth.currentUser?.uid) {
+      showDialog({
+        title: '🔐 تسجيل الدخول مطلوب',
+        message: (
+          <InlineLoginContent
+            description="يجب تسجيل الدخول لاستخدام ميزات الذكاء الاصطناعي."
+            onGoogleSignIn={async () => {
+              await googleSignIn({
+                returnTo: `${location.pathname}${location.search}`,
+                skipNavigate: true,
+                onSuccess: () => {
+                  hideDialog()
+                  showToast({ message: '✅ تم تسجيل الدخول بنجاح', type: 'success' })
+                },
+              })
+            }}
+          />
+        ),
+        hideFooter: true,
+      })
+      return
+    }
 
     setIsGeneratingCoverImage(true)
     try {
@@ -944,6 +1013,30 @@ export function QuizEditorPage() {
 
   const handleUploadCoverImage = () => {
     if (uploadingCover) return
+    
+    // Guests cannot upload images
+    if (!auth.currentUser?.uid) {
+      showDialog({
+        title: '🔐 تسجيل الدخول مطلوب',
+        message: (
+          <InlineLoginContent
+            description="يجب تسجيل الدخول لرفع الصور."
+            onGoogleSignIn={async () => {
+              await googleSignIn({
+                returnTo: `${location.pathname}${location.search}`,
+                skipNavigate: true,
+                onSuccess: () => {
+                  hideDialog()
+                  showToast({ message: '✅ تم تسجيل الدخول بنجاح', type: 'success' })
+                },
+              })
+            }}
+          />
+        ),
+        hideFooter: true,
+      })
+      return
+    }
 
     const inp = document.createElement('input')
     inp.type = 'file'
@@ -982,33 +1075,6 @@ export function QuizEditorPage() {
     }
   }
 
-  const openCoverAssetsLibrary = () => {
-    if (!auth.currentUser?.uid) {
-      showToast({ message: 'يرجى تسجيل الدخول أولاً', type: 'error' })
-      return
-    }
-
-    const previous = tempCoverImage
-    showDialog({
-      title: '🗂️ مكتبة الأصول',
-      message: (
-        <CoverAssetsDialogBody
-          initialSelectedUrl={previous}
-          onSelect={(url) => {
-            setTempCoverImage(url)
-            setCoverPreviewError('')
-          }}
-        />
-      ),
-      confirmText: 'تم',
-      cancelText: 'إلغاء',
-      onConfirm: () => {},
-      onCancel: () => {
-        setTempCoverImage(previous)
-        setCoverPreviewError('')
-      },
-    })
-  }
 
   const handleAiFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (isGeneratingAi) {
@@ -1086,6 +1152,26 @@ export function QuizEditorPage() {
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [hasUnsavedChanges])
+
+  // Sync editor state to sessionStorage for sign-out detection
+  useEffect(() => {
+    const editorState = {
+      hasUnsavedChanges,
+      quizId,
+    }
+    sessionStorage.setItem('qyan:editorState', JSON.stringify(editorState))
+    if (quizId) {
+      sessionStorage.setItem('qyan:editorQuizId', quizId)
+    }
+    
+    // Cleanup on unmount
+    return () => {
+      if (!hasUnsavedChanges) {
+        sessionStorage.removeItem('qyan:editorState')
+        sessionStorage.removeItem('qyan:editorQuizId')
+      }
+    }
+  }, [hasUnsavedChanges, quizId])
 
   // Track screen width for responsive toolbar; also auto-switch slide panel orientation
   useEffect(() => {
@@ -1288,7 +1374,25 @@ export function QuizEditorPage() {
 
   const saveQuiz = async () => {
     if (!ownerId) {
-      showStatus({ kind: 'error', msg: 'خطأ: يجب تسجيل الدخول أولاً.' })
+      showDialog({
+        title: '🔐 تسجيل الدخول مطلوب',
+        message: (
+          <InlineLoginContent
+            description="يجب تسجيل الدخول لحفظ الاختبار."
+            onGoogleSignIn={async () => {
+              await googleSignIn({
+                returnTo: `${location.pathname}${location.search}`,
+                skipNavigate: true,
+                onSuccess: () => {
+                  hideDialog()
+                  showToast({ message: '✅ تم تسجيل الدخول بنجاح', type: 'success' })
+                },
+              })
+            }}
+          />
+        ),
+        hideFooter: true,
+      })
       return
     }
 
@@ -1577,7 +1681,6 @@ export function QuizEditorPage() {
           description={tempDescription}
           tempThemeId={tempThemeId}
           onThemeIdChange={setTempThemeId}
-          shareUrl={shareUrl}
           onTitleChange={(value) => {
             setTempTitle(value)
             if (!quizId) {
@@ -1585,18 +1688,9 @@ export function QuizEditorPage() {
             }
           }}
           onDescriptionChange={setTempDescription}
-          onCopyShareUrl={() => { void copyEditorLink() }}
-          onShareUrl={() => { void shareEditorLink() }}
-          aiQuestionCount={aiQuestionCount}
-          aiPrompt={aiPrompt}
-          isGeneratingAi={isGeneratingAi}
-          aiAction={aiAction}
-          questionCountOptions={AI_QUESTION_COUNT_OPTIONS}
-          creditCostPerQuestion={AI_CREDIT_COST_PER_QUESTION}
+          onOpenAiDialog={openAiGenerateDialog}
+          creditCostPerImage={AI_CREDIT_COST_PER_IMAGE}
           creditsRemaining={creditsRemaining}
-          onQuestionCountChange={setAiQuestionCount}
-          onPromptChange={setAiPrompt}
-          onGenerateAi={handleGenerateAI}
           tempVisibility={tempVisibility}
           approvalStatus={approvalStatus}
           tempChallenge={tempChallenge}
@@ -1631,7 +1725,6 @@ export function QuizEditorPage() {
           onCoverUrlChange={setTempCoverImage}
           onUploadCoverClick={handleUploadCoverImage}
           onGenerateCoverClick={() => { void handleGenerateCoverImage() }}
-          onOpenCoverLibraryClick={openCoverAssetsLibrary}
           onUseDefaultCoverClick={() => setTempCoverImage(DEFAULT_COVER_IMAGE)}
         />
       </MetadataDialogShell>
@@ -1754,6 +1847,16 @@ export function QuizEditorPage() {
                 onSetUploadingIndex={setUploadingIndex}
                 isPremiumQuestionType={isPremiumQuestionType}
                 quizTitle={title}
+                onGoogleSignIn={async (returnTo) => {
+                  await googleSignIn({
+                    returnTo,
+                    skipNavigate: true,
+                    onSuccess: () => {
+                      hideDialog()
+                      showToast({ message: '✅ تم تسجيل الدخول بنجاح', type: 'success' })
+                    },
+                  })
+                }}
                 quizDescription={description}
                 activeIndex={slidePanelEnabled && slidePanel.visible ? activeQuestionIndex : undefined}
               />
