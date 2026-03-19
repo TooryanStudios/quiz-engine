@@ -12,7 +12,10 @@ type ToolbarDropdownMenuProps = {
   onCreateNew: () => void
   onOpenExisting: () => void
   onCloseEditor: () => void
+  onGenerateAI?: () => void
   onRecheckAI?: () => void
+  isGeneratingAI?: boolean
+  isRecheckingAI?: boolean
 }
 
 export function ToolbarDropdownMenu({
@@ -28,6 +31,9 @@ export function ToolbarDropdownMenu({
   onOpenExisting,
   onCloseEditor,
   onRecheckAI,
+  onGenerateAI,
+  isGeneratingAI,
+  isRecheckingAI,
 }: ToolbarDropdownMenuProps) {
   const hasQuiz = !!quizId
 
@@ -77,6 +83,28 @@ export function ToolbarDropdownMenu({
           onClick={() => { onRecheckAI(); onClose() }}
           className="editor-toolbar-dropdown-item"
         >🛡️ <span>تدقيق بالذكاء الاصطناعي</span></button>
+      )}
+
+      {(onGenerateAI || onRecheckAI) && (
+        <>
+          <div className="editor-toolbar-dropdown-section">الذكاء الاصطناعي</div>
+          {onGenerateAI && (
+            <button
+              type="button"
+              onClick={() => { onGenerateAI(); onClose() }}
+              disabled={!!isGeneratingAI}
+              className="editor-toolbar-dropdown-item"
+            >✨ <span>{isGeneratingAI ? 'جارٍ التوليد...' : 'توليد ذكي'}</span></button>
+          )}
+          {onRecheckAI && (
+            <button
+              type="button"
+              onClick={() => { onRecheckAI(); onClose() }}
+              disabled={!!isRecheckingAI}
+              className="editor-toolbar-dropdown-item"
+            >🛡️ <span>{isRecheckingAI ? 'جارٍ التدقيق...' : 'تدقيق الأسئلة'}</span></button>
+          )}
+        </>
       )}
 
       <div className="editor-toolbar-dropdown-section">الرابط</div>

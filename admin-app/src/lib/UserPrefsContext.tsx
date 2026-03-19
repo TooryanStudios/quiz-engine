@@ -16,9 +16,9 @@ export const UserPrefsContext = createContext<UserPrefsContextValue>({
   setLanguage: () => {},
   theme: 'light',
   setTheme: () => {},
-  slidePanelLayout: 'left',
+  slidePanelLayout: 'bottom',
   setSlidePanelLayout: () => {},
-  slidePanelEnabled: true,
+  slidePanelEnabled: false,
   setSlidePanelEnabled: () => {},
 })
 

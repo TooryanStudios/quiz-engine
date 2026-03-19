@@ -64,13 +64,6 @@ const QUESTION_TYPE_VISUALS: Record<string, QuestionTypeVisual> = {
   },
 }
 
-const MINIGAME_ACCENT_COLORS = [
-  '#3b82f6', '#8b5cf6', '#14b8a6', '#ec4899',
-  '#f97316', '#f59e0b', '#6366f1', '#eab308',
-  '#22c55e', '#ef4444', '#06b6d4', '#a855f7',
-  '#84cc16', '#f43f5e', '#0ea5e9', '#d946ef',
-]
-
 export function AddContentDialogBody({
   questionTypeOptions,
   onSelectQuestion,

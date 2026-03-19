@@ -1,5 +1,5 @@
-import React, { useRef, useState } from 'react'
-import { ToolbarDropdownMenu } from './ToolbarDropdownMenu'
+import { useState } from 'react'
+import { EditorSettingsDialog } from './EditorSettingsDialog'
 import './EditorModern.css'
 
 type ContentType = 'quiz' | 'mini-game' | 'mix'
@@ -23,16 +23,12 @@ type EditorUnifiedHeaderProps = {
   onPlayQuiz: (quizId: string) => void
 
   // Toolbar Props
-  showToolbarDropdown: boolean
   isSaving: boolean
   hasUnsavedChanges: boolean
-  onToggleDropdown: () => void
-  onCloseDropdown: () => void
   onOpenContentTypePicker: () => void
   onBack: () => void
   onOpenExisting: () => void
   onCreateNew: () => void
-  onCloseEditor: () => void
   onOpenMetadata: () => void
   onPreviewQuiz: () => void
   onCopyLink: () => void
@@ -61,16 +57,12 @@ export function EditorUnifiedHeader({
   onTitleChange,
   onPlayQuiz,
 
-  showToolbarDropdown,
   isSaving,
   hasUnsavedChanges,
-  onToggleDropdown,
-  onCloseDropdown,
   onOpenContentTypePicker,
   onBack,
   onOpenExisting,
   onCreateNew,
-  onCloseEditor,
   onOpenMetadata,
   onPreviewQuiz,
   onCopyLink,
@@ -94,16 +86,7 @@ export function EditorUnifiedHeader({
     onTitleChange(e.target.value)
   }
 
-  const settingsBtnRef = useRef<HTMLButtonElement>(null)
-  const [dropdownAnchor, setDropdownAnchor] = useState<{ top: number; right: number } | null>(null)
-
-  const handleToggleDropdown = () => {
-    if (!showToolbarDropdown && settingsBtnRef.current) {
-      const rect = settingsBtnRef.current.getBoundingClientRect()
-      setDropdownAnchor({ top: rect.bottom + 6, right: window.innerWidth - rect.right })
-    }
-    onToggleDropdown()
-  }
+  const [showSettingsDialog, setShowSettingsDialog] = useState(false)
 
   return (
     <header className="editor-unified-header">
@@ -138,8 +121,14 @@ export function EditorUnifiedHeader({
             dir="auto"
           />
           <div className="editor-header-meta">
-            <span className="editor-header-pill" onClick={onOpenMetadata} style={{cursor: 'pointer'}}>
-              {visibility === 'public' ? '🌐' : '🔒'} {visibility === 'public' ? 'عام' : 'خاص'}
+            <span
+              className="editor-header-pill icon-only"
+              onClick={onOpenMetadata}
+              style={{ cursor: 'pointer' }}
+              title={visibility === 'public' ? 'عام' : 'خاص'}
+              aria-label={visibility === 'public' ? 'عام' : 'خاص'}
+            >
+              {visibility === 'public' ? '🌐' : '🔒'}
             </span>
             {approvalStatus && (
               <span className={`editor-header-pill status-${approvalStatus}`}>
@@ -147,8 +136,14 @@ export function EditorUnifiedHeader({
                  approvalStatus === 'rejected' ? '❌ مرفوض' : '⏳ قيد المراجعة'}
               </span>
             )}
-            <span className="editor-header-pill" onClick={onOpenContentTypePicker} style={{cursor: 'pointer'}}>
-              {contentType === 'mix' ? '🧩 مزيج' : contentType === 'mini-game' ? '🎮 لعبة' : '📝 اختبار'}
+            <span
+              className="editor-header-pill icon-only"
+              onClick={onOpenContentTypePicker}
+              style={{ cursor: 'pointer' }}
+              title={contentType === 'mix' ? 'مزيج' : contentType === 'mini-game' ? 'لعبة' : 'اختبار'}
+              aria-label={contentType === 'mix' ? 'مزيج' : contentType === 'mini-game' ? 'لعبة' : 'اختبار'}
+            >
+              {contentType === 'mix' ? '🧩' : contentType === 'mini-game' ? '🎮' : '📝'}
             </span>
           </div>
         </div>
@@ -177,32 +172,13 @@ export function EditorUnifiedHeader({
             </button>
           )}
 
-          <div className="editor-header-dropdown-wrap">
-            <button
-              ref={settingsBtnRef}
-              type="button"
-              className="editor-header-settings-btn"
-              onMouseDown={(e) => { e.stopPropagation(); handleToggleDropdown() }}
-            >
-              <span className="icon">⚙️</span> {isNarrowScreen ? '' : 'الإعدادات'} 
-            </button>
-            {showToolbarDropdown && dropdownAnchor && (
-              <ToolbarDropdownMenu
-                quizId={quizId}
-                anchor={dropdownAnchor}
-                onClose={onCloseDropdown}
-                onOpenMetadata={onOpenMetadata}
-                onPreviewQuiz={onPreviewQuiz}
-                onCopyLink={onCopyLink}
-                onShareLink={onShareLink}
-                onDeleteQuiz={onDeleteQuiz}
-                onCreateNew={onCreateNew}
-                onOpenExisting={onOpenExisting}
-                onCloseEditor={onCloseEditor}
-                onRecheckAI={onRecheckAI}
-              />
-            )}
-          </div>
+          <button
+            type="button"
+            className="editor-header-settings-btn"
+            onClick={() => setShowSettingsDialog(true)}
+          >
+            <span className="icon">⚙️</span> الإعدادات
+          </button>
 
           {/* Main Saving Status / Button */}
           <button
@@ -222,6 +198,24 @@ export function EditorUnifiedHeader({
           )}
         </div>
       </div>
+
+      {showSettingsDialog && (
+        <EditorSettingsDialog
+          quizId={quizId}
+          onClose={() => setShowSettingsDialog(false)}
+          onOpenMetadata={onOpenMetadata}
+          onPreviewQuiz={onPreviewQuiz}
+          onCopyLink={onCopyLink}
+          onShareLink={onShareLink}
+          onDeleteQuiz={onDeleteQuiz}
+          onCreateNew={onCreateNew}
+          onOpenExisting={onOpenExisting}
+          onRecheckAI={onRecheckAI}
+          onGenerateAI={onGenerateAI}
+          isGeneratingAI={isGeneratingAI}
+          isRecheckingAI={isRecheckingAI}
+        />
+      )}
     </header>
   )
 }

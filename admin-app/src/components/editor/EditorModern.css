@@ -518,7 +518,7 @@
   color: var(--text-muted);
   padding: 0.4rem 1.1rem;
   border-radius: 6px;
-  font-size: 0.85rem;
+  font-size: 1rem;
   font-weight: 600;
   cursor: default;
 }
@@ -543,7 +543,7 @@
   color: var(--text-primary);
   padding: 0.4rem 0.75rem;
   border-radius: 6px;
-  font-size: 0.85rem;
+  font-size: 1rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -559,7 +559,7 @@
   border: none;
   padding: 0.4rem 1rem;
   border-radius: 6px;
-  font-size: 0.9rem;
+  font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
@@ -595,7 +595,7 @@
   border: none;
   padding: 0.4rem 1rem;
   border-radius: 6px;
-  font-size: 0.9rem;
+  font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
   box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
@@ -608,19 +608,23 @@
 @media (max-width: 768px) {
   /* Tighten the header itself */
   .editor-unified-header {
-    padding: 0.4rem 0.6rem;
-    min-height: 56px;
+    padding: 0.5rem 0.75rem;
+    min-height: auto;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.6rem;
   }
 
-  /* Smaller back button */
+  /* Hide back button on mobile */
   .editor-back-btn {
-    font-size: 1.5rem;
-    padding: 0 0.25rem;
+    display: none;
   }
 
   /* Left side gap */
   .editor-header-left {
     gap: 0.4rem;
+    flex: none;
+    width: 100%;
   }
 
   /* Shrink cover thumbnail */
@@ -629,10 +633,13 @@
     height: 36px;
   }
 
-  /* Narrower title */
+  /* Wider title to use available space */
   .editor-header-title-input {
-    max-width: 120px;
-    font-size: 0.95rem;
+    max-width: 100%;
+    flex: 1;
+    font-size: 1rem;
+    padding: 0.5rem 0.5rem;
+    min-height: 44px;
   }
 
   /* Hide the pill row entirely on very small screens — saves ≈28px of vertical crowding */
@@ -642,16 +649,17 @@
 
   /* Tighten action row */
   .editor-header-actions {
-    gap: 0.25rem;
-    display: inline-flex;
+    gap: 0.4rem;
+    display: flex;
     flex-wrap: nowrap;
-    min-width: max-content;
-    padding-bottom: 2px;
+    justify-content: space-between;
+    width: 100%;
   }
 
   .editor-header-right {
     min-width: 0;
     max-width: 100%;
+    width: 100%;
     overflow-x: auto;
     overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
@@ -675,31 +683,53 @@
     flex: 0 0 auto;
   }
 
-  /* Save button: icon only */
+  /* Save button: keep label visible on mobile */
   .editor-header-save-btn {
-    padding: 0.35rem 0.5rem;
+    padding: 0.65rem 0.85rem;
+    font-size: 1rem;
+    flex: 1;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
   .editor-header-save-btn .label {
-    display: none;
+    display: inline;
   }
-
-  /* Add button: shorter */
-  .editor-header-add-btn {
-    padding: 0.35rem 0.6rem;
-    font-size: 0.8rem;
-  }
-
-  /* Settings: icon only  */
+  
+  /* Settings button: always show text on mobile */
   .editor-header-settings-btn {
-    padding: 0.35rem 0.5rem;
-    font-size: 0.85rem;
+    padding: 0.65rem 0.85rem;
+    font-size: 1rem;
+    flex: 1;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
-  /* Play button: icon + short text */
-  .editor-header-play-btn {
-    padding: 0.35rem 0.6rem;
-    font-size: 0.82rem;
+  /* Add button: proportional sizing */
+  .editor-header-add-btn {
+    padding: 0.65rem 0.85rem;
+    font-size: 1rem;
+    flex: 1;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
+  
+  /* Play button: proportional sizing */
+  .editor-header-play-btn {
+    padding: 0.65rem 0.85rem;
+    font-size: 1rem;
+    flex: 1;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
 }
 /* -- Robust Fixed Layout -- */
 /* Suppress admin-main's own scroll/padding when the editor is mounted */

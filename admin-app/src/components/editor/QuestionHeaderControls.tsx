@@ -41,7 +41,7 @@ export function QuestionHeaderControls({
           border: '1px solid var(--border-strong)',
           backgroundColor: 'var(--bg-deep)',
           color: 'var(--text)',
-          fontSize: '0.92rem',
+          fontSize: '1rem',
           fontWeight: 600,
           cursor: 'pointer',
           outline: 'none',
@@ -66,7 +66,7 @@ export function QuestionHeaderControls({
             border: '1px solid var(--border-strong)',
             backgroundColor: 'var(--bg-deep)',
             color: 'var(--text)',
-            fontSize: '0.84rem',
+            fontSize: '1rem',
             fontWeight: 600,
             cursor: 'pointer',
             width: '140px',
@@ -92,7 +92,7 @@ export function QuestionHeaderControls({
         height: '42px',
         minWidth: isNarrowScreen ? '70px' : '85px',
       }}>
-        <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 400 }}>⏱️</span>
+        <span style={{ color: 'var(--text-muted)', fontSize: '1rem', fontWeight: 400 }}>⏱️</span>
         <select
           value={String(currentDuration || 20)}
           onChange={(e) => onDurationChange(Number(e.target.value))}
@@ -103,7 +103,7 @@ export function QuestionHeaderControls({
             border: 'none',
             background: 'transparent',
             color: 'var(--text)',
-            fontSize: '0.92rem',
+            fontSize: '1rem',
             fontWeight: 700,
             outline: 'none',
             cursor: 'pointer',
@@ -124,7 +124,7 @@ export function QuestionHeaderControls({
             onClick={onOpenDurationPicker}
             style={{
               color: 'var(--text)',
-              fontSize: '0.92rem',
+              fontSize: '1rem',
               fontWeight: 700,
               cursor: 'pointer',
             }}

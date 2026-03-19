@@ -1540,7 +1540,7 @@ function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
         waitingEl.style.color = 'var(--text-dim)';
         waitingEl.style.fontWeight = '400';
         waitingEl.dataset.state = 'waiting';
-        waitingEl.textContent = 'في انتظار الاعبين';
+        waitingEl.textContent = 'في انتظار اللاعبين';
       } else if (gameModeFromUrl === 'xo-duel' && playersArr.length < 2) {
         waitingEl.style.display = 'block';
         waitingEl.style.color = '#f87171';

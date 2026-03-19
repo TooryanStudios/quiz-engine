@@ -79,11 +79,11 @@ function App() {
   )
   const isAr = language === 'ar'
   const [slidePanelLayout, setSlidePanelLayout] = useState<'left' | 'bottom'>(
-    () => (localStorage.getItem('qyan:slidePanelLayout') as 'left' | 'bottom') || 'left'
+    () => (localStorage.getItem('qyan:slidePanelLayout') as 'left' | 'bottom') || 'bottom'
   )
   const [slidePanelEnabled, setSlidePanelEnabled] = useState<boolean>(() => {
     const stored = localStorage.getItem('qyan:slidePanelEnabled')
-    if (stored === null) return true
+    if (stored === null) return false
     return stored !== 'false'
   })
   const handleSignOut = useCallback(() => {

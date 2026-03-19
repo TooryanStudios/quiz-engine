@@ -1,7 +1,7 @@
 ﻿import { useEffect, useState, useMemo } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { auth } from '../lib/firebase'
-import { cancelPublishRequest, incrementShareCount, subscribeMyQuizzes, updateQuiz } from '../lib/quizRepo'
+import { incrementShareCount, subscribeMyQuizzes } from '../lib/quizRepo'
 import { getCoverFromQuestions, isNewContent } from '../lib/utils'
 import { buildHostGameUrl, buildPlayerGameUrl } from '../lib/gameModeUrl'
 import type { QuizDoc } from '../types/quiz'
@@ -25,11 +25,9 @@ function presetBadge(preset?: string, isAr?: boolean) {
 }
 
 export function MyQuizzesPage() {
-  const navigate = useNavigate()
   const [quizzes, setQuizzes] = useState<QuizItem[]>([])
   const [loading, setLoading] = useState(true)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
-  const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [contentFilter, setContentFilter] = useState<ContentFilter>('all')
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'title'>('newest')
@@ -40,7 +38,6 @@ export function MyQuizzesPage() {
   
   const isAr = language === 'ar'
   const t = {
-    back: isAr ? 'رجوع ⬅️' : '⬅️ Back',
     title: isAr ? 'اختباراتي' : 'My Challenges',
     newQuiz: isAr ? '+ اختبار جديد' : '+ New Challenge',
     quizzesLabel: isAr ? 'الاختبارات' : 'Challenges',
@@ -76,6 +73,7 @@ export function MyQuizzesPage() {
     questionsCountDisplay: (count: number) => isAr ? `${count} سؤال` : `${count} questions`,
     previewStr: isAr ? '🔍 معاينة' : '🔍 Preview',
     editStr: isAr ? '✏️ تعديل' : '✏️ Edit',
+    shareStr: isAr ? '🔗 مشاركة' : '🔗 Share',
     copyLinkHint: isAr ? 'نسخ الرابط' : 'Copy Link',
     visibilityHint: isAr ? 'إعدادات الخصوصية' : 'Toggle Visibility',
     loadMoreSimple: isAr ? 'تحميل المزيد' : 'Load more',
@@ -99,33 +97,6 @@ export function MyQuizzesPage() {
 
   useEffect(() => { setVisibleCount(12) }, [search, contentFilter, sortBy])
 
-  async function handleVisibilityChange(quiz: QuizItem, newVis: 'public' | 'private') {
-    if (newVis === 'private') {
-      const ok = quiz.approvalStatus === 'pending'
-        ? window.confirm(t.cancelConfirm)
-        : window.confirm(t.makePrivateConfirm)
-      if (!ok) return
-      setUpdatingId(quiz.id)
-      try {
-        await cancelPublishRequest(quiz.id)
-        showToast({ message: t.cancelSuccess, type: 'success' })
-      } catch {
-        showToast({ message: t.failOperation, type: 'error' })
-      } finally {
-        setUpdatingId(null)
-      }
-    } else {
-      setUpdatingId(quiz.id)
-      try {
-        await updateQuiz(quiz.id, { visibility: 'public' })
-        showToast({ message: t.publishSuccess, type: 'success' })
-      } catch {
-        showToast({ message: t.publishFail, type: 'error' })
-      } finally {
-        setUpdatingId(null)
-      }
-    }
-  }
 
   const filtered = useMemo(() => {
     return quizzes
@@ -146,46 +117,16 @@ export function MyQuizzesPage() {
 
   const shown = filtered.slice(0, visibleCount)
 
-  const quizCount = quizzes.filter((q) => q.contentType !== 'mini-game' && !q.gameModeId).length
-  const miniGameCount = quizzes.filter((q) => q.contentType === 'mini-game' || !!q.gameModeId).length
-  const publicCount = quizzes.filter((q) => q.visibility === 'public').length
-  const totalQuestions = quizzes.reduce((sum, q) => sum + (q.questions?.length ?? 0), 0)
-
   return (
     <div className="my-quizzes-page">
       <div className="page-header">
         <div className="header-left">
-          <button onClick={() => navigate('/dashboard')} className="back-button">{t.back}</button>
-          <div>
-            <h2 className="page-title">{t.title}</h2>
-            <p className="page-subtitle">
-              {loading ? '...' : t.resultsTotal(filtered.length, quizzes.length)}
-            </p>
-          </div>
+          <h2 className="page-title">{t.title}</h2>
         </div>
         <Link to="/editor" className="no-underline">
           <button className="new-quiz-button">{t.newQuiz}</button>
         </Link>
       </div>
-
-      {!loading && quizzes.length > 0 && (
-        <div className="stats-bar">
-          {[
-            { label: t.quizzesLabel, value: quizCount, icon: '📝' },
-            { label: t.miniGamesLabel, value: miniGameCount, icon: '🎮' },
-            { label: t.publicLabel, value: publicCount, icon: '🌐' },
-            { label: t.questionsLabel, value: totalQuestions, icon: '❓' },
-          ].map(({ label, value, icon }) => (
-            <div key={label} className="stat-pill">
-              <span className="stat-icon">{icon}</span>
-              <div className="stat-content">
-                <div className="stat-value">{value}</div>
-                <div className="stat-label">{label}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
 
       <div className="filter-bar">
         <input
@@ -282,9 +223,9 @@ export function MyQuizzesPage() {
                 </div>
 
                 <div className="action-bar-hover">
-                  <button className="action-btn flex-1" onClick={() => setPreviewQuiz(q)}>{t.previewStr}</button>
-                  <Link to={isMini ? `/mini-game-editor/${q.id}` : `/editor/${q.id}`} className="flex-1 no-underline">
-                    <button className="action-btn">{t.editStr}</button>
+                  <button className="action-btn preview-btn" onClick={() => setPreviewQuiz(q)}>{t.previewStr}</button>
+                  <Link to={isMini ? `/mini-game-editor/${q.id}` : `/editor/${q.id}`} className="action-link no-underline">
+                    <button className="action-btn edit-btn">{t.editStr}</button>
                   </Link>
                   <button
                     onClick={() => {
@@ -295,18 +236,10 @@ export function MyQuizzesPage() {
                       showToast({ message: t.linkCopied, type: 'success' })
                       incrementShareCount(q.id).catch(console.error)
                     }}
-                    className="action-btn icon-only"
+                    className="action-btn share-btn"
                     title={t.copyLinkHint}
                   >
-                    🔗
-                  </button>
-                  <button
-                    onClick={() => handleVisibilityChange(q, q.visibility === 'public' ? 'private' : 'public')}
-                    className="action-btn icon-only"
-                    disabled={updatingId === q.id}
-                    title={t.visibilityHint}
-                  >
-                    {q.visibility === 'public' ? '🔒' : q.approvalStatus === 'pending' ? '🕒' : '🌐'}
+                    {t.shareStr}
                   </button>
                 </div>
               </div>

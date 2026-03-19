@@ -58,6 +58,7 @@ import { SlidePanel } from '../components/editor/SlidePanel'
 import { useSlidePanel } from '../hooks/useSlidePanel'
 import { useUserPrefs } from '../lib/UserPrefsContext'
 import placeholderImg from '../assets/QYan_logo_300x164.jpg'
+import { OpenQuizDialog } from '../components/editor/OpenQuizDialog'
 
 const IS_LOCAL_DEV = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
 const SERVER_BASE = IS_LOCAL_DEV
