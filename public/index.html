@@ -426,10 +426,13 @@
         <!-- Center: ROOM -> timer -> points -->
         <div class="hud-center-col">
           <span class="hud-pin-text" id="host-q-room-pin">ROOM ------</span>
-          <div class="timer-ring hud-timer" id="host-timer-ring">
-            <span class="timer-count" id="host-timer-count">30</span>
+          <div class="hud-center-metrics">
+            <span class="hud-q-num hud-center-left" id="host-q-progress">Q 1 / 8</span>
+            <div class="timer-ring hud-timer" id="host-timer-ring">
+              <span class="timer-count" id="host-timer-count">30</span>
+            </div>
+            <span class="universal-score-count hud-score-val hud-center-score hud-center-right">0 pts</span>
           </div>
-          <span class="universal-score-count hud-score-val hud-center-score">0 pts</span>
         </div>
 
         <!-- Right: connection/audio (stacked) -->
@@ -451,7 +454,6 @@
 
       <!-- Meta row: progress counters -->
       <div class="hud-meta-row">
-        <span class="hud-q-num" id="host-q-progress">Q 1 / 8</span>
         <span class="hud-answer-count" id="host-answer-counter">0/0</span>
       </div>
 
@@ -504,12 +506,15 @@
 
         <div class="hud-center-col">
           <span class="hud-pin-text" id="solo-host-room-pin">ROOM ------</span>
-          <div class="timer-ring hud-timer" id="solo-host-timer-ring">
-            <span class="timer-count" id="solo-host-timer-count">30</span>
+          <div class="hud-center-metrics">
+            <span class="hud-q-num hud-center-left" id="solo-host-q-progress">Q 1 / 8</span>
+            <div class="timer-ring hud-timer" id="solo-host-timer-ring">
+              <span class="timer-count" id="solo-host-timer-count">30</span>
+            </div>
+            <span class="score-badge player-score-badge hud-center-right" id="player-score-badge">
+              <span class="score-count universal-score-count">0 pts</span>
+            </span>
           </div>
-          <span class="score-badge player-score-badge" id="player-score-badge">
-            <span class="score-count universal-score-count">0 pts</span>
-          </span>
         </div>
 
         <div class="hud-side hud-side-right hud-stack-utility">
@@ -522,7 +527,6 @@
       </div>
 
       <div class="hud-meta-row">
-        <span class="hud-q-num" id="solo-host-q-progress">Q 1 / 8</span>
         <span class="streak-badge" id="player-streak-badge" style="display:none">🔥 <span id="player-streak-count">0</span></span>
         <span class="role-badge hud-role-chip" id="player-role-badge" style="display:none">Role: —</span>
       </div>

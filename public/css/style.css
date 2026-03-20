@@ -1179,6 +1179,27 @@ h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-dim); }
   flex-shrink: 0;
 }
 
+.hud-center-metrics {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: center;
+  width: 100%;
+}
+
+.hud-center-left,
+.hud-center-right {
+  flex: 0 0 auto;
+}
+
+.hud-center-left {
+  text-align: right;
+}
+
+.hud-center-right {
+  text-align: left;
+}
+
 .hud-timer {
   width: 72px !important;
   height: 72px !important;
@@ -5092,15 +5113,15 @@ video.question-media {
 
 .match-dnd-layout {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: flex-start;
 }
 
 /* Left column: label + drop zone rows */
-.match-dnd-slots  { display: flex; flex-direction: column; gap: 10px; }
+.match-dnd-slots  { display: flex; flex-direction: column; gap: 8px; }
 
-.match-dnd-row    { display: flex; flex-direction: column; gap: 4px; }
+.match-dnd-row    { display: flex; flex-direction: column; gap: 6px; }
 
 .match-dnd-label {
   font-size: 0.78rem;
@@ -5108,11 +5129,12 @@ video.question-media {
   color: var(--text-dim);
   padding: 0 4px;
   unicode-bidi: plaintext;
+  line-height: 1.25;
 }
 
 .match-left-media {
   width: 100%;
-  height: 82px;
+  height: 68px;
   object-fit: cover;
   border-radius: 10px;
   border: 1px solid rgba(255,255,255,0.16);
@@ -5121,7 +5143,7 @@ video.question-media {
 }
 
 .match-dropzone {
-  min-height: 52px;
+  min-height: 44px;
   border-radius: var(--radius);
   border: 2px dashed rgba(255,255,255,0.2);
   display: flex;
@@ -5146,7 +5168,7 @@ video.question-media {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding-top: 22px; /* visually align with first slot */
+  padding-top: 8px;
 }
 
 .match-pool-label {
@@ -5161,10 +5183,10 @@ video.question-media {
 
 /* Chips (shared between pool and placed-in-slot) */
 .match-chip {
-  padding: 11px 14px;
+  padding: 9px 12px;
   border-radius: var(--radius);
   font-weight: 700;
-  font-size: 0.9rem;
+  font-size: 0.84rem;
   cursor: grab;
   text-align: center;
   unicode-bidi: plaintext;
@@ -5178,7 +5200,7 @@ video.question-media {
 
 .match-chip-media {
   width: 100%;
-  height: 84px;
+  height: 64px;
   object-fit: cover;
   border-radius: 10px;
   display: block;
@@ -5509,11 +5531,10 @@ video.question-media {
 
 /* Container injected into #player-match-container */
 .match-dnd-layout {
-  display: flex;
-  gap: 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
   align-items: flex-start;
-  flex-wrap: nowrap;
-  overflow-x: auto;
   width: 100%;
   max-width: 680px;
   margin: 0 auto;
@@ -5521,36 +5542,35 @@ video.question-media {
 
 /* Left column – slots */
 .match-dnd-slots {
-  flex: 1 1 55%;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 /* One slot row = label + dropzone */
 .match-dnd-row {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 6px;
 }
 
 /* Label cell (image or text on the left side) */
 .match-dnd-label {
-  flex: 0 0 90px;
-  width: 90px;
-  height: 90px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255,255,255,0.06);
-  border-radius: 10px;
-  overflow: hidden;
+  width: 100%;
+  min-height: unset;
+  display: block;
+  background: transparent;
+  border-radius: 8px;
+  padding: 0 4px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-dim);
 }
 
 /* Drop zone */
 .match-dropzone {
   flex: 1;
-  min-height: 64px;
+  min-height: 46px;
   border-radius: 10px;
   display: flex;
   align-items: center;
@@ -5577,7 +5597,6 @@ video.question-media {
 
 /* Right column – draggable chip pool */
 .match-dnd-pool {
-  flex: 1 1 45%;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -5597,16 +5616,16 @@ video.question-media {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 64px;
-  padding: 8px 12px;
+  min-height: 48px;
+  padding: 8px 10px;
   border-radius: 10px;
   cursor: grab;
   touch-action: none;
   user-select: none;
   transition: transform 0.1s, opacity 0.1s;
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   font-weight: 600;
-  gap: 8px;
+  gap: 6px;
   overflow: hidden;
 }
 .match-chip:active { cursor: grabbing; }
@@ -5634,8 +5653,8 @@ video.question-media {
 /* Images inside chips and labels */
 .match-chip-media,
 .match-left-media {
-  max-width: 72px;
-  max-height: 72px;
+  max-width: 60px;
+  max-height: 60px;
   width: auto;
   height: auto;
   object-fit: contain;
@@ -5717,28 +5736,15 @@ video.question-media {
 /* ── Mobile ── */
 @media (max-width: 600px) {
   .match-dnd-layout {
-    display: flex;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    gap: 12px;
-    padding-bottom: 8px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
   }
   .match-dnd-slots,
   .match-dnd-pool {
-    flex: 1 1 50%;
-    min-width: 220px;
+    min-width: 0;
   }
-  .match-dnd-label {
-    flex: 0 0 70px;
-    width: 70px;
-    height: 70px;
-  }
-  .match-dnd-row {
-    flex-direction: row;
-    align-items: stretch;
-  }
-  .match-dropzone {
-    min-height: 64px;
+  .match-chip {
+    font-size: 0.78rem;
   }
 }
   .match-puzzle-chip-tile { width: 38px; height: 38px; }
