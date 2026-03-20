@@ -232,6 +232,9 @@ function buildRuntimePreviewDocument(t: ThemePaletteTokens, tab: PreviewTabId): 
     tf: 'الأرض هي الكوكب الأقرب للشمس',
     open: 'ما اسم النبي الذي بنى الكعبة مع ابنه؟',
     order: 'رتّب الأحداث زمنياً من الأقدم إلى الأحدث',
+    lobby: '',
+    leaderboard: '',
+    final: '',
   }
 
   return `<!doctype html>
