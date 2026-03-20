@@ -3027,7 +3027,7 @@ function showLeaderboard(data, isFinal) {
   const titleEl = document.getElementById('lb-title');
   const hintEl  = document.getElementById('lb-next-hint');
 
-  titleEl.textContent = isFinal ? '🎉 النتائج النهائية' : '🏆 Leaderboard';
+  titleEl.textContent = isFinal ? '\ud83c\udf89 النتائج النهائية' : '\ud83c\udfc6 لوحة المتصدرين';
   if (isFinal) {
     hintEl.textContent = '🏅 جاري عرض النتائج…';
     hintEl.style.display = 'block';
@@ -3041,7 +3041,7 @@ function showLeaderboard(data, isFinal) {
     };
     tick();
   } else {
-    hintEl.textContent  = 'Next question coming up…';
+    hintEl.textContent  = 'السؤال التالي قادم...';
     hintEl.style.display = 'block';
   }
 

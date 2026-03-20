@@ -869,17 +869,106 @@ export function QuizEditorPage() {
         return `${normalized.slice(0, maxLength - 1).trimEnd()}…`;
       };
 
+      const resolveAiQuestionType = (raw: unknown): QuizQuestion['type'] => {
+        const key = String(raw ?? '').trim().toLowerCase();
+        if (key.includes('match')) return 'match';
+        if (key.includes('order') || key.includes('sequence')) return 'order';
+        if (key.includes('type') || key.includes('text') || key.includes('written')) return 'type';
+        if (key.includes('multi')) return 'multi';
+        if (key === 'boolean' || key === 'truefalse') return 'single';
+        return 'single';
+      };
+
+      const normalizePairs = (value: unknown): Array<{ left: string; right: string }> => {
+        if (!Array.isArray(value)) return [];
+        return value
+          .map((pair) => {
+            if (!pair || typeof pair !== 'object') return null;
+            const left = clampText((pair as Record<string, unknown>).left, MAX_OPTION_TEXT_LENGTH);
+            const right = clampText((pair as Record<string, unknown>).right, MAX_OPTION_TEXT_LENGTH);
+            if (!left && !right) return null;
+            return { left: left || 'العنصر', right: right || 'التفسير' };
+          })
+          .filter((pair): pair is { left: string; right: string } => !!pair);
+      };
+
+      const normalizeOrderItems = (value: unknown): string[] => {
+        if (!Array.isArray(value)) return [];
+        return value
+          .map((item) => clampText(item, MAX_OPTION_TEXT_LENGTH))
+          .filter(Boolean)
+          .slice(0, 8);
+      };
+
+      const normalizeAcceptedAnswers = (value: unknown): string[] => {
+        if (Array.isArray(value)) {
+          const cleaned = value.map((item) => clampText(item, MAX_OPTION_TEXT_LENGTH)).filter(Boolean);
+          return cleaned.length > 0 ? cleaned : ['الإجابة الصحيحة'];
+        }
+        const single = clampText(value, MAX_OPTION_TEXT_LENGTH);
+        return single ? [single] : ['الإجابة الصحيحة'];
+      };
+
       const normalizeAiQuestions = (items: unknown[]): QuizQuestion[] => {
         return items.map((raw): QuizQuestion => {
           const source = (raw ?? {}) as Record<string, unknown>;
-          const rawType = String(source.type ?? 'single').toLowerCase();
-          const normalizedType: QuizQuestion['type'] = rawType === 'multiple' || rawType === 'multi' ? 'multi' : 'single';
+          const normalizedType = resolveAiQuestionType(source.type);
+          const baseDuration = Number(source.duration) > 0 ? Number(source.duration) : 20;
+
+          if (normalizedType === 'match') {
+            const pairs = normalizePairs(source.pairs);
+            const finalPairs = pairs.length > 0
+              ? pairs
+              : [
+                  { left: 'العنصر ١', right: 'الوصف ١' },
+                  { left: 'العنصر ٢', right: 'الوصف ٢' },
+                  { left: 'العنصر ٣', right: 'الوصف ٣' },
+                ];
+            return {
+              type: 'match',
+              text: clampText(source.text, MAX_QUESTION_TEXT_LENGTH),
+              pairs: finalPairs,
+              duration: baseDuration || 35,
+            };
+          }
+
+          if (normalizedType === 'order') {
+            const itemsList = normalizeOrderItems(source.items);
+            const finalItems = itemsList.length > 0 ? itemsList : ['العنصر ١', 'العنصر ٢', 'العنصر ٣'];
+            const max = finalItems.length;
+            const order = Array.isArray(source.correctOrder)
+              ? (source.correctOrder as unknown[])
+                  .map((value) => Number(value))
+                  .filter((value) => Number.isInteger(value) && value >= 0 && value < max)
+              : [];
+            const orderSet = new Set(order);
+            const missing = Array.from({ length: max }, (_, idx) => idx).filter((idx) => !orderSet.has(idx));
+            return {
+              type: 'order',
+              text: clampText(source.text, MAX_QUESTION_TEXT_LENGTH),
+              items: finalItems,
+              correctOrder: [...orderSet, ...missing],
+              duration: baseDuration || 30,
+            };
+          }
+
+          if (normalizedType === 'type') {
+            const acceptedAnswers = normalizeAcceptedAnswers(source.acceptedAnswers ?? source.correctAnswer);
+            return {
+              type: 'type',
+              text: clampText(source.text, MAX_QUESTION_TEXT_LENGTH),
+              acceptedAnswers,
+              inputPlaceholder: 'اكتب الإجابة هنا',
+              duration: baseDuration || 20,
+            };
+          }
 
           let options = Array.isArray(source.options)
             ? source.options.map((option) => clampText(option, MAX_OPTION_TEXT_LENGTH)).filter(Boolean)
             : [];
 
-          if (rawType === 'boolean') {
+          const rawType = String(source.type ?? '').toLowerCase();
+          if (rawType === 'boolean' || rawType === 'truefalse') {
             options = ['صح', 'خطأ'];
           }
 
@@ -895,36 +984,75 @@ export function QuizEditorPage() {
           let correctIndex = options.findIndex((option) => option === rawCorrectAnswer);
           if (correctIndex < 0) correctIndex = 0;
 
-          return {
-            type: normalizedType,
-            text: clampText(source.text, MAX_QUESTION_TEXT_LENGTH),
-            options,
-            correctIndex,
-            duration: Number(source.duration) > 0 ? Number(source.duration) : 20,
-          };
+          let correctIndices: number[] | undefined;
+          if (normalizedType === 'multi') {
+            const provided = Array.isArray(source.correctIndices)
+              ? (source.correctIndices as unknown[]).map((idx) => Number(idx)).filter((idx) => Number.isInteger(idx) && idx >= 0 && idx < options.length)
+              : [];
+            if (provided.length > 0) {
+              correctIndices = Array.from(new Set(provided));
+            } else if (Array.isArray(source.correctAnswers)) {
+              const answers = (source.correctAnswers as unknown[])
+                .map((answer) => clampText(answer, MAX_OPTION_TEXT_LENGTH))
+                .filter(Boolean);
+              const indicesFromAnswers = answers
+                .map((answer) => options.findIndex((option) => option === answer))
+                .filter((idx) => idx >= 0);
+              if (indicesFromAnswers.length > 0) {
+                correctIndices = Array.from(new Set(indicesFromAnswers));
+              }
+            }
+            if (!correctIndices || correctIndices.length === 0) {
+              correctIndices = [correctIndex];
+            }
+          }
+
+          return normalizedType === 'multi'
+            ? {
+                type: 'multi',
+                text: clampText(source.text, MAX_QUESTION_TEXT_LENGTH),
+                options,
+                correctIndices,
+                duration: baseDuration || 25,
+              }
+            : {
+                type: 'single',
+                text: clampText(source.text, MAX_QUESTION_TEXT_LENGTH),
+                options,
+                correctIndex,
+                duration: baseDuration || 20,
+              };
         });
       };
 
       const promptText = `Generate a quiz with ${aiQuestionCount} questions based on the provided content. 
       Topic/Context: "${aiPrompt}".
-      Return ONLY a JSON object (no markdown tags, no backticks, just raw JSON) with this structure:
+      The final quiz MUST include a mix of question types. Use at least three different types from this list: single-choice, multi-choice, match, order, written answer. Do NOT return only one type.
+      Return ONLY raw JSON (no markdown) with this structure:
       {
-        "title": "a concise quiz title in Arabic (max 50 characters)",
+        "title": "concise quiz title (<=50 chars) in the same language as the prompt/context",
         "questions": [
           {
-            "type": "single" | "multiple" | "boolean",
-            "text": "question text in Arabic",
-            "options": ["option1", "option2", "option3", "option4"],
-            "correctAnswer": "the exact string of the correct option",
+            "type": "single" | "multi" | "match" | "order" | "type" | "boolean",
+            "text": "question text (match user language)",
+            "options": ["option1", "option2", "option3", "option4"], // required for single/multi/boolean
+            "correctAnswer": "the exact string of the correct option",   // single + boolean
+            "correctAnswers": ["option1", "option2"],                   // optional for multi
+            "correctIndices": [0,2],                                       // optional for multi
+            "pairs": [{ "left": "", "right": "" }],                 // required for match
+            "items": ["", ""],                                          // required for order
+            "correctOrder": [0,1],                                         // required for order
+            "acceptedAnswers": [""],                                      // required for type/written
             "duration": 20
           }
         ]
       }
-      Important: Use Arabic for all text including the title. For boolean questions, options must be ["صح", "خطأ"].
-      Keep content concise for mobile gameplay UI:
-      - Max question text length: ${MAX_QUESTION_TEXT_LENGTH} characters
-      - Max option text length: ${MAX_OPTION_TEXT_LENGTH} characters
-      - Max number of options: 6`;
+      Additional rules:
+      - Use the same language as the prompt/context (Arabic or otherwise) for all text.
+      - Boolean questions must use options ["صح", "خطأ"].
+      - Keep question text <= ${MAX_QUESTION_TEXT_LENGTH} characters.
+      - Keep each option/pair/item <= ${MAX_OPTION_TEXT_LENGTH} characters and <= 6 options.
+      - Ensure match questions include at least 3 pairs and order questions include at least 3 items.`;
 
       const { questions: generatedQuestions, title: generatedTitle } = await generateQuizQuestions({
         promptText,
