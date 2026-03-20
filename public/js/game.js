@@ -6166,6 +6166,17 @@ socket.on('room:closed', ({ message }) => {
     showView('view-player-join', { replaceHistory: true });
   } else if (pathView === 'view-host-loading' || pathView === 'view-host-lobby') {
     startHostLaunch(quizSlugFromUrl || null);
+  } else if (pathView === 'view-host-question' || pathView === 'view-player-question') {
+    // If refreshing on /play without an active game, redirect to appropriate lobby
+    if (isAutoHostLaunch) {
+      startHostLaunch(quizSlugFromUrl);
+    } else if (quizSlugFromUrl) {
+      state.role = 'player';
+      if (scanFallbackBanner) scanFallbackBanner.style.display = 'none';
+      showView('view-player-join', { replaceHistory: true });
+    } else {
+      showView('view-home', { replaceHistory: true });
+    }
   } else if (pathView && pathView !== 'view-home') {
     showView(pathView, { replaceHistory: true });
   } else if (isAutoHostLaunch) {
