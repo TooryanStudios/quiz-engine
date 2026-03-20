@@ -150,7 +150,7 @@ function buildBgVars(t: ThemePaletteTokens): Record<string, string> {
   }
 }
 
-export type PreviewTabId = 'mcq' | 'drag' | 'tf' | 'open' | 'order'
+export type PreviewTabId = 'mcq' | 'drag' | 'tf' | 'open' | 'order' | 'lobby' | 'leaderboard' | 'final'
 
 function getQuestionBodyHtml(tab: PreviewTabId): string {
   if (tab === 'drag') {
@@ -344,11 +344,304 @@ export function PreviewOrdering({ t }: { t: ThemePaletteTokens }) {
   return <RuntimePreviewFrame t={t} tab="order" />
 }
 
+function buildLobbyPreviewDocument(t: ThemePaletteTokens): string {
+  const runtimeBase = getRuntimeBaseUrl()
+  const baseTheme = guessBaseTheme(t.bg)
+
+  const vars = {
+    ...themeTokensToCssVars(t),
+    ...buildBgVars(t),
+  }
+  if (!vars['--radius'] && t.cardRadius) vars['--radius'] = t.cardRadius
+
+  const varCss = Object.entries(vars)
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .map(([name, value]) => `${name}:${String(value)};`)
+    .join('')
+
+  return `<!doctype html>
+<html data-theme="${baseTheme}" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="${runtimeBase}/css/style.css" />
+  <style>
+    :root { ${varCss} }
+    html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+    body {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      min-height: auto !important;
+      background: var(--bg) !important;
+      background-image: var(--app-bg-image, none) !important;
+      background-size: var(--app-bg-size, cover) !important;
+      background-repeat: var(--app-bg-repeat, no-repeat) !important;
+      background-position: var(--app-bg-position, center center) !important;
+    }
+    .host-lobby-card { max-width: 480px !important; }
+  </style>
+</head>
+<body>
+  <div id="view-host-lobby" class="view active">
+    <div class="card host-lobby-card">
+      <div class="lobby-header">
+        <div class="lobby-mode-corner">
+          <span class="mode-indicator">🌐 الويب العالمي</span>
+        </div>
+        <div class="host-header-logo">
+          <button type="button" class="host-help-text-btn">ساعدني</button>
+        </div>
+      </div>
+      <div class="lobby-play-mode-switch" dir="rtl">
+        <button class="lobby-mode-btn is-active" type="button">👥 اللعب مع فريق</button>
+        <button class="lobby-mode-btn" type="button">⚡ اللعب الفردي</button>
+      </div>
+      <div class="host-pin-qr-row">
+        <div class="pin-display">
+          <div class="pin-label-row">
+            <span class="pin-label">Room PIN</span>
+          </div>
+          <span class="pin-code">712883</span>
+          <div class="host-room-health is-ok">
+            <span class="host-room-health-label">✓ Connected</span>
+            <span class="host-room-health-detail">Room ready</span>
+          </div>
+        </div>
+      </div>
+      <div class="player-list-section">
+        <div class="player-list-header">تحدي معلومات عن الصوم <span class="player-count-badge">1</span></div>
+        <div class="player-grid">
+          <div class="player-card">
+            <div class="player-avatar">🎮</div>
+            <div class="player-name">Host</div>
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-success full-width" style="margin-top: 1rem;">🚀 ابدأ اللعبة</button>
+    </div>
+  </div>
+</body>
+</html>`
+}
+
+function buildLeaderboardPreviewDocument(t: ThemePaletteTokens): string {
+  const runtimeBase = getRuntimeBaseUrl()
+  const baseTheme = guessBaseTheme(t.bg)
+
+  const vars = {
+    ...themeTokensToCssVars(t),
+    ...buildBgVars(t),
+  }
+  if (!vars['--radius'] && t.cardRadius) vars['--radius'] = t.cardRadius
+
+  const varCss = Object.entries(vars)
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .map(([name, value]) => `${name}:${String(value)};`)
+    .join('')
+
+  return `<!doctype html>
+<html data-theme="${baseTheme}" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="${runtimeBase}/css/style.css" />
+  <style>
+    :root { ${varCss} }
+    html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+    body {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      min-height: auto !important;
+      background: var(--bg) !important;
+      background-image: var(--app-bg-image, none) !important;
+      background-size: var(--app-bg-size, cover) !important;
+      background-repeat: var(--app-bg-repeat, no-repeat) !important;
+      background-position: var(--app-bg-position, center center) !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="view-leaderboard" class="view active">
+    <div class="leaderboard-card">
+      <div class="leaderboard-header">
+        <h2 class="leaderboard-title">🏆 لوحة المتصدرين</h2>
+        <p class="leaderboard-subtitle">السؤال 4 من 10</p>
+      </div>
+      <div class="leaderboard-list">
+        <div class="leaderboard-row rank-1">
+          <span class="rank-badge">1</span>
+          <span class="player-name">أحمد</span>
+          <span class="player-score">850 pts</span>
+        </div>
+        <div class="leaderboard-row rank-2">
+          <span class="rank-badge">2</span>
+          <span class="player-name">فاطمة</span>
+          <span class="player-score">720 pts</span>
+        </div>
+        <div class="leaderboard-row rank-3">
+          <span class="rank-badge">3</span>
+          <span class="player-name">محمد</span>
+          <span class="player-score">680 pts</span>
+        </div>
+        <div class="leaderboard-row">
+          <span class="rank-badge">4</span>
+          <span class="player-name">سارة</span>
+          <span class="player-score">540 pts</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`
+}
+
+function buildFinalResultPreviewDocument(t: ThemePaletteTokens): string {
+  const runtimeBase = getRuntimeBaseUrl()
+  const baseTheme = guessBaseTheme(t.bg)
+
+  const vars = {
+    ...themeTokensToCssVars(t),
+    ...buildBgVars(t),
+  }
+  if (!vars['--radius'] && t.cardRadius) vars['--radius'] = t.cardRadius
+
+  const varCss = Object.entries(vars)
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .map(([name, value]) => `${name}:${String(value)};`)
+    .join('')
+
+  return `<!doctype html>
+<html data-theme="${baseTheme}" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="${runtimeBase}/css/style.css" />
+  <style>
+    :root { ${varCss} }
+    html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+    body {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      min-height: auto !important;
+      background: var(--bg) !important;
+      background-image: var(--app-bg-image, none) !important;
+      background-size: var(--app-bg-size, cover) !important;
+      background-repeat: var(--app-bg-repeat, no-repeat) !important;
+      background-position: var(--app-bg-position, center center) !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="view-final-results" class="view active">
+    <div class="final-results-card">
+      <div class="final-header">
+        <h1 class="final-title">🎉 انتهت اللعبة!</h1>
+        <p class="final-subtitle">تحدي معلومات عن الصوم</p>
+      </div>
+      <div class="final-podium">
+        <div class="podium-spot rank-2">
+          <div class="podium-player">
+            <div class="podium-avatar">👤</div>
+            <div class="podium-name">فاطمة</div>
+            <div class="podium-score">720 pts</div>
+          </div>
+          <div class="podium-rank">2</div>
+        </div>
+        <div class="podium-spot rank-1">
+          <div class="podium-player">
+            <div class="podium-avatar">🏆</div>
+            <div class="podium-name">أحمد</div>
+            <div class="podium-score">850 pts</div>
+          </div>
+          <div class="podium-rank">1</div>
+        </div>
+        <div class="podium-spot rank-3">
+          <div class="podium-player">
+            <div class="podium-avatar">👤</div>
+            <div class="podium-name">محمد</div>
+            <div class="podium-score">680 pts</div>
+          </div>
+          <div class="podium-rank">3</div>
+        </div>
+      </div>
+      <div class="final-stats">
+        <div class="stat-item">
+          <span class="stat-label">إجمالي الأسئلة</span>
+          <span class="stat-value">10</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">اللاعبون</span>
+          <span class="stat-value">4</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`
+}
+
+function PreviewLobby({ t }: { t: ThemePaletteTokens }) {
+  useEffect(() => {
+    if (t.headingFont) loadGoogleFont(t.headingFont)
+    if (t.bodyFont && t.bodyFont !== t.headingFont) loadGoogleFont(t.bodyFont)
+  }, [t.headingFont, t.bodyFont])
+
+  const srcDoc = useMemo(() => buildLobbyPreviewDocument(t), [t])
+
+  return (
+    <iframe
+      title="lobby-preview"
+      srcDoc={srcDoc}
+      style={{ width: '100%', height: '560px', border: 0, display: 'block' }}
+    />
+  )
+}
+
+function PreviewLeaderboard({ t }: { t: ThemePaletteTokens }) {
+  useEffect(() => {
+    if (t.headingFont) loadGoogleFont(t.headingFont)
+    if (t.bodyFont && t.bodyFont !== t.headingFont) loadGoogleFont(t.bodyFont)
+  }, [t.headingFont, t.bodyFont])
+
+  const srcDoc = useMemo(() => buildLeaderboardPreviewDocument(t), [t])
+
+  return (
+    <iframe
+      title="leaderboard-preview"
+      srcDoc={srcDoc}
+      style={{ width: '100%', height: '560px', border: 0, display: 'block' }}
+    />
+  )
+}
+
+function PreviewFinalResult({ t }: { t: ThemePaletteTokens }) {
+  useEffect(() => {
+    if (t.headingFont) loadGoogleFont(t.headingFont)
+    if (t.bodyFont && t.bodyFont !== t.headingFont) loadGoogleFont(t.bodyFont)
+  }, [t.headingFont, t.bodyFont])
+
+  const srcDoc = useMemo(() => buildFinalResultPreviewDocument(t), [t])
+
+  return (
+    <iframe
+      title="final-result-preview"
+      srcDoc={srcDoc}
+      style={{ width: '100%', height: '560px', border: 0, display: 'block' }}
+    />
+  )
+}
+
 export const PREVIEW_TABS = [
   { id: 'mcq', label: 'MCQ', component: PreviewMCQ },
   { id: 'drag', label: 'Drag', component: PreviewDragMatch },
   { id: 'tf', label: 'True/False', component: PreviewTrueFalse },
   { id: 'open', label: 'Open Text', component: PreviewOpenText },
   { id: 'order', label: 'Ordering', component: PreviewOrdering },
+  { id: 'lobby', label: 'Lobby', component: PreviewLobby },
+  { id: 'leaderboard', label: 'Leaderboard', component: PreviewLeaderboard },
+  { id: 'final', label: 'Final Result', component: PreviewFinalResult },
 ] as const
 
