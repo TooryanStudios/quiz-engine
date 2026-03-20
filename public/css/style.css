@@ -5717,12 +5717,15 @@ video.question-media {
 /* ── Mobile ── */
 @media (max-width: 600px) {
   .match-dnd-layout {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
     gap: 12px;
     padding-bottom: 8px;
   }
   .match-dnd-slots,
   .match-dnd-pool {
-    flex: 1 1 auto;
+    flex: 1 1 50%;
     min-width: 220px;
   }
   .match-dnd-label {
