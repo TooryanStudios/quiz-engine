@@ -1,6 +1,6 @@
 {
   "name": "quiz-engine",
-  "version": "1.0.47",
+  "version": "1.0.48",
   "description": "QYan - Real-time multiplayer quiz platform (Kahoot-inspired) PoC",
   "main": "server/server.js",
   "scripts": {
