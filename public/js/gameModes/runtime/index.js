@@ -6,6 +6,7 @@ import { creatorStudioRuntime } from './creatorStudio.runtime.js?v=122';
 import { matchPlusArenaRuntime } from './matchPlusArena.runtime.js?v=134';
 import { islandDiceAdventureRuntime } from './islandDiceAdventure.runtime.js?v=159';
 import { fishFenceCountRuntime } from './fishFenceCount.runtime.js?v=1';
+import { lightsSkillGameRuntime } from './lightsSkillGame.runtime.js?v=1';
 
 const EMPTY_RUNTIME = Object.freeze({});
 
@@ -17,6 +18,7 @@ const MODE_RUNTIME_REGISTRY = {
   'match-plus-arena': matchPlusArenaRuntime,
   'island-dice-adventure': islandDiceAdventureRuntime,
   'fish-fence-count': fishFenceCountRuntime,
+  'lights-skill-game': lightsSkillGameRuntime,
   'runtime-example': runtimeExampleRuntime,
 };
 
