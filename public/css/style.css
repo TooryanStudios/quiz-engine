@@ -909,21 +909,21 @@ h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-dim); }
 .host-hud-bar,
 .solo-host-hud-bar {
   position: fixed;
-  top: max(env(safe-area-inset-top, 0px), 14px);
+  top: max(env(safe-area-inset-top, 0px), 8px);
   left: 50%;
   right: auto;
   width: var(--gameplay-shell-width);
   transform: translateX(-50%);
   z-index: 200;
-  padding: 10px 14px 10px;
+  padding: 8px 12px;
   background: color-mix(in srgb, var(--surface) 96%, transparent);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 24px;
+  border-radius: 20px;
   box-sizing: border-box;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   box-shadow: 0 2px 20px rgba(0, 0, 0, 0.25);
 }
 
@@ -1182,7 +1182,7 @@ h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-dim); }
 .hud-center-metrics {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   justify-content: center;
   width: 100%;
 }
@@ -1190,6 +1190,7 @@ h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-dim); }
 .hud-center-left,
 .hud-center-right {
   flex: 0 0 auto;
+  min-width: 60px;
 }
 
 .hud-center-left {
@@ -1201,15 +1202,16 @@ h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-dim); }
 }
 
 .hud-timer {
-  width: 72px !important;
-  height: 72px !important;
+  width: 64px !important;
+  height: 64px !important;
+  flex-shrink: 0;
 }
 .hud-timer::before {
-  width: 54px !important;
-  height: 54px !important;
+  width: 48px !important;
+  height: 48px !important;
 }
 .hud-timer .timer-count {
-  font-size: 1.3rem !important;
+  font-size: 1.2rem !important;
   font-weight: 900 !important;
 }
 
@@ -1313,7 +1315,7 @@ h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-dim); }
 /* ── Question card body (sits below fixed HUD) ── */
 .host-question-body {
   /* fallback margin; JS sync keeps this accurate */
-  margin-top: 188px;
+  margin-top: 165px;
   width: var(--gameplay-shell-width);
   max-width: var(--gameplay-shell-width);
   align-self: center;
@@ -1403,9 +1405,9 @@ h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-dim); }
 @media (max-width: 480px) {
   .hud-icon-btn   { width: 40px; height: 40px; }
   .hud-icon       { width: 16px; height: 16px; }
-  .hud-timer      { width: 62px !important; height: 62px !important; }
-  .hud-timer::before { width: 46px !important; height: 46px !important; }
-  .hud-timer .timer-count { font-size: 1.1rem !important; }
+  .hud-timer      { width: 58px !important; height: 58px !important; }
+  .hud-timer::before { width: 44px !important; height: 44px !important; }
+  .hud-timer .timer-count { font-size: 1.05rem !important; }
   .hud-side       { min-width: 0; gap: 5px; }
   .hud-actions-row { gap: 8px; }
   .hud-stack-controls,
@@ -1423,20 +1425,36 @@ h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-dim); }
   .hud-status-chip { max-width: 114px; font-size: 0.66rem; padding: 0 8px; }
   .hud-side-left .hud-status-chip { max-width: 114px; }
   .score-badge { font-size: 0.8rem; padding: 3px 10px; }
-  .host-question-body { margin-top: 174px; }
+  .host-question-body { margin-top: 155px; }
+  .hud-center-metrics { gap: 8px; }
+  .hud-center-left,
+  .hud-center-right { min-width: 55px; }
+  .hud-q-num { font-size: 0.78rem; }
+  .hud-score-val { font-size: 0.82rem; }
+  .hud-pin-text { font-size: 0.92rem; letter-spacing: 1px; }
   #view-player-question.player-hud-mode #player-question-layout { margin-top: 8px; }
   .host-hud-bar,
   .solo-host-hud-bar {
     width: calc(100vw - 16px);
-    top: max(env(safe-area-inset-top, 0px), 10px);
+    top: max(env(safe-area-inset-top, 0px), 6px);
     border-radius: 18px;
+    padding: 7px 10px;
+    gap: 4px;
   }
 }
 
 @media (max-width: 360px) {
   .hud-side       { min-width: 70px; }
   .hud-icon-btn   { width: 36px; height: 36px; }
-  .host-question-body { margin-top: 166px; }
+  .host-question-body { margin-top: 148px; }
+  .hud-timer      { width: 54px !important; height: 54px !important; }
+  .hud-timer::before { width: 40px !important; height: 40px !important; }
+  .hud-timer .timer-count { font-size: 1rem !important; }
+  .hud-center-left,
+  .hud-center-right { min-width: 50px; }
+  .hud-q-num { font-size: 0.75rem; }
+  .hud-score-val { font-size: 0.78rem; }
+  .hud-pin-text { font-size: 0.88rem; }
   #view-player-question.player-hud-mode #player-question-layout { margin-top: 8px; }
 }
 
