@@ -125,7 +125,7 @@ function App() {
   const isLoginPage   = location.pathname === '/login'
   const isMasterPage  = MASTER_PATH ? location.pathname.startsWith(MASTER_PATH) : false
   const isEmbeddedPreview = location.pathname.startsWith('/preview/') && new URLSearchParams(location.search).get('embedded') === '1'
-  const isGameEmbed = location.pathname.startsWith('/embed')
+  const isGameEmbed = location.pathname.startsWith('/embed') || location.pathname.startsWith('/play')
   const allowUnauthedLocalPlayTest = isLocalDevHost && isLocalPlayTestPath
 
   // Apply theme to document element
@@ -365,6 +365,8 @@ function App() {
                 }>
                   <Routes>
                     <Route path="/embed/:gameId" element={<GameEmbedPage />} />
+                    <Route path="/play" element={<GameEmbedPage />} />
+                    <Route path="/play/:gameId" element={<GameEmbedPage />} />
                   </Routes>
                 </Suspense>
               </ErrorBoundary>

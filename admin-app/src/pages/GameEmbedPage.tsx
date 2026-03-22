@@ -5,7 +5,7 @@ export default function GameEmbedPage() {
   const { gameId } = useParams();
 
   return (
-    <div style={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', margin: 0, padding: 0 }}>
+    <div style={{ height: '100vh', width: '100vw', position: 'fixed', inset: 0, margin: 0, padding: 0, overflow: 'hidden' }}>
       <Play gameId={gameId || 'fish-fence-count'} isEmbed={true} />
     </div>
   );
