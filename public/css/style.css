@@ -3713,6 +3713,13 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: all 0.2s ease;
+}
+
+#view-host-lobby .player-stage-placeholder:hover {
+  background: rgba(45, 212, 191, 0.15);
+  border-color: rgba(45, 212, 191, 0.5);
+  transform: scale(1.05);
 }
 
 #view-host-lobby .player-stage-placeholder::after {
@@ -3720,6 +3727,11 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   color: rgba(148, 163, 184, 0.6);
   font-size: 1.5rem;
   font-weight: bold;
+  transition: color 0.2s ease;
+}
+
+#view-host-lobby .player-stage-placeholder:hover::after {
+  color: rgba(45, 212, 191, 0.9);
 }
 
 #view-host-lobby .player-stage-overflow {

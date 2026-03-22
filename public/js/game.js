@@ -1533,6 +1533,16 @@ function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
         openHostJoinDialog();
       });
     });
+    // Attach click listener to + placeholder to trigger share menu
+    listEl.querySelectorAll('.player-stage-placeholder').forEach((placeholder) => {
+      placeholder.style.cursor = 'pointer';
+      placeholder.title = 'مشاركة رابط الدعوة';
+      placeholder.addEventListener('click', () => {
+        Sounds.click();
+        const shareBtn = document.getElementById('btn-share-menu');
+        if (shareBtn) shareBtn.click();
+      });
+    });
     if (kickHint) kickHint.style.display = playersArr.length > 0 ? 'block' : 'none';
     if (waitingEl) {
       if (playersArr.length === 0) {
