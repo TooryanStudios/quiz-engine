@@ -106,19 +106,59 @@ export function AiSelectionOverlay({
                   />
                 </div>
                 <div style={{ marginLeft: '1.5rem', marginRight: '2rem' }}>
-                  <p style={{ margin: '0 0 0.35rem', color: 'var(--text)', fontWeight: 700, fontSize: isNarrowScreen ? '0.88rem' : '1rem', textAlign: 'right' }}>{question.text}</p>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                    {question.options?.map((opt, i) => (
-                      <div key={i} style={{
-                        fontSize: isNarrowScreen ? '0.78rem' : '0.85rem',
-                        color: (question.correctIndex ?? 0) === i ? '#10b981' : 'var(--text-muted)',
-                        fontWeight: (question.correctIndex ?? 0) === i ? 700 : 400,
-                        textAlign: 'right',
-                      }}>
-                        • {opt}
-                      </div>
-                    ))}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', justifyContent: 'flex-end' }}>
+                    <p style={{ margin: 0, color: 'var(--text)', fontWeight: 700, fontSize: isNarrowScreen ? '0.88rem' : '1rem', textAlign: 'right', flex: 1 }}>{question.text}</p>
+                    <span style={{
+                      fontSize: '0.7rem',
+                      fontWeight: 700,
+                      padding: '0.2rem 0.5rem',
+                      borderRadius: '12px',
+                      background: question.type === 'multi' ? '#8b5cf6' : question.type === 'match' ? '#f59e0b' : question.type === 'order' ? '#ec4899' : question.type === 'type' ? '#06b6d4' : '#3b82f6',
+                      color: 'white',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {question.type === 'single' ? 'اختيار واحد' : question.type === 'multi' ? 'اختيار متعدد' : question.type === 'match' ? 'مطابقة' : question.type === 'order' ? 'ترتيب' : question.type === 'type' ? 'كتابة' : question.type}
+                    </span>
                   </div>
+                  {question.type === 'single' || question.type === 'multi' ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                      {question.options?.map((opt, i) => {
+                        const isCorrect = question.type === 'multi' 
+                          ? (question.correctIndices ?? []).includes(i)
+                          : (question.correctIndex ?? 0) === i;
+                        return (
+                          <div key={i} style={{
+                            fontSize: isNarrowScreen ? '0.78rem' : '0.85rem',
+                            color: isCorrect ? '#10b981' : 'var(--text-muted)',
+                            fontWeight: isCorrect ? 700 : 400,
+                            textAlign: 'right',
+                          }}>
+                            {isCorrect ? '✓ ' : '• '}{opt}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : question.type === 'match' ? (
+                    <div style={{ display: 'grid', gap: '0.3rem' }}>
+                      {question.pairs?.slice(0, 3).map((pair, i) => (
+                        <div key={i} style={{ fontSize: isNarrowScreen ? '0.78rem' : '0.85rem', color: 'var(--text-muted)', textAlign: 'right' }}>
+                          • {pair.left} ← {pair.right}
+                        </div>
+                      ))}
+                    </div>
+                  ) : question.type === 'order' ? (
+                    <div style={{ display: 'grid', gap: '0.3rem' }}>
+                      {question.items?.slice(0, 3).map((item, i) => (
+                        <div key={i} style={{ fontSize: isNarrowScreen ? '0.78rem' : '0.85rem', color: 'var(--text-muted)', textAlign: 'right' }}>
+                          {i + 1}. {item}
+                        </div>
+                      ))}
+                    </div>
+                  ) : question.type === 'type' ? (
+                    <div style={{ fontSize: isNarrowScreen ? '0.78rem' : '0.85rem', color: '#10b981', fontWeight: 700, textAlign: 'right' }}>
+                      ✓ {question.acceptedAnswers?.[0] || 'إجابة مكتوبة'}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ))}

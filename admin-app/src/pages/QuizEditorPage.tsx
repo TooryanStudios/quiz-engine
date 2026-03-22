@@ -1027,7 +1027,12 @@ export function QuizEditorPage() {
 
       const promptText = `Generate a quiz with ${aiQuestionCount} questions based on the provided content. 
       Topic/Context: "${aiPrompt}".
-      The final quiz MUST include a mix of question types. Use at least three different types from this list: single-choice, multi-choice, match, order, written answer. Do NOT return only one type.
+      
+      CRITICAL REQUIREMENTS:
+      1. The quiz MUST include a diverse mix of question types. Distribute questions across ALL these types: single-choice, multi-choice, match, order, written answer.
+      2. For multi-choice questions, you MUST provide 2-4 correct answers (not just one). Use "correctAnswers" array with multiple correct option strings.
+      3. Do NOT generate only one question type. Aim for variety.
+      
       Return ONLY raw JSON (no markdown) with this structure:
       {
         "title": "concise quiz title (<=50 chars) in the same language as the prompt/context",
@@ -1036,9 +1041,9 @@ export function QuizEditorPage() {
             "type": "single" | "multi" | "match" | "order" | "type" | "boolean",
             "text": "question text (match user language)",
             "options": ["option1", "option2", "option3", "option4"], // required for single/multi/boolean
-            "correctAnswer": "the exact string of the correct option",   // single + boolean
-            "correctAnswers": ["option1", "option2"],                   // optional for multi
-            "correctIndices": [0,2],                                       // optional for multi
+            "correctAnswer": "the exact string of the correct option",   // ONLY for single + boolean
+            "correctAnswers": ["option1", "option2", "option3"],       // REQUIRED for multi (2-4 correct answers)
+            "correctIndices": [0,2,3],                                     // alternative for multi
             "pairs": [{ "left": "", "right": "" }],                 // required for match
             "items": ["", ""],                                          // required for order
             "correctOrder": [0,1],                                         // required for order
@@ -1050,9 +1055,11 @@ export function QuizEditorPage() {
       Additional rules:
       - Use the same language as the prompt/context (Arabic or otherwise) for all text.
       - Boolean questions must use options ["صح", "خطأ"].
+      - Multi-choice questions MUST have 2-4 correct answers in the "correctAnswers" array.
       - Keep question text <= ${MAX_QUESTION_TEXT_LENGTH} characters.
       - Keep each option/pair/item <= ${MAX_OPTION_TEXT_LENGTH} characters and <= 6 options.
-      - Ensure match questions include at least 3 pairs and order questions include at least 3 items.`;
+      - Ensure match questions include at least 3 pairs and order questions include at least 3 items.
+      - Distribute question types evenly across the quiz.`;
 
       const { questions: generatedQuestions, title: generatedTitle } = await generateQuizQuestions({
         promptText,
