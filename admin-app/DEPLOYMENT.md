@@ -4,14 +4,22 @@
 
 Follow this exact sequence every time you deploy the admin app:
 
-### 1. Stage & Commit Changes
+### 1. Update Version (if needed)
 ```powershell
 cd c:\Projects\quiz-engine
+# Edit package.json to bump version number (e.g., 1.0.48 -> 1.0.49)
+npm run inject-version
+```
+
+**✓ Verify**: Output shows `✓ Version updated to vX.X.XX in public/index.html`
+
+### 2. Stage & Commit Changes
+```powershell
 git add -A
 git commit -m "brief description of changes"
 ```
 
-### 2. Build Admin App
+### 3. Build Admin App
 ```powershell
 cd admin-app
 npm run build
@@ -20,14 +28,14 @@ npm run build
 **✓ Verify**: Output must show `✓ built in X.XXs` with **no TypeScript errors**  
 **✗ If build fails**: Fix TypeScript errors before proceeding
 
-### 3. Deploy to Firebase (qyan-om)
+### 4. Deploy to Firebase (qyan-om)
 ```powershell
 firebase deploy --project qyan-om --only hosting
 ```
 
 **✓ Verify**: Output shows `Deploy complete!` and `Hosting URL: https://qyan-om.web.app`
 
-### 4. Push to GitHub
+### 5. Push to GitHub
 ```powershell
 cd ..
 git push
@@ -39,6 +47,8 @@ git push
 
 ```powershell
 # From repo root: c:\Projects\quiz-engine
+# 1. Update version in package.json if needed, then:
+npm run inject-version
 git add -A
 git commit -m "your change description here"
 cd admin-app

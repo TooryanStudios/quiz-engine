@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server/server.js",
     "dev": "nodemon server/server.js",
+    "inject-version": "node scripts/inject-version.js",
     "verify:game-modes": "node scripts/verify-game-mode-runtimes.js",
     "verify:question-types": "node scripts/verify-question-type-registries.js",
     "verify:question-architecture": "node scripts/verify-question-type-architecture.js",
