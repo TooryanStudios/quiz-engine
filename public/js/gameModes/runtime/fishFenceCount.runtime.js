@@ -495,10 +495,40 @@ function renderFishFenceView({ state, socket, isHostOnly }) {
   return true;
 }
 
+const FISH_REDIRECT_GUARD_KEY = 'qyan:fish-fence-count:redirected';
+
+function buildFishStandaloneUrl() {
+  const adminBase = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? 'http://localhost:3000'
+    : 'https://qyan.app';
+  return `${adminBase}/play/fish-fence-count`;
+}
+
+function redirectToFishStandalone() {
+  if (typeof window === 'undefined') return false;
+
+  const currentPath = (window.location.pathname || '').toLowerCase();
+  if (currentPath.startsWith('/play/fish-fence-count')) return true;
+
+  if (sessionStorage.getItem(FISH_REDIRECT_GUARD_KEY) === '1') return true;
+  sessionStorage.setItem(FISH_REDIRECT_GUARD_KEY, '1');
+
+  window.location.href = buildFishStandaloneUrl();
+  return true;
+}
+
 export const fishFenceCountRuntime = {
   id: 'fish-fence-count',
 
+  onHostCreate() {
+    return redirectToFishStandalone();
+  },
+
   onGameStart({ state }) {
+    if (state?.role === 'host') {
+      return redirectToFishStandalone();
+    }
+
     if (typeof document === 'undefined') return false;
     
     // Hide default quiz chrome
@@ -518,6 +548,10 @@ export const fishFenceCountRuntime = {
   },
 
   onGameQuestion({ data, state, socket, showView }) {
+    if (state?.role === 'host') {
+      return redirectToFishStandalone();
+    }
+
     const isHostOnly = state.role === 'host' && !state.hostIsPlayer;
     showView(isHostOnly ? 'view-host-question' : 'view-player-question');
     return renderFishFenceView({ state, socket, isHostOnly });

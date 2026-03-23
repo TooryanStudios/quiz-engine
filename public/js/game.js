@@ -4931,6 +4931,16 @@ socket.on('room:created', ({ pin, reclaimed, ...modeInfo }) => {
   if (refreshBtn) refreshBtn.disabled = false;
 
   applyModeInfo(modeInfo);
+
+  const handledOnHostCreate = callGameModeHook('onHostCreate', {
+    quizSlug: quizSlugFromUrl || null,
+    miniGameConfig: modeInfo?.miniGameConfig || miniGameConfigFromUrl || state?.miniGameConfig || null,
+    state,
+    socket,
+    showView,
+  });
+  if (handledOnHostCreate === true) return;
+
   if (quizSlugFromUrl) {
     if (DIAGNOSTICS_ENABLED) console.log(`[theme-diag] room:created | pin=${pin} | keep loading until room:theme arrives`);
     // True loading mode: do not reveal host lobby until the server emits
