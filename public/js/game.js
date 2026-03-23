@@ -24,8 +24,10 @@ fetch('/api/build-info')
 const socket = io(window.location.origin);
 const queryParams = new URLSearchParams(window.location.search);
 const quizSlugFromUrl = queryParams.get('quiz');
-const modeFromUrl     = queryParams.get('mode');
-const gameModeFromUrl = queryParams.get('gameMode');
+const normalizedPathnameFromUrl = window.location.pathname.replace(/\/+$/, '') || '/';
+const isFishMiniGameAliasPath = normalizedPathnameFromUrl === '/minigame-fish';
+const modeFromUrl = queryParams.get('mode') || (isFishMiniGameAliasPath ? 'host' : null);
+const gameModeFromUrl = queryParams.get('gameMode') || (isFishMiniGameAliasPath ? 'fish-fence-count' : null);
 const DIAGNOSTICS_ENABLED = false;
 
 const IS_LOCAL_DEV_HOST = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
@@ -143,7 +145,7 @@ const miniGameConfigFromUrl = (() => {
 
 const isMiniGameSession = !!(miniGameConfigFromUrl || (gameModeFromUrl && gameModeFromUrl !== 'classic' && gameModeFromUrl !== 'quiz'));
 
-const isAutoHostLaunch = !!(quizSlugFromUrl && modeFromUrl === 'host');
+const isAutoHostLaunch = !!(modeFromUrl === 'host' && (quizSlugFromUrl || isFishMiniGameAliasPath));
 
 const resolvedGameModeRuntime = resolveGameModeRuntime(gameModeFromUrl);
 
@@ -804,6 +806,7 @@ function getPathForView(viewId) {
 function getViewForPath(pathname) {
   const normalizedPath = normalizePathname(pathname);
   if (normalizedPath === '/lobby') return 'view-host-loading';
+  if (normalizedPath === '/minigame-fish') return 'view-host-loading';
   if (normalizedPath === '/play') {
     return (state.role === 'host' && !state.hostIsPlayer)
       ? 'view-host-question'
@@ -827,7 +830,11 @@ function syncUrlForView(viewId, { replace = false } = {}) {
   const currentPath = normalizePathname(window.location.pathname);
   if (currentPath === targetPath) return;
 
-  const nextUrl = `${targetPath}${window.location.search}${window.location.hash}`;
+  const resolvedTargetPath = (isFishMiniGameAliasPath && targetPath === '/start')
+    ? '/minigame-fish'
+    : targetPath;
+
+  const nextUrl = `${resolvedTargetPath}${window.location.search}${window.location.hash}`;
   if (replace) {
     window.history.replaceState({ viewId }, '', nextUrl);
   } else {

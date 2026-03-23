@@ -293,6 +293,7 @@ const clientRoutes = [
   '/play',
   '/player',
   '/start',
+  '/minigame-fish',
   '/lobby',
   '/player/lobby',
   '/question',
