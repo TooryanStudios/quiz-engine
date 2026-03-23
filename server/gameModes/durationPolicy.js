@@ -24,6 +24,7 @@ const GAME_MODE_DURATION_POLICIES = Object.freeze({
   'gear-machine':     { type: 'self' },
   'creator-studio':   { type: 'self' },
   'fish-fence-count': { type: 'self' },
+  'lights-skill-game': { type: 'self' },
   'clue-chain':       { type: 'per-round' },
   'mystery-room-quiz':{ type: 'per-round' },
   'build-the-story':  { type: 'per-round' },

@@ -180,6 +180,7 @@ function inferGameModeIdFromQuestion(question) {
   if (!question || typeof question !== 'object') return null;
 
   if (question.type === 'xo_duel' || question.xo) return 'xo-duel';
+  if (question.type === 'lights-skill-game') return 'lights-skill-game';
   if (question.relay) return 'puzzle-relay';
   if (question.type === 'gear_machine' || question.gearMachine) return 'gear-machine';
   if (question.type === 'creator_studio' || question.creatorStudio) return 'creator-studio';
