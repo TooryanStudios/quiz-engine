@@ -8,17 +8,20 @@ function ensureFishFenceStyles() {
   style.id = FISH_FENCE_STYLE_ID;
   style.textContent = `
     .fish-fence-shell {
-      width: 100%;
-      height: 100%;
-      min-height: 400px;
+      position: fixed;
+      inset: 0;
+      z-index: 1200;
+      width: 100vw;
+      height: 100dvh;
+      min-height: 100dvh;
       display: flex;
       flex-direction: column;
-      align-items: center;
-      background: #e1f0ff;
-      border-radius: 12px;
-      padding: 10px;
+      align-items: stretch;
+      background: #0a1f3a;
+      padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
       box-sizing: border-box;
-      position: relative;
+      border-radius: 0;
+      gap: 10px;
     }
     .fish-fence-hud {
       display: flex;
@@ -31,7 +34,9 @@ function ensureFishFenceStyles() {
     }
     .fish-fence-svg {
       width: 100%;
-      max-height: 60vh;
+      flex: 1 1 auto;
+      min-height: 0;
+      max-height: none;
       background: #0c8fd4;
       border-radius: 14px;
       user-select: none;
@@ -89,6 +94,12 @@ function ensureFishFenceStyles() {
       cursor: pointer;
     }
     .fish-btn:hover { background: #0a7ab5; }
+    @media (max-width: 560px) {
+      .fish-fence-shell {
+        padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+        gap: 8px;
+      }
+    }
   `;
   document.head.appendChild(style);
 }
