@@ -6141,6 +6141,14 @@ socket.on('room:closed', ({ message }) => {
 // ─────────────────────────────────────────────
 (function () {
   const params = new URLSearchParams(window.location.search);
+  const normalizedPath = normalizePathname(window.location.pathname);
+  const isFishPlayerModeAlias = normalizedPath === '/minigame-fish' && (params.get('mode') || '').toLowerCase() === 'player';
+  if (isFishPlayerModeAlias) {
+    params.delete('mode');
+    const nextSearch = params.toString();
+    const nextUrl = `/minigame-fish/player${nextSearch ? `?${nextSearch}` : ''}${window.location.hash || ''}`;
+    window.history.replaceState({ viewId: 'view-player-join' }, '', nextUrl);
+  }
   const pinFromUrlRaw = params.get('pin');
   const pinFromUrl = normalizePin(pinFromUrlRaw);
   const pathView = getViewForPath(window.location.pathname);
