@@ -26,8 +26,9 @@ const queryParams = new URLSearchParams(window.location.search);
 const quizSlugFromUrl = queryParams.get('quiz');
 const normalizedPathnameFromUrl = window.location.pathname.replace(/\/+$/, '') || '/';
 const isFishMiniGameAliasPath = normalizedPathnameFromUrl === '/minigame-fish';
+const isFishMiniGamePlayerAliasPath = normalizedPathnameFromUrl === '/minigame-fish/player';
 const modeFromUrl = queryParams.get('mode') || (isFishMiniGameAliasPath ? 'host' : null);
-const gameModeFromUrl = queryParams.get('gameMode') || (isFishMiniGameAliasPath ? 'fish-fence-count' : null);
+const gameModeFromUrl = queryParams.get('gameMode') || ((isFishMiniGameAliasPath || isFishMiniGamePlayerAliasPath) ? 'fish-fence-count' : null);
 const DIAGNOSTICS_ENABLED = false;
 
 const IS_LOCAL_DEV_HOST = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
@@ -807,6 +808,7 @@ function getViewForPath(pathname) {
   const normalizedPath = normalizePathname(pathname);
   if (normalizedPath === '/lobby') return 'view-host-loading';
   if (normalizedPath === '/minigame-fish') return 'view-host-loading';
+  if (normalizedPath === '/minigame-fish/player') return 'view-player-join';
   if (normalizedPath === '/play') {
     return (state.role === 'host' && !state.hostIsPlayer)
       ? 'view-host-question'
@@ -832,7 +834,9 @@ function syncUrlForView(viewId, { replace = false } = {}) {
 
   const resolvedTargetPath = (isFishMiniGameAliasPath && targetPath === '/start')
     ? '/minigame-fish'
-    : targetPath;
+    : (isFishMiniGamePlayerAliasPath && targetPath === '/player')
+      ? '/minigame-fish/player'
+      : targetPath;
 
   const nextUrl = `${resolvedTargetPath}${window.location.search}${window.location.hash}`;
   if (replace) {
