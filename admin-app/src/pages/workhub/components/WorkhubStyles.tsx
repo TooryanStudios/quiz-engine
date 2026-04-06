@@ -32,17 +32,25 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         align-items: center;
         gap: 12px;
         padding: 0 4px;
-        height: 56px;
+        height: auto;
         min-height: 56px;
         flex-shrink: 0;
         border-bottom: 1px solid #e0e8f7;
         margin-bottom: 6px;
+      }
+      .workhub-topbar-main {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
+        flex: 1;
       }
       .workhub-brand-wrap {
         display: flex;
         flex-direction: column;
         justify-content: center;
         min-width: 0;
+        flex-shrink: 0;
       }
       .workhub-brand {
         font-size: 1.9rem;
@@ -63,6 +71,58 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         font-weight: 600;
         color: #5f6f90;
         white-space: nowrap;
+      }
+      .workhub-topbar-divider {
+        width: 1px;
+        height: 34px;
+        background: #d6e2f4;
+        flex: 0 0 auto;
+      }
+      .workhub-workspace-tabs-wrap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        flex: 1;
+        overflow: hidden;
+      }
+      .workhub-workspace-tabs {
+        display: flex;
+        align-items: flex-end;
+        gap: 4px;
+        min-width: 0;
+        flex: 1;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding: 2px 1px 0;
+        border-bottom: 1px solid #e3ecfb;
+        scrollbar-width: thin;
+      }
+      .workhub-workspace-tabs::-webkit-scrollbar {
+        height: 5px;
+      }
+      .workhub-workspace-tabs::-webkit-scrollbar-thumb {
+        background: #cad8f2;
+        border-radius: 999px;
+      }
+      .workhub-workspace-tab {
+        padding: 8px 12px;
+        white-space: nowrap;
+        flex: 0 0 auto;
+      }
+      .workhub-workspace-tab.is-active {
+        box-shadow: none;
+      }
+      .workhub-workspace-tab-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        flex: 0 0 auto;
+      }
+      .workhub-workspace-tab-actions .workhub-plus-btn,
+      .workhub-workspace-tab-actions .workhub-gear-btn {
+        width: 28px;
+        height: 28px;
       }
       .workhub-status-editor-modal {
         width: min(620px, calc(100vw - 24px));
@@ -225,6 +285,8 @@ const WorkhubStyles = memo(function WorkhubStyles() {
       }
       .workhub-header-actions {
         justify-content: flex-end;
+        flex-wrap: nowrap;
+        flex-shrink: 0;
         overflow: visible;
       }
       .workhub-notify-wrap {
@@ -636,8 +698,7 @@ const WorkhubStyles = memo(function WorkhubStyles() {
       .workhub-ghost-mini,
       .workhub-secondary-link,
       .workhub-switcher-btn,
-      .workhub-member-chip,
-      .workhub-workspace-card {
+      .workhub-member-chip {
         font: inherit;
       }
       .workhub-primary-btn,
@@ -1869,6 +1930,33 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         margin-top: 10px;
       }
+      .workhub-home-template-grid {
+        margin-top: 12px;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .workhub-home-widget {
+        min-height: 120px;
+      }
+      .workhub-home-widget-note {
+        margin: 0;
+        color: #53688f;
+        font-size: 0.8rem;
+        line-height: 1.35;
+      }
+      .workhub-home-widget.is-good {
+        border-color: #c7efd7;
+        background: #f4fcf7;
+      }
+      .workhub-home-widget.is-warn {
+        border-color: #ffe3b3;
+        background: #fff9ef;
+      }
+      .workhub-home-widget.is-danger {
+        border-color: #ffd0d0;
+        background: #fff5f5;
+      }
       .workhub-overview-dashboard {
         margin-top: 12px;
         display: grid;
@@ -2287,8 +2375,7 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         margin-top: 0;
         white-space: nowrap;
       }
-      .workhub-project-card-grid,
-      .workhub-workspace-grid {
+      .workhub-project-card-grid {
         display: grid;
         gap: 8px;
         grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -2344,14 +2431,6 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         color: #627291;
         font-size: 0.8rem;
       }
-      .workhub-workspace-card {
-        display: grid;
-        grid-template-columns: auto auto 1fr;
-        align-items: center;
-        gap: 6px;
-        text-align: left;
-        color: inherit;
-      }
       .workhub-danger-zone {
         margin-top: 10px;
         border: 1px solid #f3cccc;
@@ -2381,11 +2460,6 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         width: 15px;
         height: 15px;
       }
-      .workhub-workspace-card.is-active {
-        border-color: #7aa2ff;
-        box-shadow: 0 10px 20px rgba(77, 132, 255, 0.12);
-      }
-      .workhub-workspace-card strong,
       .workhub-project-card strong,
       .workhub-project-focus-card strong,
       .workhub-member-main strong,
@@ -2420,7 +2494,6 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         opacity: 0.9;
         transform: translateY(0);
       }
-      .workhub-workspace-card span,
       .workhub-member-main span,
       .workhub-comment-item span,
       .workhub-activity-item span,
@@ -3644,6 +3717,247 @@ const WorkhubStyles = memo(function WorkhubStyles() {
       }
       .workhub-modal-form.compact-create {
         gap: 10px;
+      }
+      .workhub-workspace-create-modal {
+        width: min(780px, calc(100vw - 20px));
+      }
+      .workhub-workspace-create-form {
+        gap: 10px;
+      }
+      .workhub-workspace-create-layout {
+        display: grid;
+        grid-template-columns: minmax(210px, 0.76fr) minmax(0, 1.44fr);
+        gap: 9px;
+        align-items: start;
+      }
+      .workhub-workspace-create-fields {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .workhub-template-picker-wrap {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .workhub-template-picker-label {
+        font-size: 0.76rem;
+        font-weight: 700;
+        color: #2a446f;
+      }
+      .workhub-template-card-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        max-height: none;
+        overflow-x: hidden;
+        overflow-y: visible;
+        padding-right: 0;
+      }
+      .workhub-template-card {
+        border: 1px solid #d9e5fb;
+        border-radius: 10px;
+        background: #fbfdff;
+        color: inherit;
+        text-align: left;
+        padding: 7px;
+        display: grid;
+        grid-template-columns: 46px minmax(0, 1fr);
+        align-items: start;
+        gap: 7px;
+        cursor: pointer;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+      }
+      .workhub-template-card:hover {
+        border-color: #9eb8ee;
+        transform: translateY(-1px);
+      }
+      .workhub-template-card.is-active {
+        border-color: #2f5cc2;
+        box-shadow: 0 0 0 2px rgba(47, 92, 194, 0.14);
+        background: #f3f8ff;
+      }
+      .workhub-template-card-content {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .workhub-template-card-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .workhub-template-mode {
+        font-size: 0.68rem;
+        color: #5a6f95;
+        line-height: 1.2;
+      }
+      .workhub-template-chip {
+        border: 1px solid #d7e5fb;
+        background: #ffffff;
+        border-radius: 999px;
+        padding: 2px 8px;
+        font-size: 0.66rem;
+        line-height: 1.15;
+        color: #496b9b;
+        white-space: nowrap;
+      }
+      .workhub-template-graphic {
+        width: 46px;
+        height: 46px;
+        border-radius: 9px;
+        border: 1px solid #d2e0f7;
+        background: #eef4ff;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        overflow: hidden;
+      }
+      .workhub-template-graphic::before,
+      .workhub-template-graphic::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+      .workhub-template-graphic-code {
+        position: relative;
+        z-index: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        padding: 2px 6px;
+        border: 1px solid rgba(43, 76, 128, 0.25);
+        background: rgba(255, 255, 255, 0.92);
+        font-size: 0.61rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        color: #305288;
+      }
+      .workhub-template-title {
+        font-size: 0.78rem;
+        line-height: 1.18;
+        color: #1d3866;
+        min-width: 0;
+      }
+      .workhub-template-description {
+        display: none;
+      }
+      .workhub-template-highlights {
+        display: none;
+      }
+      .workhub-template-highlight {
+        border: 1px solid #dce8fb;
+        background: #ffffff;
+        color: #31578f;
+        border-radius: 999px;
+        padding: 2px 7px;
+        font-size: 0.66rem;
+        line-height: 1.15;
+      }
+      .workhub-template-empty .workhub-template-graphic {
+        background: linear-gradient(180deg, #ffffff 0%, #f4f8ff 100%);
+        border-style: dashed;
+      }
+      .workhub-template-empty .workhub-template-graphic::before {
+        background-image: repeating-linear-gradient(0deg, rgba(139, 161, 197, 0.2) 0 1px, transparent 1px 11px);
+      }
+      .workhub-template-projects .workhub-template-graphic {
+        background: linear-gradient(160deg, #eef4ff 0%, #d9e6ff 100%);
+      }
+      .workhub-template-projects .workhub-template-graphic::before {
+        background-image: repeating-linear-gradient(90deg, rgba(63, 103, 175, 0.28) 0 7px, transparent 7px 13px);
+        inset: auto 6px 8px 6px;
+        height: 18px;
+      }
+      .workhub-template-projects .workhub-template-graphic::after {
+        background: linear-gradient(180deg, rgba(43, 83, 151, 0.34) 0%, rgba(43, 83, 151, 0) 100%);
+        inset: 7px auto 16px 8px;
+        width: 9px;
+      }
+      .workhub-template-finance .workhub-template-graphic {
+        background: linear-gradient(165deg, #ebfff3 0%, #d5f7e6 100%);
+      }
+      .workhub-template-finance .workhub-template-graphic::before {
+        background-image: repeating-linear-gradient(0deg, rgba(27, 123, 84, 0.22) 0 2px, transparent 2px 10px);
+        inset: 10px 10px 10px 10px;
+      }
+      .workhub-template-finance .workhub-template-graphic::after {
+        background: linear-gradient(90deg, rgba(19, 109, 73, 0.5) 0%, rgba(19, 109, 73, 0.08) 100%);
+        inset: 7px 8px auto 8px;
+        height: 6px;
+      }
+      .workhub-template-marketing .workhub-template-graphic {
+        background: linear-gradient(165deg, #fff9ef 0%, #ffe8cc 100%);
+      }
+      .workhub-template-marketing .workhub-template-graphic::before {
+        background-image: repeating-linear-gradient(135deg, rgba(191, 120, 18, 0.28) 0 3px, transparent 3px 10px);
+        inset: 0;
+      }
+      .workhub-template-marketing .workhub-template-graphic::after {
+        background: radial-gradient(circle at 72% 28%, rgba(209, 126, 7, 0.46) 0 6px, transparent 7px);
+      }
+      .workhub-template-proposals_leads .workhub-template-graphic {
+        background: linear-gradient(165deg, #f9f2ff 0%, #e9dbff 100%);
+      }
+      .workhub-template-proposals_leads .workhub-template-graphic::before {
+        background-image: linear-gradient(135deg, rgba(109, 74, 173, 0.25) 0 38%, transparent 38% 100%);
+      }
+      .workhub-template-proposals_leads .workhub-template-graphic::after {
+        background-image: repeating-linear-gradient(90deg, rgba(109, 74, 173, 0.22) 0 2px, transparent 2px 9px);
+        inset: auto 8px 8px 8px;
+        height: 10px;
+      }
+      .workhub-template-selection-note {
+        border: 1px solid #dce8fb;
+        background: #f6faff;
+        border-radius: 10px;
+        padding: 8px 9px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .workhub-template-selection-note strong {
+        color: #1f3f73;
+        font-size: 0.78rem;
+      }
+      .workhub-template-selection-note span {
+        color: #5b7097;
+        font-size: 0.72rem;
+        line-height: 1.3;
+      }
+      .workhub-template-selection-highlights {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+      }
+      .workhub-workspace-template-id {
+        border: 1px solid #dce8fb;
+        background: #f8fbff;
+        border-radius: 10px;
+        padding: 10px;
+        display: grid;
+        grid-template-columns: 74px minmax(0, 1fr);
+        gap: 10px;
+        align-items: start;
+      }
+      .workhub-workspace-template-id-content {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+      .workhub-workspace-template-id-content strong {
+        color: #1f3f73;
+        font-size: 0.8rem;
+      }
+      .workhub-workspace-template-id-content span {
+        color: #5b7097;
+        font-size: 0.74rem;
+        line-height: 1.3;
       }
       .workhub-create-date-grid {
         gap: 8px;
@@ -5256,6 +5570,16 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         .workhub-detail-grid {
           grid-template-columns: 1fr;
         }
+        .workhub-workspace-create-layout {
+          grid-template-columns: 1fr;
+        }
+        .workhub-template-card-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          max-height: none;
+        }
+        .workhub-home-template-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
         .workhub-overview-dashboard {
           grid-template-columns: 1fr;
         }
@@ -5305,7 +5629,21 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         }
         .workhub-field-grid.two,
         .workhub-detail-grid,
-        .workhub-summary-list {
+        .workhub-summary-list,
+        .workhub-home-template-grid {
+          grid-template-columns: 1fr;
+        }
+        .workhub-workspace-template-id {
+          grid-template-columns: 1fr;
+        }
+        .workhub-template-card {
+          grid-template-columns: 46px minmax(0, 1fr);
+        }
+        .workhub-template-graphic {
+          width: 46px;
+          height: 46px;
+        }
+        .workhub-template-card-grid {
           grid-template-columns: 1fr;
         }
         .workhub-summary-strip {

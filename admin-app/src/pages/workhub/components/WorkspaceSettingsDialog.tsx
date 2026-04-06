@@ -2,6 +2,10 @@ import type { WorkhubMember, WorkhubWorkspace } from '../../../lib/workhubRepo'
 
 export function WorkspaceSettingsDialog(props: {
   workspace: WorkhubWorkspace | null
+  workspaceTemplateId: string
+  workspaceTemplateLabel: string
+  workspaceTemplateGraphic: string
+  workspaceTemplateDescription: string
   busyKey: string
   projectCount: number
   taskCount: number
@@ -51,6 +55,15 @@ export function WorkspaceSettingsDialog(props: {
         </div>
         <div className="workhub-settings-tab-panel">
           <div className="workhub-modal-form">
+            <div className={`workhub-workspace-template-id workhub-template-${props.workspaceTemplateId}`}>
+              <span className="workhub-template-graphic" aria-hidden="true">
+                <span className="workhub-template-graphic-code">{props.workspaceTemplateGraphic}</span>
+              </span>
+              <div className="workhub-workspace-template-id-content">
+                <strong>{props.workspaceTemplateLabel}</strong>
+                <span>{props.workspaceTemplateDescription}</span>
+              </div>
+            </div>
             <label>
               <span>Workspace name</span>
               <input name="workspaceSettingsName" value={props.settingsName} onChange={(event) => props.onSettingsNameChange(event.target.value)} placeholder="Workspace name" />

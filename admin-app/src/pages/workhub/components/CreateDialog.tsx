@@ -1,17 +1,12 @@
 import { useState } from 'react'
 import type { WorkhubClient, WorkhubMember, WorkhubProjectPriority, WorkhubProjectType, WorkhubTaskPriority, WorkhubTaskStatus, WorkhubTaskStatusConfig, WorkhubVisibility } from '../../../lib/workhubRepo'
 import { PRIORITY_LABELS, PROJECT_PRIORITY_OPTIONS, PROJECT_TYPE_OPTIONS } from '../constants'
-import { WORKSPACE_STATUS_TEMPLATE_OPTIONS, type WorkhubStatusTemplateId } from '../statusTemplates'
 
 export function CreateDialog(props: {
   isOpen: boolean
-  createDialogType: 'workspace' | 'project' | 'task'
+  createDialogType: 'project' | 'task'
   onClose: () => void
-  onDialogTypeChange: (value: 'workspace' | 'project' | 'task') => void
-  workspaceName: string
-  workspaceDescription: string
-  workspaceType: 'technical' | 'hr' | 'finance'
-  workspaceStatusTemplate: WorkhubStatusTemplateId
+  onDialogTypeChange: (value: 'project' | 'task') => void
   projectName: string
   projectParentId: string
   projectDescription: string
@@ -40,13 +35,8 @@ export function CreateDialog(props: {
   approvedMembers: WorkhubMember[]
   taskAssignableMembers: WorkhubMember[]
   busyKey: string
-  canCreateWorkspace: boolean
   canCreateProject: boolean
   canCreateTask: boolean
-  onWorkspaceNameChange: (value: string) => void
-  onWorkspaceDescriptionChange: (value: string) => void
-  onWorkspaceTypeChange: (value: 'technical' | 'hr' | 'finance') => void
-  onWorkspaceStatusTemplateChange: (value: WorkhubStatusTemplateId) => void
   onProjectNameChange: (value: string) => void
   onProjectParentIdChange: (value: string) => void
   onProjectDescriptionChange: (value: string) => void
@@ -69,7 +59,6 @@ export function CreateDialog(props: {
   onTaskAssigneeChange: (value: string) => void
   onTaskPriorityChange: (value: WorkhubTaskPriority) => void
   onTaskDueDateChange: (value: string) => void
-  onCreateWorkspace: () => void
   onCreateProject: () => void
   onCreateProjectKeepOpen: () => void
   onCreateTask: () => void
@@ -92,58 +81,12 @@ export function CreateDialog(props: {
           <button className="workhub-ghost-btn" onClick={props.onClose}>Close</button>
         </div>
         <div className="workhub-switcher">
-          {(['workspace', 'project', 'task'] as const).map((type) => (
+          {(['project', 'task'] as const).map((type) => (
             <button key={type} className={`workhub-switcher-btn${props.createDialogType === type ? ' is-active' : ''}`} onClick={() => props.onDialogTypeChange(type)}>
-              {type === 'workspace' ? '🏢 Workspace' : type === 'project' ? '📁 Project' : '✅ Task'}
+              {type === 'project' ? '📁 Project' : '✅ Task'}
             </button>
           ))}
         </div>
-
-        {props.createDialogType === 'workspace' && (
-          <form
-            className="workhub-modal-form"
-            onSubmit={(event) => {
-              event.preventDefault()
-              props.onCreateWorkspace()
-            }}
-          >
-            <label>
-              <span>Workspace name</span>
-              <input name="workspaceName" value={props.workspaceName} onChange={(event) => props.onWorkspaceNameChange(event.target.value)} placeholder="Operations" />
-            </label>
-            <label className="workhub-toolbar-select" style={{ marginBottom: '12px' }}>
-              <span>Workspace Type</span>
-              <select name="workspaceType" value={props.workspaceType} onChange={(e) => props.onWorkspaceTypeChange(e.target.value as any)} style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid var(--border)' }}>
-                <option value="technical">💻 Technical / Projects</option>
-                <option value="hr">👥 HR / Management</option>
-                <option value="finance">💰 Finance Hub</option>
-              </select>
-            </label>
-            <label className="workhub-toolbar-select" style={{ marginBottom: '12px' }}>
-              <span>Task status template</span>
-              <select
-                name="workspaceStatusTemplate"
-                value={props.workspaceStatusTemplate}
-                onChange={(event) => props.onWorkspaceStatusTemplateChange(event.target.value as WorkhubStatusTemplateId)}
-                style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid var(--border)' }}
-              >
-                {WORKSPACE_STATUS_TEMPLATE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-              <small style={{ color: 'var(--wh-text-secondary)' }}>
-                {WORKSPACE_STATUS_TEMPLATE_OPTIONS.find((option) => option.value === props.workspaceStatusTemplate)?.description || 'Select a status workflow template.'}
-              </small>
-            </label>
-            <label>
-              <span>Description</span>
-              <textarea name="workspaceDescription" value={props.workspaceDescription} onChange={(event) => props.onWorkspaceDescriptionChange(event.target.value)} placeholder="What does this workspace cover?" rows={4} />
-            </label>
-            <button type="submit" className="workhub-primary-btn" disabled={props.busyKey === 'workspace' || !props.canCreateWorkspace}>
-              {props.busyKey === 'workspace' ? 'Creating…' : 'Create workspace'}
-            </button>
-          </form>
-        )}
 
         {props.createDialogType === 'project' && (
           <form

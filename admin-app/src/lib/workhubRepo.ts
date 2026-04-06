@@ -34,6 +34,7 @@ export interface WorkhubWorkspace {
   name: string
   description: string
   type: 'technical' | 'hr' | 'finance'
+  templateId?: string
   taskStatuses?: WorkhubTaskStatusConfig[]
   accessMemberUids?: string[]
   memberAccessLevels?: Record<string, 'full' | 'custom'>
@@ -282,20 +283,24 @@ export function subscribeWorkhubWorkspaces(onData: (items: WorkhubWorkspace[]) =
   })
 }
 
-export async function createWorkhubWorkspace(input: { name: string; description: string; type: 'technical' | 'hr' | 'finance'; createdBy: string }): Promise<string> {
-  const docRef = await addDoc(workspacesCol, {
+export async function createWorkhubWorkspace(input: { name: string; description: string; type: 'technical' | 'hr' | 'finance'; templateId?: string; createdBy: string }): Promise<string> {
+  const payload: Record<string, unknown> = {
     name: input.name,
     description: input.description,
     type: input.type,
     createdBy: input.createdBy,
     createdAt: serverTimestamp(),
-  })
+  }
+  if (input.templateId) {
+    payload.templateId = input.templateId
+  }
+  const docRef = await addDoc(workspacesCol, payload)
   return docRef.id
 }
 
 export async function updateWorkhubWorkspace(
   workspaceId: string,
-  patch: Partial<Pick<WorkhubWorkspace, 'name' | 'description' | 'type' | 'taskStatuses' | 'accessMemberUids' | 'memberAccessLevels' | 'invitedEmails'>>,
+  patch: Partial<Pick<WorkhubWorkspace, 'name' | 'description' | 'type' | 'templateId' | 'taskStatuses' | 'accessMemberUids' | 'memberAccessLevels' | 'invitedEmails'>>,
 ) {
   await updateDoc(doc(db, 'workhub_workspaces', workspaceId), {
     ...patch,

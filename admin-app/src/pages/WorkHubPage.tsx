@@ -57,6 +57,7 @@ import { TaskRow, emptyTaskRowMeta, type TaskRowCallbacks, type TaskRowMeta } fr
 import { QuickAddTaskRow, type QuickAddTaskSubmitInput } from './workhub/components/QuickAddTaskRow'
 import { ProjectSettingsDialog } from './workhub/components/ProjectSettingsDialog'
 import { CreateDialog } from './workhub/components/CreateDialog'
+import { CreateWorkspaceDialog } from './workhub/components/CreateWorkspaceDialog'
 import { ProjectTreeNodes } from './workhub/components/ProjectTreeNodes'
 import {
   PRIORITY_LABELS,
@@ -67,7 +68,14 @@ import {
   PROJECT_PRIORITY_OPTIONS,
   PROJECT_PRIORITY_RANK,
 } from './workhub/constants'
-import { buildWorkspaceTaskStatuses, cloneDefaultTaskStatuses, type WorkhubStatusTemplateId } from './workhub/statusTemplates'
+import { buildWorkspaceTaskStatuses, cloneDefaultTaskStatuses } from './workhub/statusTemplates'
+import {
+  DEFAULT_WORKHUB_WORKSPACE_TEMPLATE_ID,
+  resolveWorkhubWorkspaceTemplate,
+  resolveWorkhubWorkspaceTemplateIdForWorkspace,
+  type WorkhubWorkspaceTemplateId,
+} from './workhub/workspaceTemplates'
+import { buildWorkhubHomeWidgets } from './workhub/homeTemplateWidgets'
 import {
   formatDueDateShort,
   formatProjectDeadlineDate,
@@ -105,6 +113,7 @@ import { useWorkhubTaskDetailHandlers } from './workhub/hooks/useWorkhubTaskDeta
 import { useWorkhubProjectDetailHandlers } from './workhub/hooks/useWorkhubProjectDetailHandlers'
 import { useWorkhubUiInteractionHandlers } from './workhub/hooks/useWorkhubUiInteractionHandlers'
 import { useWorkhubProjectTreeSidebarHandlers } from './workhub/hooks/useWorkhubProjectTreeSidebarHandlers'
+import { useWorkhubWorkspaceTemplates } from './workhub/hooks/useWorkhubWorkspaceTemplates'
 import type { WorkhubUserAccessDraft, WorkhubUserAccessMode, WorkhubUserWorkspaceDraft } from './workhub/accessTypes'
 
 const MASTER_EMAIL = import.meta.env.VITE_MASTER_EMAIL as string | undefined
@@ -133,16 +142,16 @@ export default function WorkHubPage() {
   const [selectedAssigneeUid, setSelectedAssigneeUid] = useState('all')
   const [selectedTaskId, setSelectedTaskId] = useState('')
   const [selectedNoteProjectId, setSelectedNoteProjectId] = useState('')
-  const [activeSection, setActiveSection] = useState<'home' | 'workspaces' | 'users' | 'tasks' | 'notes' | 'dashboard' | 'clients'>('home')
+  const [activeSection, setActiveSection] = useState<'home' | 'users' | 'tasks' | 'notes' | 'dashboard' | 'clients'>('home')
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
-  const [createDialogType, setCreateDialogType] = useState<'workspace' | 'project' | 'task'>('project')
+  const [createDialogType, setCreateDialogType] = useState<'project' | 'task'>('project')
+  const [workspaceCreateDialogOpen, setWorkspaceCreateDialogOpen] = useState(false)
   const [teamDialogOpen, setTeamDialogOpen] = useState(false)
   const [workspaceSettingsId, setWorkspaceSettingsId] = useState('')
   const [projectAccessDialogId, setProjectAccessDialogId] = useState('')
   const [workspaceName, setWorkspaceName] = useState('')
   const [workspaceDescription, setWorkspaceDescription] = useState('')
-  const [workspaceType, setWorkspaceType] = useState<'technical' | 'hr' | 'finance'>('technical')
-  const [workspaceStatusTemplate, setWorkspaceStatusTemplate] = useState<WorkhubStatusTemplateId>('workspace_default')
+  const [workspaceTemplateId, setWorkspaceTemplateId] = useState<WorkhubWorkspaceTemplateId>(DEFAULT_WORKHUB_WORKSPACE_TEMPLATE_ID)
   const [workspaceSettingsName, setWorkspaceSettingsName] = useState('')
   const [workspaceSettingsDescription, setWorkspaceSettingsDescription] = useState('')
   const [workspaceAccessMemberUids, setWorkspaceAccessMemberUids] = useState<string[]>([])
@@ -472,6 +481,14 @@ export default function WorkHubPage() {
   const approvedMembers = useMemo(() => members.filter((item) => item.status === 'approved'), [members])
   const pendingMembers = useMemo(() => members.filter((item) => item.status === 'pending'), [members])
   const selectedWorkspace = useMemo(() => visibleWorkspaces.find((item) => item.id === selectedWorkspaceId) || null, [selectedWorkspaceId, visibleWorkspaces])
+  const selectedWorkspaceTemplateId = useMemo(
+    () => resolveWorkhubWorkspaceTemplateIdForWorkspace(selectedWorkspace),
+    [selectedWorkspace],
+  )
+  const selectedWorkspaceHomeTemplate = useMemo(
+    () => resolveWorkhubWorkspaceTemplate(selectedWorkspaceTemplateId),
+    [selectedWorkspaceTemplateId],
+  )
   const allClientById = useMemo(
     () => Object.fromEntries(clients.map((item) => [item.id, item])) as Record<string, WorkhubClient>,
     [clients],
@@ -540,6 +557,11 @@ export default function WorkHubPage() {
     navigateToProfile: () => navigate('/profile'),
     showToast,
   })
+  const {
+    selectedTemplate: selectedCreateWorkspaceTemplate,
+    templates: workspaceTemplateDefinitions,
+    initialTaskStatuses: workspaceTemplateTaskStatuses,
+  } = useWorkhubWorkspaceTemplates(workspaceTemplateId)
   const visibleProjectById = useMemo(
     () => Object.fromEntries(visibleWorkspaceProjects.map((item) => [item.id, item])) as Record<string, WorkhubProject>,
     [visibleWorkspaceProjects],
@@ -812,6 +834,31 @@ export default function WorkHubPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [])
   const selectedWorkspaceSettings = useMemo(() => workspaces.find((item) => item.id === workspaceSettingsId) || null, [workspaceSettingsId, workspaces])
+  const selectedWorkspaceSettingsTemplate = useMemo(() => {
+    if (!selectedWorkspaceSettings) {
+      return {
+        id: 'projects',
+        label: 'Projects workspace',
+        graphic: 'PROJ',
+        description: 'Standard project execution flow with tasks, sub-projects, and delivery tracking.',
+      }
+    }
+    if (selectedWorkspaceSettings.type === 'hr' && !selectedWorkspaceSettings.templateId) {
+      return {
+        id: 'legacy_hr',
+        label: 'Legacy HR workspace',
+        graphic: 'HR',
+        description: 'Legacy workspace type. Consider assigning a template-driven workflow.',
+      }
+    }
+    const template = resolveWorkhubWorkspaceTemplate(resolveWorkhubWorkspaceTemplateIdForWorkspace(selectedWorkspaceSettings))
+    return {
+      id: template.id,
+      label: template.label,
+      graphic: template.graphic,
+      description: template.description,
+    }
+  }, [selectedWorkspaceSettings])
   const selectedWorkspaceProjectCount = useMemo(
     () => (selectedWorkspaceSettings ? projects.filter((item) => item.workspaceId === selectedWorkspaceSettings.id).length : 0),
     [projects, selectedWorkspaceSettings],
@@ -1239,6 +1286,71 @@ export default function WorkHubPage() {
           clientName: allClientById[item.project.clientId || '']?.name || '',
       }))
         }, [allClientById, visibleWorkspaceProjects])
+  const homeWidgetTaskStatusCounts = useMemo(
+    () => visibleTasks.reduce((acc, task) => {
+      acc[task.status] = (acc[task.status] || 0) + 1
+      return acc
+    }, {} as Record<string, number>),
+    [visibleTasks],
+  )
+  const homeWidgetTaskStatusLabels = useMemo(
+    () => Object.fromEntries(workspaceTaskStatuses.map((status) => [status.id, status.label])) as Record<string, string>,
+    [workspaceTaskStatuses],
+  )
+  const workspaceClientCount = useMemo(() => {
+    if (!scopedWorkspaceIds.length) return 0
+    const scopedIds = new Set(scopedWorkspaceIds)
+    return clients.filter((item) => scopedIds.has(item.workspaceId)).length
+  }, [clients, scopedWorkspaceIds])
+  const overduePriorityProjectsCount = useMemo(
+    () => overviewPriorityProjects.filter((item) => item.isOverdue).length,
+    [overviewPriorityProjects],
+  )
+  const nearTermPriorityProjectsCount = useMemo(
+    () => overviewPriorityProjects.filter((item) => !item.isOverdue && item.daysRemaining <= 2).length,
+    [overviewPriorityProjects],
+  )
+  const homeTemplateWidgets = useMemo(
+    () => buildWorkhubHomeWidgets(selectedWorkspaceTemplateId, {
+      totalTasks: taskCounts.total,
+      activeTasks: Math.max(taskCounts.total - overviewCompletedCount, 0),
+      inProgressTasks: taskCounts.inProgress,
+      urgentTasks: taskCounts.urgent,
+      completionRate: overviewCompletionRate,
+      projectsCount: visibleWorkspaceProjects.length,
+      restrictedProjectsCount,
+      assignedMembersCount: tasksByAssignee.length,
+      workspaceClientCount,
+      unreadNotifications: unreadNotificationCount,
+      pendingMembersCount: pendingMembers.length,
+      upcomingDeadlineProjectsCount: overviewPriorityProjects.length,
+      nearTermDeadlineProjectsCount: nearTermPriorityProjectsCount,
+      overdueProjectsCount: overduePriorityProjectsCount,
+      recentActivityCount: overviewRecentTimeline.length,
+      taskStatusCounts: homeWidgetTaskStatusCounts,
+      taskStatusLabels: homeWidgetTaskStatusLabels,
+    }),
+    [
+      homeWidgetTaskStatusCounts,
+      homeWidgetTaskStatusLabels,
+      nearTermPriorityProjectsCount,
+      overviewCompletedCount,
+      overviewCompletionRate,
+      overviewPriorityProjects.length,
+      overviewRecentTimeline.length,
+      overduePriorityProjectsCount,
+      pendingMembers.length,
+      restrictedProjectsCount,
+      selectedWorkspaceTemplateId,
+      taskCounts.inProgress,
+      taskCounts.total,
+      taskCounts.urgent,
+      tasksByAssignee.length,
+      unreadNotificationCount,
+      visibleWorkspaceProjects.length,
+      workspaceClientCount,
+    ],
+  )
   const projectNotesChanged = (selectedNoteProject?.notes || '') !== projectNotesDraft
   const taskDialogProjectId = selectedProjectId === 'all' ? selectedNoteProject?.id || flatVisibleProjectOptions[0]?.id || '' : selectedProjectId
   const taskDialogAssignableMembers = useMemo(
@@ -1779,7 +1891,8 @@ export default function WorkHubPage() {
       const workspaceId = await createWorkhubWorkspace({
         name: workspaceName.trim(),
         description: workspaceDescription.trim(),
-        type: workspaceType,
+        type: selectedCreateWorkspaceTemplate.workspaceType,
+        templateId: selectedCreateWorkspaceTemplate.id,
         createdBy: auth.currentUser.uid,
       })
       const accessUids = normalizeMemberUids([...fullAccessMemberUids, auth.currentUser.uid])
@@ -1787,10 +1900,15 @@ export default function WorkHubPage() {
         acc[uid] = 'full'
         return acc
       }, {} as Record<string, 'full' | 'custom'>)
-      await updateWorkhubWorkspace(workspaceId, {
+      const workspacePatch: Parameters<typeof updateWorkhubWorkspace>[1] = {
         accessMemberUids: accessUids,
         memberAccessLevels: fullAccessLevels,
-        taskStatuses: buildWorkspaceTaskStatuses(workspaceStatusTemplate, workspaceType),
+      }
+      if (workspaceTemplateTaskStatuses.length > 0) {
+        workspacePatch.taskStatuses = workspaceTemplateTaskStatuses
+      }
+      await updateWorkhubWorkspace(workspaceId, {
+        ...workspacePatch,
       })
       await createWorkhubActivity({
         workspaceId,
@@ -1802,10 +1920,10 @@ export default function WorkHubPage() {
       })
       setWorkspaceName('')
       setWorkspaceDescription('')
-      setWorkspaceStatusTemplate('workspace_default')
+      setWorkspaceTemplateId(DEFAULT_WORKHUB_WORKSPACE_TEMPLATE_ID)
       setSelectedWorkspaceId(workspaceId)
-      setCreateDialogOpen(false)
-      setActiveSection('workspaces')
+      setWorkspaceCreateDialogOpen(false)
+      setActiveSection('home')
       showToast({ type: 'success', message: 'Workspace created.' })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not create workspace.'
@@ -2805,6 +2923,11 @@ export default function WorkHubPage() {
     setCreateDialogOpen(true)
   }
 
+  function openCreateWorkspaceDialog() {
+    setQuickAddOpen(false)
+    setWorkspaceCreateDialogOpen(true)
+  }
+
   function resolveTaskNotificationRecipients(task: WorkhubTask, updates?: Partial<WorkhubTask>) {
     const nextVisibility = updates?.visibility || task.visibility
     const taskProject = workspaceProjectById[task.projectId]
@@ -2971,15 +3094,38 @@ export default function WorkHubPage() {
     <div className="workhub-shell" dir="ltr">
       <div className="workhub-app">
         <header className="workhub-topbar">
-          <div className="workhub-brand-wrap">
-            <span className="workhub-brand" aria-label="WorkHub">
-              <span className="workhub-brand-initial">W</span>ork<span className="workhub-brand-initial">H</span>ub
-            </span>
-            <span className="workhub-brand-subtitle">Developed by Muneer Al Sulaimi 2026</span>
+          <div className="workhub-topbar-main">
+            <div className="workhub-brand-wrap">
+              <span className="workhub-brand" aria-label="WorkHub">
+                <span className="workhub-brand-initial">W</span>ork<span className="workhub-brand-initial">H</span>ub
+              </span>
+              <span className="workhub-brand-subtitle">Developed by Muneer Al Sulaimi 2026</span>
+            </div>
+            <span className="workhub-topbar-divider" aria-hidden="true" />
+            <div className="workhub-workspace-tabs-wrap">
+              <div className="workhub-workspace-tabs" role="tablist" aria-label="Workspaces">
+                {visibleWorkspaces.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`workhub-tab workhub-workspace-tab${selectedWorkspaceId === item.id ? ' is-active' : ''}`}
+                    onClick={() => setSelectedWorkspaceId(item.id)}
+                    title={item.name}
+                  >
+                    {item.name}
+                  </button>
+                ))}
+              </div>
+              {isPrivilegedMember && (
+                <div className="workhub-workspace-tab-actions">
+                  <button className="workhub-plus-btn" onClick={openCreateWorkspaceDialog}>+</button>
+                  {selectedWorkspaceId && <button className="workhub-gear-btn" onClick={() => openWorkspaceSettings(selectedWorkspaceId)}>⚙</button>}
+                </div>
+              )}
+            </div>
           </div>
           <nav className="workhub-header-actions">
             <button className={`workhub-tab${activeSection === 'home' ? ' is-active' : ''}`} onClick={() => setActiveSection('home')}>Home</button>
-            <button className={`workhub-tab${activeSection === 'workspaces' ? ' is-active' : ''}`} onClick={() => setActiveSection('workspaces')}>Workspaces</button>
             {isPrivilegedMember && <button className={`workhub-tab${activeSection === 'users' ? ' is-active' : ''}`} onClick={() => setActiveSection('users')}>Users</button>}
             <button className={`workhub-tab${activeSection === 'clients' ? ' is-active' : ''}`} onClick={() => setActiveSection('clients')}>Clients</button>
             <button className={`workhub-tab${activeSection === 'notes' ? ' is-active' : ''}`} onClick={() => setActiveSection('notes')}>Notes</button>
@@ -3083,18 +3229,6 @@ export default function WorkHubPage() {
             )}
             {!sidebarCollapsed && (
               <>
-                <div className="workhub-tree-actions">
-                  <div className="workhub-inline-row" style={{ alignItems: 'flex-end' }}>
-                    <label className="workhub-toolbar-select">
-                      <select name="selectedWorkspace" value={selectedWorkspaceId} onChange={(event) => setSelectedWorkspaceId(event.target.value)}>
-                        {visibleWorkspaces.length === 0 && <option value="">No workspace yet</option>}
-                        {visibleWorkspaces.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                      </select>
-                    </label>
-                    {isPrivilegedMember && <button className="workhub-plus-btn" onClick={(event) => handleProjectActionMenu('__workspace__', event)}>+</button>}
-                    {isPrivilegedMember && selectedWorkspaceId && <button className="workhub-gear-btn" onClick={() => openWorkspaceSettings(selectedWorkspaceId)}>⚙</button>}
-                  </div>
-                </div>
                 <div className="workhub-tree-actions">
                   <button
                     className={`workhub-tree-overview${selectedProjectId === 'all' && activeSection === 'dashboard' ? ' is-active' : ''}`}
@@ -3377,30 +3511,6 @@ export default function WorkHubPage() {
                       </article>
                     ))}
                     {selectedBranchChildProjects.length === 0 && <div className="workhub-empty-state">No child projects here yet.</div>}
-                  </div>
-                </section>
-              </main>
-            )}
-
-            {activeSection === 'workspaces' && (
-              <main className="workhub-section-stack">
-                <section className="workhub-panel">
-                  <div className="workhub-panel-head">
-                    <div>
-                      <h2>Workspaces</h2>
-                      <p>Switch the whole project tree by workspace.</p>
-                    </div>
-                  </div>
-                  <div className="workhub-workspace-grid">
-                    {visibleWorkspaces.map((workspace) => (
-                      <article key={workspace.id} className={`workhub-workspace-card${selectedWorkspaceId === workspace.id ? ' is-active' : ''}`}>
-                        <button className="workhub-ghost-mini" onClick={() => setSelectedWorkspaceId(workspace.id)}>Open</button>
-                        {isPrivilegedMember && <button className="workhub-gear-btn" onClick={() => openWorkspaceSettings(workspace.id)}>⚙</button>}
-                        <strong>{workspace.name}</strong>
-                        <span>{workspace.description || 'No description yet.'}</span>
-                      </article>
-                    ))}
-                    {visibleWorkspaces.length === 0 && <div className="workhub-empty-state">No workspace available for your account.</div>}
                   </div>
                 </section>
               </main>
@@ -4606,7 +4716,11 @@ export default function WorkHubPage() {
               <div className="workhub-panel-head">
                 <div>
                   <h2>Home</h2>
-                  <p>Minimal landing page. Use Workspace overview for the full operational dashboard.</p>
+                  <p>
+                    {selectedWorkspaceId
+                      ? `${selectedWorkspaceHomeTemplate.label}. ${selectedWorkspaceHomeTemplate.description}`
+                      : 'Select a workspace to load template-focused home panels.'}
+                  </p>
                 </div>
               </div>
               <div className="workhub-summary-strip">
@@ -4615,10 +4729,25 @@ export default function WorkHubPage() {
                 <div className="workhub-summary-tile"><strong>{taskCounts.total}</strong><span>Tasks in scope</span></div>
                 <div className="workhub-summary-tile"><strong>{tasksByAssignee.length}</strong><span>Members with assigned tasks</span></div>
               </div>
+              {selectedWorkspaceId ? (
+                <div className="workhub-home-template-grid">
+                  {homeTemplateWidgets.map((widget) => (
+                    <article key={widget.id} className={`workhub-overview-card workhub-home-widget${widget.tone ? ` is-${widget.tone}` : ''}`}>
+                      <div className="workhub-overview-head">
+                        <h3>{widget.title}</h3>
+                        <span>{widget.value}</span>
+                      </div>
+                      <p className="workhub-home-widget-note">{widget.detail}</p>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="workhub-empty-state">Select a workspace to view template-based home widgets.</div>
+              )}
               <div className="workhub-home-actions">
                 <button className="workhub-primary-btn" onClick={openWorkspaceOverview} disabled={!selectedWorkspaceId}>Open workspace overview</button>
                 <button className="workhub-ghost-btn" onClick={() => setActiveSection('tasks')} disabled={!selectedWorkspaceId}>Go to tasks</button>
-                <button className="workhub-ghost-btn" onClick={() => setActiveSection('workspaces')}>Manage workspaces</button>
+                <button className="workhub-ghost-btn" onClick={() => selectedWorkspaceId && openWorkspaceSettings(selectedWorkspaceId)} disabled={!selectedWorkspaceId}>Workspace settings</button>
               </div>
             </section>
           </main>
@@ -4656,14 +4785,26 @@ export default function WorkHubPage() {
           </section>
         </div>
 
+        <CreateWorkspaceDialog
+          isOpen={workspaceCreateDialogOpen}
+          onClose={() => setWorkspaceCreateDialogOpen(false)}
+          workspaceName={workspaceName}
+          workspaceDescription={workspaceDescription}
+          workspaceTemplateId={workspaceTemplateId}
+          workspaceTemplates={workspaceTemplateDefinitions}
+          busyKey={busyKey}
+          canCreateWorkspace={isPrivilegedMember}
+          onWorkspaceNameChange={setWorkspaceName}
+          onWorkspaceDescriptionChange={setWorkspaceDescription}
+          onWorkspaceTemplateChange={setWorkspaceTemplateId}
+          onCreateWorkspace={() => { void handleCreateWorkspace() }}
+        />
+
         <CreateDialog
           isOpen={createDialogOpen}
           createDialogType={createDialogType}
           onClose={() => setCreateDialogOpen(false)}
           onDialogTypeChange={setCreateDialogType}
-          workspaceName={workspaceName}
-          workspaceDescription={workspaceDescription}
-          workspaceStatusTemplate={workspaceStatusTemplate}
           projectName={projectName}
           projectParentId={projectParentId}
           projectDescription={projectDescription}
@@ -4692,14 +4833,8 @@ export default function WorkHubPage() {
           approvedMembers={approvedMembers}
           taskAssignableMembers={taskDialogAssignableMembers}
           busyKey={busyKey}
-          canCreateWorkspace={isPrivilegedMember}
           canCreateProject={!!selectedWorkspaceId}
           canCreateTask={!!selectedWorkspaceId}
-          workspaceType={workspaceType}
-          onWorkspaceTypeChange={setWorkspaceType}
-          onWorkspaceStatusTemplateChange={setWorkspaceStatusTemplate}
-          onWorkspaceNameChange={setWorkspaceName}
-          onWorkspaceDescriptionChange={setWorkspaceDescription}
           onProjectNameChange={setProjectName}
           onProjectParentIdChange={setProjectParentId}
           onProjectDescriptionChange={setProjectDescription}
@@ -4725,7 +4860,6 @@ export default function WorkHubPage() {
           onTaskAssigneeChange={setTaskAssigneeUid}
           onTaskPriorityChange={setTaskPriority}
           onTaskDueDateChange={setTaskDueDate}
-          onCreateWorkspace={() => { void handleCreateWorkspace() }}
           onCreateProject={() => { void handleCreateProject() }}
           onCreateProjectKeepOpen={() => { void handleCreateProject({ keepDialogOpen: true }) }}
           onCreateTask={() => { void handleCreateTask() }}
@@ -4744,6 +4878,10 @@ export default function WorkHubPage() {
 
         <WorkspaceSettingsDialog
           workspace={selectedWorkspaceSettings}
+          workspaceTemplateId={selectedWorkspaceSettingsTemplate.id}
+          workspaceTemplateLabel={selectedWorkspaceSettingsTemplate.label}
+          workspaceTemplateGraphic={selectedWorkspaceSettingsTemplate.graphic}
+          workspaceTemplateDescription={selectedWorkspaceSettingsTemplate.description}
           busyKey={busyKey}
           projectCount={selectedWorkspaceProjectCount}
           taskCount={selectedWorkspaceTaskCount}
@@ -4786,7 +4924,7 @@ export default function WorkHubPage() {
           canManageProject={isPrivilegedMember}
           canCreateTopCategory={!!selectedWorkspaceId}
           onClose={closeActionMenu}
-          onCreateWorkspace={() => { setCreateDialogType('workspace'); setCreateDialogOpen(true) }}
+          onCreateWorkspace={openCreateWorkspaceDialog}
           onCreateTask={(projectId) => openCreateTaskDialog(projectId)}
           onCreateSubProject={(projectId) => openCreateProjectDialog(projectId)}
           onOpenSettings={(projectId) => setProjectAccessDialogId(projectId)}

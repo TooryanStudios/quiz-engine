@@ -5,7 +5,7 @@ import {
   type SetStateAction,
 } from 'react'
 
-type WorkhubActiveSection = 'home' | 'workspaces' | 'users' | 'tasks' | 'notes' | 'dashboard' | 'clients'
+type WorkhubActiveSection = 'home' | 'users' | 'tasks' | 'notes' | 'dashboard' | 'clients'
 
 interface UseWorkhubProjectTreeSidebarHandlersParams {
   setActionMenuProjectId: Dispatch<SetStateAction<string | null>>

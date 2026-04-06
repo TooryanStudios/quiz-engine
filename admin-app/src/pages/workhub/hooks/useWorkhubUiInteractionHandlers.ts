@@ -10,7 +10,7 @@ import {
   type WorkhubTask,
 } from '../../../lib/workhubRepo'
 
-type WorkhubActiveSection = 'home' | 'workspaces' | 'users' | 'tasks' | 'notes' | 'dashboard' | 'clients'
+type WorkhubActiveSection = 'home' | 'users' | 'tasks' | 'notes' | 'dashboard' | 'clients'
 
 interface UseWorkhubUiInteractionHandlersParams {
   notificationMenuOpen: boolean
