@@ -27,11 +27,13 @@ import { MiniGamesTab } from './master/MiniGamesTab'
 import { ThemeEditorTab } from './master/ThemeEditorTab'
 import { FeaturedTab }    from './master/FeaturedTab'
 import { ApprovalsTab }   from './master/ApprovalsTab'
+import { FinanceTab }     from './master/FinanceTab'
 
 const BASE = import.meta.env.VITE_MASTER_PATH as string ?? '/admin-portal'
 
 const TABS: { id: MasterTab; label: string; path: string }[] = [
   { id: 'overview',   label: '🏠 Overview',   path: 'dashboard' },
+  { id: 'finance',    label: '💰 Finance',    path: 'finance' },
   { id: 'sessions',   label: '🎮 Sessions',   path: 'sessions' },
   { id: 'quizzes',    label: '📋 Content',    path: 'content' },
   { id: 'approvals',  label: '✅ Approvals',  path: 'approvals' },
@@ -169,6 +171,7 @@ export function MasterAdminPage() {
 
       <main className="master-content">
         {activeTab === 'overview'   && <OverviewTab   quizzes={quizzesData.quizzes} totalPlays={totalPlays} totalPlayers={totalPlayers} totalShares={totalShares} totalUsers={totalUsers} newUsersLast24Hours={newUsersLast24Hours} />}
+        {activeTab === 'finance'    && <FinanceTab    />}
         {activeTab === 'sessions'   && <SessionsTab   sessions={sessions.sessions}   hasMore={sessions.hasMore}    loadingMore={sessions.loadingMore}    onLoadMore={sessions.loadMore} />}
         {activeTab === 'quizzes'    && <QuizzesTab    quizzes={quizzesData.quizzes}  hasMore={quizzesData.hasMore} loadingMore={quizzesData.loadingMore} onLoadMore={quizzesData.loadMore} />}
         {activeTab === 'approvals'  && <ApprovalsTab  quizzes={quizzesData.quizzes}  hasMore={quizzesData.hasMore} loadingMore={quizzesData.loadingMore} onLoadMore={quizzesData.loadMore} />}

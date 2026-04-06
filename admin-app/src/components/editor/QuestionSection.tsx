@@ -1,8 +1,7 @@
 import React, { useState } from 'react'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
-import { storage, auth } from '../../lib/firebase'
+import { storage } from '../../lib/firebase'
 import type { QuizQuestion, QuestionType, QuizMedia } from '../../types/quiz'
-import { InlineLoginContent } from '../auth/InlineLoginContent'
 import { aiCheckQuestionCorrectness, aiGenerateQuestionMediaImage } from '../../lib/ai/questionTools'
 import {
   getQuestionTypeEditorMeta,
@@ -55,9 +54,9 @@ interface QuestionSectionProps {
   isPremiumQuestionType: (type: QuestionType) => boolean
   quizTitle?: string
   quizDescription?: string
-  onGoogleSignIn: (returnTo: string) => Promise<void>
   /** When set, only the question at this index is rendered (slideshow mode). */
   activeIndex?: number
+  onGoogleSignIn?: (returnTo: string) => Promise<void>
 }
 
 const QuestionSection: React.FC<QuestionSectionProps> = ({
@@ -87,7 +86,6 @@ const QuestionSection: React.FC<QuestionSectionProps> = ({
   onOpenUpgradeDialog,
   onOpenMiniGamePuzzleCropPicker,
   onUploadPairImage,
-  onGoogleSignIn,
   onSetUploadingIndex,
   isPremiumQuestionType,
   quizTitle,
@@ -336,7 +334,27 @@ const QuestionSection: React.FC<QuestionSectionProps> = ({
                     onUpdateQuestion={(patch) => onUpdateQuestion(index, patch)}
                     onUploadPairImage={onUploadPairImage}
                     onUploadMatchPlusImage={() => {
-                      onOpenMiniGamePuzzleCropPicker({ kind: 'block', questionIndex: index })
+                      const input = document.createElement('input')
+                      input.type = 'file'
+                      input.accept = 'image/*'
+                      input.onchange = async (event) => {
+                        const file = (event.target as HTMLInputElement).files?.[0]
+                        if (!file) return
+                        try {
+                          onShowToast({ message: '⏳ جاري رفع الصورة...', type: 'info' })
+                          const ext = file.name.split('.').pop() || 'jpg'
+                          const storagePath = `match-plus-puzzle/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+                          const storageRef = ref(storage, storagePath)
+                          await uploadBytes(storageRef, file)
+                          const url = await getDownloadURL(storageRef)
+                          onUpdateQuestion(index, { matchPlusImage: url })
+                          onShowToast({ message: '✅ تم رفع الصورة بنجاح', type: 'success' })
+                        } catch (err) {
+                          console.error('Puzzle image upload failed', err)
+                          onShowToast({ message: '❌ فشل رفع الصورة', type: 'error' })
+                        }
+                      }
+                      input.click()
                     }}
                   />
                 )}
@@ -362,26 +380,8 @@ const QuestionSection: React.FC<QuestionSectionProps> = ({
                   uploading={uploadingIndex === index}
                   aiCheckLoading={aiCheckLoadingIndex === index}
                   aiCheckResult={aiCheckResultByIndex[index] || null}
-                  creditCostPerImage={10}
                   onAiCheckClick={async () => {
                     if (aiCheckLoadingIndex !== null) return
-                    
-                    // Guests cannot use AI features
-                    if (!auth.currentUser?.uid) {
-                      onShowDialog({
-                        title: '🔐 تسجيل الدخول مطلوب',
-                        message: (
-                          <InlineLoginContent
-                            description="يجب تسجيل الدخول لاستخدام ميزات الذكاء الاصطناعي."
-                            onGoogleSignIn={() => onGoogleSignIn(window.location.pathname + window.location.search)}
-                          />
-                        ),
-                        hideFooter: true,
-                        showCloseButton: true,
-                      })
-                      return
-                    }
-                    
                     setAiCheckLoadingIndex(index)
                     try {
                       const result = await aiCheckQuestionCorrectness(q)
@@ -403,23 +403,6 @@ const QuestionSection: React.FC<QuestionSectionProps> = ({
                   aiImageLoading={aiImageLoadingIndex === index}
                   onAiImageClick={async () => {
                     if (aiImageLoadingIndex !== null) return
-                    
-                    // Guests cannot use AI features
-                    if (!auth.currentUser?.uid) {
-                      onShowDialog({
-                        title: '🔐 تسجيل الدخول مطلوب',
-                        message: (
-                          <InlineLoginContent
-                            description="يجب تسجيل الدخول لاستخدام ميزات الذكاء الاصطناعي."
-                            onGoogleSignIn={() => onGoogleSignIn(window.location.pathname + window.location.search)}
-                          />
-                        ),
-                        hideFooter: true,
-                        showCloseButton: true,
-                      })
-                      return
-                    }
-                    
                     setAiImageLoadingIndex(index)
                     try {
                       const { imageUrl } = await aiGenerateQuestionMediaImage(q, {
@@ -456,22 +439,6 @@ const QuestionSection: React.FC<QuestionSectionProps> = ({
                     onUpdateQuestion(index, { media: { ...q.media!, url: value } })
                   }}
                   onUploadMedia={() => {
-                    // Guests cannot upload media
-                    if (!auth.currentUser?.uid) {
-                      onShowDialog({
-                        title: '🔐 تسجيل الدخول مطلوب',
-                        message: (
-                          <InlineLoginContent
-                            description="يجب تسجيل الدخول لرفع الملفات."
-                            onGoogleSignIn={() => onGoogleSignIn(window.location.pathname + window.location.search)}
-                          />
-                        ),
-                        hideFooter: true,
-                        showCloseButton: true,
-                      })
-                      return
-                    }
-                    
                     const input = document.createElement('input')
                     input.type = 'file'
                     input.accept = q.media?.type === 'video' ? 'video/*' : q.media?.type === 'gif' ? 'image/gif' : 'image/*'

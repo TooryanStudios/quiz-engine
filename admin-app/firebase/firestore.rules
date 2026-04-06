@@ -20,6 +20,53 @@ service cloud.firestore {
       );
     }
 
+    function workhubMemberDoc() {
+      return get(/databases/$(database)/documents/workhub_members/$(request.auth.uid));
+    }
+
+    function workhubMemberExists() {
+      return exists(/databases/$(database)/documents/workhub_members/$(request.auth.uid));
+    }
+
+    function isApprovedWorkhubMember() {
+      return isSignedIn()
+        && workhubMemberExists()
+        && workhubMemberDoc().data.status == 'approved';
+    }
+
+    function canAccessWorkhub() {
+      return isMasterAdmin() || isApprovedWorkhubMember();
+    }
+
+    function isPrivilegedWorkhubMember() {
+      return isMasterAdmin() || (
+        isApprovedWorkhubMember()
+        && (workhubMemberDoc().data.role == 'admin' || workhubMemberDoc().data.role == 'manager')
+      );
+    }
+
+    function isVisibleWorkhubEntity(data) {
+      return data.visibility == 'workspace'
+        || data.createdBy == request.auth.uid
+        || request.auth.uid in data.memberUids;
+    }
+
+    function workhubTaskDoc(taskId) {
+      return get(/databases/$(database)/documents/workhub_tasks/$(taskId));
+    }
+
+    function workhubTaskExists(taskId) {
+      return exists(/databases/$(database)/documents/workhub_tasks/$(taskId));
+    }
+
+    function canReadWorkhubTask(taskId) {
+      return isPrivilegedWorkhubMember() || (
+        canAccessWorkhub()
+        && workhubTaskExists(taskId)
+        && isVisibleWorkhubEntity(workhubTaskDoc(taskId).data)
+      );
+    }
+
     function isValidVoiceTestRoom(roomId) {
       return roomId.matches('^test-[a-z0-9-]{3,36}$');
     }
@@ -86,6 +133,77 @@ service cloud.firestore {
     // dynamic themes via the Firestore REST API without requiring auth credentials.
     match /platform_settings/theme_editor {
       allow read: if true;
+    }
+
+    // Fish Fence levels are published by the builder and consumed by /play at runtime.
+    // Public write is intentionally scoped to this single document for dynamic level syncing.
+    match /platform_settings/fish_fence_count_levels {
+      allow read, create, update: if true;
+      allow delete: if false;
+    }
+
+    match /workhub_members/{userId} {
+      allow read: if isSignedIn() && (
+        request.auth.uid == userId
+        || canAccessWorkhub()
+      );
+      allow create, update, delete: if false;
+    }
+
+    match /workhub_workspaces/{workspaceId} {
+      allow read: if canAccessWorkhub();
+      allow create, update, delete: if isPrivilegedWorkhubMember();
+    }
+
+    match /workhub_projects/{projectId} {
+      allow read: if isPrivilegedWorkhubMember() || (canAccessWorkhub() && isVisibleWorkhubEntity(resource.data));
+      allow create, update, delete: if canAccessWorkhub();
+    }
+
+    match /workhub_tasks/{taskId} {
+      allow read: if isPrivilegedWorkhubMember() || (canAccessWorkhub() && isVisibleWorkhubEntity(resource.data));
+      allow create, update, delete: if canAccessWorkhub();
+    }
+
+    match /workhub_task_comments/{commentId} {
+      allow read: if canReadWorkhubTask(resource.data.taskId);
+      allow create, update, delete: if canAccessWorkhub();
+    }
+
+    match /workhub_activity/{activityId} {
+      allow read: if isPrivilegedWorkhubMember() || (canAccessWorkhub() && isVisibleWorkhubEntity(resource.data));
+      allow create, update, delete: if canAccessWorkhub();
+    }
+
+    match /workhub_notifications/{notificationId} {
+      allow read: if isPrivilegedWorkhubMember() || (canAccessWorkhub() && resource.data.recipientUid == request.auth.uid);
+      allow create: if canAccessWorkhub();
+      allow update: if canAccessWorkhub()
+        && resource.data.recipientUid == request.auth.uid
+        && request.resource.data.workspaceId == resource.data.workspaceId
+        && request.resource.data.recipientUid == resource.data.recipientUid
+        && request.resource.data.actorUid == resource.data.actorUid
+        && request.resource.data.entityType == resource.data.entityType
+        && request.resource.data.entityId == resource.data.entityId
+        && request.resource.data.action == resource.data.action
+        && request.resource.data.message == resource.data.message
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if false;
+    }
+
+    match /workhub_clients/{clientId} {
+      allow read: if canAccessWorkhub();
+      allow create, update, delete: if canAccessWorkhub();
+    }
+
+    match /workhub_finances/{projectId} {
+      allow read: if isPrivilegedWorkhubMember();
+      allow create, update, delete: if isPrivilegedWorkhubMember();
+
+      match /expenses/{expenseId} {
+        allow read: if isPrivilegedWorkhubMember();
+        allow create, update, delete: if isPrivilegedWorkhubMember();
+      }
     }
   }
 }

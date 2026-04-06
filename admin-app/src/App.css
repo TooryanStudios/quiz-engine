@@ -1092,12 +1092,14 @@ button:disabled {
   height: 100dvh;
   background: var(--bg-page);
   color: var(--text);
-  overflow: clip;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .embedded-preview-shell {
   overflow-y: auto;
   overflow-x: hidden;
+  background: #000;
 }
 
 /* ── Master Admin shell: sidebar on desktop, top-bar on mobile ── */

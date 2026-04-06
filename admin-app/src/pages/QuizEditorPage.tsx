@@ -1890,12 +1890,16 @@ export function QuizEditorPage() {
         onPlayQuiz={(id) => { void launchGameFromEditor(id) }}
 
         // Toolbar Props
+        showToolbarDropdown={undefined}
         isSaving={status.kind === 'saving'}
         hasUnsavedChanges={hasUnsavedChanges}
+        onToggleDropdown={undefined}
+        onCloseDropdown={undefined}
         onOpenContentTypePicker={() => setShowContentTypePicker(true)}
         onBack={() => navigate(-1)}
         onOpenExisting={handleOpenExistingContent}
         onCreateNew={handleCreateNewEditorItem}
+        onCloseEditor={() => navigate('/dashboard')}
         onOpenMetadata={openMetadataDialog}
         onPreviewQuiz={openPreviewQuiz}
         onCopyLink={() => { void copyEditorLink() }}

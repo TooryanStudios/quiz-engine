@@ -255,11 +255,6 @@ html.gameplay-active body {
   justify-content: center;
 }
 
-#view-host-lobby {
-  justify-content: flex-start;
-  padding: 12px 12px 24px;
-}
-
 .view.active {
   display: flex;
 }
@@ -381,13 +376,6 @@ html.autohost-launch #view-host-loading.active {
   .card.lobby-card {
     max-width: 900px;
   }
-}
-
-#view-host-lobby .host-lobby-card {
-  height: 100%;
-  max-height: calc(100vh - 24px);
-  display: flex;
-  flex-direction: column;
 }
 
 .center-card {
@@ -921,21 +909,21 @@ h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-dim); }
 .host-hud-bar,
 .solo-host-hud-bar {
   position: fixed;
-  top: max(env(safe-area-inset-top, 0px), 8px);
+  top: max(env(safe-area-inset-top, 0px), 14px);
   left: 50%;
   right: auto;
   width: var(--gameplay-shell-width);
   transform: translateX(-50%);
   z-index: 200;
-  padding: 8px 12px;
+  padding: 10px 14px 10px;
   background: color-mix(in srgb, var(--surface) 96%, transparent);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 20px;
+  border-radius: 24px;
   box-sizing: border-box;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
   box-shadow: 0 2px 20px rgba(0, 0, 0, 0.25);
 }
 
@@ -1191,39 +1179,16 @@ h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-dim); }
   flex-shrink: 0;
 }
 
-.hud-center-metrics {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  justify-content: center;
-  width: 100%;
-}
-
-.hud-center-left,
-.hud-center-right {
-  flex: 0 0 auto;
-  min-width: 60px;
-}
-
-.hud-center-left {
-  text-align: right;
-}
-
-.hud-center-right {
-  text-align: left;
-}
-
 .hud-timer {
-  width: 64px !important;
-  height: 64px !important;
-  flex-shrink: 0;
+  width: 72px !important;
+  height: 72px !important;
 }
 .hud-timer::before {
-  width: 48px !important;
-  height: 48px !important;
+  width: 54px !important;
+  height: 54px !important;
 }
 .hud-timer .timer-count {
-  font-size: 1.2rem !important;
+  font-size: 1.3rem !important;
   font-weight: 900 !important;
 }
 
@@ -1327,7 +1292,7 @@ h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-dim); }
 /* ── Question card body (sits below fixed HUD) ── */
 .host-question-body {
   /* fallback margin; JS sync keeps this accurate */
-  margin-top: 165px;
+  margin-top: 188px;
   width: var(--gameplay-shell-width);
   max-width: var(--gameplay-shell-width);
   align-self: center;
@@ -1417,9 +1382,9 @@ h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-dim); }
 @media (max-width: 480px) {
   .hud-icon-btn   { width: 40px; height: 40px; }
   .hud-icon       { width: 16px; height: 16px; }
-  .hud-timer      { width: 58px !important; height: 58px !important; }
-  .hud-timer::before { width: 44px !important; height: 44px !important; }
-  .hud-timer .timer-count { font-size: 1.05rem !important; }
+  .hud-timer      { width: 62px !important; height: 62px !important; }
+  .hud-timer::before { width: 46px !important; height: 46px !important; }
+  .hud-timer .timer-count { font-size: 1.1rem !important; }
   .hud-side       { min-width: 0; gap: 5px; }
   .hud-actions-row { gap: 8px; }
   .hud-stack-controls,
@@ -1437,36 +1402,20 @@ h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-dim); }
   .hud-status-chip { max-width: 114px; font-size: 0.66rem; padding: 0 8px; }
   .hud-side-left .hud-status-chip { max-width: 114px; }
   .score-badge { font-size: 0.8rem; padding: 3px 10px; }
-  .host-question-body { margin-top: 155px; }
-  .hud-center-metrics { gap: 8px; }
-  .hud-center-left,
-  .hud-center-right { min-width: 55px; }
-  .hud-q-num { font-size: 0.78rem; }
-  .hud-score-val { font-size: 0.82rem; }
-  .hud-pin-text { font-size: 0.92rem; letter-spacing: 1px; }
+  .host-question-body { margin-top: 174px; }
   #view-player-question.player-hud-mode #player-question-layout { margin-top: 8px; }
   .host-hud-bar,
   .solo-host-hud-bar {
     width: calc(100vw - 16px);
-    top: max(env(safe-area-inset-top, 0px), 6px);
+    top: max(env(safe-area-inset-top, 0px), 10px);
     border-radius: 18px;
-    padding: 7px 10px;
-    gap: 4px;
   }
 }
 
 @media (max-width: 360px) {
   .hud-side       { min-width: 70px; }
   .hud-icon-btn   { width: 36px; height: 36px; }
-  .host-question-body { margin-top: 148px; }
-  .hud-timer      { width: 54px !important; height: 54px !important; }
-  .hud-timer::before { width: 40px !important; height: 40px !important; }
-  .hud-timer .timer-count { font-size: 1rem !important; }
-  .hud-center-left,
-  .hud-center-right { min-width: 50px; }
-  .hud-q-num { font-size: 0.75rem; }
-  .hud-score-val { font-size: 0.78rem; }
-  .hud-pin-text { font-size: 0.88rem; }
+  .host-question-body { margin-top: 166px; }
   #view-player-question.player-hud-mode #player-question-layout { margin-top: 8px; }
 }
 
@@ -2152,27 +2101,20 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
 }
 
 #view-host-lobby .host-help-text-btn {
-  border: 1px solid rgba(129, 140, 248, 0.5);
-  background: rgba(99, 102, 241, 0.15);
-  color: #e0e7ff;
+  border: 1px solid color-mix(in srgb, var(--text-dim, #94a3b8) 45%, transparent);
+  background: color-mix(in srgb, var(--surface-2, #1f2937) 80%, transparent);
+  color: var(--text, #e2e8f0);
   border-radius: 12px;
-  padding: 8px 14px;
-  font-size: 0.85rem;
-  font-weight: 600;
+  padding: 6px 10px;
+  font-size: 0.72rem;
+  font-weight: 400;
   cursor: pointer;
-  transition: transform 0.12s ease, background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.15);
+  transition: transform 0.12s ease, filter 0.12s ease;
 }
 
 #view-host-lobby .host-help-text-btn:hover {
-  background: rgba(99, 102, 241, 0.25);
-  border-color: rgba(129, 140, 248, 0.75);
+  filter: brightness(1.04);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
-}
-
-#view-host-lobby .host-help-text-btn:active {
-  transform: translateY(0);
 }
 
 #view-host-lobby .host-header-logo .studio-logo {
@@ -2359,7 +2301,7 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   width: 100%;
   display: flex;
   justify-content: flex-start;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
 .coach-help-btn {
@@ -2383,46 +2325,6 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   transform: translateY(-1px);
   background: rgba(99, 102, 241, 0.3);
   border-color: rgba(129, 140, 248, 0.7);
-}
-
-/* Help text button styling for player join view */
-#view-player-join .host-help-text-btn {
-  border: 1px solid rgba(129, 140, 248, 0.5);
-  background: rgba(99, 102, 241, 0.15);
-  color: #e0e7ff;
-  border-radius: 12px;
-  padding: 8px 14px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: transform 0.12s ease, background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.15);
-}
-
-#view-player-join .host-help-text-btn:hover {
-  background: rgba(99, 102, 241, 0.25);
-  border-color: rgba(129, 140, 248, 0.75);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
-}
-
-#view-player-join .host-help-text-btn:active {
-  transform: translateY(0);
-}
-
-[data-theme="light"] #view-host-lobby .host-help-text-btn,
-[data-theme="light"] #view-player-join .host-help-text-btn {
-  color: #312e81;
-  background: rgba(99, 102, 241, 0.08);
-  border-color: rgba(99, 102, 241, 0.35);
-  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
-}
-
-[data-theme="light"] #view-host-lobby .host-help-text-btn:hover,
-[data-theme="light"] #view-player-join .host-help-text-btn:hover {
-  background: rgba(99, 102, 241, 0.2);
-  border-color: rgba(99, 102, 241, 0.55);
-  color: #1e1b4b;
 }
 
 .start-game-row #btn-start-game {
@@ -3336,33 +3238,21 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
 #view-host-lobby .host-lobby-card.card {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   max-width: 430px;
-  padding: 20px 18px;
+  padding: 18px 16px;
   background: var(--lobby-bg-image) center center / cover no-repeat, var(--surface);
 }
 
 #view-host-lobby .lobby-header {
-  padding: 2px 0 4px;
+  padding: 0;
 }
 
 #view-host-lobby .lobby-play-mode-switch {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-top: 8px;
-  margin-bottom: 2px;
-}
-
-#view-host-lobby #host-team-lobby-section {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-#view-host-lobby .host-invite-toggle-btn {
-  margin-top: 2px;
-  padding: 10px 12px;
+  gap: 8px;
+  margin-top: 4px;
 }
 
 #view-host-lobby .lobby-mode-btn {
@@ -3581,7 +3471,7 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
 #view-host-lobby #btn-start-game {
   position: relative;
   overflow: hidden;
-  padding: 15px 20px;
+  padding: 14px 20px;
   font-size: 1.05rem;
   font-weight: 800;
   letter-spacing: 0.5px;
@@ -3593,7 +3483,7 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
 }
 
 #view-host-lobby .host-as-player-section {
-  margin-top: 10px;
+  margin-top: 6px;
 }
 
 #view-host-lobby #btn-start-game::before {
@@ -3630,11 +3520,10 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
 }
 
 #view-host-lobby .player-list-section {
-  gap: 12px;
-  padding: 14px;
+  gap: 10px;
+  padding: 12px;
   background: var(--bg);
   border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 14px;
   box-shadow: none;
 }
 
@@ -3656,7 +3545,7 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   background: rgba(99, 102, 241, 0.08);
   border: 1px solid rgba(99, 102, 241, 0.28);
   border-radius: 10px;
-  padding: 10px 12px;
+  padding: 8px 10px;
 }
 
 .host-stage-controls label {
@@ -3724,26 +3613,16 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
   max-height: 165px;
   overflow-y: auto;
-  padding: 8px;
+  padding: 4px;
   /* Custom tiny scrollbar */
   scrollbar-width: thin;
   scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
   position: relative;
   z-index: 1;
-}
-
-#view-host-lobby .host-inline-tools-row {
-  margin-top: 6px;
-  gap: 10px;
-  align-items: stretch;
-}
-
-#view-host-lobby .start-game-row {
-  margin-top: 10px;
 }
 
 #view-host-lobby .host-player-stage::-webkit-scrollbar {
@@ -3766,13 +3645,6 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s ease;
-}
-
-#view-host-lobby .player-stage-placeholder:hover {
-  background: rgba(45, 212, 191, 0.15);
-  border-color: rgba(45, 212, 191, 0.5);
-  transform: scale(1.05);
 }
 
 #view-host-lobby .player-stage-placeholder::after {
@@ -3780,11 +3652,6 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
   color: rgba(148, 163, 184, 0.6);
   font-size: 1.5rem;
   font-weight: bold;
-  transition: color 0.2s ease;
-}
-
-#view-host-lobby .player-stage-placeholder:hover::after {
-  color: rgba(45, 212, 191, 0.9);
 }
 
 #view-host-lobby .player-stage-overflow {
@@ -3960,25 +3827,6 @@ input::placeholder { color: rgba(148, 163, 184, 0.3); }
 }
 
 @media (max-width: 420px) {
-  #view-host-lobby .host-lobby-card,
-  #view-host-lobby .host-lobby-card.card {
-    gap: 10px;
-    padding: 16px 14px;
-  }
-
-  #view-host-lobby #host-team-lobby-section {
-    gap: 8px;
-  }
-
-  #view-host-lobby .host-inline-tools-row {
-    margin-top: 4px;
-    gap: 8px;
-  }
-
-  #view-host-lobby .start-game-row {
-    margin-top: 8px;
-  }
-
   #view-host-lobby .host-pin-qr-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: stretch;
@@ -5197,15 +5045,15 @@ video.question-media {
 
 .match-dnd-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 12px;
-  align-items: flex-start;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-items: start;
 }
 
 /* Left column: label + drop zone rows */
-.match-dnd-slots  { display: flex; flex-direction: column; gap: 8px; }
+.match-dnd-slots  { display: flex; flex-direction: column; gap: 10px; }
 
-.match-dnd-row    { display: flex; flex-direction: column; gap: 6px; }
+.match-dnd-row    { display: flex; flex-direction: column; gap: 4px; }
 
 .match-dnd-label {
   font-size: 0.78rem;
@@ -5213,12 +5061,11 @@ video.question-media {
   color: var(--text-dim);
   padding: 0 4px;
   unicode-bidi: plaintext;
-  line-height: 1.25;
 }
 
 .match-left-media {
   width: 100%;
-  height: 68px;
+  height: 82px;
   object-fit: cover;
   border-radius: 10px;
   border: 1px solid rgba(255,255,255,0.16);
@@ -5227,7 +5074,7 @@ video.question-media {
 }
 
 .match-dropzone {
-  min-height: 44px;
+  min-height: 52px;
   border-radius: var(--radius);
   border: 2px dashed rgba(255,255,255,0.2);
   display: flex;
@@ -5252,7 +5099,7 @@ video.question-media {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding-top: 8px;
+  padding-top: 22px; /* visually align with first slot */
 }
 
 .match-pool-label {
@@ -5267,10 +5114,10 @@ video.question-media {
 
 /* Chips (shared between pool and placed-in-slot) */
 .match-chip {
-  padding: 9px 12px;
+  padding: 11px 14px;
   border-radius: var(--radius);
   font-weight: 700;
-  font-size: 0.84rem;
+  font-size: 0.9rem;
   cursor: grab;
   text-align: center;
   unicode-bidi: plaintext;
@@ -5284,7 +5131,7 @@ video.question-media {
 
 .match-chip-media {
   width: 100%;
-  height: 64px;
+  height: 84px;
   object-fit: cover;
   border-radius: 10px;
   display: block;
@@ -5615,9 +5462,8 @@ video.question-media {
 
 /* Container injected into #player-match-container */
 .match-dnd-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 12px;
+  display: flex;
+  gap: 16px;
   align-items: flex-start;
   width: 100%;
   max-width: 680px;
@@ -5626,35 +5472,36 @@ video.question-media {
 
 /* Left column – slots */
 .match-dnd-slots {
+  flex: 1 1 50%;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 /* One slot row = label + dropzone */
 .match-dnd-row {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  gap: 10px;
 }
 
 /* Label cell (image or text on the left side) */
 .match-dnd-label {
-  width: 100%;
-  min-height: unset;
-  display: block;
-  background: transparent;
-  border-radius: 8px;
-  padding: 0 4px;
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: var(--text-dim);
+  flex: 0 0 90px;
+  width: 90px;
+  height: 90px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.06);
+  border-radius: 10px;
+  overflow: hidden;
 }
 
 /* Drop zone */
 .match-dropzone {
   flex: 1;
-  min-height: 46px;
+  min-height: 64px;
   border-radius: 10px;
   display: flex;
   align-items: center;
@@ -5681,9 +5528,10 @@ video.question-media {
 
 /* Right column – draggable chip pool */
 .match-dnd-pool {
+  flex: 1 1 50%;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 .match-pool-label {
   font-size: 0.75rem;
@@ -5700,16 +5548,16 @@ video.question-media {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 48px;
-  padding: 8px 10px;
+  min-height: 64px;
+  padding: 8px 12px;
   border-radius: 10px;
   cursor: grab;
   touch-action: none;
   user-select: none;
   transition: transform 0.1s, opacity 0.1s;
-  font-size: 0.82rem;
+  font-size: 0.9rem;
   font-weight: 600;
-  gap: 6px;
+  gap: 8px;
   overflow: hidden;
 }
 .match-chip:active { cursor: grabbing; }
@@ -5737,8 +5585,8 @@ video.question-media {
 /* Images inside chips and labels */
 .match-chip-media,
 .match-left-media {
-  max-width: 60px;
-  max-height: 60px;
+  max-width: 72px;
+  max-height: 72px;
   width: auto;
   height: auto;
   object-fit: contain;
@@ -5820,17 +5668,18 @@ video.question-media {
 /* ── Mobile ── */
 @media (max-width: 600px) {
   .match-dnd-layout {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
+    flex-direction: column;
   }
-  .match-dnd-slots,
-  .match-dnd-pool {
-    min-width: 0;
+  .match-dnd-label {
+    flex: 0 0 70px;
+    width: 70px;
+    height: 70px;
   }
-  .match-chip {
-    font-size: 0.78rem;
+  .match-chip-media,
+  .match-left-media {
+    max-width: 56px;
+    max-height: 56px;
   }
-}
   .match-puzzle-chip-tile { width: 38px; height: 38px; }
   .match-puzzle-slot-tile { width: 42px; height: 42px; }
 }
@@ -6182,20 +6031,5 @@ video.question-media {
   .simple-puzzle-title-row {
     order: 0;
     padding: 2px 0;
-  }
-}
-
-/* ═══════════════════════════════════════════
-   Tutorial Spotlight Gradient Animation
-═══════════════════════════════════════════ */
-@keyframes gradientShift {
-  0% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-  100% {
-    background-position: 0% 50%;
   }
 }

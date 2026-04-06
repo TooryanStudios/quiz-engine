@@ -60,5 +60,28 @@ service firebase.storage {
       allow write: if request.auth != null
                    && request.resource.size < 20 * 1024 * 1024; // 20 MB limit
     }
+
+    function canWriteWorkhubAttachment() {
+      return request.auth != null
+             && request.resource.size < 20 * 1024 * 1024;
+    }
+
+    // WorkHub task/checklist attachments
+    match /workhub-attachments/{allPaths=**} {
+      allow read: if true;
+      allow write: if canWriteWorkhubAttachment(); // any file type, incl. PDF, under 20 MB
+    }
+
+    // WorkHub client assets (logos)
+    match /workhub-clients/{allPaths=**} {
+      allow read: if true;
+      allow write: if canWriteWorkhubAttachment();
+    }
+
+    // Legacy WorkHub attachment path kept for backwards compatibility
+    match /workhub/{allPaths=**} {
+      allow read: if true;
+      allow write: if canWriteWorkhubAttachment();
+    }
   }
 }

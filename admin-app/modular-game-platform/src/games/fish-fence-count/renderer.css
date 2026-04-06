@@ -79,7 +79,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     margin: 0;
     padding: 0;
     overflow: hidden;
@@ -872,8 +872,9 @@
     }
 
     .rescue-page-embed .rescue-board {
-        height: calc(100dvh - 11.5rem);
-        max-height: 62vh;
+        width: 100%;
+        height: 100%;
+        max-height: 100%;
     }
 
     .rescue-stage {
@@ -906,9 +907,81 @@
     }
 
     .rescue-page-embed .rescue-board {
-        height: calc(100dvh - 10rem);
-        max-height: 56vh;
+        width: 100%;
+        height: 100%;
+        max-height: 100%;
     }
+}
+
+/* ==============================
+   STANDALONE PLAY MODE — fullscreen (mirrors Lights game approach)
+   ============================== */
+.rescue-page-play {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    padding: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    background:
+        radial-gradient(circle at 20% 10%, rgba(74, 181, 255, 0.12), transparent 35%),
+        linear-gradient(180deg, #04395e 0%, #031f34 60%, #021726 100%);
+}
+
+.rescue-page-play .rescue-topbar,
+.rescue-page-play .level-list-strip {
+    display: none;
+}
+
+.rescue-page-play .rescue-stage {
+    flex: 1;
+    min-height: 0;
+    max-width: none;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.rescue-page-play .board-panel {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 0;
+    gap: 0;
+    border-radius: 0;
+    overflow: hidden;
+    background: none;
+    box-shadow: none;
+}
+
+.rescue-page-play .whale-lane {
+    display: none;
+}
+
+.rescue-page-play .rescue-board {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.rescue-page-play .board-message,
+.rescue-page-play .board-meta {
+    display: none;
+}
+
+/* Board outer border — override color here */
+.board-outer-border {
+    fill: none;
+    stroke: #0d4f7c;
+    stroke-width: 7;
 }
 
 /* New Builder Layout Styles */

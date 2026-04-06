@@ -19,6 +19,7 @@ const BillingPage     = lazy(() => import('./pages/BillingPage').then(m => ({ de
 const DashboardPage   = lazy(() => import('./pages/DashboardPage').then(m => ({ default: m.DashboardPage })))
 const PacksPage       = lazy(() => import('./pages/PacksPage').then(m => ({ default: m.PacksPage })))
 const MyQuizzesPage   = lazy(() => import('./pages/MyQuizzesPage').then(m => ({ default: m.MyQuizzesPage })))
+const WorkHubPage     = lazy(() => import('./pages/WorkHubPage'))
 const ProfilePage     = lazy(() => import('./pages/ProfilePage').then(m => ({ default: m.ProfilePage })))
 const QuizEditorPage  = lazy(() => import('./pages/QuizEditorPage').then(m => ({ default: m.QuizEditorPage })))
 const QuizPreviewPage = lazy(() => import('./pages/QuizPreviewPage').then(m => ({ default: m.QuizPreviewPage })))
@@ -44,6 +45,7 @@ function getNav(isAr: boolean) {
     { to: '/mini-game-editor', icon: '🎮', label: isAr ? 'محرر الألعاب' : 'Game Editor' },
     { to: '/my-quizzes',       icon: '📚', label: isAr ? 'اختباراتي' : 'My Challenges' },
     { to: '/packs',            icon: '📦', label: isAr ? 'المكتبة' : 'Library' },
+    { to: '/workhub',         icon: '🗂️', label: isAr ? 'وورك هَب' : 'WorkHub' },
     { to: '/billing',          icon: '💳', label: isAr ? 'الاشتراك' : 'Billing' },
     { to: '/profile',          icon: '👤', label: isAr ? 'الملف الشخصي' : 'Profile' },
   ]
@@ -124,6 +126,7 @@ function App() {
 
   const isLoginPage   = location.pathname === '/login'
   const isMasterPage  = MASTER_PATH ? location.pathname.startsWith(MASTER_PATH) : false
+  const isWorkHubPage = location.pathname === '/workhub' || location.pathname.startsWith('/workhub/')
   const isEmbeddedPreview = location.pathname.startsWith('/preview/') && new URLSearchParams(location.search).get('embedded') === '1'
   const isGameEmbed = location.pathname.startsWith('/embed') || location.pathname.startsWith('/play')
   const allowUnauthedLocalPlayTest = isLocalDevHost && isLocalPlayTestPath
@@ -140,6 +143,31 @@ function App() {
     document.documentElement.setAttribute('lang', language)
     localStorage.setItem('quizAdminLang', language)
   }, [language])
+
+  useEffect(() => {
+    const path = location.pathname
+    let nextTitle = 'Admin'
+
+    if (isWorkHubPage) nextTitle = 'WorkHub'
+    else if (path === '/login') nextTitle = 'Login'
+    else if (path.startsWith('/dashboard') || path === '/') nextTitle = 'Dashboard'
+    else if (path.startsWith('/editor')) nextTitle = 'Challenge Editor'
+    else if (path.startsWith('/mini-game-editor')) nextTitle = 'Game Editor'
+    else if (path.startsWith('/my-quizzes')) nextTitle = 'My Challenges'
+    else if (path.startsWith('/packs')) nextTitle = 'Library'
+    else if (path.startsWith('/billing')) nextTitle = 'Billing'
+    else if (path.startsWith('/profile')) nextTitle = 'Profile'
+    else if (path.startsWith('/voice-lab')) nextTitle = 'Voice Lab'
+    else if (path.startsWith('/ai-lab')) nextTitle = 'AI Lab'
+    else if (path.startsWith('/cover-gen-lab')) nextTitle = 'Cover Generator'
+    else if (path.startsWith('/game-modes')) nextTitle = 'Game Modes'
+    else if (path.startsWith('/play-test')) nextTitle = 'Play Test'
+    else if (path.startsWith('/preview')) nextTitle = 'Preview'
+    else if (path.startsWith('/play') || path.startsWith('/embed')) nextTitle = 'Game'
+    else if (isMasterPage) nextTitle = 'Master Admin'
+
+    document.title = nextTitle
+  }, [isMasterPage, isWorkHubPage, location.pathname])
 
   useEffect(() => {
     localStorage.setItem('qyan:slidePanelEnabled', slidePanelEnabled ? 'true' : 'false')
@@ -304,6 +332,31 @@ function App() {
             </Suspense>
           </div>
           <Dialog />
+        </DialogProvider>
+      </ToastProvider>
+    )
+  }
+
+  // ── Standalone WorkHub — no sidebar, no shell chrome ──
+  if (isWorkHubPage) {
+    return (
+      <ToastProvider>
+        <DialogProvider>
+          <div className="master-admin-standalone">
+            <ErrorBoundary>
+              <Suspense fallback={
+                <div className="app-loading-screen">
+                  <img src={logoImg} alt="QYan" className="app-loading-logo" />
+                  <div className="app-loading-spinner" />
+                </div>
+              }>
+                <Routes>
+                  <Route path="/workhub" element={<WorkHubPage />} />
+                </Routes>
+              </Suspense>
+            </ErrorBoundary>
+            <Dialog />
+          </div>
         </DialogProvider>
       </ToastProvider>
     )
@@ -708,6 +761,7 @@ function App() {
                 <Route path="/preview/:id" element={<QuizPreviewPage />} />
                 <Route path="/packs" element={<RequireAuth user={user ?? null}><PacksPage /></RequireAuth>} />
                 <Route path="/my-quizzes" element={<RequireAuth user={user ?? null}><MyQuizzesPage /></RequireAuth>} />
+                <Route path="/workhub" element={<RequireAuth user={user ?? null}><WorkHubPage /></RequireAuth>} />
                 <Route path="/voice-lab" element={<RequireAdmin user={user ?? null}><VoiceLabPage /></RequireAdmin>} />
                 <Route path="/ai-lab" element={<RequireAdmin user={user ?? null}><AILabPage /></RequireAdmin>} />
                 <Route path="/cover-gen-lab" element={<RequireAdmin user={user ?? null}><CoverGenLabPage /></RequireAdmin>} />

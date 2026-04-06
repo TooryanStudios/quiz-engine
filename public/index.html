@@ -94,7 +94,7 @@
   <div id="view-player-join" class="view">
     <div class="card center-card" dir="rtl">
       <div class="coach-help-row">
-        <button type="button" id="btn-help-player-tour" class="host-help-text-btn" aria-label="ساعدني" title="ساعدني">ساعدني</button>
+        <button type="button" id="btn-help-player-tour" class="coach-help-btn" aria-label="Show help" title="Show help">?</button>
       </div>
       <div style="display:flex;align-items:center;justify-content:center;width:100%;margin-bottom:0.25rem;">
         <img class="studio-logo" src="/images/QYan_logo_300x164.jpg" alt="QYan logo" style="height:48px;width:auto;margin:0;" />
@@ -207,7 +207,6 @@
           <a href="https://qyan-om.web.app/dashboard" target="_blank" rel="noopener noreferrer">
             <img class="studio-logo" src="/images/QYan_logo_300x164.jpg" alt="QYan logo" />
           </a>
-          <span class="build-version-badge" style="font-size: 0.65rem; color: var(--text-dim); opacity: 0.6; margin-left: 8px;">v1.0.48</span>
         </div>
       </div>
 
@@ -222,6 +221,13 @@
       <div class="lobby-play-mode-switch" dir="rtl">
         <button class="lobby-mode-btn is-active" id="btn-lobby-mode-team" type="button">👥 اللعب مع فريق</button>
         <button class="lobby-mode-btn" id="btn-lobby-mode-solo" type="button">⚡ اللعب الفردي</button>
+      </div>
+
+      <div id="lobby-bg-diag" class="lobby-bg-diag" dir="ltr" aria-live="polite">
+        <div class="lobby-bg-diag-head">Lobby BG DIAG</div>
+        <div id="lobby-bg-diag-line" class="lobby-bg-diag-line">waiting…</div>
+        <div id="lobby-bg-diag-url" class="lobby-bg-diag-url">url: -</div>
+        <div id="lobby-bg-diag-preview" class="lobby-bg-diag-preview" role="img" aria-label="Lobby background diagnostic preview"></div>
       </div>
 
       <div id="host-team-lobby-section">
@@ -426,13 +432,10 @@
         <!-- Center: ROOM -> timer -> points -->
         <div class="hud-center-col">
           <span class="hud-pin-text" id="host-q-room-pin">ROOM ------</span>
-          <div class="hud-center-metrics">
-            <span class="hud-q-num hud-center-left" id="host-q-progress">Q 1 / 8</span>
-            <div class="timer-ring hud-timer" id="host-timer-ring">
-              <span class="timer-count" id="host-timer-count">30</span>
-            </div>
-            <span class="universal-score-count hud-score-val hud-center-score hud-center-right">0 pts</span>
+          <div class="timer-ring hud-timer" id="host-timer-ring">
+            <span class="timer-count" id="host-timer-count">30</span>
           </div>
+          <span class="universal-score-count hud-score-val hud-center-score">0 pts</span>
         </div>
 
         <!-- Right: connection/audio (stacked) -->
@@ -454,6 +457,7 @@
 
       <!-- Meta row: progress counters -->
       <div class="hud-meta-row">
+        <span class="hud-q-num" id="host-q-progress">Q 1 / 8</span>
         <span class="hud-answer-count" id="host-answer-counter">0/0</span>
       </div>
 
@@ -506,15 +510,12 @@
 
         <div class="hud-center-col">
           <span class="hud-pin-text" id="solo-host-room-pin">ROOM ------</span>
-          <div class="hud-center-metrics">
-            <span class="hud-q-num hud-center-left" id="solo-host-q-progress">Q 1 / 8</span>
-            <div class="timer-ring hud-timer" id="solo-host-timer-ring">
-              <span class="timer-count" id="solo-host-timer-count">30</span>
-            </div>
-            <span class="score-badge player-score-badge hud-center-right" id="player-score-badge">
-              <span class="score-count universal-score-count">0 pts</span>
-            </span>
+          <div class="timer-ring hud-timer" id="solo-host-timer-ring">
+            <span class="timer-count" id="solo-host-timer-count">30</span>
           </div>
+          <span class="score-badge player-score-badge" id="player-score-badge">
+            <span class="score-count universal-score-count">0 pts</span>
+          </span>
         </div>
 
         <div class="hud-side hud-side-right hud-stack-utility">
@@ -527,6 +528,7 @@
       </div>
 
       <div class="hud-meta-row">
+        <span class="hud-q-num" id="solo-host-q-progress">Q 1 / 8</span>
         <span class="streak-badge" id="player-streak-badge" style="display:none">🔥 <span id="player-streak-count">0</span></span>
         <span class="role-badge hud-role-chip" id="player-role-badge" style="display:none">Role: —</span>
       </div>
@@ -632,9 +634,9 @@
   <div id="view-leaderboard" class="view">
     <div class="card leaderboard-card">
       <img src="/images/QYan_logo_300x164.jpg" alt="QYan" style="width:90px;border-radius:10px;margin-bottom:0.25rem;opacity:0.85;" />
-      <h2 class="lb-title" id="lb-title">🏆 لوحة المتصدرين</h2>
+      <h2 class="lb-title" id="lb-title">🏆 Leaderboard</h2>
       <ol class="leaderboard-list" id="leaderboard-list"></ol>
-      <p class="lb-next-hint" id="lb-next-hint">السؤال التالي قادم...</p>
+      <p class="lb-next-hint" id="lb-next-hint">Next question coming up…</p>
     </div>
   </div>
 

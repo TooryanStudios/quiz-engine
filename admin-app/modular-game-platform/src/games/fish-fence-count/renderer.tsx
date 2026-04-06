@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { Link } from 'react-router-dom';
 import type { GameRendererProps } from '../../core/types';
 import './renderer.css';
@@ -112,6 +112,9 @@ const KEEP_DOOR_OPEN_FOR_NOW = true;
 const ALLOW_MANUAL_SWITCH_TOGGLE = true;
 const ENABLE_LEVEL_SELECTOR = false;
 const LEVELS_LOCAL_STORAGE_KEY = 'fish-fence-count-levels-v1';
+const REMOTE_LEVELS_DOC_PATH = 'platform_settings/fish_fence_count_levels';
+const FIRESTORE_PROJECT_ID = 'qyan-om';
+const FIRESTORE_REST_BASE = `https://firestore.googleapis.com/v1/projects/${FIRESTORE_PROJECT_ID}/databases/(default)/documents`;
 
 const LEVELS: LevelSpec[] = levelsConfig as LevelSpec[];
 
@@ -174,6 +177,59 @@ function loadLevelsFromStorage(): LevelSpec[] {
         return parsed.map(normalizeLevel);
     } catch {
         return LEVELS.map(normalizeLevel);
+    }
+}
+
+function extractRemoteLevels(payload: any): LevelSpec[] | null {
+    const levelsJson = payload?.fields?.levelsJson?.stringValue;
+    if (typeof levelsJson !== 'string' || !levelsJson.trim()) {
+        return null;
+    }
+    try {
+        const parsed = JSON.parse(levelsJson) as LevelSpec[];
+        if (!Array.isArray(parsed) || parsed.length === 0) {
+            return null;
+        }
+        return parsed.map(normalizeLevel);
+    } catch {
+        return null;
+    }
+}
+
+async function fetchRemoteLevels(): Promise<LevelSpec[] | null> {
+    try {
+        const response = await fetch(`${FIRESTORE_REST_BASE}/${REMOTE_LEVELS_DOC_PATH}`, { method: 'GET' });
+        if (!response.ok) {
+            return null;
+        }
+        const payload = await response.json();
+        return extractRemoteLevels(payload);
+    } catch {
+        return null;
+    }
+}
+
+async function saveRemoteLevels(levels: LevelSpec[]): Promise<boolean> {
+    try {
+        const levelsJson = JSON.stringify(levels, null, 2);
+        const response = await fetch(
+            `${FIRESTORE_REST_BASE}/${REMOTE_LEVELS_DOC_PATH}?updateMask.fieldPaths=levelsJson&updateMask.fieldPaths=updatedAt`,
+            {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    fields: {
+                        levelsJson: { stringValue: levelsJson },
+                        updatedAt: { timestampValue: new Date().toISOString() },
+                    },
+                }),
+            },
+        );
+        return response.ok;
+    } catch {
+        return false;
     }
 }
 
@@ -690,7 +746,7 @@ function createCandidateLevel(levelId: number, difficulty: CreatorDifficulty): L
     const obstacles = sampleUnique(obstacleCandidates, randomInt(obstacleRange.min, obstacleRange.max));
     const obstacleKeys = new Set(obstacles.map((c) => tileKey(c.x, c.y)));
 
-    // Outside fish: MUST be at y=4 and face 'right' — the only path into the cage
+    // Outside fish: MUST be at y=4 and face 'right' â€” the only path into the cage
     const outsidePositions: Tile[] = [];
     for (let x = 0; x < 6; x += 1) {
         const key = tileKey(x, 4);
@@ -713,7 +769,7 @@ function createCandidateLevel(levelId: number, difficulty: CreatorDifficulty): L
     });
 
     outsideCells.forEach((cell, idx) => {
-        // Direction MUST be 'right' — door is on the left wall at y=4
+        // Direction MUST be 'right' â€” door is on the left wall at y=4
         fish.push({
             id: insideCells.length + idx + 1,
             x: cell.x,
@@ -760,12 +816,22 @@ function createValidGeneratedLevel(
     return { level: fallback, validation, attempts: maxAttempts };
 }
 
-const ConditionalWrapper: React.FC<{ condition: boolean; wrapper: (children: React.ReactNode) => JSX.Element; children: React.ReactNode }> = ({ condition, wrapper, children }) => {
+const ConditionalWrapper: React.FC<{
+    condition: boolean;
+    wrapper: (children: React.ReactNode) => React.ReactElement;
+    children: React.ReactNode;
+}> = ({ condition, wrapper, children }) => {
     return condition ? wrapper(children) : <>{children}</>;
 };
 
 const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispatch, isEmbed }) => {
-    const [editableLevels, setEditableLevels] = React.useState<LevelSpec[]>(() => loadLevelsFromStorage());
+    const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
+    const isBuilderRoute = pathname.startsWith('/builder/');
+    const isPlayRoute = pathname.startsWith('/play/');
+    const initialLevels = isBuilderRoute ? loadLevelsFromStorage() : LEVELS.map(normalizeLevel);
+
+    const [editableLevels, setEditableLevels] = React.useState<LevelSpec[]>(initialLevels);
+    const [levelsLoading, setLevelsLoading] = React.useState(true);
     const playableLevels = editableLevels.length > 0 ? editableLevels : LEVELS.map(normalizeLevel);
     const validations = React.useMemo(
         () => playableLevels.map((item) => validateLevel(item, KEEP_DOOR_OPEN_FOR_NOW)),
@@ -774,8 +840,43 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
     const correctedLevelIds: number[] = [];
 
     React.useEffect(() => {
+        if (!isBuilderRoute) {
+            return;
+        }
         window.localStorage.setItem(LEVELS_LOCAL_STORAGE_KEY, JSON.stringify(playableLevels, null, 2));
-    }, [playableLevels]);
+    }, [isBuilderRoute, playableLevels]);
+
+    React.useEffect(() => {
+        let cancelled = false;
+
+        const loadPublishedLevels = async () => {
+            const remoteLevels = await fetchRemoteLevels();
+            if (cancelled) {
+                return;
+            }
+
+            if (remoteLevels && remoteLevels.length > 0) {
+                setEditableLevels(remoteLevels);
+                setLevelIndex(0);
+                setCreatedLevel(null);
+                setFishList(buildFish(remoteLevels[0]));
+                setTimeLeftSec(remoteLevels[0].timeLimitSec);
+                setFailed(false);
+                setLevelCompleteOpen(false);
+                setMessage(isBuilderRoute
+                    ? `Loaded ${remoteLevels.length} shared level(s) from cloud.`
+                    : `Loaded ${remoteLevels.length} published level(s).`);
+            }
+            
+            setLevelsLoading(false);
+        };
+
+        void loadPublishedLevels();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [isBuilderRoute]);
 
     const [levelIndex, setLevelIndex] = React.useState(0);
     const [fishList, setFishList] = React.useState<Fish[]>(() => buildFish(playableLevels[0]));
@@ -785,6 +886,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
     const [levelCompleteOpen, setLevelCompleteOpen] = React.useState(false);
     const [failed, setFailed] = React.useState(false);
     const [muted, setMuted] = React.useState(false);
+    const [paused, setPaused] = React.useState(false);
     const [cageDoorOpen, setCageDoorOpen] = React.useState(KEEP_DOOR_OPEN_FOR_NOW);
     const [doorOpenProgress, setDoorOpenProgress] = React.useState(KEEP_DOOR_OPEN_FOR_NOW ? 1 : 0);
     const [createdLevel, setCreatedLevel] = React.useState<LevelSpec | null>(null);
@@ -794,15 +896,15 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
         if (typeof window === 'undefined') {
             return false;
         }
-        return new URLSearchParams(window.location.search).has('builder');
+        return window.location.pathname.startsWith('/builder/');
     });
     const [builderLivePreview, setBuilderLivePreview] = React.useState(true);
     const [builderTool, setBuilderTool] = React.useState<BuilderTool>('select');
     const [builderDir, setBuilderDir] = React.useState<Direction>('right');
     const [builderUpdateFlash, setBuilderUpdateFlash] = React.useState(false);
     const [builderTitle, setBuilderTitle] = React.useState('New Level');
-    const [builderWidth, setBuilderWidth] = React.useState(10);
-    const [builderHeight, setBuilderHeight] = React.useState(7);
+    const [builderWidth, setBuilderWidth] = React.useState(19);
+    const [builderHeight, setBuilderHeight] = React.useState(13);
     const [builderTime, setBuilderTime] = React.useState(180);
     const [builderActors, setBuilderActors] = React.useState<Array<{ id: number; x: number; y: number; dir: Direction }>>([]);
     const [builderObstacles, setBuilderObstacles] = React.useState<Tile[]>([]);
@@ -828,6 +930,19 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
     const [builderJsonInput, setBuilderJsonInput] = React.useState('');
     const [selectedItem, setSelectedItem] = React.useState<SelectedItem>(null);
     const [selectedItems, setSelectedItems] = React.useState<ConcreteSelectedItem[]>([]);
+    const pageRootRef = React.useRef<HTMLDivElement | null>(null);
+    const playWrapperRef = React.useRef<HTMLDivElement | null>(null);
+    const playBoardRef = React.useRef<SVGSVGElement | null>(null);
+
+    const syncLevelsToCloud = React.useCallback(async (levels: LevelSpec[]) => {
+        if (!isBuilderRoute) {
+            return;
+        }
+        const ok = await saveRemoteLevels(levels);
+        if (!ok) {
+            setMessage((prev) => `${prev} (Cloud sync failed)`);
+        }
+    }, [isBuilderRoute]);
 
     const safeBuilderOffsetMax = React.useMemo(
         () => (builderDoorSide === 'left' || builderDoorSide === 'right' ? Math.max(0, builderHeight - 1) : Math.max(0, builderWidth - 1)),
@@ -858,6 +973,19 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
             return next;
         });
     }, []);
+
+    React.useEffect(() => {
+        if (!isEmbed && !builderOpen) {
+            const prevBodyBg = document.body.style.backgroundColor;
+            const prevHtmlBg = document.documentElement.style.backgroundColor;
+            document.body.style.backgroundColor = '#021726';
+            document.documentElement.style.backgroundColor = '#021726';
+            return () => {
+                document.body.style.backgroundColor = prevBodyBg;
+                document.documentElement.style.backgroundColor = prevHtmlBg;
+            };
+        }
+    }, [isEmbed, builderOpen]);
 
     React.useEffect(() => {
         const target = cageDoorOpen ? 1 : 0;
@@ -1211,15 +1339,17 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
             return;
         }
 
-        const tick = window.setTimeout(() => {
-            setTimeLeftSec((previous) => Math.max(0, previous - 1));
-        }, 1000);
+        if (!paused) {
+            const tick = window.setTimeout(() => {
+                setTimeLeftSec((previous) => Math.max(0, previous - 1));
+            }, 1000);
 
-        return () => window.clearTimeout(tick);
-    }, [cageDoorOpen, dispatch, fishList, level.id, levelCompleteOpen, levelOverlayOpen, timeLeftSec]);
+            return () => window.clearTimeout(tick);
+        }
+    }, [cageDoorOpen, dispatch, fishList, level.id, levelCompleteOpen, levelOverlayOpen, timeLeftSec, paused]);
 
     const onFishClick = (fishId: number) => {
-    if (failed || levelCompleteOpen || levelOverlayOpen) {
+    if (failed || levelCompleteOpen || levelOverlayOpen || paused) {
         return;
     }
 
@@ -1509,6 +1639,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
         const levelFromBuilder = buildLevelFromBuilder(nextId);
         const nextLevels = [...playableLevels, levelFromBuilder];
         setEditableLevels(nextLevels);
+        void syncLevelsToCloud(nextLevels);
         setLevelIndex(nextLevels.length - 1);
         setCreatedLevel(null);
         setFishList(buildFish(levelFromBuilder));
@@ -1528,6 +1659,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
         const updated = buildLevelFromBuilder(current.id);
         const next = playableLevels.map((item, idx) => (idx === levelIndex ? updated : item));
         setEditableLevels(next);
+        void syncLevelsToCloud(next);
         setCreatedLevel(null);
         setFishList(buildFish(updated));
         setTimeLeftSec(updated.timeLimitSec);
@@ -1570,6 +1702,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
             }
             const next = parsed.map(normalizeLevel);
             setEditableLevels(next);
+            void syncLevelsToCloud(next);
             setLevelIndex(0);
             setCreatedLevel(null);
             setFishList(buildFish(next[0]));
@@ -1631,7 +1764,9 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
         setMessage('Door closed manually.');
     };
 
-    const showLabels = !isEmbed;
+    const showBuilderUi = !isEmbed && isBuilderRoute && builderOpen;
+    const showFullscreenPlayLayout = !showBuilderUi && (isPlayRoute || isEmbed);
+    const showLabels = false;
 
     const renderWhaleLane = (showLabel: boolean) => (
         <aside className="whale-lane" aria-hidden="true">
@@ -1661,7 +1796,15 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
     const renderRescueBoard = (showLabel: boolean, instanceId = 'main') => {
         const boardKey = `${instanceId}-${createdLevel ? `created-${createdLevel.id}` : `level-${level.id}`}`;
         const boardSvg = (
-            <svg key={`board-${boardKey}`} className="rescue-board" viewBox={`0 0 ${renderWidth * TILE} ${renderHeight * TILE}`} role="img" aria-label="Actor cage puzzle board">
+            <svg
+                key={`board-${boardKey}`}
+                className="rescue-board"
+                ref={instanceId === 'embed-full' ? playBoardRef : undefined}
+                preserveAspectRatio={showFullscreenPlayLayout ? 'xMidYMin meet' : 'xMidYMid meet'}
+                viewBox={`0 0 ${renderWidth * TILE} ${renderHeight * TILE}`}
+                role="img"
+                aria-label="Actor cage puzzle board"
+            >
                 <rect x={0} y={0} width={renderWidth * TILE} height={renderHeight * TILE} fill="#068ad0" rx={18} />
 
                 {Array.from({ length: renderHeight }).flatMap((_, y) =>
@@ -1776,7 +1919,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                     <rect key={`o-${tileKey(tile.x, tile.y)}`} x={tile.x * TILE + 10} y={tile.y * TILE + 10} width={TILE - 20} height={TILE - 20} rx={10} fill="#485f71" stroke="#1f2e3a" strokeWidth={2} />
                 ))}
 
-                <rect x={3} y={3} width={renderWidth * TILE - 6} height={renderHeight * TILE - 6} rx={12} fill="none" stroke="#8b3f1d" strokeWidth={7} />
+                <rect x={3} y={3} width={renderWidth * TILE - 6} height={renderHeight * TILE - 6} rx={12} className="board-outer-border" />
 
                 {renderActors.map((fish) => {
                     const x = fish.x * TILE + TILE / 2;
@@ -1814,21 +1957,21 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
     const renderBoardMeta = (showLabel: boolean) => (
         <div className="board-meta">
             {showLabel && <div className="container-label" aria-hidden="true">.board-meta</div>}
-            <span>داخل القفص: {rescued}/{fishList.length}</span>
-            <span>باب القفص: {cageDoorOpen ? 'مفتوح' : 'مغلق'}</span>
-            <span>التحقق: {levelValidation.solvable ? `صحيح (${levelValidation.minSteps} خطوات)` : 'غير صالح'}</span>
-            <span>الدليل: {levelValidation.solutionActions.slice(0, 8).join(' -> ') || 'غير متاح'}</span>
+            <span>Ø¯Ø§Ø®Ù„ Ø§Ù„Ù‚ÙØµ: {rescued}/{fishList.length}</span>
+            <span>Ø¨Ø§Ø¨ Ø§Ù„Ù‚ÙØµ: {cageDoorOpen ? 'Ù…ÙØªÙˆØ­' : 'Ù…ØºÙ„Ù‚'}</span>
+            <span>Ø§Ù„ØªØ­Ù‚Ù‚: {levelValidation.solvable ? `ØµØ­ÙŠØ­ (${levelValidation.minSteps} Ø®Ø·ÙˆØ§Øª)` : 'ØºÙŠØ± ØµØ§Ù„Ø­'}</span>
+            <span>Ø§Ù„Ø¯Ù„ÙŠÙ„: {levelValidation.solutionActions.slice(0, 8).join(' -> ') || 'ØºÙŠØ± Ù…ØªØ§Ø­'}</span>
             {creatorInfo && <span>{creatorInfo}</span>}
-            <span>نقاط الجولة: {gameState.score}</span>
+            <span>Ù†Ù‚Ø§Ø· Ø§Ù„Ø¬ÙˆÙ„Ø©: {gameState.score}</span>
         </div>
     );
 
     const boardPanelSection = (
         <section className="board-panel">
-            {renderWhaleLane(showLabels)}
+            {showBuilderUi && renderWhaleLane(showLabels)}
             {renderRescueBoard(showLabels, 'panel')}
-            {renderBoardMessage(showLabels)}
-            {renderBoardMeta(showLabels)}
+            {showBuilderUi && renderBoardMessage(showLabels)}
+            {showBuilderUi && renderBoardMeta(showLabels)}
         </section>
     );
 
@@ -1838,12 +1981,142 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
         </div>
     ) : null;
 
+    let playModeBoardFullScreen: React.ReactNode = null;
+
+    if (levelsLoading) {
+        return (
+            <div className={`rescue-page${isEmbed ? ' rescue-page-embed' : (isPlayRoute ? ' rescue-page-play' : '')}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+                <div style={{ textAlign: 'center', fontSize: '1.5rem', color: '#7aa5bf' }}>
+                    Loading levels...
+                </div>
+            </div>
+        );
+    }
+
+    const gameplayControls = showFullscreenPlayLayout ? (
+        <div style={{
+            position: 'relative',
+            display: 'flex',
+            gap: '0.5rem',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexWrap: 'wrap',
+            background: 'rgba(255, 255, 255, 0.95)',
+            padding: 'calc(env(safe-area-inset-top, 0px) + 8px) 0.5rem 0.5rem',
+            borderRadius: 0,
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+            borderBottom: '2px solid #7aa5bf'
+        }}>
+            <button 
+                className="ui-pill" 
+                onClick={() => window.location.href = '/'}
+                style={{ fontSize: '1.1rem', padding: '0.5rem 0.75rem' }}
+                title="Home"
+            >
+                🏠
+            </button>
+
+            <button 
+                className="ui-pill" 
+                onClick={goPrevLevel}
+                style={{ fontSize: '1.1rem', padding: '0.5rem 0.75rem' }}
+                title="Previous Level"
+            >
+                ⬅️
+            </button>
+
+            <select
+                value={levelIndex}
+                onChange={(e) => jumpToLevel(Number(e.target.value))}
+                style={{
+                    fontSize: '0.95rem',
+                    padding: '0.5rem 0.75rem',
+                    borderRadius: '999px',
+                    border: '2px solid #7aa5bf',
+                    background: '#fff',
+                    cursor: 'pointer',
+                    fontWeight: '600',
+                    color: '#0d4f7c',
+                    minWidth: '120px'
+                }}
+                title="Select Level"
+            >
+                {playableLevels.map((lvl, idx) => (
+                    <option key={lvl.id} value={idx}>
+                        Level {lvl.id}: {lvl.title}
+                    </option>
+                ))}
+            </select>
+
+            <button 
+                className="ui-pill" 
+                onClick={goNextLevel}
+                style={{ fontSize: '1.1rem', padding: '0.5rem 0.75rem' }}
+                title="Next Level"
+            >
+                ➡️
+            </button>
+
+            <div style={{ width: '1px', height: '24px', background: '#d0d0d0', margin: '0 0.25rem' }} />
+            <button 
+                className="ui-pill" 
+                onClick={() => resetLevel(levelIndex)}
+                style={{ fontSize: '1.1rem', padding: '0.5rem 0.75rem' }}
+                title="Restart Level"
+            >
+                🔄
+            </button>
+
+            <button 
+                className={`ui-pill ${paused ? 'ui-pill-active' : ''}`}
+                onClick={() => setPaused(!paused)}
+                style={{ fontSize: '1.1rem', padding: '0.5rem 0.75rem' }}
+                title={paused ? "Resume" : "Pause"}
+            >
+                {paused ? '▶️' : '⏸️'}
+            </button>
+
+            <button 
+                className="ui-pill" 
+                onClick={() => setMuted(!muted)}
+                style={{ fontSize: '1.1rem', padding: '0.5rem 0.75rem' }}
+                title={muted ? "Unmute" : "Mute"}
+            >
+                {muted ? '🔇' : '🔊'}
+            </button>
+        </div>
+    ) : null;
+
+    if (showFullscreenPlayLayout) {
+        playModeBoardFullScreen = (
+            <div
+                className="embed-board-fullscreen"
+                aria-label="Game board"
+                ref={playWrapperRef}
+                style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'stretch',
+                    justifyContent: 'flex-start',
+                }}
+            >
+                {gameplayControls}
+                <div style={{ flex: 1, minHeight: 0, display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
+                    {renderRescueBoard(false, 'embed-full')}
+                </div>
+            </div>
+        );
+    }
+
     return (
-        <div className={`rescue-page${isEmbed ? ' rescue-page-embed' : ''}`}>
+        <div
+            className={`rescue-page${isEmbed ? ' rescue-page-embed' : (isPlayRoute ? ' rescue-page-play' : '')}`}
+            ref={pageRootRef}
+        >
             {showLabels && (
                 <div className="container-label container-label-page" aria-hidden="true">.rescue-page (embed)</div>
             )}
-            {!isEmbed && (
+            {showBuilderUi && (
                 <header className="rescue-topbar">
                     <div className="rescue-level">Level {level.id}: {level.title}</div>
                     <div className="rescue-top-controls">
@@ -1862,7 +2135,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                 </header>
             )}
 
-            {!isEmbed && (
+            {showBuilderUi && (
                 <div className="level-list-strip">
                     <div className="level-list-label">Level List</div>
                     <button className="ui-pill" onClick={goPrevLevel}>Prev</button>
@@ -1879,19 +2152,19 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                 </div>
             )}
 
-            {builderOpen && !isEmbed && (
+            {showBuilderUi && (
                 <>
                     <div style={{ maxWidth: '1600px', margin: '0 auto 1rem', padding: '0 1rem' }}>
                         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', background: 'rgba(255, 255, 255, 0.98)', padding: '0.75rem', borderRadius: '12px', border: '2px solid #7aa5bf', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)' }}>
                             <button className={`ui-pill ${builderUpdateFlash ? 'ui-pill-success' : ''}`} onClick={updateCurrentLevelFromBuilder} style={{ fontSize: '0.85rem', padding: '0.35rem 0.65rem' }}>
-                                {builderUpdateFlash ? '✅ Updated' : '💾 Update'}
+                                {builderUpdateFlash ? 'âœ… Updated' : 'ðŸ’¾ Update'}
                             </button>
-                            <button className="ui-pill" onClick={saveBuilderAsNewLevel} style={{ fontSize: '0.85rem', padding: '0.35rem 0.65rem' }}>➕ Save New</button>
-                            <button className="ui-pill" onClick={playBuilderLevel} style={{ fontSize: '0.85rem', padding: '0.35rem 0.65rem' }}>▶️ Play</button>
-                            <button className="ui-pill" onClick={exportLevelsJson} style={{ fontSize: '0.85rem', padding: '0.35rem 0.65rem' }}>📤 Export</button>
-                            <button className="ui-pill" onClick={importLevelsJson} style={{ fontSize: '0.85rem', padding: '0.35rem 0.65rem' }}>📥 Import</button>
+                            <button className="ui-pill" onClick={saveBuilderAsNewLevel} style={{ fontSize: '0.85rem', padding: '0.35rem 0.65rem' }}>âž• Save New</button>
+                            <button className="ui-pill" onClick={playBuilderLevel} style={{ fontSize: '0.85rem', padding: '0.35rem 0.65rem' }}>â–¶ï¸ Play</button>
+                            <button className="ui-pill" onClick={exportLevelsJson} style={{ fontSize: '0.85rem', padding: '0.35rem 0.65rem' }}>ðŸ“¤ Export</button>
+                            <button className="ui-pill" onClick={importLevelsJson} style={{ fontSize: '0.85rem', padding: '0.35rem 0.65rem' }}>ðŸ“¥ Import</button>
                             <button className={`ui-pill ${builderLivePreview ? 'ui-pill-active' : ''}`} onClick={() => setBuilderLivePreview((prev) => !prev)} style={{ fontSize: '0.85rem', padding: '0.35rem 0.65rem' }}>
-                                {builderLivePreview ? '👁️ Preview' : '👁️ No Preview'}
+                                {builderLivePreview ? 'ðŸ‘ï¸ Preview' : 'ðŸ‘ï¸ No Preview'}
                             </button>
                             <select className="builder-input" value={String(builderTime)} onChange={(event) => setBuilderTime(Number(event.target.value))} style={{ width: '120px', fontSize: '0.85rem', padding: '0.35rem 0.5rem' }}>
                                 <option value="10">10 sec</option>
@@ -1915,31 +2188,31 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                     <div className="builder-layout">
                         <div className="builder-controls-panel">
                         <div className="builder-section">
-                            <h3>🎨 Tools</h3>
+                            <h3>ðŸŽ¨ Tools</h3>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                                <button className={`ui-pill ${builderTool === 'select' ? 'ui-pill-active' : ''}`} onClick={() => { setBuilderTool('select'); clearSelection(); }}>👆 Select</button>
-                                <button className={`ui-pill ${builderTool === 'actor' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderTool('actor')}>🐟 Actor</button>
-                                <button className={`ui-pill ${builderTool === 'cage' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderTool('cage')}>🟩 Cage</button>
-                                <button className={`ui-pill ${builderTool === 'obstacle' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderTool('obstacle')}>🟫 Block</button>
-                                <button className={`ui-pill ${builderTool === 'door-edge' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderTool('door-edge')}>🚪 Door</button>
-                                <button className={`ui-pill ${builderTool === 'switch' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderTool('switch')}>🔘 Switch</button>
+                                <button className={`ui-pill ${builderTool === 'select' ? 'ui-pill-active' : ''}`} onClick={() => { setBuilderTool('select'); clearSelection(); }}>ðŸ‘† Select</button>
+                                <button className={`ui-pill ${builderTool === 'actor' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderTool('actor')}>ðŸŸ Actor</button>
+                                <button className={`ui-pill ${builderTool === 'cage' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderTool('cage')}>ðŸŸ© Cage</button>
+                                <button className={`ui-pill ${builderTool === 'obstacle' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderTool('obstacle')}>ðŸŸ« Block</button>
+                                <button className={`ui-pill ${builderTool === 'door-edge' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderTool('door-edge')}>ðŸšª Door</button>
+                                <button className={`ui-pill ${builderTool === 'switch' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderTool('switch')}>ðŸ”˜ Switch</button>
                             </div>
                             
                             {builderTool === 'actor' && (
                                 <div className="builder-field" style={{ marginTop: '0.75rem' }}>
                                     <label>Direction</label>
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                                        <button className={`ui-pill ${builderDir === 'up' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderDir('up')}>⬆️ Up</button>
-                                        <button className={`ui-pill ${builderDir === 'down' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderDir('down')}>⬇️ Down</button>
-                                        <button className={`ui-pill ${builderDir === 'left' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderDir('left')}>⬅️ Left</button>
-                                        <button className={`ui-pill ${builderDir === 'right' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderDir('right')}>➡️ Right</button>
+                                        <button className={`ui-pill ${builderDir === 'up' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderDir('up')}>â¬†ï¸ Up</button>
+                                        <button className={`ui-pill ${builderDir === 'down' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderDir('down')}>â¬‡ï¸ Down</button>
+                                        <button className={`ui-pill ${builderDir === 'left' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderDir('left')}>â¬…ï¸ Left</button>
+                                        <button className={`ui-pill ${builderDir === 'right' ? 'ui-pill-active' : ''}`} onClick={() => setBuilderDir('right')}>âž¡ï¸ Right</button>
                                     </div>
                                 </div>
                             )}
 
                             {builderTool === 'cage' && (
                                 <div style={{ marginTop: '0.75rem' }}>
-                                    <button className="ui-pill" onClick={applyCageFromSelection} style={{ width: '100%' }}>✅ Apply Cage ({builderCageDraft.size})</button>
+                                    <button className="ui-pill" onClick={applyCageFromSelection} style={{ width: '100%' }}>âœ… Apply Cage ({builderCageDraft.size})</button>
                                     <span className="builder-hint">Click cells to select, then apply</span>
                                 </div>
                             )}
@@ -1947,13 +2220,13 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
 
                         {selectedItems.length > 0 && (
                             <div className="builder-section" style={{ background: 'rgba(255, 248, 220, 0.98)', borderColor: '#d4a017' }}>
-                                <h3>✏️ Selected Item</h3>
+                                <h3>âœï¸ Selected Item</h3>
                                 {selectedItems.length > 1 && (
                                     <>
                                         <div className="builder-hint" style={{ marginBottom: '0.75rem' }}>
                                             {selectedItems.length} items selected
                                         </div>
-                                        <button className="ui-pill" onClick={deleteSelectedItem} style={{ width: '100%', background: '#dc3545', color: '#fff', borderColor: '#dc3545' }}>🗑️ Delete Selected Items</button>
+                                        <button className="ui-pill" onClick={deleteSelectedItem} style={{ width: '100%', background: '#dc3545', color: '#fff', borderColor: '#dc3545' }}>ðŸ—‘ï¸ Delete Selected Items</button>
                                     </>
                                 )}
 
@@ -1975,7 +2248,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                                                         style={{ aspectRatio: '1 / 1', minHeight: '42px', padding: 0, fontSize: '1.15rem' }}
                                                         aria-label="Set actor direction up"
                                                     >
-                                                        ↑
+                                                        â†‘
                                                     </button>
                                                     <div />
                                                     <button
@@ -1984,7 +2257,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                                                         style={{ aspectRatio: '1 / 1', minHeight: '42px', padding: 0, fontSize: '1.15rem' }}
                                                         aria-label="Set actor direction left"
                                                     >
-                                                        ←
+                                                        â†
                                                     </button>
                                                     <div style={{ border: '1px solid #c8dbe8', borderRadius: '999px', background: '#f4fbff' }} />
                                                     <button
@@ -1993,7 +2266,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                                                         style={{ aspectRatio: '1 / 1', minHeight: '42px', padding: 0, fontSize: '1.15rem' }}
                                                         aria-label="Set actor direction right"
                                                     >
-                                                        →
+                                                        â†’
                                                     </button>
                                                     <div />
                                                     <button
@@ -2002,12 +2275,12 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                                                         style={{ aspectRatio: '1 / 1', minHeight: '42px', padding: 0, fontSize: '1.15rem' }}
                                                         aria-label="Set actor direction down"
                                                     >
-                                                        ↓
+                                                        â†“
                                                     </button>
                                                     <div />
                                                 </div>
                                             </div>
-                                            <button className="ui-pill" onClick={deleteSelectedItem} style={{ width: '100%', marginTop: '0.5rem', background: '#dc3545', color: '#fff', borderColor: '#dc3545' }}>🗑️ Delete Actor</button>
+                                            <button className="ui-pill" onClick={deleteSelectedItem} style={{ width: '100%', marginTop: '0.5rem', background: '#dc3545', color: '#fff', borderColor: '#dc3545' }}>ðŸ—‘ï¸ Delete Actor</button>
                                         </>
                                     );
                                 })()}
@@ -2017,7 +2290,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                                         <div className="builder-hint" style={{ marginBottom: '0.75rem' }}>
                                             Obstacle at ({selectedItem.x}, {selectedItem.y})
                                         </div>
-                                        <button className="ui-pill" onClick={deleteSelectedItem} style={{ width: '100%', background: '#dc3545', color: '#fff', borderColor: '#dc3545' }}>🗑️ Delete Obstacle</button>
+                                        <button className="ui-pill" onClick={deleteSelectedItem} style={{ width: '100%', background: '#dc3545', color: '#fff', borderColor: '#dc3545' }}>ðŸ—‘ï¸ Delete Obstacle</button>
                                     </>
                                 )}
 
@@ -2026,7 +2299,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                                         <div className="builder-hint" style={{ marginBottom: '0.75rem' }}>
                                             Cage cell at ({selectedItem.x}, {selectedItem.y})
                                         </div>
-                                        <button className="ui-pill" onClick={deleteSelectedItem} style={{ width: '100%', background: '#dc3545', color: '#fff', borderColor: '#dc3545' }}>🗑️ Remove from Cage</button>
+                                        <button className="ui-pill" onClick={deleteSelectedItem} style={{ width: '100%', background: '#dc3545', color: '#fff', borderColor: '#dc3545' }}>ðŸ—‘ï¸ Remove from Cage</button>
                                     </>
                                 )}
 
@@ -2051,10 +2324,10 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                                                 <div className="builder-field">
                                                     <label>Side</label>
                                                     <select className="builder-input" value={door.side} onChange={(e) => updateDoorAtIndex(selectedItem.doorIndex, { side: e.target.value as 'left' | 'right' | 'top' | 'bottom' })}>
-                                                        <option value="left">⬅️ Left</option>
-                                                        <option value="right">➡️ Right</option>
-                                                        <option value="top">⬆️ Top</option>
-                                                        <option value="bottom">⬇️ Bottom</option>
+                                                        <option value="left">â¬…ï¸ Left</option>
+                                                        <option value="right">âž¡ï¸ Right</option>
+                                                        <option value="top">â¬†ï¸ Top</option>
+                                                        <option value="bottom">â¬‡ï¸ Bottom</option>
                                                     </select>
                                                 </div>
                                                 <div className="builder-field">
@@ -2080,7 +2353,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                                                     </select>
                                                 </div>
                                             </div>
-                                            <button className="ui-pill" onClick={deleteSelectedItem} style={{ width: '100%', marginTop: '0.5rem', background: '#dc3545', color: '#fff', borderColor: '#dc3545' }}>🗑️ Remove Door</button>
+                                            <button className="ui-pill" onClick={deleteSelectedItem} style={{ width: '100%', marginTop: '0.5rem', background: '#dc3545', color: '#fff', borderColor: '#dc3545' }}>ðŸ—‘ï¸ Remove Door</button>
                                         </>
                                     );
                                 })()}
@@ -2088,7 +2361,7 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                         )}
 
                         <div className="builder-section">
-                            <h3>🚪 Door Setup</h3>
+                            <h3>ðŸšª Door Setup</h3>
                             <span className="builder-hint">Select a door to edit its own side, offset, hinge, and opening direction.</span>
                             <div className="builder-field-row">
                                 <div className="builder-field">
@@ -2113,21 +2386,22 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                         </div>
 
                         <div className="builder-section">
-                            <h3>⚙️ Level Settings</h3>
+                            <h3>âš™ï¸ Level Settings</h3>
                             <div className="builder-field-row">
                                 <div className="builder-field">
-                                    <label>Width</label>
-                                    <input className="builder-input" type="number" value={builderWidth} min={4} max={24} onChange={(event) => setBuilderWidth(Number(event.target.value) || 4)} />
+                                    <label>Width (Locked)</label>
+                                    <input className="builder-input" type="number" value={19} disabled style={{ background: '#f0f0f0', cursor: 'not-allowed' }} />
                                 </div>
                                 <div className="builder-field">
-                                    <label>Height</label>
-                                    <input className="builder-input" type="number" value={builderHeight} min={4} max={24} onChange={(event) => setBuilderHeight(Number(event.target.value) || 4)} />
+                                    <label>Height (Locked)</label>
+                                    <input className="builder-input" type="number" value={13} disabled style={{ background: '#f0f0f0', cursor: 'not-allowed' }} />
                                 </div>
                             </div>
+                            <span className="builder-hint" style={{ fontSize: '0.75rem', color: '#666' }}>Grid size is locked to 19Ã—13 for consistency</span>
                         </div>
 
                         <div className="builder-section">
-                            <h3>� JSON Import</h3>
+                            <h3>ï¿½ JSON Import</h3>
                             <textarea
                                 className="builder-json"
                                 value={builderJsonInput}
@@ -2281,7 +2555,9 @@ const FishFenceCountRenderer: React.FC<GameRendererProps> = ({ gameState, dispat
                 </>
             )}
 
-            {isEmbed ? (
+            {showFullscreenPlayLayout ? (
+                playModeBoardFullScreen
+            ) : isEmbed ? (
                 embedBoardFullScreen
             ) : (
                 <ConditionalWrapper 

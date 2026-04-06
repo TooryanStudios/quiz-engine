@@ -192,7 +192,7 @@ export interface UserProfile {
   gameAvatar?: string
   /** Editor slide panel layout preference */
   slidePanelLayout?: 'left' | 'bottom'
-  /** Prefer showing the slide panel (true) vs stacked cards (false) */
+  /** Editor slide panel enabled toggle */
   slidePanelEnabled?: boolean
   /** Cumulative gameplay points earned */
   points?: number
@@ -317,7 +317,7 @@ export async function loadUserPrefs(
       gameDisplayName: d.gameDisplayName ?? undefined,
       gameAvatar: d.gameAvatar ?? undefined,
       slidePanelLayout: d.slidePanelLayout ?? undefined,
-      slidePanelEnabled: d.slidePanelEnabled ?? undefined,
+      slidePanelEnabled: typeof d.slidePanelEnabled === 'boolean' ? d.slidePanelEnabled : undefined,
     }
   } catch { return null }
 }

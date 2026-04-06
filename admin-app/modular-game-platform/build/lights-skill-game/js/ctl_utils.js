@@ -331,6 +331,25 @@ function setVolume(szSound, iVolume){
     }
 }  
 
+var s_szActiveSoundtrackId = 'soundtrack';
+var s_oRegisteredMusicSettings = {};
+
+function registerMusicSettings(szSound, oSettings){
+    s_oRegisteredMusicSettings[szSound] = oSettings || {};
+}
+
+function getRegisteredMusicSettings(szSound){
+    return s_oRegisteredMusicSettings[szSound] || {};
+}
+
+function getActiveSoundtrackId(){
+    return s_szActiveSoundtrackId || 'soundtrack';
+}
+
+function setActiveSoundtrackId(szSound){
+    s_szActiveSoundtrackId = szSound || 'soundtrack';
+}
+
 function setMute(bMute, szSound){
     if(DISABLE_SOUND_MOBILE === false || s_bMobile === false){
         s_aSounds[szSound].mute(bMute);

@@ -27,15 +27,23 @@ window.addEventListener('unhandledrejection', (event) => {
 
 window.addEventListener('load', () => {
   sessionStorage.removeItem(CHUNK_RELOAD_KEY)
-  
-  // Register service worker for caching
+
+  // Hotfix: aggressively clear legacy service-worker caches to avoid
+  // stale chunk/runtime mismatches on /play routes after deploys.
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js', { scope: '/' })
-      .then((registration) => {
-        console.log('[SW] Registered:', registration.scope)
+    navigator.serviceWorker.getRegistrations()
+      .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
+      .then(() => {
+        if ('caches' in window) {
+          return caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key))))
+        }
+        return Promise.resolve([])
+      })
+      .then(() => {
+        console.log('[SW] Legacy registrations and caches cleared')
       })
       .catch((error) => {
-        console.warn('[SW] Registration failed:', error)
+        console.warn('[SW] Cleanup failed:', error)
       })
   }
 })

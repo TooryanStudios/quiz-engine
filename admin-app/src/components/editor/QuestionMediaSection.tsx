@@ -16,7 +16,6 @@ type QuestionMediaSectionProps = {
 
   aiImageLoading?: boolean
   onAiImageClick?: () => void
-  creditCostPerImage?: number
 }
 
 export function QuestionMediaSection({
@@ -31,7 +30,6 @@ export function QuestionMediaSection({
   aiImageLoading,
   onAiCheckClick,
   onAiImageClick,
-  creditCostPerImage = 10,
 }: QuestionMediaSectionProps) {
   return (
     <div style={{ marginTop: '0.5rem' }}>
@@ -124,20 +122,12 @@ export function QuestionMediaSection({
                   boxShadow: 'none',
                   opacity: aiImageLoading ? 0.6 : 1,
                   whiteSpace: 'nowrap',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.3rem',
                 }}
-                title={`توليد صورة بالذكاء الاصطناعي لهذا السؤال (${creditCostPerImage} نقطة)`}
+                title="توليد صورة بالذكاء الاصطناعي لهذا السؤال"
               >
-                {aiImageLoading ? (
-                  <><span className="ai-spinner" />{' '}صورة AI</>
-                ) : (
-                  <>
-                    <span>🎨 صورة AI</span>
-                    <span style={{ fontSize: '0.7em', opacity: 0.75 }}>({creditCostPerImage})</span>
-                  </>
-                )}
+                {aiImageLoading
+                  ? <><span className="ai-spinner" />{' '}صورة AI</>
+                  : '🎨 صورة AI'}
               </button>
             )}
           </div>

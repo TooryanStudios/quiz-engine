@@ -24,11 +24,8 @@ fetch('/api/build-info')
 const socket = io(window.location.origin);
 const queryParams = new URLSearchParams(window.location.search);
 const quizSlugFromUrl = queryParams.get('quiz');
-const normalizedPathnameFromUrl = window.location.pathname.replace(/\/+$/, '') || '/';
-const isFishMiniGameAliasPath = normalizedPathnameFromUrl === '/minigame-fish';
-const isFishMiniGamePlayerAliasPath = normalizedPathnameFromUrl === '/minigame-fish/player';
-const modeFromUrl = queryParams.get('mode') || (isFishMiniGameAliasPath ? 'host' : null);
-const gameModeFromUrl = queryParams.get('gameMode') || ((isFishMiniGameAliasPath || isFishMiniGamePlayerAliasPath) ? 'fish-fence-count' : null);
+const modeFromUrl     = queryParams.get('mode');
+const gameModeFromUrl = queryParams.get('gameMode');
 const DIAGNOSTICS_ENABLED = false;
 
 const IS_LOCAL_DEV_HOST = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
@@ -146,7 +143,7 @@ const miniGameConfigFromUrl = (() => {
 
 const isMiniGameSession = !!(miniGameConfigFromUrl || (gameModeFromUrl && gameModeFromUrl !== 'classic' && gameModeFromUrl !== 'quiz'));
 
-const isAutoHostLaunch = !!(modeFromUrl === 'host' && (quizSlugFromUrl || isFishMiniGameAliasPath));
+const isAutoHostLaunch = !!(quizSlugFromUrl && modeFromUrl === 'host');
 
 const resolvedGameModeRuntime = resolveGameModeRuntime(gameModeFromUrl);
 
@@ -180,7 +177,6 @@ function inferGameModeIdFromQuestion(question) {
   if (!question || typeof question !== 'object') return null;
 
   if (question.type === 'xo_duel' || question.xo) return 'xo-duel';
-  if (question.type === 'lights-skill-game') return 'lights-skill-game';
   if (question.relay) return 'puzzle-relay';
   if (question.type === 'gear_machine' || question.gearMachine) return 'gear-machine';
   if (question.type === 'creator_studio' || question.creatorStudio) return 'creator-studio';
@@ -305,24 +301,6 @@ function normalizeHostTitleTopic(text) {
   return raw;
 }
 
-function isLikelyOpaqueQuizId(topic) {
-  const value = String(topic || '').trim();
-  if (!value) return false;
-  if (/\s/.test(value)) return false;
-  return /^[A-Za-z0-9_-]{10,}$/.test(value);
-}
-
-function formatMiniGameDisplayName(modeId) {
-  const value = String(modeId || '').trim().toLowerCase();
-  if (!value) return '';
-  if (value === 'xo-duel') return 'X O Duel';
-  return value
-    .split('-')
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-}
-
 function setHostQuizTitle(text) {
   if (!hostQuizTitleEl) return;
   const topic = normalizeHostTitleTopic(text);
@@ -331,16 +309,9 @@ function setHostQuizTitle(text) {
     hostQuizTitleEl.textContent = '';
     return;
   }
-  if (isMiniGameSession) {
-    if (isLikelyOpaqueQuizId(topic)) {
-      const modeLabel = formatMiniGameDisplayName(gameModeFromUrl);
-      hostQuizTitleEl.textContent = modeLabel ? `لعبة مصغرة: ${modeLabel}` : 'لعبة مصغرة';
-    } else {
-      hostQuizTitleEl.textContent = `لعبة مصغرة عن ${topic}`;
-    }
-  } else {
-    hostQuizTitleEl.textContent = `تحدي معلومات عن ${topic}`;
-  }
+  hostQuizTitleEl.textContent = isMiniGameSession
+    ? `لعبة مصغرة عن ${topic}`
+    : `تحدي معلومات عن ${topic}`;
   hostQuizTitleEl.style.display = 'block';
 }
 
@@ -808,8 +779,6 @@ function getPathForView(viewId) {
 function getViewForPath(pathname) {
   const normalizedPath = normalizePathname(pathname);
   if (normalizedPath === '/lobby') return 'view-host-loading';
-  if (normalizedPath === '/minigame-fish') return 'view-host-loading';
-  if (normalizedPath === '/minigame-fish/player') return 'view-player-join';
   if (normalizedPath === '/play') {
     return (state.role === 'host' && !state.hostIsPlayer)
       ? 'view-host-question'
@@ -833,13 +802,7 @@ function syncUrlForView(viewId, { replace = false } = {}) {
   const currentPath = normalizePathname(window.location.pathname);
   if (currentPath === targetPath) return;
 
-  const resolvedTargetPath = (isFishMiniGameAliasPath && targetPath === '/start')
-    ? '/minigame-fish'
-    : (isFishMiniGamePlayerAliasPath && targetPath === '/player')
-      ? '/minigame-fish/player'
-      : targetPath;
-
-  const nextUrl = `${resolvedTargetPath}${window.location.search}${window.location.hash}`;
+  const nextUrl = `${targetPath}${window.location.search}${window.location.hash}`;
   if (replace) {
     window.history.replaceState({ viewId }, '', nextUrl);
   } else {
@@ -966,26 +929,14 @@ function runCoachTour(steps, options = {}) {
   Object.assign(spotlight.style, {
     position: 'fixed',
     borderRadius: '14px',
-    padding: '3px',
-    background: 'linear-gradient(45deg, #6366f1, #8b5cf6, #ec4899, #f59e0b, #10b981, #06b6d4, #6366f1)',
-    backgroundSize: '400% 400%',
-    animation: 'gradientShift 3s ease infinite',
-    boxShadow: '0 0 0 9999px rgba(2,6,23,0.22), 0 0 20px rgba(139,92,246,0.4), 0 0 40px rgba(236,72,153,0.3)',
+    border: '2px solid rgba(99,102,241,0.95)',
+    boxShadow: '0 0 0 9999px rgba(2,6,23,0.22), 0 0 0 6px rgba(129,140,248,0.26)',
     pointerEvents: 'none',
     opacity: '0',
     transform: 'translateZ(0) scale(0.985)',
     willChange: 'transform, opacity',
     transition: `transform ${enterDuration} ease, opacity ${enterDuration} ease`,
   });
-
-  const spotlightInner = document.createElement('div');
-  Object.assign(spotlightInner.style, {
-    width: '100%',
-    height: '100%',
-    background: 'var(--bg, #1a1a2e)',
-    borderRadius: '11px',
-  });
-  spotlight.appendChild(spotlightInner);
 
   const bubble = document.createElement('div');
   bubble.dataset.coachTourBubble = '1';
@@ -1065,6 +1016,7 @@ function runCoachTour(steps, options = {}) {
   nextBtn.type = 'button';
   nextBtn.textContent = 'التالي';
   Object.assign(nextBtn.style, {
+    marginInlineStart: 'auto',
     border: 'none',
     background: '#6366f1',
     color: '#fff',
@@ -1194,9 +1146,9 @@ function runCoachTour(steps, options = {}) {
   bubble.appendChild(stepBadge);
   bubble.appendChild(titleEl);
   bubble.appendChild(bodyEl);
-  actions.appendChild(neverBtn);
-  actions.appendChild(skipBtn);
   actions.appendChild(nextBtn);
+  actions.appendChild(skipBtn);
+  actions.appendChild(neverBtn);
   bubble.appendChild(actions);
 
   overlay.appendChild(dim);
@@ -1388,22 +1340,21 @@ function showView(viewId, options = {}) {
     updateThemeDiagNoteVisibility(viewId);
     updateLobbyBgDiagnostic(viewId);
 
-    // Auto-show tutorial disabled - users can click Help button instead
-    // if (viewId === 'view-host-lobby' && state.role === 'host') {
-    //   setTimeout(() => {
-    //     if (document.querySelector('.view.active')?.id === 'view-host-lobby') {
-    //       openHostQuickGuide();
-    //     }
-    //   }, 180);
-    // }
+    if (viewId === 'view-host-lobby' && state.role === 'host') {
+      setTimeout(() => {
+        if (document.querySelector('.view.active')?.id === 'view-host-lobby') {
+          openHostQuickGuide();
+        }
+      }, 180);
+    }
 
-    // if (viewId === 'view-player-join') {
-    //   setTimeout(() => {
-    //     if (document.querySelector('.view.active')?.id === 'view-player-join') {
-    //       openPlayerQuickGuide();
-    //     }
-    //   }, 180);
-    // }
+    if (viewId === 'view-player-join') {
+      setTimeout(() => {
+        if (document.querySelector('.view.active')?.id === 'view-player-join') {
+          openPlayerQuickGuide();
+        }
+      }, 180);
+    }
   } catch (err) {
     console.error('showView failed:', err);
     if (window.__dbgLog) window.__dbgLog('showView CRASH: ' + err.message);
@@ -1545,16 +1496,6 @@ function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
         openHostJoinDialog();
       });
     });
-    // Attach click listener to + placeholder to trigger share menu
-    listEl.querySelectorAll('.player-stage-placeholder').forEach((placeholder) => {
-      placeholder.style.cursor = 'pointer';
-      placeholder.title = 'مشاركة رابط الدعوة';
-      placeholder.addEventListener('click', () => {
-        Sounds.click();
-        const shareBtn = document.getElementById('btn-share-menu');
-        if (shareBtn) shareBtn.click();
-      });
-    });
     if (kickHint) kickHint.style.display = playersArr.length > 0 ? 'block' : 'none';
     if (waitingEl) {
       if (playersArr.length === 0) {
@@ -1562,16 +1503,13 @@ function renderPlayerList(players, listEl, countEl, isHostLobby = false) {
         waitingEl.style.color = 'var(--text-dim)';
         waitingEl.style.fontWeight = '400';
         waitingEl.dataset.state = 'waiting';
-        waitingEl.textContent = 'في انتظار اللاعبين';
+        waitingEl.textContent = 'في انتظار الاعبين';
       } else if (gameModeFromUrl === 'xo-duel' && playersArr.length < 2) {
         waitingEl.style.display = 'block';
         waitingEl.style.color = '#f87171';
         waitingEl.style.fontWeight = '700';
         waitingEl.dataset.state = 'alert';
-        const hostAddedAsPlayer = !!state.hostIsPlayer;
-        waitingEl.textContent = hostAddedAsPlayer
-          ? 'X O Duel يحتاج لاعب إضافي لبدء تحدي.'
-          : 'X O Duel يحتاج لاعبين متصلين على الأقل لبدء التحدي.';
+        waitingEl.textContent = 'X O Duel يحتاج لاعبين متصلين على الأقل لبدء التحدي.';
       } else {
         waitingEl.style.display = 'none';
         waitingEl.dataset.state = '';
@@ -1613,40 +1551,15 @@ function openAvatarPicker(currentAvatar, onSelect) {
     background: 'var(--surface, #1e1e2e)',
     border: '1px solid rgba(255,255,255,0.1)',
     borderRadius: '18px',
-    padding: '16px',
-    width: 'min(360px, 92vw)',
-    maxHeight: '70vh',
+    padding: '14px',
+    width: 'min(340px, 90vw)',
+    maxHeight: '72vh',
     boxSizing: 'border-box',
     overflowY: 'auto',
-    overflowX: 'hidden',
-    WebkitOverflowScrolling: 'touch',
     display: 'grid',
     gridTemplateColumns: 'repeat(5, 1fr)',
-    gap: '10px',
-    gridAutoRows: 'auto',
-    scrollbarWidth: 'thin',
-    scrollbarColor: 'rgba(124,58,237,0.5) rgba(255,255,255,0.05)',
+    gap: '6px',
   });
-
-  // Custom scrollbar for webkit browsers
-  const style = document.createElement('style');
-  style.textContent = `
-    #avatar-inline-overlay > div::-webkit-scrollbar {
-      width: 8px;
-    }
-    #avatar-inline-overlay > div::-webkit-scrollbar-track {
-      background: rgba(255,255,255,0.05);
-      border-radius: 10px;
-    }
-    #avatar-inline-overlay > div::-webkit-scrollbar-thumb {
-      background: rgba(124,58,237,0.5);
-      border-radius: 10px;
-    }
-    #avatar-inline-overlay > div::-webkit-scrollbar-thumb:hover {
-      background: rgba(124,58,237,0.7);
-    }
-  `;
-  document.head.appendChild(style);
 
   AVATARS.forEach((emoji) => {
     const btn = document.createElement('button');
@@ -1654,39 +1567,23 @@ function openAvatarPicker(currentAvatar, onSelect) {
     btn.textContent = emoji;
     const isCurrent = emoji === currentAvatar;
     Object.assign(btn.style, {
-      fontSize: '1.8rem',
-      padding: '12px',
+      fontSize: '1.6rem',
+      padding: '0',
       margin: '0',
-      border: isCurrent ? '2px solid #7c3aed' : '2px solid rgba(255,255,255,0.08)',
-      borderRadius: '14px',
-      background: isCurrent ? 'rgba(124,58,237,0.2)' : 'rgba(255,255,255,0.04)',
+      border: isCurrent ? '2px solid #7c3aed' : '2px solid transparent',
+      borderRadius: '12px',
+      background: isCurrent ? 'rgba(124,58,237,0.15)' : 'rgba(255,255,255,0.04)',
       cursor: 'pointer',
       touchAction: 'manipulation',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
       width: '100%',
-      height: '56px',
-      minHeight: '56px',
+      aspectRatio: '1',
       boxSizing: 'border-box',
-      transition: 'transform 0.15s ease, background 0.15s ease, border-color 0.15s ease',
+      transition: 'none',
       WebkitTapHighlightColor: 'transparent',
-    });
-
-    btn.addEventListener('mouseenter', () => {
-      if (!isCurrent) {
-        btn.style.transform = 'scale(1.08)';
-        btn.style.background = 'rgba(255,255,255,0.1)';
-        btn.style.borderColor = 'rgba(124,58,237,0.4)';
-      }
-    });
-
-    btn.addEventListener('mouseleave', () => {
-      btn.style.transform = 'scale(1)';
-      if (!isCurrent) {
-        btn.style.background = 'rgba(255,255,255,0.04)';
-        btn.style.borderColor = 'rgba(255,255,255,0.08)';
-      }
+      minWidth: '0',
     });
 
     btn.addEventListener('click', (e) => {
@@ -1703,18 +1600,8 @@ function openAvatarPicker(currentAvatar, onSelect) {
 
   // Tap backdrop to close (no selection)
   overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) {
-      overlay.remove();
-      style.remove();
-    }
+    if (e.target === overlay) overlay.remove();
   });
-
-  // Remove style when overlay is removed
-  const originalRemove = overlay.remove.bind(overlay);
-  overlay.remove = function() {
-    style.remove();
-    originalRemove();
-  };
 
   document.body.appendChild(overlay);
 }
@@ -3049,7 +2936,7 @@ function showLeaderboard(data, isFinal) {
   const titleEl = document.getElementById('lb-title');
   const hintEl  = document.getElementById('lb-next-hint');
 
-  titleEl.textContent = isFinal ? '\ud83c\udf89 النتائج النهائية' : '\ud83c\udfc6 لوحة المتصدرين';
+  titleEl.textContent = isFinal ? '🎉 النتائج النهائية' : '🏆 Leaderboard';
   if (isFinal) {
     hintEl.textContent = '🏅 جاري عرض النتائج…';
     hintEl.style.display = 'block';
@@ -3063,7 +2950,7 @@ function showLeaderboard(data, isFinal) {
     };
     tick();
   } else {
-    hintEl.textContent  = 'السؤال التالي قادم...';
+    hintEl.textContent  = 'Next question coming up…';
     hintEl.style.display = 'block';
   }
 
@@ -4931,16 +4818,6 @@ socket.on('room:created', ({ pin, reclaimed, ...modeInfo }) => {
   if (refreshBtn) refreshBtn.disabled = false;
 
   applyModeInfo(modeInfo);
-
-  const handledOnHostCreate = callGameModeHook('onHostCreate', {
-    quizSlug: quizSlugFromUrl || null,
-    miniGameConfig: modeInfo?.miniGameConfig || miniGameConfigFromUrl || state?.miniGameConfig || null,
-    state,
-    socket,
-    showView,
-  });
-  if (handledOnHostCreate === true) return;
-
   if (quizSlugFromUrl) {
     if (DIAGNOSTICS_ENABLED) console.log(`[theme-diag] room:created | pin=${pin} | keep loading until room:theme arrives`);
     // True loading mode: do not reveal host lobby until the server emits
@@ -5384,16 +5261,7 @@ socket.on('room:error', ({ message, code }) => {
   } else if (state.role === 'player') {
     showError('join-error', `⚠️ ${message}`);
   } else {
-    const waitingEl = document.getElementById('player-waiting-msg');
-    if (waitingEl) {
-      waitingEl.style.display = 'block';
-      waitingEl.style.color = '#f87171';
-      waitingEl.style.fontWeight = '700';
-      waitingEl.dataset.state = 'alert';
-      waitingEl.textContent = message ? `⚠️ ${message}` : '⚠️ Server reported a room error';
-    } else {
-      showError('join-error', `⚠️ ${message || 'Server reported a room error'}`);
-    }
+    alert(`Server error: ${message}`);
   }
 });
 
@@ -6132,12 +6000,6 @@ socket.on('host:join_request', ({ socketId, nickname, avatar }) => {
 socket.on('room:closed', ({ message }) => {
   clearGameSession();
   stopClientTimer();
-  
-  // Clean up floating dialogs when session ends
-  const liveBanner = document.getElementById('join-request-live-banner');
-  if (liveBanner) liveBanner.remove();
-  closeCoachTour();
-  
   document.getElementById('room-closed-msg').textContent = message;
   showView('view-room-closed');
 });
@@ -6152,14 +6014,6 @@ socket.on('room:closed', ({ message }) => {
 // ─────────────────────────────────────────────
 (function () {
   const params = new URLSearchParams(window.location.search);
-  const normalizedPath = normalizePathname(window.location.pathname);
-  const isFishPlayerModeAlias = normalizedPath === '/minigame-fish' && (params.get('mode') || '').toLowerCase() === 'player';
-  if (isFishPlayerModeAlias) {
-    params.delete('mode');
-    const nextSearch = params.toString();
-    const nextUrl = `/minigame-fish/player${nextSearch ? `?${nextSearch}` : ''}${window.location.hash || ''}`;
-    window.history.replaceState({ viewId: 'view-player-join' }, '', nextUrl);
-  }
   const pinFromUrlRaw = params.get('pin');
   const pinFromUrl = normalizePin(pinFromUrlRaw);
   const pathView = getViewForPath(window.location.pathname);
@@ -6206,17 +6060,6 @@ socket.on('room:closed', ({ message }) => {
     showView('view-player-join', { replaceHistory: true });
   } else if (pathView === 'view-host-loading' || pathView === 'view-host-lobby') {
     startHostLaunch(quizSlugFromUrl || null);
-  } else if (pathView === 'view-host-question' || pathView === 'view-player-question') {
-    // If refreshing on /play without an active game, redirect to appropriate lobby
-    if (isAutoHostLaunch) {
-      startHostLaunch(quizSlugFromUrl);
-    } else if (quizSlugFromUrl) {
-      state.role = 'player';
-      if (scanFallbackBanner) scanFallbackBanner.style.display = 'none';
-      showView('view-player-join', { replaceHistory: true });
-    } else {
-      showView('view-home', { replaceHistory: true });
-    }
   } else if (pathView && pathView !== 'view-home') {
     showView(pathView, { replaceHistory: true });
   } else if (isAutoHostLaunch) {

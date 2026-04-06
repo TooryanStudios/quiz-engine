@@ -9,6 +9,10 @@ admin.initializeApp()
 // Reads from functions/.env (gitignored) — never hardcoded in source.
 const masterEmailParam = defineString('MASTER_EMAIL')
 const geminiApiKeyParam = defineString('GEMINI_API_KEY')
+const workhubDriveFolderIdParam = defineString('WORKHUB_DRIVE_FOLDER_ID')
+const driveClientIdParam = defineString('DRIVE_CLIENT_ID')
+const driveClientSecretParam = defineString('DRIVE_CLIENT_SECRET')
+const driveRefreshTokenParam = defineString('DRIVE_REFRESH_TOKEN')
 
 const TRIAL_INITIAL_CREDITS = 100
 const COST_COVER_IMAGE = 20
@@ -293,6 +297,21 @@ export const grantAdminClaim = onCall({ region: 'us-central1' }, async (request)
   return { message: 'Admin claim granted. Sign out and back in to apply.' }
 })
 
+type WorkhubMemberStatus = 'pending' | 'approved' | 'suspended'
+type WorkhubMemberRole = 'member' | 'manager' | 'admin'
+
+type WorkhubMemberRecord = {
+  email: string
+  displayName: string
+  photoURL: string
+  status: WorkhubMemberStatus
+  role: WorkhubMemberRole
+  requestedAt: admin.firestore.FieldValue | admin.firestore.Timestamp | null
+  approvedAt?: admin.firestore.FieldValue | admin.firestore.Timestamp | null
+  approvedBy?: string | null
+  lastSeenAt?: admin.firestore.FieldValue | admin.firestore.Timestamp | null
+}
+
 function assertMasterAdmin(request: { auth?: { token?: Record<string, unknown>; uid?: string } | null }) {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Must be signed in.')
@@ -304,6 +323,458 @@ function assertMasterAdmin(request: { auth?: { token?: Record<string, unknown>; 
     throw new HttpsError('permission-denied', 'Not authorized.')
   }
 }
+
+function workhubMemberRef(uid: string) {
+  return admin.firestore().doc(`workhub_members/${uid}`)
+}
+
+function normalizeWorkhubStatus(value: unknown): WorkhubMemberStatus {
+  return value === 'approved' || value === 'suspended' ? value : 'pending'
+}
+
+function normalizeWorkhubRole(value: unknown): WorkhubMemberRole {
+  return value === 'manager' || value === 'admin' ? value : 'member'
+}
+
+function mapWorkhubMember(uid: string, data: Partial<WorkhubMemberRecord> | undefined) {
+  return {
+    uid,
+    email: typeof data?.email === 'string' ? data.email : '',
+    displayName: typeof data?.displayName === 'string' ? data.displayName : '',
+    photoURL: typeof data?.photoURL === 'string' ? data.photoURL : '',
+    status: normalizeWorkhubStatus(data?.status),
+    role: normalizeWorkhubRole(data?.role),
+    requestedAt: data?.requestedAt ?? null,
+    approvedAt: data?.approvedAt ?? null,
+    approvedBy: typeof data?.approvedBy === 'string' ? data.approvedBy : null,
+    lastSeenAt: data?.lastSeenAt ?? null,
+  }
+}
+
+export const requestWorkhubAccess = onCall({ region: 'us-central1', cors: true }, async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError('unauthenticated', 'Must be signed in.')
+  }
+
+  const uid = request.auth.uid
+  const email = typeof request.auth.token.email === 'string' ? request.auth.token.email : ''
+  const normalizedEmail = email.trim().toLowerCase()
+  const displayName = typeof request.auth.token.name === 'string' ? request.auth.token.name : ''
+  const photoURL = typeof request.auth.token.picture === 'string' ? request.auth.token.picture : ''
+  const ref = workhubMemberRef(uid)
+
+  let hasWorkspaceInvite = false
+  if (normalizedEmail) {
+    const invitedWorkspaceSnap = await admin
+      .firestore()
+      .collection('workhub_workspaces')
+      .where('invitedEmails', 'array-contains', normalizedEmail)
+      .limit(1)
+      .get()
+    hasWorkspaceInvite = !invitedWorkspaceSnap.empty
+  }
+
+  const member = await admin.firestore().runTransaction(async (tx) => {
+    const snap = await tx.get(ref)
+    const existing = snap.exists ? (snap.data() as Partial<WorkhubMemberRecord>) : null
+    const isMasterEmail = !!email && email === masterEmailParam.value()
+    const autoApproved = isMasterEmail || hasWorkspaceInvite
+    const nextStatus: WorkhubMemberStatus = autoApproved ? 'approved' : normalizeWorkhubStatus(existing?.status)
+    const nextRole: WorkhubMemberRole = isMasterEmail ? 'admin' : normalizeWorkhubRole(existing?.role)
+
+    tx.set(ref, {
+      email,
+      displayName,
+      photoURL,
+      status: nextStatus,
+      role: nextRole,
+      requestedAt: existing?.requestedAt ?? admin.firestore.FieldValue.serverTimestamp(),
+      approvedAt: nextStatus === 'approved'
+        ? (existing?.approvedAt ?? admin.firestore.FieldValue.serverTimestamp())
+        : null,
+      approvedBy: nextStatus === 'approved'
+        ? (existing?.approvedBy ?? (isMasterEmail ? uid : 'workspace_invite'))
+        : null,
+      lastSeenAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true })
+
+    return mapWorkhubMember(uid, {
+      ...existing,
+      email,
+      displayName,
+      photoURL,
+      status: nextStatus,
+      role: nextRole,
+      approvedBy: nextStatus === 'approved' ? (existing?.approvedBy ?? (isMasterEmail ? uid : 'workspace_invite')) : null,
+    })
+  })
+
+  return { member }
+})
+
+type SetWorkhubMemberStatusRequest = {
+  uid: string
+  status: WorkhubMemberStatus
+  role?: WorkhubMemberRole
+}
+
+export const setWorkhubMemberStatus = onCall<SetWorkhubMemberStatusRequest, Promise<{ member: ReturnType<typeof mapWorkhubMember> }>>(
+  { region: 'us-central1', cors: true },
+  async (request) => {
+    assertMasterAdmin(request)
+
+    const uid = typeof request.data?.uid === 'string' ? request.data.uid.trim() : ''
+    const status = normalizeWorkhubStatus(request.data?.status)
+    const role = normalizeWorkhubRole(request.data?.role)
+    if (!uid) {
+      throw new HttpsError('invalid-argument', 'uid is required.')
+    }
+
+    const ref = workhubMemberRef(uid)
+    const snap = await ref.get()
+    if (!snap.exists) {
+      throw new HttpsError('not-found', 'WorkHub member request not found.')
+    }
+
+    const existing = snap.data() as Partial<WorkhubMemberRecord>
+    const payload: Partial<WorkhubMemberRecord> = {
+      status,
+      role,
+      approvedAt: status === 'approved' ? admin.firestore.FieldValue.serverTimestamp() : null,
+      approvedBy: status === 'approved' ? request.auth?.uid ?? null : null,
+      lastSeenAt: admin.firestore.FieldValue.serverTimestamp(),
+    }
+    await ref.set(payload, { merge: true })
+
+    return {
+      member: mapWorkhubMember(uid, {
+        ...existing,
+        ...payload,
+      }),
+    }
+  },
+)
+
+type UploadWorkhubAttachmentToDriveRequest = {
+  fileName: string
+  contentType: string
+  dataBase64: string
+  parentFolderId?: string
+}
+
+type UploadWorkhubAttachmentToDriveResponse = {
+  url: string
+  fileId: string
+  fileName: string
+}
+
+function sanitizeUploadName(name: string) {
+  const trimmed = name.trim()
+  const safe = trimmed.replace(/[^a-zA-Z0-9._-]/g, '_')
+  return safe || `file_${Date.now()}`
+}
+
+async function getOAuthAccessToken() {
+  const clientId = driveClientIdParam.value()
+  const clientSecret = driveClientSecretParam.value()
+  const refreshToken = driveRefreshTokenParam.value()
+
+  if (!clientId || !clientSecret || !refreshToken) {
+    throw new HttpsError('failed-precondition', 'Drive OAuth credentials (CLIENT_ID, SECRET, REFRESH_TOKEN) are not fully configured in .env.')
+  }
+
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token',
+    }),
+  })
+  if (!tokenRes.ok) {
+    const errorText = await tokenRes.text()
+    throw new HttpsError('internal', `Failed to obtain access token from refresh token: ${errorText}`)
+  }
+  const tokenData = await tokenRes.json() as { access_token: string }
+  return tokenData.access_token
+}
+
+export const ensureWorkhubDriveProjectFolder = onCall<{ projectId: string; projectName: string }, Promise<{ folderId: string }>>(
+  { region: 'us-central1', cors: true },
+  async (request) => {
+    if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Must be signed in.')
+
+    const uid = request.auth.uid
+    const email = typeof request.auth.token.email === 'string' ? request.auth.token.email : ''
+    const isClaimAdmin = request.auth.token?.['admin'] === true
+    const isMasterEmail = !!email && email === masterEmailParam.value()
+    if (!isClaimAdmin && !isMasterEmail) {
+      const memberSnap = await workhubMemberRef(uid).get()
+      const memberStatus = memberSnap.exists ? (memberSnap.data() as Partial<WorkhubMemberRecord>).status : null
+      if (memberStatus !== 'approved') {
+        throw new HttpsError('permission-denied', 'WorkHub access is required.')
+      }
+    }
+
+    const { projectId, projectName } = request.data
+    if (!projectId || typeof projectId !== 'string') throw new HttpsError('invalid-argument', 'projectId is required.')
+    if (!projectName || typeof projectName !== 'string') throw new HttpsError('invalid-argument', 'projectName is required.')
+
+    const rootFolderId = workhubDriveFolderIdParam.value()
+    if (!rootFolderId) throw new HttpsError('failed-precondition', 'WORKHUB_DRIVE_FOLDER_ID is not configured.')
+
+    // Check if we already stored a folderId on this project document
+    const projectRef = admin.firestore().collection('workhub_projects').doc(projectId)
+    const projectSnap = await projectRef.get()
+    if (!projectSnap.exists) throw new HttpsError('not-found', 'Project not found.')
+    const existingFolderId = (projectSnap.data() as Record<string, unknown>).driveFolderId
+    if (existingFolderId && typeof existingFolderId === 'string') {
+      return { folderId: existingFolderId }
+    }
+
+    const accessToken = await getOAuthAccessToken()
+    const safeName = projectName.replace(/[/\\:*?"<>|]/g, '_').slice(0, 200)
+
+    const createRes = await fetch('https://www.googleapis.com/drive/v3/files?supportsAllDrives=true&fields=id', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: safeName,
+        mimeType: 'application/vnd.google-apps.folder',
+        parents: [rootFolderId],
+      }),
+    })
+
+    if (!createRes.ok) {
+      const errorText = await createRes.text()
+      throw new HttpsError('internal', `Failed to create Drive folder: ${errorText}`)
+    }
+
+    const createPayload = await createRes.json() as { id?: string }
+    const folderId = createPayload.id
+    if (!folderId) throw new HttpsError('internal', 'Drive folder creation returned no ID.')
+
+    // Persist on the project document so we don't create duplicates
+    await projectRef.update({ driveFolderId: folderId })
+
+    return { folderId }
+  },
+)
+
+export const uploadWorkhubAttachmentToDrive = onCall<UploadWorkhubAttachmentToDriveRequest, Promise<UploadWorkhubAttachmentToDriveResponse>>(
+  { region: 'us-central1', cors: true },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', 'Must be signed in.')
+    }
+
+    const uid = request.auth.uid
+    const email = typeof request.auth.token.email === 'string' ? request.auth.token.email : ''
+    const isClaimAdmin = request.auth.token?.['admin'] === true
+    const isMasterEmail = !!email && email === masterEmailParam.value()
+    if (!isClaimAdmin && !isMasterEmail) {
+      const memberSnap = await workhubMemberRef(uid).get()
+      const memberStatus = memberSnap.exists ? (memberSnap.data() as Partial<WorkhubMemberRecord>).status : null
+      if (memberStatus !== 'approved') {
+        throw new HttpsError('permission-denied', 'WorkHub access is required for Drive uploads.')
+      }
+    }
+
+    const folderId = request.data?.parentFolderId?.trim() || workhubDriveFolderIdParam.value()
+    if (!folderId) {
+      throw new HttpsError('failed-precondition', 'WORKHUB_DRIVE_FOLDER_ID is not configured.')
+    }
+
+    const fileNameRaw = typeof request.data?.fileName === 'string' ? request.data.fileName : ''
+    const contentTypeRaw = typeof request.data?.contentType === 'string' ? request.data.contentType : ''
+    const dataBase64Raw = typeof request.data?.dataBase64 === 'string' ? request.data.dataBase64 : ''
+    if (!fileNameRaw.trim() || !dataBase64Raw.trim()) {
+      throw new HttpsError('invalid-argument', 'fileName and dataBase64 are required.')
+    }
+
+    const fileName = sanitizeUploadName(fileNameRaw)
+    const contentType = contentTypeRaw.trim() || 'application/octet-stream'
+    let fileBuffer: Buffer
+    try {
+      fileBuffer = Buffer.from(dataBase64Raw, 'base64')
+    } catch {
+      throw new HttpsError('invalid-argument', 'Invalid base64 file payload.')
+    }
+
+    const MAX_UPLOAD_BYTES = 7 * 1024 * 1024
+    if (fileBuffer.length <= 0 || fileBuffer.length > MAX_UPLOAD_BYTES) {
+      throw new HttpsError('invalid-argument', 'File size must be between 1 byte and 7 MB.')
+    }
+
+    const accessToken = await getOAuthAccessToken()
+    
+    // Determine target subfolder based on content type
+    let targetFolderId = folderId
+    const isImage = contentType.startsWith('image/')
+    const isVideo = contentType.startsWith('video/')
+    const subfolderName = isImage ? 'images' : (isVideo ? 'vPost' : 'docs')
+
+    try {
+      const q = `name='${subfolderName}' and '${targetFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`
+      const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      })
+      
+      let subfolderId: string | null = null
+      if (searchRes.ok) {
+        const searchData = (await searchRes.json()) as { files?: { id: string }[] }
+        if (searchData.files && searchData.files.length > 0) {
+          subfolderId = searchData.files[0].id
+        }
+      }
+
+      if (!subfolderId) {
+        const createRes = await fetch('https://www.googleapis.com/drive/v3/files?supportsAllDrives=true&fields=id', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: subfolderName,
+            mimeType: 'application/vnd.google-apps.folder',
+            parents: [targetFolderId],
+          }),
+        })
+        if (createRes.ok) {
+          const createData = (await createRes.json()) as { id?: string }
+          if (createData.id) {
+            subfolderId = createData.id
+          }
+        }
+      }
+
+      if (subfolderId) {
+        targetFolderId = subfolderId
+      }
+    } catch (err) {
+      console.error(`Failed to resolve or create subfolder ${subfolderName}:`, err)
+      // Fallback to uploading into the root project folder
+    }
+
+    const driveFileName = `${Date.now()}_${fileName}`
+
+    const uploadWithMetadata = async (metadata: { name: string; parents?: string[] }) => {
+      const boundary = `workhub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+      const multipartHeader = Buffer.from(
+        `--${boundary}\r\n` +
+        'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+        `${JSON.stringify(metadata)}\r\n` +
+        `--${boundary}\r\n` +
+        `Content-Type: ${contentType}\r\n\r\n`,
+        'utf8',
+      )
+      const multipartFooter = Buffer.from(`\r\n--${boundary}--`, 'utf8')
+      const multipartBody = Buffer.concat([multipartHeader, fileBuffer, multipartFooter])
+
+      return fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': `multipart/related; boundary=${boundary}`,
+        },
+        body: multipartBody,
+      })
+    }
+
+    const uploadRes = await uploadWithMetadata({
+      name: driveFileName,
+      parents: [targetFolderId],
+    })
+
+    if (!uploadRes.ok) {
+      const errorText = await uploadRes.text()
+      if (uploadRes.status === 404) {
+        throw new HttpsError(
+          'failed-precondition',
+          `Drive folder not found or service account lacks access. Ensure WORKHUB_DRIVE_FOLDER_ID points to a Shared Drive folder and the service account is a member of that Shared Drive.`,
+        )
+      }
+      if (uploadRes.status === 403 && errorText.includes('storageQuotaExceeded')) {
+        throw new HttpsError(
+          'failed-precondition',
+          `Drive upload failed: service accounts have no personal Drive quota. WORKHUB_DRIVE_FOLDER_ID must point to a Shared Drive folder, and the service account must be added as a Contributor on that Shared Drive.`,
+        )
+      }
+      throw new HttpsError('internal', `Drive upload failed: ${errorText}`)
+    }
+
+    const uploadPayload = await uploadRes.json() as { id?: string; name?: string }
+    const fileId = uploadPayload.id
+    if (!fileId) {
+      throw new HttpsError('internal', 'Drive upload succeeded but no file id returned.')
+    }
+
+    const permissionRes = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}/permissions?supportsAllDrives=true`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ role: 'reader', type: 'anyone' }),
+    })
+
+    if (!permissionRes.ok) {
+      const errorText = await permissionRes.text()
+      throw new HttpsError('internal', `Drive permission update failed: ${errorText}`)
+    }
+
+    const url = `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w1000&name=${encodeURIComponent(uploadPayload.name || fileName)}`
+    return {
+      url,
+      fileId,
+      fileName: uploadPayload.name || fileName,
+    }
+  },
+)
+
+export const deleteWorkhubAttachmentFromDrive = onCall<{ fileId: string }, Promise<{ success: boolean }>>(
+  { region: 'us-central1', cors: true },
+  async (request) => {
+    if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Must be signed in.')
+
+    const email = typeof request.auth.token.email === 'string' ? request.auth.token.email : ''
+    const isClaimAdmin = request.auth.token?.['admin'] === true
+    const isMasterEmail = !!email && email === masterEmailParam.value()
+    
+    if (!isClaimAdmin && !isMasterEmail) {
+      const memberSnap = await workhubMemberRef(request.auth.uid).get()
+      const memberStatus = memberSnap.exists ? (memberSnap.data() as Partial<WorkhubMemberRecord>).status : null
+      if (memberStatus !== 'approved') {
+        throw new HttpsError('permission-denied', 'WorkHub access is required.')
+      }
+    }
+
+    const { fileId } = request.data
+    if (!fileId || typeof fileId !== 'string') {
+      throw new HttpsError('invalid-argument', 'fileId is required')
+    }
+
+    const accessToken = await getOAuthAccessToken()
+    
+    const delRes = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?supportsAllDrives=true`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+
+    if (!delRes.ok) {
+      const errorText = await delRes.text()
+      throw new HttpsError('internal', `Drive deletion failed: ${errorText}`)
+    }
+
+    return { success: true }
+  }
+)
 
 type AddUserCreditsRequest = {
   uid: string

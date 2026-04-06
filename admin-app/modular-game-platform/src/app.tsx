@@ -77,7 +77,7 @@ const PlayRoute: React.FC<PlayRouteProps> = ({ standalone, forceGameId }) => {
 const Navigation: React.FC = () => {
     const location = useLocation();
     const isEmbed = location.pathname.startsWith('/embed');
-    const isStandaloneMini = location.pathname.startsWith('/mini') || location.pathname.startsWith('/play/lights-skill-game');
+    const isStandaloneMini = location.pathname.startsWith('/mini') || location.pathname.startsWith('/play/lights-skill-game') || location.pathname.startsWith('/play/fish-fence-count') || location.pathname.startsWith('/builder/');
     
     if (isEmbed || isStandaloneMini) {
         return null;
@@ -90,6 +90,7 @@ const Navigation: React.FC = () => {
             <Link to="/play/clue-chain" style={{ color: '#eee', marginRight: '1rem', textDecoration: 'none' }}>Play Classic</Link>
             <Link to="/play/html5-target-rush" style={{ color: '#eee', marginRight: '1rem', textDecoration: 'none' }}>Play HTML5 Test</Link>
             <Link to="/play/fish-fence-count" style={{ color: '#eee', marginRight: '1rem', textDecoration: 'none' }}>Play Fish Fence</Link>
+            <Link to="/builder/fish-fence-count" style={{ color: '#eee', marginRight: '1rem', textDecoration: 'none' }}>Fish Fence Builder</Link>
             <Link to="/mini/lights-skill-game" style={{ color: '#eee', marginRight: '1rem', textDecoration: 'none' }}>Standalone Mini</Link>
             <Link to="/runtime" style={{ color: '#eee', textDecoration: 'none' }}>Multiplayer Runtime</Link>
         </nav>
@@ -107,6 +108,8 @@ const AppContent: React.FC = () => {
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/play" element={<Play gameId="clue-chain" />} />
                 <Route path="/play/lights-skill-game" element={<PlayRoute standalone forceGameId="lights-skill-game" />} />
+                <Route path="/play/fish-fence-count" element={<PlayRoute standalone forceGameId="fish-fence-count" />} />
+                <Route path="/builder/fish-fence-count" element={<PlayRoute standalone forceGameId="fish-fence-count" />} />
                 <Route path="/play/:gameId" element={<PlayRoute />} />
                 <Route path="/embed/:gameId" element={<PlayRoute />} />
                 <Route path="/mini/:gameId" element={<PlayRoute standalone />} />

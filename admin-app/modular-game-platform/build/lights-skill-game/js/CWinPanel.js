@@ -6,6 +6,7 @@ function CWinPanel(iMode, iTimeSpent, iLevel, iLevelStars){
     var _oButNext;
     var _oVideoElement;
     var _oVideoBitmap;
+    var _oConfig;
     
     var _oInterface;
     
@@ -45,33 +46,8 @@ function CWinPanel(iMode, iTimeSpent, iLevel, iLevelStars){
         _oBg = createBitmap(s_oSpriteLibrary.getSprite("bg_end_panel"));
         _oContainer.addChild(_oBg, _oFade);
         
-        // Create video element
-        _oVideoElement = document.createElement('video');
-        _oVideoElement.src = './sprites/ba5aa73d88e980cd712a6ad1216260a4_720w.mp4';
-        _oVideoElement.loop = true;
-        _oVideoElement.muted = false;
-        _oVideoElement.autoplay = true;
-        _oVideoElement.playsInline = true;
-        _oVideoElement.style.display = 'none';
-        document.body.appendChild(_oVideoElement);
-
-        // Create bitmap from video with user-approved exact settings
-        _oVideoBitmap = new createjs.Bitmap(_oVideoElement);
-        _oVideoBitmap.x = -5;
-        _oVideoBitmap.y = 0;
-        _oVideoBitmap.regX = 0;
-        _oVideoBitmap.regY = 0;
-        _oVideoBitmap.scaleX = 1.09;
-        _oVideoBitmap.scaleY = 1.09;
-        _oVideoBitmap.alpha = 0.7;
-        
-        _oContainer.addChild(_oVideoBitmap);
-        
-        // Play video
-        _oVideoElement.play();
-        
-        // Debug preset buttons (DOM overlay)
-        this._createDebugPresetsDOM();
+        // Load UI config and apply background settings
+        this._loadConfigAndApplyBackground();
         
         var oSprite = s_oSpriteLibrary.getSprite('msg_box');
         var oPanel = createBitmap(oSprite);  
@@ -194,6 +170,21 @@ function CWinPanel(iMode, iTimeSpent, iLevel, iLevelStars){
         if (oDebugPanel && oDebugPanel.parentNode) {
             oDebugPanel.parentNode.removeChild(oDebugPanel);
         }
+        
+        // Save current settings to config if debug panel was used
+        if (_oVideoBitmap && window.localStorage) {
+            try {
+                var settings = {
+                    x: _oVideoBitmap.x,
+                    y: _oVideoBitmap.y,
+                    scaleX: _oVideoBitmap.scaleX,
+                    scaleY: _oVideoBitmap.scaleY
+                };
+                localStorage.setItem('winPanelVideoSettings', JSON.stringify(settings));
+            } catch(e) {
+                console.log('Could not save settings:', e);
+            }
+        }
                 
         s_oStage.removeChild(_oContainer);
         s_oWinPanel = null;
@@ -214,6 +205,107 @@ function CWinPanel(iMode, iTimeSpent, iLevel, iLevelStars){
             s_oGame.unload();
             s_oMain.gotoLevelSelect(_iMode);
         };
+    };
+    
+    this._loadConfigAndApplyBackground = function() {
+        var self = this;
+        
+        // Default config (fallback)
+        var defaultConfig = {
+            background: {
+                type: 'video',
+                url: './sprites/ba5aa73d88e980cd712a6ad1216260a4_720w.mp4',
+                position: { x: -5, y: 0 },
+                scale: { x: 1.09, y: 1.09 },
+                alpha: 0.7,
+                loop: true,
+                muted: false,
+                autoplay: true
+            }
+        };
+        
+        // Check for localStorage override first (from config editor)
+        var overrideConfig = null;
+        try {
+            var stored = localStorage.getItem('ui-config-override');
+            if (stored) {
+                overrideConfig = JSON.parse(stored);
+                console.log('Using config from editor override');
+            }
+        } catch (e) {
+            console.log('No valid config override found');
+        }
+        
+        if (overrideConfig) {
+            _oConfig = overrideConfig.winPanel || defaultConfig;
+            self._applyBackgroundFromConfig();
+        } else {
+            // Try to load config from JSON file
+            fetch('./config/ui-config.json')
+                .then(function(response) {
+                    if (!response.ok) {
+                        throw new Error('Config file not found');
+                    }
+                    return response.json();
+                })
+                .then(function(config) {
+                    _oConfig = config.winPanel || defaultConfig;
+                    self._applyBackgroundFromConfig();
+                })
+                .catch(function(error) {
+                    console.log('Using default config:', error.message);
+                    _oConfig = defaultConfig;
+                    self._applyBackgroundFromConfig();
+                });
+        }
+    };
+    
+    this._applyBackgroundFromConfig = function() {
+        var bgConfig = _oConfig.background;
+        
+        if (bgConfig.type === 'video') {
+            // Create video element
+            _oVideoElement = document.createElement('video');
+            _oVideoElement.src = bgConfig.url;
+            _oVideoElement.loop = bgConfig.loop !== false;
+            _oVideoElement.muted = bgConfig.muted !== false;
+            _oVideoElement.autoplay = bgConfig.autoplay !== false;
+            _oVideoElement.playsInline = true;
+            _oVideoElement.style.display = 'none';
+            document.body.appendChild(_oVideoElement);
+
+            // Create bitmap from video
+            _oVideoBitmap = new createjs.Bitmap(_oVideoElement);
+            _oVideoBitmap.x = bgConfig.position.x;
+            _oVideoBitmap.y = bgConfig.position.y;
+            _oVideoBitmap.regX = 0;
+            _oVideoBitmap.regY = 0;
+            _oVideoBitmap.scaleX = bgConfig.scale.x;
+            _oVideoBitmap.scaleY = bgConfig.scale.y;
+            _oVideoBitmap.alpha = bgConfig.alpha || 1;
+            
+            _oContainer.addChild(_oVideoBitmap);
+            
+            // Play video
+            _oVideoElement.play();
+            
+            // Debug preset buttons (DOM overlay)
+            this._createDebugPresetsDOM();
+        } else if (bgConfig.type === 'image') {
+            // Load image background
+            var oImg = new Image();
+            oImg.onload = function() {
+                var oBitmap = new createjs.Bitmap(oImg);
+                oBitmap.x = bgConfig.position.x;
+                oBitmap.y = bgConfig.position.y;
+                oBitmap.scaleX = bgConfig.scale.x;
+                oBitmap.scaleY = bgConfig.scale.y;
+                oBitmap.alpha = bgConfig.alpha || 1;
+                _oContainer.addChildAt(oBitmap, 1);
+            };
+            oImg.src = bgConfig.url;
+        }
+        // If type is 'none', no background is added
     };
     
     this._createDebugPresetsDOM = function() {

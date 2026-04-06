@@ -15,6 +15,9 @@ function CGame(oData, iMode, iLevel) {
     var _iTotalScore;
 
     var _oGameContainer;
+    var _oBackgroundAsset;
+    var _oBackgroundConfig;
+    var _oBackgroundVideoElement;
     var _oInterface;
     var _oEndPanel;
     var _oHelpPanel;  
@@ -35,11 +38,12 @@ function CGame(oData, iMode, iLevel) {
         _iLevel = iLevel;
         
         this.resetVariables();
-        
-        var oBg = createBitmap(s_oSpriteLibrary.getSprite("bg_game"));        
-        oBg.cache;
+
+        _oBackgroundAsset = this._createFallbackBackground();
         _oMatrixContainer = new createjs.Container();
-        _oGameContainer.addChild(oBg, _oMatrixContainer);
+        _oGameContainer.addChild(_oBackgroundAsset);
+        _oGameContainer.addChild(_oMatrixContainer);
+        this._loadBackgroundConfig();
         
         _oRotatingPiecesContainer = new createjs.Container();
         _oPipesContainer = new createjs.Container();
@@ -56,6 +60,128 @@ function CGame(oData, iMode, iLevel) {
         } else {
             this._onExitHelp();
         };
+
+    this._createFallbackBackground = function() {
+        var sprite = s_oSpriteLibrary.getSprite("bg_game");
+        if (sprite) {
+            return createBitmap(sprite);
+        }
+        var fallbackShape = new createjs.Shape();
+        fallbackShape.graphics.beginFill("#020617").drawRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        return fallbackShape;
+    };
+
+    this._loadBackgroundConfig = function() {
+        var self = this;
+        var defaultConfig = {
+            background: {
+                type: 'image',
+                url: './sprites/bg_game.jpg',
+                position: { x: 0, y: 0 },
+                scale: { x: 1, y: 1 },
+                alpha: 1
+            }
+        };
+
+        var applyConfig = function(config) {
+            _oBackgroundConfig = config || defaultConfig;
+            self._applyBackgroundFromConfig();
+        };
+
+        var overrideConfig = null;
+        try {
+            var stored = localStorage.getItem('ui-config-override');
+            if (stored) {
+                overrideConfig = JSON.parse(stored);
+            }
+        } catch (e) {}
+
+        if (overrideConfig && overrideConfig.gameBackground) {
+            applyConfig(overrideConfig.gameBackground);
+        } else {
+            fetch('./config/ui-config.json')
+                .then(function(response) {
+                    if (!response.ok) {
+                        throw new Error('Config missing');
+                    }
+                    return response.json();
+                })
+                .then(function(config) {
+                    applyConfig(config.gameBackground || defaultConfig);
+                })
+                .catch(function() {
+                    applyConfig(defaultConfig);
+                });
+        }
+    };
+
+    this._applyBackgroundFromConfig = function() {
+        if (!_oBackgroundConfig || !_oBackgroundConfig.background) {
+            return;
+        }
+
+        var bgConfig = _oBackgroundConfig.background;
+        var insertIndex = _oGameContainer.getChildIndex(_oMatrixContainer);
+
+        if (_oBackgroundAsset && _oGameContainer.contains(_oBackgroundAsset)) {
+            _oGameContainer.removeChild(_oBackgroundAsset);
+        }
+
+        if (_oBackgroundVideoElement) {
+            _oBackgroundVideoElement.pause();
+            _oBackgroundVideoElement.removeAttribute('src');
+            _oBackgroundVideoElement.load();
+            if (_oBackgroundVideoElement.parentNode) {
+                _oBackgroundVideoElement.parentNode.removeChild(_oBackgroundVideoElement);
+            }
+            _oBackgroundVideoElement = null;
+        }
+
+        if (bgConfig.type === 'video') {
+            _oBackgroundVideoElement = document.createElement('video');
+            _oBackgroundVideoElement.src = bgConfig.url;
+            _oBackgroundVideoElement.loop = bgConfig.loop !== false;
+            _oBackgroundVideoElement.muted = bgConfig.muted !== false;
+            _oBackgroundVideoElement.autoplay = bgConfig.autoplay !== false;
+            _oBackgroundVideoElement.playsInline = true;
+            _oBackgroundVideoElement.style.display = 'none';
+            document.body.appendChild(_oBackgroundVideoElement);
+
+            var videoBitmap = new createjs.Bitmap(_oBackgroundVideoElement);
+            videoBitmap.x = bgConfig.position ? bgConfig.position.x || 0 : 0;
+            videoBitmap.y = bgConfig.position ? bgConfig.position.y || 0 : 0;
+            videoBitmap.scaleX = bgConfig.scale ? bgConfig.scale.x || 1 : 1;
+            videoBitmap.scaleY = bgConfig.scale ? bgConfig.scale.y || 1 : 1;
+            videoBitmap.alpha = bgConfig.alpha == null ? 1 : bgConfig.alpha;
+            _oBackgroundAsset = videoBitmap;
+            _oGameContainer.addChildAt(_oBackgroundAsset, Math.max(0, insertIndex));
+            _oBackgroundVideoElement.play();
+            return;
+        }
+
+        if (bgConfig.type === 'image') {
+            var img = new Image();
+            var self = this;
+            img.onload = function() {
+                var bitmap = new createjs.Bitmap(img);
+                bitmap.x = bgConfig.position ? bgConfig.position.x || 0 : 0;
+                bitmap.y = bgConfig.position ? bgConfig.position.y || 0 : 0;
+                bitmap.scaleX = bgConfig.scale ? bgConfig.scale.x || 1 : 1;
+                bitmap.scaleY = bgConfig.scale ? bgConfig.scale.y || 1 : 1;
+                bitmap.alpha = bgConfig.alpha == null ? 1 : bgConfig.alpha;
+                _oBackgroundAsset = bitmap;
+                _oGameContainer.addChildAt(_oBackgroundAsset, Math.max(0, insertIndex));
+            };
+            img.src = bgConfig.url;
+            return;
+        }
+
+        // type 'none' or unrecognized
+        var shape = new createjs.Shape();
+        shape.graphics.beginFill("#000000").drawRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        _oBackgroundAsset = shape;
+        _oGameContainer.addChildAt(_oBackgroundAsset, Math.max(0, insertIndex));
+    };
     };
 
     this.resetVariables = function(){
@@ -132,6 +258,16 @@ function CGame(oData, iMode, iLevel) {
     this.unload = function(){
         _oInterface.unload();
         createjs.Tween.removeAllTweens();
+        if (_oBackgroundVideoElement) {
+            _oBackgroundVideoElement.pause();
+            _oBackgroundVideoElement.removeAttribute('src');
+            _oBackgroundVideoElement.load();
+            if (_oBackgroundVideoElement.parentNode) {
+                _oBackgroundVideoElement.parentNode.removeChild(_oBackgroundVideoElement);
+            }
+            _oBackgroundVideoElement = null;
+        }
+
         s_oStage.removeAllChildren();
         s_oGame = null;
     };

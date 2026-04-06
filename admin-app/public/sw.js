@@ -1,5 +1,5 @@
-const CACHE_NAME = 'qyan-v1'
-const RUNTIME_CACHE = 'qyan-runtime-v1'
+const CACHE_NAME = 'qyan-v2'
+const RUNTIME_CACHE = 'qyan-runtime-v2'
 
 // Assets to cache on install
 const PRECACHE_ASSETS = [
@@ -37,6 +37,12 @@ self.addEventListener('fetch', (event) => {
 
   // Skip non-GET requests
   if (request.method !== 'GET') return
+
+  // Never cache-bypass app bundles in SW to avoid stale chunk/runtime mismatches after deploys.
+  // Let the browser fetch these directly.
+  if (url.pathname.startsWith('/assets/') || /\.(js|css|map)$/i.test(url.pathname)) {
+    return
+  }
 
   // Skip Firebase and external API requests
   if (

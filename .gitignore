@@ -24,3 +24,6 @@ admin-app/functions/.env.*
 functions/lib/
 functions/node_modules/
 tmp_*
+
+workHub/
+*.bak
