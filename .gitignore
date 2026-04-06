@@ -25,5 +25,5 @@ functions/lib/
 functions/node_modules/
 tmp_*
 
-workHub/
+/workHub/
 *.bak
