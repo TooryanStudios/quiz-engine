@@ -107,7 +107,7 @@ export function CreateWorkspaceDialog(props: {
                 className="workhub-primary-btn"
                 disabled={props.busyKey === 'workspace' || !props.canCreateWorkspace}
               >
-                {props.busyKey === 'workspace' ? 'Creating…' : 'Create workspace'}
+                {props.busyKey === 'workspace' ? 'Creating…' : '🏢 Create workspace'}
               </button>
             </div>
           </div>

@@ -6,6 +6,7 @@ export type WorkhubWorkspaceTemplateId =
   | 'empty'
   | 'projects'
   | 'finance'
+  | 'hr'
   | 'marketing'
   | 'proposals_leads'
 

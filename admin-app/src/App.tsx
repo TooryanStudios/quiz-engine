@@ -38,6 +38,13 @@ if (!MASTER_EMAIL || !MASTER_PATH) {
   console.error('[config] VITE_MASTER_EMAIL or VITE_MASTER_PATH is not set. Admin features will be disabled.')
 }
 
+type NavItem = {
+  to: string
+  icon: string
+  label: string
+  end?: boolean
+}
+
 function getNav(isAr: boolean) {
   return [
     { to: '/dashboard',        icon: '🏠', label: isAr ? 'الرئيسية' : 'Dashboard', end: true },
@@ -48,7 +55,14 @@ function getNav(isAr: boolean) {
     { to: '/workhub',         icon: '🗂️', label: isAr ? 'وورك هَب' : 'WorkHub' },
     { to: '/billing',          icon: '💳', label: isAr ? 'الاشتراك' : 'Billing' },
     { to: '/profile',          icon: '👤', label: isAr ? 'الملف الشخصي' : 'Profile' },
-  ]
+  ] satisfies NavItem[]
+}
+
+function resolveNavTarget(to: string) {
+  if (typeof window === 'undefined') return to
+  if (to === '/editor') return sessionStorage.getItem('lastEditorPath') || to
+  if (to === '/mini-game-editor') return sessionStorage.getItem('lastMiniGameEditorPath') || to
+  return to
 }
 
 function RequireAuth({ user, children }: { user: User | null; children: ReactElement }) {
@@ -73,6 +87,11 @@ function App() {
   const [burgerOpen, setBurgerOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
+  const [mobileHeaderCompact, setMobileHeaderCompact] = useState(false)
+  const [isMobileLayout, setIsMobileLayout] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    return window.matchMedia('(max-width: 768px)').matches
+  })
   const [theme, setTheme] = useState<'dark' | 'light'>(
     () => 'light'
   )
@@ -272,7 +291,21 @@ function App() {
   useEffect(() => {
     setBurgerOpen(false)
     setProfileOpen(false)
+    setMobileHeaderCompact(false)
   }, [location.pathname])
+
+  // Keep layout shell in sync with viewport width so mobile and desktop can use
+  // completely different structures without changing page logic.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const query = window.matchMedia('(max-width: 768px)')
+    const apply = (matches: boolean) => setIsMobileLayout(matches)
+    apply(query.matches)
+
+    const onChange = (event: MediaQueryListEvent) => apply(event.matches)
+    query.addEventListener('change', onChange)
+    return () => query.removeEventListener('change', onChange)
+  }, [])
 
   // Close profile dropdown on outside click
   useEffect(() => {
@@ -431,22 +464,180 @@ function App() {
     )
   }
 
+  const appRoutes = (
+    <Routes>
+      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/dashboard" element={<DashboardPage />} />
+      <Route path="/editor" element={<QuizEditorPage />} />
+      <Route path="/editor/:id" element={<QuizEditorPage />} />
+      <Route path="/mini-game-editor" element={<QuizEditorPage />} />
+      <Route path="/mini-game-editor/:id" element={<QuizEditorPage />} />
+      <Route path="/game-modes" element={<RequireAdmin user={user ?? null}><GameModesPage /></RequireAdmin>} />
+      <Route path="/play-test" element={allowUnauthedLocalPlayTest ? <PlayTestPage /> : <RequireAdmin user={user ?? null}><PlayTestPage /></RequireAdmin>} />
+      <Route path="/play-test/:gameId" element={allowUnauthedLocalPlayTest ? <PlayTestPage /> : <RequireAdmin user={user ?? null}><PlayTestPage /></RequireAdmin>} />
+      <Route path="/play" element={<GameEmbedPage />} />
+      <Route path="/play/:gameId" element={<GameEmbedPage />} />
+      <Route path="/preview" element={<QuizPreviewPage />} />
+      <Route path="/preview/:id" element={<QuizPreviewPage />} />
+      <Route path="/packs" element={<RequireAuth user={user ?? null}><PacksPage /></RequireAuth>} />
+      <Route path="/my-quizzes" element={<RequireAuth user={user ?? null}><MyQuizzesPage /></RequireAuth>} />
+      <Route path="/workhub" element={<RequireAuth user={user ?? null}><WorkHubPage /></RequireAuth>} />
+      <Route path="/voice-lab" element={<RequireAdmin user={user ?? null}><VoiceLabPage /></RequireAdmin>} />
+      <Route path="/ai-lab" element={<RequireAdmin user={user ?? null}><AILabPage /></RequireAdmin>} />
+      <Route path="/cover-gen-lab" element={<RequireAdmin user={user ?? null}><CoverGenLabPage /></RequireAdmin>} />
+      <Route path="/billing" element={<RequireAuth user={user ?? null}><BillingPage /></RequireAuth>} />
+      <Route path="/profile" element={<RequireAuth user={user ?? null}><ProfilePage /></RequireAuth>} />
+    </Routes>
+  )
+
+  const navItems = getNav(isAr)
+  const navLookup = new Map(navItems.map((item) => [item.to, item]))
+  const pickNavItems = (targets: string[]): NavItem[] => {
+    const selected: NavItem[] = []
+    for (const to of targets) {
+      const item = navLookup.get(to)
+      if (item) selected.push(item)
+    }
+    return selected
+  }
+
+  const mobileRouteKey =
+    location.pathname.startsWith('/editor') || location.pathname.startsWith('/mini-game-editor')
+      ? 'editor'
+      : location.pathname.startsWith('/workhub')
+        ? 'workhub'
+        : location.pathname.startsWith('/packs')
+          ? 'library'
+          : location.pathname.startsWith('/my-quizzes')
+            ? 'my-quizzes'
+            : location.pathname.startsWith('/billing')
+              ? 'billing'
+              : location.pathname.startsWith('/profile')
+                ? 'profile'
+                : location.pathname.startsWith('/game-modes')
+                  ? 'game-modes'
+                  : location.pathname.startsWith('/voice-lab') || location.pathname.startsWith('/ai-lab') || location.pathname.startsWith('/cover-gen-lab')
+                    ? 'labs'
+                    : 'dashboard'
+
+  const mobileHeaderTitle =
+    mobileRouteKey === 'editor'
+      ? (isAr ? 'وضع التحرير' : 'Editing Studio')
+      : mobileRouteKey === 'workhub'
+        ? 'WorkHub'
+        : mobileRouteKey === 'library'
+          ? (isAr ? 'المكتبة' : 'Library')
+          : mobileRouteKey === 'my-quizzes'
+            ? (isAr ? 'تحدياتي' : 'My Challenges')
+            : mobileRouteKey === 'billing'
+              ? (isAr ? 'الفوترة' : 'Billing')
+              : mobileRouteKey === 'profile'
+                ? (isAr ? 'الملف الشخصي' : 'Profile')
+                : mobileRouteKey === 'game-modes'
+                  ? (isAr ? 'أوضاع اللعب' : 'Game Modes')
+                  : mobileRouteKey === 'labs'
+                    ? (isAr ? 'المختبر' : 'Labs')
+                    : (isAr ? 'لوحة التحكم' : 'Dashboard')
+
+  const mobileHeaderHint =
+    mobileRouteKey === 'editor'
+      ? (isAr ? 'تحرير سريع ومركّز' : 'Focused creation flow')
+      : mobileRouteKey === 'workhub'
+        ? (isAr ? 'مساحة العمل المتقدمة' : 'Projects and docs')
+        : mobileRouteKey === 'dashboard'
+          ? (isAr ? 'ملخص سريع' : 'Daily snapshot')
+          : ''
+
+  const mobileTabPriorityByRoute: Record<string, string[]> = {
+    dashboard: ['/dashboard', '/editor', '/workhub', '/my-quizzes', '/profile'],
+    editor: ['/editor', '/mini-game-editor', '/my-quizzes', '/dashboard', '/workhub'],
+    workhub: ['/workhub', '/dashboard', '/editor', '/packs', '/profile'],
+    library: ['/packs', '/my-quizzes', '/dashboard', '/editor', '/profile'],
+    'my-quizzes': ['/my-quizzes', '/editor', '/dashboard', '/packs', '/profile'],
+    billing: ['/billing', '/dashboard', '/packs', '/profile', '/workhub'],
+    profile: ['/profile', '/dashboard', '/my-quizzes', '/packs', '/workhub'],
+    'game-modes': ['/dashboard', '/editor', '/workhub', '/my-quizzes', '/profile'],
+    labs: ['/dashboard', '/editor', '/workhub', '/my-quizzes', '/profile'],
+  }
+
+  const mobileTabs = (mobileTabPriorityByRoute[mobileRouteKey] || mobileTabPriorityByRoute.dashboard)
+    .reduce<NavItem[]>((acc, to) => {
+      const item = navLookup.get(to)
+      if (item) acc.push(item)
+      return acc
+    }, [])
+    .slice(0, 5)
+
+  const mobileDrawerSections = [
+    {
+      key: 'primary',
+      title: isAr ? 'التنقل الأساسي' : 'Primary',
+      links: pickNavItems(['/dashboard', '/my-quizzes', '/packs', '/profile', '/billing']),
+    },
+    {
+      key: 'creation',
+      title: isAr ? 'التحرير والإنشاء' : 'Creation',
+      links: pickNavItems(['/editor', '/mini-game-editor', '/workhub']),
+    },
+  ]
+
+  const mobileAdminLinks = user?.email === MASTER_EMAIL && MASTER_PATH
+    ? [
+        { to: '/game-modes', icon: '🧩', label: isAr ? 'أوضاع اللعب' : 'Game Modes' },
+        { to: '/voice-lab', icon: '🎙️', label: isAr ? 'مختبر الصوت' : 'Voice Lab' },
+        { to: '/ai-lab', icon: '🤖', label: isAr ? 'مختبر الذكاء' : 'AI Lab' },
+        { to: '/cover-gen-lab', icon: '🖼️', label: isAr ? 'مختبر الغلاف' : 'Cover Lab' },
+        { to: `${MASTER_PATH}/dashboard`, icon: '👑', label: isAr ? 'الإدارة ↗' : 'Admin ↗', end: true },
+      ]
+    : []
+
+  const handleMobileMainScroll = (event: { currentTarget: HTMLElement }) => {
+    const nextCompact = event.currentTarget.scrollTop > 12
+    setMobileHeaderCompact((prev) => (prev !== nextCompact ? nextCompact : prev))
+  }
+
   return (
     <UserPrefsContext.Provider value={userPrefsValue}>
     <ToastProvider>
       <DialogProvider>
-        <div className={isLoginPage ? 'login-shell' : `admin-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
-          {!isLoginPage && (
-            <aside className="admin-sidebar">
-              {/* Brand + collapse toggle */}
-              <div className="sidebar-header">
-                {user && (
-                  <div className="header-profile-mobile" ref={profileRef}>
+        {isLoginPage ? (
+          <div className="login-shell">
+            <main className="login-main">
+              <ErrorBoundary>
+                <Suspense fallback={
+                  <div className="app-loading-screen">
+                    <img src={logoImg} alt="QYan" className="app-loading-logo" />
+                    <div className="app-loading-spinner" />
+                  </div>
+                }>
+                  {appRoutes}
+                </Suspense>
+              </ErrorBoundary>
+            </main>
+          </div>
+        ) : isMobileLayout ? (
+          <div className="mobile-shell">
+            <header className={`mobile-shell-header${mobileHeaderCompact ? ' is-compact' : ''}`}>
+              <div className="mobile-shell-header-main">
+                <button className="mobile-shell-brand" onClick={() => navigate('/dashboard')} type="button">
+                  Q<span>Yan</span> Gaming
+                </button>
+                <div className="mobile-shell-heading">
+                  <strong className="mobile-shell-page-title">{mobileHeaderTitle}</strong>
+                  {mobileHeaderHint && <span className="mobile-shell-page-hint">{mobileHeaderHint}</span>}
+                </div>
+              </div>
+
+              <div className="mobile-shell-actions" ref={profileRef}>
+                {user ? (
+                  <>
                     <button
                       className="mobile-avatar-btn"
                       onClick={() => { setProfileOpen((o) => !o); setBurgerOpen(false) }}
                       aria-label="Profile menu"
                       title="Profile"
+                      type="button"
                     >
                       {user.photoURL ? (
                         <img src={user.photoURL} referrerPolicy="no-referrer" alt="" className="sidebar-user-avatar" />
@@ -478,9 +669,145 @@ function App() {
                         </button>
                       </div>
                     )}
-                  </div>
-                )}
 
+                    <button
+                      className="burger-btn"
+                      onClick={() => { setBurgerOpen((o) => !o); setProfileOpen(false) }}
+                      aria-label="Toggle menu"
+                      title="Menu"
+                      type="button"
+                    >
+                      <span className={`burger-line ${burgerOpen ? 'open-top' : ''}`} />
+                      <span className={`burger-line ${burgerOpen ? 'open-mid' : ''}`} />
+                      <span className={`burger-line ${burgerOpen ? 'open-bot' : ''}`} />
+                    </button>
+                  </>
+                ) : (
+                  <button className="sidebar-auth-btn" onClick={handleGuestSignIn} type="button">
+                    {isAr ? 'تسجيل الدخول / إنشاء حساب' : 'Sign In / Sign Up'}
+                  </button>
+                )}
+              </div>
+            </header>
+
+            {user && burgerOpen && (
+              <div
+                className="mobile-drawer-overlay"
+                onClick={() => setBurgerOpen(false)}
+                aria-label="Close menu"
+              />
+            )}
+
+            {user && (
+              <nav className={`mobile-nav-drawer ${burgerOpen ? ' drawer-open' : ''}`}>
+                <div className="mobile-nav-content">
+                  {mobileDrawerSections.map((section) => (
+                    <section className="mobile-nav-section" key={section.key}>
+                      <p className="mobile-nav-section-title">{section.title}</p>
+                      {section.links.map(({ to, icon, label, end }) => (
+                        <NavLink
+                          key={`${section.key}-${to}`}
+                          to={resolveNavTarget(to)}
+                          end={end}
+                          onClick={() => setBurgerOpen(false)}
+                          className={() =>
+                            `mobile-nav-link${(end ? location.pathname === to : location.pathname.startsWith(to)) ? ' active' : ''}`
+                          }
+                        >
+                          <span className="mobile-nav-link-row" style={{ justifyContent: 'flex-start' }}>
+                            <span className="mobile-nav-link-icon">{icon}</span>
+                            <span className="mobile-nav-link-label">{label}</span>
+                          </span>
+                        </NavLink>
+                      ))}
+                    </section>
+                  ))}
+
+                  {mobileAdminLinks.length > 0 && (
+                    <section className="mobile-nav-section mobile-nav-section-admin">
+                      <p className="mobile-nav-section-title">{isAr ? 'أدوات الإدارة' : 'Admin Tools'}</p>
+                      {mobileAdminLinks.map(({ to, icon, label, end }) => (
+                        <NavLink
+                          key={`admin-${to}`}
+                          to={to}
+                          end={end}
+                          onClick={() => setBurgerOpen(false)}
+                          target={to.startsWith(MASTER_PATH || '/__missing__') ? '_blank' : undefined}
+                          rel={to.startsWith(MASTER_PATH || '/__missing__') ? 'noopener noreferrer' : undefined}
+                          className={() =>
+                            `mobile-nav-link${(end ? location.pathname === to : location.pathname.startsWith(to)) ? ' active' : ''}`
+                          }
+                        >
+                          <span className="mobile-nav-link-row" style={{ justifyContent: 'flex-start' }}>
+                            <span className="mobile-nav-link-icon">{icon}</span>
+                            <span className="mobile-nav-link-label">{label}</span>
+                          </span>
+                        </NavLink>
+                      ))}
+                    </section>
+                  )}
+                </div>
+
+                <div className="mobile-nav-divider"></div>
+
+                <div className="mobile-profile-section">
+                  <div className="mobile-profile-info">
+                    {user.photoURL ? (
+                      <img src={user.photoURL} referrerPolicy="no-referrer" alt="" className="mobile-profile-avatar" />
+                    ) : (
+                      <div className="sidebar-user-avatar sidebar-user-initials mobile-profile-initials">
+                        {(user.displayName || user.email || '?').slice(0, 2).toUpperCase()}
+                      </div>
+                    )}
+                    <div className="mobile-profile-text">
+                      <div className="mobile-profile-name">
+                        {user.displayName || user.email?.split('@')[0]}
+                      </div>
+                      <div className="mobile-profile-email">
+                        {user.email}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button onClick={handleSignOut} className="mobile-signout-btn">
+                    {isAr ? 'تسجيل الخروج' : 'Sign Out'}
+                  </button>
+                </div>
+              </nav>
+            )}
+
+            <main className={`mobile-shell-main mobile-route-${mobileRouteKey}`} data-scrollable="true" onScroll={handleMobileMainScroll}>
+              <ErrorBoundary>
+                <Suspense fallback={
+                  <div className="app-loading-screen">
+                    <img src={logoImg} alt="QYan" className="app-loading-logo" />
+                    <div className="app-loading-spinner" />
+                  </div>
+                }>
+                  {appRoutes}
+                </Suspense>
+              </ErrorBoundary>
+            </main>
+
+            {user && (
+              <nav className="mobile-shell-tabbar">
+                {mobileTabs.map(({ to, icon, label, end }) => {
+                  const resolvedTo = resolveNavTarget(to)
+                  const isActive = end ? location.pathname === to : location.pathname.startsWith(to)
+                  return (
+                    <NavLink key={to} to={resolvedTo} end={end} className={`mobile-tab-link${isActive ? ' active' : ''}`}>
+                      <span className="mobile-tab-icon">{icon}</span>
+                      <span className="mobile-tab-label">{label}</span>
+                    </NavLink>
+                  )
+                })}
+              </nav>
+            )}
+          </div>
+        ) : (
+          <div className={`admin-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
+            <aside className="admin-sidebar">
+              <div className="sidebar-header">
                 <h1 className="sidebar-brand" onClick={() => navigate('/dashboard')} style={{ cursor: 'pointer' }}>Q<span>Yan</span> Gaming</h1>
                 {user ? (
                   <button
@@ -501,18 +828,15 @@ function App() {
                 )}
               </div>
 
-              {/* Desktop nav */}
               {user && (
                 <nav className="sidebar-nav-desktop">
                   {getNav(isAr).map(({ to, icon, label, end }) => {
-                    // For editor nav items, resolve to the last-used path (with quiz ID) so
-                    // clicking the link returns to the quiz in progress instead of a blank editor.
                     const resolvedTo =
                       to === '/editor'
                         ? (sessionStorage.getItem('lastEditorPath') || to)
                         : to === '/mini-game-editor'
-                        ? (sessionStorage.getItem('lastMiniGameEditorPath') || to)
-                        : to
+                          ? (sessionStorage.getItem('lastMiniGameEditorPath') || to)
+                          : to
                     return (
                       <NavLink
                         key={to}
@@ -573,7 +897,6 @@ function App() {
                 </nav>
               )}
 
-              {/* Desktop user section */}
               {user && (
                 <div className="sidebar-user">
                   <NavLink to="/profile" className={({ isActive }) => `sidebar-user-chip${isActive ? ' active' : ''}`}>
@@ -591,188 +914,22 @@ function App() {
                   <button onClick={handleSignOut} className="sidebar-signout-btn">{isAr ? 'تسجيل الخروج' : 'Sign Out'}</button>
                 </div>
               )}
-
-              {/* ── Mobile top-bar controls ── */}
-              {user && (
-                <div className="mobile-bar-controls">
-                  {/* Burger button only */}
-                  <button
-                    className="burger-btn"
-                    onClick={() => { setBurgerOpen((o) => !o); setProfileOpen(false) }}
-                    aria-label="Toggle menu"
-                    title="Menu"
-                  >
-                    <span className={`burger-line ${burgerOpen ? 'open-top' : ''}`} />
-                    <span className={`burger-line ${burgerOpen ? 'open-mid' : ''}`} />
-                    <span className={`burger-line ${burgerOpen ? 'open-bot' : ''}`} />
-                  </button>
-
-                  {/* Overlay to close drawer on tap */}
-                  {burgerOpen && (
-                    <div
-                      className="mobile-drawer-overlay"
-                      onClick={() => setBurgerOpen(false)}
-                      aria-label="Close menu"
-                    />
-                  )}
-                </div>
-              )}
-
-              {/* Mobile nav drawer */}
-              {user && (
-                <nav className={`mobile-nav-drawer ${burgerOpen ? 'drawer-open' : ''}`}>
-                  {/* Navigation links */}
-                  <div className="mobile-nav-content">
-                    {getNav(isAr).map(({ to, icon, label, end }) => {
-                      const resolvedTo =
-                        to === '/editor'
-                          ? (sessionStorage.getItem('lastEditorPath') || to)
-                          : to === '/mini-game-editor'
-                          ? (sessionStorage.getItem('lastMiniGameEditorPath') || to)
-                          : to
-                      return (
-                        <NavLink
-                          key={to}
-                          to={resolvedTo}
-                          end={end}
-                          className={() =>
-                            `mobile-nav-link${(end ? location.pathname === to : location.pathname.startsWith(to)) ? ' active' : ''}`
-                          }
-                        >
-                          <span
-                            className="mobile-nav-link-row"
-                            style={{ justifyContent: 'flex-start' }}
-                          >
-                            <span className="mobile-nav-link-icon">{icon}</span>
-                            <span className="mobile-nav-link-label">{label}</span>
-                          </span>
-                        </NavLink>
-                      )
-                    })}
-
-                    {user.email === MASTER_EMAIL && MASTER_PATH && (
-                      <>
-                        <NavLink
-                          to="/game-modes"
-                          className={({ isActive }) => `mobile-nav-link${isActive ? ' active' : ''}`}
-                          style={{ borderTop: '1px solid var(--border)', marginTop: '0.5rem', paddingTop: '0.5rem' }}>
-                          <span className="mobile-nav-link-row" style={{ justifyContent: 'flex-start' }}>
-                            <span className="mobile-nav-link-icon">🧩</span>
-                            <span className="mobile-nav-link-label">{isAr ? 'أوضاع اللعب' : 'Game Modes'}</span>
-                          </span>
-                        </NavLink>
-                        <NavLink
-                          to="/voice-lab"
-                          className={({ isActive }) => `mobile-nav-link${isActive ? ' active' : ''}`}
-                          style={{ marginTop: '0.5rem' }}>
-                          <span className="mobile-nav-link-row" style={{ justifyContent: 'flex-start' }}>
-                            <span className="mobile-nav-link-icon">🎙️</span>
-                            <span className="mobile-nav-link-label">{isAr ? 'مختبر الصوت' : 'Voice Lab'}</span>
-                          </span>
-                        </NavLink>
-                        <NavLink
-                          to="/ai-lab"
-                          className={({ isActive }) => `mobile-nav-link${isActive ? ' active' : ''}`}
-                          style={{ marginTop: '0.5rem' }}>
-                          <span className="mobile-nav-link-row" style={{ justifyContent: 'flex-start' }}>
-                            <span className="mobile-nav-link-icon">🤖</span>
-                            <span className="mobile-nav-link-label">{isAr ? 'مختبر الذكاء' : 'AI Lab'}</span>
-                          </span>
-                        </NavLink>
-                        <NavLink
-                          to="/cover-gen-lab"
-                          className={({ isActive }) => `mobile-nav-link${isActive ? ' active' : ''}`}
-                          style={{ marginTop: '0.5rem' }}>
-                          <span className="mobile-nav-link-row" style={{ justifyContent: 'flex-start' }}>
-                            <span className="mobile-nav-link-icon">🖼️</span>
-                            <span className="mobile-nav-link-label">{isAr ? 'مختبر الغلاف' : 'Cover Lab'}</span>
-                          </span>
-                        </NavLink>
-                        <NavLink
-                          to={`${MASTER_PATH}/dashboard`}
-                          className={({ isActive }) => `mobile-nav-link${isActive ? ' active' : ''}`}
-                          target="_blank"
-                          rel="noopener noreferrer">
-                          <span className="mobile-nav-link-row" style={{ justifyContent: 'flex-start' }}>
-                            <span className="mobile-nav-link-icon">👑</span>
-                            <span className="mobile-nav-link-label">{isAr ? 'الإدارة ↗' : 'Admin ↗'}</span>
-                          </span>
-                        </NavLink>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Divider */}
-                  <div className="mobile-nav-divider"></div>
-
-                  {/* Profile section in drawer */}
-                  <div className="mobile-profile-section">
-                    <div className="mobile-profile-info">
-                      {user.photoURL ? (
-                        <img src={user.photoURL} referrerPolicy="no-referrer" alt="" className="mobile-profile-avatar" />
-                      ) : (
-                        <div className="sidebar-user-avatar sidebar-user-initials mobile-profile-initials">
-                          {(user.displayName || user.email || '?').slice(0, 2).toUpperCase()}
-                        </div>
-                      )}
-                      <div className="mobile-profile-text">
-                        <div className="mobile-profile-name">
-                          {user.displayName || user.email?.split('@')[0]}
-                        </div>
-                        <div className="mobile-profile-email">
-                          {user.email}
-                        </div>
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={handleSignOut}
-                      className="mobile-signout-btn"
-                    >
-                      {isAr ? 'تسجيل الخروج' : 'Sign Out'}
-                    </button>
-                  </div>
-                </nav>
-              )}
             </aside>
-          )}
-          <main className={isLoginPage ? 'login-main' : 'admin-main'} data-scrollable="true">
-            <ErrorBoundary>
-              <Suspense fallback={
-                <div className="app-loading-screen">
-                  <img src={logoImg} alt="QYan" className="app-loading-logo" />
-                  <div className="app-loading-spinner" />
-                </div>
-              }>
-              <Routes>
-                <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                <Route path="/login" element={<LoginPage />} />
-                <Route path="/dashboard" element={<DashboardPage />} />
-                <Route path="/editor" element={<QuizEditorPage />} />
-                <Route path="/editor/:id" element={<QuizEditorPage />} />
-                <Route path="/mini-game-editor" element={<QuizEditorPage />} />
-                <Route path="/mini-game-editor/:id" element={<QuizEditorPage />} />
-                <Route path="/game-modes" element={<RequireAdmin user={user ?? null}><GameModesPage /></RequireAdmin>} />
-                <Route path="/play-test" element={allowUnauthedLocalPlayTest ? <PlayTestPage /> : <RequireAdmin user={user ?? null}><PlayTestPage /></RequireAdmin>} />
-                <Route path="/play-test/:gameId" element={allowUnauthedLocalPlayTest ? <PlayTestPage /> : <RequireAdmin user={user ?? null}><PlayTestPage /></RequireAdmin>} />
-                <Route path="/play" element={<GameEmbedPage />} />
-                <Route path="/play/:gameId" element={<GameEmbedPage />} />
-                <Route path="/preview" element={<QuizPreviewPage />} />
-                <Route path="/preview/:id" element={<QuizPreviewPage />} />
-                <Route path="/packs" element={<RequireAuth user={user ?? null}><PacksPage /></RequireAuth>} />
-                <Route path="/my-quizzes" element={<RequireAuth user={user ?? null}><MyQuizzesPage /></RequireAuth>} />
-                <Route path="/workhub" element={<RequireAuth user={user ?? null}><WorkHubPage /></RequireAuth>} />
-                <Route path="/voice-lab" element={<RequireAdmin user={user ?? null}><VoiceLabPage /></RequireAdmin>} />
-                <Route path="/ai-lab" element={<RequireAdmin user={user ?? null}><AILabPage /></RequireAdmin>} />
-                <Route path="/cover-gen-lab" element={<RequireAdmin user={user ?? null}><CoverGenLabPage /></RequireAdmin>} />
-                <Route path="/billing" element={<RequireAuth user={user ?? null}><BillingPage /></RequireAuth>} />
-                <Route path="/profile" element={<RequireAuth user={user ?? null}><ProfilePage /></RequireAuth>} />
-              </Routes>
-              </Suspense>
-            </ErrorBoundary>
 
-          </main>
-        </div>{/* end admin-shell */}
+            <main className="admin-main" data-scrollable="true">
+              <ErrorBoundary>
+                <Suspense fallback={
+                  <div className="app-loading-screen">
+                    <img src={logoImg} alt="QYan" className="app-loading-logo" />
+                    <div className="app-loading-spinner" />
+                  </div>
+                }>
+                  {appRoutes}
+                </Suspense>
+              </ErrorBoundary>
+            </main>
+          </div>
+        )}
         <Dialog />
         <VFXContainer />
       </DialogProvider>

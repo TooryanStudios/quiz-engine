@@ -351,6 +351,168 @@
   color: var(--text) !important;
 }
 
+.mobile-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--bg-page);
+}
+
+.mobile-shell-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 240;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 58px;
+  padding: 8px 12px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  transition: min-height 0.2s ease, padding 0.2s ease, box-shadow 0.2s ease;
+}
+
+.mobile-shell-header.is-compact {
+  min-height: 52px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  box-shadow: 0 3px 16px rgba(2, 6, 23, 0.12);
+}
+
+.mobile-shell-header-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.mobile-shell-brand {
+  background: transparent;
+  border: none;
+  color: var(--text-bright);
+  font-size: 0.94rem;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+  padding: 0;
+}
+
+.mobile-shell-heading {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.mobile-shell-page-title {
+  font-size: 0.73rem;
+  letter-spacing: 0.02em;
+  color: var(--text-bright);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-shell-page-hint {
+  font-size: 0.64rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-shell-brand span {
+  color: #2563eb;
+}
+
+.mobile-shell-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+
+.mobile-shell-main {
+  flex: 1;
+  margin-top: 58px;
+  padding: 12px;
+  overflow-y: auto;
+  overflow-x: clip;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+}
+
+.mobile-route-dashboard {
+  padding-top: 14px;
+}
+
+.mobile-route-editor,
+.mobile-route-workhub {
+  padding-top: 8px;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.mobile-route-library,
+.mobile-route-my-quizzes,
+.mobile-route-profile,
+.mobile-route-billing,
+.mobile-route-game-modes,
+.mobile-route-labs {
+  padding-top: 10px;
+}
+
+.mobile-shell-tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 230;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+  align-items: center;
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border);
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+}
+
+.mobile-tab-link {
+  text-decoration: none;
+  color: var(--text-dim);
+  border-radius: 10px;
+  padding: 7px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 48px;
+}
+
+.mobile-tab-link.active {
+  color: #1d4ed8;
+  background: rgba(37, 99, 235, 0.12);
+}
+
+.mobile-tab-icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.mobile-tab-label {
+  font-size: 0.66rem;
+  font-weight: 600;
+  line-height: 1.1;
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── Mobile: fixed top header ─────────────── */
 
 /* Hide mobile-only elements on desktop */
@@ -711,6 +873,10 @@
     text-align: inherit;
   }
 
+  [dir="rtl"] .mobile-nav-section-title {
+    text-align: right;
+  }
+
   [dir="rtl"] .mobile-nav-link {
     direction: rtl;
     text-align: center;
@@ -773,6 +939,33 @@
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
   scrollbar-color: var(--border-mid) transparent;
+}
+
+.mobile-nav-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 2px;
+}
+
+.mobile-nav-section + .mobile-nav-section {
+  margin-top: 10px;
+}
+
+.mobile-nav-section-title {
+  margin: 0;
+  padding: 8px 20px 6px;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.mobile-nav-section-admin {
+  border-top: 1px solid var(--border);
+  margin-top: 14px;
+  padding-top: 8px;
 }
 
 @media (max-width: 768px) {

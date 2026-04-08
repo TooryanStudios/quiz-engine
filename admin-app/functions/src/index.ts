@@ -2,6 +2,7 @@ import * as admin from 'firebase-admin'
 import { onCall, HttpsError } from 'firebase-functions/v2/https'
 import { defineString } from 'firebase-functions/params'
 import * as functionsV1 from 'firebase-functions/v1'
+import nodemailer from 'nodemailer'
 
 
 admin.initializeApp()
@@ -13,11 +14,188 @@ const workhubDriveFolderIdParam = defineString('WORKHUB_DRIVE_FOLDER_ID')
 const driveClientIdParam = defineString('DRIVE_CLIENT_ID')
 const driveClientSecretParam = defineString('DRIVE_CLIENT_SECRET')
 const driveRefreshTokenParam = defineString('DRIVE_REFRESH_TOKEN')
+const emailNotificationsEnabledParam = defineString('EMAIL_NOTIFICATIONS_ENABLED')
+const smtpHostParam = defineString('SMTP_HOST')
+const smtpPortParam = defineString('SMTP_PORT')
+const smtpSecureParam = defineString('SMTP_SECURE')
+const smtpUserParam = defineString('SMTP_USER')
+const smtpPassParam = defineString('SMTP_PASS')
+const smtpFromParam = defineString('SMTP_FROM')
+const smtpReplyToParam = defineString('SMTP_REPLY_TO')
 
 const TRIAL_INITIAL_CREDITS = 100
 const COST_COVER_IMAGE = 20
 const COST_QUESTION_MEDIA_IMAGE = 10
 const COST_QUESTION_CHECK = 2
+
+let smtpTransporter: nodemailer.Transporter | null = null
+
+function parseBooleanEnv(value: string | undefined, defaultValue = false): boolean {
+  if (typeof value !== 'string') return defaultValue
+  const normalized = value.trim().toLowerCase()
+  if (!normalized) return defaultValue
+  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on'
+}
+
+function toValidEmail(value: string | null | undefined): string | null {
+  const email = (value || '').trim()
+  if (!email) return null
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+async function getSmtpTransporter() {
+  if (smtpTransporter) return smtpTransporter
+
+  const host = smtpHostParam.value().trim()
+  const portRaw = smtpPortParam.value().trim()
+  const port = Number(portRaw || '587')
+  if (!host || !Number.isFinite(port) || port <= 0) {
+    throw new Error('SMTP_HOST and SMTP_PORT must be configured with valid values.')
+  }
+
+  const secure = parseBooleanEnv(smtpSecureParam.value(), port === 465)
+  const user = smtpUserParam.value().trim()
+  const pass = smtpPassParam.value()
+
+  smtpTransporter = nodemailer.createTransport({
+    host,
+    port,
+    secure,
+    auth: user ? { user, pass } : undefined,
+  })
+  return smtpTransporter
+}
+
+async function sendNotificationEmail(params: {
+  to: string | string[]
+  subject: string
+  text: string
+  html: string
+}) {
+  if (!parseBooleanEnv(emailNotificationsEnabledParam.value(), false)) {
+    return
+  }
+
+  const from = smtpFromParam.value().trim()
+  if (!from) {
+    console.warn('[email] Skipping send: SMTP_FROM is not configured.')
+    return
+  }
+
+  const recipients = Array.isArray(params.to) ? params.to : [params.to]
+  const validRecipients = Array.from(new Set(
+    recipients
+      .map((email) => toValidEmail(email))
+      .filter((email): email is string => !!email),
+  ))
+
+  if (!validRecipients.length) {
+    console.warn('[email] Skipping send: no valid recipients found.')
+    return
+  }
+
+  try {
+    const transporter = await getSmtpTransporter()
+    const replyTo = smtpReplyToParam.value().trim()
+    await transporter.sendMail({
+      from,
+      to: validRecipients,
+      replyTo: replyTo || undefined,
+      subject: params.subject,
+      text: params.text,
+      html: params.html,
+    })
+  } catch (error) {
+    console.error('[email] Failed to send notification email.', error)
+  }
+}
+
+async function notifyAdminAboutWorkhubAccessRequest(params: {
+  uid: string
+  email: string
+  displayName: string
+  hasWorkspaceInvite: boolean
+}) {
+  const adminEmail = toValidEmail(masterEmailParam.value())
+  if (!adminEmail) return
+
+  const requesterName = params.displayName.trim() || '(no display name)'
+  const requesterEmail = params.email.trim() || '(no email)'
+  const inviteLabel = params.hasWorkspaceInvite ? 'Yes' : 'No'
+  const reviewUrl = 'https://qyan-om.web.app/workhub'
+
+  await sendNotificationEmail({
+    to: adminEmail,
+    subject: `[WorkHub] New access request: ${requesterName}`,
+    text: [
+      'A user requested WorkHub access.',
+      '',
+      `UID: ${params.uid}`,
+      `Display name: ${requesterName}`,
+      `Email: ${requesterEmail}`,
+      `Workspace invite detected: ${inviteLabel}`,
+      '',
+      `Review request: ${reviewUrl}`,
+    ].join('\n'),
+    html: [
+      '<p>A user requested <strong>WorkHub access</strong>.</p>',
+      '<ul>',
+      `<li><strong>UID:</strong> ${escapeHtml(params.uid)}</li>`,
+      `<li><strong>Display name:</strong> ${escapeHtml(requesterName)}</li>`,
+      `<li><strong>Email:</strong> ${escapeHtml(requesterEmail)}</li>`,
+      `<li><strong>Workspace invite detected:</strong> ${escapeHtml(inviteLabel)}</li>`,
+      '</ul>',
+      `<p><a href="${reviewUrl}">Review request in WorkHub</a></p>`,
+    ].join(''),
+  })
+}
+
+async function notifyMemberAboutWorkhubStatusChange(params: {
+  toEmail: string
+  displayName: string
+  status: WorkhubMemberStatus
+}) {
+  const memberEmail = toValidEmail(params.toEmail)
+  if (!memberEmail) return
+
+  const memberName = params.displayName.trim() || 'there'
+  const statusLabel = params.status === 'approved' ? 'approved' : 'suspended'
+  const actionText = params.status === 'approved'
+    ? 'Your WorkHub access has been approved. You can sign in and start working.'
+    : 'Your WorkHub access has been suspended. If this looks wrong, contact your administrator.'
+  const subject = params.status === 'approved'
+    ? '[WorkHub] Access approved'
+    : '[WorkHub] Access suspended'
+  const workhubUrl = 'https://qyan-om.web.app/workhub'
+
+  await sendNotificationEmail({
+    to: memberEmail,
+    subject,
+    text: [
+      `Hi ${memberName},`,
+      '',
+      actionText,
+      `Current status: ${statusLabel}`,
+      '',
+      `Open WorkHub: ${workhubUrl}`,
+    ].join('\n'),
+    html: [
+      `<p>Hi ${escapeHtml(memberName)},</p>`,
+      `<p>${escapeHtml(actionText)}</p>`,
+      `<p><strong>Current status:</strong> ${escapeHtml(statusLabel)}</p>`,
+      `<p><a href="${workhubUrl}">Open WorkHub</a></p>`,
+    ].join(''),
+  })
+}
 
 // Vertex AI Imagen — uses the Cloud Function's built-in service account (ADC).
 // No extra API key needed; the service account just needs the "Vertex AI User" role in IAM.
@@ -374,7 +552,7 @@ export const requestWorkhubAccess = onCall({ region: 'us-central1', cors: true }
     hasWorkspaceInvite = !invitedWorkspaceSnap.empty
   }
 
-  const member = await admin.firestore().runTransaction(async (tx) => {
+  const { member, shouldNotifyAdmin } = await admin.firestore().runTransaction(async (tx) => {
     const snap = await tx.get(ref)
     const existing = snap.exists ? (snap.data() as Partial<WorkhubMemberRecord>) : null
     const isMasterEmail = !!email && email === masterEmailParam.value()
@@ -398,7 +576,7 @@ export const requestWorkhubAccess = onCall({ region: 'us-central1', cors: true }
       lastSeenAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true })
 
-    return mapWorkhubMember(uid, {
+    const member = mapWorkhubMember(uid, {
       ...existing,
       email,
       displayName,
@@ -407,7 +585,18 @@ export const requestWorkhubAccess = onCall({ region: 'us-central1', cors: true }
       role: nextRole,
       approvedBy: nextStatus === 'approved' ? (existing?.approvedBy ?? (isMasterEmail ? uid : 'workspace_invite')) : null,
     })
+    const shouldNotifyAdmin = member.status === 'pending' && !existing?.requestedAt
+    return { member, shouldNotifyAdmin }
   })
+
+  if (shouldNotifyAdmin) {
+    await notifyAdminAboutWorkhubAccessRequest({
+      uid,
+      email,
+      displayName,
+      hasWorkspaceInvite,
+    })
+  }
 
   return { member }
 })
@@ -445,6 +634,15 @@ export const setWorkhubMemberStatus = onCall<SetWorkhubMemberStatusRequest, Prom
       lastSeenAt: admin.firestore.FieldValue.serverTimestamp(),
     }
     await ref.set(payload, { merge: true })
+
+    const previousStatus = normalizeWorkhubStatus(existing.status)
+    if ((status === 'approved' || status === 'suspended') && status !== previousStatus) {
+      await notifyMemberAboutWorkhubStatusChange({
+        toEmail: existing.email || '',
+        displayName: existing.displayName || '',
+        status,
+      })
+    }
 
     return {
       member: mapWorkhubMember(uid, {

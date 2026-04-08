@@ -178,13 +178,13 @@ const QuickAddTaskRow = memo(function QuickAddTaskRow(props: {
                 <button
                   type="button"
                   className="workhub-quick-add-trigger workhub-quick-add-assignee-trigger"
-                  title={quickAddAssigneeLabel}
+                  aria-label={`Assignee: ${quickAddAssigneeLabel}`}
                   onClick={() => {
                     setAssigneeMenuOpen((current) => !current)
                     setPriorityMenuOpen(false)
                   }}
                 >
-                  <span className="workhub-assignee-badge" title={quickAddAssigneeLabel}>
+                  <span className="workhub-assignee-badge">
                     {quickAddAssigneeMember?.photoURL
                       ? <img src={quickAddAssigneeMember.photoURL} alt={quickAddAssigneeLabel} />
                       : <span className="workhub-assignee-fallback">👤</span>}
@@ -239,7 +239,7 @@ const QuickAddTaskRow = memo(function QuickAddTaskRow(props: {
                 <button
                   type="button"
                   className={`workhub-quick-add-trigger workhub-priority-indicator priority-${priority}`}
-                  title={`Priority: ${PRIORITY_LABELS[priority]}`}
+                  aria-label={`Priority: ${PRIORITY_LABELS[priority]}`}
                   onClick={() => {
                     setPriorityMenuOpen((current) => !current)
                     setAssigneeMenuOpen(false)

@@ -1,8 +1,8 @@
-import type { WorkhubHomeWidgetMetrics } from './homeWidgetTypes'
+import type { WorkhubHomeWidget, WorkhubHomeWidgetMetrics } from './homeWidgetTypes'
 import { asCount, asPercent } from './homeWidgetUtils'
 import type { WorkhubWorkspaceTemplateModule } from './types'
 
-function buildProjectsHomeWidgets(metrics: WorkhubHomeWidgetMetrics) {
+function buildProjectsHomeWidgets(metrics: WorkhubHomeWidgetMetrics): WorkhubHomeWidget[] {
   return [
     {
       id: 'projects-active',

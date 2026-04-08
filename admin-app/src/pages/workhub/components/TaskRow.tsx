@@ -117,7 +117,6 @@ const TaskRow = memo(function TaskRow({
               onClick={(event) => event.stopPropagation()}
               onDragStart={(event) => { event.stopPropagation(); callbacks.onDragStart(event, task.id, task.status) }}
               onDragEnd={() => callbacks.onDragEnd()}
-              title="Drag to reorder"
               aria-label="Drag to reorder"
             >
               ⋮⋮
@@ -155,11 +154,9 @@ const TaskRow = memo(function TaskRow({
                 <>
                   <strong
                     onDoubleClick={(event) => { event.stopPropagation(); callbacks.onTitleEditStart(task) }}
-                    title="Double-click to rename"
                   >
                     {normalizeTaskTitle(task.title || '') || 'Untitled task'}
                   </strong>
-                  <span className="workhub-title-edit-hint" aria-hidden="true">edit</span>
                 </>
               )}
             </div>
@@ -173,7 +170,6 @@ const TaskRow = memo(function TaskRow({
                 event.stopPropagation()
                 callbacks.onOpenStatusMenu(task.id)
               }}
-              title={currentTaskStatusLabel}
               aria-label={`Status: ${currentTaskStatusLabel}`}
             >
               <span className="status-dot" />
@@ -199,7 +195,7 @@ const TaskRow = memo(function TaskRow({
           <div className="workhub-task-col assignee">
             <div className="workhub-task-people">
               {showCreatorSeparately && (
-                <span className="workhub-assignee-badge workhub-task-creator-badge" title={`Created by ${creatorLabel}`}>
+                <span className="workhub-assignee-badge workhub-task-creator-badge">
                   {taskCreator!.photoURL
                     ? <img src={taskCreator!.photoURL} alt={creatorLabel} />
                     : <span className="workhub-assignee-initials">{getInitials(creatorLabel)}</span>}
@@ -208,7 +204,7 @@ const TaskRow = memo(function TaskRow({
               <button
                 type="button"
                 className={`workhub-assignee-badge workhub-task-assignee-btn${assigneeIsCreator ? ' is-creator' : ''}`}
-                title={assigneeLabel}
+                aria-label={`Assignee: ${assigneeLabel}`}
                 onClick={(event) => {
                   event.stopPropagation()
                   callbacks.onOpenAssigneeMenu(task.id)
@@ -248,7 +244,6 @@ const TaskRow = memo(function TaskRow({
             <button
               type="button"
               className={`workhub-priority-indicator priority-${task.priority}`}
-              title={`Priority: ${PRIORITY_LABELS[task.priority]}`}
               aria-label={`Priority: ${PRIORITY_LABELS[task.priority]}`}
               onClick={(event) => {
                 event.stopPropagation()
@@ -277,12 +272,12 @@ const TaskRow = memo(function TaskRow({
             <button
               className="workhub-checklist-toggle"
               onClick={(event) => { event.stopPropagation(); callbacks.onToggleChecklist(task.id) }}
-              title="Toggle checklist"
+              aria-label="Toggle checklist"
             >
               {checklistExpanded ? '▾' : '▸'} {checklist.length > 0 ? `${checklistDoneCount}/${checklist.length}` : 'List'}
             </button>
             {(checklistDetailsCount > 0 || checklistImagesCount > 0 || checklistLinksCount > 0) && (
-              <span className="workhub-checklist-meta" title={`Details: ${checklistDetailsCount} • Attachments: ${checklistImagesCount} • Links: ${checklistLinksCount}`}>
+              <span className="workhub-checklist-meta">
                 {checklistDetailsCount > 0 && <span>📝{checklistDetailsCount}</span>}
                 {checklistImagesCount > 0 && <span>📎{checklistImagesCount}</span>}
                 {checklistLinksCount > 0 && <span>🔗{checklistLinksCount}</span>}
@@ -293,7 +288,6 @@ const TaskRow = memo(function TaskRow({
             {taskAttachmentCount > 0 && (
               <span
                 className="workhub-task-attachment-indicator"
-                title={`${taskAttachmentCount} attachment${taskAttachmentCount === 1 ? '' : 's'}`}
                 aria-label={`${taskAttachmentCount} attachment${taskAttachmentCount === 1 ? '' : 's'}`}
               >
                 📎
@@ -311,7 +305,6 @@ const TaskRow = memo(function TaskRow({
                 event.stopPropagation()
                 callbacks.onOpenMoreMenu(task.id)
               }}
-              title="More"
               aria-label="More"
             >
               ⋯
@@ -373,7 +366,7 @@ const TaskRow = memo(function TaskRow({
                         type="button"
                         className="workhub-checklist-edit"
                         onClick={(e) => { e.stopPropagation(); callbacks.onChecklistItemEditStart(task.id, item.id, item.text, 'inline') }}
-                        title="Edit checklist item"
+                        aria-label="Edit checklist item"
                       >
                         ✏️
                       </button>
@@ -381,7 +374,7 @@ const TaskRow = memo(function TaskRow({
                         type="button"
                         className="workhub-checklist-remove"
                         onClick={(e) => { e.stopPropagation(); callbacks.onChecklistRemove(task, item.id) }}
-                        title="Delete checklist item"
+                        aria-label="Delete checklist item"
                       >
                         🗑️
                       </button>

@@ -143,3 +143,166 @@ h2 {
 p {
   color: #94a3b8;
 }
+
+/* ── Shared Document Standalone Page ───────────────────────────────────── */
+.shared-doc-shell {
+  min-height: 100vh;
+  background: #f7f9fd;
+  display: flex;
+  flex-direction: column;
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px;
+  color: #2a3d5c;
+}
+.shared-doc-header {
+  background: #fff;
+  border-bottom: 1px solid #e0e8f6;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.shared-doc-header-left { display: flex; align-items: center; gap: 10px; }
+.shared-doc-brand { font-weight: 700; font-size: 0.8rem; color: #1e3060; letter-spacing: 0.02em; }
+.shared-doc-lock-badge { font-size: 0.7rem; color: #b05a00; background: #fff4e0; border: 1px solid #f3d09e; border-radius: 5px; padding: 2px 7px; }
+.shared-doc-header-right { display: flex; align-items: center; gap: 10px; }
+.shared-doc-save-msg { font-size: 0.72rem; color: #3a7e4f; }
+.shared-doc-save-btn {
+  padding: 6px 16px;
+  border-radius: 7px;
+  background: #2a5ad9;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 600;
+  transition: background 0.15s;
+}
+.shared-doc-save-btn:hover:not(:disabled) { background: #1d48b8; }
+.shared-doc-save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.shared-doc-body {
+  flex: 1;
+  max-width: 760px;
+  width: 100%;
+  margin: 0 auto;
+  padding: clamp(16px, 4vw, 44px) clamp(16px, 5vw, 48px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.shared-doc-meta {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 0.67rem;
+  color: #8da0bf;
+}
+.shared-doc-title-input {
+  width: 100%;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #1a2d50;
+  border: none;
+  border-bottom: 2px solid #dce8f8;
+  background: transparent;
+  padding: 4px 0 8px;
+  outline: none;
+  transition: border-color 0.18s;
+}
+.shared-doc-title-input:focus { border-bottom-color: #3b7ee6; }
+.shared-doc-title-input:disabled { color: #617392; cursor: not-allowed; background: transparent; }
+
+.shared-doc-tiny-editor {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.shared-doc-tiny-editor .tox {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100% !important;
+  border: 1px solid #dce8f8;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.shared-doc-tiny-editor .tox.tox-tinymce--focused {
+  border-color: #dce8f8;
+  box-shadow: none;
+  outline: none;
+}
+.shared-doc-tiny-editor .tox.tox-edit-focus .tox-edit-area::before {
+  opacity: 0 !important;
+  border-color: transparent !important;
+}
+.shared-doc-tiny-editor .tox .tox-editor-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.shared-doc-tiny-editor .tox .tox-edit-area {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.shared-doc-tiny-editor .tox .tox-edit-area__iframe {
+  height: 100% !important;
+  display: block;
+  background: #fff;
+}
+.shared-doc-tiny-editor .tox .tox-toolbar__primary {
+  background: #f8fbff;
+  border-bottom: 1px solid #e3ecfb;
+}
+.shared-doc-tiny-editor .tox .tox-toolbar,
+.shared-doc-tiny-editor .tox .tox-toolbar__overflow,
+.shared-doc-tiny-editor .tox .tox-toolbar__primary {
+  padding: 0 2px;
+}
+.shared-doc-tiny-editor .tox .tox-toolbar__group {
+  padding: 0 1px;
+}
+.shared-doc-tiny-editor .tox .tox-tbtn {
+  min-width: 20px;
+  min-height: 20px !important;
+  padding: 0 1px;
+}
+.shared-doc-tiny-editor .tox .tox-mbtn,
+.shared-doc-tiny-editor .tox .tox-listboxfield .tox-listbox--select {
+  min-height: 26px !important;
+  padding: 0 6px;
+}
+.shared-doc-tiny-editor .tox .tox-mbtn__select-label,
+.shared-doc-tiny-editor .tox .tox-tbtn__select-label,
+.shared-doc-tiny-editor .tox .tox-collection__item-label {
+  font-size: 0.74rem;
+}
+.shared-doc-tiny-editor .tox .tox-collection__item {
+  min-height: 28px;
+}
+.shared-doc-tiny-editor.is-locked .tox {
+  border-color: #d3dff1;
+  background: #f7f9fc;
+}
+.shared-doc-tiny-editor.is-locked .tox .tox-edit-area__iframe {
+  background: #f7f9fc;
+}
+
+.shared-doc-loading, .shared-doc-not-found {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #617392;
+  font-size: 0.85rem;
+  padding: 40px;
+}
+.shared-doc-not-found h1 { font-size: 1.2rem; color: #2a3d5c; margin: 0; }
+.shared-doc-not-found p { margin: 0; color: #7a8fb2; }

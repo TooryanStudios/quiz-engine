@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { WorkhubClient, WorkhubMember, WorkhubProjectPriority, WorkhubProjectType, WorkhubTaskPriority, WorkhubTaskStatus, WorkhubTaskStatusConfig, WorkhubVisibility } from '../../../lib/workhubRepo'
-import { PRIORITY_LABELS, PROJECT_PRIORITY_OPTIONS, PROJECT_TYPE_OPTIONS } from '../constants'
+import { PRIORITY_LABELS, type WorkhubProjectColorMeaning } from '../constants'
 
 export function CreateDialog(props: {
   isOpen: boolean
@@ -31,6 +31,7 @@ export function CreateDialog(props: {
   taskDueDate: string
   taskStatusOptions: WorkhubTaskStatusConfig[]
   projectColorOptions: string[]
+  projectColorMeanings: WorkhubProjectColorMeaning[]
   projectOptions: Array<{ id: string; name: string; depth: number }>
   approvedMembers: WorkhubMember[]
   taskAssignableMembers: WorkhubMember[]
@@ -65,9 +66,14 @@ export function CreateDialog(props: {
 }) {
   const workspaceTaskStatuses = props.taskStatusOptions
   const statusLabels = Object.fromEntries(workspaceTaskStatuses.map((s) => [s.id, s.label])) as Record<WorkhubTaskStatus, string>
+  const colorMeaningByColor = new Map(props.projectColorMeanings.map((item) => [item.color.toLowerCase(), item]))
+  const selectedProjectColorMeaning = colorMeaningByColor.get(props.projectColor.toLowerCase()) || {
+    color: props.projectColor,
+    label: 'Custom color',
+    hint: `Custom meaning (${props.projectColor.toUpperCase()}).`,
+  }
   const [projectAdvancedOpen, setProjectAdvancedOpen] = useState(false)
   const [taskAdvancedOpen, setTaskAdvancedOpen] = useState(false)
-  const [quickClientName, setQuickClientName] = useState('')
   if (!props.isOpen) return null
 
   return (
@@ -83,7 +89,7 @@ export function CreateDialog(props: {
         <div className="workhub-switcher">
           {(['project', 'task'] as const).map((type) => (
             <button key={type} className={`workhub-switcher-btn${props.createDialogType === type ? ' is-active' : ''}`} onClick={() => props.onDialogTypeChange(type)}>
-              {type === 'project' ? '📁 Project' : '✅ Task'}
+              {type === 'project' ? '📁 Folder' : '✅ Task'}
             </button>
           ))}
         </div>
@@ -97,106 +103,16 @@ export function CreateDialog(props: {
             }}
           >
             <label className="workhub-icon-field">
-              <span>📁 Project name</span>
-              <input name="projectName" value={props.projectName} onChange={(event) => props.onProjectNameChange(event.target.value)} placeholder="Release project" />
+              <span>📁 Folder name</span>
+              <input name="projectName" value={props.projectName} onChange={(event) => props.onProjectNameChange(event.target.value)} placeholder="New folder" />
             </label>
             <label className="workhub-icon-field">
-              <span>🧭 Parent project/category</span>
+              <span>🧭 Parent folder/category</span>
               <select name="projectParent" value={props.projectParentId} onChange={(event) => props.onProjectParentIdChange(event.target.value)}>
-                <option value="">Top-level category</option>
+                <option value="">Top-level folder</option>
                 {props.projectOptions.map((item) => <option key={item.id} value={item.id}>{`${'— '.repeat(item.depth)}${item.name}`}</option>)}
               </select>
             </label>
-            <label className="workhub-icon-field">
-              <span>🏷️ Project type</span>
-              <select
-                name="projectType"
-                value={props.projectType}
-                onChange={(event) => props.onProjectTypeChange(event.target.value as WorkhubProjectType)}
-              >
-                {PROJECT_TYPE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-            </label>
-            <div className="workhub-field-grid two compact workhub-create-date-grid">
-              <label className="workhub-icon-field">
-                <span>🗓️ Project starts</span>
-                <input
-                  name="projectStartDate"
-                  type="date"
-                  value={props.projectStartDate}
-                  onChange={(event) => props.onProjectStartDateChange(event.target.value)}
-                />
-              </label>
-              <label className="workhub-icon-field">
-                <span>{props.projectType === 'tender' ? '📅 Submission date' : '🏁 Final submission deadline'}</span>
-                <input
-                  name="projectDeadline"
-                  type="date"
-                  value={props.projectDeadline}
-                  onChange={(event) => props.onProjectDeadlineChange(event.target.value)}
-                />
-              </label>
-            </div>
-            {props.projectType === 'tender' && (
-              <label className="workhub-icon-field">
-                <span>⏰ Submission time</span>
-                <input
-                  name="projectSubmissionTime"
-                  type="time"
-                  value={props.projectSubmissionTime}
-                  onChange={(event) => props.onProjectSubmissionTimeChange(event.target.value)}
-                />
-              </label>
-            )}
-            <label className="workhub-icon-field">
-              <span>🚩 Project priority</span>
-              <select
-                name="projectPriority"
-                value={props.projectPriority}
-                onChange={(event) => props.onProjectPriorityChange(event.target.value as WorkhubProjectPriority)}
-              >
-                {PROJECT_PRIORITY_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-            </label>
-            <label className="workhub-icon-field">
-              <span>🏢 Client</span>
-              <select
-                name="projectClient"
-                value={props.projectClientId}
-                onChange={(event) => props.onProjectClientIdChange(event.target.value)}
-              >
-                <option value="">No client assigned</option>
-                {props.clientOptions.map((client) => (
-                  <option key={client.id} value={client.id}>{client.name}</option>
-                ))}
-              </select>
-            </label>
-            <div className="workhub-inline-row workhub-client-quick-add">
-              <input
-                name="quickClientName"
-                value={quickClientName}
-                onChange={(event) => setQuickClientName(event.target.value)}
-                placeholder="Client not listed? Add new client"
-              />
-              <button
-                type="button"
-                className="workhub-ghost-btn"
-                disabled={!quickClientName.trim() || props.busyKey === 'client:create'}
-                onClick={() => {
-                  void props.onCreateClientInline(quickClientName).then((clientId) => {
-                    if (!clientId) return
-                    props.onProjectClientIdChange(clientId)
-                    setQuickClientName('')
-                  })
-                }}
-              >
-                {props.busyKey === 'client:create' ? 'Adding…' : 'Add client'}
-              </button>
-            </div>
             <button type="button" className="workhub-collapse-toggle" onClick={() => setProjectAdvancedOpen((current) => !current)}>
               {projectAdvancedOpen ? '▾ Hide advanced' : '▸ Show advanced'}
             </button>
@@ -214,14 +130,30 @@ export function CreateDialog(props: {
                   </select>
                 </label>
                 <label className="workhub-icon-field">
-                  <span>🎨 Color</span>
+                  <span>🎨 Status color</span>
                   <div className="workhub-inline-row">
                     <input name="projectColor" value={props.projectColor} onChange={(event) => props.onProjectColorChange(event.target.value)} placeholder="#6d5efc" />
                     <div className="workhub-color-pills">
-                      {props.projectColorOptions.map((color) => (
-                        <button key={color} type="button" className={`workhub-color-pill${props.projectColor === color ? ' active' : ''}`} style={{ background: color }} onClick={() => props.onProjectColorChange(color)} />
-                      ))}
+                      {props.projectColorOptions.map((color) => {
+                        const colorMeaning = colorMeaningByColor.get(color.toLowerCase())
+                        const colorLabel = colorMeaning ? `${colorMeaning.label}: ${colorMeaning.hint}` : color
+                        return (
+                          <button
+                            key={color}
+                            type="button"
+                            className={`workhub-color-pill${props.projectColor === color ? ' active' : ''}`}
+                            style={{ background: color }}
+                            onClick={() => props.onProjectColorChange(color)}
+                            title={colorLabel}
+                            aria-label={colorLabel}
+                          />
+                        )
+                      })}
                     </div>
+                  </div>
+                  <div className="workhub-color-meaning-note">
+                    <strong>{selectedProjectColorMeaning.label}</strong>
+                    <span>{selectedProjectColorMeaning.hint}</span>
                   </div>
                 </label>
                 <div className="workhub-switcher compact-switcher">
@@ -264,10 +196,10 @@ export function CreateDialog(props: {
                   disabled={!props.canCreateProject || props.busyKey === 'project'}
                   onClick={props.onCreateProjectKeepOpen}
                 >
-                  {props.busyKey === 'project' ? 'Creating…' : 'Create and keep open'}
+                  {props.busyKey === 'project' ? 'Creating…' : '📁 Create folder and keep open'}
                 </button>
                 <button type="submit" className="workhub-primary-btn" disabled={!props.canCreateProject || props.busyKey === 'project'}>
-                  {props.busyKey === 'project' ? 'Creating…' : 'Create project'}
+                  {props.busyKey === 'project' ? 'Creating…' : '📁 Create folder'}
                 </button>
               </div>
             </div>
@@ -337,7 +269,7 @@ export function CreateDialog(props: {
               </div>
             )}
             <button type="submit" className="workhub-primary-btn" disabled={!props.canCreateTask || props.busyKey === 'task'}>
-              {props.busyKey === 'task' ? 'Creating…' : 'Create task'}
+              {props.busyKey === 'task' ? 'Creating…' : '✅ Create task'}
             </button>
           </form>
         )}

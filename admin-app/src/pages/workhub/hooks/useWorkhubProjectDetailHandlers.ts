@@ -8,18 +8,34 @@ import {
   createWorkhubNotifications,
   updateWorkhubProject,
   type WorkhubProject,
+  type WorkhubProjectIntent,
   type WorkhubProjectType,
 } from '../../../lib/workhubRepo'
-import { isValidHexColor, normalizeMemberUids } from '../projectUtils'
+import { isStartAfterEnd, isValidHexColor, normalizeMemberUids } from '../projectUtils'
+
+function parseMonetaryAmountInput(value: string): number | null {
+  const normalized = value.trim()
+  if (!normalized) return 0
+  const parsed = Number(normalized)
+  if (!Number.isFinite(parsed) || parsed < 0) return null
+  return Math.round(parsed * 100) / 100
+}
+
+function normalizeCurrencyInput(value: string): string {
+  const normalized = value.trim().toUpperCase().replace(/[^A-Z]/g, '')
+  return (normalized || 'USD').slice(0, 3)
+}
 
 interface UseWorkhubProjectDetailHandlersParams {
   currentUserUid: string
   selectedWorkspaceId: string
   selectedWorkspaceAccessMemberUids: string[]
   selectedProject: WorkhubProject | null
+  selectedProjectIntent: WorkhubProjectIntent
   canEditSelectedProject: boolean
   selectedProjectNameDraft: string
   selectedProjectDescriptionDraft: string
+  resolvedProjectDescriptionDraft?: string
   setSelectedProjectDescriptionDraft: Dispatch<SetStateAction<string>>
   selectedProjectColorDraft: string
   setSelectedProjectColorDraft: Dispatch<SetStateAction<string>>
@@ -27,6 +43,8 @@ interface UseWorkhubProjectDetailHandlersParams {
   selectedProjectDeadlineDraft: string
   selectedProjectSubmissionTimeDraft: string
   selectedProjectTypeDraft: WorkhubProjectType
+  selectedProjectValueAmountDraft: string
+  selectedProjectValueCurrencyDraft: string
   setSelectedProjectColorMenuOpen: Dispatch<SetStateAction<boolean>>
   setBusyKey: Dispatch<SetStateAction<string>>
   showToast: (payload: { message: string; type?: 'success' | 'error' | 'info' | 'warning'; durationMs?: number }) => void
@@ -37,9 +55,11 @@ export function useWorkhubProjectDetailHandlers({
   selectedWorkspaceId,
   selectedWorkspaceAccessMemberUids,
   selectedProject,
+  selectedProjectIntent,
   canEditSelectedProject,
   selectedProjectNameDraft,
   selectedProjectDescriptionDraft,
+  resolvedProjectDescriptionDraft,
   setSelectedProjectDescriptionDraft,
   selectedProjectColorDraft,
   setSelectedProjectColorDraft,
@@ -47,6 +67,8 @@ export function useWorkhubProjectDetailHandlers({
   selectedProjectDeadlineDraft,
   selectedProjectSubmissionTimeDraft,
   selectedProjectTypeDraft,
+  selectedProjectValueAmountDraft,
+  selectedProjectValueCurrencyDraft,
   setSelectedProjectColorMenuOpen,
   setBusyKey,
   showToast,
@@ -59,6 +81,7 @@ export function useWorkhubProjectDetailHandlers({
     }
 
     const nextName = selectedProjectNameDraft.trim()
+    const nextDescription = (resolvedProjectDescriptionDraft ?? selectedProjectDescriptionDraft).trim()
     if (!nextName) {
       showToast({ type: 'error', message: 'Project name is required.' })
       return
@@ -67,25 +90,45 @@ export function useWorkhubProjectDetailHandlers({
       showToast({ type: 'error', message: 'Pick a valid project color.' })
       return
     }
-    if (selectedProjectTypeDraft === 'tender' && !selectedProjectSubmissionTimeDraft.trim()) {
+    const isFolderContainer = selectedProjectIntent === 'project'
+    if (!isFolderContainer && selectedProjectTypeDraft === 'tender' && !selectedProjectSubmissionTimeDraft.trim()) {
       showToast({ type: 'error', message: 'Submission time is required for tender projects.' })
       return
     }
-    if (selectedProjectStartDateDraft && selectedProjectDeadlineDraft && selectedProjectStartDateDraft > selectedProjectDeadlineDraft) {
+    if (
+      !isFolderContainer
+      && selectedProjectStartDateDraft
+      && selectedProjectDeadlineDraft
+      && isStartAfterEnd(selectedProjectStartDateDraft, selectedProjectDeadlineDraft)
+    ) {
       showToast({ type: 'error', message: 'Deadline cannot be earlier than the start date.' })
       return
+    }
+    let nextValueAmount = 0
+    let nextValueCurrency = normalizeCurrencyInput(selectedProjectValueCurrencyDraft)
+    if (!isFolderContainer) {
+      const parsedValueAmount = parseMonetaryAmountInput(selectedProjectValueAmountDraft)
+      if (parsedValueAmount === null) {
+        showToast({ type: 'error', message: 'Value amount must be zero or a positive number.' })
+        return
+      }
+      nextValueAmount = parsedValueAmount
     }
 
     setBusyKey(`project-detail:${selectedProject.id}`)
     try {
       await updateWorkhubProject(selectedProject.id, {
         name: nextName,
-        description: selectedProjectDescriptionDraft.trim(),
+        description: nextDescription,
         color: selectedProjectColorDraft,
-        projectStartDate: selectedProjectStartDateDraft,
-        projectDeadline: selectedProjectDeadlineDraft,
-        submissionTime: selectedProjectTypeDraft === 'tender' ? selectedProjectSubmissionTimeDraft.trim() : '',
-        projectType: selectedProjectTypeDraft,
+        ...(isFolderContainer ? {} : {
+          projectStartDate: selectedProjectStartDateDraft,
+          projectDeadline: selectedProjectDeadlineDraft,
+          submissionTime: selectedProjectTypeDraft === 'tender' ? selectedProjectSubmissionTimeDraft.trim() : '',
+          projectType: selectedProjectTypeDraft,
+          valueAmount: nextValueAmount,
+          valueCurrency: nextValueCurrency,
+        }),
       })
       await createWorkhubActivity({
         workspaceId: selectedWorkspaceId,
@@ -119,6 +162,7 @@ export function useWorkhubProjectDetailHandlers({
     canEditSelectedProject,
     currentUserUid,
     selectedProject,
+    selectedProjectIntent,
     selectedProjectColorDraft,
     selectedProjectDeadlineDraft,
     selectedProjectDescriptionDraft,
@@ -126,6 +170,9 @@ export function useWorkhubProjectDetailHandlers({
     selectedProjectStartDateDraft,
     selectedProjectSubmissionTimeDraft,
     selectedProjectTypeDraft,
+    selectedProjectValueAmountDraft,
+    selectedProjectValueCurrencyDraft,
+    resolvedProjectDescriptionDraft,
     selectedWorkspaceAccessMemberUids,
     selectedWorkspaceId,
     setBusyKey,
@@ -134,7 +181,7 @@ export function useWorkhubProjectDetailHandlers({
 
   const handleSelectedProjectDescriptionBlur = useCallback(async () => {
     if (!selectedProject || !canEditSelectedProject) return
-    const nextDescription = selectedProjectDescriptionDraft.trim()
+    const nextDescription = (resolvedProjectDescriptionDraft ?? selectedProjectDescriptionDraft).trim()
     if (nextDescription === (selectedProject.description || '')) return
     setBusyKey(`project-detail:${selectedProject.id}`)
     try {
@@ -148,6 +195,7 @@ export function useWorkhubProjectDetailHandlers({
     }
   }, [
     canEditSelectedProject,
+    resolvedProjectDescriptionDraft,
     selectedProject,
     selectedProjectDescriptionDraft,
     setBusyKey,

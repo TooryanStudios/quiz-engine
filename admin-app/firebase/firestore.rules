@@ -160,6 +160,20 @@ service cloud.firestore {
       allow create, update, delete: if canAccessWorkhub();
     }
 
+    match /workhub_documents/{documentId} {
+      // Public read access when a valid share token is presented
+      allow read: if (resource.data.shareEnabled == true && resource.data.shareToken != null && resource.data.shareToken != '')
+        || isPrivilegedWorkhubMember()
+        || (canAccessWorkhub() && isVisibleWorkhubEntity(resource.data));
+      // Public write access when sharing is enabled (allows body/title edits via shared link)
+      allow update: if (resource.data.shareEnabled == true && resource.data.shareToken != null
+        && request.resource.data.shareToken == resource.data.shareToken
+        && request.resource.data.workspaceId == resource.data.workspaceId
+        && request.resource.data.isLocked != true)
+        || canAccessWorkhub();
+      allow create, delete: if canAccessWorkhub();
+    }
+
     match /workhub_tasks/{taskId} {
       allow read: if isPrivilegedWorkhubMember() || (canAccessWorkhub() && isVisibleWorkhubEntity(resource.data));
       allow create, update, delete: if canAccessWorkhub();

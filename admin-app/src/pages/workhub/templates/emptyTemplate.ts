@@ -1,8 +1,8 @@
-import type { WorkhubHomeWidgetMetrics } from './homeWidgetTypes'
+import type { WorkhubHomeWidget, WorkhubHomeWidgetMetrics } from './homeWidgetTypes'
 import { asCount } from './homeWidgetUtils'
 import type { WorkhubWorkspaceTemplateModule } from './types'
 
-function buildEmptyHomeWidgets(metrics: WorkhubHomeWidgetMetrics) {
+function buildEmptyHomeWidgets(metrics: WorkhubHomeWidgetMetrics): WorkhubHomeWidget[] {
   return [
     {
       id: 'empty-tasks',
@@ -30,7 +30,7 @@ function buildEmptyHomeWidgets(metrics: WorkhubHomeWidgetMetrics) {
       title: 'Workspace readiness',
       value: metrics.totalTasks === 0 && metrics.projectsCount === 0 ? 'Ready' : 'In setup',
       detail: 'Use quick-add actions to scaffold your starting workflow.',
-      tone: (metrics.totalTasks === 0 && metrics.projectsCount === 0 ? 'good' : 'warn') as const,
+      tone: metrics.totalTasks === 0 && metrics.projectsCount === 0 ? 'good' : 'warn',
     },
   ]
 }

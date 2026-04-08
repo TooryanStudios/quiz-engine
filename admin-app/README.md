@@ -27,7 +27,23 @@ VITE_STRIPE_TEST_PRICE_ID=
 VITE_API_BASE_URL=https://quizengine.onrender.com
 VITE_LOCAL_GAME_URL=http://localhost:3001
 VITE_PAYMENTS_MODE=mock
+VITE_TINYMCE_DEPLOYMENT_MODE=self-hosted
+VITE_TINYMCE_API_KEY=
+VITE_TINYMCE_SCRIPT_SRC=
 ```
+
+## TinyMCE setup (free by default)
+
+The editor is configured to use **self-hosted TinyMCE** by default, which is free under GPL and does not require a Tiny Cloud API key.
+
+- `VITE_TINYMCE_DEPLOYMENT_MODE=self-hosted`:
+	Uses local `/public/tinymce` assets.
+- `VITE_TINYMCE_DEPLOYMENT_MODE=cloud`:
+	Uses Tiny Cloud and requires `VITE_TINYMCE_API_KEY`.
+- `VITE_TINYMCE_SCRIPT_SRC` (optional):
+	Override script source explicitly for advanced hosting/CDN setups.
+
+TinyMCE assets are synced from `node_modules/tinymce` to `public/tinymce` automatically before `dev` and `build`.
 
 ## Local gameplay preview
 
@@ -41,6 +57,29 @@ When the admin app runs on localhost, launch/share links will automatically targ
 
 - Host preview on localhost uses: `http://localhost:3001/?quiz=<id>&mode=host&theme=<themeId>`
 - Player preview on localhost uses: `http://localhost:3001/?quiz=<id>&theme=<themeId>`
+
+## WorkHub email notifications (Cloud Functions)
+
+WorkHub access request and approval/suspension notifications are sent from Firebase Cloud Functions using SMTP.
+
+Set these values in `functions/.env` (or with your deployed function params):
+
+```env
+EMAIL_NOTIFICATIONS_ENABLED=true
+SMTP_HOST=smtp.your-provider.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=your-smtp-user
+SMTP_PASS=your-smtp-password
+SMTP_FROM="QYan WorkHub <no-reply@your-domain.com>"
+SMTP_REPLY_TO=support@your-domain.com
+```
+
+Notes:
+- `EMAIL_NOTIFICATIONS_ENABLED` must be `true` to send emails.
+- `MASTER_EMAIL` receives new pending WorkHub access request notifications.
+- Users receive email when their WorkHub status changes to `approved` or `suspended`.
+- Notification send failures are logged, but they do not block WorkHub actions.
 
 ## Firestore data model
 

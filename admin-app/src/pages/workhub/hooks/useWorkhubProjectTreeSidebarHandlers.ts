@@ -13,11 +13,13 @@ interface UseWorkhubProjectTreeSidebarHandlersParams {
   setProjectAccessDialogId: Dispatch<SetStateAction<string>>
   setSelectedProjectId: Dispatch<SetStateAction<string>>
   setSelectedNoteProjectId: Dispatch<SetStateAction<string>>
+  setSelectedDocumentId: Dispatch<SetStateAction<string>>
   setActiveSection: (section: WorkhubActiveSection) => void
   setSelectedTaskId: Dispatch<SetStateAction<string>>
   setExpandedProjectIds: Dispatch<SetStateAction<string[]>>
   setSidebarCollapsed: Dispatch<SetStateAction<boolean>>
   setProjectsGroupExpanded: Dispatch<SetStateAction<boolean>>
+  resolveProjectMainPanelSection?: (projectId: string) => 'tasks' | 'dashboard'
 }
 
 export function useWorkhubProjectTreeSidebarHandlers({
@@ -26,11 +28,13 @@ export function useWorkhubProjectTreeSidebarHandlers({
   setProjectAccessDialogId,
   setSelectedProjectId,
   setSelectedNoteProjectId,
+  setSelectedDocumentId,
   setActiveSection,
   setSelectedTaskId,
   setExpandedProjectIds,
   setSidebarCollapsed,
   setProjectsGroupExpanded,
+  resolveProjectMainPanelSection,
 }: UseWorkhubProjectTreeSidebarHandlersParams) {
   const handleProjectActionMenu = useCallback((projectId: string, event: ReactMouseEvent<HTMLElement>) => {
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
@@ -49,16 +53,18 @@ export function useWorkhubProjectTreeSidebarHandlers({
   const handleSelectProject = useCallback((projectId: string) => {
     setSelectedProjectId(projectId)
     setSelectedNoteProjectId(projectId)
-    setActiveSection('tasks')
+    setSelectedDocumentId('')
+    setActiveSection(resolveProjectMainPanelSection ? resolveProjectMainPanelSection(projectId) : 'tasks')
     setSelectedTaskId('')
-  }, [setActiveSection, setSelectedNoteProjectId, setSelectedProjectId, setSelectedTaskId])
+  }, [resolveProjectMainPanelSection, setActiveSection, setSelectedDocumentId, setSelectedNoteProjectId, setSelectedProjectId, setSelectedTaskId])
 
   const openWorkspaceOverview = useCallback(() => {
     setSelectedProjectId('all')
     setSelectedNoteProjectId('')
+    setSelectedDocumentId('')
     setActiveSection('dashboard')
     setSelectedTaskId('')
-  }, [setActiveSection, setSelectedNoteProjectId, setSelectedProjectId, setSelectedTaskId])
+  }, [setActiveSection, setSelectedDocumentId, setSelectedNoteProjectId, setSelectedProjectId, setSelectedTaskId])
 
   const toggleProjectExpansion = useCallback((projectId: string) => {
     setExpandedProjectIds((current) => current.includes(projectId)

@@ -1,4 +1,5 @@
 import type { MouseEvent } from 'react'
+import type { WorkhubDocument, WorkhubProjectIntent } from '../../../lib/workhubRepo'
 import type { WorkhubProjectTreeNode } from '../projectUtils'
 
 interface ProjectTreeNodesProps {
@@ -6,8 +7,13 @@ interface ProjectTreeNodesProps {
   selectedProjectId: string
   expandedProjectIds: string[]
   directTaskCountByProjectId: Record<string, number>
+  projectIntentById: Record<string, WorkhubProjectIntent>
+  projectIntentIconById: Record<string, string>
+  selectedDocumentId: string
+  documentsByProjectId: Record<string, WorkhubDocument[]>
   isPrivilegedMember: boolean
   onSelectProject: (projectId: string) => void
+  onSelectDocument: (documentId: string) => void
   onToggleExpansion: (projectId: string) => void
   onOpenActionMenu: (projectId: string, event: MouseEvent<HTMLElement>) => void
   onOpenSettings: (projectId: string) => void
@@ -19,8 +25,13 @@ export function ProjectTreeNodes({
   selectedProjectId,
   expandedProjectIds,
   directTaskCountByProjectId,
+  projectIntentById,
+  projectIntentIconById,
+  selectedDocumentId,
+  documentsByProjectId,
   isPrivilegedMember,
   onSelectProject,
+  onSelectDocument,
   onToggleExpansion,
   onOpenActionMenu,
   onOpenSettings,
@@ -31,12 +42,19 @@ export function ProjectTreeNodes({
       {nodes.map((node) => {
         const isExpanded = expandedProjectIds.includes(node.id)
         const childCount = node.children.length
+        const nodeDocuments = documentsByProjectId[node.id] || []
+        const documentCount = nodeDocuments.length
+        const hasExpandableChildren = childCount > 0 || documentCount > 0
         const directTaskCount = directTaskCountByProjectId[node.id] || 0
+        const effectiveIntent = projectIntentById[node.id] || 'project'
+        const intentIcon = effectiveIntent === 'project'
+          ? (hasExpandableChildren ? (isExpanded ? '📂' : '📁') : (projectIntentIconById[node.id] || '📁'))
+          : (projectIntentIconById[node.id] || '📁')
 
         return (
           <div key={node.id} className={`workhub-tree-node-wrap${depth === 0 ? ' is-root' : ' is-nested'}`}>
             <div
-              className={`workhub-tree-node${selectedProjectId === node.id ? ' is-active' : ''}${depth === 0 && childCount === 0 ? ' is-root-leaf-node' : ''}`}
+              className={`workhub-tree-node${selectedProjectId === node.id && !selectedDocumentId ? ' is-active' : ''}${depth === 0 && !hasExpandableChildren ? ' is-root-leaf-node' : ''}`}
               style={{ paddingLeft: `${10 + (depth * 14)}px` }}
               role="button"
               tabIndex={0}
@@ -50,12 +68,12 @@ export function ProjectTreeNodes({
               onDoubleClick={(event) => {
                 const target = event.target as HTMLElement
                 if (target.closest('.workhub-tree-toggle, .workhub-tree-node-actions')) return
-                if (childCount > 0) {
+                if (hasExpandableChildren) {
                   onToggleExpansion(node.id)
                 }
               }}
             >
-              {childCount > 0 ? (
+              {hasExpandableChildren ? (
                 <button
                   type="button"
                   className="workhub-tree-toggle"
@@ -84,9 +102,16 @@ export function ProjectTreeNodes({
               <div className="workhub-tree-node-main">
                 <span className={`workhub-project-dot${depth === 0 ? ' is-root' : ''}`} style={{ background: node.color }} />
                 <span className="workhub-tree-node-text">
-                  <span className="workhub-tree-node-title" title={node.name}>{node.name}</span>
+                  <span className="workhub-tree-node-title">
+                    <span className="workhub-tree-node-intent-icon" aria-hidden="true">{intentIcon}</span>
+                    <span className="workhub-tree-node-title-text">{node.name}</span>
+                  </span>
                   <span className="workhub-tree-node-meta">
-                    ({childCount > 0 ? `${childCount} sub-project${childCount > 1 ? 's' : ''}` : `${directTaskCount} task${directTaskCount === 1 ? '' : 's'}`})
+                    ({childCount > 0
+                      ? `${childCount} sub-project${childCount > 1 ? 's' : ''}${documentCount > 0 ? ` • ${documentCount} doc${documentCount === 1 ? '' : 's'}` : ''}`
+                      : documentCount > 0
+                        ? `${documentCount} doc${documentCount === 1 ? '' : 's'}`
+                        : `${directTaskCount} task${directTaskCount === 1 ? '' : 's'}`})
                   </span>
                 </span>
               </div>
@@ -123,12 +148,36 @@ export function ProjectTreeNodes({
                   selectedProjectId={selectedProjectId}
                   expandedProjectIds={expandedProjectIds}
                   directTaskCountByProjectId={directTaskCountByProjectId}
+                  projectIntentById={projectIntentById}
+                  projectIntentIconById={projectIntentIconById}
+                  selectedDocumentId={selectedDocumentId}
+                  documentsByProjectId={documentsByProjectId}
                   isPrivilegedMember={isPrivilegedMember}
                   onSelectProject={onSelectProject}
+                  onSelectDocument={onSelectDocument}
                   onToggleExpansion={onToggleExpansion}
                   onOpenActionMenu={onOpenActionMenu}
                   onOpenSettings={onOpenSettings}
                 />
+              </div>
+            )}
+            {documentCount > 0 && isExpanded && (
+              <div className="workhub-tree-doc-sublist" style={{ marginLeft: `${36 + (depth * 14)}px` }}>
+                {nodeDocuments.map((document) => (
+                  <button
+                    key={document.id}
+                    type="button"
+                    className={`workhub-tree-doc-subitem${selectedDocumentId === document.id ? ' is-active' : ''}`}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onSelectDocument(document.id)
+                    }}
+                    title={document.title}
+                  >
+                    <span className="workhub-tree-doc-subitem-title">📝 {document.title}</span>
+                    {document.isLocked && <span className="workhub-tree-doc-lock-badge" title="Locked">🔒</span>}
+                  </button>
+                ))}
               </div>
             )}
           </div>

@@ -1,4 +1,4 @@
-import { addDoc, collection, deleteDoc, doc, limit, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
+import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, limit, onSnapshot, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { db, functions } from './firebase'
 
@@ -9,11 +9,27 @@ export type WorkhubTaskStatus = string
 export type WorkhubTaskPriority = 'low' | 'medium' | 'high' | 'urgent'
 export type WorkhubProjectType = 'tender' | 'lead' | 'direct_award' | 'other'
 export type WorkhubProjectPriority = 'low' | 'medium' | 'high' | 'critical'
+export type WorkhubProjectIntent =
+  | 'project'
+  | 'proposal'
+  | 'lead'
+  | 'finance_invoice_stream'
+  | 'finance_payment_cycle'
+  | 'marketing_campaign'
+  | 'marketing_content_stream'
+  | 'hr_requisition'
+  | 'hr_onboarding_track'
 
 export interface WorkhubTaskStatusConfig {
   id: string
   label: string
   color: string
+}
+
+export interface WorkhubProjectColorMeaningConfig {
+  color: string
+  label: string
+  hint: string
 }
 
 export interface WorkhubMember {
@@ -36,6 +52,7 @@ export interface WorkhubWorkspace {
   type: 'technical' | 'hr' | 'finance'
   templateId?: string
   taskStatuses?: WorkhubTaskStatusConfig[]
+  projectColorMeanings?: WorkhubProjectColorMeaningConfig[]
   accessMemberUids?: string[]
   memberAccessLevels?: Record<string, 'full' | 'custom'>
   invitedEmails?: string[]
@@ -47,6 +64,10 @@ export interface WorkhubProject {
   id: string
   workspaceId: string
   parentProjectId?: string | null
+  intent?: WorkhubProjectIntent
+  mainPanelView?: 'tasks' | 'dashboard'
+  valueAmount?: number
+  valueCurrency?: string
   name: string
   description: string
   color: string
@@ -66,6 +87,40 @@ export interface WorkhubProject {
   updatedAt?: unknown
   notesUpdatedAt?: unknown
   notesUpdatedBy?: string
+}
+
+export interface WorkhubDocumentChecklistItem {
+  id: string
+  text: string
+  completed: boolean
+}
+
+export interface WorkhubDocumentEditEntry {
+  uid: string
+  at: string
+}
+
+export interface WorkhubDocument {
+  id: string
+  workspaceId: string
+  projectId?: string | null
+  title: string
+  body: string
+  checklist?: WorkhubDocumentChecklistItem[]
+  attachments?: string[]
+  links?: string[]
+  editedBy?: WorkhubDocumentEditEntry[]
+  isLocked?: boolean
+  lockedBy?: string | null
+  lockedAt?: unknown
+  shareToken?: string | null
+  shareEnabled?: boolean
+  visibility: WorkhubVisibility
+  memberUids: string[]
+  editMemberUids?: string[]
+  createdBy: string
+  createdAt?: unknown
+  updatedAt?: unknown
 }
 
 export interface WorkhubTask {
@@ -114,7 +169,7 @@ export interface WorkhubActivity {
   id: string
   workspaceId: string
   actorUid: string
-  entityType: 'workspace' | 'project' | 'task' | 'comment' | 'member'
+  entityType: 'workspace' | 'project' | 'task' | 'comment' | 'member' | 'document'
   entityId: string
   action: string
   message: string
@@ -128,7 +183,7 @@ export interface WorkhubNotification {
   workspaceId: string
   recipientUid: string
   actorUid: string
-  entityType: 'workspace' | 'project' | 'task' | 'comment' | 'member'
+  entityType: 'workspace' | 'project' | 'task' | 'comment' | 'member' | 'document'
   entityId: string
   action: string
   message: string
@@ -156,6 +211,7 @@ export interface WorkhubClient {
 const membersCol = collection(db, 'workhub_members')
 const workspacesCol = collection(db, 'workhub_workspaces')
 const projectsCol = collection(db, 'workhub_projects')
+const documentsCol = collection(db, 'workhub_documents')
 const tasksCol = collection(db, 'workhub_tasks')
 const commentsCol = collection(db, 'workhub_task_comments')
 const activityCol = collection(db, 'workhub_activity')
@@ -196,6 +252,26 @@ function sortTasks(items: WorkhubTask[]): WorkhubTask[] {
     if (orderDelta !== 0) return orderDelta
     return getTimeValue(a.createdAt) - getTimeValue(b.createdAt)
   })
+}
+
+function getDocumentOrderValue(document: Pick<WorkhubDocument, 'updatedAt' | 'createdAt'>): number {
+  return getTimeValue(document.updatedAt || document.createdAt)
+}
+
+function sortDocuments(items: WorkhubDocument[]): WorkhubDocument[] {
+  return [...items].sort((a, b) => {
+    const orderDelta = getDocumentOrderValue(b) - getDocumentOrderValue(a)
+    if (orderDelta !== 0) return orderDelta
+    return getTimeValue(b.createdAt) - getTimeValue(a.createdAt)
+  })
+}
+
+function mergeDocumentsById(groups: WorkhubDocument[][]) {
+  const map = new Map<string, WorkhubDocument>()
+  groups.flat().forEach((item) => {
+    map.set(item.id, item)
+  })
+  return sortDocuments(Array.from(map.values()))
 }
 
 function sortMembers(items: WorkhubMember[]): WorkhubMember[] {
@@ -300,7 +376,7 @@ export async function createWorkhubWorkspace(input: { name: string; description:
 
 export async function updateWorkhubWorkspace(
   workspaceId: string,
-  patch: Partial<Pick<WorkhubWorkspace, 'name' | 'description' | 'type' | 'templateId' | 'taskStatuses' | 'accessMemberUids' | 'memberAccessLevels' | 'invitedEmails'>>,
+  patch: Partial<Pick<WorkhubWorkspace, 'name' | 'description' | 'type' | 'templateId' | 'taskStatuses' | 'projectColorMeanings' | 'accessMemberUids' | 'memberAccessLevels' | 'invitedEmails'>>,
 ) {
   await updateDoc(doc(db, 'workhub_workspaces', workspaceId), {
     ...patch,
@@ -424,6 +500,10 @@ export function subscribeWorkhubProjects(workspaceId: string, currentUid: string
 export async function createWorkhubProject(input: {
   workspaceId: string
   parentProjectId?: string | null
+  intent?: WorkhubProjectIntent
+  mainPanelView?: 'tasks' | 'dashboard'
+  valueAmount?: number
+  valueCurrency?: string
   name: string
   description: string
   color: string
@@ -441,6 +521,10 @@ export async function createWorkhubProject(input: {
   const docRef = await addDoc(projectsCol, {
     workspaceId: input.workspaceId,
     parentProjectId: input.parentProjectId || null,
+    intent: input.intent || 'project',
+    mainPanelView: input.mainPanelView || 'tasks',
+    valueAmount: typeof input.valueAmount === 'number' && Number.isFinite(input.valueAmount) ? Math.max(0, input.valueAmount) : 0,
+    valueCurrency: (input.valueCurrency || 'USD').trim().toUpperCase(),
     name: input.name,
     description: input.description,
     color: input.color,
@@ -461,7 +545,7 @@ export async function createWorkhubProject(input: {
   return docRef.id
 }
 
-export async function updateWorkhubProject(projectId: string, patch: Partial<Pick<WorkhubProject, 'parentProjectId' | 'name' | 'description' | 'color' | 'notes' | 'notesUpdatedBy' | 'visibility' | 'memberUids' | 'storageMethod' | 'projectStartDate' | 'projectDeadline' | 'projectType' | 'submissionTime' | 'priority' | 'clientId'>>) {
+export async function updateWorkhubProject(projectId: string, patch: Partial<Pick<WorkhubProject, 'parentProjectId' | 'intent' | 'mainPanelView' | 'valueAmount' | 'valueCurrency' | 'name' | 'description' | 'color' | 'notes' | 'notesUpdatedBy' | 'visibility' | 'memberUids' | 'storageMethod' | 'projectStartDate' | 'projectDeadline' | 'projectType' | 'submissionTime' | 'priority' | 'clientId'>>) {
   const payload: Record<string, unknown> = {
     ...patch,
     updatedAt: serverTimestamp(),
@@ -474,6 +558,100 @@ export async function updateWorkhubProject(projectId: string, patch: Partial<Pic
 
 export async function deleteWorkhubProject(projectId: string) {
   await deleteDoc(doc(db, 'workhub_projects', projectId))
+}
+
+export function subscribeWorkhubDocuments(
+  workspaceId: string,
+  currentUid: string,
+  canSeeAll: boolean,
+  onData: (items: WorkhubDocument[]) => void,
+) {
+  if (canSeeAll) {
+    const q = query(documentsCol, where('workspaceId', '==', workspaceId))
+    return onSnapshot(q, (snap) => {
+      onData(sortDocuments(snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubDocument))))
+    })
+  }
+
+  const workspaceQuery = query(documentsCol, where('workspaceId', '==', workspaceId), where('visibility', '==', 'workspace'))
+  const restrictedQuery = query(documentsCol, where('memberUids', 'array-contains', currentUid))
+  let workspaceItems: WorkhubDocument[] = []
+  let restrictedItems: WorkhubDocument[] = []
+  const emit = () => onData(mergeDocumentsById([workspaceItems, restrictedItems]))
+  const unsubWorkspace = onSnapshot(workspaceQuery, (snap) => {
+    workspaceItems = snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubDocument)
+    )
+    emit()
+  })
+  const unsubRestricted = onSnapshot(restrictedQuery, (snap) => {
+    restrictedItems = snap.docs
+      .map((item) => ({ id: item.id, ...item.data() } as WorkhubDocument))
+      .filter((item) => item.workspaceId === workspaceId && item.visibility === 'restricted')
+    emit()
+  })
+  return () => {
+    unsubWorkspace()
+    unsubRestricted()
+  }
+}
+
+export async function createWorkhubDocument(input: {
+  workspaceId: string
+  projectId?: string | null
+  title: string
+  body: string
+  visibility: WorkhubVisibility
+  memberUids: string[]
+  createdBy: string
+}): Promise<string> {
+  const docRef = await addDoc(documentsCol, {
+    workspaceId: input.workspaceId,
+    projectId: input.projectId || null,
+    title: input.title,
+    body: input.body,
+    isLocked: false,
+    lockedBy: null,
+    lockedAt: null,
+    visibility: input.visibility,
+    memberUids: input.memberUids,
+    editMemberUids: input.visibility === 'restricted' ? input.memberUids : [],
+    createdBy: input.createdBy,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  })
+  return docRef.id
+}
+
+export async function getWorkhubDocumentByShareToken(token: string): Promise<WorkhubDocument | null> {
+  const q = query(collection(db, 'workhub_documents'), where('shareToken', '==', token), where('shareEnabled', '==', true), limit(1))
+  const snap = await getDocs(q)
+  if (snap.empty) return null
+  const d = snap.docs[0]
+  return { id: d.id, ...d.data() } as WorkhubDocument
+}
+
+export async function getWorkhubDocumentById(documentId: string): Promise<WorkhubDocument | null> {
+  const snap = await getDoc(doc(db, 'workhub_documents', documentId))
+  if (!snap.exists()) return null
+  return { id: snap.id, ...snap.data() } as WorkhubDocument
+}
+
+export async function updateWorkhubDocument(
+  documentId: string,
+  patch: Partial<Pick<WorkhubDocument, 'projectId' | 'title' | 'body' | 'checklist' | 'attachments' | 'links' | 'editedBy' | 'isLocked' | 'lockedBy' | 'lockedAt' | 'shareToken' | 'shareEnabled' | 'visibility' | 'memberUids' | 'editMemberUids'>>,
+) {
+  const payload: Record<string, unknown> = {
+    ...patch,
+    updatedAt: serverTimestamp(),
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'projectId')) {
+    payload.projectId = patch.projectId || null
+  }
+  await updateDoc(doc(db, 'workhub_documents', documentId), payload)
+}
+
+export async function deleteWorkhubDocument(documentId: string) {
+  await deleteDoc(doc(db, 'workhub_documents', documentId))
 }
 
 export function subscribeWorkhubTasks(workspaceId: string, currentUid: string, canSeeAll: boolean, onData: (items: WorkhubTask[]) => void) {
@@ -617,16 +795,13 @@ export async function createWorkhubActivity(input: {
   })
 }
 
-export function subscribeWorkhubNotifications(workspaceId: string, recipientUid: string, onData: (items: WorkhubNotification[]) => void) {
+export function subscribeWorkhubNotifications(recipientUid: string, onData: (items: WorkhubNotification[]) => void) {
   const q = query(
     notificationsCol,
-    where('workspaceId', '==', workspaceId),
-    where('recipientUid', '==', recipientUid),
-    orderBy('createdAt', 'desc'),
-    limit(60),
+      where('recipientUid', '==', recipientUid),
   )
   return onSnapshot(q, (snap) => {
-    onData(snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubNotification)))
+      onData(sortByNewest(snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubNotification))))
   })
 }
 

@@ -25,6 +25,11 @@ jobs:
       run: |
         cd admin-app
         npm ci
+
+    - name: Run WorkHub template contract tests
+      run: |
+        cd admin-app
+        npm run test:workhub-templates
         
     - name: Build project
       run: |

@@ -1,4 +1,5 @@
 import type { WorkhubMember, WorkhubWorkspace } from '../../../lib/workhubRepo'
+import type { WorkhubProjectColorMeaning } from '../constants'
 
 export function WorkspaceSettingsDialog(props: {
   workspace: WorkhubWorkspace | null
@@ -6,6 +7,7 @@ export function WorkspaceSettingsDialog(props: {
   workspaceTemplateLabel: string
   workspaceTemplateGraphic: string
   workspaceTemplateDescription: string
+  workspaceTemplateWarning?: string
   busyKey: string
   projectCount: number
   taskCount: number
@@ -22,9 +24,13 @@ export function WorkspaceSettingsDialog(props: {
   deleteAcknowledge: boolean
   settingsName: string
   settingsDescription: string
+  projectColorMeanings: WorkhubProjectColorMeaning[]
   onClose: () => void
   onSettingsNameChange: (value: string) => void
   onSettingsDescriptionChange: (value: string) => void
+  onProjectColorMeaningChange: (index: number, patch: Partial<WorkhubProjectColorMeaning>) => void
+  onRemoveProjectColorMeaning: (index: number) => void
+  onResetProjectColorMeanings: () => void
   onWorkspaceAccessToggle: (uid: string, checked: boolean) => void
   onToggleUserWorkspace: (uid: string, workspaceId: string, checked: boolean) => void
   onWorkspaceInviteDraftChange: (value: string) => void
@@ -42,11 +48,14 @@ export function WorkspaceSettingsDialog(props: {
 }) {
   if (!props.workspace) return null
   const canDelete = props.deleteTypedName.trim() === props.workspace.name && props.deletePhrase.trim() === 'DELETE WORKSPACE' && props.deleteAcknowledge
+  const deleteValidationMessage = canDelete
+    ? 'All confirmations complete. You can delete this workspace.'
+    : 'To enable delete: type the exact workspace name, type DELETE WORKSPACE, and check the acknowledgement box in Danger zone.'
 
   return (
     <div className="workhub-modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) props.onClose() }}>
       <div className="workhub-modal large workhub-workspace-settings-modal" onMouseDown={(event) => event.stopPropagation()}>
-        <div className="workhub-modal-head">
+        <div className="workhub-modal-head workhub-workspace-settings-head">
           <div>
             <h2>Workspace settings</h2>
             <p>Manage workspace details and lifecycle controls.</p>
@@ -64,6 +73,9 @@ export function WorkspaceSettingsDialog(props: {
                 <span>{props.workspaceTemplateDescription}</span>
               </div>
             </div>
+            {props.workspaceTemplateWarning ? (
+              <div className="workhub-template-warning-note">{props.workspaceTemplateWarning}</div>
+            ) : null}
             <label>
               <span>Workspace name</span>
               <input name="workspaceSettingsName" value={props.settingsName} onChange={(event) => props.onSettingsNameChange(event.target.value)} placeholder="Workspace name" />
@@ -72,9 +84,63 @@ export function WorkspaceSettingsDialog(props: {
               <span>Description</span>
               <textarea name="workspaceSettingsDescription" value={props.settingsDescription} onChange={(event) => props.onSettingsDescriptionChange(event.target.value)} rows={4} placeholder="Workspace description" />
             </label>
-            <button className="workhub-primary-btn" disabled={props.busyKey === `workspace-settings:${props.workspace.id}`} onClick={props.onSave}>
-              {props.busyKey === `workspace-settings:${props.workspace.id}` ? 'Saving…' : 'Save workspace'}
-            </button>
+            <details className="workhub-workspace-color-meaning-editor">
+              <summary className="workhub-workspace-color-meaning-summary">
+                <div>
+                  <strong>Project color meanings</strong>
+                  <span>Customize what each project color means in this workspace template.</span>
+                </div>
+              </summary>
+              <div className="workhub-workspace-color-meaning-head">
+                <div />
+                <button type="button" className="workhub-ghost-btn" onClick={props.onResetProjectColorMeanings}>Reset defaults</button>
+              </div>
+              <div className="workhub-workspace-color-meaning-list">
+                {props.projectColorMeanings.map((item, index) => (
+                  <div key={`workspace-project-color-${index}`} className="workhub-workspace-color-meaning-row">
+                    <label className="workhub-workspace-color-cell">
+                      <span>Color</span>
+                      <div className="workhub-workspace-color-input-row">
+                        <input
+                          type="color"
+                          value={item.color}
+                          onChange={(event) => props.onProjectColorMeaningChange(index, { color: event.target.value })}
+                          aria-label={`Color ${index + 1}`}
+                        />
+                        <small>{item.color.toUpperCase()}</small>
+                      </div>
+                    </label>
+                    <label>
+                      <span>Label</span>
+                      <input
+                        value={item.label}
+                        onChange={(event) => props.onProjectColorMeaningChange(index, { label: event.target.value })}
+                        placeholder="Running"
+                      />
+                    </label>
+                    <label>
+                      <span>Meaning</span>
+                      <input
+                        value={item.hint}
+                        onChange={(event) => props.onProjectColorMeaningChange(index, { hint: event.target.value })}
+                        placeholder="Approved and currently executing"
+                      />
+                    </label>
+                    <div className="workhub-workspace-color-row-actions">
+                      <button
+                        type="button"
+                        className="workhub-danger-btn"
+                        disabled={props.projectColorMeanings.length <= 1}
+                        onClick={() => props.onRemoveProjectColorMeaning(index)}
+                        title="Delete this status meaning"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </details>
           </div>
 
           <details className="workhub-collapsible-danger">
@@ -99,6 +165,20 @@ export function WorkspaceSettingsDialog(props: {
               </button>
             </div>
           </details>
+        </div>
+        <div className="workhub-workspace-settings-footer">
+          <div className="workhub-workspace-delete-hint" aria-live="polite">{deleteValidationMessage}</div>
+          <button
+            className="workhub-danger-btn"
+            disabled={!canDelete || props.busyKey === `workspace-delete:${props.workspace.id}`}
+            onClick={props.onDelete}
+            title={deleteValidationMessage}
+          >
+            {props.busyKey === `workspace-delete:${props.workspace.id}` ? 'Deleting…' : 'Delete workspace forever'}
+          </button>
+          <button className="workhub-primary-btn" disabled={props.busyKey === `workspace-settings:${props.workspace.id}`} onClick={props.onSave}>
+            {props.busyKey === `workspace-settings:${props.workspace.id}` ? 'Saving…' : 'Save workspace'}
+          </button>
         </div>
       </div>
     </div>

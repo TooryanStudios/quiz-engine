@@ -38,6 +38,69 @@ export function getWorkspaceType(
   return workspace?.type || 'technical'
 }
 
+function toDateOnlyTimestamp(year: number, month: number, day: number): number | null {
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null
+  if (month < 1 || month > 12) return null
+  if (day < 1 || day > 31) return null
+  const candidate = new Date(Date.UTC(year, month - 1, day))
+  if (
+    candidate.getUTCFullYear() !== year
+    || candidate.getUTCMonth() !== month - 1
+    || candidate.getUTCDate() !== day
+  ) {
+    return null
+  }
+  return candidate.getTime()
+}
+
+function parseDateInputCandidates(value: string): number[] {
+  const trimmed = value.trim()
+  if (!trimmed) return []
+
+  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed)
+  if (isoMatch) {
+    const candidate = toDateOnlyTimestamp(Number(isoMatch[1]), Number(isoMatch[2]), Number(isoMatch[3]))
+    return candidate === null ? [] : [candidate]
+  }
+
+  const slashMatch = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(trimmed)
+  if (slashMatch) {
+    const first = Number(slashMatch[1])
+    const second = Number(slashMatch[2])
+    const year = Number(slashMatch[3])
+    const candidates = new Set<number>()
+
+    const monthFirst = toDateOnlyTimestamp(year, first, second)
+    if (monthFirst !== null) candidates.add(monthFirst)
+
+    const dayFirst = toDateOnlyTimestamp(year, second, first)
+    if (dayFirst !== null) candidates.add(dayFirst)
+
+    return Array.from(candidates)
+  }
+
+  const parsed = Date.parse(trimmed)
+  if (!Number.isFinite(parsed)) return []
+  const candidate = new Date(parsed)
+  return [Date.UTC(candidate.getUTCFullYear(), candidate.getUTCMonth(), candidate.getUTCDate())]
+}
+
+export function isStartAfterEnd(startDate: string, endDate: string): boolean {
+  const startCandidates = parseDateInputCandidates(startDate)
+  const endCandidates = parseDateInputCandidates(endDate)
+  if (startCandidates.length === 0 || endCandidates.length === 0) return false
+
+  for (const startCandidate of startCandidates) {
+    for (const endCandidate of endCandidates) {
+      if (startCandidate <= endCandidate) {
+        return false
+      }
+    }
+  }
+
+  return true
+}
+
 export function makeTaskStatusId(label: string): string {
   return label.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || `status_${Date.now()}`
 }
