@@ -24,10 +24,12 @@ export function WorkspaceSettingsDialog(props: {
   deleteAcknowledge: boolean
   settingsName: string
   settingsDescription: string
+  treeMetaDisplayMode: 'counts' | 'countdown'
   projectColorMeanings: WorkhubProjectColorMeaning[]
   onClose: () => void
   onSettingsNameChange: (value: string) => void
   onSettingsDescriptionChange: (value: string) => void
+  onTreeMetaDisplayModeChange: (value: 'counts' | 'countdown') => void
   onProjectColorMeaningChange: (index: number, patch: Partial<WorkhubProjectColorMeaning>) => void
   onRemoveProjectColorMeaning: (index: number) => void
   onResetProjectColorMeanings: () => void
@@ -83,6 +85,16 @@ export function WorkspaceSettingsDialog(props: {
             <label>
               <span>Description</span>
               <textarea name="workspaceSettingsDescription" value={props.settingsDescription} onChange={(event) => props.onSettingsDescriptionChange(event.target.value)} rows={4} placeholder="Workspace description" />
+            </label>
+            <label>
+              <span>Project tree meta display</span>
+              <select
+                value={props.treeMetaDisplayMode}
+                onChange={(event) => props.onTreeMetaDisplayModeChange(event.target.value as 'counts' | 'countdown')}
+              >
+                <option value="counts">Show sub-item counts</option>
+                <option value="countdown">Show submission time remaining</option>
+              </select>
             </label>
             <details className="workhub-workspace-color-meaning-editor">
               <summary className="workhub-workspace-color-meaning-summary">

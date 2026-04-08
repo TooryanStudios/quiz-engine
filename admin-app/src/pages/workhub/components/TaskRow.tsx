@@ -1,7 +1,6 @@
 import { memo } from 'react'
-import type { WorkhubMember, WorkhubTask, WorkhubTaskChecklistItem, WorkhubTaskPriority, WorkhubTaskStatus, WorkhubTaskStatusConfig } from '../../../lib/workhubRepo'
-import { PRIORITY_LABELS, getPriorityIcon, getTaskStatusIcon } from '../constants'
-import { DEFAULT_TASK_STATUSES } from '../statusTemplates'
+import type { WorkhubMember, WorkhubTask, WorkhubTaskChecklistItem, WorkhubTaskPriority, WorkhubTaskStatus } from '../../../lib/workhubRepo'
+import { PRIORITY_LABELS, getPriorityIcon } from '../constants'
 import { formatDueDateShort, getInitials, normalizeTaskTitle } from '../taskUtils'
 
 interface TaskRowMeta {
@@ -37,6 +36,7 @@ interface TaskRowCallbacks {
   onStatusSelect: (task: WorkhubTask, statusId: WorkhubTaskStatus) => void
   onPrioritySelect: (task: WorkhubTask, priorityValue: WorkhubTaskPriority) => void
   onToggleChecklist: (taskId: string) => void
+  onDueDateChange: (task: WorkhubTask, value: string) => void
   onOpenDetails: (taskId: string) => void
   onChecklistItemToggle: (task: WorkhubTask, itemId: string, checked: boolean) => void
   onChecklistItemEditStart: (taskId: string, itemId: string, text: string, scope: 'inline' | 'details') => void
@@ -70,7 +70,6 @@ interface TaskRowProps {
   taskAssignee: WorkhubMember | undefined
   assignableMembers: WorkhubMember[]
   taskCreator: WorkhubMember | undefined
-  statuses: WorkhubTaskStatusConfig[]
   meta: TaskRowMeta
   callbacks: TaskRowCallbacks
 }
@@ -80,16 +79,13 @@ const TaskRow = memo(function TaskRow({
   statusMenuOpen, priorityMenuOpen, moreMenuOpen, assigneeMenuOpen,
   editingTitle, editingTitleText, checklistExpanded, checklistDraft,
   editingChecklistItemId, editingChecklistScope, editingChecklistText,
-  isTaskBusy, taskAssignee, taskCreator, assignableMembers, statuses, meta, callbacks,
+  isTaskBusy, taskAssignee, taskCreator, assignableMembers, meta, callbacks,
 }: TaskRowProps) {
-  const { checklist, checklistDoneCount, checklistDetailsCount, checklistImagesCount, checklistLinksCount, taskAttachmentCount } = meta
+  const { checklist } = meta
   const assigneeLabel = taskAssignee?.displayName || taskAssignee?.email || 'Unassigned'
   const creatorLabel = taskCreator?.displayName || taskCreator?.email || 'Unknown'
   const showCreatorSeparately = taskCreator && taskCreator.uid !== task.assigneeUid
   const assigneeIsCreator = taskCreator?.uid === task.assigneeUid
-  const currentTaskStatus = statuses.find((s) => s.id === task.status) || DEFAULT_TASK_STATUSES.find((s) => s.id === task.status)
-  const currentTaskStatusLabel = currentTaskStatus?.label || task.status
-  const currentTaskStatusColor = currentTaskStatus?.color || '#8aa0c7'
   const hasOpenInlineMenu = statusMenuOpen || priorityMenuOpen || moreMenuOpen || assigneeMenuOpen
 
   return (
@@ -161,37 +157,6 @@ const TaskRow = memo(function TaskRow({
               )}
             </div>
           </div>
-          <div className="workhub-task-col status">
-            <button
-              type="button"
-              className="workhub-task-status-btn"
-              style={{ '--status-color': currentTaskStatusColor } as React.CSSProperties}
-              onClick={(event) => {
-                event.stopPropagation()
-                callbacks.onOpenStatusMenu(task.id)
-              }}
-              aria-label={`Status: ${currentTaskStatusLabel}`}
-            >
-              <span className="status-dot" />
-            </button>
-            {statusMenuOpen && (
-              <div className="workhub-task-status-menu" onClick={(event) => event.stopPropagation()}>
-                {statuses.map((taskStatus) => (
-                  <button
-                    key={taskStatus.id}
-                    type="button"
-                    className={task.status === taskStatus.id ? 'is-active' : ''}
-                    style={{ '--status-color': taskStatus.color } as React.CSSProperties}
-                    onClick={() => callbacks.onStatusSelect(task, taskStatus.id as WorkhubTaskStatus)}
-                  >
-                    <span className="status-dot" />
-                    <span className="status-icon">{getTaskStatusIcon(taskStatus.id)}</span>
-                    <span>{taskStatus.label}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
           <div className="workhub-task-col assignee">
             <div className="workhub-task-people">
               {showCreatorSeparately && (
@@ -238,35 +203,40 @@ const TaskRow = memo(function TaskRow({
             )}
           </div>
           <div className="workhub-task-col due">
-            <span className={task.dueDate ? 'is-set' : 'is-empty'}>📅 {formatDueDateShort(task.dueDate || '')}</span>
+            <div className="workhub-task-due-inline">
+              <button
+                type="button"
+                className="workhub-task-due-picker-trigger"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  const container = event.currentTarget.closest('.workhub-task-due-inline')
+                  const input = container?.querySelector('.workhub-task-due-input') as HTMLInputElement | null
+                  if (!input) return
+                  const pickerInput = input as HTMLInputElement & { showPicker?: () => void }
+                  pickerInput.showPicker?.()
+                  input.focus()
+                }}
+                aria-label="Open due date picker"
+              >
+                📅
+              </button>
+              <input
+                type="date"
+                className="workhub-task-due-input"
+                value={task.dueDate || ''}
+                onClick={(event) => event.stopPropagation()}
+                onChange={(event) => callbacks.onDueDateChange(task, event.target.value)}
+                aria-label={task.dueDate ? `Due date: ${formatDueDateShort(task.dueDate)}` : 'Set due date'}
+              />
+            </div>
           </div>
           <div className="workhub-task-col priority">
-            <button
-              type="button"
+            <span
               className={`workhub-priority-indicator priority-${task.priority}`}
               aria-label={`Priority: ${PRIORITY_LABELS[task.priority]}`}
-              onClick={(event) => {
-                event.stopPropagation()
-                callbacks.onOpenPriorityMenu(task.id)
-              }}
             >
               {getPriorityIcon(task.priority)}
-            </button>
-            {priorityMenuOpen && (
-              <div className="workhub-task-priority-menu" onClick={(event) => event.stopPropagation()}>
-                {(Object.keys(PRIORITY_LABELS) as WorkhubTaskPriority[]).map((priorityValue) => (
-                  <button
-                    key={priorityValue}
-                    type="button"
-                    className={task.priority === priorityValue ? 'is-active' : ''}
-                    onClick={() => callbacks.onPrioritySelect(task, priorityValue)}
-                  >
-                    <span className={`workhub-priority-indicator priority-${priorityValue}`}>{getPriorityIcon(priorityValue)}</span>
-                    <span>{PRIORITY_LABELS[priorityValue]}</span>
-                  </button>
-                ))}
-              </div>
-            )}
+            </span>
           </div>
           <div className="workhub-task-col checklist-inline">
             <button
@@ -274,51 +244,8 @@ const TaskRow = memo(function TaskRow({
               onClick={(event) => { event.stopPropagation(); callbacks.onToggleChecklist(task.id) }}
               aria-label="Toggle checklist"
             >
-              {checklistExpanded ? '▾' : '▸'} {checklist.length > 0 ? `${checklistDoneCount}/${checklist.length}` : 'List'}
+              {checklist.length}
             </button>
-            {(checklistDetailsCount > 0 || checklistImagesCount > 0 || checklistLinksCount > 0) && (
-              <span className="workhub-checklist-meta">
-                {checklistDetailsCount > 0 && <span>📝{checklistDetailsCount}</span>}
-                {checklistImagesCount > 0 && <span>📎{checklistImagesCount}</span>}
-                {checklistLinksCount > 0 && <span>🔗{checklistLinksCount}</span>}
-              </span>
-            )}
-          </div>
-          <div className="workhub-task-col actions-inline">
-            {taskAttachmentCount > 0 && (
-              <span
-                className="workhub-task-attachment-indicator"
-                aria-label={`${taskAttachmentCount} attachment${taskAttachmentCount === 1 ? '' : 's'}`}
-              >
-                📎
-              </span>
-            )}
-            <button className="workhub-gear-btn" onClick={(event) => { event.stopPropagation(); callbacks.onOpenDetails(task.id) }}>
-              ⚙️
-            </button>
-          </div>
-          <div className="workhub-task-col more">
-            <button
-              type="button"
-              className="workhub-task-more-btn"
-              onClick={(event) => {
-                event.stopPropagation()
-                callbacks.onOpenMoreMenu(task.id)
-              }}
-              aria-label="More"
-            >
-              ⋯
-            </button>
-            {moreMenuOpen && (
-              <div className="workhub-task-more-menu" onClick={(event) => event.stopPropagation()}>
-                <button type="button" onClick={() => callbacks.onToggleChecklist(task.id)}>
-                  {checklistExpanded ? 'Hide list' : 'Show list'} {checklist.length > 0 ? `(${checklistDoneCount}/${checklist.length})` : ''}
-                </button>
-                <button type="button" onClick={() => callbacks.onOpenDetails(task.id)}>
-                  Open details
-                </button>
-              </div>
-            )}
           </div>
         </div>
         {checklistExpanded && (

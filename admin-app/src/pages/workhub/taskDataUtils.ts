@@ -19,3 +19,29 @@ export function getTaskAttachments(task: WorkhubTask): string[] {
 export function getTaskLinks(task: WorkhubTask): string[] {
   return Array.isArray(task.links) ? task.links : []
 }
+
+export function deriveAttachmentTitle(url: string): string {
+  const trimmed = (url || '').trim()
+  if (!trimmed) return 'Attachment'
+
+  try {
+    const parsed = new URL(trimmed)
+    const pathToken = parsed.pathname.split('/').filter(Boolean).pop() || ''
+    const decoded = decodeURIComponent(pathToken).replace(/[_-]+/g, ' ').trim()
+    if (decoded) return decoded
+  } catch {
+    // Fall through to plain-string parsing when URL constructor fails.
+  }
+
+  const plainToken = trimmed.split('/').filter(Boolean).pop() || trimmed
+  const plainDecoded = decodeURIComponent(plainToken).replace(/[_-]+/g, ' ').trim()
+  return plainDecoded || 'Attachment'
+}
+
+export function getTaskAttachmentTitle(task: WorkhubTask, url: string): string {
+  const explicitTitle = task.attachmentTitles?.[url]
+  if (explicitTitle && explicitTitle.trim()) {
+    return explicitTitle.trim()
+  }
+  return deriveAttachmentTitle(url)
+}

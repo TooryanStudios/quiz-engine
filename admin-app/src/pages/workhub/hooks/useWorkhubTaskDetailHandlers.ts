@@ -28,6 +28,8 @@ interface UseWorkhubTaskDetailHandlersParams {
   setTaskChecklistDrafts: Dispatch<SetStateAction<Record<string, string>>>
   taskAttachmentDrafts: Record<string, string>
   setTaskAttachmentDrafts: Dispatch<SetStateAction<Record<string, string>>>
+  taskAttachmentTitleDrafts: Record<string, string>
+  setTaskAttachmentTitleDrafts: Dispatch<SetStateAction<Record<string, string>>>
   taskLinkDrafts: Record<string, string>
   setTaskLinkDrafts: Dispatch<SetStateAction<Record<string, string>>>
   checklistDetailsDrafts: Record<string, string>
@@ -58,6 +60,8 @@ export function useWorkhubTaskDetailHandlers({
   setTaskChecklistDrafts,
   taskAttachmentDrafts,
   setTaskAttachmentDrafts,
+  taskAttachmentTitleDrafts,
+  setTaskAttachmentTitleDrafts,
   taskLinkDrafts,
   setTaskLinkDrafts,
   checklistDetailsDrafts,
@@ -235,7 +239,19 @@ export function useWorkhubTaskDetailHandlers({
     try {
       const uploadedUrls = await Promise.all(files.map((file) => uploadWorkhubAttachment(file, project)))
       const nextAttachments = [...getTaskAttachments(task), ...uploadedUrls]
-      await handleTaskUpdate(task, { attachments: nextAttachments }, { silent: true })
+      const nextAttachmentTitles: Record<string, string> = {
+        ...(task.attachmentTitles || {}),
+      }
+      uploadedUrls.forEach((url, index) => {
+        const fileName = files[index]?.name?.trim()
+        if (fileName) {
+          nextAttachmentTitles[url] = fileName
+        }
+      })
+      await handleTaskUpdate(task, {
+        attachments: nextAttachments,
+        attachmentTitles: nextAttachmentTitles,
+      }, { silent: true })
       showToast({ type: 'success', message: uploadedUrls.length > 1 ? `${uploadedUrls.length} attachments uploaded.` : 'Attachment uploaded.' })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not upload attachment.'
@@ -281,10 +297,19 @@ export function useWorkhubTaskDetailHandlers({
   const handleTaskAttachmentAdd = useCallback((task: WorkhubTask) => {
     const nextUrl = (taskAttachmentDrafts[task.id] || '').trim()
     if (!nextUrl) return
+    const nextTitle = (taskAttachmentTitleDrafts[task.id] || '').trim()
     const nextAttachments = [...getTaskAttachments(task), nextUrl]
+    const nextAttachmentTitles: Record<string, string> = {
+      ...(task.attachmentTitles || {}),
+      [nextUrl]: nextTitle || 'Attachment',
+    }
+    setTaskAttachmentTitleDrafts((current) => ({ ...current, [task.id]: '' }))
     setTaskAttachmentDrafts((current) => ({ ...current, [task.id]: '' }))
-    void handleTaskUpdate(task, { attachments: nextAttachments }, { silent: true })
-  }, [handleTaskUpdate, setTaskAttachmentDrafts, taskAttachmentDrafts])
+    void handleTaskUpdate(task, {
+      attachments: nextAttachments,
+      attachmentTitles: nextAttachmentTitles,
+    }, { silent: true })
+  }, [handleTaskUpdate, setTaskAttachmentDrafts, setTaskAttachmentTitleDrafts, taskAttachmentDrafts, taskAttachmentTitleDrafts])
 
   const handleTaskAttachmentRemove = useCallback((task: WorkhubTask, attachment: string) => {
     const isDriveFile = attachment.includes('drive.google.com/thumbnail?id=')
@@ -311,7 +336,12 @@ export function useWorkhubTaskDetailHandlers({
     }
 
     const nextAttachments = getTaskAttachments(task).filter((url) => url !== attachment)
-    void handleTaskUpdate(task, { attachments: nextAttachments }, { silent: true })
+    const nextAttachmentTitles = { ...(task.attachmentTitles || {}) }
+    delete nextAttachmentTitles[attachment]
+    void handleTaskUpdate(task, {
+      attachments: nextAttachments,
+      attachmentTitles: Object.keys(nextAttachmentTitles).length > 0 ? nextAttachmentTitles : {},
+    }, { silent: true })
     setAttachmentDeletePrompt(null)
   }, [attachmentDeletePrompt, handleTaskUpdate, setAttachmentDeletePrompt, showToast])
 

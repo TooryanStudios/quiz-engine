@@ -370,7 +370,8 @@ function App() {
     )
   }
 
-  // ── Standalone WorkHub — no sidebar, no shell chrome ──
+  // ── Standalone WorkHub (desktop only) — keep no sidebar chrome on desktop,
+  // while mobile routes through the dedicated mobile shell below.
   if (isWorkHubPage) {
     return (
       <ToastProvider>
@@ -523,9 +524,9 @@ function App() {
 
   const mobileHeaderTitle =
     mobileRouteKey === 'editor'
-      ? (isAr ? 'وضع التحرير' : 'Editing Studio')
+      ? (isAr ? 'استوديو التحديات' : 'Challenge Studio')
       : mobileRouteKey === 'workhub'
-        ? 'WorkHub'
+        ? (isAr ? 'وورك هَب التشغيلي' : 'WorkHub Operations')
         : mobileRouteKey === 'library'
           ? (isAr ? 'المكتبة' : 'Library')
           : mobileRouteKey === 'my-quizzes'
@@ -538,21 +539,21 @@ function App() {
                   ? (isAr ? 'أوضاع اللعب' : 'Game Modes')
                   : mobileRouteKey === 'labs'
                     ? (isAr ? 'المختبر' : 'Labs')
-                    : (isAr ? 'لوحة التحكم' : 'Dashboard')
+                      : (isAr ? 'مركز التحكم' : 'Control Center')
 
   const mobileHeaderHint =
     mobileRouteKey === 'editor'
-      ? (isAr ? 'تحرير سريع ومركّز' : 'Focused creation flow')
+        ? (isAr ? 'صياغة وتحرير ثم نشر' : 'Draft, refine, publish')
       : mobileRouteKey === 'workhub'
-        ? (isAr ? 'مساحة العمل المتقدمة' : 'Projects and docs')
+          ? (isAr ? 'المشاريع والمهام والمراجعات' : 'Projects, tasks, approvals')
         : mobileRouteKey === 'dashboard'
-          ? (isAr ? 'ملخص سريع' : 'Daily snapshot')
+            ? (isAr ? 'تابع النشاط وانتقل لخطوتك التالية' : 'Review activity and continue your next task')
           : ''
 
   const mobileTabPriorityByRoute: Record<string, string[]> = {
-    dashboard: ['/dashboard', '/editor', '/workhub', '/my-quizzes', '/profile'],
-    editor: ['/editor', '/mini-game-editor', '/my-quizzes', '/dashboard', '/workhub'],
-    workhub: ['/workhub', '/dashboard', '/editor', '/packs', '/profile'],
+      dashboard: ['/dashboard', '/workhub', '/editor', '/my-quizzes', '/packs'],
+      editor: ['/editor', '/mini-game-editor', '/workhub', '/my-quizzes', '/dashboard'],
+      workhub: ['/workhub', '/dashboard', '/editor', '/my-quizzes', '/packs'],
     library: ['/packs', '/my-quizzes', '/dashboard', '/editor', '/profile'],
     'my-quizzes': ['/my-quizzes', '/editor', '/dashboard', '/packs', '/profile'],
     billing: ['/billing', '/dashboard', '/packs', '/profile', '/workhub'],

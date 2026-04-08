@@ -32,6 +32,7 @@ import {
   subscribeWorkhubTasks,
   subscribeWorkhubWorkspaces,
   ensureWorkhubDriveProjectFolder,
+  uploadWorkhubAttachmentToDrive,
   updateWorkhubProject,
   updateWorkhubTask,
   updateWorkhubClient,
@@ -125,7 +126,7 @@ import {
   createEmptyImageReview,
   type WorkhubImageReview,
 } from './workhub/imageReview'
-import { buildChecklist, getTaskAttachments, getTaskLinks } from './workhub/taskDataUtils'
+import { buildChecklist, getTaskAttachmentTitle, getTaskAttachments, getTaskLinks } from './workhub/taskDataUtils'
 import { getNextTaskSortOrder, getOrderedTasksForStatus } from './workhub/taskOrdering'
 import { useWorkhubImageReviewHandlers } from './workhub/hooks/useWorkhubImageReviewHandlers'
 import { useWorkhubAccessHandlers } from './workhub/hooks/useWorkhubAccessHandlers'
@@ -622,6 +623,7 @@ export default function WorkHubPage() {
   const [templateCreateDialogOpen, setTemplateCreateDialogOpen] = useState(false)
   const [templateCreateIntent, setTemplateCreateIntent] = useState<WorkhubTemplateCreationIntent | null>(null)
   const [templateCreateDraft, setTemplateCreateDraft] = useState<WorkhubTemplateCreationDraft>(buildInitialTemplateCreationDraft('project'))
+  const [templateCreateParentProjectId, setTemplateCreateParentProjectId] = useState('')
   const [workspaceCreateDialogOpen, setWorkspaceCreateDialogOpen] = useState(false)
   const [teamDialogOpen, setTeamDialogOpen] = useState(false)
   const [workspaceSettingsId, setWorkspaceSettingsId] = useState('')
@@ -631,6 +633,7 @@ export default function WorkHubPage() {
   const [workspaceTemplateId, setWorkspaceTemplateId] = useState<WorkhubWorkspaceTemplateId>(DEFAULT_WORKHUB_WORKSPACE_TEMPLATE_ID)
   const [workspaceSettingsName, setWorkspaceSettingsName] = useState('')
   const [workspaceSettingsDescription, setWorkspaceSettingsDescription] = useState('')
+  const [workspaceTreeMetaDisplayMode, setWorkspaceTreeMetaDisplayMode] = useState<'counts' | 'countdown'>('counts')
   const [workspaceProjectColorMeaningDrafts, setWorkspaceProjectColorMeaningDrafts] = useState<WorkhubProjectColorMeaning[]>([])
   const [workspaceAccessMemberUids, setWorkspaceAccessMemberUids] = useState<string[]>([])
   const [workspaceMemberAccessLevels, setWorkspaceMemberAccessLevels] = useState<Record<string, 'full' | 'custom'>>({})
@@ -710,12 +713,20 @@ export default function WorkHubPage() {
   const [clientNotesDraft, setClientNotesDraft] = useState('')
   const [actionMenuProjectId, setActionMenuProjectId] = useState<string | null>(null)
   const [actionMenuPosition, setActionMenuPosition] = useState({ x: 0, y: 0 })
-  const [quickAddOpen, setQuickAddOpen] = useState(false)
+  const [, setQuickAddOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [isMobileWorkhubLayout, setIsMobileWorkhubLayout] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    return window.matchMedia('(max-width: 429px)').matches
+  })
+  const [mobileWorkspacePanelOpen, setMobileWorkspacePanelOpen] = useState(false)
   const [expandedTaskChecklistIds, setExpandedTaskChecklistIds] = useState<string[]>([])
   const [expandedChecklistDetailKeys, setExpandedChecklistDetailKeys] = useState<string[]>([])
   const [taskChecklistDrafts, setTaskChecklistDrafts] = useState<Record<string, string>>({})
   const [taskAttachmentDrafts, setTaskAttachmentDrafts] = useState<Record<string, string>>({})
+  const [taskAttachmentTitleDrafts, setTaskAttachmentTitleDrafts] = useState<Record<string, string>>({})
+  const [taskAttachmentFileDrafts, setTaskAttachmentFileDrafts] = useState<Record<string, File[]>>({})
+  const [taskAttachmentFilePathDrafts, setTaskAttachmentFilePathDrafts] = useState<Record<string, string>>({})
   const [taskLinkDrafts, setTaskLinkDrafts] = useState<Record<string, string>>({})
   const [uploadingTaskAttachmentId, setUploadingTaskAttachmentId] = useState('')
   const [checklistDetailsDrafts, setChecklistDetailsDrafts] = useState<Record<string, string>>({})
@@ -736,6 +747,10 @@ export default function WorkHubPage() {
   const [selectedProjectTypeDraft, setSelectedProjectTypeDraft] = useState<WorkhubProjectType>('other')
   const [selectedProjectValueAmountDraft, setSelectedProjectValueAmountDraft] = useState('')
   const [selectedProjectValueCurrencyDraft, setSelectedProjectValueCurrencyDraft] = useState('USD')
+  const [selectedProjectAttachmentDraft, setSelectedProjectAttachmentDraft] = useState('')
+  const [selectedProjectAttachmentFileDrafts, setSelectedProjectAttachmentFileDrafts] = useState<File[]>([])
+  const [selectedProjectAttachmentFilePathDraft, setSelectedProjectAttachmentFilePathDraft] = useState('')
+  const [uploadingSelectedProjectAttachment, setUploadingSelectedProjectAttachment] = useState(false)
   const [selectedProjectColorMenuOpen, setSelectedProjectColorMenuOpen] = useState(false)
   const [editingTaskTitleId, setEditingTaskTitleId] = useState<string | null>(null)
   const [editingTaskTitleText, setEditingTaskTitleText] = useState('')
@@ -752,6 +767,7 @@ export default function WorkHubPage() {
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false)
   const [attachmentReviews, setAttachmentReviews] = useState<Record<string, WorkhubImageReview>>({})
   const [attachmentViewMode, setAttachmentViewMode] = useState<'thumbnail' | 'list' | 'card'>('thumbnail')
+  const [taskAttachmentsCollapsed, setTaskAttachmentsCollapsed] = useState(true)
   const [attachmentDeletePrompt, setAttachmentDeletePrompt] = useState<{ task: WorkhubTask, attachment: string, isDriveFile: boolean } | null>(null)
   const globalFinderInputRef = useRef<HTMLInputElement | null>(null)
   const statusBootstrapWorkspaceIdsRef = useRef<Set<string>>(new Set())
@@ -776,7 +792,7 @@ export default function WorkHubPage() {
     const handleDocumentPointerDown = (event: MouseEvent) => {
       const target = event.target
       if (!(target instanceof Element)) return
-      if (target.closest('.workhub-task-status-btn, .workhub-task-status-menu, .workhub-priority-indicator, .workhub-task-priority-menu, .workhub-task-more-btn, .workhub-task-more-menu, .workhub-detail-icon-btn, .workhub-detail-icon-menu, .workhub-task-filter-btn, .workhub-task-filter-menu, .workhub-bulk-status-btn, .workhub-bulk-status-menu, .workhub-task-assignee-btn, .workhub-task-assignee-menu, .workhub-notify-btn, .workhub-notify-menu, .workhub-account-btn, .workhub-account-menu, .workhub-project-color-select-btn, .workhub-project-color-select-menu')) {
+      if (target.closest('.workhub-task-status-btn, .workhub-task-status-menu, .workhub-priority-indicator, .workhub-task-priority-menu, .workhub-task-more-btn, .workhub-task-more-menu, .workhub-detail-icon-btn, .workhub-detail-icon-menu, .workhub-task-filter-btn, .workhub-task-filter-menu, .workhub-bulk-status-btn, .workhub-bulk-status-menu, .workhub-task-assignee-btn, .workhub-task-assignee-menu, .workhub-notify-btn, .workhub-notify-menu, .workhub-account-btn, .workhub-account-menu, .workhub-project-color-select-btn, .workhub-project-color-select-menu, .workhub-mobile-workspace-panel, .workhub-mobile-workspace-toggle')) {
         return
       }
       setOpenTaskStatusMenuId('')
@@ -789,6 +805,7 @@ export default function WorkHubPage() {
       setNotificationMenuOpen(false)
       setAccountMenuOpen(false)
       setSelectedProjectColorMenuOpen(false)
+      setMobileWorkspacePanelOpen(false)
     }
 
     document.addEventListener('mousedown', handleDocumentPointerDown)
@@ -1075,6 +1092,7 @@ export default function WorkHubPage() {
   const selectedWorkspaceTemplateId = selectedWorkspaceTemplateResolution.templateId
   const selectedWorkspaceHomeTemplate = selectedWorkspaceTemplateResolution.template
   const selectedWorkspaceScopeType = selectedWorkspaceHomeTemplate.workspaceType
+  const treeMetaDisplayMode = selectedWorkspace?.treeMetaDisplayMode || 'counts'
   const selectedWorkspaceTemplateIntentSet = useMemo(
     () => new Set(resolveWorkspaceTemplateIntents(selectedWorkspaceTemplateId)),
     [selectedWorkspaceTemplateId],
@@ -1451,15 +1469,13 @@ export default function WorkHubPage() {
     return result
   }, [tasks])
   const selectedTask = useMemo(() => visibleTasks.find((item) => item.id === selectedTaskId) || null, [selectedTaskId, visibleTasks])
+  useEffect(() => {
+    setTaskAttachmentsCollapsed(true)
+  }, [selectedTask?.id])
   const selectedTaskIdSet = useMemo(() => new Set(selectedTaskIds), [selectedTaskIds])
   const expandedTaskChecklistIdsSet = useMemo(() => new Set(expandedTaskChecklistIds), [expandedTaskChecklistIds])
   const selectedTasks = useMemo(() => tasks.filter((item) => selectedTaskIdSet.has(item.id)), [selectedTaskIdSet, tasks])
   const selectedTaskCount = selectedTasks.length
-  const visibleTaskIds = useMemo(() => filteredTasks.map((item) => item.id), [filteredTasks])
-  const allVisibleTasksSelected = useMemo(
-    () => visibleTaskIds.length > 0 && visibleTaskIds.every((taskId) => selectedTaskIdSet.has(taskId)),
-    [selectedTaskIdSet, visibleTaskIds],
-  )
   // Stable callbacks bag — created once on mount, reads current state via _cbRef.
   // This lets TaskRow be memoised: it only re-renders when its own props change.
   const taskRowCallbacks = useMemo<TaskRowCallbacks>(() => ({
@@ -1556,6 +1572,9 @@ export default function WorkHubPage() {
       setOpenTaskMoreMenuId('')
       setOpenTaskStatusMenuId('')
       setOpenTaskPriorityMenuId('')
+    },
+    onDueDateChange: (task, value) => {
+      void _cbRef.current.handleTaskUpdate(task, { dueDate: value }, { silent: true })
     },
     onOpenDetails: (taskId) => {
       setSelectedTaskId(taskId)
@@ -1800,6 +1819,36 @@ export default function WorkHubPage() {
     () => (selectedProject ? selectedProjectBranchProjects.filter((item) => item.id !== selectedProject.id) : visibleWorkspaceProjects),
     [selectedProject, selectedProjectBranchProjects, visibleWorkspaceProjects],
   )
+  function renderDashboardProjectCard(project: WorkhubProject, depth = 0): JSX.Element {
+    const childProjects = visibleProjectsByParent.get(project.id) || []
+    return (
+      <article
+        key={project.id}
+        className={`workhub-project-card compact-card is-clickable depth-${Math.min(depth, 4)}`}
+        role="button"
+        tabIndex={0}
+        onClick={() => handleSelectProject(project.id)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            handleSelectProject(project.id)
+          }
+        }}
+      >
+        <div className="workhub-project-title-row">
+          <span className="workhub-project-dot" style={{ background: project.color }} />
+          <strong>{project.name}</strong>
+          <span className="workhub-badge">{project.visibility === 'restricted' ? 'Restricted' : 'Workspace'}</span>
+        </div>
+        <p>{project.description || 'No description yet.'}</p>
+        {childProjects.length > 0 && (
+          <div className="workhub-project-card-nested">
+            {childProjects.map((child) => renderDashboardProjectCard(child, depth + 1))}
+          </div>
+        )}
+      </article>
+    )
+  }
   const selectedScopeMonetaryTotalsByCurrency = useMemo(() => {
     const totals: Record<string, number> = {}
     selectedScopeProjects.forEach((project) => {
@@ -2015,6 +2064,8 @@ export default function WorkHubPage() {
     setTaskChecklistDrafts,
     taskAttachmentDrafts,
     setTaskAttachmentDrafts,
+    taskAttachmentTitleDrafts,
+    setTaskAttachmentTitleDrafts,
     taskLinkDrafts,
     setTaskLinkDrafts,
     checklistDetailsDrafts,
@@ -2392,6 +2443,7 @@ export default function WorkHubPage() {
     openDocumentCreateDialog,
     closeDocumentCreateDialog,
     handleCreateDocument,
+    createDocumentQuick,
   } = useWorkhubDocumentCreation({
     currentUserUid: currentUid,
     selectedWorkspaceId,
@@ -2499,6 +2551,9 @@ export default function WorkHubPage() {
       setSelectedProjectTypeDraft('other')
       setSelectedProjectValueAmountDraft('0')
       setSelectedProjectValueCurrencyDraft('USD')
+      setSelectedProjectAttachmentDraft('')
+      setSelectedProjectAttachmentFileDrafts([])
+      setSelectedProjectAttachmentFilePathDraft('')
       setSelectedProjectColorMenuOpen(false)
       return
     }
@@ -2515,6 +2570,9 @@ export default function WorkHubPage() {
     setSelectedProjectTypeDraft(nextProjectType)
     setSelectedProjectValueAmountDraft(String(resolveProjectMonetaryAmount(selectedProject)))
     setSelectedProjectValueCurrencyDraft(normalizeMoneyCurrency(selectedProject.valueCurrency))
+    setSelectedProjectAttachmentDraft('')
+    setSelectedProjectAttachmentFileDrafts([])
+    setSelectedProjectAttachmentFilePathDraft('')
     setSelectedProjectColorMenuOpen(false)
   }, [
     selectedProject?.color,
@@ -2527,9 +2585,105 @@ export default function WorkHubPage() {
     selectedProject?.projectType,
     selectedProject?.valueAmount,
     selectedProject?.valueCurrency,
+    selectedProject?.attachments,
     selectedProjectEffectiveIntent,
     selectedWorkspaceProjectColorOptions,
   ])
+
+  const selectedProjectAttachments = useMemo(
+    () => selectedProject?.attachments || [],
+    [selectedProject?.attachments],
+  )
+
+  const handleSelectedProjectAttachmentAdd = useCallback(async () => {
+    if (!selectedProject || !canEditSelectedProject) return
+    const nextUrl = selectedProjectAttachmentDraft.trim()
+    if (!nextUrl) return
+    const nextAttachments = Array.from(new Set([...selectedProjectAttachments, nextUrl]))
+    setBusyKey(`project-detail:${selectedProject.id}`)
+    try {
+      await updateWorkhubProject(selectedProject.id, { attachments: nextAttachments })
+      setSelectedProjectAttachmentDraft('')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not add attachment.'
+      showToast({ type: 'error', message })
+    } finally {
+      setBusyKey('')
+    }
+  }, [canEditSelectedProject, selectedProject, selectedProjectAttachmentDraft, selectedProjectAttachments, setBusyKey, showToast])
+
+  const handleSelectedProjectAttachmentRemove = useCallback(async (url: string) => {
+    if (!selectedProject || !canEditSelectedProject) return
+    const nextAttachments = selectedProjectAttachments.filter((item) => item !== url)
+    setBusyKey(`project-detail:${selectedProject.id}`)
+    try {
+      await updateWorkhubProject(selectedProject.id, { attachments: nextAttachments })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not remove attachment.'
+      showToast({ type: 'error', message })
+    } finally {
+      setBusyKey('')
+    }
+  }, [canEditSelectedProject, selectedProject, selectedProjectAttachments, setBusyKey, showToast])
+
+  const fileToBase64 = useCallback(async (file: File) => {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = typeof reader.result === 'string' ? reader.result : ''
+        const base64 = result.includes(',') ? result.split(',')[1] : result
+        if (!base64) {
+          reject(new Error('Could not read file data.'))
+          return
+        }
+        resolve(base64)
+      }
+      reader.onerror = () => reject(new Error('Could not read file data.'))
+      reader.readAsDataURL(file)
+    })
+  }, [])
+
+  const uploadProjectAttachment = useCallback(async (file: File, project: WorkhubProject) => {
+    const isDrive = project.storageMethod === 'drive'
+    if (isDrive) {
+      const dataBase64 = await fileToBase64(file)
+      const folderResult = await ensureWorkhubDriveProjectFolder({ projectId: project.id, projectName: project.name })
+      const result = await uploadWorkhubAttachmentToDrive({
+        fileName: file.name,
+        contentType: file.type || 'application/octet-stream',
+        dataBase64,
+        parentFolderId: folderResult.folderId,
+      })
+      return result.url
+    }
+    const extension = file.name.split('.').pop() || 'bin'
+    const isImage = file.type.startsWith('image/')
+    const isVideo = file.type.startsWith('video/')
+    const subfolder = isImage ? 'images' : (isVideo ? 'videos' : 'docs')
+    const storagePath = `workhub-attachments/${project.workspaceId}/${project.id}/${subfolder}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${extension}`
+    const storageRef = ref(storage, storagePath)
+    await uploadBytes(storageRef, file, { contentType: file.type })
+    return await getDownloadURL(storageRef)
+  }, [fileToBase64])
+
+  const handleSelectedProjectAttachmentFileUpload = useCallback(async () => {
+    if (!selectedProject || !canEditSelectedProject || selectedProjectAttachmentFileDrafts.length === 0) return
+    setUploadingSelectedProjectAttachment(true)
+    setBusyKey(`project-detail:${selectedProject.id}`)
+    try {
+      const uploadedUrls = await Promise.all(selectedProjectAttachmentFileDrafts.map((file) => uploadProjectAttachment(file, selectedProject)))
+      const nextAttachments = Array.from(new Set([...selectedProjectAttachments, ...uploadedUrls]))
+      await updateWorkhubProject(selectedProject.id, { attachments: nextAttachments })
+      setSelectedProjectAttachmentFileDrafts([])
+      setSelectedProjectAttachmentFilePathDraft('')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not upload attachment.'
+      showToast({ type: 'error', message })
+    } finally {
+      setUploadingSelectedProjectAttachment(false)
+      setBusyKey('')
+    }
+  }, [canEditSelectedProject, selectedProject, selectedProjectAttachmentFileDrafts, selectedProjectAttachments, setBusyKey, showToast, uploadProjectAttachment])
 
   useEffect(() => {
     if (selectedWorkspaceProjectColorOptions.length === 0) return
@@ -2853,6 +3007,7 @@ export default function WorkHubPage() {
     if (!selectedWorkspaceSettings) return
     setWorkspaceSettingsName(selectedWorkspaceSettings.name)
     setWorkspaceSettingsDescription(selectedWorkspaceSettings.description || '')
+    setWorkspaceTreeMetaDisplayMode(selectedWorkspaceSettings.treeMetaDisplayMode || 'counts')
     setWorkspaceProjectColorMeaningDrafts(resolveProjectColorMeanings(
       selectedWorkspaceSettingsTemplate.id,
       selectedWorkspaceSettings.projectColorMeanings,
@@ -3136,6 +3291,7 @@ export default function WorkHubPage() {
       await updateWorkhubWorkspace(selectedWorkspaceSettings.id, {
         name: workspaceSettingsName.trim(),
         description: workspaceSettingsDescription.trim(),
+        treeMetaDisplayMode: workspaceTreeMetaDisplayMode,
         projectColorMeanings: normalizedProjectColorMeanings,
         accessMemberUids: normalizeMemberUids(workspaceAccessMemberUids),
         invitedEmails: normalizeInviteEmails(workspaceInviteEmails),
@@ -3700,16 +3856,6 @@ export default function WorkHubPage() {
     setBulkStatusMenuOpen(false)
   }
 
-  function handleToggleSelectAllVisible(checked: boolean) {
-    setSelectedTaskIds((current) => {
-      if (checked) {
-        return Array.from(new Set([...current, ...visibleTaskIds]))
-      }
-      const visibleSet = new Set(visibleTaskIds)
-      return current.filter((taskId) => !visibleSet.has(taskId))
-    })
-  }
-
   async function handleBulkStatusChange(statusId: WorkhubTaskStatus) {
     if (!auth.currentUser || !selectedWorkspaceId || selectedTasks.length === 0) return
     setBusyKey('bulk-task')
@@ -4108,9 +4254,10 @@ export default function WorkHubPage() {
     setCreateDialogOpen(true)
   }
 
-  function openTemplateCreateDialog(intent: WorkhubTemplateCreationIntent) {
+  function openTemplateCreateDialog(intent: WorkhubTemplateCreationIntent, parentProjectId = '') {
     setQuickAddOpen(false)
     setTemplateCreateIntent(intent)
+    setTemplateCreateParentProjectId(parentProjectId)
     setTemplateCreateDraft(buildInitialTemplateCreationDraft(intent))
     setTemplateCreateDialogOpen(true)
   }
@@ -4120,12 +4267,13 @@ export default function WorkHubPage() {
       openCreateProjectDialog(parentProjectId)
       return
     }
-    openTemplateCreateDialog(intent)
+    openTemplateCreateDialog(intent, parentProjectId)
   }
 
   function closeTemplateCreateDialog() {
     setTemplateCreateDialogOpen(false)
     setTemplateCreateIntent(null)
+    setTemplateCreateParentProjectId('')
   }
 
   async function handleCreateTemplateEntity() {
@@ -4201,13 +4349,14 @@ export default function WorkHubPage() {
     const projectType = intentMeta.defaults.projectType
     const description = buildTemplateCreationDescription(templateCreateIntent, draft)
     const projectSubject = intentMeta.subjectLabel
+    const resolvedParentProjectId = templateCreateParentProjectId || (selectedProjectId !== 'all' ? selectedProjectId : '')
 
     setBusyKey('template-create')
     try {
       const projectColorPool = selectedWorkspaceProjectColorOptions.length > 0 ? selectedWorkspaceProjectColorOptions : PROJECT_COLORS
       const projectId = await createWorkhubProject({
         workspaceId: selectedWorkspaceId,
-        parentProjectId: null,
+        parentProjectId: resolvedParentProjectId || null,
         intent: templateCreateIntent,
         name,
         description,
@@ -4245,6 +4394,46 @@ export default function WorkHubPage() {
       showToast({ type: 'success', message: `${projectSubject} created in ${workspaceName}.` })
     } catch (error) {
       const message = error instanceof Error ? error.message : `Could not create ${projectSubject.toLowerCase()}.`
+      showToast({ type: 'error', message })
+    } finally {
+      setBusyKey('')
+    }
+  }
+
+  async function createTaskQuick(projectId: string) {
+    if (!auth.currentUser || !selectedWorkspaceId || !projectId) return
+    const targetProject = workspaceProjectById[projectId]
+    if (!targetProject) return
+    const statusId = workspaceTaskStatuses.find((item) => item.id === 'backlog')?.id || workspaceTaskStatuses[0]?.id || defaultTaskStatusId
+    setBusyKey('task:create')
+    try {
+      const taskId = await createWorkhubTask({
+        workspaceId: selectedWorkspaceId,
+        projectId,
+        title: 'New task',
+        description: '',
+        visibility: targetProject.visibility || 'workspace',
+        memberUids: targetProject.memberUids || [],
+        status: statusId,
+        priority: 'medium',
+        assigneeUid: '',
+        dueDate: '',
+        createdBy: auth.currentUser.uid,
+      })
+      await createWorkhubActivity({
+        workspaceId: selectedWorkspaceId,
+        actorUid: auth.currentUser.uid,
+        entityType: 'task',
+        entityId: taskId,
+        action: 'create',
+        message: 'Created task New task',
+      })
+      setSelectedProjectId(projectId)
+      setSelectedTaskId(taskId)
+      setActiveSection('tasks')
+      showToast({ type: 'success', message: 'Task created.' })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not create task.'
       showToast({ type: 'error', message })
     } finally {
       setBusyKey('')
@@ -4381,6 +4570,30 @@ export default function WorkHubPage() {
     }
     : null
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const media = window.matchMedia('(max-width: 429px)')
+    const apply = (matches: boolean) => setIsMobileWorkhubLayout(matches)
+    apply(media.matches)
+    const onChange = (event: MediaQueryListEvent) => apply(event.matches)
+    media.addEventListener('change', onChange)
+    return () => media.removeEventListener('change', onChange)
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const check = () => setSidebarCollapsed(window.innerWidth < 900)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
+
+  useEffect(() => {
+    if (!isMobileWorkhubLayout) {
+      setMobileWorkspacePanelOpen(false)
+    }
+  }, [isMobileWorkhubLayout])
+
   if (memberLoading || (bootstrappingMasterAccess && !member)) {
     return (
       <div className="workhub-shell">
@@ -4476,6 +4689,84 @@ export default function WorkHubPage() {
     ? workspaceDisplayNameById[selectedWorkspace.id] || selectedWorkspace.name
     : ''
 
+  const mobileWorkflowView: 'dashboard' | 'editor' | 'workhub' = activeSection === 'dashboard'
+    ? 'dashboard'
+    : activeSection === 'notes'
+      ? 'editor'
+      : 'workhub'
+
+  const mobileHeaderTitle = mobileWorkflowView === 'dashboard'
+    ? 'Dashboard Focus'
+    : mobileWorkflowView === 'editor'
+      ? 'Editor Focus'
+      : 'WorkHub Focus'
+
+  const mobileHeaderHint = mobileWorkflowView === 'dashboard'
+    ? 'Review metrics and move to execution.'
+    : mobileWorkflowView === 'editor'
+      ? 'Draft, annotate, and finalize workspace notes.'
+      : 'Navigate projects and execute daily operations.'
+
+  const workhubHeaderTabs = [
+    {
+      id: 'home',
+      section: 'home' as const,
+      icon: '⌂',
+      label: 'Home',
+      onClick: () => setActiveSection('home'),
+    },
+    {
+      id: 'tasks',
+      section: 'tasks' as const,
+      icon: '✓',
+      label: 'Tasks',
+      onClick: () => setActiveSection('tasks'),
+    },
+    {
+      id: 'notes',
+      section: 'notes' as const,
+      icon: '📝',
+      label: 'Editor',
+      onClick: () => setActiveSection('notes'),
+    },
+    {
+      id: 'dashboard',
+      section: 'dashboard' as const,
+      icon: '📊',
+      label: 'Dashboard',
+      onClick: openWorkspaceOverview,
+    },
+    {
+      id: 'clients',
+      section: 'clients' as const,
+      icon: '🏢',
+      label: 'Clients',
+      onClick: () => setActiveSection('clients'),
+    },
+    ...(isPrivilegedMember
+      ? [{
+          id: 'users',
+          section: 'users' as const,
+          icon: '👥',
+          label: 'Users',
+          onClick: () => setActiveSection('users'),
+        }]
+      : []),
+  ]
+
+  const mobileTabOrderByWorkflow: Record<'dashboard' | 'editor' | 'workhub', string[]> = {
+    dashboard: ['dashboard', 'tasks', 'notes', 'home', 'clients', 'users'],
+    editor: ['notes', 'tasks', 'dashboard', 'home', 'clients', 'users'],
+    workhub: ['home', 'tasks', 'dashboard', 'notes', 'clients', 'users'],
+  }
+
+  const visibleHeaderTabs = isMobileWorkhubLayout
+    ? mobileTabOrderByWorkflow[mobileWorkflowView]
+      .map((id) => workhubHeaderTabs.find((tab) => tab.id === id))
+      .filter((tab): tab is (typeof workhubHeaderTabs)[number] => Boolean(tab))
+      .slice(0, 5)
+    : workhubHeaderTabs
+
   const workspaceTemplateCreateActionsBase: WorkhubWorkspaceTemplateCreateAction[] = selectedWorkspaceId
     ? resolveWorkspaceTemplateCreateActions(selectedWorkspaceTemplateId)
     : []
@@ -4525,7 +4816,7 @@ export default function WorkHubPage() {
     : 'No items yet. Create a top-level category first.'
 
   return (
-    <div className="workhub-shell" dir="ltr">
+    <div className={`workhub-shell${isMobileWorkhubLayout ? ' is-mobile' : ''}`} dir="ltr">
       <div className="workhub-app">
         <header className="workhub-topbar">
           <div className="workhub-topbar-main">
@@ -4533,77 +4824,46 @@ export default function WorkHubPage() {
               <span className="workhub-brand" aria-label="WorkHub">
                 <span className="workhub-brand-initial">W</span>ork<span className="workhub-brand-initial">H</span>ub
               </span>
-              <span className="workhub-brand-subtitle">Developed by Muneer Al Sulaimi 2026</span>
+              <span className="workhub-brand-subtitle">
+                {isMobileWorkhubLayout ? `${mobileHeaderTitle} - ${mobileHeaderHint}` : 'Developed by Muneer Al Sulaimi 2026'}
+              </span>
             </div>
             <span className="workhub-topbar-divider" aria-hidden="true" />
-            <div className="workhub-workspace-tabs-wrap">
-              <div className="workhub-workspace-tabs" role="tablist" aria-label="Workspaces">
-                {visibleWorkspaces.map((item) => {
-                  const workspaceDisplayName = workspaceDisplayNameById[item.id] || item.name
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      className={`workhub-tab workhub-workspace-tab${selectedWorkspaceId === item.id ? ' is-active' : ''}`}
-                      onClick={() => setSelectedWorkspaceId(item.id)}
-                      title={workspaceDisplayName}
-                    >
-                      {workspaceDisplayName}
-                    </button>
-                  )
-                })}
+            {isMobileWorkhubLayout ? (
+              <div className="workhub-mobile-workspace-entry">
+                <button
+                  type="button"
+                  className={`workhub-mobile-workspace-toggle${mobileWorkspacePanelOpen ? ' is-active' : ''}`}
+                  onClick={() => setMobileWorkspacePanelOpen((current) => !current)}
+                  aria-label="Toggle workspace list"
+                  aria-expanded={mobileWorkspacePanelOpen}
+                >
+                  <span aria-hidden="true">☰</span>
+                  <span>Workspaces</span>
+                </button>
               </div>
-              {isPrivilegedMember && (
-                <div className="workhub-workspace-tab-actions">
-                  <button className="workhub-plus-btn" onClick={openCreateWorkspaceDialog}>+</button>
-                  {selectedWorkspaceId && <button className="workhub-gear-btn" onClick={() => openWorkspaceSettings(selectedWorkspaceId)}>⚙</button>}
+            ) : (
+              <div className="workhub-workspace-tabs-wrap">
+                <div className="workhub-workspace-tabs" role="tablist" aria-label="Workspaces">
+                  {visibleWorkspaces.map((item) => {
+                    const workspaceDisplayName = workspaceDisplayNameById[item.id] || item.name
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className={`workhub-tab workhub-workspace-tab${selectedWorkspaceId === item.id ? ' is-active' : ''}`}
+                        onClick={() => setSelectedWorkspaceId(item.id)}
+                        title={workspaceDisplayName}
+                      >
+                        {workspaceDisplayName}
+                      </button>
+                    )
+                  })}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
           <nav className="workhub-header-actions">
-            <button
-              className={`workhub-tab workhub-top-nav-icon-btn${activeSection === 'home' ? ' is-active' : ''}`}
-              onClick={() => setActiveSection('home')}
-              aria-label="Home"
-              title="Home"
-            >
-              <span aria-hidden="true">⌂</span>
-            </button>
-            {isPrivilegedMember && (
-              <button
-                className={`workhub-tab workhub-top-nav-icon-btn${activeSection === 'users' ? ' is-active' : ''}`}
-                onClick={() => setActiveSection('users')}
-                aria-label="Users"
-                title="Users"
-              >
-                <span aria-hidden="true">👥</span>
-              </button>
-            )}
-            <button
-              className={`workhub-tab workhub-top-nav-icon-btn${activeSection === 'clients' ? ' is-active' : ''}`}
-              onClick={() => setActiveSection('clients')}
-              aria-label="Clients"
-              title="Clients"
-            >
-              <span aria-hidden="true">🏢</span>
-            </button>
-            <button
-              className={`workhub-tab workhub-top-nav-icon-btn${activeSection === 'notes' ? ' is-active' : ''}`}
-              onClick={() => setActiveSection('notes')}
-              aria-label="Notes"
-              title="Notes"
-            >
-              <span aria-hidden="true">📝</span>
-            </button>
-            <button
-              className={`workhub-tab workhub-top-nav-icon-btn${activeSection === 'dashboard' ? ' is-active' : ''}`}
-              onClick={openWorkspaceOverview}
-              aria-label="Dashboard"
-              title="Dashboard"
-            >
-              <span aria-hidden="true">📊</span>
-            </button>
             <button
               type="button"
               className="workhub-tab workhub-find-command-btn workhub-top-nav-icon-btn"
@@ -4689,6 +4949,43 @@ export default function WorkHubPage() {
                       <span>{accountEmail || 'No email'}</span>
                     </div>
                   </div>
+                  {visibleHeaderTabs.map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      className="workhub-account-menu-action"
+                      onClick={() => {
+                        setAccountMenuOpen(false)
+                        tab.onClick()
+                      }}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                  {isPrivilegedMember && (
+                    <button
+                      type="button"
+                      className="workhub-account-menu-action"
+                      onClick={() => {
+                        setAccountMenuOpen(false)
+                        openCreateWorkspaceDialog()
+                      }}
+                    >
+                      Create workspace
+                    </button>
+                  )}
+                  {selectedWorkspaceId && (
+                    <button
+                      type="button"
+                      className="workhub-account-menu-action"
+                      onClick={() => {
+                        setAccountMenuOpen(false)
+                        openWorkspaceSettings(selectedWorkspaceId)
+                      }}
+                    >
+                      Workspace settings
+                    </button>
+                  )}
                   <button type="button" className="workhub-account-menu-action" onClick={handleOpenAccountSettings}>Account settings</button>
                   <button
                     type="button"
@@ -4706,8 +5003,106 @@ export default function WorkHubPage() {
           </nav>
         </header>
 
+        {isMobileWorkhubLayout && mobileWorkspacePanelOpen && (
+          <div
+            className="workhub-mobile-workspace-panel-backdrop"
+            onClick={() => setMobileWorkspacePanelOpen(false)}
+            aria-hidden="true"
+          >
+            <aside
+              className="workhub-mobile-workspace-panel"
+              role="dialog"
+              aria-label="Workspace list"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="workhub-mobile-workspace-panel-head">
+                <strong>Workspaces</strong>
+                <button type="button" className="workhub-ghost-mini" onClick={() => setMobileWorkspacePanelOpen(false)}>Close</button>
+              </div>
+              <div className="workhub-mobile-workspace-picker">
+                <div className="workhub-mobile-workspace-picker-row">
+                  <select
+                    id="workhub-mobile-workspace-select"
+                    className="workhub-mobile-workspace-picker-select"
+                    value={selectedWorkspaceId}
+                    onChange={(event) => setSelectedWorkspaceId(event.target.value)}
+                  >
+                    {visibleWorkspaces.map((item) => {
+                      const workspaceDisplayName = workspaceDisplayNameById[item.id] || item.name
+                      return (
+                        <option key={item.id} value={item.id}>
+                          {workspaceDisplayName}
+                        </option>
+                      )
+                    })}
+                  </select>
+                  {isPrivilegedMember && (
+                    <div className="workhub-mobile-workspace-picker-actions">
+                      <button
+                        type="button"
+                        className="workhub-plus-btn"
+                        onClick={openCreateWorkspaceDialog}
+                        title="Create workspace"
+                        aria-label="Create workspace"
+                      >
+                        +
+                      </button>
+                      {selectedWorkspaceId && (
+                        <button
+                          type="button"
+                          className="workhub-gear-btn"
+                          onClick={() => openWorkspaceSettings(selectedWorkspaceId)}
+                          title="Workspace settings"
+                          aria-label="Workspace settings"
+                        >
+                          ⚙
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="workhub-mobile-tree-panel">
+                <div className="workhub-mobile-tree-panel-head">
+                  <strong>Workspace tree</strong>
+                </div>
+                <div className="workhub-mobile-tree-panel-body">
+                  {visibleProjectTree.length > 0 ? (
+                    <ProjectTreeNodes
+                      nodes={visibleProjectTree}
+                      treeMetaDisplayMode={treeMetaDisplayMode}
+                      selectedProjectId={selectedProjectId}
+                      expandedProjectIds={expandedProjectIds}
+                      directTaskCountByProjectId={workspaceTaskCountByProjectId}
+                      projectIntentById={projectIntentById}
+                      projectIntentIconById={projectIntentIconById}
+                      selectedDocumentId={selectedDocumentId}
+                      documentsByProjectId={workspaceDocumentsByProjectId}
+                      isPrivilegedMember={isPrivilegedMember}
+                      onSelectProject={(projectId) => {
+                        handleSelectProject(projectId)
+                        setMobileWorkspacePanelOpen(false)
+                      }}
+                      onSelectDocument={(documentId) => {
+                        handleSelectDocumentFromTree(documentId)
+                        setMobileWorkspacePanelOpen(false)
+                      }}
+                      onToggleExpansion={toggleProjectExpansion}
+                      onOpenActionMenu={handleProjectActionMenu}
+                      onOpenSettings={openProjectSettingsDialog}
+                    />
+                  ) : (
+                    <div className="workhub-empty-state">No project tree items yet.</div>
+                  )}
+                </div>
+              </div>
+            </aside>
+          </div>
+        )}
+
         <div className={`workhub-shell-layout${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
-          <aside className={`workhub-panel workhub-tree-sidebar${sidebarCollapsed ? ' is-collapsed' : ''}`}>
+          {!isMobileWorkhubLayout && (
+            <aside className={`workhub-panel workhub-tree-sidebar${sidebarCollapsed ? ' is-collapsed' : ''}`}>
             {sidebarCollapsed ? (
               <div className="workhub-panel-head compact is-collapsed-head">
                 <button className="workhub-sidebar-toggle" onClick={handleExpandSidebar} title="Expand sidebar" aria-label="Expand sidebar">
@@ -4780,6 +5175,7 @@ export default function WorkHubPage() {
                             <div className="workhub-tree-group-body">
                               <ProjectTreeNodes
                                 nodes={mirroredProjectRoots}
+                                treeMetaDisplayMode={treeMetaDisplayMode}
                                 selectedProjectId={selectedProjectId}
                                 expandedProjectIds={expandedProjectIds}
                                 directTaskCountByProjectId={workspaceTaskCountByProjectId}
@@ -4804,6 +5200,7 @@ export default function WorkHubPage() {
                         <div className="workhub-tree-group-body">
                           <ProjectTreeNodes
                             nodes={localWorkspaceRoots}
+                            treeMetaDisplayMode={treeMetaDisplayMode}
                             selectedProjectId={selectedProjectId}
                             expandedProjectIds={expandedProjectIds}
                             directTaskCountByProjectId={workspaceTaskCountByProjectId}
@@ -4824,6 +5221,7 @@ export default function WorkHubPage() {
                   ) : visibleProjectTree.length > 0 ? (
                     <ProjectTreeNodes
                       nodes={visibleProjectTree}
+                      treeMetaDisplayMode={treeMetaDisplayMode}
                       selectedProjectId={selectedProjectId}
                       expandedProjectIds={expandedProjectIds}
                       directTaskCountByProjectId={workspaceTaskCountByProjectId}
@@ -4891,7 +5289,8 @@ export default function WorkHubPage() {
                 </div>
               </>
             )}
-          </aside>
+            </aside>
+          )}
 
           <section className="workhub-main-stage">
 
@@ -5092,21 +5491,7 @@ export default function WorkHubPage() {
                     </div>
                   </div>
                   <div className="workhub-project-card-grid">
-                    {selectedBranchChildProjects.map((project) => (
-                      <article key={project.id} className="workhub-project-card compact-card">
-                        <div className="workhub-project-title-row">
-                          <span className="workhub-project-dot" style={{ background: project.color }} />
-                          <strong>{project.name}</strong>
-                          <span className="workhub-badge">{project.visibility === 'restricted' ? 'Restricted' : 'Workspace'}</span>
-                        </div>
-                        <p>{project.description || 'No description yet.'}</p>
-                        <div className="workhub-project-card-actions">
-                          <button className="workhub-ghost-mini" onClick={() => handleSelectProject(project.id)}>Open</button>
-                          <button className="workhub-plus-btn" onClick={(event) => handleProjectActionMenu(project.id, event)}>+</button>
-                          {isPrivilegedMember && <button className="workhub-gear-btn" onClick={() => openProjectSettingsDialog(project.id)}>⚙</button>}
-                        </div>
-                      </article>
-                    ))}
+                    {selectedBranchChildProjects.map((project) => renderDashboardProjectCard(project))}
                     {selectedBranchChildProjects.length === 0 && <div className="workhub-empty-state">No child projects here yet.</div>}
                   </div>
                 </section>
@@ -5586,40 +5971,8 @@ export default function WorkHubPage() {
                     </button>
                   </>
                 )}
-                {isPrivilegedMember && (
-                  <>
-                    <button
-                      type="button"
-                      className="workhub-status-manage-btn"
-                      onClick={() => setStatusDialogOpen(true)}
-                      aria-label="Manage task statuses"
-                      title="Manage task statuses"
-                    >
-                      ⚙
-                    </button>
-                  </>
-                )}
               </div>
               <div className="workhub-task-table-wrap">
-                <div className="workhub-task-table-head shared">
-                  <span className="workhub-select-all-head">
-                    <input
-                      type="checkbox"
-                      checked={allVisibleTasksSelected}
-                      onChange={(event) => handleToggleSelectAllVisible(event.target.checked)}
-                      disabled={visibleTaskIds.length === 0}
-                      aria-label="Select all visible tasks"
-                    />
-                    <span>Task details</span>
-                  </span>
-                  <span>Status</span>
-                  <span>Assignee</span>
-                  <span>Due</span>
-                  <span>Priority</span>
-                  <span className="workhub-col-checklist">Checklist</span>
-                  <span className="workhub-col-actions">Actions</span>
-                  <span className="workhub-col-more">More</span>
-                </div>
                 {(() => {
                   const visibleStatuses = selectedTaskStatusTab === 'all'
                     ? workspaceTaskStatuses
@@ -5657,7 +6010,6 @@ export default function WorkHubPage() {
                               taskAssignee={memberByUid[task.assigneeUid]}
                               assignableMembers={assignableMembersByProjectId[task.projectId] || workspaceAssignableMembers}
                               taskCreator={memberByUid[task.createdBy]}
-                              statuses={workspaceTaskStatuses}
                               meta={taskMetaById[task.id] ?? emptyTaskRowMeta}
                               callbacks={taskRowCallbacks}
                             />
@@ -5689,14 +6041,6 @@ export default function WorkHubPage() {
             </div>
 
             <aside className="workhub-task-detail-rail">
-              <div className="workhub-detail-rail-head">
-                <h3>Details</h3>
-                {selectedTask ? (
-                  <span>Task selected</span>
-                ) : !selectedProject ? (
-                  <span>No item selected</span>
-                ) : null}
-              </div>
               {selectedTask ? (
                 <>
                   <div className="workhub-detail-card">
@@ -5833,45 +6177,103 @@ export default function WorkHubPage() {
                     />
                     <div className="workhub-task-attachments">
                       <div className="workhub-task-attachments-head">
-                        <span>Attachments & links</span>
-                        <div className="workhub-view-mode-toggle">
-                          <button type="button" className={attachmentViewMode === 'list' ? 'active' : ''} onClick={() => setAttachmentViewMode('list')} title="Minimal List">List</button>
-                          <button type="button" className={attachmentViewMode === 'thumbnail' ? 'active' : ''} onClick={() => setAttachmentViewMode('thumbnail')} title="Small Thumbnails">Thumbs</button>
-                          <button type="button" className={attachmentViewMode === 'card' ? 'active' : ''} onClick={() => setAttachmentViewMode('card')} title="Cards">Cards</button>
-                        </div>
+                        <button
+                          type="button"
+                          className="workhub-task-attachments-toggle"
+                          onClick={() => setTaskAttachmentsCollapsed((current) => !current)}
+                          aria-expanded={!taskAttachmentsCollapsed}
+                        >
+                          <span>Attachments & links</span>
+                          <span aria-hidden="true" className="workhub-task-attachments-toggle-caret">{taskAttachmentsCollapsed ? '▸' : '▾'}</span>
+                        </button>
+                        {!taskAttachmentsCollapsed && (
+                          <div className="workhub-view-mode-toggle">
+                            <button type="button" className={attachmentViewMode === 'list' ? 'active' : ''} onClick={() => setAttachmentViewMode('list')} title="Minimal List">List</button>
+                            <button type="button" className={attachmentViewMode === 'thumbnail' ? 'active' : ''} onClick={() => setAttachmentViewMode('thumbnail')} title="Small Thumbnails">Thumbs</button>
+                            <button type="button" className={attachmentViewMode === 'card' ? 'active' : ''} onClick={() => setAttachmentViewMode('card')} title="Cards">Cards</button>
+                          </div>
+                        )}
                       </div>
-                      <div className="workhub-checklist-url-row compact-row">
-                        <input
-                          type="url"
-                          value={taskAttachmentDrafts[selectedTask.id] || ''}
-                          onChange={(event) => setTaskAttachmentDrafts((current) => ({ ...current, [selectedTask.id]: event.target.value }))}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter') {
-                              event.preventDefault()
-                              handleTaskAttachmentAdd(selectedTask)
-                            }
-                          }}
-                          placeholder="Attachment URL (image, video, pdf, file)"
-                        />
-                        <button type="button" onClick={() => handleTaskAttachmentAdd(selectedTask)}>➕ Add URL</button>
-                        <label className="workhub-file-upload-btn">
+                      {!taskAttachmentsCollapsed && <div className="workhub-task-attachment-editor">
+                        <div className="workhub-checklist-url-row compact-row is-stacked">
                           <input
-                            type="file"
-                            multiple
-                            onChange={(event) => {
-                              const files = Array.from(event.target.files || [])
-                              if (files.length === 0) return
-                              void handleTaskAttachmentFileUpload(selectedTask, files)
-                              event.target.value = ''
+                            type="text"
+                            value={taskAttachmentTitleDrafts[selectedTask.id] || ''}
+                            onChange={(event) => setTaskAttachmentTitleDrafts((current) => ({ ...current, [selectedTask.id]: event.target.value }))}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                event.preventDefault()
+                                handleTaskAttachmentAdd(selectedTask)
+                              }
                             }}
-                            disabled={uploadingTaskAttachmentId === selectedTask.id}
+                            placeholder="File title"
+                            className="workhub-task-attachment-title-input"
                           />
-                          {uploadingTaskAttachmentId === selectedTask.id ? 'Uploading…' : 'Upload'}
-                        </label>
-                      </div>
-                      {getTaskAttachments(selectedTask).length > 0 && (
+                        </div>
+                        <div className="workhub-checklist-url-row compact-row is-stacked">
+                          <input
+                            type="url"
+                            value={taskAttachmentDrafts[selectedTask.id] || ''}
+                            onChange={(event) => setTaskAttachmentDrafts((current) => ({ ...current, [selectedTask.id]: event.target.value }))}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                event.preventDefault()
+                                handleTaskAttachmentAdd(selectedTask)
+                              }
+                            }}
+                            placeholder="Attachment URL"
+                          />
+                        </div>
+                        <div className="workhub-checklist-url-row compact-row is-stacked workhub-task-file-path-row">
+                          <input
+                            type="text"
+                            value={taskAttachmentFilePathDrafts[selectedTask.id] || ''}
+                            placeholder="File path"
+                            readOnly
+                          />
+                          <label className="workhub-file-upload-btn">
+                            <input
+                              type="file"
+                              multiple
+                              onChange={(event) => {
+                                const files = Array.from(event.target.files || [])
+                                setTaskAttachmentFileDrafts((current) => ({ ...current, [selectedTask.id]: files }))
+                                setTaskAttachmentFilePathDrafts((current) => ({
+                                  ...current,
+                                  [selectedTask.id]: files.map((file) => file.name).join(', '),
+                                }))
+                                event.target.value = ''
+                              }}
+                              disabled={uploadingTaskAttachmentId === selectedTask.id}
+                            />
+                            Browse
+                          </label>
+                        </div>
+                        <div className="workhub-checklist-url-row compact-row is-stacked">
+                          <button type="button" onClick={() => handleTaskAttachmentAdd(selectedTask)}>➕ Add file</button>
+                        </div>
+                        <div className="workhub-checklist-url-row compact-row is-stacked">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const files = taskAttachmentFileDrafts[selectedTask.id] || []
+                              if (files.length === 0) return
+                              void (async () => {
+                                await handleTaskAttachmentFileUpload(selectedTask, files)
+                                setTaskAttachmentFileDrafts((current) => ({ ...current, [selectedTask.id]: [] }))
+                                setTaskAttachmentFilePathDrafts((current) => ({ ...current, [selectedTask.id]: '' }))
+                              })()
+                            }}
+                            disabled={uploadingTaskAttachmentId === selectedTask.id || (taskAttachmentFileDrafts[selectedTask.id] || []).length === 0}
+                          >
+                            {uploadingTaskAttachmentId === selectedTask.id ? 'Uploading…' : 'Upload'}
+                          </button>
+                        </div>
+                      </div>}
+                      {!taskAttachmentsCollapsed && getTaskAttachments(selectedTask).length > 0 && (
                         <div className={`workhub-checklist-url-list view-${attachmentViewMode}`}>
                           {getTaskAttachments(selectedTask).map((url) => {
+                            const attachmentTitle = getTaskAttachmentTitle(selectedTask, url)
                             const review = attachmentReviews[url]
                             const reviewCount = (review?.notes.trim() ? 1 : 0)
                               + (review?.comments.length || 0)
@@ -5882,12 +6284,18 @@ export default function WorkHubPage() {
                                 {isImageAttachmentUrl(url) ? (
                                   <button type="button" className="workhub-attachment-preview-btn" onClick={() => openAttachmentLightbox(url)}>
                                     <img src={url} alt="Attachment preview" className="workhub-task-image-thumb" loading="lazy" />
-                                    <span>{url}</span>
+                                    <span className="workhub-attachment-copy">
+                                      <strong>{attachmentTitle}</strong>
+                                      <small>{url}</small>
+                                    </span>
                                   </button>
                                 ) : (
                                   <a href={url} target="_blank" rel="noreferrer" className="workhub-task-image-link">
                                     <span className="workhub-task-attachment-icon">📎</span>
-                                    <span>{url}</span>
+                                    <span className="workhub-attachment-copy">
+                                      <strong>{attachmentTitle}</strong>
+                                      <small>{url}</small>
+                                    </span>
                                   </a>
                                 )}
                                 {reviewCount > 0 && (
@@ -5902,7 +6310,7 @@ export default function WorkHubPage() {
                         </div>
                       )}
 
-                      <div className="workhub-checklist-url-row compact-row">
+                      {!taskAttachmentsCollapsed && <div className="workhub-checklist-url-row compact-row">
                         <input
                           type="url"
                           value={taskLinkDrafts[selectedTask.id] || ''}
@@ -5916,8 +6324,8 @@ export default function WorkHubPage() {
                           placeholder="Task link URL"
                         />
                         <button type="button" onClick={() => handleTaskLinkAdd(selectedTask)}>➕ Add link</button>
-                      </div>
-                      {getTaskLinks(selectedTask).length > 0 && (
+                      </div>}
+                      {!taskAttachmentsCollapsed && getTaskLinks(selectedTask).length > 0 && (
                         <div className="workhub-checklist-url-list">
                           {getTaskLinks(selectedTask).map((link) => (
                             <div key={link} className="workhub-checklist-url-item">
@@ -5940,16 +6348,20 @@ export default function WorkHubPage() {
                   </div>
 
                   <div className="workhub-detail-card">
-                    <h3>Checklist</h3>
                     {(() => {
                       const checklist = buildChecklist(selectedTask)
                       const checklistDoneCount = checklist.filter((item) => item.completed).length
+                      const checklistSummaryText = checklist.length > 0
+                        ? ` (${checklistDoneCount}/${checklist.length} completed)`
+                        : ''
                       return (
-                        <div className="workhub-checklist-items">
-                          {checklist.length === 0 ? (
-                            <div className="workhub-empty-state">No checklist items yet.</div>
-                          ) : (
-                            checklist.map((item, index) => {
+                        <>
+                          <h3>{`Checklist${checklistSummaryText}`}</h3>
+                          <div className="workhub-checklist-items">
+                            {checklist.length === 0 ? (
+                              <div className="workhub-empty-state">No checklist items yet.</div>
+                            ) : (
+                              checklist.map((item, index) => {
                               const detailKey = getChecklistDetailKey(selectedTask.id, item.id)
                               const detailsExpanded = expandedChecklistDetailKeys.includes(detailKey)
                               return (
@@ -6116,14 +6528,10 @@ export default function WorkHubPage() {
                                   )}
                                 </div>
                               )
-                            })
-                          )}
-                          {checklist.length > 0 && (
-                            <div className="workhub-checklist-summary">
-                              {checklistDoneCount}/{checklist.length} completed
-                            </div>
-                          )}
-                        </div>
+                              })
+                            )}
+                          </div>
+                        </>
                       )
                     })()}
                     <div className="workhub-checklist-add">
@@ -6204,6 +6612,75 @@ export default function WorkHubPage() {
                       }))
                     }}
                   />
+
+                  {selectedProjectEffectiveIntent === 'proposal' && (
+                    <div className="workhub-detail-grid workhub-project-detail-grid">
+                      <label className="workhub-span-2">
+                        <span>Attachments</span>
+                        <div className="workhub-checklist-url-row compact-row is-stacked">
+                          <input
+                            type="url"
+                            value={selectedProjectAttachmentDraft}
+                            onChange={(event) => setSelectedProjectAttachmentDraft(event.target.value)}
+                            placeholder="Attachment URL"
+                            disabled={!canEditSelectedProject}
+                          />
+                          <button type="button" onClick={() => { void handleSelectedProjectAttachmentAdd() }} disabled={!canEditSelectedProject}>➕ Add URL</button>
+                        </div>
+                        <div className="workhub-checklist-url-row compact-row is-stacked workhub-task-file-path-row">
+                          <input
+                            type="text"
+                            value={selectedProjectAttachmentFilePathDraft}
+                            readOnly
+                            placeholder="No file selected"
+                          />
+                          <label className="workhub-file-upload-btn">
+                            <input
+                              type="file"
+                              multiple
+                              disabled={!canEditSelectedProject || uploadingSelectedProjectAttachment}
+                              onChange={(event) => {
+                                const files = Array.from(event.target.files || [])
+                                setSelectedProjectAttachmentFileDrafts(files)
+                                setSelectedProjectAttachmentFilePathDraft(files.map((file) => file.name).join(', '))
+                                event.target.value = ''
+                              }}
+                            />
+                            Add files
+                          </label>
+                        </div>
+                        <div className="workhub-checklist-url-row compact-row is-stacked">
+                          <button
+                            type="button"
+                            onClick={() => { void handleSelectedProjectAttachmentFileUpload() }}
+                            disabled={!canEditSelectedProject || uploadingSelectedProjectAttachment || selectedProjectAttachmentFileDrafts.length === 0}
+                          >
+                            {uploadingSelectedProjectAttachment ? 'Uploading…' : 'Upload'}
+                          </button>
+                        </div>
+                        {selectedProjectAttachments.length > 0 && (
+                          <div className={`workhub-checklist-url-list view-${attachmentViewMode}`}>
+                            {selectedProjectAttachments.map((url) => (
+                              <div key={url} className="workhub-checklist-url-item workhub-task-image-item">
+                                {isImageAttachmentUrl(url) ? (
+                                  <button type="button" className="workhub-attachment-preview-btn" onClick={() => openAttachmentLightbox(url)}>
+                                    <img src={url} alt="Project attachment preview" className="workhub-task-image-thumb" loading="lazy" />
+                                    <span>{url}</span>
+                                  </button>
+                                ) : (
+                                  <a href={url} target="_blank" rel="noreferrer" className="workhub-task-image-link">
+                                    <span className="workhub-task-attachment-icon">📎</span>
+                                    <span>{url}</span>
+                                  </a>
+                                )}
+                                {canEditSelectedProject && <button type="button" onClick={() => { void handleSelectedProjectAttachmentRemove(url) }}>✕</button>}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </label>
+                    </div>
+                  )}
 
                   <div className="workhub-detail-grid workhub-project-detail-grid">
                     <label>
@@ -6317,37 +6794,63 @@ export default function WorkHubPage() {
           </main>
         )}
 
-          <div className="workhub-floating-add-wrap">
-            {quickAddOpen && (
-              <div className="workhub-floating-add-menu">
-                <button
-                  className="workhub-floating-add-option"
-                  disabled={!selectedWorkspaceId}
-                  onClick={() => openCreateTaskDialog(selectedProjectId !== 'all' ? selectedProjectId : '')}
-                >
-                  ✅ Add task
-                </button>
-                {workspaceTemplateCreateActions.map((action) => (
-                  <button
-                    key={action.id}
-                    className="workhub-floating-add-option"
-                    disabled={!selectedWorkspaceId}
-                    onClick={() => openWorkspaceTypeCreateDialog(action.intent, selectedProjectId !== 'all' ? selectedProjectId : '')}
-                  >
-                    {`${action.icon} ${action.label}`}
-                  </button>
-                ))}
-              </div>
-            )}
-            <button
-              className="workhub-floating-add-btn"
-              onClick={() => setQuickAddOpen((current) => !current)}
-              aria-label="Quick add"
-              title="Quick add"
-            >
-              +
-            </button>
-          </div>
+          {isMobileWorkhubLayout && (
+            <nav className="workhub-mobile-footer" aria-label="Mobile navigation">
+              <button
+                type="button"
+                className={`workhub-mobile-footer-btn${activeSection === 'home' ? ' is-active' : ''}`}
+                onClick={() => {
+                  setQuickAddOpen(false)
+                  setActiveSection('home')
+                }}
+                aria-label="Home"
+                title="Home"
+              >
+                <span aria-hidden="true">⌂</span>
+                <small>Home</small>
+              </button>
+              <button
+                type="button"
+                className={`workhub-mobile-footer-btn${activeSection === 'tasks' ? ' is-active' : ''}`}
+                onClick={() => {
+                  setQuickAddOpen(false)
+                  setActiveSection('tasks')
+                }}
+                aria-label="Tasks"
+                title="Tasks"
+              >
+                <span aria-hidden="true">☑</span>
+                <small>Tasks</small>
+              </button>
+              <button
+                type="button"
+                className={`workhub-mobile-footer-btn${mobileWorkspacePanelOpen ? ' is-active' : ''}`}
+                onClick={() => {
+                  setQuickAddOpen(false)
+                  setMobileWorkspacePanelOpen(true)
+                }}
+                aria-label="Workspaces"
+                title="Workspaces"
+              >
+                <span aria-hidden="true">▤</span>
+                <small>Workspaces</small>
+              </button>
+              <button
+                type="button"
+                className="workhub-mobile-footer-btn"
+                onClick={() => {
+                  setQuickAddOpen(false)
+                  setAccountMenuOpen(false)
+                  handleOpenAccountSettings()
+                }}
+                aria-label="Account settings"
+                title="Account settings"
+              >
+                <span aria-hidden="true">◯</span>
+                <small>Account</small>
+              </button>
+            </nav>
+          )}
 
           </section>
         </div>
@@ -6577,10 +7080,12 @@ export default function WorkHubPage() {
           deleteAcknowledge={workspaceDeleteAcknowledge}
           settingsName={workspaceSettingsName}
           settingsDescription={workspaceSettingsDescription}
+          treeMetaDisplayMode={workspaceTreeMetaDisplayMode}
           projectColorMeanings={workspaceProjectColorMeaningDrafts}
           onClose={() => setWorkspaceSettingsId('')}
           onSettingsNameChange={setWorkspaceSettingsName}
           onSettingsDescriptionChange={setWorkspaceSettingsDescription}
+          onTreeMetaDisplayModeChange={setWorkspaceTreeMetaDisplayMode}
           onProjectColorMeaningChange={handleWorkspaceProjectColorMeaningChange}
           onRemoveProjectColorMeaning={handleRemoveWorkspaceProjectColorMeaning}
           onResetProjectColorMeanings={handleResetWorkspaceProjectColorMeanings}
@@ -6611,9 +7116,21 @@ export default function WorkHubPage() {
           canCreateTopCategory={!!selectedWorkspaceId}
           templateCreateActions={workspaceTemplateCreateActions}
           onClose={closeActionMenu}
-          onCreateTask={(projectId) => openCreateTaskDialog(projectId)}
+          onCreateTask={(projectId) => {
+            if (projectId) {
+              void createTaskQuick(projectId)
+              return
+            }
+            openCreateTaskDialog(projectId)
+          }}
           onCreateSubProject={(projectId) => openCreateProjectDialog(projectId)}
-          onCreateDocument={(projectId) => openDocumentCreateDialog(projectId || '')}
+          onCreateDocument={(projectId) => {
+            if (projectId) {
+              void createDocumentQuick(projectId)
+              return
+            }
+            openDocumentCreateDialog(projectId || '')
+          }}
           onCreateTemplateEntity={(intent, projectId) => openWorkspaceTypeCreateDialog(intent, projectId || '')}
           onOpenSettings={(projectId) => setProjectAccessDialogId(projectId)}
         />

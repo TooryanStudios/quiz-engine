@@ -4,6 +4,7 @@ import type { WorkhubProjectTreeNode } from '../projectUtils'
 
 interface ProjectTreeNodesProps {
   nodes: WorkhubProjectTreeNode[]
+  treeMetaDisplayMode: 'counts' | 'countdown'
   selectedProjectId: string
   expandedProjectIds: string[]
   directTaskCountByProjectId: Record<string, number>
@@ -20,8 +21,43 @@ interface ProjectTreeNodesProps {
   depth?: number
 }
 
+function parseProjectSubmissionTimestamp(projectDeadline?: string, submissionTime?: string): number | null {
+  const deadline = (projectDeadline || '').trim()
+  if (!deadline) return null
+  const time = (submissionTime || '').trim() || '23:59'
+  const value = Date.parse(`${deadline}T${time}`)
+  return Number.isFinite(value) ? value : null
+}
+
+function formatCountdownMeta(projectDeadline?: string, submissionTime?: string): {
+  label: string
+  isNear: boolean
+  isOverdue: boolean
+} {
+  const targetTs = parseProjectSubmissionTimestamp(projectDeadline, submissionTime)
+  if (!targetTs) return { label: 'No deadline', isNear: false, isOverdue: false }
+
+  const diffMs = targetTs - Date.now()
+  const isOverdue = diffMs < 0
+  const absMs = Math.abs(diffMs)
+  const totalHours = Math.max(0, Math.floor(absMs / (1000 * 60 * 60)))
+  const monthHours = 24 * 30
+  const months = Math.floor(totalHours / monthHours)
+  const afterMonthsHours = totalHours - (months * monthHours)
+  const days = Math.floor(afterMonthsHours / 24)
+  const hours = afterMonthsHours % 24
+  const isNear = !isOverdue && absMs <= (1000 * 60 * 60 * 72)
+  const monthPart = months > 0 ? `${months}mo` : ''
+  const dayPart = days > 0 ? `${days}d` : ''
+  const hourPart = `${hours}h`
+  const label = [monthPart, dayPart, hourPart].filter(Boolean).join(' ').trim() || '0h'
+
+  return { label, isNear: isNear || isOverdue, isOverdue }
+}
+
 export function ProjectTreeNodes({
   nodes,
+  treeMetaDisplayMode,
   selectedProjectId,
   expandedProjectIds,
   directTaskCountByProjectId,
@@ -50,6 +86,16 @@ export function ProjectTreeNodes({
         const intentIcon = effectiveIntent === 'project'
           ? (hasExpandableChildren ? (isExpanded ? '📂' : '📁') : (projectIntentIconById[node.id] || '📁'))
           : (projectIntentIconById[node.id] || '📁')
+        const countdownMeta = formatCountdownMeta(node.projectDeadline, node.submissionTime)
+        const defaultMetaText = childCount > 0
+          ? `${childCount} sub-project${childCount > 1 ? 's' : ''}${documentCount > 0 ? ` • ${documentCount} doc${documentCount === 1 ? '' : 's'}` : ''}`
+          : documentCount > 0
+            ? `${documentCount} doc${documentCount === 1 ? '' : 's'}`
+            : `${directTaskCount} task${directTaskCount === 1 ? '' : 's'}`
+        const showCountdownMeta = treeMetaDisplayMode === 'countdown' && childCount === 0
+        const metaText = showCountdownMeta ? countdownMeta.label : defaultMetaText
+        const showMeta = !(treeMetaDisplayMode === 'countdown' && childCount > 0)
+        const metaClassName = `workhub-tree-node-meta${treeMetaDisplayMode === 'countdown' && countdownMeta.isNear ? ' is-near-submission' : ''}${treeMetaDisplayMode === 'countdown' && countdownMeta.isOverdue ? ' is-overdue' : ''}`
 
         return (
           <div key={node.id} className={`workhub-tree-node-wrap${depth === 0 ? ' is-root' : ' is-nested'}`}>
@@ -106,14 +152,12 @@ export function ProjectTreeNodes({
                     <span className="workhub-tree-node-intent-icon" aria-hidden="true">{intentIcon}</span>
                     <span className="workhub-tree-node-title-text">{node.name}</span>
                   </span>
-                  <span className="workhub-tree-node-meta">
-                    ({childCount > 0
-                      ? `${childCount} sub-project${childCount > 1 ? 's' : ''}${documentCount > 0 ? ` • ${documentCount} doc${documentCount === 1 ? '' : 's'}` : ''}`
-                      : documentCount > 0
-                        ? `${documentCount} doc${documentCount === 1 ? '' : 's'}`
-                        : `${directTaskCount} task${directTaskCount === 1 ? '' : 's'}`})
-                  </span>
                 </span>
+                {showMeta && (
+                  <span className={metaClassName}>
+                    ({metaText})
+                  </span>
+                )}
               </div>
               <div className="workhub-tree-node-actions">
                 <button
@@ -144,6 +188,7 @@ export function ProjectTreeNodes({
               <div className="workhub-tree-children">
                 <ProjectTreeNodes
                   nodes={node.children}
+                  treeMetaDisplayMode={treeMetaDisplayMode}
                   depth={depth + 1}
                   selectedProjectId={selectedProjectId}
                   expandedProjectIds={expandedProjectIds}

@@ -50,6 +50,7 @@ export interface WorkhubWorkspace {
   name: string
   description: string
   type: 'technical' | 'hr' | 'finance'
+  treeMetaDisplayMode?: 'counts' | 'countdown'
   templateId?: string
   taskStatuses?: WorkhubTaskStatusConfig[]
   projectColorMeanings?: WorkhubProjectColorMeaningConfig[]
@@ -80,6 +81,7 @@ export interface WorkhubProject {
   priority?: WorkhubProjectPriority
   clientId?: string
   notes?: string
+  attachments?: string[]
   driveFolderId?: string
   storageMethod?: 'firebase' | 'drive'
   createdBy: string
@@ -131,6 +133,7 @@ export interface WorkhubTask {
   title: string
   description: string
   attachments?: string[]
+  attachmentTitles?: Record<string, string>
   imageUrls?: string[]
   links?: string[]
   visibility: WorkhubVisibility
@@ -376,7 +379,7 @@ export async function createWorkhubWorkspace(input: { name: string; description:
 
 export async function updateWorkhubWorkspace(
   workspaceId: string,
-  patch: Partial<Pick<WorkhubWorkspace, 'name' | 'description' | 'type' | 'templateId' | 'taskStatuses' | 'projectColorMeanings' | 'accessMemberUids' | 'memberAccessLevels' | 'invitedEmails'>>,
+  patch: Partial<Pick<WorkhubWorkspace, 'name' | 'description' | 'type' | 'treeMetaDisplayMode' | 'templateId' | 'taskStatuses' | 'projectColorMeanings' | 'accessMemberUids' | 'memberAccessLevels' | 'invitedEmails'>>,
 ) {
   await updateDoc(doc(db, 'workhub_workspaces', workspaceId), {
     ...patch,
@@ -545,7 +548,7 @@ export async function createWorkhubProject(input: {
   return docRef.id
 }
 
-export async function updateWorkhubProject(projectId: string, patch: Partial<Pick<WorkhubProject, 'parentProjectId' | 'intent' | 'mainPanelView' | 'valueAmount' | 'valueCurrency' | 'name' | 'description' | 'color' | 'notes' | 'notesUpdatedBy' | 'visibility' | 'memberUids' | 'storageMethod' | 'projectStartDate' | 'projectDeadline' | 'projectType' | 'submissionTime' | 'priority' | 'clientId'>>) {
+export async function updateWorkhubProject(projectId: string, patch: Partial<Pick<WorkhubProject, 'parentProjectId' | 'intent' | 'mainPanelView' | 'valueAmount' | 'valueCurrency' | 'name' | 'description' | 'color' | 'notes' | 'attachments' | 'notesUpdatedBy' | 'visibility' | 'memberUids' | 'storageMethod' | 'projectStartDate' | 'projectDeadline' | 'projectType' | 'submissionTime' | 'priority' | 'clientId'>>) {
   const payload: Record<string, unknown> = {
     ...patch,
     updatedAt: serverTimestamp(),

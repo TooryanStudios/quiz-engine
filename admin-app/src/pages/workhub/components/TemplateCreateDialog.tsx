@@ -126,10 +126,9 @@ export function TemplateCreateDialog(props: {
       <div className="workhub-modal" onMouseDown={(event) => event.stopPropagation()}>
         <div className="workhub-modal-head">
           <div>
-            <h2>{intentMeta.title}</h2>
+            <h2 className={`workhub-template-create-title${props.intent === 'proposal' ? ' is-proposal' : ''}`}>{intentMeta.title}</h2>
             <p>{intentMeta.subtitle}</p>
           </div>
-          <button className="workhub-ghost-btn" onClick={props.onClose}>Close</button>
         </div>
 
         <form

@@ -111,6 +111,56 @@ export function useWorkhubDocumentCreation({
     workspaceProjectById,
   ])
 
+  const createDocumentQuick = useCallback(async (projectId = '') => {
+    if (!selectedWorkspaceId || !currentUserUid) return
+
+    const targetProject = projectId ? (workspaceProjectById[projectId] || null) : null
+    const visibility: WorkhubVisibility = targetProject?.visibility || 'workspace'
+    const memberUids = visibility === 'restricted'
+      ? normalizeMemberUids(targetProject?.memberUids?.length ? targetProject.memberUids : [currentUserUid])
+      : []
+
+    const title = 'New document'
+    setBusyKey('document:create')
+    try {
+      const documentId = await createWorkhubDocument({
+        workspaceId: selectedWorkspaceId,
+        projectId: targetProject?.id || null,
+        title,
+        body: '',
+        visibility,
+        memberUids,
+        createdBy: currentUserUid,
+      })
+
+      await createWorkhubActivity({
+        workspaceId: selectedWorkspaceId,
+        actorUid: currentUserUid,
+        entityType: 'document',
+        entityId: documentId,
+        action: 'create',
+        message: `Created document ${title}`,
+        visibility,
+        memberUids,
+      })
+
+      onDocumentCreated?.(documentId, targetProject?.id || null)
+      showToast({ type: 'success', message: 'Document created.' })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not create document.'
+      showToast({ type: 'error', message })
+    } finally {
+      setBusyKey('')
+    }
+  }, [
+    currentUserUid,
+    onDocumentCreated,
+    selectedWorkspaceId,
+    setBusyKey,
+    showToast,
+    workspaceProjectById,
+  ])
+
   return {
     documentDialogOpen,
     documentTitleDraft,
@@ -122,5 +172,6 @@ export function useWorkhubDocumentCreation({
     openDocumentCreateDialog,
     closeDocumentCreateDialog,
     handleCreateDocument,
+    createDocumentQuick,
   }
 }
