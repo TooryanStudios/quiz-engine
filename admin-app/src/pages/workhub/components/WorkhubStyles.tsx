@@ -8035,6 +8035,36 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         .workhub-document-format-toolbar {
           justify-content: flex-start;
         }
+        .workhub-task-context-strip {
+          gap: 6px;
+          padding: 6px 8px;
+          border-radius: 10px;
+          margin-bottom: 8px;
+        }
+        .workhub-task-context-path {
+          gap: 4px;
+        }
+        .workhub-task-context-node {
+          min-height: 30px;
+          padding: 4px 8px;
+          border-radius: 9px;
+        }
+        .workhub-task-context-node-icon {
+          font-size: 0.72rem;
+        }
+        .workhub-task-context-node-title {
+          font-size: 0.72rem;
+          line-height: 1.15;
+        }
+        .workhub-task-context-sep {
+          font-size: 0.72rem;
+          margin: 0 1px;
+        }
+        .workhub-task-context-period {
+          gap: 5px;
+          font-size: 0.68rem;
+          line-height: 1.15;
+        }
         .workhub-document-body-editor {
           min-height: 320px;
           height: 320px;

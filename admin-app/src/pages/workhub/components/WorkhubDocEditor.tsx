@@ -9,6 +9,11 @@ interface WorkhubDocEditorProps extends UseWorkhubDocEditorHandlersOutput {
   selectedDocument: WorkhubDocument | undefined
   scopedWorkspaceDocuments: WorkhubDocument[]
   selectedProjectId: string
+  taskContextTrail: Array<Pick<WorkhubProject, 'id' | 'name'>>
+  taskContextIconByProjectId: Record<string, string>
+  selectedProjectPeriodLabel: string
+  selectedProjectSubmissionTimeLabel: string
+  onSelectProject: (projectId: string) => void
   busyKey: string
   memberByUid: Record<string, WorkhubMember>
   workhubShareCandidates: WorkhubMember[]
@@ -67,6 +72,11 @@ export function WorkhubDocEditor({
   selectedDocument,
   scopedWorkspaceDocuments,
   selectedProjectId,
+  taskContextTrail,
+  taskContextIconByProjectId,
+  selectedProjectPeriodLabel,
+  selectedProjectSubmissionTimeLabel,
+  onSelectProject,
   busyKey,
   memberByUid,
   workhubShareCandidates,
@@ -89,6 +99,39 @@ export function WorkhubDocEditor({
       <main className="workhub-section-stack workhub-notes-content-area">
         <div className="workhub-notes-layout">
           <section className="workhub-panel workhub-documents-panel">
+            {taskContextTrail.length > 0 && (
+              <div className="workhub-task-context-strip" role="navigation" aria-label="Current item path">
+                <div className="workhub-task-context-path">
+                  {taskContextTrail.map((project, index) => {
+                    const isCurrent = index === taskContextTrail.length - 1
+                    const icon = taskContextIconByProjectId[project.id] || '📁'
+                    return (
+                      <div key={project.id} className="workhub-task-context-node-wrap">
+                        <button
+                          type="button"
+                          className={`workhub-task-context-node${isCurrent ? ' is-current' : ''}`}
+                          onClick={() => onSelectProject(project.id)}
+                          title={project.name}
+                          aria-current={isCurrent ? 'page' : undefined}
+                        >
+                          <span className="workhub-task-context-node-icon" aria-hidden="true">{icon}</span>
+                          <span className="workhub-task-context-node-text">
+                            <span className="workhub-task-context-node-title">{project.name}</span>
+                          </span>
+                        </button>
+                        {!isCurrent && <span className="workhub-task-context-sep" aria-hidden="true">›</span>}
+                      </div>
+                    )
+                  })}
+                </div>
+                {(selectedProjectPeriodLabel || selectedProjectSubmissionTimeLabel) && (
+                  <div className="workhub-task-context-period" title="Proposal period">
+                    {selectedProjectPeriodLabel && <span><strong>Period:</strong> {selectedProjectPeriodLabel}</span>}
+                    {selectedProjectSubmissionTimeLabel && <span className="workhub-ltr-token">{selectedProjectSubmissionTimeLabel}</span>}
+                  </div>
+                )}
+              </div>
+            )}
             <div className="workhub-panel-head">
               <div className="workhub-documents-head-main">
                 {selectedDocument ? (

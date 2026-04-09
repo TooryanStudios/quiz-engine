@@ -6073,6 +6073,11 @@ export default function WorkHubPage() {
             selectedDocument={selectedDocument ?? undefined}
             scopedWorkspaceDocuments={scopedWorkspaceDocuments}
             selectedProjectId={selectedProjectId}
+            taskContextTrail={taskContextTrail}
+            taskContextIconByProjectId={Object.fromEntries(taskContextTrail.map((project) => [project.id, projectIntentMetaById[project.id]?.icon || '📁']))}
+            selectedProjectPeriodLabel={selectedProjectPeriodLabel}
+            selectedProjectSubmissionTimeLabel={selectedProjectSubmissionTimeLabel}
+            onSelectProject={handleSelectProject}
             busyKey={busyKey}
             memberByUid={memberByUid}
             workspaceProjectById={workspaceProjectById}
