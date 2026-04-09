@@ -31,7 +31,7 @@ const QuickAddTaskRow = memo(function QuickAddTaskRow(props: {
   onDropToEnd: (statusId: string) => void
   onCommit: (input: QuickAddTaskSubmitInput) => Promise<boolean | undefined>
 }) {
-  const { status, assignableMembersByProjectId, workspaceAssignableMembers, memberByUid, flatVisibleProjectOptions, defaultProjectId, selectedProjectId, selectedTaskStatusTab, currentUid, activeDragTaskId, activeDragStatusId, dropTargetKey, focusTrigger, onFocusHandled, onDragOverEnd, onDropToEnd, onCommit } = props
+  const { status, assignableMembersByProjectId, workspaceAssignableMembers, memberByUid, flatVisibleProjectOptions, defaultProjectId, selectedProjectId, currentUid, activeDragTaskId, activeDragStatusId, dropTargetKey, focusTrigger, onFocusHandled, onDragOverEnd, onDropToEnd, onCommit } = props
   const [title, setTitle] = useState('')
   const [assigneeUid, setAssigneeUid] = useState('')
   const [priority, setPriority] = useState<WorkhubTaskPriority>('medium')
