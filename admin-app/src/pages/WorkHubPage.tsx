@@ -1408,7 +1408,7 @@ export default function WorkHubPage() {
     while (current && !visited.has(current.id)) {
       lineage.unshift(current)
       visited.add(current.id)
-      const parentId = current.parentProjectId || ''
+      const parentId: string = current.parentProjectId || ''
       current = parentId ? (visibleProjectById[parentId] || null) : null
     }
 
@@ -4847,18 +4847,6 @@ export default function WorkHubPage() {
     : activeSection === 'notes'
       ? 'editor'
       : 'workhub'
-
-  const mobileHeaderTitle = mobileWorkflowView === 'dashboard'
-    ? 'Dashboard Focus'
-    : mobileWorkflowView === 'editor'
-      ? 'Editor Focus'
-      : 'WorkHub Focus'
-
-  const mobileHeaderHint = mobileWorkflowView === 'dashboard'
-    ? 'Review metrics and move to execution.'
-    : mobileWorkflowView === 'editor'
-      ? 'Draft, annotate, and finalize workspace notes.'
-      : 'Navigate projects and execute daily operations.'
 
   const workhubHeaderTabs = [
     {

@@ -77,7 +77,6 @@ export function WorkhubDocEditor({
   openDocumentCreateDialog,
   isMobileLayout,
 }: WorkhubDocEditorProps) {
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [mobileDocDetailsOpen, setMobileDocDetailsOpen] = useState(false)
   const shareSelectedCount = Object.keys(shareDocAccessDraftByUid).length
 
