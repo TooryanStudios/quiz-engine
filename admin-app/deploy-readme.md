@@ -1,6 +1,6 @@
 # deploy-readme
 
-<small><strong>WorkHub v.003</strong></small>
+<small><strong>WorkHub v.004</strong></small>
 
 Use this file for every release.
 
@@ -24,7 +24,7 @@ Run these commands in this exact order:
 cd C:\Projects\quiz-engine
 git status --short
 git add -A
-git commit -m "release: WorkHub v.003"
+git commit -m "release: WorkHub v.004"
 
 # 2) Build in admin app
 cd admin-app
@@ -63,5 +63,5 @@ npm run deploy:hostgator
 Add one line after each successful release.
 
 ```text
-WorkHub v.003 | 2026-04-08 | <commit-sha> | <short notes>
+WorkHub v.004 | 2026-04-09 | <commit-sha> | <short notes>
 ```

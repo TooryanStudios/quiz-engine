@@ -38,8 +38,26 @@ export function useWorkhubProjectTreeSidebarHandlers({
 }: UseWorkhubProjectTreeSidebarHandlersParams) {
   const handleProjectActionMenu = useCallback((projectId: string, event: ReactMouseEvent<HTMLElement>) => {
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+    const viewportWidth = window.innerWidth
+    const viewportHeight = window.innerHeight
+    const menuWidth = 196
+    const menuHeight = 236
+    const margin = 8
+
+    const nextX = Math.min(
+      Math.max(rect.left, margin),
+      Math.max(margin, viewportWidth - menuWidth - margin),
+    )
+
+    const defaultY = rect.bottom + 4
+    const shouldOpenUp = (defaultY + menuHeight) > (viewportHeight - margin)
+    const upY = rect.top - menuHeight - 4
+    const nextY = shouldOpenUp
+      ? Math.max(margin, upY)
+      : Math.min(defaultY, Math.max(margin, viewportHeight - menuHeight - margin))
+
     setActionMenuProjectId(projectId)
-    setActionMenuPosition({ x: rect.left, y: rect.bottom + 4 })
+    setActionMenuPosition({ x: nextX, y: nextY })
   }, [setActionMenuPosition, setActionMenuProjectId])
 
   const closeActionMenu = useCallback(() => {

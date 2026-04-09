@@ -25,6 +25,33 @@ export function formatDueDateShort(value: string): string {
   return new Date(parsed).toLocaleDateString(undefined, { day: 'numeric', month: 'numeric', year: '2-digit' })
 }
 
+export function formatTaskDueDisplay(value: string, mode: 'remaining' | 'date'): string {
+  if (!value) return 'No due date'
+  if (mode === 'date') return formatDueDateShort(value)
+
+  const dueMs = Date.parse(`${value}T23:59`)
+  if (!Number.isFinite(dueMs)) return formatDueDateShort(value)
+
+  const nowMs = Date.now()
+  const deltaMs = dueMs - nowMs
+  const absMs = Math.abs(deltaMs)
+  const hourMs = 60 * 60 * 1000
+  const dayMs = 24 * hourMs
+
+  if (absMs < hourMs) {
+    const minutes = Math.max(1, Math.ceil(absMs / (60 * 1000)))
+    return deltaMs >= 0 ? `${minutes}m left` : `${minutes}m overdue`
+  }
+
+  if (absMs < dayMs) {
+    const hours = Math.max(1, Math.ceil(absMs / hourMs))
+    return deltaMs >= 0 ? `${hours}h left` : `${hours}h overdue`
+  }
+
+  const days = Math.max(1, Math.ceil(absMs / dayMs))
+  return deltaMs >= 0 ? `${days}d left` : `${days}d overdue`
+}
+
 export function resolveProjectDeadlineMs(project: Pick<WorkhubProject, 'projectDeadline' | 'submissionTime' | 'projectType'>): number {
   const dateValue = (project.projectDeadline || '').trim()
   if (!dateValue) return Number.NaN

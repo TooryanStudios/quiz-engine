@@ -29,6 +29,7 @@ export function ProjectSettingsDialog(props: {
   settingsValueAmount: string
   settingsValueCurrency: string
   settingsMainPanelView: 'tasks' | 'dashboard'
+  settingsTaskItemDisplayMode: 'inherit' | 'list' | 'cards' | 'grid'
   settingsClientId: string
   settingsStorageMethod: 'firebase' | 'drive'
   accessVisibility: WorkhubVisibility
@@ -48,6 +49,7 @@ export function ProjectSettingsDialog(props: {
   onValueAmountChange: (value: string) => void
   onValueCurrencyChange: (value: string) => void
   onMainPanelViewChange: (value: 'tasks' | 'dashboard') => void
+  onTaskItemDisplayModeChange: (value: 'inherit' | 'list' | 'cards' | 'grid') => void
   onClientChange: (value: string) => void
   onCreateClientInline: (name: string) => Promise<string | null>
   onStorageMethodChange: (value: 'firebase' | 'drive') => void
@@ -298,6 +300,21 @@ export function ProjectSettingsDialog(props: {
                     </button>
                   </div>
                 </div>
+                {isFolderContainer && (
+                  <label style={{ display: 'block', marginTop: 10 }}>
+                    <span>Task items display mode</span>
+                    <select
+                      value={props.settingsTaskItemDisplayMode}
+                      onChange={(event) => props.onTaskItemDisplayModeChange(event.target.value as 'inherit' | 'list' | 'cards' | 'grid')}
+                      style={{ marginTop: 6 }}
+                    >
+                      <option value="inherit">Inherit from parent folder</option>
+                      <option value="list">List rows</option>
+                      <option value="cards">Cards</option>
+                      <option value="grid">Grid</option>
+                    </select>
+                  </label>
+                )}
               </div>
             </details>
           </section>

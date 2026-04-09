@@ -1,7 +1,7 @@
 import { memo } from 'react'
 import type { WorkhubMember, WorkhubTask, WorkhubTaskChecklistItem, WorkhubTaskPriority, WorkhubTaskStatus } from '../../../lib/workhubRepo'
 import { PRIORITY_LABELS, getPriorityIcon } from '../constants'
-import { formatDueDateShort, getInitials, normalizeTaskTitle } from '../taskUtils'
+import { formatDueDateShort, formatTaskDueDisplay, getInitials, normalizeTaskTitle } from '../taskUtils'
 
 interface TaskRowMeta {
   checklist: WorkhubTaskChecklistItem[]
@@ -50,6 +50,7 @@ interface TaskRowCallbacks {
 
 interface TaskRowProps {
   task: WorkhubTask
+  dueDisplayMode: 'remaining' | 'date'
   index: number
   isChecked: boolean
   isSelected: boolean
@@ -75,7 +76,7 @@ interface TaskRowProps {
 }
 
 const TaskRow = memo(function TaskRow({
-  task, index, isChecked, isSelected, isDropTarget, isDragSource,
+  task, dueDisplayMode, index, isChecked, isSelected, isDropTarget, isDragSource,
   statusMenuOpen, priorityMenuOpen, moreMenuOpen, assigneeMenuOpen,
   editingTitle, editingTitleText, checklistExpanded, checklistDraft,
   editingChecklistItemId, editingChecklistScope, editingChecklistText,
@@ -87,6 +88,7 @@ const TaskRow = memo(function TaskRow({
   const showCreatorSeparately = taskCreator && taskCreator.uid !== task.assigneeUid
   const assigneeIsCreator = taskCreator?.uid === task.assigneeUid
   const hasOpenInlineMenu = statusMenuOpen || priorityMenuOpen || moreMenuOpen || assigneeMenuOpen
+  const dueLabel = formatTaskDueDisplay(task.dueDate || '', dueDisplayMode)
 
   return (
     <article
@@ -219,6 +221,23 @@ const TaskRow = memo(function TaskRow({
                 aria-label="Open due date picker"
               >
                 📅
+              </button>
+              <button
+                type="button"
+                className={`workhub-task-due-label${task.dueDate ? ' is-set' : ''}`}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  const container = event.currentTarget.closest('.workhub-task-due-inline')
+                  const input = container?.querySelector('.workhub-task-due-input') as HTMLInputElement | null
+                  if (!input) return
+                  const pickerInput = input as HTMLInputElement & { showPicker?: () => void }
+                  pickerInput.showPicker?.()
+                  input.focus()
+                }}
+                title={task.dueDate ? `Due date: ${formatDueDateShort(task.dueDate)}` : 'Set due date'}
+                aria-label={task.dueDate ? `Due date ${dueLabel}` : 'Set due date'}
+              >
+                {dueLabel}
               </button>
               <input
                 type="date"

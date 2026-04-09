@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { UseWorkhubDocEditorHandlersOutput } from '../hooks/useWorkhubDocEditorHandlers'
 import type { WorkhubDocument, WorkhubMember, WorkhubProject } from '../../../lib/workhubRepo'
 import { TinyRichTextEditor } from '../../../components/editor/TinyRichTextEditor'
@@ -17,6 +17,7 @@ interface WorkhubDocEditorProps extends UseWorkhubDocEditorHandlersOutput {
   openAttachmentLightbox: (url: string) => void
   formatTime: (value: unknown) => string
   openDocumentCreateDialog: (projectId: string) => void
+  isMobileLayout: boolean
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -74,9 +75,16 @@ export function WorkhubDocEditor({
   openAttachmentLightbox,
   formatTime,
   openDocumentCreateDialog,
+  isMobileLayout,
 }: WorkhubDocEditorProps) {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [mobileDocDetailsOpen, setMobileDocDetailsOpen] = useState(false)
   const shareSelectedCount = Object.keys(shareDocAccessDraftByUid).length
+
+  useEffect(() => {
+    setMobileDocDetailsOpen(false)
+  }, [selectedDocument?.id])
+
   return (
     <>
       <main className="workhub-section-stack workhub-notes-content-area">
@@ -97,72 +105,74 @@ export function WorkhubDocEditor({
                 )}
               </div>
               <div className="workhub-panel-tools">
-                <button className="workhub-ghost-btn" onClick={() => openDocumentCreateDialog(selectedProjectId !== 'all' ? selectedProjectId : '')}>
-                  📝 New document
+                <button
+                  className="workhub-ghost-btn workhub-doc-tool-btn"
+                  title="New document"
+                  aria-label="New document"
+                  onClick={() => openDocumentCreateDialog(selectedProjectId !== 'all' ? selectedProjectId : '')}
+                >
+                  📝
                 </button>
                 {selectedDocument ? (
                   <button
-                    className="workhub-ghost-btn"
+                    className="workhub-ghost-btn workhub-doc-tool-btn"
                     onClick={() => { setShareDocDialogOpen(true) }}
                     title="Share document"
+                    aria-label="Share document"
                     disabled={!selectedDocumentCanEdit}
                   >
-                    🔗 Share
+                    🔗
                   </button>
                 ) : null}
                 {selectedDocument && selectedDocumentCanEdit ? (
                   <button
-                    className="workhub-ghost-btn"
+                    className="workhub-ghost-btn workhub-doc-tool-btn"
                     disabled={busyKey === `document-lock:${selectedDocument.id}`}
                     onClick={() => { void handleToggleSelectedDocumentLock() }}
+                    title={selectedDocumentLocked ? 'Unlock document' : 'Lock document'}
+                    aria-label={selectedDocumentLocked ? 'Unlock document' : 'Lock document'}
                   >
-                    {busyKey === `document-lock:${selectedDocument.id}`
-                      ? (selectedDocumentLocked ? 'Unlocking...' : 'Locking...')
-                      : (selectedDocumentLocked ? '🔓 Unlock' : '🔒 Lock')}
+                    {busyKey === `document-lock:${selectedDocument.id}` ? '⏳' : (selectedDocumentLocked ? '🔓' : '🔒')}
                   </button>
                 ) : null}
                 {selectedDocument && selectedDocumentCanEdit && !selectedDocumentLocked ? (
-                  deleteConfirmId === selectedDocument.id ? (
-                    <span className="workhub-doc-delete-confirm">
-                      <span>Delete this document?</span>
-                      <button
-                        className="workhub-danger-btn"
-                        disabled={busyKey === `document-delete:${selectedDocument.id}`}
-                        onClick={() => { void handleDeleteSelectedDocument(); setDeleteConfirmId(null) }}
-                      >
-                        {busyKey === `document-delete:${selectedDocument.id}` ? 'Deleting...' : 'Yes, delete'}
-                      </button>
-                      <button
-                        className="workhub-ghost-btn"
-                        onClick={() => setDeleteConfirmId(null)}
-                      >
-                        Cancel
-                      </button>
-                    </span>
-                  ) : (
-                    <button
-                      className="workhub-danger-btn"
-                      onClick={() => setDeleteConfirmId(selectedDocument.id)}
-                    >
-                      Delete
-                    </button>
-                  )
+                  <button
+                    className="workhub-danger-btn workhub-doc-tool-btn"
+                    title="Delete document"
+                    aria-label="Delete document"
+                    disabled={busyKey === `document-delete:${selectedDocument.id}`}
+                    onClick={() => {
+                      if (!window.confirm('Delete this document?')) return
+                      void handleDeleteSelectedDocument()
+                    }}
+                  >
+                    {busyKey === `document-delete:${selectedDocument.id}` ? '⏳' : '🗑'}
+                  </button>
                 ) : null}
                 <button
-                  className="workhub-primary-btn"
+                  className="workhub-primary-btn workhub-doc-tool-btn"
+                  title="Save document"
+                  aria-label="Save document"
                   disabled={!selectedDocument || selectedDocumentReadOnly || !selectedDocumentChanged || busyKey === `document:${selectedDocument?.id || ''}`}
                   onClick={() => { void handleSaveSelectedDocument() }}
                 >
-                  {busyKey === `document:${selectedDocument?.id || ''}` ? 'Saving...' : 'Save document'}
+                  {busyKey === `document:${selectedDocument?.id || ''}` ? '⏳' : '💾'}
                 </button>
+                {isMobileLayout && selectedDocument && (
+                  <button
+                    className="workhub-ghost-btn workhub-doc-tool-btn"
+                    onClick={() => setMobileDocDetailsOpen(true)}
+                    title="Details"
+                    aria-label="Details"
+                  >
+                    ⚙️
+                  </button>
+                )}
               </div>
             </div>
 
             {selectedDocument ? (
               <>
-                <div className="workhub-document-body-head">
-                  <span>{selectedDocumentReadOnly ? 'Document body (View only)' : 'Document body'}</span>
-                </div>
                 <TinyRichTextEditor
                   className={`workhub-document-body-editor${selectedDocumentReadOnly ? ' is-locked' : ''}`}
                   value={selectedDocumentBodyDraft}
@@ -180,7 +190,24 @@ export function WorkhubDocEditor({
           </section>
 
           {/* Document detail rail */}
-          <aside className="workhub-doc-detail-rail">
+          <aside
+            className={`workhub-doc-detail-rail${isMobileLayout ? ' is-mobile-drawer' : ''}${isMobileLayout && mobileDocDetailsOpen ? ' is-open' : ''}`}
+            aria-hidden={isMobileLayout && !mobileDocDetailsOpen}
+          >
+            {isMobileLayout && (
+              <div className="workhub-mobile-detail-drawer-head">
+                <button
+                  type="button"
+                  className="workhub-mobile-detail-drawer-handle"
+                  aria-label="Close document details"
+                  onClick={() => setMobileDocDetailsOpen(false)}
+                />
+                <div className="workhub-mobile-detail-drawer-title-row">
+                  <strong>Details</strong>
+                  <button type="button" className="workhub-ghost-mini" onClick={() => setMobileDocDetailsOpen(false)}>✕</button>
+                </div>
+              </div>
+            )}
             <div className="workhub-detail-rail-head">
               <h3>Details</h3>
               {selectedDocument && <span>Document selected</span>}
@@ -397,6 +424,15 @@ export function WorkhubDocEditor({
               <div className="workhub-empty-state" style={{ margin: '12px 0' }}>Select a document to view its details.</div>
             )}
           </aside>
+
+          {isMobileLayout && mobileDocDetailsOpen && (
+            <button
+              type="button"
+              className="workhub-task-detail-drawer-backdrop"
+              aria-label="Close document details"
+              onClick={() => setMobileDocDetailsOpen(false)}
+            />
+          )}
         </div>
       </main>
 

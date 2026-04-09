@@ -1,10 +1,23 @@
 import { memo } from 'react'
 
-const WorkhubStyles = memo(function WorkhubStyles() {
+type WorkhubStylesProps = {
+  phoneMaxWidth?: number
+}
+
+const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: WorkhubStylesProps) {
   return (
     <style>{`
       html.workhub-font-compact {
         font-size: 15px;
+      }
+      html.workhub-page-active,
+      html.workhub-page-active body {
+        overflow: hidden;
+        overscroll-behavior: none;
+        touch-action: none;
+        position: fixed;
+        width: 100%;
+        height: 100%;
       }
       .workhub-shell {
         height: 100vh;
@@ -141,10 +154,17 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         gap: 6px;
         flex: 0 0 auto;
       }
+      .workhub-mobile-gear-wrap {
+        position: relative;
+      }
       .workhub-workspace-tab-actions .workhub-plus-btn,
       .workhub-workspace-tab-actions .workhub-gear-btn {
         width: 28px;
         height: 28px;
+      }
+      .workhub-mobile-workspace-picker-actions .workhub-gear-menu.is-up {
+        top: auto;
+        bottom: calc(100% + 4px);
       }
       .workhub-mobile-workspace-entry {
         display: none;
@@ -171,16 +191,34 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         background: #edf4ff;
         color: #295fe6;
       }
+      .workhub-mobile-dashboard-actions {
+        display: none;
+      }
       .workhub-mobile-workspace-panel-backdrop {
         position: fixed;
-        inset: 0;
+        left: 0;
+      .workhub-shell.is-mobile .workhub-mobile-dashboard-actions {
+        display: flex;
+        position: sticky;
+        bottom: calc(64px + env(safe-area-inset-bottom));
+        z-index: 4;
+        padding: 6px;
+        border-radius: 10px;
+        border: 1px solid #d7e4fb;
+        background: rgba(248, 251, 255, 0.96);
+        backdrop-filter: blur(4px);
+      }
+        right: 0;
+        top: 0;
+        bottom: calc(60px + env(safe-area-inset-bottom));
         z-index: 55;
         background: rgba(20, 32, 56, 0.28);
         display: flex;
         justify-content: flex-start;
+        align-items: stretch;
       }
       .workhub-mobile-workspace-panel {
-        width: min(320px, calc(100vw - 34px));
+        width: min(92vw, 460px);
         height: 100%;
         background: #ffffff;
         border-right: 1px solid #dbe7ff;
@@ -264,6 +302,9 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         min-height: 0;
         overflow-y: auto;
         padding-right: 2px;
+        overscroll-behavior: contain;
+        touch-action: pan-y;
+        -webkit-overflow-scrolling: touch;
       }
       .workhub-mobile-footer {
         display: none;
@@ -442,7 +483,7 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         display: flex;
         justify-content: flex-end;
       }
-      @media (max-width: 429px) {
+      @media (max-width: ${phoneMaxWidth}px) {
         .workhub-status-editor-layout {
           grid-template-columns: 1fr;
           min-height: 0;
@@ -452,13 +493,22 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         }
       }
       .workhub-shell.is-mobile .workhub-topbar {
+        flex-direction: row;
         gap: 8px;
+        flex-wrap: nowrap;
+        align-items: center;
+      }
+      .workhub-shell.is-mobile .workhub-shell-layout,
+      .workhub-shell.is-mobile .workhub-shell-layout.sidebar-collapsed {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0;
       }
       .workhub-shell.is-mobile .workhub-main-stage {
         padding-bottom: calc(76px + env(safe-area-inset-bottom));
       }
       .workhub-shell.is-mobile .workhub-topbar-main {
-        width: 100%;
+        width: auto;
+        flex: 1 1 auto;
         gap: 8px;
         min-width: 0;
       }
@@ -491,26 +541,25 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         padding: 0 8px;
         border-radius: 8px;
       }
-      @media (max-width: 429px) {
+      @media (max-width: ${phoneMaxWidth}px) {
         .workhub-shell.is-mobile .workhub-mobile-workspace-toggle span:last-child {
           display: none;
         }
       }
       .workhub-shell.is-mobile .workhub-header-actions {
-        width: 100%;
+        width: auto;
         flex-direction: row;
         align-items: center;
-        justify-content: flex-start;
+        justify-content: flex-end;
         flex-wrap: nowrap;
-        overflow-x: auto;
-        overflow-y: hidden;
-        border-top: 1px solid #e0e8f7;
-        padding-top: 6px;
-        margin-top: 2px;
-        margin-left: 0;
+        overflow: visible;
+        border-top: none;
+        padding-top: 0;
+        margin-top: 0;
+        margin-left: 6px;
         padding-left: 0;
         border-left: none;
-        scrollbar-width: thin;
+        scrollbar-width: none;
       }
       .workhub-shell.is-mobile .workhub-top-nav-icon-btn {
         min-width: 34px;
@@ -518,6 +567,9 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         height: 34px;
         border-radius: 8px;
         font-size: 1rem;
+      }
+      .workhub-shell.is-mobile .workhub-find-command-btn {
+        display: none;
       }
       .workhub-header-actions,
       .workhub-home-actions,
@@ -1148,7 +1200,7 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         min-height: 0;
         display: flex;
         flex-direction: column;
-        overflow: hidden;
+        overflow: visible;
         border: 1px solid #d7dee8;
         background: #f6f8fb;
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
@@ -1556,31 +1608,27 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         stroke-linejoin: round;
       }
       .workhub-tree-leaf-indicator {
-        width: 17px;
-        height: 17px;
-        display: grid;
-        place-items: center;
-        color: #8ea0b8;
+        width: auto;
+        height: auto;
+        border-radius: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
         font-size: 0.62rem;
-        line-height: 1;
-      }
+        border: 0;
+        background: transparent;
       .workhub-tree-leaf-indicator.is-root-leaf {
+        padding: 0;
         font-size: 0.82rem;
         color: #6e829f;
       }
       .workhub-tree-node-main {
-        display: flex;
-        align-items: center;
         gap: 6px;
         min-width: 0;
         border: 0;
-        background: transparent;
-        padding: 0;
         cursor: pointer;
         text-align: left;
       }
-      .workhub-tree-node-text {
-        display: flex;
         align-items: baseline;
         gap: 5px;
         min-width: 0;
@@ -1745,6 +1793,39 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         padding: 0;
         text-align: center;
       }
+      .workhub-gear-menu {
+        position: absolute;
+        left: 0;
+        top: calc(100% + 4px);
+        min-width: 170px;
+        background: #ffffff;
+        border: 1px solid #dbe7ff;
+        border-radius: 8px;
+        box-shadow: 0 10px 24px rgba(20, 40, 77, 0.14);
+        z-index: 200;
+        overflow: hidden;
+      }
+      .workhub-mobile-workspace-picker-actions .workhub-gear-menu {
+        left: auto;
+        right: 0;
+        max-width: min(220px, calc(100vw - 32px));
+      }
+      .workhub-gear-menu-item {
+        display: block;
+        width: 100%;
+        border: 0;
+        border-top: 1px solid #edf3ff;
+        background: #ffffff;
+        color: #244374;
+        text-align: left;
+        font: inherit;
+        font-size: 0.78rem;
+        padding: 9px 12px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .workhub-gear-menu-item:first-child { border-top: 0; }
+      .workhub-gear-menu-item:hover { background: #f5f9ff; }
       .workhub-danger-btn {
         border: 1px solid #f3c5c5;
         background: #fff5f5;
@@ -2588,6 +2669,102 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         overflow-y: auto;
         overflow-x: hidden;
         padding-right: 2px;
+        overscroll-behavior: contain;
+        touch-action: pan-y;
+        -webkit-overflow-scrolling: touch;
+      }
+      .workhub-task-context-strip {
+        display: grid;
+        gap: 8px;
+        margin: 0 0 6px;
+        padding: 6px;
+        border: 0;
+        border-radius: 12px;
+        background: #f8fbff;
+      }
+      .workhub-task-context-path {
+        display: flex;
+        align-items: stretch;
+        gap: 6px;
+        min-width: 0;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: none;
+      }
+      .workhub-task-context-node-wrap {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        flex: 0 0 auto;
+      }
+      .workhub-task-context-node {
+        border: 1px solid #cbd9f4;
+        background: #f0f4ff;
+        color: #274066;
+        border-radius: 12px;
+        padding: 6px 8px;
+        min-height: 56px;
+        font-size: 0.71rem;
+        font-weight: 500;
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        width: 134px;
+        text-align: center;
+      }
+      .workhub-task-context-node-icon {
+        flex: 0 0 auto;
+        margin-top: 0;
+      }
+      .workhub-task-context-node-text {
+        display: grid;
+        gap: 2px;
+        min-width: 0;
+        justify-items: center;
+      }
+      .workhub-task-context-node-title {
+        font-size: 0.72rem;
+        font-weight: 600;
+        line-height: 1.2;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+      }
+      .workhub-task-context-node-meta {
+        font-size: 0.64rem;
+        color: #6880aa;
+        letter-spacing: 0.01em;
+      }
+      .workhub-task-context-node:not(:disabled) {
+        cursor: pointer;
+      }
+      .workhub-task-context-node.is-current {
+        border-color: #94b0e4;
+        background: #dde9ff;
+        color: #0f2c58;
+      }
+      .workhub-task-context-sep {
+        color: #7184a8;
+        font-size: 0.8rem;
+      }
+      .workhub-task-context-period {
+        flex: 0 0 auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: #3d5279;
+        font-size: 0.69rem;
+        white-space: nowrap;
+      }
+      .workhub-task-context-period strong {
+        font-size: 0.67rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #5f749b;
       }
       .workhub-task-table-wrap {
         min-width: 0;
@@ -2603,6 +2780,18 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         overflow-y: auto;
         border-left: 1px solid #e3ecfb;
         padding-left: 10px;
+      }
+      .workhub-mobile-detail-drawer-head {
+        display: none;
+      }
+      .workhub-mobile-detail-drawer-handle {
+        display: none;
+      }
+      .workhub-mobile-detail-drawer-title-row {
+        display: none;
+      }
+      .workhub-task-detail-drawer-backdrop {
+        display: none;
       }
       .workhub-detail-rail-head {
         position: sticky;
@@ -5221,6 +5410,156 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         min-height: 30px;
         align-items: center;
       }
+      .workhub-task-sections.task-view-cards .workhub-task-group-body,
+      .workhub-task-sections.task-view-grid .workhub-task-group-body {
+        display: grid;
+        gap: 10px;
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-group-body {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .workhub-task-sections.task-view-grid .workhub-task-group-body {
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-table-head,
+      .workhub-task-sections.task-view-grid .workhub-task-table-head {
+        display: none;
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-row,
+      .workhub-task-sections.task-view-grid .workhub-task-row {
+        border: 1px solid #d9e3f6;
+        border-radius: 12px;
+        overflow: hidden;
+        background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
+        box-shadow: 0 4px 12px rgba(32, 63, 115, 0.08);
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-row:first-child,
+      .workhub-task-sections.task-view-grid .workhub-task-row:first-child {
+        border-top: 1px solid #d9e3f6;
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-row-grid,
+      .workhub-task-sections.task-view-grid .workhub-task-row-grid {
+        grid-template-columns: minmax(0, 1fr) auto auto auto auto;
+        gap: 8px;
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-row-main,
+      .workhub-task-sections.task-view-grid .workhub-task-row-main {
+        padding: 10px 10px;
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-col.details,
+      .workhub-task-sections.task-view-grid .workhub-task-col.details {
+        grid-template-columns: 14px 14px minmax(0, 1fr);
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-row-title strong,
+      .workhub-task-sections.task-view-grid .workhub-task-row-title strong {
+        font-size: 0.8rem;
+        line-height: 1.3;
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-col.checklist-inline,
+      .workhub-task-sections.task-view-grid .workhub-task-col.checklist-inline {
+        display: none;
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-group-body {
+        gap: 6px;
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-group {
+        border: 0;
+        background: transparent;
+        border-radius: 0;
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-group-head {
+        background: transparent;
+        border-bottom: 0;
+        padding-left: 0;
+        padding-right: 0;
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-row {
+        border: 1px solid #d8e3f6;
+        border-radius: 10px;
+        background: #ffffff;
+        box-shadow: none;
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-row.is-alt,
+      .workhub-task-sections.task-view-cards .workhub-task-row:hover {
+        background: #f8fbff;
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-row.is-selected {
+        border-color: #8aa8da;
+        box-shadow: inset 3px 0 0 #4f74bd;
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-row-main {
+        padding: 16px;
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-row-grid {
+        grid-template-columns: minmax(0, 1fr) auto auto;
+        grid-template-areas:
+          'details details details'
+          'due assignee priority';
+        row-gap: 12px;
+        column-gap: 8px;
+        align-items: start;
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-col.details {
+        grid-area: details;
+        grid-template-columns: 14px minmax(0, 1fr);
+        gap: 10px;
+        align-items: start;
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-drag-handle {
+        display: none;
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-col.details input[type='checkbox'] {
+        margin-top: 2px;
+        accent-color: #4f74bd;
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-row-title strong {
+        font-size: 0.86rem;
+        line-height: 1.35;
+        font-weight: 400;
+        color: #1d3357;
+        white-space: normal;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-col.assignee {
+        grid-area: assignee;
+        justify-self: end;
+        align-self: end;
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-col.due {
+        grid-area: due;
+        justify-self: start;
+        align-self: end;
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-col.priority {
+        grid-area: priority;
+        justify-self: end;
+        align-self: end;
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-col.assignee .workhub-task-people {
+        gap: 6px;
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-due-label,
+      .workhub-task-sections.task-view-cards .workhub-task-due-picker-trigger {
+        color: #4a638f;
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-due-label {
+        min-width: 82px;
+        font-weight: 600;
+      }
+      .workhub-task-sections.task-view-cards .workhub-priority-indicator {
+        border: 0;
+        background: transparent;
+        box-shadow: none;
+      }
+      .workhub-task-sections.task-view-cards .workhub-assignee-badge img,
+      .workhub-task-sections.task-view-cards .workhub-assignee-fallback,
+      .workhub-task-sections.task-view-cards .workhub-assignee-initials {
+        box-shadow: 0 0 0 2px #eef4ff;
+      }
       .workhub-task-col {
         min-width: 0;
       }
@@ -5266,6 +5605,14 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-col.details .workhub-task-row-title strong {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: normal;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
       }
       .workhub-task-col.status,
       .workhub-task-col.assignee {
@@ -5495,6 +5842,7 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         color: #cf4e67;
       }
       .workhub-task-due-inline {
+        position: relative;
         display: inline-flex;
         align-items: center;
         gap: 4px;
@@ -5508,12 +5856,31 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         line-height: 1;
         color: #4f648c;
       }
-      .workhub-task-due-input {
+      .workhub-task-due-label {
         border: 0;
         background: transparent;
         color: #4f648c;
         font-size: 0.74rem;
-        min-width: 98px;
+        min-width: 72px;
+        padding: 0;
+        text-align: left;
+        cursor: pointer;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .workhub-task-due-label.is-set {
+        color: #2d4670;
+      }
+      .workhub-task-due-input {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+        border: 0;
         padding: 0;
       }
       .workhub-task-due-input::-webkit-calendar-picker-indicator {
@@ -5830,7 +6197,7 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         font-size: 0.68rem;
         padding: 3px 7px;
       }
-      @media (max-width: 429px) {
+      @media (max-width: ${phoneMaxWidth}px) {
         .workhub-notes-layout { flex-direction: column; }
         .workhub-doc-detail-rail {
           flex: none;
@@ -5838,6 +6205,32 @@ const WorkhubStyles = memo(function WorkhubStyles() {
           border-left: none;
           border-top: 1px solid #e3eafb;
           max-height: 45vh;
+        }
+        .workhub-doc-detail-rail.is-mobile-drawer {
+          position: fixed;
+          left: 0;
+          right: 0;
+          bottom: calc(60px + env(safe-area-inset-bottom));
+          width: 100%;
+          max-height: calc(68vh - env(safe-area-inset-bottom));
+          border-top: 1px solid #d9e6fb;
+          border-left: none;
+          border-radius: 14px 14px 0 0;
+          background: #f8fbff;
+          z-index: 47;
+          transform: translateY(108%);
+          transition: transform 0.26s ease;
+          box-shadow: 0 -10px 24px rgba(16, 35, 68, 0.18);
+          padding: 8px 10px 14px;
+        }
+        .workhub-doc-detail-rail.is-mobile-drawer.is-open {
+          transform: translateY(0);
+        }
+        .workhub-doc-detail-rail.is-mobile-drawer .workhub-detail-rail-head {
+          position: sticky;
+          top: 0;
+          background: #f8fbff;
+          z-index: 2;
         }
       }
       .workhub-documents-panel {
@@ -5882,6 +6275,22 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         font-size: var(--workhub-doc-title-size);
         line-height: 1.2;
         font-weight: 500;
+      }
+      .workhub-documents-panel .workhub-panel-tools {
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .workhub-documents-panel .workhub-panel-tools .workhub-doc-tool-btn {
+        min-width: 34px;
+        width: 34px;
+        height: 32px;
+        padding: 0;
+        border-radius: 8px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.95rem;
       }
       .workhub-doc-delete-confirm {
         display: inline-flex;
@@ -5988,8 +6397,10 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         flex: 1 1 auto;
         min-height: 0;
         height: 100% !important;
-        border: 1px solid #dce8fb;
-        border-radius: 10px;
+        border: none;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
         overflow: hidden;
       }
       .workhub-document-body-editor .tox.tox-tinymce--focused {
@@ -6010,11 +6421,15 @@ const WorkhubStyles = memo(function WorkhubStyles() {
         flex: 1 1 auto;
         min-height: 0;
         overflow: hidden;
+        touch-action: auto;
+        pointer-events: auto;
       }
       .workhub-document-body-editor .tox .tox-edit-area__iframe {
         height: 100% !important;
         display: block;
         background: #ffffff;
+        touch-action: auto;
+        pointer-events: auto;
       }
       .workhub-document-body-editor .tox .tox-toolbar__primary {
         background: #f8fbff;
@@ -6024,6 +6439,13 @@ const WorkhubStyles = memo(function WorkhubStyles() {
       .workhub-document-body-editor .tox .tox-toolbar__overflow,
       .workhub-document-body-editor .tox .tox-toolbar__primary {
         padding: 0 2px;
+      }
+      .workhub-document-body-editor .tox .tox-toolbar__primary,
+      .workhub-document-body-editor .tox .tox-toolbar__overflow {
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-x;
       }
       .workhub-document-body-editor .tox .tox-toolbar__group {
         padding: 0 1px;
@@ -7400,7 +7822,7 @@ const WorkhubStyles = memo(function WorkhubStyles() {
       @keyframes workhubSpin {
         to { transform: rotate(360deg); }
       }
-      @media (max-width: 429px) {
+      @media (max-width: ${phoneMaxWidth}px) {
         .workhub-shell-layout,
         .workhub-compact-grid,
         .workhub-detail-grid {
@@ -7426,6 +7848,86 @@ const WorkhubStyles = memo(function WorkhubStyles() {
           border-left: 0;
           padding-left: 0;
           max-height: none;
+        }
+        .workhub-task-detail-rail.is-mobile-drawer {
+          position: fixed;
+          left: 0;
+          right: 0;
+          bottom: calc(60px + env(safe-area-inset-bottom));
+          z-index: 47;
+          background: #f8fbff;
+          border-top: 1px solid #d7e5ff;
+          border-radius: 14px 14px 0 0;
+          box-shadow: 0 -14px 28px rgba(20, 40, 77, 0.22);
+          max-height: min(72vh, 640px);
+          overflow-y: auto;
+          padding: 0 0 10px;
+          transform: translateY(calc(100% + 16px));
+          transition: transform 0.22s ease;
+          pointer-events: none;
+        }
+        .workhub-task-detail-rail.is-mobile-drawer.is-open {
+          transform: translateY(0);
+          pointer-events: auto;
+        }
+        .workhub-mobile-detail-drawer-head {
+          position: sticky;
+          top: 0;
+          z-index: 2;
+          background: #f8fbff;
+          border-bottom: 1px solid #e0e9f8;
+          padding: 6px 12px 8px;
+          display: flex;
+          flex-direction: column;
+          align-items: stretch;
+          gap: 0;
+        }
+        .workhub-mobile-detail-drawer-handle {
+          display: block;
+          width: 42px;
+          height: 5px;
+          border: 0;
+          border-radius: 999px;
+          background: #c5d5ef;
+          cursor: pointer;
+          padding: 0;
+          align-self: center;
+          margin: 0 auto 6px;
+        }
+        .workhub-mobile-detail-drawer-title-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+        }
+        .workhub-mobile-detail-drawer-head strong {
+          font-size: 0.82rem;
+          color: #1d345f;
+        }
+        .workhub-shell.task-detail-open .workhub-task-sections,
+        .workhub-shell.task-detail-open .workhub-section-stack,
+        .workhub-shell.task-detail-open .workhub-main-stage,
+        .workhub-shell.task-detail-open .workhub-app {
+          overflow: hidden;
+          touch-action: none;
+        }
+        .workhub-task-detail-rail.is-mobile-drawer.is-open {
+          overscroll-behavior: contain;
+          touch-action: pan-y;
+        }
+        .workhub-task-detail-drawer-backdrop {
+          display: block;
+          position: fixed;
+          left: 0;
+          right: 0;
+          top: 0;
+          bottom: calc(60px + env(safe-area-inset-bottom));
+          z-index: 46;
+          background: rgba(20, 32, 56, 0.28);
+          border: 0;
+          padding: 0;
+          margin: 0;
+          cursor: pointer;
         }
         .workhub-task-table-head,
         .workhub-task-row-grid {
@@ -7456,7 +7958,7 @@ const WorkhubStyles = memo(function WorkhubStyles() {
       .workhub-summary-strip {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
-      @media (max-width: 429px) {
+      @media (max-width: ${phoneMaxWidth}px) {
         .workhub-topbar,
         .workhub-header-actions,
         .workhub-project-title-row.spaced {
@@ -7506,7 +8008,11 @@ const WorkhubStyles = memo(function WorkhubStyles() {
           border-left: 0;
         }
         .workhub-mobile-workspace-panel {
-          width: min(320px, calc(100vw - 24px));
+          width: 100%;
+          height: 100%;
+          border-right: none;
+          border-radius: 0;
+          box-shadow: none;
         }
         .workhub-find-command-shortcut {
           display: none;
@@ -7656,29 +8162,49 @@ const WorkhubStyles = memo(function WorkhubStyles() {
           width: 100%;
         }
         .workhub-task-sections {
+          overflow-x: hidden;
+        }
+        .workhub-task-context-strip {
+          display: block;
+          padding: 6px;
+        }
+        .workhub-task-context-path {
+          width: 100%;
+          margin-bottom: 4px;
+        }
+        .workhub-task-context-node {
+          width: 124px;
+          min-height: 52px;
+          font-size: 0.68rem;
+          padding: 6px 7px;
+        }
+        .workhub-task-context-period {
+          width: 100%;
+          justify-content: flex-start;
+          gap: 6px;
           overflow-x: auto;
         }
         .workhub-task-table-wrap {
           min-width: 100%;
           width: 100%;
-          overflow-x: auto;
+          overflow-x: hidden;
           -webkit-overflow-scrolling: touch;
         }
         .workhub-task-group-body {
-          min-width: max-content;
+          min-width: 0;
         }
         .workhub-task-col.details {
           grid-template-columns: 14px 14px minmax(0, 1fr);
           min-width: 0;
         }
         .workhub-task-row-grid {
-          grid-template-columns: minmax(240px, max-content) auto auto auto auto auto;
-          width: max-content;
-          min-width: 100%;
+          grid-template-columns: minmax(0, 1fr) auto auto auto auto auto;
+          width: 100%;
+          min-width: 0;
         }
         .workhub-task-col.details .workhub-task-row-title strong {
-          overflow: visible;
-          text-overflow: clip;
+          overflow: hidden;
+          text-overflow: ellipsis;
           white-space: nowrap;
         }
         .workhub-task-col.status,

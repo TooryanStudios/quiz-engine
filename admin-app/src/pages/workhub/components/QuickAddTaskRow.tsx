@@ -25,11 +25,12 @@ const QuickAddTaskRow = memo(function QuickAddTaskRow(props: {
   activeDragTaskId: string
   activeDragStatusId: string
   dropTargetKey: string
+  focusTrigger?: number
   onDragOverEnd: (statusId: string) => void
   onDropToEnd: (statusId: string) => void
   onCommit: (input: QuickAddTaskSubmitInput) => Promise<boolean | undefined>
 }) {
-  const { status, assignableMembersByProjectId, workspaceAssignableMembers, memberByUid, flatVisibleProjectOptions, defaultProjectId, selectedProjectId, selectedTaskStatusTab, currentUid, activeDragTaskId, activeDragStatusId, dropTargetKey, onDragOverEnd, onDropToEnd, onCommit } = props
+  const { status, assignableMembersByProjectId, workspaceAssignableMembers, memberByUid, flatVisibleProjectOptions, defaultProjectId, selectedProjectId, selectedTaskStatusTab, currentUid, activeDragTaskId, activeDragStatusId, dropTargetKey, focusTrigger, onDragOverEnd, onDropToEnd, onCommit } = props
   const [title, setTitle] = useState('')
   const [assigneeUid, setAssigneeUid] = useState('')
   const [priority, setPriority] = useState<WorkhubTaskPriority>('medium')
@@ -53,6 +54,12 @@ const QuickAddTaskRow = memo(function QuickAddTaskRow(props: {
       inputRef.current?.focus()
     }
   }, [selectedTaskStatusTab, status.id])
+
+  useEffect(() => {
+    if (!focusTrigger) return
+    inputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    inputRef.current?.focus()
+  }, [focusTrigger])
 
   useEffect(() => {
     if (quickAddAssignableMembers.length === 0) {
@@ -97,7 +104,7 @@ const QuickAddTaskRow = memo(function QuickAddTaskRow(props: {
     return Boolean(created)
   }
 
-  const commitDraft = async () => commitWithTitle(title)
+  const commitDraft = async (rawTitle?: string) => commitWithTitle(typeof rawTitle === 'string' ? rawTitle : title)
 
   return (
     <article
@@ -117,8 +124,9 @@ const QuickAddTaskRow = memo(function QuickAddTaskRow(props: {
         window.setTimeout(() => {
           const active = document.activeElement
           if (rootRef.current?.contains(active)) return
-          if (title.trim()) {
-            void commitDraft()
+          const currentInputValue = inputRef.current?.value || title
+          if (currentInputValue.trim()) {
+            void commitDraft(currentInputValue)
           } else {
             setAssigneeMenuOpen(false)
             setPriorityMenuOpen(false)
@@ -148,7 +156,7 @@ const QuickAddTaskRow = memo(function QuickAddTaskRow(props: {
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') {
                     event.preventDefault()
-                    void commitDraft()
+                    void commitDraft(event.currentTarget.value)
                   }
                   if (event.key === 'Escape') {
                     event.preventDefault()

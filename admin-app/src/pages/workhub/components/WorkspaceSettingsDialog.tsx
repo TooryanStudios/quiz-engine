@@ -25,11 +25,13 @@ export function WorkspaceSettingsDialog(props: {
   settingsName: string
   settingsDescription: string
   treeMetaDisplayMode: 'counts' | 'countdown'
+  taskDueDisplayMode: 'remaining' | 'date'
   projectColorMeanings: WorkhubProjectColorMeaning[]
   onClose: () => void
   onSettingsNameChange: (value: string) => void
   onSettingsDescriptionChange: (value: string) => void
   onTreeMetaDisplayModeChange: (value: 'counts' | 'countdown') => void
+  onTaskDueDisplayModeChange: (value: 'remaining' | 'date') => void
   onProjectColorMeaningChange: (index: number, patch: Partial<WorkhubProjectColorMeaning>) => void
   onRemoveProjectColorMeaning: (index: number) => void
   onResetProjectColorMeanings: () => void
@@ -94,6 +96,16 @@ export function WorkspaceSettingsDialog(props: {
               >
                 <option value="counts">Show sub-item counts</option>
                 <option value="countdown">Show submission time remaining</option>
+              </select>
+            </label>
+            <label>
+              <span>Task due date display</span>
+              <select
+                value={props.taskDueDisplayMode}
+                onChange={(event) => props.onTaskDueDisplayModeChange(event.target.value as 'remaining' | 'date')}
+              >
+                <option value="remaining">Show time left (days/hours)</option>
+                <option value="date">Show actual due date</option>
               </select>
             </label>
             <details className="workhub-workspace-color-meaning-editor">
