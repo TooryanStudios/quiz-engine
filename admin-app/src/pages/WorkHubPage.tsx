@@ -7158,6 +7158,20 @@ export default function WorkHubPage() {
               </button>
               <button
                 type="button"
+                className="workhub-mobile-footer-btn workhub-mobile-footer-btn-quick"
+                onClick={(event) => {
+                  setQuickAddOpen(false)
+                  handleProjectActionMenu('__workspace__', event)
+                }}
+                aria-label="Quick add"
+                title="Quick add"
+                disabled={!selectedWorkspaceId}
+              >
+                <span aria-hidden="true">+</span>
+                <small>Add</small>
+              </button>
+              <button
+                type="button"
                 className={`workhub-mobile-footer-btn${mobileWorkspacePanelOpen ? ' is-active' : ''}`}
                 onClick={() => {
                   setQuickAddOpen(false)

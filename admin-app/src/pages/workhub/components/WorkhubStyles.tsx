@@ -316,33 +316,55 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         background: #ffffff;
         border-top: 1px solid #dbe7ff;
         box-shadow: 0 -8px 22px rgba(20, 40, 77, 0.1);
-        padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 8px;
+        padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 9px;
+        align-items: center;
       }
       .workhub-mobile-footer-btn {
         border: 1px solid transparent;
         background: transparent;
         color: #667997;
-        border-radius: 10px;
-        min-height: 44px;
-        padding: 4px 2px;
+        border-radius: 12px;
+        min-height: 48px;
+        padding: 5px 3px;
         display: inline-flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 2px;
+        gap: 3px;
         cursor: pointer;
         font: inherit;
       }
       .workhub-mobile-footer-btn > span {
-        font-size: 1.1rem;
+        font-size: 1.12rem;
         line-height: 1;
       }
       .workhub-mobile-footer-btn > small {
-        font-size: 0.64rem;
+        font-size: 0.62rem;
         font-weight: 700;
-        line-height: 1.1;
+        line-height: 1;
+        white-space: nowrap;
+      }
+      .workhub-mobile-footer-btn-quick {
+        min-height: 50px;
+        border-radius: 16px;
+        border-color: #bfd4ff;
+        background: linear-gradient(180deg, #f5f9ff 0%, #e8f1ff 100%);
+        color: #18489e;
+        box-shadow: 0 4px 12px rgba(32, 73, 148, 0.18);
+      }
+      .workhub-mobile-footer-btn-quick > span {
+        font-size: 1.35rem;
+        font-weight: 700;
+        line-height: 0.9;
+      }
+      .workhub-mobile-footer-btn-quick > small {
+        font-size: 0.6rem;
+      }
+      .workhub-mobile-footer-btn-quick:disabled {
+        opacity: 0.5;
+        box-shadow: none;
       }
       .workhub-mobile-footer-btn.is-active {
         color: #1f4fae;
@@ -1617,21 +1639,23 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         font-size: 0.62rem;
         border: 0;
         background: transparent;
+        color: #6e829f;
+        padding: 0;
+        box-shadow: none;
+      }
       .workhub-tree-leaf-indicator.is-root-leaf {
         padding: 0;
         font-size: 0.82rem;
         color: #6e829f;
       }
       .workhub-tree-node-main {
+        display: inline-flex;
+        align-items: baseline;
         gap: 6px;
         min-width: 0;
         border: 0;
         cursor: pointer;
         text-align: left;
-      }
-        align-items: baseline;
-        gap: 5px;
-        min-width: 0;
         flex: 1 1 auto;
       }
       .workhub-tree-node-title {
@@ -8068,6 +8092,46 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         .workhub-document-body-editor {
           min-height: 320px;
           height: 320px;
+        }
+        .workhub-tree-node {
+          min-height: 46px;
+          padding: 10px 12px;
+          border-radius: 10px;
+          gap: 8px;
+        }
+        .workhub-tree-node-wrap.is-root > .workhub-tree-node {
+          min-height: 50px;
+          padding: 11px 13px;
+        }
+        .workhub-tree-node-wrap.is-root + .workhub-tree-node-wrap.is-root {
+          margin-top: 8px;
+          padding-top: 0;
+        }
+        .workhub-tree-node-wrap.is-nested > .workhub-tree-node {
+          min-height: 40px;
+          padding-top: 8px;
+          padding-bottom: 8px;
+        }
+        .workhub-tree-node-title {
+          font-size: 0.86rem;
+          line-height: 1.25;
+          font-weight: 400;
+        }
+        .workhub-tree-node-meta {
+          font-size: 0.68rem;
+          line-height: 1.2;
+          font-weight: 400;
+          color: #566f95;
+        }
+        .workhub-tree-node-intent-icon {
+          font-size: 0.92rem;
+          opacity: 1;
+        }
+        .workhub-tree-node .workhub-plus-btn,
+        .workhub-tree-node .workhub-gear-btn {
+          width: 28px;
+          height: 28px;
+          font-size: 0.9rem;
         }
         .workhub-documents-layout {
           grid-template-columns: 1fr;

@@ -83,9 +83,11 @@ export function ProjectTreeNodes({
         const hasExpandableChildren = childCount > 0 || documentCount > 0
         const directTaskCount = directTaskCountByProjectId[node.id] || 0
         const effectiveIntent = projectIntentById[node.id] || 'project'
+        const folderFallbackClosed = '🗂️'
+        const folderFallbackOpen = '📂'
         const intentIcon = effectiveIntent === 'project'
-          ? (hasExpandableChildren ? (isExpanded ? '📂' : '📁') : (projectIntentIconById[node.id] || '📁'))
-          : (projectIntentIconById[node.id] || '📁')
+          ? (hasExpandableChildren ? (isExpanded ? folderFallbackOpen : folderFallbackClosed) : (projectIntentIconById[node.id] || folderFallbackClosed))
+          : (projectIntentIconById[node.id] || folderFallbackClosed)
         const countdownMeta = formatCountdownMeta(node.projectDeadline, node.submissionTime)
         const defaultMetaText = childCount > 0
           ? `${childCount} sub-project${childCount > 1 ? 's' : ''}${documentCount > 0 ? ` • ${documentCount} doc${documentCount === 1 ? '' : 's'}` : ''}`
