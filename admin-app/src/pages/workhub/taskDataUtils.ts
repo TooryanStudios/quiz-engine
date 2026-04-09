@@ -45,3 +45,44 @@ export function getTaskAttachmentTitle(task: WorkhubTask, url: string): string {
   }
   return deriveAttachmentTitle(url)
 }
+
+export function deriveLinkTitle(url: string): string {
+  const trimmed = (url || '').trim()
+  if (!trimmed) return 'Link'
+
+  try {
+    const parsed = new URL(trimmed)
+    const host = parsed.hostname.replace(/^www\./i, '')
+    if (/docs\.google\.com$/i.test(parsed.hostname)) {
+      if (parsed.pathname.includes('/document/')) return 'Google Doc'
+      if (parsed.pathname.includes('/spreadsheets/')) return 'Google Sheet'
+      if (parsed.pathname.includes('/presentation/')) return 'Google Slides'
+      if (parsed.pathname.includes('/forms/')) return 'Google Form'
+      if (parsed.pathname.includes('/drive/')) return 'Google Drive file'
+    }
+    const derived = deriveAttachmentTitle(trimmed)
+    if (derived && !/^[A-Za-z0-9_-]{16,}$/.test(derived)) return derived
+    return host || 'Link'
+  } catch {
+    const fallback = deriveAttachmentTitle(trimmed)
+    return fallback || 'Link'
+  }
+}
+
+export function getTaskLinkTitle(task: WorkhubTask, url: string): string {
+  const explicitTitle = task.linkTitles?.[url]
+  if (explicitTitle && explicitTitle.trim()) {
+    return explicitTitle.trim()
+  }
+  return deriveLinkTitle(url)
+}
+
+export function getUrlHostLabel(url: string): string {
+  const trimmed = (url || '').trim()
+  if (!trimmed) return 'link'
+  try {
+    return new URL(trimmed).hostname.replace(/^www\./i, '') || 'link'
+  } catch {
+    return trimmed.replace(/^https?:\/\//i, '').split('/')[0] || 'link'
+  }
+}

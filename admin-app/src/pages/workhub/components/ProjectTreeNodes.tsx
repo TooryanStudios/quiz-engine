@@ -88,6 +88,7 @@ export function ProjectTreeNodes({
         const intentIcon = effectiveIntent === 'project'
           ? (hasExpandableChildren ? (isExpanded ? folderFallbackOpen : folderFallbackClosed) : (projectIntentIconById[node.id] || folderFallbackClosed))
           : (projectIntentIconById[node.id] || folderFallbackClosed)
+        const intentIconKind = intentIcon === '🚀' ? 'project' : 'folder'
         const countdownMeta = formatCountdownMeta(node.projectDeadline, node.submissionTime)
         const defaultMetaText = childCount > 0
           ? `${childCount} sub-project${childCount > 1 ? 's' : ''}${documentCount > 0 ? ` • ${documentCount} doc${documentCount === 1 ? '' : 's'}` : ''}`
@@ -97,6 +98,7 @@ export function ProjectTreeNodes({
         const showCountdownMeta = treeMetaDisplayMode === 'countdown' && childCount === 0
         const metaText = showCountdownMeta ? countdownMeta.label : defaultMetaText
         const showMeta = !(treeMetaDisplayMode === 'countdown' && childCount > 0)
+        const attachmentCount = Array.isArray(node.attachments) ? node.attachments.length : 0
         const metaClassName = `workhub-tree-node-meta${treeMetaDisplayMode === 'countdown' && countdownMeta.isNear ? ' is-near-submission' : ''}${treeMetaDisplayMode === 'countdown' && countdownMeta.isOverdue ? ' is-overdue' : ''}`
 
         return (
@@ -151,8 +153,17 @@ export function ProjectTreeNodes({
                 <span className={`workhub-project-dot${depth === 0 ? ' is-root' : ''}`} style={{ background: node.color }} />
                 <span className="workhub-tree-node-text">
                   <span className="workhub-tree-node-title">
-                    <span className="workhub-tree-node-intent-icon" aria-hidden="true">{intentIcon}</span>
+                      <span className={`workhub-tree-node-intent-icon is-${intentIconKind}-kind`} aria-hidden="true">{intentIcon}</span>
                     <span className="workhub-tree-node-title-text">{node.name}</span>
+                    {attachmentCount > 0 && (
+                      <span
+                        className="workhub-tree-node-attachment-indicator"
+                        title={`${attachmentCount} attachment${attachmentCount === 1 ? '' : 's'}`}
+                        aria-label={`${attachmentCount} attachment${attachmentCount === 1 ? '' : 's'}`}
+                      >
+                        📎
+                      </span>
+                    )}
                   </span>
                 </span>
                 {showMeta && (
@@ -221,7 +232,10 @@ export function ProjectTreeNodes({
                     }}
                     title={document.title}
                   >
-                    <span className="workhub-tree-doc-subitem-title">📝 {document.title}</span>
+                    <span className="workhub-tree-doc-subitem-title">
+                      📝 {document.title}
+                      {!!document.attachments?.length && <span className="workhub-tree-doc-attachment-indicator" title={`${document.attachments.length} attachment${document.attachments.length === 1 ? '' : 's'}`}>📎</span>}
+                    </span>
                     {document.isLocked && <span className="workhub-tree-doc-lock-badge" title="Locked">🔒</span>}
                   </button>
                 ))}

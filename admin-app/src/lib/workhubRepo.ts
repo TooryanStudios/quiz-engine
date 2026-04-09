@@ -84,6 +84,7 @@ export interface WorkhubProject {
   clientId?: string
   notes?: string
   attachments?: string[]
+  attachmentTitles?: Record<string, string>
   driveFolderId?: string
   storageMethod?: 'firebase' | 'drive'
   createdBy: string
@@ -138,6 +139,8 @@ export interface WorkhubTask {
   attachmentTitles?: Record<string, string>
   imageUrls?: string[]
   links?: string[]
+  linkTitles?: Record<string, string>
+  linkCreatedBy?: Record<string, string>
   visibility: WorkhubVisibility
   memberUids: string[]
   status: WorkhubTaskStatus
@@ -550,7 +553,7 @@ export async function createWorkhubProject(input: {
   return docRef.id
 }
 
-export async function updateWorkhubProject(projectId: string, patch: Partial<Pick<WorkhubProject, 'parentProjectId' | 'intent' | 'mainPanelView' | 'taskItemDisplayMode' | 'valueAmount' | 'valueCurrency' | 'name' | 'description' | 'color' | 'notes' | 'attachments' | 'notesUpdatedBy' | 'visibility' | 'memberUids' | 'storageMethod' | 'projectStartDate' | 'projectDeadline' | 'projectType' | 'submissionTime' | 'priority' | 'clientId'>>) {
+export async function updateWorkhubProject(projectId: string, patch: Partial<Pick<WorkhubProject, 'parentProjectId' | 'intent' | 'mainPanelView' | 'taskItemDisplayMode' | 'valueAmount' | 'valueCurrency' | 'name' | 'description' | 'color' | 'notes' | 'attachments' | 'attachmentTitles' | 'notesUpdatedBy' | 'visibility' | 'memberUids' | 'storageMethod' | 'projectStartDate' | 'projectDeadline' | 'projectType' | 'submissionTime' | 'priority' | 'clientId'>>) {
   const payload: Record<string, unknown> = {
     ...patch,
     updatedAt: serverTimestamp(),
@@ -721,7 +724,7 @@ export async function createWorkhubTask(input: {
   return docRef.id
 }
 
-export async function updateWorkhubTask(taskId: string, patch: Partial<Pick<WorkhubTask, 'title' | 'description' | 'attachments' | 'imageUrls' | 'links' | 'status' | 'priority' | 'assigneeUid' | 'dueDate' | 'checklist' | 'completedAt' | 'sortOrder'>>) {
+export async function updateWorkhubTask(taskId: string, patch: Partial<Pick<WorkhubTask, 'title' | 'description' | 'attachments' | 'attachmentTitles' | 'imageUrls' | 'links' | 'linkTitles' | 'linkCreatedBy' | 'status' | 'priority' | 'assigneeUid' | 'dueDate' | 'checklist' | 'completedAt' | 'sortOrder'>>) {
   await updateDoc(doc(db, 'workhub_tasks', taskId), {
     ...patch,
     updatedAt: serverTimestamp(),

@@ -89,6 +89,7 @@ const TaskRow = memo(function TaskRow({
   const assigneeIsCreator = taskCreator?.uid === task.assigneeUid
   const hasOpenInlineMenu = statusMenuOpen || priorityMenuOpen || moreMenuOpen || assigneeMenuOpen
   const dueLabel = formatTaskDueDisplay(task.dueDate || '', dueDisplayMode)
+  const totalAttachmentCount = meta.taskAttachmentCount + meta.checklistImagesCount
 
   return (
     <article
@@ -258,6 +259,15 @@ const TaskRow = memo(function TaskRow({
             </span>
           </div>
           <div className="workhub-task-col checklist-inline">
+            {totalAttachmentCount > 0 && (
+              <span
+                className="workhub-task-attachment-chip"
+                title={`${totalAttachmentCount} attachment${totalAttachmentCount === 1 ? '' : 's'}`}
+                aria-label={`${totalAttachmentCount} attachment${totalAttachmentCount === 1 ? '' : 's'}`}
+              >
+                📎
+              </span>
+            )}
             <button
               className="workhub-checklist-toggle"
               onClick={(event) => { event.stopPropagation(); callbacks.onToggleChecklist(task.id) }}

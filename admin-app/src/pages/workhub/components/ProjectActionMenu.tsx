@@ -42,29 +42,55 @@ export function ProjectActionMenu(props: {
           <>
             <button
               type="button"
-              className="workhub-action-menu-item"
+              className="workhub-action-menu-item is-project-action"
+              disabled={!props.canCreateTopCategory}
+              onClick={() => {
+                props.onClose()
+                props.onCreateTemplateEntity('project', '')
+              }}
+            >
+              <span className="workhub-action-icon">🚀</span>
+              <span>Add project</span>
+            </button>
+            <button
+              type="button"
+              className="workhub-action-menu-item is-folder-action"
               disabled={!props.canCreateTopCategory}
               onClick={() => {
                 props.onClose()
                 props.onCreateSubProject('')
               }}
             >
-              <span className="workhub-action-icon">🚀</span>
-              <span>Add project</span>
+              <span className="workhub-action-icon">📁</span>
+              <span>Add folder</span>
             </button>
             {selectedWorkspaceProjectId && (
-              <button
-                type="button"
-                className="workhub-action-menu-item"
-                disabled={!props.canCreateTopCategory}
-                onClick={() => {
-                  props.onClose()
-                  props.onCreateSubProject(selectedWorkspaceProjectId)
-                }}
-              >
-                <span className="workhub-action-icon">📁</span>
-                <span>Add sub-project</span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="workhub-action-menu-item is-project-action"
+                  disabled={!props.canCreateTopCategory}
+                  onClick={() => {
+                    props.onClose()
+                    props.onCreateTemplateEntity('project', selectedWorkspaceProjectId)
+                  }}
+                >
+                  <span className="workhub-action-icon">🚀</span>
+                  <span>Add sub-project</span>
+                </button>
+                <button
+                  type="button"
+                  className="workhub-action-menu-item is-folder-action"
+                  disabled={!props.canCreateTopCategory}
+                  onClick={() => {
+                    props.onClose()
+                    props.onCreateSubProject(selectedWorkspaceProjectId)
+                  }}
+                >
+                  <span className="workhub-action-icon">📁</span>
+                  <span>Add sub-folder</span>
+                </button>
+              </>
             )}
             {nonProjectTemplateActions.map((action) => (
               <button
@@ -128,14 +154,25 @@ export function ProjectActionMenu(props: {
         </button>
         <button
           type="button"
-          className="workhub-action-menu-item"
+          className="workhub-action-menu-item is-project-action"
+          onClick={() => {
+            props.onClose()
+            props.onCreateTemplateEntity('project', props.projectId || '')
+          }}
+        >
+          <span className="workhub-action-icon">🚀</span>
+          <span style={{ textTransform: 'capitalize' }}>New {trFolder === 'project' ? 'project' : trFolder}</span>
+        </button>
+        <button
+          type="button"
+          className="workhub-action-menu-item is-folder-action"
           onClick={() => {
             props.onClose()
             props.onCreateSubProject('')
           }}
         >
-          <span className="workhub-action-icon">🚀</span>
-          <span style={{ textTransform: 'capitalize' }}>New {trFolder}</span>
+          <span className="workhub-action-icon">📁</span>
+          <span style={{ textTransform: 'capitalize' }}>New folder</span>
         </button>
         {props.templateCreateActions.map((action) => (
           <button

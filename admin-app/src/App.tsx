@@ -385,7 +385,7 @@ function App() {
                 </div>
               }>
                 <Routes>
-                  <Route path="/workhub" element={<WorkHubPage />} />
+                  <Route path="/workhub/*" element={<WorkHubPage />} />
                 </Routes>
               </Suspense>
             </ErrorBoundary>
@@ -483,7 +483,7 @@ function App() {
       <Route path="/preview/:id" element={<QuizPreviewPage />} />
       <Route path="/packs" element={<RequireAuth user={user ?? null}><PacksPage /></RequireAuth>} />
       <Route path="/my-quizzes" element={<RequireAuth user={user ?? null}><MyQuizzesPage /></RequireAuth>} />
-      <Route path="/workhub" element={<RequireAuth user={user ?? null}><WorkHubPage /></RequireAuth>} />
+      <Route path="/workhub/*" element={<RequireAuth user={user ?? null}><WorkHubPage /></RequireAuth>} />
       <Route path="/voice-lab" element={<RequireAdmin user={user ?? null}><VoiceLabPage /></RequireAdmin>} />
       <Route path="/ai-lab" element={<RequireAdmin user={user ?? null}><AILabPage /></RequireAdmin>} />
       <Route path="/cover-gen-lab" element={<RequireAdmin user={user ?? null}><CoverGenLabPage /></RequireAdmin>} />

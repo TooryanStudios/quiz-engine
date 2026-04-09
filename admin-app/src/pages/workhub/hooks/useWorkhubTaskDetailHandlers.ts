@@ -13,7 +13,7 @@ import {
   type WorkhubTask,
   type WorkhubTaskChecklistItem,
 } from '../../../lib/workhubRepo'
-import { buildChecklist, getTaskAttachments, getTaskLinks } from '../taskDataUtils'
+import { buildChecklist, deriveLinkTitle, getTaskAttachments, getTaskLinks } from '../taskDataUtils'
 import { normalizeTaskTitle } from '../taskUtils'
 
 type AttachmentDeletePrompt = {
@@ -32,6 +32,10 @@ interface UseWorkhubTaskDetailHandlersParams {
   setTaskAttachmentTitleDrafts: Dispatch<SetStateAction<Record<string, string>>>
   taskLinkDrafts: Record<string, string>
   setTaskLinkDrafts: Dispatch<SetStateAction<Record<string, string>>>
+  taskLinkTitleDrafts: Record<string, string>
+  setTaskLinkTitleDrafts: Dispatch<SetStateAction<Record<string, string>>>
+  taskLinkEditingDrafts: Record<string, string>
+  setTaskLinkEditingDrafts: Dispatch<SetStateAction<Record<string, string>>>
   checklistDetailsDrafts: Record<string, string>
   checklistAttachmentDrafts: Record<string, string>
   setChecklistAttachmentDrafts: Dispatch<SetStateAction<Record<string, string>>>
@@ -50,6 +54,7 @@ interface UseWorkhubTaskDetailHandlersParams {
   setUploadingChecklistAttachmentKey: Dispatch<SetStateAction<string>>
   attachmentDeletePrompt: AttachmentDeletePrompt
   setAttachmentDeletePrompt: Dispatch<SetStateAction<AttachmentDeletePrompt>>
+  currentUserUid: string
   handleTaskUpdate: (task: WorkhubTask, updates: Partial<WorkhubTask>, options?: { silent?: boolean }) => Promise<void>
   showToast: (payload: { message: string; type?: 'success' | 'error' | 'info' | 'warning'; durationMs?: number }) => void
 }
@@ -64,6 +69,10 @@ export function useWorkhubTaskDetailHandlers({
   setTaskAttachmentTitleDrafts,
   taskLinkDrafts,
   setTaskLinkDrafts,
+  taskLinkTitleDrafts,
+  setTaskLinkTitleDrafts,
+  taskLinkEditingDrafts,
+  setTaskLinkEditingDrafts,
   checklistDetailsDrafts,
   checklistAttachmentDrafts,
   setChecklistAttachmentDrafts,
@@ -82,6 +91,7 @@ export function useWorkhubTaskDetailHandlers({
   setUploadingChecklistAttachmentKey,
   attachmentDeletePrompt,
   setAttachmentDeletePrompt,
+  currentUserUid,
   handleTaskUpdate,
   showToast,
 }: UseWorkhubTaskDetailHandlersParams) {
@@ -361,18 +371,82 @@ export function useWorkhubTaskDetailHandlers({
     void handleTaskUpdate(task, { title: nextTitle }, { silent: true })
   }, [handleTaskUpdate, selectedTaskTitleDraft, setSelectedTaskTitleDraft])
 
+  const handleTaskLinkEditStart = useCallback((task: WorkhubTask, link: string) => {
+    setTaskLinkDrafts((current) => ({ ...current, [task.id]: link }))
+    setTaskLinkTitleDrafts((current) => ({
+      ...current,
+      [task.id]: task.linkTitles?.[link] || '',
+    }))
+    setTaskLinkEditingDrafts((current) => ({ ...current, [task.id]: link }))
+  }, [setTaskLinkDrafts, setTaskLinkEditingDrafts, setTaskLinkTitleDrafts])
+
+  const handleTaskLinkEditCancel = useCallback((taskId: string) => {
+    setTaskLinkDrafts((current) => ({ ...current, [taskId]: '' }))
+    setTaskLinkTitleDrafts((current) => ({ ...current, [taskId]: '' }))
+    setTaskLinkEditingDrafts((current) => ({ ...current, [taskId]: '' }))
+  }, [setTaskLinkDrafts, setTaskLinkEditingDrafts, setTaskLinkTitleDrafts])
+
   const handleTaskLinkAdd = useCallback((task: WorkhubTask) => {
     const nextLink = (taskLinkDrafts[task.id] || '').trim()
     if (!nextLink) return
-    const nextLinks = [...getTaskLinks(task), nextLink]
+
+    const editingLink = (taskLinkEditingDrafts[task.id] || '').trim()
+    const nextTitle = (taskLinkTitleDrafts[task.id] || '').trim() || deriveLinkTitle(nextLink)
+    const existingLinks = getTaskLinks(task)
+    const nextLinks = Array.from(new Set(
+      (editingLink
+        ? existingLinks.map((value) => value === editingLink ? nextLink : value)
+        : [...existingLinks, nextLink])
+        .filter(Boolean),
+    ))
+    const nextLinkTitles: Record<string, string> = {
+      ...(task.linkTitles || {}),
+      [nextLink]: nextTitle,
+    }
+    const nextLinkCreatedBy: Record<string, string> = {
+      ...(task.linkCreatedBy || {}),
+    }
+
+    if (editingLink && editingLink !== nextLink) {
+      const previousCreatorUid = nextLinkCreatedBy[editingLink]
+      delete nextLinkTitles[editingLink]
+      delete nextLinkCreatedBy[editingLink]
+      if (previousCreatorUid && !nextLinkCreatedBy[nextLink]) {
+        nextLinkCreatedBy[nextLink] = previousCreatorUid
+      }
+    }
+
+    if (!nextLinkCreatedBy[nextLink]) {
+      nextLinkCreatedBy[nextLink] = currentUserUid || task.createdBy
+    }
+
     setTaskLinkDrafts((current) => ({ ...current, [task.id]: '' }))
-    void handleTaskUpdate(task, { links: nextLinks }, { silent: true })
-  }, [handleTaskUpdate, setTaskLinkDrafts, taskLinkDrafts])
+    setTaskLinkTitleDrafts((current) => ({ ...current, [task.id]: '' }))
+    setTaskLinkEditingDrafts((current) => ({ ...current, [task.id]: '' }))
+    void handleTaskUpdate(task, {
+      links: nextLinks,
+      linkTitles: Object.keys(nextLinkTitles).length > 0 ? nextLinkTitles : {},
+      linkCreatedBy: Object.keys(nextLinkCreatedBy).length > 0 ? nextLinkCreatedBy : {},
+    }, { silent: true })
+  }, [currentUserUid, handleTaskUpdate, setTaskLinkDrafts, setTaskLinkEditingDrafts, setTaskLinkTitleDrafts, taskLinkDrafts, taskLinkEditingDrafts, taskLinkTitleDrafts])
 
   const handleTaskLinkRemove = useCallback((task: WorkhubTask, link: string) => {
     const nextLinks = getTaskLinks(task).filter((value) => value !== link)
-    void handleTaskUpdate(task, { links: nextLinks }, { silent: true })
-  }, [handleTaskUpdate])
+    const nextLinkTitles = { ...(task.linkTitles || {}) }
+    const nextLinkCreatedBy = { ...(task.linkCreatedBy || {}) }
+    delete nextLinkTitles[link]
+    delete nextLinkCreatedBy[link]
+
+    if ((taskLinkEditingDrafts[task.id] || '') === link) {
+      handleTaskLinkEditCancel(task.id)
+    }
+
+    void handleTaskUpdate(task, {
+      links: nextLinks,
+      linkTitles: Object.keys(nextLinkTitles).length > 0 ? nextLinkTitles : {},
+      linkCreatedBy: Object.keys(nextLinkCreatedBy).length > 0 ? nextLinkCreatedBy : {},
+    }, { silent: true })
+  }, [handleTaskLinkEditCancel, handleTaskUpdate, taskLinkEditingDrafts])
 
   const handleChecklistItemEditCancel = useCallback(() => {
     setEditingChecklistTaskId(null)
@@ -401,6 +475,8 @@ export function useWorkhubTaskDetailHandlers({
     confirmAttachmentRemoval,
     handleSelectedTaskDescriptionSave,
     handleSelectedTaskTitleSave,
+    handleTaskLinkEditStart,
+    handleTaskLinkEditCancel,
     handleTaskLinkAdd,
     handleTaskLinkRemove,
     handleChecklistItemEditCancel,

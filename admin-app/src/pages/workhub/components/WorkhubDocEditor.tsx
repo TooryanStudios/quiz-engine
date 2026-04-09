@@ -105,6 +105,7 @@ export function WorkhubDocEditor({
                   {taskContextTrail.map((project, index) => {
                     const isCurrent = index === taskContextTrail.length - 1
                     const icon = taskContextIconByProjectId[project.id] || '📁'
+                    const iconKind = icon === '🚀' ? 'project' : 'folder'
                     return (
                       <div key={project.id} className="workhub-task-context-node-wrap">
                         <button
@@ -114,7 +115,7 @@ export function WorkhubDocEditor({
                           title={project.name}
                           aria-current={isCurrent ? 'page' : undefined}
                         >
-                          <span className="workhub-task-context-node-icon" aria-hidden="true">{icon}</span>
+                          <span className={`workhub-task-context-node-icon is-${iconKind}-kind`} aria-hidden="true">{icon}</span>
                           <span className="workhub-task-context-node-text">
                             <span className="workhub-task-context-node-title">{project.name}</span>
                           </span>

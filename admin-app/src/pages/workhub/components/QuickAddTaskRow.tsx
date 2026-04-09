@@ -26,11 +26,12 @@ const QuickAddTaskRow = memo(function QuickAddTaskRow(props: {
   activeDragStatusId: string
   dropTargetKey: string
   focusTrigger?: number
+  onFocusHandled?: () => void
   onDragOverEnd: (statusId: string) => void
   onDropToEnd: (statusId: string) => void
   onCommit: (input: QuickAddTaskSubmitInput) => Promise<boolean | undefined>
 }) {
-  const { status, assignableMembersByProjectId, workspaceAssignableMembers, memberByUid, flatVisibleProjectOptions, defaultProjectId, selectedProjectId, selectedTaskStatusTab, currentUid, activeDragTaskId, activeDragStatusId, dropTargetKey, focusTrigger, onDragOverEnd, onDropToEnd, onCommit } = props
+  const { status, assignableMembersByProjectId, workspaceAssignableMembers, memberByUid, flatVisibleProjectOptions, defaultProjectId, selectedProjectId, selectedTaskStatusTab, currentUid, activeDragTaskId, activeDragStatusId, dropTargetKey, focusTrigger, onFocusHandled, onDragOverEnd, onDropToEnd, onCommit } = props
   const [title, setTitle] = useState('')
   const [assigneeUid, setAssigneeUid] = useState('')
   const [priority, setPriority] = useState<WorkhubTaskPriority>('medium')
@@ -50,16 +51,11 @@ const QuickAddTaskRow = memo(function QuickAddTaskRow(props: {
   const quickAddAssigneeLabel = quickAddAssigneeMember?.displayName || quickAddAssigneeMember?.email || 'Me'
 
   useEffect(() => {
-    if (selectedTaskStatusTab === status.id) {
-      inputRef.current?.focus()
-    }
-  }, [selectedTaskStatusTab, status.id])
-
-  useEffect(() => {
     if (!focusTrigger) return
     inputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
     inputRef.current?.focus()
-  }, [focusTrigger])
+    onFocusHandled?.()
+  }, [focusTrigger, onFocusHandled])
 
   useEffect(() => {
     if (quickAddAssignableMembers.length === 0) {
