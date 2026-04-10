@@ -1189,6 +1189,51 @@ button:disabled {
   background: var(--bg-page);
 }
 
+.app-loading-screen.is-workhub {
+  gap: 1rem;
+  background:
+    radial-gradient(circle at top, rgba(102, 134, 255, 0.12), transparent 0 42%),
+    linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
+}
+
+.app-loading-workhub-badge {
+  width: 68px;
+  height: 68px;
+  border-radius: 18px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #edf4ff, #dfeaff);
+  border: 1px solid #cfe0ff;
+  box-shadow: 0 12px 28px rgba(59, 91, 173, 0.12);
+  color: #173b78;
+  font-size: 1.55rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.app-loading-workhub-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  text-align: center;
+}
+
+.app-loading-workhub-copy strong {
+  color: #17305c;
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.app-loading-workhub-copy span {
+  max-width: 320px;
+  color: #5d7298;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
 .app-loading-logo {
   width: 180px;
   height: auto;
@@ -1203,6 +1248,11 @@ button:disabled {
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
+}
+
+.app-loading-spinner-workhub {
+  border-color: #d5e2fb;
+  border-top-color: #4f74bd;
 }
 
 .app-loading-note {

@@ -1,7 +1,7 @@
 ﻿import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 import { auth, storage } from '../lib/firebase'
 import { markSignOut } from '../lib/signOutState'
 import { useToast } from '../lib/ToastContext'
@@ -231,7 +231,8 @@ const MONEY_RELATED_INTENTS = new Set<WorkhubProjectIntent>([
 
 function normalizeMoneyCurrency(value: string | undefined): string {
   const normalized = (value || '').trim().toUpperCase().replace(/[^A-Z]/g, '')
-  return (normalized || 'USD').slice(0, 3)
+  const nextCurrency = normalized === 'USD' ? 'OMR' : normalized
+  return (nextCurrency || 'OMR').slice(0, 3)
 }
 
 function parseMonetaryAmountInput(value: string): number | null {
@@ -270,7 +271,7 @@ function resolveProjectMonetaryCurrency(project: Pick<WorkhubProject, 'valueCurr
   if ((project.valueCurrency || '').trim()) return normalizeMoneyCurrency(project.valueCurrency)
   const description = (project.description || '').toUpperCase()
   const matched = description.match(/\b[A-Z]{3}\b/)
-  return normalizeMoneyCurrency(matched ? matched[0] : 'USD')
+  return normalizeMoneyCurrency(matched ? matched[0] : 'OMR')
 }
 
 function addMonetaryTotal(target: Record<string, number>, currency: string, amount: number) {
@@ -623,6 +624,7 @@ function getUnknownTimeValue(value: unknown): number {
 export default function WorkHubPage() {
   const navigate = useNavigate()
   const location = useLocation()
+  const navigationType = useNavigationType()
   const { showToast } = useToast()
   const [userEmail, setUserEmail] = useState('')
   const [userName, setUserName] = useState('')
@@ -730,14 +732,13 @@ export default function WorkHubPage() {
   const [settingsProjectType, setSettingsProjectType] = useState<WorkhubProjectType>('other')
   const [settingsProjectPriority, setSettingsProjectPriority] = useState<WorkhubProjectPriority>('medium')
   const [settingsProjectValueAmountDraft, setSettingsProjectValueAmountDraft] = useState('')
-  const [settingsProjectValueCurrencyDraft, setSettingsProjectValueCurrencyDraft] = useState('USD')
+  const [settingsProjectValueCurrencyDraft, setSettingsProjectValueCurrencyDraft] = useState('OMR')
   const [settingsProjectMainPanelView, setSettingsProjectMainPanelView] = useState<'tasks' | 'dashboard'>('tasks')
   const [settingsProjectTaskItemDisplayMode, setSettingsProjectTaskItemDisplayMode] = useState<'inherit' | 'list' | 'cards' | 'grid'>('inherit')
   const [settingsProjectClientId, setSettingsProjectClientId] = useState('')
   const [settingsStorageMethod, setSettingsStorageMethod] = useState<'firebase' | 'drive'>('firebase')
   const [selectedClientId, setSelectedClientId] = useState('')
   const [clientDeleteTargetId, setClientDeleteTargetId] = useState('')
-  const [clientDeleteTypedName, setClientDeleteTypedName] = useState('')
   const [expandedUserPickerUid, setExpandedUserPickerUid] = useState<string | null>(null)
   const [userWorkspaceFilter, setUserWorkspaceFilter] = useState<'all' | string>('all')
   const [userAccessDraftByUid, setUserAccessDraftByUid] = useState<Record<string, WorkhubUserAccessDraft>>({})
@@ -787,7 +788,7 @@ export default function WorkHubPage() {
   const [selectedProjectSubmissionTimeDraft, setSelectedProjectSubmissionTimeDraft] = useState('')
   const [selectedProjectTypeDraft, setSelectedProjectTypeDraft] = useState<WorkhubProjectType>('other')
   const [selectedProjectValueAmountDraft, setSelectedProjectValueAmountDraft] = useState('')
-  const [selectedProjectValueCurrencyDraft, setSelectedProjectValueCurrencyDraft] = useState('USD')
+  const [selectedProjectValueCurrencyDraft, setSelectedProjectValueCurrencyDraft] = useState('OMR')
   const [selectedProjectAttachmentTitleDraft, setSelectedProjectAttachmentTitleDraft] = useState('')
   const [selectedProjectAttachmentDraft, setSelectedProjectAttachmentDraft] = useState('')
   const [selectedProjectAttachmentFileDrafts, setSelectedProjectAttachmentFileDrafts] = useState<File[]>([])
@@ -838,7 +839,7 @@ export default function WorkHubPage() {
     const handleDocumentPointerDown = (event: MouseEvent) => {
       const target = event.target
       if (!(target instanceof Element)) return
-      if (target.closest('.workhub-task-status-btn, .workhub-task-status-menu, .workhub-priority-indicator, .workhub-task-priority-menu, .workhub-task-more-btn, .workhub-task-more-menu, .workhub-detail-icon-btn, .workhub-detail-icon-menu, .workhub-task-filter-btn, .workhub-task-filter-menu, .workhub-bulk-status-btn, .workhub-bulk-status-menu, .workhub-task-assignee-btn, .workhub-task-assignee-menu, .workhub-notify-btn, .workhub-notify-menu, .workhub-account-btn, .workhub-account-menu, .workhub-project-color-select-btn, .workhub-project-color-select-menu, .workhub-mobile-workspace-panel, .workhub-mobile-workspace-toggle')) {
+      if (target.closest('.workhub-task-status-btn, .workhub-task-status-menu, .workhub-priority-indicator, .workhub-task-priority-menu, .workhub-task-more-btn, .workhub-task-more-menu, .workhub-detail-icon-btn, .workhub-detail-icon-menu, .workhub-task-filter-btn, .workhub-task-filter-menu, .workhub-bulk-status-btn, .workhub-bulk-status-menu, .workhub-task-assignee-btn, .workhub-task-assignee-menu, .workhub-notify-btn, .workhub-notify-menu, .workhub-account-btn, .workhub-account-menu, .workhub-project-color-select-btn, .workhub-project-color-select-menu, .workhub-mobile-workspace-panel, .workhub-mobile-workspace-toggle, .workhub-mobile-footer, .workhub-mobile-footer-btn')) {
         return
       }
       setOpenTaskStatusMenuId('')
@@ -899,6 +900,10 @@ export default function WorkHubPage() {
       '.workhub-task-detail-rail.is-mobile-drawer.is-open .workhub-detail-card',
       '.workhub-main-stage',
       '.workhub-summary-strip',
+      '.workhub-modal',
+      '.workhub-project-settings-body',
+      '.workhub-settings-tab-panel',
+      '.workhub-modal-form',
     ].join(', ')
 
     const handleTouchMove = (event: TouchEvent) => {
@@ -1993,8 +1998,38 @@ export default function WorkHubPage() {
     () => (selectedProject ? selectedProjectBranchProjects.filter((item) => item.id !== selectedProject.id) : visibleWorkspaceProjects),
     [selectedProject, selectedProjectBranchProjects, visibleWorkspaceProjects],
   )
-  function renderDashboardProjectCard(project: WorkhubProject, depth = 0): JSX.Element {
+  function renderDashboardProjectCard(project: WorkhubProject, depth = 0, options?: { simplified?: boolean }): JSX.Element {
     const childProjects = visibleProjectsByParent.get(project.id) || []
+    const intentMeta = projectIntentMetaById[project.id] || getTemplateCreationIntentMeta(resolveEffectiveProjectIntent(project, workspaceByIdForFiltering, selectedWorkspaceTemplateIntentSet), selectedWorkspaceTemplateId)
+    const simplified = !!options?.simplified
+
+    if (simplified) {
+      return (
+        <article
+          key={project.id}
+          className="workhub-project-card compact-card is-clickable is-category-card"
+          style={{ ['--workhub-category-accent' as string]: project.color }}
+          role="button"
+          tabIndex={0}
+          onClick={() => handleSelectProject(project.id)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              handleSelectProject(project.id)
+            }
+          }}
+        >
+          <div className="workhub-project-title-row workhub-category-card-title-row">
+            <span className="workhub-project-category-icon" aria-hidden="true">{intentMeta.icon || '📁'}</span>
+            <div className="workhub-category-card-copy">
+              <strong>{project.name}</strong>
+              <span className="workhub-badge">{project.visibility === 'restricted' ? 'Restricted' : 'Workspace'}</span>
+            </div>
+          </div>
+        </article>
+      )
+    }
+
     return (
       <article
         key={project.id}
@@ -2428,6 +2463,10 @@ export default function WorkHubPage() {
     const scopedIds = new Set(scopedWorkspaceIds)
     return clients.filter((item) => scopedIds.has(item.workspaceId)).length
   }, [clients, scopedWorkspaceIds])
+  const displayedOverviewPriorityProjects = useMemo(
+    () => overviewPriorityProjects.slice(0, 6),
+    [overviewPriorityProjects],
+  )
   const overduePriorityProjectsCount = useMemo(
     () => overviewPriorityProjects.filter((item) => item.isOverdue).length,
     [overviewPriorityProjects],
@@ -2730,7 +2769,7 @@ export default function WorkHubPage() {
       setSelectedProjectSubmissionTimeDraft('')
       setSelectedProjectTypeDraft('other')
       setSelectedProjectValueAmountDraft('0')
-      setSelectedProjectValueCurrencyDraft('USD')
+      setSelectedProjectValueCurrencyDraft('OMR')
       setSelectedProjectAttachmentTitleDraft('')
       setSelectedProjectAttachmentDraft('')
       setSelectedProjectAttachmentFileDrafts([])
@@ -2939,6 +2978,20 @@ export default function WorkHubPage() {
   useEffect(() => {
     if (!selectedWorkspaceId || !isWorkspaceSelectionResolved) return
 
+    // During browser back/forward (POP), the URL should temporarily lead while the
+    // workspace / project / section state catches up. Without this guard, stale state can
+    // immediately push the old path back into history and cause a flicker loop.
+    if (
+      navigationType === 'POP'
+      && (
+        (!!selectedWorkspaceParam && selectedWorkspaceId !== selectedWorkspaceParam)
+        || (!!selectedProjectParam && selectedProjectId !== selectedProjectParam)
+        || (!!selectedSectionParam && activeSection !== selectedSectionParam)
+      )
+    ) {
+      return
+    }
+
     // Compare against previous selectedProjectId to detect whether it changed this render.
     // If the URL names a specific project but selectedProjectId still hasn't caught up
     // (prevProjectId === selectedProjectId means no change occurred this render), the
@@ -2971,10 +3024,13 @@ export default function WorkHubPage() {
     isWorkspaceSelectionResolved,
     location.pathname,
     navigate,
+    navigationType,
     parsedWorkhubPath.wsId,
     selectedProjectId,
     selectedProjectParam,
+    selectedSectionParam,
     selectedWorkspaceId,
+    selectedWorkspaceParam,
   ])
 
   useEffect(() => {
@@ -3653,12 +3709,10 @@ export default function WorkHubPage() {
   async function handleDeleteClientDetails() {
     if (!selectedClientId || selectedClientId === '__new__') return
     setClientDeleteTargetId(selectedClientId)
-    setClientDeleteTypedName('')
   }
 
   function handleCancelClientDelete() {
     setClientDeleteTargetId('')
-    setClientDeleteTypedName('')
   }
 
   async function handleConfirmClientDelete() {
@@ -3666,10 +3720,6 @@ export default function WorkHubPage() {
     const targetClient = allClientById[clientDeleteTargetId]
     if (!targetClient) {
       handleCancelClientDelete()
-      return
-    }
-    if (clientDeleteTypedName.trim() !== targetClient.name) {
-      showToast({ type: 'error', message: 'Type the exact client name to confirm deletion.' })
       return
     }
     const linkedProjects = projects.filter((project) => project.clientId === clientDeleteTargetId)
@@ -4385,6 +4435,9 @@ export default function WorkHubPage() {
       showToast({ type: 'error', message: `Move or delete ${entityLabelLower} tasks first.` })
       return
     }
+    if (!window.confirm(`Delete ${entityLabelLower} "${selectedAccessProject.name}"?`)) {
+      return
+    }
     setBusyKey(`delete:${selectedAccessProject.id}`)
     try {
       await deleteWorkhubProject(selectedAccessProject.id)
@@ -4729,6 +4782,30 @@ export default function WorkHubPage() {
     closeActionMenu()
   }
 
+  const handleMobileWorkspaceChange = useCallback((workspaceId: string) => {
+    setGearMenuOpen(false)
+    setSelectedWorkspaceId(workspaceId)
+    setMobileWorkspacePanelOpen(true)
+  }, [setSelectedWorkspaceId])
+
+  const handleMobileWorkspaceOverviewSelect = useCallback(() => {
+    setGearMenuOpen(false)
+    openWorkspaceOverview()
+    setMobileWorkspacePanelOpen(true)
+  }, [openWorkspaceOverview])
+
+  const handleMobileProjectSelect = useCallback((projectId: string) => {
+    setGearMenuOpen(false)
+    handleSelectProject(projectId)
+    setMobileWorkspacePanelOpen(true)
+  }, [handleSelectProject])
+
+  const handleMobileDocumentSelect = useCallback((documentId: string) => {
+    setGearMenuOpen(false)
+    handleSelectDocumentFromTree(documentId)
+    setMobileWorkspacePanelOpen(true)
+  }, [handleSelectDocumentFromTree])
+
   function resolveTaskNotificationRecipients(task: WorkhubTask, updates?: Partial<WorkhubTask>) {
     const nextVisibility = updates?.visibility || task.visibility
     const taskProject = workspaceProjectById[task.projectId]
@@ -5055,7 +5132,7 @@ export default function WorkHubPage() {
     : 'No items yet. Create a top-level category first.'
 
   return (
-    <div className={`workhub-shell${isMobileWorkhubLayout ? ' is-mobile' : ''}${isMobileWorkhubLayout && !!selectedTask ? ' task-detail-open' : ''}`} dir="ltr">
+    <div className={`workhub-shell${isMobileWorkhubLayout ? ' is-mobile' : ''}${isMobileWorkhubLayout && !!selectedTask ? ' task-detail-open' : ''}${isMobileWorkhubLayout && mobileWorkspacePanelOpen ? ' workspace-drawer-open' : ''}`} dir="ltr">
       <div className="workhub-app">
         <header className="workhub-topbar">
           <div className="workhub-topbar-main">
@@ -5242,26 +5319,34 @@ export default function WorkHubPage() {
         {isMobileWorkhubLayout && mobileWorkspacePanelOpen && (
           <div
             className="workhub-mobile-workspace-panel-backdrop"
-            onClick={() => setMobileWorkspacePanelOpen(false)}
-            aria-hidden="true"
+            onClick={() => {
+              setGearMenuOpen(false)
+              setMobileWorkspacePanelOpen(false)
+            }}
           >
             <aside
               className="workhub-mobile-workspace-panel"
               role="dialog"
+              aria-modal="true"
               aria-label="Workspace list"
               onClick={(event) => event.stopPropagation()}
             >
-              <div className="workhub-mobile-workspace-panel-head">
-                <strong>Workspaces</strong>
-                <button type="button" className="workhub-ghost-mini" onClick={() => setMobileWorkspacePanelOpen(false)}>Close</button>
-              </div>
-              <div className="workhub-mobile-workspace-picker">
-                <div className="workhub-mobile-workspace-picker-row">
+              <div className="workhub-mobile-detail-drawer-head workhub-mobile-workspace-panel-head">
+                <button
+                  type="button"
+                  className="workhub-mobile-detail-drawer-handle"
+                  aria-label="Close workspace list"
+                  onClick={() => {
+                    setGearMenuOpen(false)
+                    setMobileWorkspacePanelOpen(false)
+                  }}
+                />
+                <div className="workhub-mobile-workspace-picker-row workhub-mobile-workspace-toolbar">
                   <select
                     id="workhub-mobile-workspace-select"
                     className="workhub-mobile-workspace-picker-select"
                     value={selectedWorkspaceId}
-                    onChange={(event) => setSelectedWorkspaceId(event.target.value)}
+                    onChange={(event) => handleMobileWorkspaceChange(event.target.value)}
                   >
                     {visibleWorkspaces.map((item) => {
                       const workspaceDisplayName = workspaceDisplayNameById[item.id] || item.name
@@ -5272,125 +5357,130 @@ export default function WorkHubPage() {
                       )
                     })}
                   </select>
-                  {isPrivilegedMember && (
-                    <div className="workhub-mobile-workspace-picker-actions">
-                      <button
-                        type="button"
-                        className="workhub-plus-btn"
-                        onClick={(event) => handleProjectActionMenu('__workspace__', event)}
-                        title="Create items"
-                        aria-label="Create items"
-                        disabled={!selectedWorkspaceId}
-                      >
-                        +
-                      </button>
-                      {selectedWorkspaceId && (
-                        <div className="workhub-mobile-gear-wrap" ref={mobileGearMenuAnchorRef}>
-                          <button
-                            type="button"
-                            className="workhub-gear-btn"
-                            onClick={() => setGearMenuOpen((v) => !v)}
-                            title="Workspace options"
-                            aria-label="Workspace options"
-                          >
-                            ⚙
-                          </button>
-                          {gearMenuOpen && (
-                            <div ref={mobileGearMenuRef} className={`workhub-gear-menu${mobileGearMenuOpenUp ? ' is-up' : ''}`}>
-                              <button type="button" className="workhub-gear-menu-item" onClick={() => { setGearMenuOpen(false); openWorkspaceSettings(selectedWorkspaceId) }}>Workspace settings</button>
-                              <button type="button" className="workhub-gear-menu-item" onClick={() => { setGearMenuOpen(false); setStatusDialogOpen(true) }}>Status settings</button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="workhub-mobile-tree-panel">
-                <div className="workhub-mobile-tree-panel-head">
-                  <strong>Workspace tree</strong>
-                </div>
-                <div className="workhub-mobile-tree-panel-body">
-                  <div className="workhub-tree-group">
+                  <div className="workhub-mobile-workspace-picker-actions">
                     <button
                       type="button"
-                      className={`workhub-tree-overview${selectedProjectId === 'all' && activeSection === 'dashboard' ? ' is-active' : ''}`}
+                      className={`workhub-ghost-mini workhub-mobile-workspace-overview-btn${selectedProjectId === 'all' && activeSection === 'dashboard' ? ' is-active' : ''}`}
+                      onClick={handleMobileWorkspaceOverviewSelect}
+                      title="Workspace overview"
+                      aria-label="Workspace overview"
+                      disabled={!selectedWorkspaceId}
+                    >
+                      📊
+                    </button>
+                    {isPrivilegedMember && (
+                      <>
+                        <button
+                          type="button"
+                          className="workhub-plus-btn"
+                          onClick={(event) => handleProjectActionMenu('__workspace__', event)}
+                          title="Create items"
+                          aria-label="Create items"
+                          disabled={!selectedWorkspaceId}
+                        >
+                          +
+                        </button>
+                        {selectedWorkspaceId && (
+                          <div className="workhub-mobile-gear-wrap" ref={mobileGearMenuAnchorRef}>
+                            <button
+                              type="button"
+                              className="workhub-gear-btn"
+                              onClick={() => setGearMenuOpen((v) => !v)}
+                              title="Workspace options"
+                              aria-label="Workspace options"
+                            >
+                              ⚙
+                            </button>
+                            {gearMenuOpen && (
+                              <div ref={mobileGearMenuRef} className={`workhub-gear-menu${mobileGearMenuOpenUp ? ' is-up' : ''}`}>
+                                <button type="button" className="workhub-gear-menu-item" onClick={() => { setGearMenuOpen(false); openWorkspaceSettings(selectedWorkspaceId) }}>Workspace settings</button>
+                                <button type="button" className="workhub-gear-menu-item" onClick={() => { setGearMenuOpen(false); setStatusDialogOpen(true) }}>Status settings</button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      className="workhub-ghost-mini"
                       onClick={() => {
-                        openWorkspaceOverview()
+                        setGearMenuOpen(false)
                         setMobileWorkspacePanelOpen(false)
                       }}
                     >
-                      Workspace overview
+                      ✕
                     </button>
                   </div>
-
-                  {visibleProjectTree.length > 0 ? (
-                    <ProjectTreeNodes
-                      nodes={visibleProjectTree}
-                      treeMetaDisplayMode={treeMetaDisplayMode}
-                      selectedProjectId={selectedProjectId}
-                      expandedProjectIds={expandedProjectIds}
-                      directTaskCountByProjectId={workspaceTaskCountByProjectId}
-                      projectIntentById={projectIntentById}
-                      projectIntentIconById={projectIntentIconById}
-                      selectedDocumentId={selectedDocumentId}
-                      documentsByProjectId={workspaceDocumentsByProjectId}
-                      isPrivilegedMember={isPrivilegedMember}
-                      onSelectProject={(projectId) => {
-                        handleSelectProject(projectId)
-                        setMobileWorkspacePanelOpen(false)
-                      }}
-                      onSelectDocument={(documentId) => {
-                        handleSelectDocumentFromTree(documentId)
-                        setMobileWorkspacePanelOpen(false)
-                      }}
-                      onToggleExpansion={toggleProjectExpansion}
-                      onOpenActionMenu={handleProjectActionMenu}
-                      onOpenSettings={openProjectSettingsDialog}
-                    />
-                  ) : (
-                    <div className="workhub-empty-state">No project tree items yet.</div>
-                  )}
-
-                  <div className="workhub-tree-group">
-                    <button
-                      type="button"
-                      className="workhub-tree-group-toggle"
-                      onClick={() => setDocumentsGroupExpanded((current) => !current)}
-                    >
-                      <span className="workhub-tree-group-label">
-                        <span className="workhub-tree-group-caret">{documentsGroupExpanded ? '▾' : '▸'}</span>
-                        <strong>Workspace docs</strong>
-                      </span>
-                      <small>{workspaceLevelDocuments.length} item{workspaceLevelDocuments.length === 1 ? '' : 's'}</small>
-                    </button>
-                    {documentsGroupExpanded && (
-                      workspaceLevelDocuments.length > 0 ? (
-                        <div className="workhub-tree-docs-list">
-                          {workspaceLevelDocuments.map((item) => {
-                            const isActiveDocument = activeSection === 'notes' && selectedDocumentId === item.id
-                            return (
-                              <button
-                                key={item.id}
-                                type="button"
-                                className={`workhub-tree-doc-item${isActiveDocument ? ' is-active' : ''}`}
-                                onClick={() => {
-                                  handleSelectDocumentFromTree(item.id)
-                                  setMobileWorkspacePanelOpen(false)
-                                }}
-                                title={item.title}
-                              >
-                                <span className="workhub-tree-doc-item-title">📝 {item.title}</span>
-                                <span className="workhub-tree-doc-item-meta">Workspace document</span>
-                              </button>
-                            )
-                          })}
-                        </div>
-                      ) : (
-                        <div className="workhub-empty-state">No workspace-level documents yet.</div>
-                      )
+                </div>
+              </div>
+              <div className="workhub-mobile-workspace-panel-body">
+                <div className="workhub-mobile-tree-panel">
+                  <div className="workhub-mobile-tree-panel-body">
+                    {visibleProjectTree.length > 0 ? (
+                      <ProjectTreeNodes
+                        nodes={visibleProjectTree}
+                        treeMetaDisplayMode={treeMetaDisplayMode}
+                        selectedProjectId={selectedProjectId}
+                        expandedProjectIds={expandedProjectIds}
+                        directTaskCountByProjectId={workspaceTaskCountByProjectId}
+                        projectIntentById={projectIntentById}
+                        projectIntentIconById={projectIntentIconById}
+                        selectedDocumentId={selectedDocumentId}
+                        documentsByProjectId={workspaceDocumentsByProjectId}
+                        isPrivilegedMember={isPrivilegedMember}
+                        onSelectProject={(projectId) => {
+                          handleMobileProjectSelect(projectId)
+                        }}
+                        onSelectDocument={(documentId) => {
+                          handleMobileDocumentSelect(documentId)
+                        }}
+                        onToggleExpansion={toggleProjectExpansion}
+                        onOpenActionMenu={handleProjectActionMenu}
+                        onOpenSettings={openProjectSettingsDialog}
+                      />
+                    ) : (
+                      <div className="workhub-empty-state">No project tree items yet.</div>
                     )}
+
+                    <div className="workhub-tree-group">
+                      <button
+                        type="button"
+                        className="workhub-tree-group-toggle"
+                        onClick={() => setDocumentsGroupExpanded((current) => !current)}
+                      >
+                        <span className="workhub-tree-group-label">
+                          <span className="workhub-tree-group-caret">{documentsGroupExpanded ? '▾' : '▸'}</span>
+                          <strong>Workspace docs</strong>
+                        </span>
+                        <small>{workspaceLevelDocuments.length} item{workspaceLevelDocuments.length === 1 ? '' : 's'}</small>
+                      </button>
+                      {documentsGroupExpanded && (
+                        workspaceLevelDocuments.length > 0 ? (
+                          <div className="workhub-tree-docs-list">
+                            {workspaceLevelDocuments.map((item) => {
+                              const isActiveDocument = activeSection === 'notes' && selectedDocumentId === item.id
+                              return (
+                                <button
+                                  key={item.id}
+                                  type="button"
+                                  className={`workhub-tree-doc-item${isActiveDocument ? ' is-active' : ''}`}
+                                  onClick={() => {
+                                    handleMobileDocumentSelect(item.id)
+                                  }}
+                                  title={item.title}
+                                >
+                                  <span className="workhub-tree-doc-item-title">📝 {item.title}</span>
+                                  <span className="workhub-tree-doc-item-meta">Workspace document</span>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          <div className="workhub-empty-state">No workspace-level documents yet.</div>
+                        )
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -5717,8 +5807,8 @@ export default function WorkHubPage() {
                           <span>{overviewPriorityProjects.length} tracked</span>
                         </div>
                         <div className="workhub-project-risk-list">
-                          {overviewPriorityProjects.length === 0 && <div className="workhub-empty-state">No high-priority projects with upcoming deadlines.</div>}
-                          {overviewPriorityProjects.map((item) => (
+                          {displayedOverviewPriorityProjects.length === 0 && <div className="workhub-empty-state">No high-priority projects with upcoming deadlines.</div>}
+                          {displayedOverviewPriorityProjects.map((item) => (
                             <button
                               key={item.id}
                               type="button"
@@ -5806,7 +5896,7 @@ export default function WorkHubPage() {
                     </div>
                   </div>
                   <div className="workhub-project-card-grid">
-                    {selectedBranchChildProjects.map((project) => renderDashboardProjectCard(project))}
+                    {selectedBranchChildProjects.map((project) => renderDashboardProjectCard(project, 0, { simplified: !selectedProject }))}
                     {selectedBranchChildProjects.length === 0 && <div className="workhub-empty-state">No child projects here yet.</div>}
                   </div>
                 </section>
@@ -6178,40 +6268,53 @@ export default function WorkHubPage() {
         {activeSection === 'tasks' && (
           <main className="workhub-content-area">
             <div className={`workhub-task-sections compact-sections task-view-${taskItemDisplayMode}`}>
-              {taskContextTrail.length > 0 && (
-                <div className="workhub-task-context-strip" role="navigation" aria-label="Current item path">
-                  <div className="workhub-task-context-path">
-                    {taskContextTrail.map((project, index) => {
-                      const isCurrent = index === taskContextTrail.length - 1
-                      const icon = projectIntentMetaById[project.id]?.icon || '📁'
-                      const iconKind = icon === '🚀' ? 'project' : 'folder'
-                      return (
-                        <div key={project.id} className="workhub-task-context-node-wrap">
-                          <button
-                            type="button"
-                            className={`workhub-task-context-node${isCurrent ? ' is-current' : ''}`}
-                            onClick={() => handleSelectProject(project.id)}
-                            title={project.name}
-                            aria-current={isCurrent ? 'page' : undefined}
-                          >
-                            <span className={`workhub-task-context-node-icon is-${iconKind}-kind`} aria-hidden="true">{icon}</span>
-                            <span className="workhub-task-context-node-text">
-                              <span className="workhub-task-context-node-title">{project.name}</span>
-                            </span>
-                          </button>
-                          {!isCurrent && <span className="workhub-task-context-sep" aria-hidden="true">›</span>}
+              {taskContextTrail.length > 0 && (() => {
+                const currentContextProject = taskContextTrail[taskContextTrail.length - 1]
+                const breadcrumbProjects = taskContextTrail.slice(0, -1)
+                const currentContextIcon = currentContextProject ? (projectIntentMetaById[currentContextProject.id]?.icon || '📁') : '📁'
+
+                return (
+                  <div className="workhub-task-context-strip" role="navigation" aria-label="Current item path">
+                    {breadcrumbProjects.length > 0 && (
+                      <div className="workhub-task-context-path">
+                        {breadcrumbProjects.map((project, index) => {
+                          const isLastBreadcrumb = index === breadcrumbProjects.length - 1
+                          const icon = projectIntentMetaById[project.id]?.icon || '📁'
+                          const iconKind = icon === '🚀' ? 'project' : 'folder'
+                          return (
+                            <div key={project.id} className="workhub-task-context-node-wrap">
+                              <button
+                                type="button"
+                                className="workhub-task-context-node"
+                                onClick={() => handleSelectProject(project.id)}
+                                title={project.name}
+                              >
+                                <span className={`workhub-task-context-node-icon is-${iconKind}-kind`} aria-hidden="true">{icon}</span>
+                                <span className="workhub-task-context-node-text">
+                                  <span className="workhub-task-context-node-title">{project.name}</span>
+                                </span>
+                              </button>
+                              {!isLastBreadcrumb && <span className="workhub-task-context-sep" aria-hidden="true">›</span>}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                    <div className="workhub-task-context-current">
+                      <div className="workhub-task-context-current-title">
+                        <span className="workhub-task-context-current-icon" aria-hidden="true">{currentContextIcon}</span>
+                        <span>{currentContextProject?.name || selectedWorkspaceDisplayName || 'Workspace overview'}</span>
+                      </div>
+                      {(selectedProjectPeriodLabel || selectedProjectSubmissionTimeLabel) && (
+                        <div className="workhub-task-context-current-meta" title="Current item details">
+                          {selectedProjectPeriodLabel && <span><strong>Period:</strong> {selectedProjectPeriodLabel}</span>}
+                          {selectedProjectSubmissionTimeLabel && <span className="workhub-ltr-token"><strong>Time:</strong> {selectedProjectSubmissionTimeLabel}</span>}
                         </div>
-                      )
-                    })}
-                  </div>
-                  {(selectedProjectPeriodLabel || selectedProjectSubmissionTimeLabel) && (
-                    <div className="workhub-task-context-period" title="Proposal period">
-                      {selectedProjectPeriodLabel && <span><strong>Period:</strong> {selectedProjectPeriodLabel}</span>}
-                      {selectedProjectSubmissionTimeLabel && <span className="workhub-ltr-token">{selectedProjectSubmissionTimeLabel}</span>}
+                      )}
                     </div>
-                  )}
-                </div>
-              )}
+                  </div>
+                )
+              })()}
               <div className="workhub-status-tabs">
                 {(() => {
                   const visibleStatusTabs = nonEmptyFilteredTaskStatuses
@@ -7364,7 +7467,8 @@ export default function WorkHubPage() {
                 className={`workhub-mobile-footer-btn${mobileWorkspacePanelOpen ? ' is-active' : ''}`}
                 onClick={() => {
                   setQuickAddOpen(false)
-                  setMobileWorkspacePanelOpen(true)
+                  setGearMenuOpen(false)
+                  setMobileWorkspacePanelOpen((current) => !current)
                 }}
                 aria-label="Workspaces"
                 title="Workspaces"
@@ -8032,26 +8136,19 @@ export default function WorkHubPage() {
               <div className="workhub-modal-head">
                 <div>
                   <h2>Delete client</h2>
-                  <p>This action is permanent. Type the exact client name to confirm.</p>
+                  <p>Are you sure you want to delete this client?</p>
                 </div>
                 <button className="workhub-ghost-btn" disabled={busyKey === `client:delete:${clientDeleteTarget.id}`} onClick={handleCancelClientDelete}>✕</button>
               </div>
-              <div className="workhub-modal-form">
-                <label>
-                  <span>Type client name: {clientDeleteTarget.name}</span>
-                  <input
-                    value={clientDeleteTypedName}
-                    onChange={(event) => setClientDeleteTypedName(event.target.value)}
-                    placeholder={clientDeleteTarget.name}
-                    disabled={busyKey === `client:delete:${clientDeleteTarget.id}`}
-                  />
-                </label>
+              <div className="workhub-delete-prompt-filename">
+                <span>🗑</span>
+                <span>{clientDeleteTarget.name}</span>
               </div>
               <div className="workhub-delete-prompt-actions">
                 <button
                   type="button"
                   className="workhub-danger-btn"
-                  disabled={clientDeleteTypedName.trim() !== clientDeleteTarget.name || busyKey === `client:delete:${clientDeleteTarget.id}`}
+                  disabled={busyKey === `client:delete:${clientDeleteTarget.id}`}
                   onClick={() => { void handleConfirmClientDelete() }}
                 >
                   {busyKey === `client:delete:${clientDeleteTarget.id}` ? 'Deleting…' : 'Delete client'}

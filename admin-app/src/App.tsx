@@ -76,6 +76,35 @@ function RequireAdmin({ user, children }: { user: User | null; children: ReactEl
   return children
 }
 
+function AppLoadingScreen({
+  variant = 'default',
+  note,
+}: {
+  variant?: 'default' | 'workhub'
+  note?: string
+}) {
+  if (variant === 'workhub') {
+    return (
+      <div className="app-loading-screen is-workhub">
+        <div className="app-loading-workhub-badge" aria-hidden="true">W</div>
+        <div className="app-loading-workhub-copy">
+          <strong>WorkHub</strong>
+          {note && <span>{note}</span>}
+        </div>
+        <div className="app-loading-spinner app-loading-spinner-workhub" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="app-loading-screen">
+      <img src={logoImg} alt="QYan" className="app-loading-logo" />
+      <div className="app-loading-spinner" />
+      {note ? <p className="app-loading-note">{note}</p> : null}
+    </div>
+  )
+}
+
 function App() {
   const redirectPendingKey = 'qyan:authRedirectPending'
   const [user, setUser] = useState<User | null | undefined>(undefined)
@@ -335,15 +364,14 @@ function App() {
     }
 
     return (
-      <div className="app-loading-screen">
-        <img src={logoImg} alt="QYan" className="app-loading-logo" />
-        <div className="app-loading-spinner" />
-        <p className="app-loading-note">
-          {isAr
-            ? 'نقوم بتحميل ألعاب واختبارات مجانية لك الآن. يمكنك اللعب بدون تسجيل، وتسجيل الدخول يمنحك تجربة أفضل.'
-            : 'We are loading free challenges and games for you. No registration is required to play, and signing in gives you a better experience.'}
-        </p>
-      </div>
+      <AppLoadingScreen
+        variant={isWorkHubPage ? 'workhub' : 'default'}
+        note={isWorkHubPage
+          ? (isAr ? 'جارٍ تجهيز مساحة العمل…' : 'Preparing your workspace…')
+          : (isAr
+              ? 'نقوم بتحميل ألعاب واختبارات مجانية لك الآن. يمكنك اللعب بدون تسجيل، وتسجيل الدخول يمنحك تجربة أفضل.'
+              : 'We are loading free challenges and games for you. No registration is required to play, and signing in gives you a better experience.')}
+      />
     )
   }
 
@@ -379,10 +407,10 @@ function App() {
           <div className="master-admin-standalone">
             <ErrorBoundary>
               <Suspense fallback={
-                <div className="app-loading-screen">
-                  <img src={logoImg} alt="QYan" className="app-loading-logo" />
-                  <div className="app-loading-spinner" />
-                </div>
+                <AppLoadingScreen
+                  variant="workhub"
+                  note={isAr ? 'جارٍ تحميل WorkHub…' : 'Loading WorkHub…'}
+                />
               }>
                 <Routes>
                   <Route path="/workhub/*" element={<WorkHubPage />} />

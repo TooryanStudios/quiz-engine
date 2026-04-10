@@ -532,7 +532,7 @@ export async function createWorkhubProject(input: {
     intent: input.intent || 'project',
     mainPanelView: input.mainPanelView || 'tasks',
     valueAmount: typeof input.valueAmount === 'number' && Number.isFinite(input.valueAmount) ? Math.max(0, input.valueAmount) : 0,
-    valueCurrency: (input.valueCurrency || 'USD').trim().toUpperCase(),
+    valueCurrency: (input.valueCurrency || 'OMR').trim().toUpperCase(),
     name: input.name,
     description: input.description,
     color: input.color,

@@ -113,7 +113,7 @@ function renderMonetaryValueFields(
         <input
           value={props.valueCurrency}
           onChange={(event) => props.onValueCurrencyChange(event.target.value.toUpperCase().slice(0, 3))}
-          placeholder="USD"
+          placeholder="OMR"
           maxLength={3}
           disabled={!props.canEdit}
         />

@@ -23,7 +23,8 @@ function parseMonetaryAmountInput(value: string): number | null {
 
 function normalizeCurrencyInput(value: string): string {
   const normalized = value.trim().toUpperCase().replace(/[^A-Z]/g, '')
-  return (normalized || 'USD').slice(0, 3)
+  const nextCurrency = normalized === 'USD' ? 'OMR' : normalized
+  return (nextCurrency || 'OMR').slice(0, 3)
 }
 
 interface UseWorkhubProjectDetailHandlersParams {

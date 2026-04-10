@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react'
 import type { WorkhubClient, WorkhubMember, WorkhubProject, WorkhubProjectIntent, WorkhubProjectPriority, WorkhubProjectType, WorkhubVisibility } from '../../../lib/workhubRepo'
 import { PROJECT_PRIORITY_OPTIONS, type WorkhubProjectColorMeaning } from '../constants'
 import { BUILD_NUMBER, BUILD_TIME_UTC } from '../../../buildInfo'
@@ -60,9 +59,6 @@ export function ProjectSettingsDialog(props: {
   onEnsureDriveFolder?: () => void
 }) {
   if (!props.project) return null
-  const [deleteTypedName, setDeleteTypedName] = useState('')
-  const [deletePhrase, setDeletePhrase] = useState('')
-  const [deleteAcknowledge, setDeleteAcknowledge] = useState(false)
   const entityIcon = props.entityIcon || '📁'
   const entityLabel = props.entityLabel || 'Project'
   const entityLabelLower = entityLabel.toLowerCase()
@@ -73,19 +69,7 @@ export function ProjectSettingsDialog(props: {
     hint: `Custom meaning (${props.settingsColor.toUpperCase()}).`,
   }
   const isFolderContainer = props.intent === 'project'
-  const deletePhraseExpected = `DELETE ${entityLabel.toUpperCase()}`
   const hasDeleteBlockers = props.childCount > 0 || props.taskCount > 0
-  const canDeleteProject = props.canDelete
-    && !hasDeleteBlockers
-    && deleteTypedName.trim() === props.project.name
-    && deletePhrase.trim() === deletePhraseExpected
-    && deleteAcknowledge
-
-  useEffect(() => {
-    setDeleteTypedName('')
-    setDeletePhrase('')
-    setDeleteAcknowledge(false)
-  }, [props.project?.id])
 
   return (
     <div className="workhub-modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) props.onClose() }}>
@@ -275,7 +259,7 @@ export function ProjectSettingsDialog(props: {
                       <input
                         value={props.settingsValueCurrency}
                         onChange={(event) => props.onValueCurrencyChange(event.target.value.toUpperCase().slice(0, 3))}
-                        placeholder="USD"
+                        placeholder="OMR"
                         maxLength={3}
                       />
                     </label>
@@ -322,51 +306,21 @@ export function ProjectSettingsDialog(props: {
 
         <div className="workhub-project-settings-sticky-actions">
           {props.canDelete && (
-            <details className="workhub-project-settings-danger-inline">
-              <summary>{`Danger zone: manage move, assign members, and delete this ${entityLabelLower}.`}</summary>
-              <div className="workhub-danger-zone">
-                <p>{`Deleting this ${entityLabelLower} is irreversible. Complete the confirmation fields below to enable deletion.`}</p>
-                {hasDeleteBlockers && (
-                  <div className="workhub-badge is-danger" style={{ width: 'fit-content' }}>
-                    Move or delete child items and tasks first.
-                  </div>
-                )}
-                <label>
-                  <span>{`Type ${entityLabelLower} name exactly: ${props.project.name}`}</span>
-                  <input
-                    name="projectDeleteTypedName"
-                    value={deleteTypedName}
-                    onChange={(event) => setDeleteTypedName(event.target.value)}
-                    placeholder={props.project.name}
-                  />
-                </label>
-                <label>
-                  <span>{`Type ${deletePhraseExpected}`}</span>
-                  <input
-                    name="projectDeletePhrase"
-                    value={deletePhrase}
-                    onChange={(event) => setDeletePhrase(event.target.value)}
-                    placeholder={deletePhraseExpected}
-                  />
-                </label>
-                <label className="workhub-checkline">
-                  <input
-                    name="projectDeleteAcknowledge"
-                    type="checkbox"
-                    checked={deleteAcknowledge}
-                    onChange={(event) => setDeleteAcknowledge(event.target.checked)}
-                  />
-                  <span>{`I understand this permanently removes the ${entityLabelLower}.`}</span>
-                </label>
-                <button
-                  className="workhub-danger-btn"
-                  disabled={!canDeleteProject || props.busyKey === `delete:${props.project.id}`}
-                  onClick={props.onDelete}
-                >
-                  {props.busyKey === `delete:${props.project.id}` ? 'Deleting…' : `Delete ${entityLabelLower} forever`}
-                </button>
-              </div>
-            </details>
+            <div className="workhub-project-settings-delete-action">
+              <button
+                type="button"
+                className="workhub-danger-btn workhub-project-settings-delete-btn"
+                disabled={hasDeleteBlockers || props.busyKey === `delete:${props.project.id}`}
+                onClick={props.onDelete}
+                title={hasDeleteBlockers ? 'Move or delete child items and tasks first.' : `Delete ${entityLabelLower}`}
+                aria-label={`Delete ${entityLabelLower}`}
+              >
+                {props.busyKey === `delete:${props.project.id}` ? '⏳' : '🗑'}
+              </button>
+              <span className="workhub-project-settings-delete-note">
+                {hasDeleteBlockers ? 'Move or delete child items and tasks first.' : `Delete this ${entityLabelLower}.`}
+              </span>
+            </div>
           )}
           <div className="workhub-psettings-footer-btns">
             <button className="workhub-primary-btn" disabled={props.busyKey === `access:${props.project.id}`} onClick={props.onSave}>

@@ -200,7 +200,7 @@ export function TemplateCreateDialog(props: {
               <div className="workhub-field-grid two compact">
                 <label className="workhub-icon-field">
                   <span>💰 Estimated value</span>
-                  <input value={props.draft.budgetAmount} onChange={(event) => props.onDraftChange({ budgetAmount: event.target.value })} placeholder="e.g. 250000 USD" />
+                  <input value={props.draft.budgetAmount} onChange={(event) => props.onDraftChange({ budgetAmount: event.target.value })} placeholder="e.g. 250000 OMR" />
                 </label>
                 {renderPriorityField(props.draft, props.onDraftChange)}
               </div>
