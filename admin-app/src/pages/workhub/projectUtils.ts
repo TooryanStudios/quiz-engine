@@ -107,8 +107,50 @@ export function makeTaskStatusId(label: string): string {
 
 export type WorkhubProjectTreeNode = WorkhubProject & { children: WorkhubProjectTreeNode[] }
 
+function getSortTimestamp(value: unknown): number {
+  if (!value) return 0
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+  if (typeof value === 'object') {
+    const maybeToMillis = value as { toMillis?: () => number }
+    if (typeof maybeToMillis.toMillis === 'function') {
+      const millis = maybeToMillis.toMillis()
+      return Number.isFinite(millis) ? millis : 0
+    }
+    const maybeTimestampParts = value as { seconds?: number; nanoseconds?: number }
+    if (typeof maybeTimestampParts.seconds === 'number') {
+      const nanos = typeof maybeTimestampParts.nanoseconds === 'number' ? maybeTimestampParts.nanoseconds : 0
+      return (maybeTimestampParts.seconds * 1000) + Math.floor(nanos / 1_000_000)
+    }
+  }
+  return 0
+}
+
 export function buildProjectTree(items: WorkhubProject[]): WorkhubProjectTreeNode[] {
-  const sorted = [...items].sort((a, b) => a.name.localeCompare(b.name))
+  const sorted = [...items].sort((a, b) => {
+    const aSortOrder = Number((a as WorkhubProject & { sortOrder?: unknown }).sortOrder)
+    const bSortOrder = Number((b as WorkhubProject & { sortOrder?: unknown }).sortOrder)
+    const aHasSortOrder = Number.isFinite(aSortOrder)
+    const bHasSortOrder = Number.isFinite(bSortOrder)
+    if (aHasSortOrder && bHasSortOrder && aSortOrder !== bSortOrder) {
+      return aSortOrder - bSortOrder
+    }
+    if (aHasSortOrder !== bHasSortOrder) {
+      return aHasSortOrder ? -1 : 1
+    }
+
+    const aCreated = getSortTimestamp(a.createdAt)
+    const bCreated = getSortTimestamp(b.createdAt)
+    if (aCreated !== bCreated) {
+      // Keep older items first to preserve creation order naturally.
+      return aCreated - bCreated
+    }
+
+    return a.name.localeCompare(b.name)
+  })
   const byParent = new Map<string, WorkhubProject[]>()
   sorted.forEach((item) => {
     const key = item.parentProjectId || ''

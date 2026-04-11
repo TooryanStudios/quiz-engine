@@ -1,10 +1,12 @@
 import type { MouseEvent } from 'react'
 import type { WorkhubDocument, WorkhubMoodBoard, WorkhubProjectIntent } from '../../../lib/workhubRepo'
+import type { WorkhubProjectColorMeaning } from '../constants'
 import type { WorkhubProjectTreeNode } from '../projectUtils'
 
 interface ProjectTreeNodesProps {
   nodes: WorkhubProjectTreeNode[]
   treeMetaDisplayMode: 'counts' | 'countdown' | 'progress'
+  showProjectColorDots?: boolean
   selectedProjectId: string
   expandedProjectIds: string[]
   directTaskCountByProjectId: Record<string, number>
@@ -16,6 +18,7 @@ interface ProjectTreeNodesProps {
   documentsByProjectId: Record<string, WorkhubDocument[]>
   moodBoardsByProjectId: Record<string, WorkhubMoodBoard[]>
   isPrivilegedMember: boolean
+  projectColorMeanings?: WorkhubProjectColorMeaning[]
   onSelectProject: (projectId: string) => void
   onSelectDocument: (documentId: string) => void
   onSelectMoodBoard: (boardId: string) => void
@@ -33,13 +36,34 @@ function parseProjectSubmissionTimestamp(projectDeadline?: string, submissionTim
   return Number.isFinite(value) ? value : null
 }
 
-function formatCountdownMeta(projectDeadline?: string, submissionTime?: string): {
+function formatSubmittedAgo(projectDeadline?: string, submissionTime?: string): string {
+  const targetTs = parseProjectSubmissionTimestamp(projectDeadline, submissionTime)
+  if (!targetTs) return 'Submitted'
+  const diffMs = Date.now() - targetTs
+  if (diffMs <= 0) return 'Submitted'
+  const totalDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+  if (totalDays === 0) return 'Submitted today'
+  if (totalDays === 1) return 'Submitted 1 day ago'
+  return `Submitted ${totalDays}d ago`
+}
+
+function formatCountdownMeta(
+  projectDeadline?: string, submissionTime?: string): {
   label: string
+  submissionTimeLabel: string
   isNear: boolean
   isOverdue: boolean
 } {
   const targetTs = parseProjectSubmissionTimestamp(projectDeadline, submissionTime)
-  if (!targetTs) return { label: 'No deadline', isNear: false, isOverdue: false }
+  const normalizedSubmissionTime = (submissionTime || '').trim()
+  const submissionTimeLabel = normalizedSubmissionTime
+    ? new Intl.DateTimeFormat('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    }).format(new Date(`2000-01-01T${normalizedSubmissionTime}`))
+    : ''
+  if (!targetTs) return { label: 'No deadline', submissionTimeLabel: '', isNear: false, isOverdue: false }
 
   const diffMs = targetTs - Date.now()
   const isOverdue = diffMs < 0
@@ -56,12 +80,18 @@ function formatCountdownMeta(projectDeadline?: string, submissionTime?: string):
   const hourPart = `${hours}h`
   const label = [monthPart, dayPart, hourPart].filter(Boolean).join(' ').trim() || '0h'
 
-  return { label, isNear: isNear || isOverdue, isOverdue }
+  return {
+    label,
+    submissionTimeLabel,
+    isNear: isNear || isOverdue,
+    isOverdue,
+  }
 }
 
 export function ProjectTreeNodes({
   nodes,
   treeMetaDisplayMode,
+  showProjectColorDots = true,
   selectedProjectId,
   expandedProjectIds,
   directTaskCountByProjectId = {},
@@ -73,6 +103,7 @@ export function ProjectTreeNodes({
   documentsByProjectId = {},
   moodBoardsByProjectId = {},
   isPrivilegedMember,
+  projectColorMeanings = [],
   onSelectProject,
   onSelectDocument,
   onSelectMoodBoard = () => {},
@@ -105,6 +136,9 @@ export function ProjectTreeNodes({
           : (projectIntentIconById[node.id] || folderFallbackClosed)
         const intentIconKind = intentIcon === '🚀' ? 'project' : 'folder'
         const countdownMeta = formatCountdownMeta(node.projectDeadline, node.submissionTime)
+        const nodeColorMeaning = projectColorMeanings.find((m) => m.color.toLowerCase() === (node.color || '').toLowerCase())
+        const isSubmittedStatus = nodeColorMeaning?.label?.toLowerCase() === 'submitted'
+        const submittedAgoLabel = isSubmittedStatus ? formatSubmittedAgo(node.projectDeadline, node.submissionTime) : null
         const defaultMetaText = childCount > 0
           ? `${childCount} sub-project${childCount > 1 ? 's' : ''}${documentCount > 0 ? ` • ${documentCount} doc${documentCount === 1 ? '' : 's'}` : ''}${moodBoardCount > 0 ? ` • ${moodBoardCount} board${moodBoardCount === 1 ? '' : 's'}` : ''}`
           : documentCount > 0 || moodBoardCount > 0
@@ -112,10 +146,11 @@ export function ProjectTreeNodes({
             : `${directTaskCount} task${directTaskCount === 1 ? '' : 's'}`
         const showCountdownMeta = treeMetaDisplayMode === 'countdown' && childCount === 0
         const showProgressMeta = treeMetaDisplayMode === 'progress' && hasProgressTasks
-        const metaText = showCountdownMeta ? countdownMeta.label : defaultMetaText
+        const rawCountdownText = showCountdownMeta ? (submittedAgoLabel ?? countdownMeta.label) : defaultMetaText
+        const metaText = rawCountdownText
         const showMeta = !(treeMetaDisplayMode === 'countdown' && childCount > 0) && !showProgressMeta
         const attachmentCount = Array.isArray(node.attachments) ? node.attachments.length : 0
-        const metaClassName = `workhub-tree-node-meta${treeMetaDisplayMode === 'countdown' && countdownMeta.isNear ? ' is-near-submission' : ''}${treeMetaDisplayMode === 'countdown' && countdownMeta.isOverdue ? ' is-overdue' : ''}`
+        const metaClassName = `workhub-tree-node-meta${treeMetaDisplayMode === 'countdown' && !isSubmittedStatus && countdownMeta.isNear ? ' is-near-submission' : ''}${treeMetaDisplayMode === 'countdown' && !isSubmittedStatus && countdownMeta.isOverdue ? ' is-overdue' : ''}${isSubmittedStatus ? ' is-submitted-status' : ''}`
 
         return (
           <div key={node.id} className={`workhub-tree-node-wrap${depth === 0 ? ' is-root' : ' is-nested'}`}>
@@ -158,7 +193,9 @@ export function ProjectTreeNodes({
                 <span className="workhub-tree-leaf-spacer" aria-hidden="true" />
               )}
               <div className="workhub-tree-node-main">
-                <span className={`workhub-project-dot${depth === 0 ? ' is-root' : ''}`} style={{ background: node.color }} />
+                {showProjectColorDots && (
+                  <span className={`workhub-project-dot${depth === 0 ? ' is-root' : ''}`} style={{ background: node.color }} />
+                )}
                 <span className="workhub-tree-node-text">
                   <span className="workhub-tree-node-title">
                       <span className={`workhub-tree-node-intent-icon is-${intentIconKind}-kind`} aria-hidden="true">{intentIcon}</span>
@@ -183,7 +220,15 @@ export function ProjectTreeNodes({
                   )}
                   {showMeta && (
                     <span className={metaClassName}>
-                      ({metaText})
+                      <span className="workhub-tree-node-meta-bracket" aria-hidden="true">(</span>
+                      <span className="workhub-tree-node-meta-primary">{metaText}</span>
+                      {showCountdownMeta && !isSubmittedStatus && countdownMeta.submissionTimeLabel && (
+                        <>
+                          <span className="workhub-tree-node-meta-separator" aria-hidden="true"> | </span>
+                          <span className="workhub-tree-node-meta-time workhub-ltr-token">{countdownMeta.submissionTimeLabel}</span>
+                        </>
+                      )}
+                      <span className="workhub-tree-node-meta-bracket" aria-hidden="true">)</span>
                     </span>
                   )}
                 </span>
@@ -225,11 +270,13 @@ export function ProjectTreeNodes({
                   taskProgressByProjectId={taskProgressByProjectId}
                   projectIntentById={projectIntentById}
                   projectIntentIconById={projectIntentIconById}
+                  showProjectColorDots={showProjectColorDots}
                   selectedDocumentId={selectedDocumentId}
                   selectedMoodBoardId={selectedMoodBoardId}
                   documentsByProjectId={documentsByProjectId}
                   moodBoardsByProjectId={moodBoardsByProjectId}
                   isPrivilegedMember={isPrivilegedMember}
+                  projectColorMeanings={projectColorMeanings}
                   onSelectProject={onSelectProject}
                   onSelectDocument={onSelectDocument}
                   onSelectMoodBoard={onSelectMoodBoard}

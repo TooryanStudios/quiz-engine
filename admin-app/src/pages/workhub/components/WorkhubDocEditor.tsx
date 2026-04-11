@@ -53,6 +53,7 @@ export function WorkhubDocEditor({
   selectedDocumentReadOnly,
   setSelectedDocumentTitleDraft,
   setSelectedDocumentBodyDraft,
+  closeSelectedDocument,
   handleSaveSelectedDocument,
   handleToggleSelectedDocumentLock,
   handleDeleteSelectedDocument,
@@ -84,6 +85,7 @@ export function WorkhubDocEditor({
   setDocLinkDraft,
   handleDocLinkAdd,
   handleDocLinkRemove,
+  noteAutoSaveStatus,
   // Extra page-level props
   selectedDocument,
   scopedWorkspaceDocuments,
@@ -118,10 +120,88 @@ export function WorkhubDocEditor({
 }: WorkhubDocEditorProps) {
   const [mobileDocDetailsOpen, setMobileDocDetailsOpen] = useState(false)
   const shareSelectedCount = Object.keys(shareDocAccessDraftByUid).length
+  const isQuickNote = selectedDocument?.type === 'note'
 
   useEffect(() => {
     setMobileDocDetailsOpen(false)
   }, [selectedDocument?.id])
+
+  if (isQuickNote && selectedDocument) {
+    const projectName = selectedDocument.projectId ? (workspaceProjectById[selectedDocument.projectId]?.name || 'project') : null
+    return (
+      <div className="workhub-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) closeSelectedDocument() }}>
+        <div className="workhub-modal workhub-quick-note-modal" onMouseDown={(event) => event.stopPropagation()}>
+          <div className="workhub-quick-note-head">
+            <div className="workhub-quick-note-head-left">
+              <h2>Quick note</h2>
+              {projectName && (
+                <span className="workhub-quick-note-location">{projectName}</span>
+              )}
+            </div>
+            <button
+              type="button"
+              className="workhub-ghost-btn workhub-quick-note-close"
+              onClick={closeSelectedDocument}
+              aria-label="Close quick note"
+            >
+              ✕
+            </button>
+          </div>
+
+          <TinyRichTextEditor
+            className={`workhub-document-body-editor workhub-quick-note-editor${selectedDocumentReadOnly ? ' is-locked' : ''}`}
+            value={selectedDocumentBodyDraft}
+            onChange={setSelectedDocumentBodyDraft}
+            disabled={selectedDocumentReadOnly}
+            minHeight={420}
+            placeholder="Write a quick idea, reminder, or short note..."
+            autoFocus={!selectedDocumentReadOnly}
+          />
+
+          <div className="workhub-quick-note-foot">
+            <div className="workhub-quick-note-foot-left">
+              {!selectedDocumentReadOnly && (
+                <button
+                  type="button"
+                  className="workhub-ghost-btn workhub-quick-note-share-btn"
+                  onClick={() => setShareDocDialogOpen(true)}
+                  title="Share with colleague"
+                  aria-label="Share note with a colleague"
+                >
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <circle cx="12" cy="3" r="1.75" stroke="currentColor" strokeWidth="1.5"/>
+                    <circle cx="12" cy="13" r="1.75" stroke="currentColor" strokeWidth="1.5"/>
+                    <circle cx="4" cy="8" r="1.75" stroke="currentColor" strokeWidth="1.5"/>
+                    <line x1="10.3" y1="3.9" x2="5.7" y2="7.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                    <line x1="5.7" y1="8.9" x2="10.3" y2="12.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  </svg>
+                  {shareSelectedCount > 0 && (
+                    <span className="workhub-quick-note-share-count">{shareSelectedCount}</span>
+                  )}
+                </button>
+              )}
+            </div>
+            <div className="workhub-quick-note-actions">
+              {selectedDocumentCanEdit && !selectedDocumentLocked ? (
+                <button
+                  type="button"
+                  className="workhub-danger-btn"
+                  disabled={busyKey === `document-delete:${selectedDocument.id}`}
+                  onClick={() => {
+                    if (!window.confirm('Delete this note?')) return
+                    void handleDeleteSelectedDocument()
+                  }}
+                >
+                  {busyKey === `document-delete:${selectedDocument.id}` ? 'Deleting…' : 'Delete'}
+                </button>
+              ) : null}
+              <button type="button" className="workhub-primary-btn" onClick={closeSelectedDocument}>Done</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <>
@@ -227,9 +307,15 @@ export function WorkhubDocEditor({
                   aria-label="Save document"
                   disabled={!selectedDocument || selectedDocumentReadOnly || !selectedDocumentChanged || busyKey === `document:${selectedDocument?.id || ''}`}
                   onClick={() => { void handleSaveSelectedDocument() }}
+                  style={selectedDocument?.type === 'note' ? { display: 'none' } : undefined}
                 >
                   {busyKey === `document:${selectedDocument?.id || ''}` ? '⏳' : '💾'}
                 </button>
+                {selectedDocument?.type === 'note' && (
+                  <span className="workhub-note-autosave-status" aria-live="polite">
+                    {noteAutoSaveStatus === 'saving' ? 'Saving…' : noteAutoSaveStatus === 'saved' ? '✓ Saved' : ''}
+                  </span>
+                )}
                 {isMobileLayout && selectedDocument && (
                   <button
                     className="workhub-ghost-btn workhub-doc-tool-btn"
@@ -288,7 +374,8 @@ export function WorkhubDocEditor({
             {selectedDocument ? (
               <>
                 {/* Meta */}
-                <div className="workhub-detail-card">
+                <details className="workhub-detail-collapsible-info">
+                  <summary>{selectedDocument.type === 'note' ? 'Note information' : 'Document information'}</summary>
                   <div className="workhub-detail-meta">
                     <span>Created by: {memberByUid[selectedDocument.createdBy]?.displayName || memberByUid[selectedDocument.createdBy]?.email || selectedDocument.createdBy}</span>
                     <span>Created: {formatTime(selectedDocument.createdAt)}</span>
@@ -300,7 +387,7 @@ export function WorkhubDocEditor({
                       <span>Project: {workspaceProjectById[selectedDocument.projectId]?.name || selectedDocument.projectId}</span>
                     )}
                   </div>
-                </div>
+                </details>
 
                 {/* Edit history */}
                 {Array.isArray(selectedDocument.editedBy) && selectedDocument.editedBy.length > 0 && (

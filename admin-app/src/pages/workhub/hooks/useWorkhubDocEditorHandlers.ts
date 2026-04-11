@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { auth } from '../../../lib/firebase'
 import { storage } from '../../../lib/firebase'
@@ -56,6 +56,7 @@ export interface UseWorkhubDocEditorHandlersOutput {
   setSelectedDocumentTitleDraft: React.Dispatch<React.SetStateAction<string>>
   setSelectedDocumentBodyDraft: React.Dispatch<React.SetStateAction<string>>
 
+  closeSelectedDocument: () => void
   handleSaveSelectedDocument: () => Promise<void>
   handleToggleSelectedDocumentLock: () => Promise<void>
   handleDeleteSelectedDocument: () => Promise<void>
@@ -91,6 +92,8 @@ export interface UseWorkhubDocEditorHandlersOutput {
   setDocLinkDraft: React.Dispatch<React.SetStateAction<string>>
   handleDocLinkAdd: () => void
   handleDocLinkRemove: (url: string) => void
+
+  noteAutoSaveStatus: 'idle' | 'saving' | 'saved'
 }
 
 export function useWorkhubDocEditorHandlers({
@@ -157,9 +160,32 @@ export function useWorkhubDocEditorHandlers({
     setSelectedDocumentBodyDraft(bodyHtml)
   }, [selectedDocument?.body, selectedDocument?.id, selectedDocument?.title])
 
+  // Auto-save for notes: debounced 1.5s after typing stops, no toast
+  const [noteAutoSaveStatus, setNoteAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!selectedDocument || selectedDocument.type !== 'note') return
+    if (selectedDocumentReadOnly) return
+    if (!selectedDocumentChanged) return
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current)
+    setNoteAutoSaveStatus('idle')
+    autoSaveTimerRef.current = setTimeout(async () => {
+      const nextTitle = selectedDocumentTitleDraft.trim() || selectedDocument.title
+      const nextBody = normalizeDocumentBodyForStorage(selectedDocumentBodyDraft)
+      try {
+        setNoteAutoSaveStatus('saving')
+        await updateWorkhubDocument(selectedDocument.id, { title: nextTitle, body: nextBody })
+        setNoteAutoSaveStatus('saved')
+      } catch {
+        setNoteAutoSaveStatus('idle')
+      }
+    }, 800)
+    return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDocumentBodyDraft, selectedDocumentTitleDraft])
+
   useEffect(() => {
     if (!shareDocDialogOpen || !selectedDocument) return
-
     const viewMemberUids = selectedDocument.visibility === 'restricted'
       ? normalizeMemberUids(Array.isArray(selectedDocument.memberUids) ? selectedDocument.memberUids : [])
       : []
@@ -182,6 +208,11 @@ export function useWorkhubDocEditorHandlers({
     shareDocDialogOpen,
     workhubShareCandidates,
   ])
+
+  function closeSelectedDocument() {
+    setShareDocDialogOpen(false)
+    setSelectedDocumentId('')
+  }
 
   async function handleSaveSelectedDocument() {
     if (!auth.currentUser || !selectedWorkspaceId || !selectedDocument) return
@@ -541,6 +572,7 @@ export function useWorkhubDocEditorHandlers({
     setSelectedDocumentTitleDraft,
     setSelectedDocumentBodyDraft,
 
+    closeSelectedDocument,
     handleSaveSelectedDocument,
     handleToggleSelectedDocumentLock,
     handleDeleteSelectedDocument,
@@ -576,5 +608,7 @@ export function useWorkhubDocEditorHandlers({
     setDocLinkDraft,
     handleDocLinkAdd,
     handleDocLinkRemove,
+
+    noteAutoSaveStatus,
   }
 }

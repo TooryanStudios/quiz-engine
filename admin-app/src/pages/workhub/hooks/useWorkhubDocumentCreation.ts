@@ -161,6 +161,48 @@ export function useWorkhubDocumentCreation({
     workspaceProjectById,
   ])
 
+  const createNoteQuick = useCallback(async (projectId = '') => {
+    if (!selectedWorkspaceId || !currentUserUid) return
+
+    const targetProject = projectId ? (workspaceProjectById[projectId] || null) : null
+    const visibility: WorkhubVisibility = targetProject?.visibility || 'workspace'
+    const memberUids = visibility === 'restricted'
+      ? normalizeMemberUids(targetProject?.memberUids?.length ? targetProject.memberUids : [currentUserUid])
+      : []
+
+    const now = new Date()
+    const dateLabel = now.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    const title = `Note – ${dateLabel}`
+
+    setBusyKey('note:create')
+    try {
+      const documentId = await createWorkhubDocument({
+        workspaceId: selectedWorkspaceId,
+        projectId: targetProject?.id || null,
+        type: 'note',
+        title,
+        body: '',
+        visibility,
+        memberUids,
+        createdBy: currentUserUid,
+      })
+
+      onDocumentCreated?.(documentId, targetProject?.id || null)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not create note.'
+      showToast({ type: 'error', message })
+    } finally {
+      setBusyKey('')
+    }
+  }, [
+    currentUserUid,
+    onDocumentCreated,
+    selectedWorkspaceId,
+    setBusyKey,
+    showToast,
+    workspaceProjectById,
+  ])
+
   return {
     documentDialogOpen,
     documentTitleDraft,
@@ -173,5 +215,7 @@ export function useWorkhubDocumentCreation({
     closeDocumentCreateDialog,
     handleCreateDocument,
     createDocumentQuick,
+    createNoteQuick,
   }
 }
+

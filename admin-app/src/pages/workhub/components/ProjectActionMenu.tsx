@@ -21,6 +21,7 @@ export function ProjectActionMenu(props: {
   onCreateTask: (projectId: string) => void
   onCreateSubProject: (projectId: string) => void
   onCreateDocument: (projectId?: string) => void
+  onCreateNote: (projectId?: string) => void
   onCreateTemplateEntity: (intent: WorkhubTemplateCreationIntent, projectId?: string) => void
   onOpenSettings: (projectId: string) => void
   onOpenMoodBoard: (entityType: 'workspace' | 'project', entityId: string) => void
@@ -43,6 +44,34 @@ export function ProjectActionMenu(props: {
             <button type="button" className="workhub-action-dialog-close" onClick={props.onClose} aria-label="Close">✕</button>
           </div>
           <div className="workhub-action-dialog-grid">
+            <button
+              type="button"
+              className="workhub-action-card"
+              disabled={!props.canCreateTopCategory}
+              onClick={() => { props.onClose(); props.onCreateTask(selectedWorkspaceProjectId) }}
+            >
+              <span className="workhub-action-card-icon">✅</span>
+              <span className="workhub-action-card-label">New task</span>
+            </button>
+            <button
+              type="button"
+              className="workhub-action-card"
+              disabled={!props.canCreateTopCategory}
+              onClick={() => { props.onClose(); props.onCreateDocument(selectedWorkspaceProjectId) }}
+            >
+              <span className="workhub-action-card-icon">📝</span>
+              <span className="workhub-action-card-label">New document</span>
+            </button>
+            <button
+              type="button"
+              className="workhub-action-card is-note-action"
+              disabled={!props.canCreateTopCategory}
+              onClick={() => { props.onClose(); props.onCreateNote(selectedWorkspaceProjectId) }}
+            >
+              <span className="workhub-action-card-icon">🗒️</span>
+              <span className="workhub-action-card-label">New note</span>
+            </button>
+            <div className="workhub-action-dialog-divider" />
             <button
               type="button"
               className="workhub-action-card is-project-action"
@@ -95,24 +124,6 @@ export function ProjectActionMenu(props: {
                 <span className="workhub-action-card-label">{action.label}</span>
               </button>
             ))}
-            <button
-              type="button"
-              className="workhub-action-card"
-              disabled={!props.canCreateTopCategory}
-              onClick={() => { props.onClose(); props.onCreateTask(selectedWorkspaceProjectId) }}
-            >
-              <span className="workhub-action-card-icon">✅</span>
-              <span className="workhub-action-card-label">New task</span>
-            </button>
-            <button
-              type="button"
-              className="workhub-action-card"
-              disabled={!props.canCreateTopCategory}
-              onClick={() => { props.onClose(); props.onCreateDocument(selectedWorkspaceProjectId) }}
-            >
-              <span className="workhub-action-card-icon">📝</span>
-              <span className="workhub-action-card-label">New document</span>
-            </button>
             {props.moodBoardEnabled !== false && (
               <button
                 type="button"
@@ -145,6 +156,11 @@ export function ProjectActionMenu(props: {
             <span className="workhub-action-card-icon">📝</span>
             <span className="workhub-action-card-label">New document</span>
           </button>
+          <button type="button" className="workhub-action-card is-note-action" onClick={() => { props.onClose(); props.onCreateNote(props.projectId || '') }}>
+            <span className="workhub-action-card-icon">🗒️</span>
+            <span className="workhub-action-card-label">New note</span>
+          </button>
+          <div className="workhub-action-dialog-divider" />
           <button
             type="button"
             className="workhub-action-card is-project-action"

@@ -27,6 +27,7 @@ export function WorkspaceSettingsDialog(props: {
   treeMetaDisplayMode: 'counts' | 'countdown' | 'progress'
   taskDueDisplayMode: 'remaining' | 'date'
   moodBoardEnabled: boolean
+  showProjectColorDots: boolean
   projectColorMeanings: WorkhubProjectColorMeaning[]
   onClose: () => void
   onSettingsNameChange: (value: string) => void
@@ -34,6 +35,7 @@ export function WorkspaceSettingsDialog(props: {
   onTreeMetaDisplayModeChange: (value: 'counts' | 'countdown' | 'progress') => void
   onTaskDueDisplayModeChange: (value: 'remaining' | 'date') => void
   onMoodBoardEnabledChange: (value: boolean) => void
+  onShowProjectColorDotsChange: (value: boolean) => void
   onProjectColorMeaningChange: (index: number, patch: Partial<WorkhubProjectColorMeaning>) => void
   onRemoveProjectColorMeaning: (index: number) => void
   onResetProjectColorMeanings: () => void
@@ -125,6 +127,23 @@ export function WorkspaceSettingsDialog(props: {
                 </button>
                 <span style={{ fontSize: '0.75rem', color: '#7a8faa' }}>
                   {props.moodBoardEnabled ? 'Mood boards are visible in this workspace' : 'Mood boards are hidden for this workspace'}
+                </span>
+              </div>
+            </label>
+            <label className="workhub-toggle-label">
+              <span>Project color dots</span>
+              <div className="workhub-toggle-row">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={props.showProjectColorDots}
+                  className={`workhub-toggle-btn${props.showProjectColorDots ? ' is-on' : ''}`}
+                  onClick={() => props.onShowProjectColorDotsChange(!props.showProjectColorDots)}
+                >
+                  {props.showProjectColorDots ? 'Enabled' : 'Disabled'}
+                </button>
+                <span style={{ fontSize: '0.75rem', color: '#7a8faa' }}>
+                  {props.showProjectColorDots ? 'Colored dots are visible beside projects in the workspace panel' : 'Colored dots are hidden from the workspace panel'}
                 </span>
               </div>
             </label>

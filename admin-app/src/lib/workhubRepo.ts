@@ -52,6 +52,7 @@ export interface WorkhubWorkspace {
   type: 'technical' | 'hr' | 'finance'
   treeMetaDisplayMode?: 'counts' | 'countdown' | 'progress'
   taskDueDisplayMode?: 'remaining' | 'date'
+  showProjectColorDots?: boolean
   templateId?: string
   taskStatuses?: WorkhubTaskStatusConfig[]
   projectColorMeanings?: WorkhubProjectColorMeaningConfig[]
@@ -110,6 +111,7 @@ export interface WorkhubDocument {
   id: string
   workspaceId: string
   projectId?: string | null
+  type?: 'document' | 'note'
   title: string
   body: string
   checklist?: WorkhubDocumentChecklistItem[]
@@ -389,7 +391,7 @@ export async function createWorkhubWorkspace(input: { name: string; description:
 
 export async function updateWorkhubWorkspace(
   workspaceId: string,
-  patch: Partial<Pick<WorkhubWorkspace, 'name' | 'description' | 'type' | 'treeMetaDisplayMode' | 'taskDueDisplayMode' | 'templateId' | 'taskStatuses' | 'projectColorMeanings' | 'accessMemberUids' | 'memberAccessLevels' | 'invitedEmails'>>,
+  patch: Partial<Pick<WorkhubWorkspace, 'name' | 'description' | 'type' | 'treeMetaDisplayMode' | 'taskDueDisplayMode' | 'showProjectColorDots' | 'templateId' | 'taskStatuses' | 'projectColorMeanings' | 'accessMemberUids' | 'memberAccessLevels' | 'invitedEmails'>>,
 ) {
   await updateDoc(doc(db, 'workhub_workspaces', workspaceId), {
     ...patch,
@@ -611,6 +613,7 @@ export function subscribeWorkhubDocuments(
 export async function createWorkhubDocument(input: {
   workspaceId: string
   projectId?: string | null
+  type?: 'document' | 'note'
   title: string
   body: string
   visibility: WorkhubVisibility
@@ -620,6 +623,7 @@ export async function createWorkhubDocument(input: {
   const docRef = await addDoc(documentsCol, {
     workspaceId: input.workspaceId,
     projectId: input.projectId || null,
+    type: input.type || 'document',
     title: input.title,
     body: input.body,
     isLocked: false,
