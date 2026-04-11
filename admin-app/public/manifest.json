@@ -1,17 +1,26 @@
 {
-  "name": "QYan Gaming",
-  "short_name": "QYan",
-  "description": "تحدى أصدقاءك واختبر معلوماتك",
+  "name": "WorkHub",
+  "short_name": "WorkHub",
+  "description": "Workspace planning, task tracking, notes, and team collaboration.",
+  "id": "/",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#0a0e27",
+  "background_color": "#ffffff",
   "theme_color": "#7c3aed",
-  "orientation": "portrait-primary",
+  "orientation": "any",
   "icons": [
     {
-      "src": "/images/QYan_logo_300x164.jpg",
-      "sizes": "300x164",
-      "type": "image/jpeg"
+      "src": "/images/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/images/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }
