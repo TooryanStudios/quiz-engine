@@ -19,6 +19,10 @@ export function useGoogleSignIn() {
   const { showToast, hideToast } = useToast()
   const navigate = useNavigate()
   const isLocalDevHost = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
+  const isStandalone = typeof window !== 'undefined' && (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    ('standalone' in window.navigator && (window.navigator as { standalone?: boolean }).standalone === true)
+  )
 
   return useCallback(async (options?: GoogleSignInOptions) => {
     const {
@@ -31,6 +35,15 @@ export function useGoogleSignIn() {
     } = options ?? {}
 
     onStart?.()
+
+    // In PWA standalone mode popups are blocked — go straight to redirect flow
+    if (isStandalone) {
+      localStorage.setItem(AUTH_REDIRECT_PENDING_KEY, String(Date.now()))
+      await authReady
+      await signInWithRedirect(auth, googleProvider)
+      return
+    }
+
     let hintTimer: ReturnType<typeof setTimeout> | undefined
     hintTimer = setTimeout(() => {
       showToast({
@@ -89,5 +102,5 @@ export function useGoogleSignIn() {
       }
       onEnd?.()
     }
-  }, [hideToast, navigate, showToast, isLocalDevHost])
+  }, [hideToast, navigate, showToast, isLocalDevHost, isStandalone])
 }
