@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { UseWorkhubDocEditorHandlersOutput } from '../hooks/useWorkhubDocEditorHandlers'
-import type { WorkhubDocument, WorkhubMember, WorkhubProject } from '../../../lib/workhubRepo'
+import type { WorkhubDocument, WorkhubMember, WorkhubProject, WorkhubTaskComment } from '../../../lib/workhubRepo'
 import { TinyRichTextEditor } from '../../../components/editor/TinyRichTextEditor'
+import { WorkhubAttachmentCard } from './WorkhubAttachmentCard'
+import { WorkhubChecklistCard } from './WorkhubChecklistCard'
+import { WorkhubDiscussionCard } from './WorkhubDiscussionCard'
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -23,6 +26,19 @@ interface WorkhubDocEditorProps extends UseWorkhubDocEditorHandlersOutput {
   formatTime: (value: unknown) => string
   openDocumentCreateDialog: (projectId: string) => void
   isMobileLayout: boolean
+  discussionComments: WorkhubTaskComment[]
+  discussionText: string
+  onDiscussionTextChange: (value: string) => void
+  onDiscussionSend: () => Promise<void>
+  discussionBusy: boolean
+  discussionEditingId: string
+  discussionEditingText: string
+  onDiscussionEditStart: (comment: WorkhubTaskComment) => void
+  onDiscussionEditChange: (value: string) => void
+  onDiscussionEditCancel: () => void
+  onDiscussionEditSave: (comment: WorkhubTaskComment) => Promise<void>
+  discussionEditBusyKey: string
+  currentUid: string
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -86,6 +102,19 @@ export function WorkhubDocEditor({
   formatTime,
   openDocumentCreateDialog,
   isMobileLayout,
+  discussionComments,
+  discussionText,
+  onDiscussionTextChange,
+  onDiscussionSend,
+  discussionBusy,
+  discussionEditingId,
+  discussionEditingText,
+  onDiscussionEditStart,
+  onDiscussionEditChange,
+  onDiscussionEditCancel,
+  onDiscussionEditSave,
+  discussionEditBusyKey,
+  currentUid,
 }: WorkhubDocEditorProps) {
   const [mobileDocDetailsOpen, setMobileDocDetailsOpen] = useState(false)
   const shareSelectedCount = Object.keys(shareDocAccessDraftByUid).length
@@ -289,150 +318,70 @@ export function WorkhubDocEditor({
                 )}
 
                 {/* Checklist */}
-                <div className="workhub-detail-card">
-                  <h3>Checklist</h3>
-                  {(() => {
-                    const docChecklist = getDocChecklist(selectedDocument)
-                    const doneCount = docChecklist.filter((item) => item.completed).length
-                    return (
-                      <>
-                        {docChecklist.length > 0 && (
-                          <div className="workhub-doc-checklist-progress">
-                            <div className="workhub-doc-checklist-bar">
-                              <div
-                                className="workhub-doc-checklist-bar-fill"
-                                style={{ width: `${Math.round((doneCount / docChecklist.length) * 100)}%` }}
-                              />
-                            </div>
-                            <span>{doneCount}/{docChecklist.length}</span>
-                          </div>
-                        )}
-                        <div className="workhub-checklist-items">
-                          {docChecklist.length === 0 ? (
-                            <div className="workhub-empty-state">No checklist items yet.</div>
-                          ) : (
-                            docChecklist.map((item) => (
-                              <div key={item.id} className="workhub-checklist-item even">
-                                <div className="workhub-checklist-left">
-                                  <div className="workhub-checklist-item-main">
-                                    <input
-                                      type="checkbox"
-                                      checked={item.completed}
-                                      disabled={selectedDocumentReadOnly}
-                                      onChange={(e) => handleDocChecklistToggle(item.id, e.target.checked)}
-                                    />
-                                    {editingDocChecklistItemId === item.id ? (
-                                      <input
-                                        type="text"
-                                        className="workhub-checklist-edit-input"
-                                        autoFocus
-                                        value={editingDocChecklistItemText}
-                                        onChange={(e) => setEditingDocChecklistItemText(e.target.value)}
-                                        onKeyDown={(e) => {
-                                          if (e.key === 'Enter') { e.preventDefault(); handleDocChecklistEditSave(item.id) }
-                                          if (e.key === 'Escape') { setEditingDocChecklistItemId(null); setEditingDocChecklistItemText('') }
-                                        }}
-                                        onBlur={() => handleDocChecklistEditSave(item.id)}
-                                      />
-                                    ) : (
-                                      <span
-                                        className={`workhub-checklist-item-text${item.completed ? ' is-checked' : ''}`}
-                                        onDoubleClick={() => { if (!selectedDocumentReadOnly) { setEditingDocChecklistItemId(item.id); setEditingDocChecklistItemText(item.text) } }}
-                                      >
-                                        {item.text}
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                                <div className="workhub-checklist-actions">
-                                  <button
-                                    type="button"
-                                    className="workhub-checklist-edit"
-                                    onClick={() => { setEditingDocChecklistItemId(item.id); setEditingDocChecklistItemText(item.text) }}
-                                    title="Edit item"
-                                    disabled={selectedDocumentReadOnly}
-                                  >✏️</button>
-                                  <button
-                                    type="button"
-                                    className="workhub-checklist-remove"
-                                    onClick={() => handleDocChecklistRemove(item.id)}
-                                    title="Remove item"
-                                    disabled={selectedDocumentReadOnly}
-                                  >🗑️</button>
-                                </div>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                        {!selectedDocumentReadOnly && (
-                          <div className="workhub-checklist-url-row compact-row">
-                            <input
-                              type="text"
-                              value={docChecklistDraft}
-                              onChange={(e) => setDocChecklistDraft(e.target.value)}
-                              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleDocChecklistAdd() } }}
-                              placeholder="Add checklist item"
-                            />
-                            <button type="button" onClick={handleDocChecklistAdd}>➕</button>
-                          </div>
-                        )}
-                      </>
-                    )
-                  })()}
-                </div>
+                <WorkhubChecklistCard
+                  title="Checklist"
+                  items={getDocChecklist(selectedDocument)}
+                  readOnly={selectedDocumentReadOnly}
+                  draftValue={docChecklistDraft}
+                  onDraftChange={setDocChecklistDraft}
+                  onAdd={handleDocChecklistAdd}
+                  editingItemId={editingDocChecklistItemId}
+                  editingItemText={editingDocChecklistItemText}
+                  onEditingItemTextChange={setEditingDocChecklistItemText}
+                  onEditStart={(item) => {
+                    setEditingDocChecklistItemId(item.id)
+                    setEditingDocChecklistItemText(item.text)
+                  }}
+                  onEditSave={(item) => {
+                    handleDocChecklistEditSave(item.id)
+                  }}
+                  onEditCancel={() => {
+                    setEditingDocChecklistItemId(null)
+                    setEditingDocChecklistItemText('')
+                  }}
+                  onToggle={(item, checked) => {
+                    handleDocChecklistToggle(item.id, checked)
+                  }}
+                  onRemove={(item) => {
+                    handleDocChecklistRemove(item.id)
+                  }}
+                />
+
+                {/* Discussion */}
+                <WorkhubDiscussionCard
+                  comments={discussionComments}
+                  currentUid={currentUid}
+                  memberByUid={memberByUid}
+                  formatTime={formatTime}
+                  editingId={discussionEditingId}
+                  editingText={discussionEditingText}
+                  onEditStart={onDiscussionEditStart}
+                  onEditChange={onDiscussionEditChange}
+                  onEditCancel={onDiscussionEditCancel}
+                  onEditSave={onDiscussionEditSave}
+                  editBusyKey={discussionEditBusyKey}
+                  composerText={discussionText}
+                  onComposerTextChange={onDiscussionTextChange}
+                  onComposerSend={onDiscussionSend}
+                  composerBusy={discussionBusy}
+                />
 
                 {/* Attachments */}
-                <div className="workhub-detail-card">
-                  <h3>Attachments</h3>
-                  {!selectedDocumentReadOnly && (
-                    <div className="workhub-checklist-url-row compact-row">
-                      <input
-                        type="url"
-                        value={docAttachmentDraft}
-                        onChange={(e) => setDocAttachmentDraft(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleDocAttachmentAdd() } }}
-                        placeholder="Attachment URL"
-                      />
-                      <button type="button" onClick={handleDocAttachmentAdd}>➕ Add URL</button>
-                      <label className="workhub-file-upload-btn">
-                        <input
-                          type="file"
-                          multiple
-                          disabled={uploadingDocAttachment}
-                          onChange={(e) => {
-                            const files = Array.from(e.target.files || [])
-                            if (files.length === 0) return
-                            void handleDocAttachmentFileUpload(files)
-                            e.target.value = ''
-                          }}
-                        />
-                        {uploadingDocAttachment ? 'Uploading…' : 'Upload'}
-                      </label>
-                    </div>
-                  )}
-                  {(selectedDocument.attachments || []).length > 0 && (
-                    <div className="workhub-checklist-url-list view-list">
-                      {(selectedDocument.attachments || []).map((url) => (
-                        <div key={url} className="workhub-checklist-url-item workhub-task-image-item">
-                          {isImageAttachmentUrl(url) ? (
-                            <button type="button" className="workhub-attachment-preview-btn" onClick={() => openAttachmentLightbox(url)}>
-                              <img src={url} alt="Attachment" className="workhub-task-image-thumb" loading="lazy" />
-                              <span>{url}</span>
-                            </button>
-                          ) : (
-                            <a href={url} target="_blank" rel="noreferrer" className="workhub-task-image-link">
-                              <span className="workhub-task-attachment-icon">📎</span>
-                              <span>{url}</span>
-                            </a>
-                          )}
-                          {!selectedDocumentReadOnly && (
-                            <button type="button" onClick={() => handleDocAttachmentRemove(url)}>✕</button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <WorkhubAttachmentCard
+                  title="Attachments"
+                  attachments={selectedDocument.attachments || []}
+                  readOnly={selectedDocumentReadOnly}
+                  draftValue={docAttachmentDraft}
+                  onDraftChange={setDocAttachmentDraft}
+                  onAddUrl={handleDocAttachmentAdd}
+                  uploading={uploadingDocAttachment}
+                  onUploadFiles={(files) => {
+                    void handleDocAttachmentFileUpload(files)
+                  }}
+                  isImageUrl={isImageAttachmentUrl}
+                  onOpenImage={openAttachmentLightbox}
+                  onRemove={handleDocAttachmentRemove}
+                />
 
                 {/* Links */}
                 <div className="workhub-detail-card">
@@ -455,7 +404,17 @@ export function WorkhubDocEditor({
                         <div key={url} className="workhub-checklist-url-item">
                           <a href={url} target="_blank" rel="noreferrer">{url}</a>
                           {!selectedDocumentReadOnly && (
-                            <button type="button" onClick={() => handleDocLinkRemove(url)}>✕</button>
+                            <button
+                              type="button"
+                              title="Remove link"
+                              aria-label="Remove link"
+                              onClick={() => {
+                                if (!window.confirm('Remove this link?')) return
+                                handleDocLinkRemove(url)
+                              }}
+                            >
+                              🗑
+                            </button>
                           )}
                         </div>
                       ))}

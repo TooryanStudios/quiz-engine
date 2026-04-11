@@ -234,10 +234,10 @@ export function useWorkhubTaskDetailHandlers({
     const isVideo = file.type.startsWith('video/')
     const subfolder = isImage ? 'images' : (isVideo ? 'videos' : 'docs')
 
-    const storagePath = `workhub-attachments/${project.workspaceId}/${project.id}/${subfolder}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${extension}`
+    const storagePath = `workhub-attachments/${project.workspaceId}/${project.id}/${subfolder}/${crypto.randomUUID()}.${extension}`
     const storageRef = ref(storage, storagePath)
 
-    await uploadBytes(storageRef, file, { contentType: file.type })
+    await uploadBytes(storageRef, file, { contentType: file.type || 'application/octet-stream' })
     return await getDownloadURL(storageRef)
   }, [fileToBase64, resolveProjectDriveFolderId])
 

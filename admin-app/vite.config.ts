@@ -5,9 +5,27 @@ import { fileURLToPath } from 'node:url'
 
 const rootDir = fileURLToPath(new URL('.', import.meta.url))
 
+// Vite 7 tries to run its CSS transform pipeline on every *.css request, including
+// ones that TinyMCE's runtime makes for its own skin assets in /public/tinymce/.
+// Those requests arrive with Vite's "?direct" query param appended, which causes Vite
+// to throw "This file is in /public … should not be imported from source code".
+// Stripping any query string from /tinymce/** paths before the transform middleware
+// runs makes Vite serve them as plain static files instead.
+const tinymceStaticMiddleware = {
+  name: 'tinymce-static',
+  configureServer(server: import('vite').ViteDevServer) {
+    server.middlewares.use((req, _res, next) => {
+      if (req.url && req.url.startsWith('/tinymce/') && req.url.includes('?')) {
+        req.url = req.url.split('?')[0]
+      }
+      next()
+    })
+  },
+}
+
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tinymceStaticMiddleware],
   resolve: {
     dedupe: ['react', 'react-dom'],
     alias: {

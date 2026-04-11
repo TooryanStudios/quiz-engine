@@ -24,14 +24,16 @@ export function WorkspaceSettingsDialog(props: {
   deleteAcknowledge: boolean
   settingsName: string
   settingsDescription: string
-  treeMetaDisplayMode: 'counts' | 'countdown'
+  treeMetaDisplayMode: 'counts' | 'countdown' | 'progress'
   taskDueDisplayMode: 'remaining' | 'date'
+  moodBoardEnabled: boolean
   projectColorMeanings: WorkhubProjectColorMeaning[]
   onClose: () => void
   onSettingsNameChange: (value: string) => void
   onSettingsDescriptionChange: (value: string) => void
-  onTreeMetaDisplayModeChange: (value: 'counts' | 'countdown') => void
+  onTreeMetaDisplayModeChange: (value: 'counts' | 'countdown' | 'progress') => void
   onTaskDueDisplayModeChange: (value: 'remaining' | 'date') => void
+  onMoodBoardEnabledChange: (value: boolean) => void
   onProjectColorMeaningChange: (index: number, patch: Partial<WorkhubProjectColorMeaning>) => void
   onRemoveProjectColorMeaning: (index: number) => void
   onResetProjectColorMeanings: () => void
@@ -92,10 +94,11 @@ export function WorkspaceSettingsDialog(props: {
               <span>Project tree meta display</span>
               <select
                 value={props.treeMetaDisplayMode}
-                onChange={(event) => props.onTreeMetaDisplayModeChange(event.target.value as 'counts' | 'countdown')}
+                onChange={(event) => props.onTreeMetaDisplayModeChange(event.target.value as 'counts' | 'countdown' | 'progress')}
               >
                 <option value="counts">Show sub-item counts</option>
                 <option value="countdown">Show submission time remaining</option>
+                <option value="progress">Show task progress (done/total)</option>
               </select>
             </label>
             <label>
@@ -107,6 +110,23 @@ export function WorkspaceSettingsDialog(props: {
                 <option value="remaining">Show time left (days/hours)</option>
                 <option value="date">Show actual due date</option>
               </select>
+            </label>
+            <label className="workhub-toggle-label">
+              <span>Mood board feature</span>
+              <div className="workhub-toggle-row">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={props.moodBoardEnabled}
+                  className={`workhub-toggle-btn${props.moodBoardEnabled ? ' is-on' : ''}`}
+                  onClick={() => props.onMoodBoardEnabledChange(!props.moodBoardEnabled)}
+                >
+                  {props.moodBoardEnabled ? 'Enabled' : 'Disabled'}
+                </button>
+                <span style={{ fontSize: '0.75rem', color: '#7a8faa' }}>
+                  {props.moodBoardEnabled ? 'Mood boards are visible in this workspace' : 'Mood boards are hidden for this workspace'}
+                </span>
+              </div>
             </label>
             <details className="workhub-workspace-color-meaning-editor">
               <summary className="workhub-workspace-color-meaning-summary">

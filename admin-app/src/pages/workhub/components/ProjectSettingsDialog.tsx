@@ -243,24 +243,20 @@ export function ProjectSettingsDialog(props: {
               <div className="workhub-settings-group-body">
                 {props.showMonetaryValue && (
                   <div className="workhub-field-grid two compact workhub-project-settings-money-grid">
-                    <label>
-                      <span>{props.monetaryValueLabel}</span>
+                    <label className="workhub-span-2">
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'space-between' }}>
+                        <span>{props.monetaryValueLabel}</span>
+                        <span style={{ fontWeight: 600, color: '#4a5e78', fontSize: '0.78rem' }}>{props.settingsValueCurrency || 'OMR'}</span>
+                      </span>
                       <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={props.settingsValueAmount}
-                        onChange={(event) => props.onValueAmountChange(event.target.value)}
+                        type="text"
+                        inputMode="decimal"
+                        value={props.settingsValueAmount === '' || props.settingsValueAmount === '0'
+                          ? props.settingsValueAmount
+                          : (() => { const n = parseFloat(props.settingsValueAmount.replace(/,/g, '')); return Number.isFinite(n) ? n.toLocaleString('en-US') : props.settingsValueAmount })()
+                        }
+                        onChange={(event) => props.onValueAmountChange(event.target.value.replace(/,/g, ''))}
                         placeholder="0"
-                      />
-                    </label>
-                    <label>
-                      <span>Currency</span>
-                      <input
-                        value={props.settingsValueCurrency}
-                        onChange={(event) => props.onValueCurrencyChange(event.target.value.toUpperCase().slice(0, 3))}
-                        placeholder="OMR"
-                        maxLength={3}
                       />
                     </label>
                   </div>

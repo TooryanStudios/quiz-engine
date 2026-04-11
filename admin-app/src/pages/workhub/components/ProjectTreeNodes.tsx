@@ -1,20 +1,24 @@
 import type { MouseEvent } from 'react'
-import type { WorkhubDocument, WorkhubProjectIntent } from '../../../lib/workhubRepo'
+import type { WorkhubDocument, WorkhubMoodBoard, WorkhubProjectIntent } from '../../../lib/workhubRepo'
 import type { WorkhubProjectTreeNode } from '../projectUtils'
 
 interface ProjectTreeNodesProps {
   nodes: WorkhubProjectTreeNode[]
-  treeMetaDisplayMode: 'counts' | 'countdown'
+  treeMetaDisplayMode: 'counts' | 'countdown' | 'progress'
   selectedProjectId: string
   expandedProjectIds: string[]
   directTaskCountByProjectId: Record<string, number>
+  taskProgressByProjectId: Record<string, { done: number; total: number }>
   projectIntentById: Record<string, WorkhubProjectIntent>
   projectIntentIconById: Record<string, string>
   selectedDocumentId: string
+  selectedMoodBoardId: string
   documentsByProjectId: Record<string, WorkhubDocument[]>
+  moodBoardsByProjectId: Record<string, WorkhubMoodBoard[]>
   isPrivilegedMember: boolean
   onSelectProject: (projectId: string) => void
   onSelectDocument: (documentId: string) => void
+  onSelectMoodBoard: (boardId: string) => void
   onToggleExpansion: (projectId: string) => void
   onOpenActionMenu: (projectId: string, event: MouseEvent<HTMLElement>) => void
   onOpenSettings: (projectId: string) => void
@@ -60,14 +64,18 @@ export function ProjectTreeNodes({
   treeMetaDisplayMode,
   selectedProjectId,
   expandedProjectIds,
-  directTaskCountByProjectId,
-  projectIntentById,
-  projectIntentIconById,
-  selectedDocumentId,
-  documentsByProjectId,
+  directTaskCountByProjectId = {},
+  taskProgressByProjectId = {},
+  projectIntentById = {},
+  projectIntentIconById = {},
+  selectedDocumentId = '',
+  selectedMoodBoardId = '',
+  documentsByProjectId = {},
+  moodBoardsByProjectId = {},
   isPrivilegedMember,
   onSelectProject,
   onSelectDocument,
+  onSelectMoodBoard = () => {},
   onToggleExpansion,
   onOpenActionMenu,
   onOpenSettings,
@@ -79,9 +87,16 @@ export function ProjectTreeNodes({
         const isExpanded = expandedProjectIds.includes(node.id)
         const childCount = node.children.length
         const nodeDocuments = documentsByProjectId[node.id] || []
+        const nodeMoodBoards = moodBoardsByProjectId[node.id] || []
         const documentCount = nodeDocuments.length
-        const hasExpandableChildren = childCount > 0 || documentCount > 0
+        const moodBoardCount = nodeMoodBoards.length
+        const hasExpandableChildren = childCount > 0 || documentCount > 0 || moodBoardCount > 0
         const directTaskCount = directTaskCountByProjectId[node.id] || 0
+        const progressSnapshot = taskProgressByProjectId[node.id] || { done: directTaskCount, total: directTaskCount }
+        const totalTaskCount = Math.max(0, progressSnapshot.total)
+        const doneTaskCount = Math.max(0, Math.min(progressSnapshot.done, totalTaskCount))
+        const hasProgressTasks = totalTaskCount > 0
+        const progressPercent = hasProgressTasks ? Math.max(6, Math.round((doneTaskCount / totalTaskCount) * 100)) : 0
         const effectiveIntent = projectIntentById[node.id] || 'project'
         const folderFallbackClosed = '🗂️'
         const folderFallbackOpen = '📂'
@@ -91,20 +106,21 @@ export function ProjectTreeNodes({
         const intentIconKind = intentIcon === '🚀' ? 'project' : 'folder'
         const countdownMeta = formatCountdownMeta(node.projectDeadline, node.submissionTime)
         const defaultMetaText = childCount > 0
-          ? `${childCount} sub-project${childCount > 1 ? 's' : ''}${documentCount > 0 ? ` • ${documentCount} doc${documentCount === 1 ? '' : 's'}` : ''}`
-          : documentCount > 0
-            ? `${documentCount} doc${documentCount === 1 ? '' : 's'}`
+          ? `${childCount} sub-project${childCount > 1 ? 's' : ''}${documentCount > 0 ? ` • ${documentCount} doc${documentCount === 1 ? '' : 's'}` : ''}${moodBoardCount > 0 ? ` • ${moodBoardCount} board${moodBoardCount === 1 ? '' : 's'}` : ''}`
+          : documentCount > 0 || moodBoardCount > 0
+            ? `${documentCount > 0 ? `${documentCount} doc${documentCount === 1 ? '' : 's'}` : ''}${documentCount > 0 && moodBoardCount > 0 ? ' • ' : ''}${moodBoardCount > 0 ? `${moodBoardCount} board${moodBoardCount === 1 ? '' : 's'}` : ''}`
             : `${directTaskCount} task${directTaskCount === 1 ? '' : 's'}`
         const showCountdownMeta = treeMetaDisplayMode === 'countdown' && childCount === 0
+        const showProgressMeta = treeMetaDisplayMode === 'progress' && hasProgressTasks
         const metaText = showCountdownMeta ? countdownMeta.label : defaultMetaText
-        const showMeta = !(treeMetaDisplayMode === 'countdown' && childCount > 0)
+        const showMeta = !(treeMetaDisplayMode === 'countdown' && childCount > 0) && !showProgressMeta
         const attachmentCount = Array.isArray(node.attachments) ? node.attachments.length : 0
         const metaClassName = `workhub-tree-node-meta${treeMetaDisplayMode === 'countdown' && countdownMeta.isNear ? ' is-near-submission' : ''}${treeMetaDisplayMode === 'countdown' && countdownMeta.isOverdue ? ' is-overdue' : ''}`
 
         return (
           <div key={node.id} className={`workhub-tree-node-wrap${depth === 0 ? ' is-root' : ' is-nested'}`}>
             <div
-              className={`workhub-tree-node${selectedProjectId === node.id && !selectedDocumentId ? ' is-active' : ''}${depth === 0 && !hasExpandableChildren ? ' is-root-leaf-node' : ''}`}
+              className={`workhub-tree-node${selectedProjectId === node.id && !selectedDocumentId && !selectedMoodBoardId ? ' is-active' : ''}${depth === 0 && !hasExpandableChildren ? ' is-root-leaf-node' : ''}`}
               style={{ paddingLeft: `${10 + (depth * 14)}px` }}
               role="button"
               tabIndex={0}
@@ -139,15 +155,7 @@ export function ProjectTreeNodes({
                   </span>
                 </button>
               ) : (
-                depth === 0 ? null : (
-                  <span
-                    className="workhub-tree-leaf-indicator"
-                    aria-hidden="true"
-                    title="No sub-projects"
-                  >
-                    •
-                  </span>
-                )
+                <span className="workhub-tree-leaf-spacer" aria-hidden="true" />
               )}
               <div className="workhub-tree-node-main">
                 <span className={`workhub-project-dot${depth === 0 ? ' is-root' : ''}`} style={{ background: node.color }} />
@@ -165,12 +173,20 @@ export function ProjectTreeNodes({
                       </span>
                     )}
                   </span>
+                  {showProgressMeta && (
+                    <span className="workhub-tree-node-progress" title={`${doneTaskCount} of ${totalTaskCount} tasks done`}>
+                      <span className="workhub-tree-node-progress-track" aria-hidden="true">
+                        <span className="workhub-tree-node-progress-fill" style={{ width: `${progressPercent}%` }} />
+                      </span>
+                      <span className="workhub-tree-node-progress-label">{doneTaskCount}/{totalTaskCount}</span>
+                    </span>
+                  )}
+                  {showMeta && (
+                    <span className={metaClassName}>
+                      ({metaText})
+                    </span>
+                  )}
                 </span>
-                {showMeta && (
-                  <span className={metaClassName}>
-                    ({metaText})
-                  </span>
-                )}
               </div>
               <div className="workhub-tree-node-actions">
                 <button
@@ -206,20 +222,24 @@ export function ProjectTreeNodes({
                   selectedProjectId={selectedProjectId}
                   expandedProjectIds={expandedProjectIds}
                   directTaskCountByProjectId={directTaskCountByProjectId}
+                  taskProgressByProjectId={taskProgressByProjectId}
                   projectIntentById={projectIntentById}
                   projectIntentIconById={projectIntentIconById}
                   selectedDocumentId={selectedDocumentId}
+                  selectedMoodBoardId={selectedMoodBoardId}
                   documentsByProjectId={documentsByProjectId}
+                  moodBoardsByProjectId={moodBoardsByProjectId}
                   isPrivilegedMember={isPrivilegedMember}
                   onSelectProject={onSelectProject}
                   onSelectDocument={onSelectDocument}
+                  onSelectMoodBoard={onSelectMoodBoard}
                   onToggleExpansion={onToggleExpansion}
                   onOpenActionMenu={onOpenActionMenu}
                   onOpenSettings={onOpenSettings}
                 />
               </div>
             )}
-            {documentCount > 0 && isExpanded && (
+            {(documentCount > 0 || moodBoardCount > 0) && isExpanded && (
               <div className="workhub-tree-doc-sublist" style={{ marginLeft: `${36 + (depth * 14)}px` }}>
                 {nodeDocuments.map((document) => (
                   <button
@@ -237,6 +257,20 @@ export function ProjectTreeNodes({
                       {!!document.attachments?.length && <span className="workhub-tree-doc-attachment-indicator" title={`${document.attachments.length} attachment${document.attachments.length === 1 ? '' : 's'}`}>📎</span>}
                     </span>
                     {document.isLocked && <span className="workhub-tree-doc-lock-badge" title="Locked">🔒</span>}
+                  </button>
+                ))}
+                {nodeMoodBoards.map((board) => (
+                  <button
+                    key={board.id}
+                    type="button"
+                    className={`workhub-tree-doc-subitem${selectedMoodBoardId === board.id ? ' is-active' : ''}`}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onSelectMoodBoard(board.id)
+                    }}
+                    title={board.title}
+                  >
+                    <span className="workhub-tree-doc-subitem-title">🎨 {board.title}</span>
                   </button>
                 ))}
               </div>

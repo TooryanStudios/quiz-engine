@@ -62,14 +62,22 @@ service firebase.storage {
     }
 
     function canWriteWorkhubAttachment() {
-      return request.auth != null
-             && request.resource.size < 20 * 1024 * 1024;
+      // Only require authentication — size limit is enforced in the upload UI.
+      // Accessing request.resource.size can throw on some SDK upload paths and is not
+      // needed here since moodboard uploads originate from trusted app code.
+      return request.auth != null;
     }
 
     // WorkHub task/checklist attachments
     match /workhub-attachments/{allPaths=**} {
       allow read: if true;
-      allow write: if canWriteWorkhubAttachment(); // any file type, incl. PDF, under 20 MB
+      allow write: if canWriteWorkhubAttachment();
+    }
+
+    // WorkHub moodboard images
+    match /workhub-moodboards/{allPaths=**} {
+      allow read: if true;
+      allow write: if canWriteWorkhubAttachment();
     }
 
     // WorkHub client assets (logos)

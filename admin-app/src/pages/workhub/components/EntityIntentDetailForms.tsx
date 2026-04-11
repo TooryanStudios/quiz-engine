@@ -94,27 +94,25 @@ function renderMonetaryValueFields(
   amountLabel: string,
   amountPlaceholder: string,
 ) {
+  const displayValue = props.valueAmount === '' || props.valueAmount === '0'
+    ? props.valueAmount
+    : (() => {
+        const n = parseFloat(props.valueAmount.replace(/,/g, ''))
+        return Number.isFinite(n) ? n.toLocaleString('en-US') : props.valueAmount
+      })()
   return (
     <div className="workhub-field-grid two compact workhub-span-2">
-      <label>
-        <span>{amountLabel}</span>
+      <label className="workhub-span-2">
+        <span style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'space-between' }}>
+          <span>{amountLabel}</span>
+          <span style={{ fontWeight: 600, color: '#4a5e78', fontSize: '0.78rem' }}>{props.valueCurrency || 'OMR'}</span>
+        </span>
         <input
-          type="number"
-          min="0"
-          step="0.01"
-          value={props.valueAmount}
-          onChange={(event) => props.onValueAmountChange(event.target.value)}
+          type="text"
+          inputMode="decimal"
+          value={displayValue}
+          onChange={(event) => props.onValueAmountChange(event.target.value.replace(/,/g, ''))}
           placeholder={amountPlaceholder}
-          disabled={!props.canEdit}
-        />
-      </label>
-      <label>
-        <span>Currency</span>
-        <input
-          value={props.valueCurrency}
-          onChange={(event) => props.onValueCurrencyChange(event.target.value.toUpperCase().slice(0, 3))}
-          placeholder="OMR"
-          maxLength={3}
           disabled={!props.canEdit}
         />
       </label>
@@ -159,7 +157,7 @@ function ProposalIntentDetailForm(props: WorkhubEntityIntentDetailFormProps) {
             disabled={!props.canEdit}
           />
         </label>
-        <label className="workhub-span-2">
+        <label>
           <span>Submission time</span>
           <input
             type="time"

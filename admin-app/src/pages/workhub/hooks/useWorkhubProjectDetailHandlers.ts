@@ -46,6 +46,7 @@ interface UseWorkhubProjectDetailHandlersParams {
   selectedProjectTypeDraft: WorkhubProjectType
   selectedProjectValueAmountDraft: string
   selectedProjectValueCurrencyDraft: string
+  setProjects: Dispatch<SetStateAction<WorkhubProject[]>>
   setSelectedProjectColorMenuOpen: Dispatch<SetStateAction<boolean>>
   setBusyKey: Dispatch<SetStateAction<string>>
   showToast: (payload: { message: string; type?: 'success' | 'error' | 'info' | 'warning'; durationMs?: number }) => void
@@ -70,6 +71,7 @@ export function useWorkhubProjectDetailHandlers({
   selectedProjectTypeDraft,
   selectedProjectValueAmountDraft,
   selectedProjectValueCurrencyDraft,
+  setProjects,
   setSelectedProjectColorMenuOpen,
   setBusyKey,
   showToast,
@@ -116,21 +118,25 @@ export function useWorkhubProjectDetailHandlers({
       nextValueAmount = parsedValueAmount
     }
 
+    const optimisticProjectPatch: Partial<WorkhubProject> = {
+      name: nextName,
+      description: nextDescription,
+      color: selectedProjectColorDraft,
+      ...(isFolderContainer ? {} : {
+        projectStartDate: selectedProjectStartDateDraft,
+        projectDeadline: selectedProjectDeadlineDraft,
+        submissionTime: selectedProjectTypeDraft === 'tender' ? selectedProjectSubmissionTimeDraft.trim() : '',
+        projectType: selectedProjectTypeDraft,
+        valueAmount: nextValueAmount,
+        valueCurrency: nextValueCurrency,
+      }),
+    }
+
+    const previousProjectSnapshot = selectedProject
+    setProjects((current) => current.map((item) => (item.id === selectedProject.id ? { ...item, ...optimisticProjectPatch } : item)))
     setBusyKey(`project-detail:${selectedProject.id}`)
     try {
-      await updateWorkhubProject(selectedProject.id, {
-        name: nextName,
-        description: nextDescription,
-        color: selectedProjectColorDraft,
-        ...(isFolderContainer ? {} : {
-          projectStartDate: selectedProjectStartDateDraft,
-          projectDeadline: selectedProjectDeadlineDraft,
-          submissionTime: selectedProjectTypeDraft === 'tender' ? selectedProjectSubmissionTimeDraft.trim() : '',
-          projectType: selectedProjectTypeDraft,
-          valueAmount: nextValueAmount,
-          valueCurrency: nextValueCurrency,
-        }),
-      })
+      await updateWorkhubProject(selectedProject.id, optimisticProjectPatch)
       await createWorkhubActivity({
         workspaceId: selectedWorkspaceId,
         actorUid: currentUserUid,
@@ -154,6 +160,7 @@ export function useWorkhubProjectDetailHandlers({
       })
       showToast({ type: 'success', message: 'Project details updated.' })
     } catch (error) {
+      setProjects((current) => current.map((item) => (item.id === previousProjectSnapshot.id ? previousProjectSnapshot : item)))
       const message = error instanceof Error ? error.message : 'Could not update project details.'
       showToast({ type: 'error', message })
     } finally {
@@ -173,6 +180,7 @@ export function useWorkhubProjectDetailHandlers({
     selectedProjectTypeDraft,
     selectedProjectValueAmountDraft,
     selectedProjectValueCurrencyDraft,
+    setProjects,
     resolvedProjectDescriptionDraft,
     selectedWorkspaceAccessMemberUids,
     selectedWorkspaceId,
@@ -184,10 +192,13 @@ export function useWorkhubProjectDetailHandlers({
     if (!selectedProject || !canEditSelectedProject) return
     const nextDescription = (resolvedProjectDescriptionDraft ?? selectedProjectDescriptionDraft).trim()
     if (nextDescription === (selectedProject.description || '')) return
+    const previousProjectSnapshot = selectedProject
+    setProjects((current) => current.map((item) => (item.id === selectedProject.id ? { ...item, description: nextDescription } : item)))
     setBusyKey(`project-detail:${selectedProject.id}`)
     try {
       await updateWorkhubProject(selectedProject.id, { description: nextDescription })
     } catch (error) {
+      setProjects((current) => current.map((item) => (item.id === previousProjectSnapshot.id ? previousProjectSnapshot : item)))
       const message = error instanceof Error ? error.message : 'Could not update project description.'
       showToast({ type: 'error', message })
       setSelectedProjectDescriptionDraft(selectedProject.description || '')
@@ -199,6 +210,7 @@ export function useWorkhubProjectDetailHandlers({
     resolvedProjectDescriptionDraft,
     selectedProject,
     selectedProjectDescriptionDraft,
+    setProjects,
     setBusyKey,
     setSelectedProjectDescriptionDraft,
     showToast,
@@ -209,10 +221,13 @@ export function useWorkhubProjectDetailHandlers({
     setSelectedProjectColorMenuOpen(false)
     if (!selectedProject || !canEditSelectedProject) return
     if (nextColor === selectedProject.color) return
+    const previousProjectSnapshot = selectedProject
+    setProjects((current) => current.map((item) => (item.id === selectedProject.id ? { ...item, color: nextColor } : item)))
     setBusyKey(`project-detail:${selectedProject.id}`)
     try {
       await updateWorkhubProject(selectedProject.id, { color: nextColor })
     } catch (error) {
+      setProjects((current) => current.map((item) => (item.id === previousProjectSnapshot.id ? previousProjectSnapshot : item)))
       const message = error instanceof Error ? error.message : 'Could not update project color.'
       showToast({ type: 'error', message })
       setSelectedProjectColorDraft(selectedProject.color)
@@ -222,6 +237,7 @@ export function useWorkhubProjectDetailHandlers({
   }, [
     canEditSelectedProject,
     selectedProject,
+    setProjects,
     setBusyKey,
     setSelectedProjectColorDraft,
     setSelectedProjectColorMenuOpen,

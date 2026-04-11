@@ -147,6 +147,37 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       .workhub-workspace-tab.is-active {
         box-shadow: none;
       }
+      .workhub-primary-tabs-strip {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        padding: 0 4px 8px;
+        margin-bottom: 6px;
+        border-bottom: 1px solid #e3ecfb;
+      }
+      .workhub-primary-tabs-scroll {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        flex: 1;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding: 0 1px 2px;
+        scrollbar-width: thin;
+      }
+      .workhub-primary-tabs-scroll::-webkit-scrollbar {
+        height: 5px;
+      }
+      .workhub-primary-tabs-scroll::-webkit-scrollbar-thumb {
+        background: #cad8f2;
+        border-radius: 999px;
+      }
+      .workhub-primary-nav-tab {
+        flex: 0 0 auto;
+        padding: 8px 14px;
+      }
       .workhub-workspace-tab-actions {
         display: inline-flex;
         align-items: center;
@@ -592,6 +623,10 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       }
       .workhub-shell.is-mobile .workhub-workspace-tabs-wrap {
         display: none;
+      }
+      .workhub-shell.is-mobile .workhub-primary-tabs-strip {
+        padding: 0 0 6px;
+        margin-bottom: 4px;
       }
       .workhub-shell.is-mobile .workhub-mobile-workspace-entry {
         display: flex;
@@ -1663,6 +1698,12 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       .workhub-tree-toggle-icon.is-expanded {
         transform: rotate(90deg);
       }
+      .workhub-tree-leaf-spacer {
+        display: inline-block;
+        width: 17px;
+        height: 17px;
+        flex-shrink: 0;
+      }
       .workhub-tree-toggle-icon svg {
         width: 100%;
         height: 100%;
@@ -1694,14 +1735,23 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         color: #6e829f;
       }
       .workhub-tree-node-main {
-        display: inline-flex;
-        align-items: baseline;
+        display: flex;
+        align-items: flex-start;
         gap: 6px;
         min-width: 0;
+        overflow: hidden;
         border: 0;
         cursor: pointer;
         text-align: left;
         flex: 1 1 auto;
+      }
+      .workhub-tree-node-text {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+        flex: 1 1 auto;
+        overflow: hidden;
       }
       .workhub-tree-node-title {
         display: inline-flex;
@@ -1743,6 +1793,7 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       .workhub-tree-node-title-text {
         min-width: 0;
         overflow: hidden;
+        white-space: nowrap;
         text-overflow: ellipsis;
       }
       .workhub-tree-node-meta {
@@ -1752,7 +1803,33 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         line-height: 1.1;
         font-weight: 500;
         white-space: nowrap;
-        margin-left: auto;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .workhub-tree-node-progress {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 0.56rem;
+        line-height: 1;
+        color: #5d6f8f;
+      }
+      .workhub-tree-node-progress-track {
+        width: 38px;
+        height: 5px;
+        border-radius: 999px;
+        background: #e4ecfb;
+        overflow: hidden;
+        display: inline-flex;
+      }
+      .workhub-tree-node-progress-fill {
+        height: 100%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #2d6ee8 0%, #53b77c 100%);
+      }
+      .workhub-tree-node-progress-label {
+        font-weight: 700;
+        letter-spacing: 0.01em;
       }
       .workhub-tree-node-meta.is-near-submission {
         color: #b4232f;
@@ -1768,30 +1845,40 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       .workhub-tree-node.is-active .workhub-tree-node-meta {
         color: #466392;
       }
+      .workhub-tree-node.is-active .workhub-tree-node-progress {
+        color: #3c5a8a;
+      }
+      .workhub-tree-node.is-active .workhub-tree-node-progress-track {
+        background: #d6e2f8;
+      }
       .workhub-tree-node-actions {
         display: flex;
         gap: 5px;
         align-items: center;
+        flex-shrink: 0;
+        overflow: hidden;
+        max-width: 60px;
         opacity: 1;
         visibility: visible;
-        transform: translateX(0);
-        transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0s;
+        transition: max-width 0.15s ease, opacity 0.14s ease, visibility 0s linear 0s;
       }
       @media (hover: hover) and (pointer: fine) {
         .workhub-tree-node .workhub-tree-node-actions {
+          max-width: 0;
           opacity: 0;
           visibility: hidden;
           pointer-events: none;
-          transform: translateX(2px);
-          transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
+          gap: 0;
+          transition: max-width 0.15s ease, opacity 0.14s ease, gap 0.15s ease, visibility 0s linear 0.14s;
         }
         .workhub-tree-node:hover .workhub-tree-node-actions,
         .workhub-tree-node:focus-within .workhub-tree-node-actions {
+          max-width: 60px;
           opacity: 1;
           visibility: visible;
           pointer-events: auto;
-          transform: translateX(0);
-          transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0s;
+          gap: 5px;
+          transition: max-width 0.15s ease, opacity 0.14s ease, gap 0.15s ease, visibility 0s linear 0s;
         }
       }
       .workhub-tree-node-wrap.is-nested > .workhub-tree-node {
@@ -2212,66 +2299,310 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       .workhub-modal-backdrop.transparent {
         background: transparent;
       }
-      .workhub-action-menu {
+      .workhub-action-dialog {
         position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
         z-index: 3005;
-        width: 210px;
+        width: 440px;
+        max-width: 96vw;
         background: #ffffff;
         border: 1px solid #dbe7ff;
-        border-radius: 12px;
-        padding: 6px;
-        box-shadow: 0 16px 38px rgba(22, 36, 68, 0.2);
+        border-radius: 16px;
+        padding: 18px;
+        box-shadow: 0 24px 60px rgba(22, 36, 68, 0.22);
+      }
+      .workhub-action-dialog-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 14px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #1c365f;
+      }
+      .workhub-action-dialog-context {
+        display: inline-block;
+        margin-left: 7px;
+        padding: 2px 8px;
+        background: #eef4ff;
+        border: 1px solid #c5d8f9;
+        border-radius: 20px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: #2a5aac;
+        vertical-align: middle;
+        max-width: 180px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .workhub-action-dialog-close {
+        border: 0;
+        background: transparent;
+        cursor: pointer;
+        color: #7a8faa;
+        font-size: 1rem;
+        line-height: 1;
+        padding: 2px 6px;
+        border-radius: 6px;
+      }
+      .workhub-action-dialog-close:hover {
+        background: #f0f4fa;
+        color: #1c365f;
+      }
+      .workhub-action-dialog-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+      }
+      .workhub-action-card {
         display: flex;
         flex-direction: column;
-        gap: 4px;
-      }
-      .workhub-action-menu-item {
-        border: 0;
-        background: #f8fbff;
-        color: #1f365f;
-        border-radius: 8px;
-        padding: 7px 8px;
-        display: flex;
         align-items: center;
         gap: 8px;
-        font: inherit;
-        font-size: 0.78rem;
-        font-weight: 400;
+        padding: 14px 8px;
+        border: 1px solid #e1e8f2;
+        border-radius: 12px;
+        background: #f8fbff;
         cursor: pointer;
+        font: inherit;
+        transition: background 120ms, border-color 120ms;
       }
-      .workhub-action-menu-item:hover {
+      .workhub-action-card:hover {
         background: #edf4ff;
+        border-color: #b8cdf7;
       }
-      .workhub-action-icon {
-        width: 18px;
-        height: 18px;
-        border-radius: 999px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        background: #ffffff;
-        border: 1px solid #d8e4fa;
-        color: #365dba;
-        font-size: 0.68rem;
+      .workhub-action-card:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+      .workhub-action-card-icon {
+        font-size: 1.4rem;
         line-height: 1;
       }
-      .workhub-action-menu-item.is-project-action {
+      .workhub-action-card-label {
+        font-size: 0.7rem;
+        font-weight: 500;
+        text-align: center;
+        color: #22324a;
+      }
+      .workhub-action-card.is-project-action {
         background: #f0f6ff;
-        color: #18458e;
+        border-color: #c8dcff;
       }
-      .workhub-action-menu-item.is-project-action .workhub-action-icon {
+      .workhub-action-card.is-project-action:hover {
         background: #e4efff;
-        border-color: #b8cdf7;
-        color: #245bb8;
+        border-color: #a0c0fa;
       }
-      .workhub-action-menu-item.is-folder-action {
+      .workhub-action-card.is-folder-action {
         background: #f7f3ea;
-        color: #5d4a28;
+        border-color: #e0d4b6;
       }
-      .workhub-action-menu-item.is-folder-action .workhub-action-icon {
-        background: #fff4dd;
-        border-color: #e9cea0;
-        color: #8b641f;
+      .workhub-action-card.is-folder-action:hover {
+        background: #f0e9d5;
+        border-color: #c8b080;
+      }
+      .workhub-action-card.is-moodboard-action {
+        background: #fff8f0;
+        border-color: #fad8b0;
+      }
+      .workhub-action-card.is-moodboard-action:hover {
+        background: #fff0de;
+        border-color: #f0b870;
+      }
+      .workhub-action-card.is-settings-action {
+        background: #f4f4f8;
+        border-color: #d5d8e4;
+      }
+      .workhub-action-card.is-settings-action:hover {
+        background: #eaeaf4;
+        border-color: #b8bcd8;
+      }
+      .workhub-moodboard-dialog {
+        position: fixed;
+        inset: 0;
+        z-index: 4000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+      .workhub-moodboard-panel {
+        position: relative;
+        background: #ffffff;
+        border: 1px solid #dbe7ff;
+        border-radius: 18px;
+        box-shadow: 0 28px 72px rgba(22, 36, 68, 0.24);
+        width: 800px;
+        max-width: 98vw;
+        max-height: 90vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .workhub-moodboard-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 18px;
+        border-bottom: 1px solid #e8eef8;
+        flex-shrink: 0;
+      }
+      .workhub-moodboard-title-input {
+        flex: 1;
+        border: 0;
+        font: inherit;
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: #1c365f;
+        background: transparent;
+        outline: none;
+        min-width: 0;
+      }
+      .workhub-moodboard-title-input::placeholder {
+        color: #b0bdd8;
+        font-weight: 400;
+      }
+      .workhub-moodboard-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .workhub-moodboard-empty {
+        text-align: center;
+        padding: 40px 0;
+        color: #9aaac0;
+        font-size: 0.82rem;
+      }
+      .workhub-moodboard-images {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: 12px;
+      }
+      .workhub-moodboard-image-card {
+        position: relative;
+        border: 1px solid #e1e8f2;
+        border-radius: 12px;
+        overflow: hidden;
+        background: #f4f8ff;
+        aspect-ratio: 4/3;
+      }
+      .workhub-moodboard-image-card img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      .workhub-moodboard-image-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.45);
+        opacity: 0;
+        transition: opacity 120ms;
+        display: flex;
+        align-items: flex-end;
+        padding: 8px;
+      }
+      .workhub-moodboard-image-card:hover .workhub-moodboard-image-overlay {
+        opacity: 1;
+      }
+      .workhub-moodboard-image-caption {
+        color: #fff;
+        font-size: 0.68rem;
+        line-height: 1.3;
+        flex: 1;
+      }
+      .workhub-moodboard-image-remove {
+        border: 0;
+        background: rgba(0, 0, 0, 0.5);
+        color: #fff;
+        border-radius: 6px;
+        padding: 2px 6px;
+        font-size: 0.65rem;
+        cursor: pointer;
+        flex-shrink: 0;
+        align-self: flex-start;
+        margin-left: auto;
+      }
+      .workhub-moodboard-image-remove:hover {
+        background: rgba(180, 30, 30, 0.75);
+      }
+      .workhub-moodboard-upload-zone {
+        border: 2px dashed #c8d8f0;
+        border-radius: 12px;
+        padding: 24px;
+        text-align: center;
+        cursor: pointer;
+        color: #8fa8cc;
+        font-size: 0.82rem;
+        transition: background 120ms, border-color 120ms;
+      }
+      .workhub-moodboard-upload-zone:hover {
+        background: #f0f6ff;
+        border-color: #8ab0e8;
+      }
+      .workhub-moodboard-upload-zone input[type='file'] {
+        display: none;
+      }
+      .workhub-moodboard-view {
+        overflow-y: auto;
+        overflow-x: hidden;
+      }
+      .workhub-moodboard-error {
+        background: #fff0f0;
+        border: 1px solid #f0b0b0;
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-size: 0.78rem;
+        color: #b33030;
+        margin: 0 18px;
+      }
+      .workhub-moodboard-share-bar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 6px 18px;
+        background: #f4f8ff;
+        border-bottom: 1px solid #e4edf8;
+        font-size: 0.78rem;
+      }
+      .workhub-toggle-label > span {
+        font-weight: 500;
+        display: block;
+        margin-bottom: 6px;
+        font-size: 0.82rem;
+        color: #1c365f;
+      }
+      .workhub-toggle-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .workhub-toggle-btn {
+        border: 1px solid #d0d8e8;
+        background: #f4f4f8;
+        color: #7a8faa;
+        border-radius: 20px;
+        padding: 4px 14px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 120ms, border-color 120ms, color 120ms;
+        font: inherit;
+      }
+      .workhub-toggle-btn.is-on {
+        background: #2a6ae8;
+        border-color: #1a4fc0;
+        color: #fff;
+      }
+      .workhub-toggle-btn:hover:not(.is-on) {
+        background: #eaecf4;
+        border-color: #b8c4d8;
       }
       .workhub-assignee-strip {
         display: grid;
@@ -2313,6 +2644,12 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         flex: 1 1 auto;
         min-height: 0;
         overflow: hidden;
+      }
+      .workhub-section-stack.is-dashboard {
+        overflow-y: auto;
+        overflow-x: hidden;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
       }
       .workhub-floating-add-wrap {
         position: fixed;
@@ -2783,6 +3120,7 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         min-height: 0;
       }
       .workhub-task-sections {
+        --workhub-task-list-min-width: 760px;
         min-width: 0;
         height: 100%;
         min-height: 0;
@@ -2794,7 +3132,7 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         -webkit-overflow-scrolling: touch;
       }
       .workhub-task-context-strip {
-        display: grid;
+        display: none;
         gap: 8px;
         margin: 0 0 6px;
         padding: 6px;
@@ -2929,6 +3267,16 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         min-width: 0;
         width: 100%;
         padding-bottom: 4px;
+        overflow-x: auto;
+        overflow-y: visible;
+        -webkit-overflow-scrolling: touch;
+      }
+      .workhub-task-sections.task-view-list .workhub-task-group {
+        width: max(100%, var(--workhub-task-list-min-width));
+      }
+      .workhub-task-sections.task-view-list .workhub-task-table-head,
+      .workhub-task-sections.task-view-list .workhub-task-row-main {
+        min-width: var(--workhub-task-list-min-width);
       }
       .workhub-task-detail-rail {
         display: flex;
@@ -2937,6 +3285,7 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         height: 100%;
         min-height: 0;
         overflow-y: auto;
+        overflow-x: hidden;
         border-left: 1px solid #e3ecfb;
         padding-left: 10px;
       }
@@ -2977,6 +3326,11 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       }
       .workhub-span-2 {
         grid-column: 1 / -1;
+      }
+      .workhub-modal-form {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
       }
       .workhub-modal-form button {
         margin-top: 16px;
@@ -3520,6 +3874,10 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       }
       .workhub-project-card.compact-card {
         padding: 7px;
+        border: 1px solid #dce7fb;
+        border-radius: 12px;
+        background: #fbfdff;
+        box-shadow: 0 1px 3px rgba(31, 55, 102, 0.04);
       }
       .workhub-project-card.compact-card.is-clickable {
         cursor: pointer;
@@ -3528,6 +3886,7 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       .workhub-project-card.compact-card.is-clickable:hover {
         border-color: #b8ccef;
         background: #f8fbff;
+        box-shadow: 0 4px 10px rgba(67, 97, 150, 0.08);
       }
       .workhub-project-card.compact-card.is-clickable:focus-visible {
         outline: 2px solid #8aaef1;
@@ -3589,6 +3948,7 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       .workhub-project-card-nested .workhub-project-card.compact-card {
         margin: 0;
         background: #fbfdff;
+        border-color: #e3ebf9;
       }
       .workhub-project-title-row,
       .workhub-task-row-title {
@@ -3639,6 +3999,7 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         height: 9px;
         border-radius: 999px;
         flex-shrink: 0;
+        margin-top: 3px;
       }
       .workhub-project-dot.is-root {
         width: 11px;
@@ -3936,13 +4297,13 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         width: 100%;
         min-width: 0;
         border: 1px solid #d8e4fa;
-        border-radius: 4px;
+        border-radius: 9px;
         background: #ffffff;
         color: #17305c;
-        font-size: 0.74rem;
+        font-size: 0.82rem;
         font-weight: 400;
-        line-height: 1.2;
-        padding: 1px 6px;
+        line-height: 1.3;
+        padding: 7px 9px;
       }
       .workhub-task-title-edit-input:focus {
         outline: 1px solid #2f4f84;
@@ -3992,6 +4353,7 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         flex-direction: column;
         gap: 4px;
         margin-top: 6px;
+        min-width: 0;
       }
       .workhub-checklist-url-item {
         display: flex;
@@ -4002,6 +4364,7 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         border: 1px solid #e2ebff;
         border-radius: 4px;
         background: #ffffff;
+        min-width: 0;
       }
       .workhub-checklist-url-item a {
         min-width: 0;
@@ -4019,6 +4382,20 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         min-width: 0;
         flex: 1;
       }
+      .workhub-attachment-preview-btn {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        flex: 1;
+        width: 100%;
+        padding: 0;
+        border: none;
+        background: transparent;
+        color: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
       .workhub-task-image-link span {
         min-width: 0;
         overflow: hidden;
@@ -4029,6 +4406,7 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         display: flex;
         flex-direction: column;
         min-width: 0;
+        flex: 1;
       }
       .workhub-attachment-copy strong {
         font-size: 0.64rem;
@@ -4088,6 +4466,109 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         display: flex;
         flex-direction: column;
         gap: 4px;
+        min-width: 0;
+        overflow: hidden;
+      }
+      .workhub-attachment-drop-zone {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        padding: 14px 10px;
+        border: 1.5px dashed #c0d0ee;
+        border-radius: 9px;
+        background: #f7faff;
+        cursor: pointer;
+        text-align: center;
+        transition: background 0.15s ease, border-color 0.15s ease;
+        margin-bottom: 4px;
+        outline: none;
+        user-select: none;
+      }
+      .workhub-attachment-drop-zone:hover,
+      .workhub-attachment-drop-zone:focus-visible,
+      .workhub-attachment-drop-zone.is-drag-over {
+        background: #eef4ff;
+        border-color: #4f8cff;
+        border-style: solid;
+      }
+      .workhub-attachment-drop-zone.is-drag-over {
+        background: #deeaff;
+      }
+      .workhub-attachment-drop-icon {
+        font-size: 1.4rem;
+        line-height: 1;
+      }
+      .workhub-attachment-drop-label {
+        font-size: 0.68rem;
+        color: #5b73a0;
+        font-weight: 500;
+        line-height: 1.3;
+      }
+      .workhub-attachment-drop-queued {
+        font-size: 0.65rem;
+        color: #2a6fcc;
+        font-weight: 600;
+        background: #deeaff;
+        border-radius: 6px;
+        padding: 2px 8px;
+        line-height: 1.4;
+      }
+      .workhub-attachment-drop-zone.has-files {
+        cursor: default;
+        align-items: stretch;
+        padding: 10px;
+      }
+      .workhub-attachment-drop-preview {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        width: 100%;
+      }
+      .workhub-attachment-drop-preview-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: #f0f5ff;
+        border-radius: 6px;
+        padding: 5px 8px;
+        min-width: 0;
+      }
+      .workhub-attachment-drop-thumb {
+        width: 44px;
+        height: 44px;
+        object-fit: cover;
+        border-radius: 5px;
+        flex-shrink: 0;
+        border: 1px solid #c8d8f0;
+      }
+      .workhub-attachment-drop-file-icon {
+        font-size: 1.5rem;
+        flex-shrink: 0;
+      }
+      .workhub-attachment-drop-filename {
+        font-size: 0.7rem;
+        color: #334466;
+        font-weight: 500;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        flex: 1;
+        min-width: 0;
+      }
+      .workhub-attachment-drop-preview-actions {
+        display: flex;
+        gap: 6px;
+        margin-top: 4px;
+      }
+      .workhub-attachment-url-section {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin-top: 4px;
+        padding-top: 8px;
+        border-top: 1px solid #e8eef8;
       }
       .workhub-checklist-url-row.compact-row.is-stacked {
         display: flex;
@@ -4132,6 +4613,7 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         flex-direction: column;
         gap: 5px;
         margin: 8px 0;
+        min-width: 0;
       }
       .workhub-task-attachments-head {
         font-size: 0.68rem;
@@ -4396,31 +4878,109 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         background: rgba(238, 244, 255, 0.95);
       }
       .workhub-detail-icon-row {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      .workhub-detail-card-head {
         display: flex;
         align-items: center;
-        gap: 6px;
-        margin-bottom: 8px;
+        justify-content: space-between;
+        gap: 8px;
+        margin: 0 0 8px;
+      }
+      .workhub-detail-card-head strong {
+        font-size: 0.8rem;
+        color: #1e3a67;
+        letter-spacing: 0.01em;
+      }
+      .workhub-detail-card-head-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .workhub-detail-card-head span {
+        font-size: 0.64rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #6981ab;
+        font-weight: 700;
+      }
+      .workhub-detail-delete-task-btn {
+        border: none;
+        background: transparent;
+        color: #b04060;
+        font-size: 0.68rem;
+        font-weight: 600;
+        cursor: pointer;
+        padding: 2px 4px;
+        border-radius: 4px;
+        line-height: 1;
+        white-space: nowrap;
+      }
+      .workhub-detail-delete-task-btn:hover {
+        background: #fff0f3;
+        color: #8b2040;
       }
       .workhub-detail-icon-wrap {
         position: relative;
+        min-width: 0;
       }
       .workhub-detail-icon-btn {
-        width: 28px;
-        height: 28px;
-        border-radius: 999px;
-        border: 1px solid #d4e2fb;
-        background: #f4f8ff;
-        color: #2d4f84;
-        display: inline-flex;
-        align-items: center;
+        width: 100%;
+        min-height: 46px;
+        border-radius: 10px;
+        border: 1px solid #d5e3fb;
+        background: #f7faff;
+        color: #24467a;
+        display: flex;
+        align-items: flex-start;
         justify-content: center;
+        flex-direction: column;
+        gap: 2px;
+        padding: 7px 9px;
         cursor: pointer;
+        text-align: left;
+        position: relative;
+      }
+      .workhub-detail-icon-btn:hover {
+        border-color: #b9cef5;
+        background: #eff5ff;
+      }
+      .workhub-detail-chip-label {
+        font-size: 0.62rem;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        color: #5b73a0;
+        line-height: 1.1;
+      }
+      .workhub-detail-chip-value {
+        font-size: 0.74rem;
+        color: #1e3a67;
+        font-weight: 600;
+        line-height: 1.2;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 100%;
+      }
+      .workhub-detail-chip-edit {
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 0.75rem;
+        color: #5f78a5;
+        line-height: 1;
+        pointer-events: none;
       }
       .workhub-detail-icon-menu {
         position: absolute;
-        top: 32px;
-        left: 0;
-        min-width: 160px;
+        top: 52px;
+        right: 0;
+        min-width: 220px;
+        max-width: 320px;
         background: #ffffff;
         border: 1px solid #dbe7ff;
         border-radius: 9px;
@@ -4430,6 +4990,13 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         display: flex;
         flex-direction: column;
         gap: 4px;
+      }
+      .workhub-detail-icon-menu-fixed {
+        position: fixed;
+        top: unset;
+        right: unset;
+        z-index: 200;
+        min-width: 200px;
       }
       .workhub-detail-icon-menu button {
         border: none;
@@ -4453,8 +5020,9 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       }
       .workhub-task-details-input {
         width: 100%;
-        min-height: 94px;
+        min-height: 112px;
         resize: vertical;
+        font-size: 0.82rem;
       }
       .workhub-task-detail-name-field {
         display: flex;
@@ -4467,8 +5035,298 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         color: #60708f;
         font-weight: 700;
       }
+      .workhub-task-resource-card,
+      .workhub-task-checklist-card,
+      .workhub-discussion-card {
+        margin-top: 14px;
+      }
+      .workhub-task-detail-rail .workhub-detail-meta {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 14px;
+        padding-top: 12px;
+        border-top: 1px solid #e3ecfb;
+      }
+      .workhub-task-detail-rail .workhub-detail-meta span {
+        font-size: 0.73rem;
+        color: #425a82;
+        line-height: 1.3;
+        background: #ffffff;
+        border: 1px solid #dee8fa;
+        border-radius: 8px;
+        padding: 7px 8px;
+      }
+      .workhub-task-resource-card .workhub-task-attachments-head {
+        margin-bottom: 8px;
+      }
+      .workhub-task-resource-card .workhub-task-attachment-editor {
+        gap: 8px;
+        min-width: 0;
+      }
+      .workhub-task-resource-card .workhub-checklist-url-row {
+        min-width: 0;
+      }
+      .workhub-task-resource-card .workhub-checklist-url-row input,
+      .workhub-task-resource-card .workhub-checklist-url-row .workhub-file-upload-btn,
+      .workhub-task-resource-card .workhub-checklist-url-row button {
+        min-width: 0;
+      }
+      .workhub-task-resource-card .workhub-task-file-path-row input {
+        min-width: 0;
+      }
+      .workhub-task-resource-card .workhub-checklist-url-list {
+        margin-top: 10px;
+        gap: 8px;
+        min-width: 0;
+      }
+      .workhub-task-resource-card .workhub-checklist-url-item {
+        padding: 7px 8px;
+        border-radius: 8px;
+        min-width: 0;
+      }
+      .workhub-task-resource-card .workhub-task-image-link,
+      .workhub-task-resource-card .workhub-attachment-preview-btn,
+      .workhub-task-resource-card .workhub-link-hero,
+      .workhub-task-resource-card .workhub-attachment-copy {
+        min-width: 0;
+      }
+      .workhub-task-resource-card .workhub-task-image-thumb {
+        width: 40px;
+        height: 40px;
+      }
+      .workhub-task-resource-card .workhub-attachment-copy strong {
+        font-size: 0.72rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .workhub-task-resource-card .workhub-attachment-copy small {
+        font-size: 0.62rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .workhub-task-resource-card .workhub-checklist-url-item > button,
+      .workhub-task-resource-card .workhub-link-item-actions button {
+        border: 1px solid #d2def5;
+        background: #f6f9ff;
+        color: #31517f;
+        border-radius: 6px;
+        padding: 3px 8px;
+        font-size: 0.68rem;
+        cursor: pointer;
+      }
+      .workhub-task-resource-card .workhub-checklist-url-item > button:hover,
+      .workhub-task-resource-card .workhub-link-item-actions button:hover {
+        background: #ecf3ff;
+        border-color: #b8ccf1;
+      }
+      .workhub-task-checklist-card .workhub-checklist-progress {
+        margin: 0 0 10px;
+      }
+      .workhub-task-checklist-card .workhub-checklist-progress-bar {
+        width: 100%;
+        height: 8px;
+        border-radius: 999px;
+        background: #e4edfc;
+        overflow: hidden;
+      }
+      .workhub-task-checklist-card .workhub-checklist-progress-fill {
+        display: block;
+        height: 100%;
+        background: linear-gradient(90deg, #4b7ae6 0%, #6fa4ff 100%);
+        border-radius: inherit;
+      }
+      .workhub-task-checklist-card .workhub-checklist-item {
+        padding: 8px 10px;
+      }
+      .workhub-task-checklist-card .workhub-checklist-actions {
+        opacity: 1;
+        gap: 6px;
+      }
+      .workhub-task-checklist-card .workhub-checklist-edit,
+      .workhub-task-checklist-card .workhub-checklist-expand,
+      .workhub-task-checklist-card .workhub-checklist-remove {
+        border: 1px solid #d8e4fa;
+        background: #f7faff;
+        color: #33537f;
+        border-radius: 6px;
+        font-size: 0.66rem;
+        padding: 3px 7px;
+      }
+      .workhub-task-checklist-card .workhub-checklist-item-details {
+        margin-top: 6px;
+        margin-left: 0;
+        border-left: 0;
+        border: 1px solid #dfe9fb;
+        border-radius: 8px;
+      }
+      .workhub-task-checklist-card .workhub-checklist-add {
+        margin-top: 10px;
+      }
+      .workhub-discussion-card .workhub-comment-list-chat {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        max-height: 280px;
+        overflow-y: auto;
+        padding: 4px 2px;
+      }
+      .workhub-discussion-card .workhub-comment-item {
+        display: flex;
+        justify-content: flex-start;
+      }
+      .workhub-discussion-card .workhub-comment-item.is-own {
+        justify-content: flex-end;
+      }
+      .workhub-discussion-card .workhub-comment-bubble {
+        width: min(100%, 92%);
+        border: 1px solid #dfe9fb;
+        background: #ffffff;
+        border-radius: 11px;
+        padding: 8px 10px;
+      }
+      .workhub-discussion-card .workhub-comment-item.is-own .workhub-comment-bubble {
+        background: #eef4ff;
+        border-color: #c9daf7;
+      }
+      .workhub-discussion-card .workhub-comment-bubble-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 4px;
+      }
+      .workhub-comment-author {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+      }
+      .workhub-comment-author-avatar,
+      .workhub-comment-author-avatar-fallback {
+        width: 18px;
+        height: 18px;
+        border-radius: 999px;
+        flex-shrink: 0;
+      }
+      .workhub-comment-author-avatar {
+        object-fit: cover;
+        border: 1px solid #c5d6f3;
+      }
+      .workhub-comment-author-avatar-fallback {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid #c5d6f3;
+        background: #eaf1ff;
+        color: #2a4c85;
+        font-size: 0.56rem;
+        font-weight: 700;
+      }
+      .workhub-comment-head-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        flex-shrink: 0;
+      }
+      .workhub-comment-head-actions > span {
+        color: #6d81a6;
+        font-weight: 500;
+      }
+      .workhub-comment-edit-btn {
+        border: 1px solid #d4e2fb;
+        background: #f7faff;
+        color: #355487;
+        border-radius: 6px;
+        width: 20px;
+        height: 20px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .workhub-comment-edit-btn:hover {
+        background: #edf4ff;
+        border-color: #b9ccf1;
+      }
+      .workhub-comment-edit-btn:focus-visible {
+        outline: 2px solid #8eb1f5;
+        outline-offset: 1px;
+      }
+      .workhub-discussion-card .workhub-comment-bubble-head strong {
+        font-size: 0.72rem;
+      }
+      .workhub-discussion-card .workhub-comment-bubble-head span {
+        font-size: 0.64rem;
+        color: #7286ab;
+        white-space: nowrap;
+      }
+      .workhub-discussion-card .workhub-comment-bubble p {
+        margin: 0;
+        font-size: 0.74rem;
+        line-height: 1.35;
+        color: #2c4165;
+        white-space: pre-wrap;
+      }
+      .workhub-comment-edit-form {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 4px;
+        padding: 7px;
+        border-radius: 8px;
+        border: 1px solid #dce8fb;
+        background: #f8fbff;
+      }
+      .workhub-comment-edit-form textarea {
+        min-height: 70px;
+        border-radius: 8px;
+        border: 1px solid #d4e3fb;
+        background: #ffffff;
+      }
+      .workhub-comment-edit-form textarea:focus {
+        border-color: #7ea4ee;
+        box-shadow: 0 0 0 2px rgba(126, 164, 238, 0.16);
+        outline: none;
+      }
+      .workhub-comment-edit-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 6px;
+      }
+      .workhub-comment-edit-actions .workhub-primary-mini,
+      .workhub-comment-edit-actions .workhub-ghost-mini {
+        min-width: 72px;
+        justify-content: center;
+      }
+      .workhub-comment-composer {
+        margin-top: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .workhub-comment-composer textarea {
+        min-height: 84px;
+        border-radius: 9px;
+        border: 1px solid #d4e3fb;
+        background: #ffffff;
+      }
+      .workhub-comment-composer textarea:focus {
+        border-color: #7ea4ee;
+        box-shadow: 0 0 0 2px rgba(126, 164, 238, 0.16);
+        outline: none;
+      }
+      .workhub-comment-composer button {
+        align-self: flex-end;
+        min-width: 96px;
+      }
       .workhub-task-name-input {
-        min-height: 42px;
+        min-height: 56px;
         resize: vertical;
         line-height: 1.3;
       }
@@ -4950,6 +5808,7 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         background: #f9fbff;
         border: 1px solid #e3ecfb;
         margin: 12px 0;
+        min-width: 0;
       }
       .workhub-detail-grid {
         display: grid;
@@ -4976,7 +5835,7 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         font-weight: 500;
       }
       .workhub-project-detail-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
         gap: 10px;
         margin: 10px 0 12px;
       }
@@ -5483,6 +6342,14 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       .workhub-create-option-toggle input {
         margin: 0;
       }
+      .workhub-create-option-toggle span {
+        white-space: nowrap;
+      }
+      .workhub-icon-field {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
       .workhub-icon-field span {
         font-size: 0.76rem;
         font-weight: 700;
@@ -5969,6 +6836,48 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         align-items: center;
         gap: 4px;
       }
+      .workhub-task-checklist-progress {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        min-width: 0;
+      }
+      .workhub-task-title-checklist-progress {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        flex-shrink: 0;
+        margin-left: 4px;
+      }
+      .workhub-task-title-checklist-progress .workhub-task-checklist-progress-track {
+        width: 36px;
+        height: 4px;
+      }
+      .workhub-task-title-checklist-progress .workhub-task-checklist-progress-label {
+        font-size: 0.6rem;
+        color: #7a8fb5;
+        font-weight: 600;
+      }
+      .workhub-task-checklist-progress-track {
+        width: 34px;
+        height: 5px;
+        border-radius: 999px;
+        background: #e4ecfb;
+        overflow: hidden;
+        display: inline-flex;
+      }
+      .workhub-task-checklist-progress-fill {
+        height: 100%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #3d7af1 0%, #61b47e 100%);
+      }
+      .workhub-task-checklist-progress-label {
+        font-size: 0.58rem;
+        font-weight: 700;
+        color: #526b95;
+        letter-spacing: 0.01em;
+        white-space: nowrap;
+      }
       .workhub-task-attachment-chip {
         display: inline-flex;
         align-items: center;
@@ -6252,6 +7161,14 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         min-width: 28px;
         padding: 2px 6px;
         justify-content: center;
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-checklist-progress-track,
+      .workhub-task-sections.task-view-grid .workhub-task-checklist-progress-track {
+        width: 44px;
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-checklist-progress-label,
+      .workhub-task-sections.task-view-grid .workhub-task-checklist-progress-label {
+        font-size: 0.61rem;
       }
       .workhub-task-attachment-indicator {
         display: inline-flex;
@@ -8415,6 +9332,7 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
           justify-content: flex-start;
         }
         .workhub-task-context-strip {
+          display: grid;
           gap: 6px;
           padding: 6px 8px;
           border-radius: 10px;
@@ -8570,6 +9488,14 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
           line-height: 1.15;
           font-weight: 400;
           color: #566f95;
+        }
+        .workhub-tree-node-progress {
+          font-size: 0.64rem;
+          gap: 6px;
+        }
+        .workhub-tree-node-progress-track {
+          width: 44px;
+          height: 6px;
         }
         .workhub-tree-node-intent-icon {
           font-size: 0.88rem;
@@ -8747,6 +9673,9 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         .workhub-task-sections {
           overflow-x: hidden;
         }
+        .workhub-task-sections.task-view-list {
+          --workhub-task-list-min-width: 620px;
+        }
         .workhub-task-context-strip {
           display: block;
           padding: 6px;
@@ -8781,8 +9710,10 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         .workhub-task-table-wrap {
           min-width: 100%;
           width: 100%;
-          overflow-x: hidden;
+          overflow-x: auto;
+          overflow-y: visible;
           -webkit-overflow-scrolling: touch;
+          overscroll-behavior-x: contain;
         }
         .workhub-task-group-body {
           min-width: 0;
@@ -8824,6 +9755,73 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         }
         .workhub-task-row-main {
           padding: 6px 8px;
+        }
+        .workhub-detail-icon-row {
+          grid-template-columns: 1fr;
+        }
+        .workhub-detail-icon-menu {
+          min-width: min(280px, calc(100vw - 48px));
+        }
+        .workhub-task-detail-rail .workhub-detail-meta {
+          grid-template-columns: 1fr;
+        }
+        .workhub-discussion-card .workhub-comment-list-chat {
+          max-height: 220px;
+          gap: 6px;
+          padding: 2px 0;
+        }
+        .workhub-discussion-card .workhub-comment-bubble {
+          width: 100%;
+          padding: 7px 8px;
+          border-radius: 9px;
+        }
+        .workhub-discussion-card .workhub-comment-bubble-head {
+          margin-bottom: 3px;
+        }
+        .workhub-comment-author {
+          gap: 5px;
+        }
+        .workhub-comment-author-avatar,
+        .workhub-comment-author-avatar-fallback {
+          width: 16px;
+          height: 16px;
+        }
+        .workhub-comment-head-actions {
+          gap: 4px;
+        }
+        .workhub-comment-head-actions > span {
+          font-size: 0.6rem;
+        }
+        .workhub-comment-edit-btn {
+          width: 18px;
+          height: 18px;
+          border-radius: 5px;
+        }
+        .workhub-comment-edit-form {
+          gap: 5px;
+          margin-top: 3px;
+          padding: 6px;
+        }
+        .workhub-comment-edit-form textarea {
+          min-height: 62px;
+        }
+        .workhub-comment-edit-actions .workhub-primary-mini,
+        .workhub-comment-edit-actions .workhub-ghost-mini {
+          min-width: 64px;
+          min-height: 26px;
+          padding: 3px 8px;
+          font-size: 0.68rem;
+        }
+        .workhub-comment-composer {
+          margin-top: 8px;
+          gap: 6px;
+        }
+        .workhub-comment-composer textarea {
+          min-height: 72px;
+        }
+        .workhub-comment-composer button {
+          min-width: 84px;
+          min-height: 30px;
         }
         .workhub-quick-add-placeholder {
           min-height: 0;

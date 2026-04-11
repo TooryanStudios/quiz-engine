@@ -90,6 +90,11 @@ const TaskRow = memo(function TaskRow({
   const hasOpenInlineMenu = statusMenuOpen || priorityMenuOpen || moreMenuOpen || assigneeMenuOpen
   const dueLabel = formatTaskDueDisplay(task.dueDate || '', dueDisplayMode)
   const totalAttachmentCount = meta.taskAttachmentCount + meta.checklistImagesCount
+  const checklistTotal = checklist.length
+  const checklistDone = Math.min(meta.checklistDoneCount, checklistTotal)
+  const checklistProgressPercent = checklistTotal > 0
+    ? Math.max(8, Math.round((checklistDone / checklistTotal) * 100))
+    : 0
 
   return (
     <article
@@ -150,13 +155,11 @@ const TaskRow = memo(function TaskRow({
                   autoFocus
                 />
               ) : (
-                <>
-                  <strong
-                    onDoubleClick={(event) => { event.stopPropagation(); callbacks.onTitleEditStart(task) }}
-                  >
-                    {normalizeTaskTitle(task.title || '') || 'Untitled task'}
-                  </strong>
-                </>
+                <strong
+                  onDoubleClick={(event) => { event.stopPropagation(); callbacks.onTitleEditStart(task) }}
+                >
+                  {normalizeTaskTitle(task.title || '') || 'Untitled task'}
+                </strong>
               )}
             </div>
           </div>
@@ -240,6 +243,14 @@ const TaskRow = memo(function TaskRow({
               >
                 {dueLabel}
               </button>
+              {checklistTotal > 0 && (
+                <span className="workhub-task-title-checklist-progress" title={`${checklistDone} of ${checklistTotal} checklist items done`}>
+                  <span className="workhub-task-checklist-progress-track" aria-hidden="true">
+                    <span className="workhub-task-checklist-progress-fill" style={{ width: `${checklistProgressPercent}%` }} />
+                  </span>
+                  <span className="workhub-task-checklist-progress-label">{checklistDone}/{checklistTotal}</span>
+                </span>
+              )}
               <input
                 type="date"
                 className="workhub-task-due-input"
@@ -268,12 +279,20 @@ const TaskRow = memo(function TaskRow({
                 📎
               </span>
             )}
+            {checklistTotal > 0 && (
+              <span className="workhub-task-checklist-progress" title={`${checklistDone} of ${checklistTotal} checklist items completed`}>
+                <span className="workhub-task-checklist-progress-track" aria-hidden="true">
+                  <span className="workhub-task-checklist-progress-fill" style={{ width: `${checklistProgressPercent}%` }} />
+                </span>
+                <span className="workhub-task-checklist-progress-label">{checklistDone}/{checklistTotal}</span>
+              </span>
+            )}
             <button
               className="workhub-checklist-toggle"
               onClick={(event) => { event.stopPropagation(); callbacks.onToggleChecklist(task.id) }}
               aria-label="Toggle checklist"
             >
-              {checklist.length}
+              {checklistTotal}
             </button>
           </div>
         </div>

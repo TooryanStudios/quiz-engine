@@ -45,9 +45,12 @@
       }
     ]
   },
-  "storage": {
-    "rules": "firebase/storage.rules"
-  },
+  "storage": [
+    {
+      "bucket": "qyan-om.firebasestorage.app",
+      "rules": "firebase/storage.rules"
+    }
+  ],
   "firestore": {
     "rules": "firebase/firestore.rules",
     "indexes": "firebase/firestore.indexes.json"

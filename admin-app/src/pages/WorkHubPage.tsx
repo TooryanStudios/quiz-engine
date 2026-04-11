@@ -6,7 +6,7 @@ import { auth, storage } from '../lib/firebase'
 import { markSignOut } from '../lib/signOutState'
 import { useToast } from '../lib/ToastContext'
 import {
-  addWorkhubTaskComment,
+  addWorkhubComment,
   createWorkhubActivity,
   createWorkhubClient,
   createWorkhubNotifications,
@@ -23,7 +23,7 @@ import {
   subscribeAllWorkhubMembers,
   subscribeOwnWorkhubMember,
   subscribeWorkhubActivity,
-  subscribeWorkhubComments,
+  subscribeWorkhubCommentsByEntity,
   subscribeWorkhubClientsMulti,
   subscribeWorkhubDocuments,
   getWorkhubDocumentById,
@@ -34,6 +34,7 @@ import {
   ensureWorkhubDriveProjectFolder,
   uploadWorkhubAttachmentToDrive,
   updateWorkhubProject,
+  updateWorkhubComment,
   updateWorkhubTask,
   updateWorkhubClient,
   updateWorkhubWorkspace,
@@ -48,14 +49,19 @@ import {
   type WorkhubProjectType,
   type WorkhubTask,
   type WorkhubTaskChecklistItem,
+  type WorkhubTaskComment,
   type WorkhubTaskPriority,
   type WorkhubTaskStatus,
   type WorkhubTaskStatusConfig,
   type WorkhubVisibility,
   type WorkhubWorkspace,
+  createWorkhubMoodBoard,
+  subscribeWorkhubMoodBoardsForWorkspace,
+  type WorkhubMoodBoard,
 } from '../lib/workhubRepo'
 
 import { ProjectActionMenu } from './workhub/components/ProjectActionMenu'
+import { MoodBoardPanel } from './workhub/components/MoodBoardDialog'
 import { TeamDialog } from './workhub/components/TeamDialog'
 import { WorkspaceSettingsDialog } from './workhub/components/WorkspaceSettingsDialog'
 import { WorkhubStyles } from './workhub/components/WorkhubStyles'
@@ -138,6 +144,10 @@ import { useWorkhubDocumentCreation } from './workhub/hooks/useWorkhubDocumentCr
 import { useWorkhubWorkspaceTemplates } from './workhub/hooks/useWorkhubWorkspaceTemplates'
 import { useWorkhubDocEditorHandlers } from './workhub/hooks/useWorkhubDocEditorHandlers'
 import { WorkhubDocEditor } from './workhub/components/WorkhubDocEditor'
+import { WorkhubDiscussionCard } from './workhub/components/WorkhubDiscussionCard'
+import { WorkhubTaskAttachmentCard } from './workhub/components/WorkhubTaskAttachmentCard'
+import { WorkhubTaskChecklistCard } from './workhub/components/WorkhubTaskChecklistCard'
+import { WorkhubProjectAttachmentCard } from './workhub/components/WorkhubProjectAttachmentCard'
 import type { WorkhubUserAccessDraft, WorkhubUserAccessMode, WorkhubUserWorkspaceDraft } from './workhub/accessTypes'
 
 const MASTER_EMAIL = import.meta.env.VITE_MASTER_EMAIL as string | undefined
@@ -277,6 +287,41 @@ function resolveProjectMonetaryCurrency(project: Pick<WorkhubProject, 'valueCurr
 function addMonetaryTotal(target: Record<string, number>, currency: string, amount: number) {
   if (amount <= 0) return
   target[currency] = Math.round(((target[currency] || 0) + amount) * 100) / 100
+}
+
+function pluralizeDashboardSubjectLabel(label: string): string {
+  const normalized = label.trim()
+  const irregularMap: Record<string, string> = {
+    Proposal: 'Proposals',
+    Lead: 'Leads',
+    Folder: 'Folders',
+    Project: 'Projects',
+    Campaign: 'Campaigns',
+    Requisition: 'Requisitions',
+    'Content stream': 'Content streams',
+    'Invoice stream': 'Invoice streams',
+    'Payment cycle': 'Payment cycles',
+    'Onboarding track': 'Onboarding tracks',
+  }
+  if (irregularMap[normalized]) return irregularMap[normalized]
+  return normalized.endsWith('s') ? normalized : `${normalized}s`
+}
+
+function resolveWorkspaceCollectionHeading(templateId: WorkhubWorkspaceTemplateId): string {
+  switch (templateId) {
+    case 'proposals_leads':
+      return 'Lead & proposal categories'
+    case 'finance':
+      return 'Finance categories'
+    case 'marketing':
+      return 'Campaign categories'
+    case 'hr':
+      return 'HR categories'
+    case 'projects':
+      return 'Project categories'
+    default:
+      return 'Top-level categories'
+  }
 }
 
 function formatMonetaryAmount(amount: number, currency: string): string {
@@ -456,33 +501,211 @@ const WORKHUB_INTENT_DETAIL_FIELDS: Record<WorkhubProjectIntent, WorkhubDetailFi
 }
 
 // ── URL helpers ────────────────────────────────────────────────────────────
-const WORKHUB_VALID_SECTIONS = new Set(['home', 'users', 'tasks', 'notes', 'dashboard', 'clients'])
+type WorkhubCanonicalSection = 'home' | 'users' | 'tasks' | 'notes' | 'dashboard' | 'clients'
+type WorkhubParsedRouteKind = 'root' | 'workspace' | 'project' | 'document' | 'moodboard' | 'task'
 
-function parseWorkhubPathname(pathname: string): { wsId: string; projId: string; section: string } {
+type WorkhubParsedRoute = {
+  source: 'canonical' | 'legacy'
+  kind: WorkhubParsedRouteKind
+  wsId: string
+  projId: string
+  section: string
+  entityId: string
+}
+
+type WorkhubPersistedRouteMap = Record<string, string>
+
+const WORKHUB_WORKSPACE_SECTIONS = new Set<WorkhubCanonicalSection>(['home', 'users', 'tasks', 'notes', 'dashboard', 'clients'])
+const WORKHUB_LEGACY_SECTIONS = new Set<string>([...WORKHUB_WORKSPACE_SECTIONS, 'moodboard'])
+
+function isWorkhubWorkspaceSection(value: string): value is WorkhubCanonicalSection {
+  return WORKHUB_WORKSPACE_SECTIONS.has(value as WorkhubCanonicalSection)
+}
+
+function parseLegacyWorkhubPathname(pathname: string): Pick<WorkhubParsedRoute, 'wsId' | 'projId' | 'section' | 'entityId'> {
   const parts = pathname.replace(/^\/workhub\/?/, '').split('/').filter(Boolean)
-  let wsId = '', projId = 'all', section = ''
+  let wsId = ''
+  let projId = 'all'
+  let section = ''
+  let entityId = ''
+
   if (parts[0]) wsId = decodeURIComponent(parts[0])
   if (parts[1]) {
     const seg2 = decodeURIComponent(parts[1])
-    if (WORKHUB_VALID_SECTIONS.has(seg2)) {
+    if (WORKHUB_LEGACY_SECTIONS.has(seg2)) {
       section = seg2
+      if (parts[2]) entityId = decodeURIComponent(parts[2])
     } else {
       projId = seg2
       if (parts[2]) {
         const seg3 = decodeURIComponent(parts[2])
-        if (WORKHUB_VALID_SECTIONS.has(seg3)) section = seg3
+        if (WORKHUB_LEGACY_SECTIONS.has(seg3)) {
+          section = seg3
+          if (parts[3]) entityId = decodeURIComponent(parts[3])
+        }
       }
     }
   }
-  return { wsId, projId, section }
+
+  return { wsId, projId, section, entityId }
 }
 
-function buildWorkhubPathname(wsId: string, projId: string, section: string): string {
+function parseWorkhubPathname(pathname: string, search = ''): WorkhubParsedRoute {
+  const parts = pathname.replace(/^\/workhub\/?/, '').split('/').filter(Boolean)
+  const searchParams = new URLSearchParams(search)
+  const contextProjectId = (searchParams.get('p') || '').trim()
+  const normalizedContextProjectId = contextProjectId && contextProjectId !== 'all' ? contextProjectId : 'all'
+
+  if (parts.length === 0) {
+    return { source: 'canonical', kind: 'root', wsId: '', projId: 'all', section: '', entityId: '' }
+  }
+
+  if (parts[0] === 'w') {
+    const wsId = decodeURIComponent(parts[1] || '')
+    if (!wsId) {
+      return { source: 'canonical', kind: 'root', wsId: '', projId: 'all', section: '', entityId: '' }
+    }
+
+    const marker = decodeURIComponent(parts[2] || '')
+    const value = decodeURIComponent(parts[3] || '')
+
+    if (!marker) {
+      return { source: 'canonical', kind: 'workspace', wsId, projId: normalizedContextProjectId, section: 'dashboard', entityId: '' }
+    }
+
+    if (marker === 's') {
+      const section = isWorkhubWorkspaceSection(value) ? value : 'dashboard'
+      return { source: 'canonical', kind: 'workspace', wsId, projId: normalizedContextProjectId, section, entityId: '' }
+    }
+
+    if (marker === 'p' && value) {
+      return { source: 'canonical', kind: 'project', wsId, projId: value, section: '', entityId: '' }
+    }
+
+    if (marker === 'd' && value) {
+      return { source: 'canonical', kind: 'document', wsId, projId: 'all', section: 'notes', entityId: value }
+    }
+
+    if (marker === 'm' && value) {
+      return { source: 'canonical', kind: 'moodboard', wsId, projId: 'all', section: 'moodboard', entityId: value }
+    }
+
+    if (marker === 't' && value) {
+      return { source: 'canonical', kind: 'task', wsId, projId: 'all', section: 'tasks', entityId: value }
+    }
+
+    return { source: 'canonical', kind: 'workspace', wsId, projId: normalizedContextProjectId, section: 'dashboard', entityId: '' }
+  }
+
+  const legacy = parseLegacyWorkhubPathname(pathname)
+  if (!legacy.wsId) {
+    return { source: 'legacy', kind: 'root', wsId: '', projId: 'all', section: '', entityId: '' }
+  }
+
+  if (legacy.section === 'notes' && legacy.entityId) {
+    return { source: 'legacy', kind: 'document', wsId: legacy.wsId, projId: 'all', section: 'notes', entityId: legacy.entityId }
+  }
+
+  if (legacy.section === 'moodboard' && legacy.entityId) {
+    return { source: 'legacy', kind: 'moodboard', wsId: legacy.wsId, projId: 'all', section: 'moodboard', entityId: legacy.entityId }
+  }
+
+  if (legacy.section === 'tasks' && legacy.entityId) {
+    return { source: 'legacy', kind: 'task', wsId: legacy.wsId, projId: 'all', section: 'tasks', entityId: legacy.entityId }
+  }
+
+  if (legacy.projId && legacy.projId !== 'all' && (!legacy.section || legacy.section === 'tasks' || legacy.section === 'dashboard')) {
+    return { source: 'legacy', kind: 'project', wsId: legacy.wsId, projId: legacy.projId, section: '', entityId: '' }
+  }
+
+  if (legacy.section === 'moodboard' && !legacy.entityId) {
+    return { source: 'legacy', kind: 'workspace', wsId: legacy.wsId, projId: legacy.projId || 'all', section: 'dashboard', entityId: '' }
+  }
+
+  const section = isWorkhubWorkspaceSection(legacy.section) ? legacy.section : 'dashboard'
+  return { source: 'legacy', kind: 'workspace', wsId: legacy.wsId, projId: legacy.projId || 'all', section, entityId: '' }
+}
+
+function buildWorkhubRouteSearch(projId: string): string {
+  if (!projId || projId === 'all') return ''
+  const params = new URLSearchParams({ p: projId })
+  return `?${params.toString()}`
+}
+
+function buildWorkhubPathname(wsId: string, projId: string, section: string, entityId = ''): string {
   if (!wsId) return '/workhub'
-  const proj = projId && projId !== 'all' ? projId : null
-  if (proj) return `/workhub/${wsId}/${proj}/${section || 'home'}`
-  if (section && section !== 'home') return `/workhub/${wsId}/${section}`
-  return `/workhub/${wsId}`
+
+  const encodedWorkspaceId = encodeURIComponent(wsId)
+  const encodedProjectId = projId && projId !== 'all' ? encodeURIComponent(projId) : ''
+  const encodedEntityId = entityId ? encodeURIComponent(entityId) : ''
+  const normalizedSection = isWorkhubWorkspaceSection(section) ? section : 'dashboard'
+
+  if (normalizedSection === 'notes' && encodedEntityId) {
+    return `/workhub/w/${encodedWorkspaceId}/d/${encodedEntityId}`
+  }
+
+  if (section === 'moodboard' && encodedEntityId) {
+    return `/workhub/w/${encodedWorkspaceId}/m/${encodedEntityId}`
+  }
+
+  if (normalizedSection === 'tasks' && encodedEntityId) {
+    return `/workhub/w/${encodedWorkspaceId}/t/${encodedEntityId}`
+  }
+
+  if ((normalizedSection === 'tasks' || normalizedSection === 'dashboard') && encodedProjectId) {
+    return `/workhub/w/${encodedWorkspaceId}/p/${encodedProjectId}`
+  }
+
+  const search = buildWorkhubRouteSearch(projId)
+  if (normalizedSection === 'dashboard') {
+    return `/workhub/w/${encodedWorkspaceId}${search}`
+  }
+
+  return `/workhub/w/${encodedWorkspaceId}/s/${normalizedSection}${search}`
+}
+
+function splitPersistedWorkhubRoute(value: string): { pathname: string; search: string } {
+  const trimmedValue = value.trim()
+  const [pathname = '', ...searchParts] = trimmedValue.split('?')
+  return {
+    pathname,
+    search: searchParts.length ? `?${searchParts.join('?')}` : '',
+  }
+}
+
+function readPersistedWorkhubRouteMap(storageKey: string): WorkhubPersistedRouteMap {
+  if (!storageKey) return {}
+
+  try {
+    const raw = localStorage.getItem(storageKey)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>)
+        .filter(([workspaceId, route]) => workspaceId && typeof route === 'string')
+        .map(([workspaceId, route]) => [workspaceId, (route as string).trim()]),
+    )
+  } catch {
+    return {}
+  }
+}
+
+function writePersistedWorkhubRouteMap(storageKey: string, routeMap: WorkhubPersistedRouteMap) {
+  if (!storageKey) return
+  if (Object.keys(routeMap).length === 0) {
+    localStorage.removeItem(storageKey)
+    return
+  }
+  localStorage.setItem(storageKey, JSON.stringify(routeMap))
+}
+
+function normalizePersistedWorkhubRoute(value: string): string {
+  const { pathname, search } = splitPersistedWorkhubRoute(value)
+  if (!pathname.startsWith('/workhub')) return ''
+  const parsedRoute = parseWorkhubPathname(pathname, search)
+  if (!parsedRoute.wsId) return ''
+  return buildWorkhubPathname(parsedRoute.wsId, parsedRoute.projId, parsedRoute.section, parsedRoute.entityId)
 }
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -644,7 +867,7 @@ export default function WorkHubPage() {
   const [globalFinderOpen, setGlobalFinderOpen] = useState(false)
   const [globalFinderQuery, setGlobalFinderQuery] = useState('')
   const [globalFinderActiveIndex, setGlobalFinderActiveIndex] = useState(0)
-  const [comments, setComments] = useState<Array<{ id: string; workspaceId: string; taskId: string; authorUid: string; body: string; createdAt?: unknown }>>([])
+  const [comments, setComments] = useState<WorkhubTaskComment[]>([])
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState('')
   const [selectedProjectId, setSelectedProjectId] = useState('all')
   const [selectedAssigneeUid, setSelectedAssigneeUid] = useState('all')
@@ -652,7 +875,8 @@ export default function WorkHubPage() {
   const [selectedNoteProjectId, setSelectedNoteProjectId] = useState('')
   const [selectedDocumentId, setSelectedDocumentId] = useState('')
   const [pendingNotificationDocument, setPendingNotificationDocument] = useState<WorkhubDocument | null>(null)
-  const [activeSection, setActiveSection] = useState<'home' | 'users' | 'tasks' | 'notes' | 'dashboard' | 'clients'>('home')
+  const [activeSection, setActiveSection] = useState<'home' | 'users' | 'tasks' | 'notes' | 'dashboard' | 'clients' | 'moodboard'>('dashboard')
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<WorkhubCanonicalSection>('dashboard')
   const [quickAddFocusTrigger, setQuickAddFocusTrigger] = useState(0)
   const [quickAddFocusStatusId, setQuickAddFocusStatusId] = useState('')
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
@@ -670,8 +894,9 @@ export default function WorkHubPage() {
   const [workspaceTemplateId, setWorkspaceTemplateId] = useState<WorkhubWorkspaceTemplateId>(DEFAULT_WORKHUB_WORKSPACE_TEMPLATE_ID)
   const [workspaceSettingsName, setWorkspaceSettingsName] = useState('')
   const [workspaceSettingsDescription, setWorkspaceSettingsDescription] = useState('')
-  const [workspaceTreeMetaDisplayMode, setWorkspaceTreeMetaDisplayMode] = useState<'counts' | 'countdown'>('counts')
+  const [workspaceTreeMetaDisplayMode, setWorkspaceTreeMetaDisplayMode] = useState<'counts' | 'countdown' | 'progress'>('counts')
   const [workspaceTaskDueDisplayMode, setWorkspaceTaskDueDisplayMode] = useState<'remaining' | 'date'>('remaining')
+  const [workspaceMoodBoardEnabled, setWorkspaceMoodBoardEnabled] = useState(true)
   const [workspaceProjectColorMeaningDrafts, setWorkspaceProjectColorMeaningDrafts] = useState<WorkhubProjectColorMeaning[]>([])
   const [workspaceAccessMemberUids, setWorkspaceAccessMemberUids] = useState<string[]>([])
   const [workspaceMemberAccessLevels, setWorkspaceMemberAccessLevels] = useState<Record<string, 'full' | 'custom'>>({})
@@ -711,6 +936,8 @@ export default function WorkHubPage() {
   const [statusDrafts, setStatusDrafts] = useState<WorkhubTaskStatusConfig[]>([])
   const [selectedStatusDraftId, setSelectedStatusDraftId] = useState('')
   const [commentText, setCommentText] = useState('')
+  const [editingCommentId, setEditingCommentId] = useState('')
+  const [editingCommentText, setEditingCommentText] = useState('')
   const [busyKey, setBusyKey] = useState('')
   const [batchCreateProgress, setBatchCreateProgress] = useState<{ total: number; created: number; source: 'dialog' | 'quick-add' } | null>(null)
   const [dragTaskId, setDragTaskId] = useState('')
@@ -753,6 +980,8 @@ export default function WorkHubPage() {
   const [clientNotesDraft, setClientNotesDraft] = useState('')
   const [actionMenuProjectId, setActionMenuProjectId] = useState<string | null>(null)
   const [actionMenuPosition, setActionMenuPosition] = useState({ x: 0, y: 0 })
+  const [workspaceMoodBoards, setWorkspaceMoodBoards] = useState<WorkhubMoodBoard[]>([])
+  const [selectedMoodBoardId, setSelectedMoodBoardId] = useState('')
   const [, setQuickAddOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [isMobileWorkhubLayout, setIsMobileWorkhubLayout] = useState<boolean>(() => {
@@ -776,6 +1005,7 @@ export default function WorkHubPage() {
   const [checklistLinkDrafts, setChecklistLinkDrafts] = useState<Record<string, string>>({})
   const [uploadingChecklistAttachmentKey, setUploadingChecklistAttachmentKey] = useState('')
   const [detailMenuOpen, setDetailMenuOpen] = useState<'status' | 'priority' | 'assignee' | 'dueDate' | ''>('')
+  const [detailMenuCoords, setDetailMenuCoords] = useState<{ top: number; left: number; right: number } | null>(null)
   const [selectedTaskTitleDraft, setSelectedTaskTitleDraft] = useState('')
   const [selectedTaskDescriptionDraft, setSelectedTaskDescriptionDraft] = useState('')
   const [selectedProjectNameDraft, setSelectedProjectNameDraft] = useState('')
@@ -1097,13 +1327,36 @@ export default function WorkHubPage() {
   }, [member, selectedWorkspaceId, userEmail])
 
   useEffect(() => {
-    if (!selectedTaskId || !member || member.status !== 'approved') {
+    if (!member || member.status !== 'approved') {
       setComments([])
+      setEditingCommentId('')
+      setEditingCommentText('')
       return
     }
-    const unsubComments = subscribeWorkhubComments(selectedTaskId, setComments)
+
+    let entityType: 'task' | 'project' | 'document' | '' = ''
+    let entityId = ''
+    if (activeSection === 'notes' && selectedDocumentId) {
+      entityType = 'document'
+      entityId = selectedDocumentId
+    } else if (activeSection === 'tasks' && selectedTaskId) {
+      entityType = 'task'
+      entityId = selectedTaskId
+    } else if (activeSection === 'tasks' && selectedProjectId && selectedProjectId !== 'all') {
+      entityType = 'project'
+      entityId = selectedProjectId
+    }
+
+    if (!entityType || !entityId) {
+      setComments([])
+      setEditingCommentId('')
+      setEditingCommentText('')
+      return
+    }
+
+    const unsubComments = subscribeWorkhubCommentsByEntity(entityType, entityId, setComments)
     return () => unsubComments()
-  }, [member, selectedTaskId])
+  }, [activeSection, member, selectedDocumentId, selectedProjectId, selectedTaskId])
 
   useEffect(() => {
     const localUid = auth.currentUser?.uid || ''
@@ -1113,6 +1366,14 @@ export default function WorkHubPage() {
     }
     return subscribeWorkhubNotifications(localUid, setNotifications)
   }, [member])
+
+  useEffect(() => {
+    if (!selectedWorkspaceId) {
+      setWorkspaceMoodBoards([])
+      return
+    }
+    return subscribeWorkhubMoodBoardsForWorkspace(selectedWorkspaceId, setWorkspaceMoodBoards)
+  }, [selectedWorkspaceId])
 
   useEffect(() => {
     if (!member || member.status !== 'approved') return
@@ -1152,6 +1413,10 @@ export default function WorkHubPage() {
   )
   const projectSelectionStorageKey = useMemo(
     () => currentUid ? `workhub:selectedProjectByWorkspace:${currentUid}` : '',
+    [currentUid],
+  )
+  const workspaceRouteMemoryStorageKey = useMemo(
+    () => currentUid ? `workhub:lastRouteByWorkspace:${currentUid}` : '',
     [currentUid],
   )
   const isMasterAdmin = !!MASTER_EMAIL && userEmail === MASTER_EMAIL
@@ -1354,6 +1619,7 @@ export default function WorkHubPage() {
     setSelectedNoteProjectId(targetDocument.projectId || '')
     setSelectedTaskId('')
     setSelectedDocumentId(targetDocument.id)
+    setSelectedMoodBoardId('')
     setActiveSection('notes')
     setProjectsGroupExpanded(true)
     setSidebarCollapsed(false)
@@ -1499,6 +1765,10 @@ export default function WorkHubPage() {
     () => selectedWorkspaceProjectColorMeanings.map((item) => item.color),
     [selectedWorkspaceProjectColorMeanings],
   )
+  const selectedWorkspaceDisplayName = useMemo(
+    () => (selectedWorkspace ? `${resolveWorkhubWorkspaceTemplateIcon(selectedWorkspaceTemplateId)} ${selectedWorkspace.name}` : ''),
+    [selectedWorkspace, selectedWorkspaceTemplateId],
+  )
   const selectedProjectColorMeaning = useMemo(
     () => {
       const normalizedColor = selectedProjectColorDraft.trim().toLowerCase()
@@ -1554,6 +1824,56 @@ export default function WorkHubPage() {
     })
     return counts
   }, [workspaceScopedTasks])
+  const workspaceDoneTaskCountByProjectId = useMemo(() => {
+    const counts: Record<string, number> = {}
+    workspaceScopedTasks.forEach((task) => {
+      if (!/done|complete/i.test(task.status)) return
+      counts[task.projectId] = (counts[task.projectId] || 0) + 1
+    })
+    return counts
+  }, [workspaceScopedTasks])
+  const workspaceTaskProgressByProjectId = useMemo(() => {
+    const cache: Record<string, { done: number; total: number }> = {}
+    const visiting = new Set<string>()
+
+    const resolveProgress = (projectId: string): { done: number; total: number } => {
+      if (!projectId) return { done: 0, total: 0 }
+      if (cache[projectId]) return cache[projectId]
+      if (visiting.has(projectId)) {
+        return {
+          done: workspaceDoneTaskCountByProjectId[projectId] || 0,
+          total: workspaceTaskCountByProjectId[projectId] || 0,
+        }
+      }
+
+      visiting.add(projectId)
+      let done = workspaceDoneTaskCountByProjectId[projectId] || 0
+      let total = workspaceTaskCountByProjectId[projectId] || 0
+
+      const children = visibleProjectsByParent.get(projectId) || []
+      children.forEach((child) => {
+        const childProgress = resolveProgress(child.id)
+        done += childProgress.done
+        total += childProgress.total
+      })
+
+      visiting.delete(projectId)
+      const result = { done, total }
+      cache[projectId] = result
+      return result
+    }
+
+    visibleWorkspaceProjects.forEach((project) => {
+      cache[project.id] = resolveProgress(project.id)
+    })
+
+    return cache
+  }, [
+    visibleProjectsByParent,
+    visibleWorkspaceProjects,
+    workspaceDoneTaskCountByProjectId,
+    workspaceTaskCountByProjectId,
+  ])
   const visibleTasks = useMemo(() => {
     if (selectedProjectId === 'all') return workspaceScopedTasks
     return workspaceScopedTasks.filter((item) => item.projectId === selectedProjectId)
@@ -1615,17 +1935,25 @@ export default function WorkHubPage() {
     }
     return grouped
   }, [filteredTasks])
-  const nonEmptyFilteredTaskStatuses = useMemo(
-    () => workspaceTaskStatuses.filter((status) => (filteredTasksByStatus[status.id] || []).length > 0),
-    [filteredTasksByStatus, workspaceTaskStatuses],
+  const taskFilterBaseTasksByStatus = useMemo(() => {
+    const grouped: Record<string, WorkhubTask[]> = {}
+    for (const item of taskFilterBaseTasks) {
+      if (!grouped[item.status]) grouped[item.status] = []
+      grouped[item.status].push(item)
+    }
+    return grouped
+  }, [taskFilterBaseTasks])
+  const nonEmptyTaskStatusesForTabs = useMemo(
+    () => workspaceTaskStatuses.filter((status) => (taskFilterBaseTasksByStatus[status.id] || []).length > 0),
+    [taskFilterBaseTasksByStatus, workspaceTaskStatuses],
   )
   const renderedTaskStatuses = useMemo(() => {
     if (selectedTaskStatusTab === 'all') {
-      if (nonEmptyFilteredTaskStatuses.length > 0) return nonEmptyFilteredTaskStatuses
+      if (nonEmptyTaskStatusesForTabs.length > 0) return nonEmptyTaskStatusesForTabs
       return workspaceTaskStatuses[0] ? [workspaceTaskStatuses[0]] : []
     }
     return workspaceTaskStatuses.filter((status) => status.id === selectedTaskStatusTab)
-  }, [nonEmptyFilteredTaskStatuses, selectedTaskStatusTab, workspaceTaskStatuses])
+  }, [nonEmptyTaskStatusesForTabs, selectedTaskStatusTab, workspaceTaskStatuses])
   // Pre-compute expensive per-task metadata — only recalculates when task DATA changes,
   // not when selectedTaskIds / other UI state changes.
   const taskMetaById = useMemo<Record<string, TaskRowMeta>>(() => {
@@ -1645,7 +1973,7 @@ export default function WorkHubPage() {
   }, [tasks])
   const selectedTask = useMemo(() => visibleTasks.find((item) => item.id === selectedTaskId) || null, [selectedTaskId, visibleTasks])
   useEffect(() => {
-    setTaskAttachmentsCollapsed(true)
+    setTaskAttachmentsCollapsed(false)
   }, [selectedTask?.id])
 
   useEffect(() => {
@@ -1998,10 +2326,67 @@ export default function WorkHubPage() {
     () => (selectedProject ? selectedProjectBranchProjects.filter((item) => item.id !== selectedProject.id) : visibleWorkspaceProjects),
     [selectedProject, selectedProjectBranchProjects, visibleWorkspaceProjects],
   )
+  const selectedDashboardFocusIntent = useMemo<WorkhubProjectIntent>(() => {
+    const descendantIntentCounts = new Map<WorkhubProjectIntent, number>()
+    selectedScopeDescendantProjects.forEach((project) => {
+      const intent = projectIntentById[project.id] || 'project'
+      if (intent === 'project') return
+      descendantIntentCounts.set(intent, (descendantIntentCounts.get(intent) || 0) + 1)
+    })
+
+    const dominantIntent = Array.from(descendantIntentCounts.entries())
+      .sort((left, right) => right[1] - left[1])[0]?.[0]
+
+    if (dominantIntent) return dominantIntent
+    if (selectedProject && selectedProjectEffectiveIntent !== 'project') return selectedProjectEffectiveIntent
+
+    return resolveWorkspaceTemplateCreateActions(selectedWorkspaceTemplateId)[0]?.intent || selectedProjectEffectiveIntent || 'project'
+  }, [projectIntentById, selectedProject, selectedProjectEffectiveIntent, selectedScopeDescendantProjects, selectedWorkspaceTemplateId])
+  const selectedDashboardFocusMeta = useMemo(
+    () => getTemplateCreationIntentMeta(selectedDashboardFocusIntent, selectedWorkspaceTemplateId),
+    [selectedDashboardFocusIntent, selectedWorkspaceTemplateId],
+  )
+  const selectedDashboardOverviewTitle = useMemo(() => {
+    if (!selectedProject) return selectedWorkspaceDisplayName || 'Workspace overview'
+
+    const subjectLabel = selectedDashboardFocusMeta.subjectLabel
+    const subjectPlural = pluralizeDashboardSubjectLabel(subjectLabel)
+
+    if (selectedProjectEffectiveIntent !== 'project') {
+      return `${selectedDashboardFocusMeta.icon} ${subjectLabel} summary`
+    }
+
+    return `${selectedDashboardFocusMeta.icon} ${subjectPlural} overview`
+  }, [selectedDashboardFocusMeta, selectedProject, selectedProjectEffectiveIntent, selectedWorkspaceDisplayName])
+  const selectedDashboardChildrenTitle = useMemo(() => {
+    if (!selectedProject) return resolveWorkspaceCollectionHeading(selectedWorkspaceTemplateId)
+
+    switch (selectedDashboardFocusIntent) {
+      case 'proposal':
+        return 'Available proposals'
+      case 'lead':
+        return 'Active leads'
+      case 'marketing_campaign':
+        return 'Active campaigns'
+      case 'marketing_content_stream':
+        return 'Content streams'
+      case 'finance_invoice_stream':
+        return 'Invoice streams'
+      case 'finance_payment_cycle':
+        return 'Payment cycles'
+      case 'hr_requisition':
+        return 'Open requisitions'
+      case 'hr_onboarding_track':
+        return 'Onboarding tracks'
+      default:
+        return pluralizeDashboardSubjectLabel(selectedDashboardFocusMeta.subjectLabel)
+    }
+  }, [selectedDashboardFocusIntent, selectedDashboardFocusMeta.subjectLabel, selectedProject, selectedWorkspaceTemplateId])
   function renderDashboardProjectCard(project: WorkhubProject, depth = 0, options?: { simplified?: boolean }): JSX.Element {
     const childProjects = visibleProjectsByParent.get(project.id) || []
     const intentMeta = projectIntentMetaById[project.id] || getTemplateCreationIntentMeta(resolveEffectiveProjectIntent(project, workspaceByIdForFiltering, selectedWorkspaceTemplateIntentSet), selectedWorkspaceTemplateId)
     const simplified = !!options?.simplified
+    const attachmentCount = Array.isArray(project.attachments) ? project.attachments.length : 0
 
     if (simplified) {
       return (
@@ -2024,6 +2409,15 @@ export default function WorkHubPage() {
             <div className="workhub-category-card-copy">
               <strong>{project.name}</strong>
               <span className="workhub-badge">{project.visibility === 'restricted' ? 'Restricted' : 'Workspace'}</span>
+              {attachmentCount > 0 && (
+                <span
+                  className="workhub-inline-attachment-indicator"
+                  title={`${attachmentCount} attachment${attachmentCount === 1 ? '' : 's'}`}
+                  aria-label={`${attachmentCount} attachment${attachmentCount === 1 ? '' : 's'}`}
+                >
+                  📎 {attachmentCount}
+                </span>
+              )}
             </div>
           </div>
         </article>
@@ -2045,9 +2439,17 @@ export default function WorkHubPage() {
         }}
       >
         <div className="workhub-project-title-row">
-          <span className="workhub-project-dot" style={{ background: project.color }} />
           <strong>{project.name}</strong>
           <span className="workhub-badge">{project.visibility === 'restricted' ? 'Restricted' : 'Workspace'}</span>
+          {attachmentCount > 0 && (
+            <span
+              className="workhub-inline-attachment-indicator"
+              title={`${attachmentCount} attachment${attachmentCount === 1 ? '' : 's'}`}
+              aria-label={`${attachmentCount} attachment${attachmentCount === 1 ? '' : 's'}`}
+            >
+              📎 {attachmentCount}
+            </span>
+          )}
         </div>
         <p>{project.description || 'No description yet.'}</p>
         {childProjects.length > 0 && (
@@ -2307,7 +2709,7 @@ export default function WorkHubPage() {
   })
   const taskCounts = useMemo(() => ({
     total: visibleTasks.length,
-    done: visibleTasks.filter((item) => item.status === 'done').length,
+    done: visibleTasks.filter((item) => /done|complete/i.test(item.status)).length,
     inProgress: visibleTasks.filter((item) => item.status === 'in_progress').length,
     urgent: visibleTasks.filter((item) => item.priority === 'urgent').length,
   }), [visibleTasks])
@@ -2366,7 +2768,7 @@ export default function WorkHubPage() {
           name: person.displayName || person.email,
           total: personTasks.length,
           inProgress: personTasks.filter((task) => task.status === 'in_progress').length,
-          done: personTasks.filter((task) => task.status === 'done').length,
+          done: personTasks.filter((task) => /done|complete/i.test(task.status)).length,
         }
       })
       .filter((item) => item.total > 0)
@@ -2549,6 +2951,23 @@ export default function WorkHubPage() {
     })
     return grouped
   }, [visibleProjectIds, workspaceDocuments])
+  const workspaceMoodBoardsByProjectId = useMemo(() => {
+    const grouped: Record<string, WorkhubMoodBoard[]> = {}
+    workspaceMoodBoards.forEach((item) => {
+      if (!item.entityId || !visibleProjectIds.has(item.entityId)) return
+      if (!grouped[item.entityId]) grouped[item.entityId] = []
+      grouped[item.entityId].push(item)
+    })
+    Object.values(grouped).forEach((items) => {
+      items.sort((left, right) => getUnknownTimeValue(right.updatedAt || right.createdAt) - getUnknownTimeValue(left.updatedAt || left.createdAt))
+    })
+    return grouped
+  }, [visibleProjectIds, workspaceMoodBoards])
+  const workspaceLevelMoodBoards = useMemo(() => {
+    return [...workspaceMoodBoards]
+      .filter((item) => !item.entityId || !visibleProjectIds.has(item.entityId))
+      .sort((left, right) => getUnknownTimeValue(right.updatedAt || right.createdAt) - getUnknownTimeValue(left.updatedAt || left.createdAt))
+  }, [visibleProjectIds, workspaceMoodBoards])
   const workspaceDocumentById = useMemo(
     () => Object.fromEntries(workspaceDocuments.map((item) => [item.id, item])) as Record<string, WorkhubDocument>,
     [workspaceDocuments],
@@ -2577,6 +2996,55 @@ export default function WorkHubPage() {
     },
     [pendingNotificationDocument, scopedWorkspaceDocuments, selectedDocumentId, workspaceDocumentById],
   )
+
+  const activeMoodBoard = useMemo(
+    () => workspaceMoodBoards.find((b) => b.id === selectedMoodBoardId) ?? null,
+    [workspaceMoodBoards, selectedMoodBoardId],
+  )
+
+  const selectedDiscussionTarget = useMemo(() => {
+    if (activeSection === 'moodboard' && activeMoodBoard) {
+      return {
+        entityType: 'document' as const,
+        entityId: activeMoodBoard.id,
+        workspaceId: activeMoodBoard.workspaceId,
+        label: activeMoodBoard.title?.trim() || 'Mood Board',
+        visibility: 'workspace' as const,
+        memberUids: [] as string[],
+      }
+    }
+    if (activeSection === 'notes' && selectedDocument) {
+      return {
+        entityType: 'document' as const,
+        entityId: selectedDocument.id,
+        workspaceId: selectedDocument.workspaceId,
+        label: selectedDocument.title?.trim() || 'Untitled document',
+        visibility: selectedDocument.visibility,
+        memberUids: selectedDocument.memberUids,
+      }
+    }
+    if (activeSection === 'tasks' && selectedTask) {
+      return {
+        entityType: 'task' as const,
+        entityId: selectedTask.id,
+        workspaceId: selectedTask.workspaceId,
+        label: normalizeTaskTitle(selectedTask.title || '') || 'Untitled task',
+        visibility: selectedTask.visibility,
+        memberUids: selectedTask.memberUids,
+      }
+    }
+    if (activeSection === 'tasks' && selectedProject && selectedProjectId !== 'all') {
+      return {
+        entityType: 'project' as const,
+        entityId: selectedProject.id,
+        workspaceId: selectedProject.workspaceId,
+        label: selectedProject.name?.trim() || 'Untitled item',
+        visibility: selectedProject.visibility,
+        memberUids: selectedProject.memberUids,
+      }
+    }
+    return null
+  }, [activeSection, selectedDocument, selectedProject, selectedProjectId, selectedTask])
   const taskDialogProjectId = selectedProjectId === 'all' ? selectedNoteProject?.id || flatVisibleProjectOptions[0]?.id || '' : selectedProjectId
   const taskDialogAssignableMembers = useMemo(
     () => assignableMembersByProjectId[taskDialogProjectId] || workspaceAssignableMembers,
@@ -2624,6 +3092,7 @@ export default function WorkHubPage() {
     selectedProjectTypeDraft,
     selectedProjectValueAmountDraft,
     selectedProjectValueCurrencyDraft,
+    setProjects,
     setSelectedProjectColorMenuOpen,
     setBusyKey,
     showToast,
@@ -2633,7 +3102,6 @@ export default function WorkHubPage() {
     closeActionMenu,
     openProjectSettingsDialog,
     handleSelectProject,
-    openWorkspaceOverview,
     toggleProjectExpansion,
     handleExpandSidebar,
     handleCollapseSidebar,
@@ -2652,6 +3120,69 @@ export default function WorkHubPage() {
     setProjectsGroupExpanded,
     resolveProjectMainPanelSection,
   })
+  const resolveRememberedWorkspaceRoute = useCallback((workspaceId: string) => {
+    if (!workspaceId || !workspaceRouteMemoryStorageKey) return ''
+    if (!visibleWorkspaces.some((item) => item.id === workspaceId)) return ''
+
+    const routeMap = readPersistedWorkhubRouteMap(workspaceRouteMemoryStorageKey)
+    const savedRoute = routeMap[workspaceId] || ''
+    if (!savedRoute) return ''
+
+    const normalizedRoute = normalizePersistedWorkhubRoute(savedRoute)
+    if (!normalizedRoute) return ''
+
+    const { pathname, search } = splitPersistedWorkhubRoute(normalizedRoute)
+    const parsedRoute = parseWorkhubPathname(pathname, search)
+    return parsedRoute.wsId === workspaceId ? normalizedRoute : ''
+  }, [visibleWorkspaces, workspaceRouteMemoryStorageKey])
+  const navigateToWorkspaceSection = useCallback((section: WorkhubCanonicalSection, workspaceId = selectedWorkspaceId) => {
+    setSelectedProjectId('all')
+    setSelectedNoteProjectId('')
+    setSelectedDocumentId('')
+    setSelectedMoodBoardId('')
+    setSelectedTaskId('')
+    setPendingNotificationDocument(null)
+    setActiveWorkspaceTab(section)
+    setActiveSection(section)
+    setProjectsGroupExpanded(true)
+    setSidebarCollapsed(false)
+
+    if (!workspaceId) {
+      setSelectedWorkspaceId('')
+      if (location.pathname !== '/workhub') {
+        navigate('/workhub')
+      }
+      return
+    }
+
+    setSelectedWorkspaceId(workspaceId)
+    const nextPath = buildWorkhubPathname(workspaceId, 'all', section)
+    const currentPath = `${location.pathname}${location.search}`
+    if (currentPath !== nextPath) {
+      navigate(nextPath)
+    }
+  }, [location.pathname, location.search, navigate, selectedWorkspaceId])
+  const navigateToWorkspaceOverview = useCallback((workspaceId: string) => {
+    navigateToWorkspaceSection('dashboard', workspaceId)
+  }, [navigateToWorkspaceSection])
+  const navigateToRememberedWorkspaceRoute = useCallback((workspaceId: string) => {
+    if (!workspaceId) return
+
+    setPendingNotificationDocument(null)
+    setProjectsGroupExpanded(true)
+    setSidebarCollapsed(false)
+
+    const rememberedRoute = resolveRememberedWorkspaceRoute(workspaceId)
+    if (!rememberedRoute) {
+      navigateToWorkspaceOverview(workspaceId)
+      return
+    }
+
+    setSelectedWorkspaceId(workspaceId)
+    if (`${location.pathname}${location.search}` !== rememberedRoute) {
+      navigate(rememberedRoute)
+    }
+  }, [location.pathname, location.search, navigate, navigateToWorkspaceOverview, resolveRememberedWorkspaceRoute])
   const {
     documentDialogOpen,
     documentTitleDraft,
@@ -2677,6 +3208,7 @@ export default function WorkHubPage() {
         setSelectedNoteProjectId(projectId)
       }
       setSelectedDocumentId(documentId)
+      setSelectedMoodBoardId('')
       setActiveSection('notes')
       setProjectsGroupExpanded(true)
       setSidebarCollapsed(false)
@@ -2728,23 +3260,16 @@ export default function WorkHubPage() {
     selectedProjectValueAmountDraft,
     selectedProjectValueCurrencyDraft,
   ])
-  const parsedWorkhubPath = useMemo(() => parseWorkhubPathname(location.pathname), [location.pathname])
+  const parsedWorkhubPath = useMemo(() => parseWorkhubPathname(location.pathname, location.search), [location.pathname, location.search])
   const selectedWorkspaceParam = parsedWorkhubPath.wsId
   const selectedProjectParam = parsedWorkhubPath.projId
-  const selectedSectionParam = useMemo(() => {
-    switch (parsedWorkhubPath.section) {
-      case 'home':
-      case 'users':
-      case 'tasks':
-      case 'notes':
-      case 'dashboard':
-      case 'clients':
-        return parsedWorkhubPath.section
-      default:
-        return ''
-    }
-  }, [parsedWorkhubPath.section])
+  const selectedEntityParam = parsedWorkhubPath.entityId
+  const selectedSectionParam = useMemo<WorkhubCanonicalSection | ''>(
+    () => (isWorkhubWorkspaceSection(parsedWorkhubPath.section) ? parsedWorkhubPath.section : ''),
+    [parsedWorkhubPath.section],
+  )
   const previousSelectedSectionParamRef = useRef<string | null>(null)
+  const prevSelectedWorkspaceIdRef = useRef(selectedWorkspaceId)
   const prevSelectedProjectIdRef = useRef(selectedProjectId)
   const isWorkspaceSelectionResolved = useMemo(() => {
     if (!selectedWorkspaceId) return false
@@ -2844,6 +3369,7 @@ export default function WorkHubPage() {
 
   const handleSelectedProjectAttachmentRemove = useCallback(async (url: string) => {
     if (!selectedProject || !canEditSelectedProject) return
+    if (!window.confirm('Remove this attachment?')) return
     const nextAttachments = selectedProjectAttachments.filter((item) => item !== url)
     const nextAttachmentTitles = { ...(selectedProject.attachmentTitles || {}) }
     delete nextAttachmentTitles[url]
@@ -2895,9 +3421,9 @@ export default function WorkHubPage() {
     const isImage = file.type.startsWith('image/')
     const isVideo = file.type.startsWith('video/')
     const subfolder = isImage ? 'images' : (isVideo ? 'videos' : 'docs')
-    const storagePath = `workhub-attachments/${project.workspaceId}/${project.id}/${subfolder}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${extension}`
+    const storagePath = `workhub-attachments/${project.workspaceId}/${project.id}/${subfolder}/${crypto.randomUUID()}.${extension}`
     const storageRef = ref(storage, storagePath)
-    await uploadBytes(storageRef, file, { contentType: file.type })
+    await uploadBytes(storageRef, file, { contentType: file.type || 'application/octet-stream' })
     return await getDownloadURL(storageRef)
   }, [fileToBase64])
 
@@ -2944,33 +3470,122 @@ export default function WorkHubPage() {
     }
   }, [selectedWorkspaceParam, workspaces]) // Left out selectedWorkspaceId intentionally to avoid loop on local changes
 
-  // Sync project from URL to state
+  // Sync project context or project entity route from URL to state.
   useEffect(() => {
-    if (!selectedProjectParam) return
+    if (parsedWorkhubPath.kind !== 'workspace' && parsedWorkhubPath.kind !== 'project') return
 
     if (selectedProjectParam === 'all') {
-      if (selectedProjectId !== 'all') {
-        setSelectedProjectId('all')
-      }
+      setSelectedProjectId('all')
+      setSelectedNoteProjectId('')
       return
     }
 
     const matchedProject = visibleWorkspaceProjects.find((item) => item.id === selectedProjectParam)
-    if (matchedProject && selectedProjectId !== selectedProjectParam) {
-      setSelectedProjectId(selectedProjectParam)
-      setSelectedNoteProjectId(selectedProjectParam)
-    }
-  }, [selectedProjectParam, visibleWorkspaceProjects]) // Left out selectedProjectId intentionally
+    if (!matchedProject) return
 
-  // Sync section from URL to state
+    setSelectedProjectId(selectedProjectParam)
+    setSelectedNoteProjectId(selectedProjectParam)
+
+    if (parsedWorkhubPath.kind === 'project') {
+      setSelectedDocumentId('')
+      setSelectedMoodBoardId('')
+      setSelectedTaskId('')
+      setActiveSection(resolveProjectMainPanelSection(selectedProjectParam))
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    parsedWorkhubPath.kind,
+    resolveProjectMainPanelSection,
+    selectedProjectParam,
+    visibleWorkspaceProjects,
+  ])
+
+  // Sync workspace-section routes from URL to state.
   useEffect(() => {
+    if (parsedWorkhubPath.kind !== 'workspace') return
+
     const previousParam = previousSelectedSectionParamRef.current
     previousSelectedSectionParamRef.current = selectedSectionParam
-    if (previousParam === selectedSectionParam) return
     if (!selectedSectionParam) return
-    if (activeSection === selectedSectionParam) return
+    if (previousParam === selectedSectionParam) return
+    setSelectedDocumentId('')
+    setSelectedMoodBoardId('')
+    setSelectedTaskId('')
+    setActiveWorkspaceTab(selectedSectionParam)
     setActiveSection(selectedSectionParam)
-  }, [activeSection, selectedSectionParam])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parsedWorkhubPath.kind, selectedSectionParam])
+
+  // Sync typed entity routes (and legacy deep links) from URL to state.
+  // NOTE: selectedDocumentId, selectedMoodBoardId, selectedProjectId are intentionally
+  // excluded from deps. Including them causes an oscillation loop: a user click sets state
+  // (e.g. docB), this effect fires because state changed, sees URL still says docA, and
+  // reverts state back to docA. These values are only used as no-op guards; React bails
+  // out automatically when setState is called with the already-current value.
+  useEffect(() => {
+    if (!selectedEntityParam) return
+
+    if (parsedWorkhubPath.kind === 'document') {
+      const targetDocument = workspaceDocumentById[selectedEntityParam]
+      if (!targetDocument) return
+      if (targetDocument.projectId) {
+        const lineage = collectProjectLineage(targetDocument.projectId, workspaceProjectById)
+        setExpandedProjectIds((current) => Array.from(new Set([...current, ...lineage])))
+      }
+      const nextProjectId = targetDocument.projectId && visibleProjectIds.has(targetDocument.projectId)
+        ? targetDocument.projectId
+        : 'all'
+      setSelectedProjectId(nextProjectId)
+      setSelectedNoteProjectId(targetDocument.projectId || '')
+      setSelectedTaskId('')
+      setSelectedDocumentId(targetDocument.id)
+      setSelectedMoodBoardId('')
+      setActiveSection('notes')
+      return
+    }
+
+    if (parsedWorkhubPath.kind === 'moodboard') {
+      const targetBoard = workspaceMoodBoards.find((item) => item.id === selectedEntityParam)
+      if (!targetBoard) return
+      const nextProjectId = targetBoard.entityType === 'project' && visibleProjectIds.has(targetBoard.entityId)
+        ? targetBoard.entityId
+        : 'all'
+      setSelectedProjectId(nextProjectId)
+      setSelectedNoteProjectId(targetBoard.entityType === 'project' ? targetBoard.entityId : '')
+      setSelectedMoodBoardId(targetBoard.id)
+      setSelectedDocumentId('')
+      setSelectedTaskId('')
+      setActiveSection('moodboard')
+      return
+    }
+
+    if (parsedWorkhubPath.kind === 'task') {
+      const targetTask = tasks.find((item) => item.id === selectedEntityParam)
+      if (!targetTask) return
+      if (targetTask.projectId) {
+        const lineage = collectProjectLineage(targetTask.projectId, workspaceProjectById)
+        setExpandedProjectIds((current) => Array.from(new Set([...current, ...lineage])))
+      }
+      const nextProjectId = targetTask.projectId && visibleProjectIds.has(targetTask.projectId)
+        ? targetTask.projectId
+        : 'all'
+      setSelectedProjectId(nextProjectId)
+      setSelectedNoteProjectId(targetTask.projectId || '')
+      setSelectedTaskId(targetTask.id)
+      setSelectedDocumentId('')
+      setSelectedMoodBoardId('')
+      setActiveSection('tasks')
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    parsedWorkhubPath.kind,
+    selectedEntityParam,
+    tasks,
+    visibleProjectIds,
+    workspaceDocumentById,
+    workspaceMoodBoards,
+    workspaceProjectById,
+  ])
 
   // Sync state → URL immediately. Uses replace only on the very first auto-selection
   // (no workspace in the URL yet). Every subsequent navigation pushes a real history
@@ -2978,60 +3593,175 @@ export default function WorkHubPage() {
   useEffect(() => {
     if (!selectedWorkspaceId || !isWorkspaceSelectionResolved) return
 
+    const prevWorkspaceId = prevSelectedWorkspaceIdRef.current
+    prevSelectedWorkspaceIdRef.current = selectedWorkspaceId
+    const workspaceChangedThisRender = prevWorkspaceId !== selectedWorkspaceId
+
+    const expectedProjectParam = activeSection === 'notes'
+      ? (selectedNoteProjectId || selectedProjectId || 'all')
+      : (selectedProjectId || 'all')
+
+    // Track whether the project changed THIS render (i.e. a user action or URL→state
+    // sync just updated it) vs. remaining unchanged while some other param is still
+    // catching up. Must be computed before any early return so the ref stays current.
+    const prevProjectId = prevSelectedProjectIdRef.current
+    prevSelectedProjectIdRef.current = expectedProjectParam
+    const projectChangedThisRender = prevProjectId !== expectedProjectParam
+
     // During browser back/forward (POP), the URL should temporarily lead while the
     // workspace / project / section state catches up. Without this guard, stale state can
     // immediately push the old path back into history and cause a flicker loop.
+    //
+    // IMPORTANT: Do NOT apply this block when the project just changed this render.
+    // If navigationType stays 'POP' from the initial page load (it never advances to
+    // 'PUSH' until the first programmatic navigate() call), this guard would permanently
+    // block every user click that tries to change the project — the URL would never
+    // update. Exempting renders where the project actually changed ensures user
+    // navigation always produces a URL update.
+    const expectedEntityParam = activeSection === 'notes'
+      ? selectedDocumentId
+      : (activeSection === 'moodboard'
+        ? selectedMoodBoardId
+        : (activeSection === 'tasks' ? selectedTaskId : ''))
+
     if (
       navigationType === 'POP'
+      && !workspaceChangedThisRender
+      && !projectChangedThisRender
       && (
         (!!selectedWorkspaceParam && selectedWorkspaceId !== selectedWorkspaceParam)
-        || (!!selectedProjectParam && selectedProjectId !== selectedProjectParam)
+        || (!!selectedProjectParam && expectedProjectParam !== selectedProjectParam)
         || (!!selectedSectionParam && activeSection !== selectedSectionParam)
+        || (!!selectedEntityParam && expectedEntityParam !== selectedEntityParam)
       )
     ) {
       return
     }
 
-    // Compare against previous selectedProjectId to detect whether it changed this render.
-    // If the URL names a specific project but selectedProjectId still hasn't caught up
-    // (prevProjectId === selectedProjectId means no change occurred this render), the
-    // "sync project from URL → state" effect is about to update selectedProjectId on the
-    // next render — don't race it by overwriting the URL with the stale 'all' value.
-    // If selectedProjectId DID change this render (prevProjectId !== selectedProjectId),
-    // that means a user action drove the change, so we should update the URL.
-    const prevProjectId = prevSelectedProjectIdRef.current
-    prevSelectedProjectIdRef.current = selectedProjectId
+    // Guard against stale state overwriting the URL when the URL names a specific
+    // project but state hasn't changed yet (timing races outside of POP navigation).
+    // Uses the same projectChangedThisRender signal: if nothing changed we're still
+    // waiting for the URL→state sync to finish — don't race it.
     if (
       selectedProjectParam
       && selectedProjectParam !== 'all'
-      && selectedProjectId !== selectedProjectParam
-      && prevProjectId === selectedProjectId
+      && expectedProjectParam !== selectedProjectParam
+      && !projectChangedThisRender
     ) {
       return
     }
 
-    const targetProject = selectedProjectId || 'all'
-    const targetSection = activeSection
-    const newPath = buildWorkhubPathname(selectedWorkspaceId, targetProject, targetSection)
+    const targetProject = expectedProjectParam || 'all'
+    // Mood boards are entity-only routes. If no board is selected, canonicalize to
+    // the workspace dashboard instead of preserving a stale /moodboard suffix.
+    const targetSection = activeSection === 'moodboard' && !selectedMoodBoardId
+      ? 'dashboard'
+      : activeSection
+    const targetEntityId = targetSection === 'notes'
+      ? selectedDocumentId
+      : (targetSection === 'moodboard'
+        ? selectedMoodBoardId
+        : (targetSection === 'tasks' ? selectedTaskId : ''))
+    let newPath = buildWorkhubPathname(selectedWorkspaceId, targetProject, targetSection, targetEntityId)
 
-    if (location.pathname === newPath) return
+    if (!parsedWorkhubPath.wsId) {
+      const rememberedRoute = resolveRememberedWorkspaceRoute(selectedWorkspaceId)
+      if (rememberedRoute) {
+        newPath = rememberedRoute
+      }
+    }
 
-    // Replace only when the URL has no workspace segment yet (initial load).
-    const shouldReplace = !parsedWorkhubPath.wsId
+    const currentPath = `${location.pathname}${location.search}`
+    if (currentPath === newPath) return
+
+    // Replace when bootstrapping from no workspace or canonicalizing a legacy URL.
+    const shouldReplace = !parsedWorkhubPath.wsId || parsedWorkhubPath.source === 'legacy'
     navigate(newPath, { replace: shouldReplace })
   }, [
     activeSection,
     isWorkspaceSelectionResolved,
     location.pathname,
+    location.search,
     navigate,
     navigationType,
+    parsedWorkhubPath.source,
     parsedWorkhubPath.wsId,
+    selectedDocumentId,
+    selectedEntityParam,
+    selectedMoodBoardId,
+    selectedNoteProjectId,
     selectedProjectId,
     selectedProjectParam,
     selectedSectionParam,
+    selectedTaskId,
     selectedWorkspaceId,
     selectedWorkspaceParam,
+    resolveRememberedWorkspaceRoute,
   ])
+
+  useEffect(() => {
+    if (!workspaceRouteMemoryStorageKey || !selectedWorkspaceId || !isWorkspaceSelectionResolved) return
+
+    const currentRoute = normalizePersistedWorkhubRoute(`${location.pathname}${location.search}`)
+    if (!currentRoute) return
+
+    const { pathname, search } = splitPersistedWorkhubRoute(currentRoute)
+    const parsedRoute = parseWorkhubPathname(pathname, search)
+    if (parsedRoute.wsId !== selectedWorkspaceId) return
+
+    const routeMap = readPersistedWorkhubRouteMap(workspaceRouteMemoryStorageKey)
+    if (routeMap[selectedWorkspaceId] === currentRoute) return
+
+    writePersistedWorkhubRouteMap(workspaceRouteMemoryStorageKey, {
+      ...routeMap,
+      [selectedWorkspaceId]: currentRoute,
+    })
+  }, [
+    isWorkspaceSelectionResolved,
+    location.pathname,
+    location.search,
+    selectedWorkspaceId,
+    workspaceRouteMemoryStorageKey,
+  ])
+
+  useEffect(() => {
+    if (!workspaceRouteMemoryStorageKey || memberLoading || member?.status !== 'approved') return
+
+    const routeMap = readPersistedWorkhubRouteMap(workspaceRouteMemoryStorageKey)
+    if (Object.keys(routeMap).length === 0) return
+
+    const visibleWorkspaceIdSet = new Set(visibleWorkspaces.map((item) => item.id))
+    const cleanedRouteMap: WorkhubPersistedRouteMap = {}
+    let changed = false
+
+    Object.entries(routeMap).forEach(([workspaceId, savedRoute]) => {
+      if (!visibleWorkspaceIdSet.has(workspaceId)) {
+        changed = true
+        return
+      }
+
+      const normalizedRoute = normalizePersistedWorkhubRoute(savedRoute)
+      if (!normalizedRoute) {
+        changed = true
+        return
+      }
+
+      const { pathname, search } = splitPersistedWorkhubRoute(normalizedRoute)
+      const parsedRoute = parseWorkhubPathname(pathname, search)
+      if (parsedRoute.wsId !== workspaceId) {
+        changed = true
+        return
+      }
+
+      cleanedRouteMap[workspaceId] = normalizedRoute
+      if (normalizedRoute !== savedRoute) {
+        changed = true
+      }
+    })
+
+    if (!changed && Object.keys(cleanedRouteMap).length === Object.keys(routeMap).length) return
+    writePersistedWorkhubRouteMap(workspaceRouteMemoryStorageKey, cleanedRouteMap)
+  }, [member?.status, memberLoading, visibleWorkspaces, workspaceRouteMemoryStorageKey])
 
   useEffect(() => {
     if (!projectSelectionStorageKey || !selectedWorkspaceId) return
@@ -3175,6 +3905,13 @@ export default function WorkHubPage() {
     if (!pendingNotificationDocument) return
     if (selectedWorkspaceId !== pendingNotificationDocument.workspaceId) return
 
+    // If navigation/user selection has already moved to a different document,
+    // stop forcing the pending notification selection to avoid selection loops.
+    if (selectedDocumentId && selectedDocumentId !== pendingNotificationDocument.id) {
+      setPendingNotificationDocument(null)
+      return
+    }
+
     const targetDocument = workspaceDocumentById[pendingNotificationDocument.id]
     if (!targetDocument) return
 
@@ -3191,6 +3928,7 @@ export default function WorkHubPage() {
     setSelectedNoteProjectId(targetDocument.projectId || '')
     setSelectedTaskId('')
     setSelectedDocumentId(targetDocument.id)
+    setSelectedMoodBoardId('')
     setActiveSection('notes')
     setProjectsGroupExpanded(true)
     setSidebarCollapsed(false)
@@ -3200,6 +3938,7 @@ export default function WorkHubPage() {
   }, [
     documents,
     pendingNotificationDocument,
+    selectedDocumentId,
     selectedWorkspaceId,
     visibleProjectIds,
     workspaceDocumentById,
@@ -3217,6 +3956,15 @@ export default function WorkHubPage() {
   }, [pendingNotificationDocument, selectedDocumentId, selectedWorkspaceId, workspaceDocumentById])
 
   useEffect(() => {
+    if (!selectedMoodBoardId) return
+    if (workspaceMoodBoards.some((item) => item.id === selectedMoodBoardId)) return
+    if (activeSection === 'moodboard') {
+      setActiveSection('dashboard')
+    }
+    setSelectedMoodBoardId('')
+  }, [activeSection, selectedMoodBoardId, workspaceMoodBoards])
+
+  useEffect(() => {
     if (selectedAssigneeUid === 'all') return
     if (scopeAssignableMemberUidSet.has(selectedAssigneeUid)) return
     setSelectedAssigneeUid('all')
@@ -3229,8 +3977,8 @@ export default function WorkHubPage() {
   }, [selectedTaskId, visibleTasks])
 
   useEffect(() => {
-    if (selectedTaskStatusTab === 'all' && nonEmptyFilteredTaskStatuses.length <= 1) {
-      const fallbackStatusId = nonEmptyFilteredTaskStatuses[0]?.id || workspaceTaskStatuses[0]?.id || ''
+    if (selectedTaskStatusTab === 'all' && nonEmptyTaskStatusesForTabs.length <= 1) {
+      const fallbackStatusId = nonEmptyTaskStatusesForTabs[0]?.id || workspaceTaskStatuses[0]?.id || ''
       if (fallbackStatusId) setSelectedTaskStatusTab(fallbackStatusId)
       return
     }
@@ -3240,7 +3988,7 @@ export default function WorkHubPage() {
         setSelectedTaskStatusTab(firstStatusId)
       }
     }
-  }, [filteredTasks.length, nonEmptyFilteredTaskStatuses, selectedTaskStatusTab, workspaceTaskStatuses])
+  }, [filteredTasks.length, nonEmptyTaskStatusesForTabs, selectedTaskStatusTab, workspaceTaskStatuses])
 
   useEffect(() => {
     if (!selectedTask) {
@@ -3303,6 +4051,7 @@ export default function WorkHubPage() {
     setWorkspaceSettingsDescription(selectedWorkspaceSettings.description || '')
     setWorkspaceTreeMetaDisplayMode(selectedWorkspaceSettings.treeMetaDisplayMode || 'counts')
     setWorkspaceTaskDueDisplayMode(selectedWorkspaceSettings.taskDueDisplayMode || 'remaining')
+    setWorkspaceMoodBoardEnabled(selectedWorkspaceSettings.moodBoardEnabled !== false)
     setWorkspaceProjectColorMeaningDrafts(resolveProjectColorMeanings(
       selectedWorkspaceSettingsTemplate.id,
       selectedWorkspaceSettings.projectColorMeanings,
@@ -3582,17 +4331,21 @@ export default function WorkHubPage() {
       }
       normalizedProjectColorMeanings.push({ color, label, hint })
     }
+    const previousWorkspaceSnapshot = selectedWorkspaceSettings
+    const optimisticWorkspacePatch = {
+      name: workspaceSettingsName.trim(),
+      description: workspaceSettingsDescription.trim(),
+      treeMetaDisplayMode: workspaceTreeMetaDisplayMode,
+      taskDueDisplayMode: workspaceTaskDueDisplayMode,
+      moodBoardEnabled: workspaceMoodBoardEnabled,
+      projectColorMeanings: normalizedProjectColorMeanings,
+      accessMemberUids: normalizeMemberUids(workspaceAccessMemberUids),
+      invitedEmails: normalizeInviteEmails(workspaceInviteEmails),
+    }
+    setWorkspaces((current) => current.map((item) => (item.id === selectedWorkspaceSettings.id ? { ...item, ...optimisticWorkspacePatch } : item)))
     setBusyKey(`workspace-settings:${selectedWorkspaceSettings.id}`)
     try {
-      await updateWorkhubWorkspace(selectedWorkspaceSettings.id, {
-        name: workspaceSettingsName.trim(),
-        description: workspaceSettingsDescription.trim(),
-        treeMetaDisplayMode: workspaceTreeMetaDisplayMode,
-        taskDueDisplayMode: workspaceTaskDueDisplayMode,
-        projectColorMeanings: normalizedProjectColorMeanings,
-        accessMemberUids: normalizeMemberUids(workspaceAccessMemberUids),
-        invitedEmails: normalizeInviteEmails(workspaceInviteEmails),
-      })
+      await updateWorkhubWorkspace(selectedWorkspaceSettings.id, optimisticWorkspacePatch)
       await createWorkhubActivity({
         workspaceId: selectedWorkspaceSettings.id,
         actorUid: auth.currentUser.uid,
@@ -3604,6 +4357,7 @@ export default function WorkHubPage() {
       setWorkspaceSettingsId('')
       showToast({ type: 'success', message: 'Workspace settings updated.' })
     } catch (error) {
+      setWorkspaces((current) => current.map((item) => (item.id === previousWorkspaceSnapshot.id ? previousWorkspaceSnapshot : item)))
       const message = error instanceof Error ? error.message : 'Could not update workspace settings.'
       showToast({ type: 'error', message })
     } finally {
@@ -3622,7 +4376,7 @@ export default function WorkHubPage() {
       await deleteWorkhubWorkspace(selectedWorkspaceSettings.id)
       if (selectedWorkspaceId === selectedWorkspaceSettings.id) {
         const fallback = workspaces.find((item) => item.id !== selectedWorkspaceSettings.id)
-        setSelectedWorkspaceId(fallback?.id || '')
+        navigateToWorkspaceOverview(fallback?.id || '')
       }
       setWorkspaceSettingsId('')
       showToast({ type: 'success', message: 'Workspace deleted.' })
@@ -3635,7 +4389,9 @@ export default function WorkHubPage() {
   }
 
   function openWorkspaceSettings(workspaceId: string) {
-    setSelectedWorkspaceId(workspaceId)
+    if (workspaceId !== selectedWorkspaceId) {
+      navigateToWorkspaceOverview(workspaceId)
+    }
     setWorkspaceSettingsId(workspaceId)
   }
 
@@ -3684,21 +4440,27 @@ export default function WorkHubPage() {
       showToast({ type: 'error', message: 'Enter a valid client email.' })
       return
     }
+    const previousClientSnapshot = clients.find((item) => item.id === selectedClientId) || null
+    const optimisticClientPatch = {
+      name: trimmedName,
+      contactPerson: clientContactPersonDraft.trim(),
+      email: clientEmailDraft.trim(),
+      phone: clientPhoneDraft.trim(),
+      website: clientWebsiteDraft.trim(),
+      address: clientAddressDraft.trim(),
+      industry: clientIndustryDraft.trim(),
+      logoUrl: clientLogoUrlDraft.trim(),
+      notes: clientNotesDraft.trim(),
+    }
+    setClients((current) => current.map((item) => (item.id === selectedClientId ? { ...item, ...optimisticClientPatch } : item)))
     setBusyKey(`client:save:${selectedClientId}`)
     try {
-      await updateWorkhubClient(selectedClientId, {
-        name: trimmedName,
-        contactPerson: clientContactPersonDraft.trim(),
-        email: clientEmailDraft.trim(),
-        phone: clientPhoneDraft.trim(),
-        website: clientWebsiteDraft.trim(),
-        address: clientAddressDraft.trim(),
-        industry: clientIndustryDraft.trim(),
-        logoUrl: clientLogoUrlDraft.trim(),
-        notes: clientNotesDraft.trim(),
-      })
+      await updateWorkhubClient(selectedClientId, optimisticClientPatch)
       showToast({ type: 'success', message: 'Client details updated.' })
     } catch (error) {
+      if (previousClientSnapshot) {
+        setClients((current) => current.map((item) => (item.id === previousClientSnapshot.id ? previousClientSnapshot : item)))
+      }
       const message = error instanceof Error ? error.message : 'Could not save client details.'
       showToast({ type: 'error', message })
     } finally {
@@ -3772,7 +4534,7 @@ export default function WorkHubPage() {
       return
     }
     const extension = file.name.split('.').pop() || 'png'
-    const storagePath = `workhub-clients/${selectedWorkspaceId}/logos/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${extension}`
+    const storagePath = `workhub-clients/${selectedWorkspaceId}/logos/${crypto.randomUUID()}.${extension}`
     setBusyKey('client:logo-upload')
     try {
       const storageRef = ref(storage, storagePath)
@@ -4081,6 +4843,15 @@ export default function WorkHubPage() {
     if (updates.status && updates.status !== task.status && typeof nextUpdates.sortOrder !== 'number') {
       nextUpdates.sortOrder = getNextTaskSortOrder(tasks, selectedWorkspaceId, updates.status)
     }
+    const previousTaskSnapshot = task
+    setTasks((current) => current.map((item) => {
+      if (item.id !== task.id) return item
+      return {
+        ...item,
+        ...nextUpdates,
+        updatedAt: new Date().toISOString(),
+      }
+    }))
     try {
       await updateWorkhubTask(task.id, nextUpdates)
       const changedLabels: string[] = []
@@ -4135,6 +4906,7 @@ export default function WorkHubPage() {
         setSelectedTaskId('')
       }
     } catch (error) {
+      setTasks((current) => current.map((item) => (item.id === task.id ? previousTaskSnapshot : item)))
       const message = error instanceof Error ? error.message : 'Could not update task.'
       showToast({ type: 'error', message })
     } finally {
@@ -4237,39 +5009,42 @@ export default function WorkHubPage() {
 
   async function handleAddComment() {
     const nextCommentBody = commentText.trim()
-    if (!auth.currentUser || !selectedWorkspaceId || !selectedTask || !nextCommentBody) return
+    if (!auth.currentUser || !selectedDiscussionTarget || !nextCommentBody) return
     setBusyKey('comment')
     setCommentText('')
-    showToast({ type: 'success', message: 'Comment added.' })
     try {
-      await addWorkhubTaskComment({
-        workspaceId: selectedWorkspaceId,
-        taskId: selectedTask.id,
+      await addWorkhubComment({
+        workspaceId: selectedDiscussionTarget.workspaceId,
+        entityType: selectedDiscussionTarget.entityType,
+        entityId: selectedDiscussionTarget.entityId,
         authorUid: auth.currentUser.uid,
         body: nextCommentBody,
       })
       await createWorkhubActivity({
-        workspaceId: selectedWorkspaceId,
+        workspaceId: selectedDiscussionTarget.workspaceId,
         actorUid: auth.currentUser.uid,
         entityType: 'comment',
-        entityId: selectedTask.id,
+        entityId: selectedDiscussionTarget.entityId,
         action: 'comment',
-        message: `Commented on ${selectedTask.title}`,
-        visibility: selectedTask.visibility,
-        memberUids: selectedTask.memberUids,
+        message: `Commented on ${selectedDiscussionTarget.label}`,
+        visibility: selectedDiscussionTarget.visibility,
+        memberUids: selectedDiscussionTarget.memberUids,
       })
-      await createWorkhubNotifications({
-        workspaceId: selectedWorkspaceId,
-        actorUid: auth.currentUser.uid,
-        recipientUids: normalizeMemberUids([
-          ...resolveTaskNotificationRecipients(selectedTask),
-          ...comments.map((item) => item.authorUid),
-        ]),
-        entityType: 'comment',
-        entityId: selectedTask.id,
-        action: 'comment',
-        message: `commented on \"${selectedTask.title}\": ${nextCommentBody.slice(0, 88)}${nextCommentBody.length > 88 ? '…' : ''}`,
-      })
+      if (selectedDiscussionTarget.entityType === 'task' && selectedTask) {
+        await createWorkhubNotifications({
+          workspaceId: selectedDiscussionTarget.workspaceId,
+          actorUid: auth.currentUser.uid,
+          recipientUids: normalizeMemberUids([
+            ...resolveTaskNotificationRecipients(selectedTask),
+            ...comments.map((item) => item.authorUid),
+          ]),
+          entityType: 'comment',
+          entityId: selectedTask.id,
+          action: 'comment',
+          message: `commented on \"${selectedTask.title}\": ${nextCommentBody.slice(0, 88)}${nextCommentBody.length > 88 ? '…' : ''}`,
+        })
+      }
+      showToast({ type: 'success', message: 'Comment added.' })
     } catch (error) {
       setCommentText(nextCommentBody)
       const message = error instanceof Error ? error.message : 'Could not add comment.'
@@ -4277,6 +5052,62 @@ export default function WorkHubPage() {
     } finally {
       setBusyKey('')
     }
+  }
+
+  function handleStartCommentEdit(comment: WorkhubTaskComment) {
+    const currentUid = auth.currentUser?.uid || ''
+    if (!currentUid || comment.authorUid !== currentUid) return
+    setEditingCommentId(comment.id)
+    setEditingCommentText(comment.body || '')
+  }
+
+  function handleCancelCommentEdit() {
+    setEditingCommentId('')
+    setEditingCommentText('')
+  }
+
+  async function handleSaveCommentEdit(comment: WorkhubTaskComment) {
+    const currentUid = auth.currentUser?.uid || ''
+    if (!currentUid || comment.authorUid !== currentUid) return
+    const nextBody = editingCommentText.trim()
+    if (!nextBody || nextBody === (comment.body || '').trim()) {
+      handleCancelCommentEdit()
+      return
+    }
+    setBusyKey(`comment-edit:${comment.id}`)
+    try {
+      await updateWorkhubComment(comment.id, { body: nextBody })
+      showToast({ type: 'success', message: 'Comment updated.' })
+      handleCancelCommentEdit()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not update comment.'
+      showToast({ type: 'error', message })
+    } finally {
+      setBusyKey('')
+    }
+  }
+
+  function renderDiscussionCard() {
+    return (
+      <WorkhubDiscussionCard
+        comments={comments}
+        currentUid={auth.currentUser?.uid || ''}
+        memberByUid={memberByUid}
+        showAuthorAvatar
+        formatTime={formatTime}
+        editingId={editingCommentId}
+        editingText={editingCommentText}
+        onEditStart={handleStartCommentEdit}
+        onEditChange={setEditingCommentText}
+        onEditCancel={handleCancelCommentEdit}
+        onEditSave={handleSaveCommentEdit}
+        editBusyKey={busyKey}
+        composerText={commentText}
+        onComposerTextChange={setCommentText}
+        onComposerSend={handleAddComment}
+        composerBusy={busyKey === 'comment'}
+      />
+    )
   }
 
   async function handleMemberModeration(targetUid: string, status: 'approved' | 'suspended', role?: 'member' | 'manager' | 'admin') {
@@ -4351,29 +5182,31 @@ export default function WorkHubPage() {
     const memberUids = accessVisibility === 'restricted'
       ? normalizeMemberUids(accessMemberUids.length > 0 ? accessMemberUids : [selectedAccessProject.createdBy])
       : []
+    const previousProjectSnapshot = selectedAccessProject
+    const optimisticProjectPatch = {
+      name: settingsProjectName.trim(),
+      description: settingsProjectDescription.trim(),
+      color: settingsProjectColor,
+      parentProjectId: settingsProjectParentId || null,
+      projectDeadline: settingsProjectDeadline,
+      projectType: settingsProjectType,
+      submissionTime: settingsProjectType === 'tender' ? settingsProjectSubmissionTime : '',
+      priority: settingsProjectPriority,
+      valueAmount: settingsValueAmount || 0,
+      valueCurrency: settingsValueCurrency,
+      mainPanelView: settingsProjectMainPanelView,
+      taskItemDisplayMode: isFolderContainer ? settingsProjectTaskItemDisplayMode : (selectedAccessProject.taskItemDisplayMode || 'inherit'),
+      clientId: settingsProjectClientId,
+      storageMethod: settingsStorageMethod,
+      visibility: accessVisibility,
+      memberUids,
+    }
+    setProjects((current) => current.map((item) => (item.id === selectedAccessProject.id ? { ...item, ...optimisticProjectPatch } : item)))
     setBusyKey(`access:${selectedAccessProject.id}`)
     try {
-      await updateWorkhubProject(selectedAccessProject.id, {
-        name: settingsProjectName.trim(),
-        description: settingsProjectDescription.trim(),
-        color: settingsProjectColor,
-        parentProjectId: settingsProjectParentId || null,
-        projectDeadline: settingsProjectDeadline,
-        projectType: settingsProjectType,
-        submissionTime: settingsProjectType === 'tender' ? settingsProjectSubmissionTime : '',
-        priority: settingsProjectPriority,
-        valueAmount: settingsValueAmount || 0,
-        valueCurrency: settingsValueCurrency,
-        mainPanelView: settingsProjectMainPanelView,
-        taskItemDisplayMode: isFolderContainer ? settingsProjectTaskItemDisplayMode : (selectedAccessProject.taskItemDisplayMode || 'inherit'),
-        clientId: settingsProjectClientId,
-        storageMethod: settingsStorageMethod,
-        visibility: accessVisibility,
-        memberUids,
-      })
+      await updateWorkhubProject(selectedAccessProject.id, optimisticProjectPatch)
       setSelectedProjectId(selectedAccessProject.id)
       setSelectedNoteProjectId(selectedAccessProject.id)
-      setActiveSection(settingsProjectMainPanelView)
       await createWorkhubActivity({
         workspaceId: selectedWorkspaceId,
         actorUid: auth.currentUser.uid,
@@ -4398,6 +5231,7 @@ export default function WorkHubPage() {
       setProjectAccessDialogId('')
       showToast({ type: 'success', message: `${entityLabel} settings updated.` })
     } catch (error) {
+      setProjects((current) => current.map((item) => (item.id === previousProjectSnapshot.id ? previousProjectSnapshot : item)))
       const message = error instanceof Error ? error.message : `Could not update ${entityLabelLower} settings.`
       showToast({ type: 'error', message })
     } finally {
@@ -4521,9 +5355,11 @@ export default function WorkHubPage() {
       return
     }
 
+    const previousWorkspaceSnapshot = workspaces.find((item) => item.id === selectedWorkspaceId) || null
+    const updatedStatuses = statusDrafts.map((item) => ({ ...item, label: item.label.trim() }))
+    setWorkspaces((current) => current.map((item) => (item.id === selectedWorkspaceId ? { ...item, taskStatuses: updatedStatuses } : item)))
     setBusyKey('status')
     try {
-      const updatedStatuses = statusDrafts.map((item) => ({ ...item, label: item.label.trim() }))
       await updateWorkhubWorkspace(selectedWorkspaceId, { taskStatuses: updatedStatuses })
       await createWorkhubActivity({
         workspaceId: selectedWorkspaceId,
@@ -4542,6 +5378,9 @@ export default function WorkHubPage() {
       showToast({ type: 'success', message: 'Task statuses updated.' })
       closeStatusDialog()
     } catch (error) {
+      if (previousWorkspaceSnapshot) {
+        setWorkspaces((current) => current.map((item) => (item.id === previousWorkspaceSnapshot.id ? previousWorkspaceSnapshot : item)))
+      }
       const message = error instanceof Error ? error.message : 'Could not update task statuses.'
       showToast({ type: 'error', message })
     } finally {
@@ -4776,6 +5615,7 @@ export default function WorkHubPage() {
     setSelectedNoteProjectId(document.projectId || '')
     setSelectedTaskId('')
     setSelectedDocumentId(document.id)
+    setSelectedMoodBoardId('')
     setActiveSection('notes')
     setProjectsGroupExpanded(true)
     setSidebarCollapsed(false)
@@ -4784,15 +5624,17 @@ export default function WorkHubPage() {
 
   const handleMobileWorkspaceChange = useCallback((workspaceId: string) => {
     setGearMenuOpen(false)
-    setSelectedWorkspaceId(workspaceId)
+    if (workspaceId !== selectedWorkspaceId) {
+      navigateToRememberedWorkspaceRoute(workspaceId)
+    }
     setMobileWorkspacePanelOpen(true)
-  }, [setSelectedWorkspaceId])
+  }, [navigateToRememberedWorkspaceRoute, selectedWorkspaceId])
 
   const handleMobileWorkspaceOverviewSelect = useCallback(() => {
     setGearMenuOpen(false)
-    openWorkspaceOverview()
+    navigateToWorkspaceSection('dashboard')
     setMobileWorkspacePanelOpen(true)
-  }, [openWorkspaceOverview])
+  }, [navigateToWorkspaceSection])
 
   const handleMobileProjectSelect = useCallback((projectId: string) => {
     setGearMenuOpen(false)
@@ -4805,6 +5647,37 @@ export default function WorkHubPage() {
     handleSelectDocumentFromTree(documentId)
     setMobileWorkspacePanelOpen(true)
   }, [handleSelectDocumentFromTree])
+
+  const handleSelectMoodBoardFromTree = useCallback((boardId: string) => {
+    const board = workspaceMoodBoards.find((item) => item.id === boardId)
+    if (board?.entityType === 'project' && board.entityId) {
+      const lineage = collectProjectLineage(board.entityId, workspaceProjectById)
+      if (lineage.length > 0) {
+        setExpandedProjectIds((current) => Array.from(new Set([...current, ...lineage])))
+      }
+      if (visibleProjectIds.has(board.entityId)) {
+        setSelectedProjectId(board.entityId)
+      }
+      setSelectedNoteProjectId(board.entityId)
+    }
+    if (board?.entityType === 'workspace') {
+      setSelectedProjectId('all')
+      setSelectedNoteProjectId('')
+    }
+    setSelectedMoodBoardId(boardId)
+    setSelectedDocumentId('')
+    setSelectedTaskId('')
+    setActiveSection('moodboard')
+    setProjectsGroupExpanded(true)
+    setSidebarCollapsed(false)
+    closeActionMenu()
+  }, [closeActionMenu, visibleProjectIds, workspaceMoodBoards, workspaceProjectById])
+
+  const handleMobileMoodBoardSelect = useCallback((boardId: string) => {
+    setGearMenuOpen(false)
+    handleSelectMoodBoardFromTree(boardId)
+    setMobileWorkspacePanelOpen(true)
+  }, [handleSelectMoodBoardFromTree])
 
   function resolveTaskNotificationRecipients(task: WorkhubTask, updates?: Partial<WorkhubTask>) {
     const nextVisibility = updates?.visibility || task.visibility
@@ -5000,51 +5873,41 @@ export default function WorkHubPage() {
     workspaceDisplayNameById[workspace.id] = `${resolveWorkhubWorkspaceTemplateIcon(templateId)} ${workspace.name}`
   })
 
-  const selectedWorkspaceDisplayName = selectedWorkspace
-    ? workspaceDisplayNameById[selectedWorkspace.id] || selectedWorkspace.name
-    : ''
-
-  const mobileWorkflowView: 'dashboard' | 'editor' | 'workhub' = activeSection === 'dashboard'
-    ? 'dashboard'
-    : activeSection === 'notes'
-      ? 'editor'
-      : 'workhub'
-
   const workhubHeaderTabs = [
     {
       id: 'home',
       section: 'home' as const,
       icon: '⌂',
       label: 'Home',
-      onClick: () => setActiveSection('home'),
+      onClick: () => navigateToWorkspaceSection('home'),
     },
     {
       id: 'tasks',
       section: 'tasks' as const,
       icon: '✓',
       label: 'Tasks',
-      onClick: () => setActiveSection('tasks'),
+      onClick: () => navigateToWorkspaceSection('tasks'),
     },
     {
       id: 'notes',
       section: 'notes' as const,
       icon: '📝',
       label: 'Editor',
-      onClick: () => setActiveSection('notes'),
+      onClick: () => navigateToWorkspaceSection('notes'),
     },
     {
       id: 'dashboard',
       section: 'dashboard' as const,
       icon: '📊',
       label: 'Dashboard',
-      onClick: openWorkspaceOverview,
+      onClick: () => navigateToWorkspaceSection('dashboard'),
     },
     {
       id: 'clients',
       section: 'clients' as const,
       icon: '🏢',
       label: 'Clients',
-      onClick: () => setActiveSection('clients'),
+      onClick: () => navigateToWorkspaceSection('clients'),
     },
     ...(isPrivilegedMember
       ? [{
@@ -5052,36 +5915,11 @@ export default function WorkHubPage() {
           section: 'users' as const,
           icon: '👥',
           label: 'Users',
-          onClick: () => setActiveSection('users'),
+          onClick: () => navigateToWorkspaceSection('users'),
         }]
       : []),
   ]
-
-  const mobileTabOrderByWorkflow: Record<'dashboard' | 'editor' | 'workhub', string[]> = {
-    dashboard: ['dashboard', 'tasks', 'notes', 'home', 'clients', 'users'],
-    editor: ['notes', 'tasks', 'dashboard', 'home', 'clients', 'users'],
-    workhub: ['home', 'tasks', 'dashboard', 'notes', 'clients', 'users'],
-  }
-
-  const mobileOrderedHeaderTabs = mobileTabOrderByWorkflow[mobileWorkflowView]
-    .map((id) => workhubHeaderTabs.find((tab) => tab.id === id))
-    .filter((tab): tab is (typeof workhubHeaderTabs)[number] => Boolean(tab))
-
-  const visibleHeaderTabs = isMobileWorkhubLayout
-    ? (() => {
-      if (!isPrivilegedMember) {
-        return mobileOrderedHeaderTabs.slice(0, 5)
-      }
-
-      const usersTab = mobileOrderedHeaderTabs.find((tab) => tab.id === 'users')
-      if (!usersTab) {
-        return mobileOrderedHeaderTabs.slice(0, 5)
-      }
-
-      const mobileTabsWithoutUsers = mobileOrderedHeaderTabs.filter((tab) => tab.id !== 'users')
-      return [...mobileTabsWithoutUsers.slice(0, 4), usersTab]
-    })()
-    : workhubHeaderTabs
+  const accountMenuNavigationTabs = workhubHeaderTabs.filter((tab) => !['home', 'tasks', 'notes', 'dashboard'].includes(tab.id))
 
   const workspaceTemplateCreateActionsBase: WorkhubWorkspaceTemplateCreateAction[] = selectedWorkspaceId
     ? resolveWorkspaceTemplateCreateActions(selectedWorkspaceTemplateId)
@@ -5165,7 +6003,11 @@ export default function WorkHubPage() {
                         key={item.id}
                         type="button"
                         className={`workhub-tab workhub-workspace-tab${selectedWorkspaceId === item.id ? ' is-active' : ''}`}
-                        onClick={() => setSelectedWorkspaceId(item.id)}
+                        onClick={() => {
+                          if (item.id !== selectedWorkspaceId) {
+                            navigateToRememberedWorkspaceRoute(item.id)
+                          }
+                        }}
                         title={workspaceDisplayName}
                       >
                         {workspaceDisplayName}
@@ -5262,7 +6104,7 @@ export default function WorkHubPage() {
                       <span>{accountEmail || 'No email'}</span>
                     </div>
                   </div>
-                  {visibleHeaderTabs.map((tab) => (
+                  {accountMenuNavigationTabs.map((tab) => (
                     <button
                       key={tab.id}
                       type="button"
@@ -5424,16 +6266,22 @@ export default function WorkHubPage() {
                         selectedProjectId={selectedProjectId}
                         expandedProjectIds={expandedProjectIds}
                         directTaskCountByProjectId={workspaceTaskCountByProjectId}
+                        taskProgressByProjectId={workspaceTaskProgressByProjectId}
                         projectIntentById={projectIntentById}
                         projectIntentIconById={projectIntentIconById}
-                        selectedDocumentId={selectedDocumentId}
+                        selectedDocumentId={activeSection === 'notes' ? selectedDocumentId : ''}
+                        selectedMoodBoardId={activeSection === 'moodboard' ? selectedMoodBoardId : ''}
                         documentsByProjectId={workspaceDocumentsByProjectId}
+                        moodBoardsByProjectId={workspaceMoodBoardsByProjectId}
                         isPrivilegedMember={isPrivilegedMember}
                         onSelectProject={(projectId) => {
                           handleMobileProjectSelect(projectId)
                         }}
                         onSelectDocument={(documentId) => {
                           handleMobileDocumentSelect(documentId)
+                        }}
+                        onSelectMoodBoard={(boardId) => {
+                          handleMobileMoodBoardSelect(boardId)
                         }}
                         onToggleExpansion={toggleProjectExpansion}
                         onOpenActionMenu={handleProjectActionMenu}
@@ -5453,10 +6301,10 @@ export default function WorkHubPage() {
                           <span className="workhub-tree-group-caret">{documentsGroupExpanded ? '▾' : '▸'}</span>
                           <strong>Workspace docs</strong>
                         </span>
-                        <small>{workspaceLevelDocuments.length} item{workspaceLevelDocuments.length === 1 ? '' : 's'}</small>
+                        <small>{workspaceLevelDocuments.length + (selectedWorkspace?.moodBoardEnabled !== false ? workspaceLevelMoodBoards.length : 0)} item{workspaceLevelDocuments.length + (selectedWorkspace?.moodBoardEnabled !== false ? workspaceLevelMoodBoards.length : 0) === 1 ? '' : 's'}</small>
                       </button>
                       {documentsGroupExpanded && (
-                        workspaceLevelDocuments.length > 0 ? (
+                        workspaceLevelDocuments.length > 0 || (selectedWorkspace?.moodBoardEnabled !== false && workspaceLevelMoodBoards.length > 0) ? (
                           <div className="workhub-tree-docs-list">
                             {workspaceLevelDocuments.map((item) => {
                               const isActiveDocument = activeSection === 'notes' && selectedDocumentId === item.id
@@ -5472,6 +6320,23 @@ export default function WorkHubPage() {
                                 >
                                   <span className="workhub-tree-doc-item-title">📝 {item.title}</span>
                                   <span className="workhub-tree-doc-item-meta">Workspace document</span>
+                                </button>
+                              )
+                            })}
+                            {selectedWorkspace?.moodBoardEnabled !== false && workspaceLevelMoodBoards.map((item) => {
+                              const isActiveMoodBoard = activeSection === 'moodboard' && selectedMoodBoardId === item.id
+                              return (
+                                <button
+                                  key={item.id}
+                                  type="button"
+                                  className={`workhub-tree-doc-item${isActiveMoodBoard ? ' is-active' : ''}`}
+                                  onClick={() => {
+                                    handleMobileMoodBoardSelect(item.id)
+                                  }}
+                                  title={item.title}
+                                >
+                                  <span className="workhub-tree-doc-item-title">🎨 {item.title}</span>
+                                  <span className="workhub-tree-doc-item-meta">Workspace mood board</span>
                                 </button>
                               )
                             })}
@@ -5513,7 +6378,7 @@ export default function WorkHubPage() {
                   <div className="workhub-tree-overview-row">
                     <button
                       className={`workhub-tree-overview${selectedProjectId === 'all' && activeSection === 'dashboard' ? ' is-active' : ''}`}
-                      onClick={openWorkspaceOverview}
+                      onClick={() => navigateToWorkspaceSection('dashboard')}
                     >
                       Workspace overview
                     </button>
@@ -5554,6 +6419,7 @@ export default function WorkHubPage() {
                 <div className="workhub-tree-scroll">
                   {groupedProjectsWorkspace ? (
                     <>
+                      {selectedWorkspaceScopeType !== 'finance' && (
                       <div className="workhub-tree-group">
                         <button
                           type="button"
@@ -5575,13 +6441,17 @@ export default function WorkHubPage() {
                                 selectedProjectId={selectedProjectId}
                                 expandedProjectIds={expandedProjectIds}
                                 directTaskCountByProjectId={workspaceTaskCountByProjectId}
+                                taskProgressByProjectId={workspaceTaskProgressByProjectId}
                                 projectIntentById={projectIntentById}
                                 projectIntentIconById={projectIntentIconById}
-                                selectedDocumentId={selectedDocumentId}
+                                selectedDocumentId={activeSection === 'notes' ? selectedDocumentId : ''}
+                                selectedMoodBoardId={activeSection === 'moodboard' ? selectedMoodBoardId : ''}
                                 documentsByProjectId={workspaceDocumentsByProjectId}
+                                moodBoardsByProjectId={workspaceMoodBoardsByProjectId}
                                 isPrivilegedMember={isPrivilegedMember}
                                 onSelectProject={handleSelectProject}
                                 onSelectDocument={handleSelectDocumentFromTree}
+                                onSelectMoodBoard={handleSelectMoodBoardFromTree}
                                 onToggleExpansion={toggleProjectExpansion}
                                 onOpenActionMenu={handleProjectActionMenu}
                                 onOpenSettings={openProjectSettingsDialog}
@@ -5592,6 +6462,7 @@ export default function WorkHubPage() {
                           )
                         )}
                       </div>
+                      )}
                       {localWorkspaceRoots.length > 0 && (
                         <div className="workhub-tree-group-body">
                           <ProjectTreeNodes
@@ -5600,13 +6471,17 @@ export default function WorkHubPage() {
                             selectedProjectId={selectedProjectId}
                             expandedProjectIds={expandedProjectIds}
                             directTaskCountByProjectId={workspaceTaskCountByProjectId}
+                            taskProgressByProjectId={workspaceTaskProgressByProjectId}
                             projectIntentById={projectIntentById}
                             projectIntentIconById={projectIntentIconById}
-                            selectedDocumentId={selectedDocumentId}
+                            selectedDocumentId={activeSection === 'notes' ? selectedDocumentId : ''}
+                            selectedMoodBoardId={activeSection === 'moodboard' ? selectedMoodBoardId : ''}
                             documentsByProjectId={workspaceDocumentsByProjectId}
+                            moodBoardsByProjectId={workspaceMoodBoardsByProjectId}
                             isPrivilegedMember={isPrivilegedMember}
                             onSelectProject={handleSelectProject}
                             onSelectDocument={handleSelectDocumentFromTree}
+                            onSelectMoodBoard={handleSelectMoodBoardFromTree}
                             onToggleExpansion={toggleProjectExpansion}
                             onOpenActionMenu={handleProjectActionMenu}
                             onOpenSettings={openProjectSettingsDialog}
@@ -5621,13 +6496,17 @@ export default function WorkHubPage() {
                       selectedProjectId={selectedProjectId}
                       expandedProjectIds={expandedProjectIds}
                       directTaskCountByProjectId={workspaceTaskCountByProjectId}
+                      taskProgressByProjectId={workspaceTaskProgressByProjectId}
                       projectIntentById={projectIntentById}
                       projectIntentIconById={projectIntentIconById}
-                      selectedDocumentId={selectedDocumentId}
+                      selectedDocumentId={activeSection === 'notes' ? selectedDocumentId : ''}
+                      selectedMoodBoardId={activeSection === 'moodboard' ? selectedMoodBoardId : ''}
                       documentsByProjectId={workspaceDocumentsByProjectId}
+                      moodBoardsByProjectId={workspaceMoodBoardsByProjectId}
                       isPrivilegedMember={isPrivilegedMember}
                       onSelectProject={handleSelectProject}
                       onSelectDocument={handleSelectDocumentFromTree}
+                      onSelectMoodBoard={handleSelectMoodBoardFromTree}
                       onToggleExpansion={toggleProjectExpansion}
                       onOpenActionMenu={handleProjectActionMenu}
                       onOpenSettings={openProjectSettingsDialog}
@@ -5656,10 +6535,10 @@ export default function WorkHubPage() {
                         <span className="workhub-tree-group-caret">{documentsGroupExpanded ? '▾' : '▸'}</span>
                         <strong>Workspace docs</strong>
                       </span>
-                      <small>{workspaceLevelDocuments.length} item{workspaceLevelDocuments.length === 1 ? '' : 's'}</small>
+                      <small>{workspaceLevelDocuments.length + (selectedWorkspace?.moodBoardEnabled !== false ? workspaceLevelMoodBoards.length : 0)} item{workspaceLevelDocuments.length + (selectedWorkspace?.moodBoardEnabled !== false ? workspaceLevelMoodBoards.length : 0) === 1 ? '' : 's'}</small>
                     </button>
                     {documentsGroupExpanded && (
-                      workspaceLevelDocuments.length > 0 ? (
+                      workspaceLevelDocuments.length > 0 || (selectedWorkspace?.moodBoardEnabled !== false && workspaceLevelMoodBoards.length > 0) ? (
                         <div className="workhub-tree-docs-list">
                           {workspaceLevelDocuments.map((item) => {
                             const isActiveDocument = activeSection === 'notes' && selectedDocumentId === item.id
@@ -5673,6 +6552,21 @@ export default function WorkHubPage() {
                               >
                                 <span className="workhub-tree-doc-item-title">📝 {item.title}</span>
                                 <span className="workhub-tree-doc-item-meta">Workspace document</span>
+                              </button>
+                            )
+                          })}
+                          {selectedWorkspace?.moodBoardEnabled !== false && workspaceLevelMoodBoards.map((item) => {
+                            const isActiveMoodBoard = activeSection === 'moodboard' && selectedMoodBoardId === item.id
+                            return (
+                              <button
+                                key={item.id}
+                                type="button"
+                                className={`workhub-tree-doc-item${isActiveMoodBoard ? ' is-active' : ''}`}
+                                onClick={() => handleSelectMoodBoardFromTree(item.id)}
+                                title={item.title}
+                              >
+                                <span className="workhub-tree-doc-item-title">🎨 {item.title}</span>
+                                <span className="workhub-tree-doc-item-meta">Workspace mood board</span>
                               </button>
                             )
                           })}
@@ -5691,16 +6585,11 @@ export default function WorkHubPage() {
           <section className="workhub-main-stage">
 
             {activeSection === 'dashboard' && (
-              <main className="workhub-section-stack">
+              <main className="workhub-section-stack is-dashboard">
                 <section className="workhub-panel">
                   <div className="workhub-panel-head compact">
                     <div>
-                      <h2>{selectedProject ? selectedProjectDisplayName : selectedWorkspaceDisplayName || 'Workspace overview'}</h2>
-                      <p>
-                        {selectedProject
-                          ? selectedProject.description || 'This category/project is ready for nested sub-projects, notes, and tasks.'
-                          : selectedWorkspace?.description || 'Select a category from the tree or create a new one to start organizing nested projects.'}
-                      </p>
+                      <h2>{selectedDashboardOverviewTitle}</h2>
                     </div>
                     <span className="workhub-badge">{selectedProject ? `${selectedBranchChildProjects.length} direct children` : `${visibleWorkspaceProjects.length} visible projects`}</span>
                   </div>
@@ -5710,10 +6599,11 @@ export default function WorkHubPage() {
                     <div className="workhub-summary-tile"><strong>{taskCounts.urgent}</strong><span>Urgent</span></div>
                     <div className="workhub-summary-tile"><strong>{restrictedProjectsCount}</strong><span>Restricted projects</span></div>
                   </div>
+                  {isPrivilegedMember && (
                   <div className="workhub-summary-strip">
                     <div className="workhub-summary-tile">
                       <strong>{selectedScopeMonetaryTotalText}</strong>
-                      <span>{selectedProject ? 'Branch total value' : 'Workspace total value'}</span>
+                      <span>{selectedProject ? `${pluralizeDashboardSubjectLabel(selectedDashboardFocusMeta.subjectLabel)} summary value` : 'Workspace total value'}</span>
                     </div>
                     <div className="workhub-summary-tile">
                       <strong>{selectedScopeLeadValueText}</strong>
@@ -5732,18 +6622,19 @@ export default function WorkHubPage() {
                       <span>{selectedProject ? 'Sub-marketing value' : 'Marketing value'}</span>
                     </div>
                   </div>
+                  )}
                   {!isMobileWorkhubLayout && (
                     <div className="workhub-home-actions">
-                      {selectedProject && <button className="workhub-primary-btn" onClick={() => openCreateProjectDialog(selectedProject.id)}>{`${workspaceProjectActionIcon} Add child project`}</button>}
+                      {selectedProject && <button className="workhub-primary-btn" onClick={() => openCreateProjectDialog(selectedProject.id)}>{`${selectedDashboardFocusMeta.icon} ${selectedDashboardFocusMeta.actionLabel}`}</button>}
                       {selectedProject && <button className="workhub-ghost-btn" onClick={() => openCreateTaskDialog(selectedProject.id)}>✅ Add task</button>}
-                      <button className="workhub-ghost-btn" onClick={() => setActiveSection('home')}>Open home</button>
+                      <button className="workhub-ghost-btn" onClick={() => navigateToWorkspaceSection('home')}>Open workspace home</button>
                     </div>
                   )}
                   {isMobileWorkhubLayout && (
                     <div className="workhub-mobile-dashboard-actions">
-                      {selectedProject && <button className="workhub-primary-btn" onClick={() => openCreateProjectDialog(selectedProject.id)}>{`${workspaceProjectActionIcon} Add child project`}</button>}
+                      {selectedProject && <button className="workhub-primary-btn" onClick={() => openCreateProjectDialog(selectedProject.id)}>{`${selectedDashboardFocusMeta.icon} ${selectedDashboardFocusMeta.actionLabel}`}</button>}
                       {selectedProject && <button className="workhub-ghost-btn" onClick={() => openCreateTaskDialog(selectedProject.id)}>✅ Add task</button>}
-                      <button className="workhub-ghost-btn" onClick={() => setActiveSection('home')}>Open home</button>
+                      <button className="workhub-ghost-btn" onClick={() => navigateToWorkspaceSection('home')}>Open workspace home</button>
                     </div>
                   )}
                   {selectedProjectId === 'all' && (
@@ -5891,8 +6782,7 @@ export default function WorkHubPage() {
                 <section className="workhub-panel">
                   <div className="workhub-panel-head compact">
                     <div>
-                      <h2>{selectedProject ? 'Sub-projects' : 'Top-level categories'}</h2>
-                      <p>{selectedProject ? 'Children of the selected project/category.' : 'These are the main categories in your workspace tree.'}</p>
+                      <h2>{selectedDashboardChildrenTitle}</h2>
                     </div>
                   </div>
                   <div className="workhub-project-card-grid">
@@ -6133,11 +7023,11 @@ export default function WorkHubPage() {
                         ➕ New client
                       </button>
                       {selectedClientId === '__new__' ? (
-                        <button className="workhub-primary-btn" onClick={() => { void handleCreateClientFromManager() }} disabled={busyKey === 'client:create'}>
+                        <button type="button" className="workhub-primary-btn" onClick={() => { void handleCreateClientFromManager() }} disabled={busyKey === 'client:create'}>
                           {busyKey === 'client:create' ? 'Creating…' : '🏢 Create client'}
                         </button>
                       ) : (
-                        <button className="workhub-primary-btn" onClick={() => { void handleSaveClientDetails() }} disabled={!selectedClientId || busyKey === `client:save:${selectedClientId}`}>
+                        <button type="button" className="workhub-primary-btn" onClick={() => { void handleSaveClientDetails() }} disabled={!selectedClientId || busyKey === `client:save:${selectedClientId}`}>
                           {busyKey === `client:save:${selectedClientId}` ? 'Saving…' : 'Save client'}
                         </button>
                       )}
@@ -6262,6 +7152,71 @@ export default function WorkHubPage() {
             formatTime={formatTime}
             openDocumentCreateDialog={openDocumentCreateDialog}
             isMobileLayout={isMobileWorkhubLayout}
+            discussionComments={comments}
+            discussionText={commentText}
+            onDiscussionTextChange={setCommentText}
+            onDiscussionSend={handleAddComment}
+            discussionBusy={busyKey === 'comment'}
+            discussionEditingId={editingCommentId}
+            discussionEditingText={editingCommentText}
+            onDiscussionEditStart={handleStartCommentEdit}
+            onDiscussionEditChange={setEditingCommentText}
+            onDiscussionEditCancel={handleCancelCommentEdit}
+            onDiscussionEditSave={handleSaveCommentEdit}
+            discussionEditBusyKey={busyKey}
+            currentUid={auth.currentUser?.uid || ''}
+          />
+        )}
+
+        {activeSection === 'moodboard' && (
+          <MoodBoardPanel
+            board={activeMoodBoard}
+            entityLabel={
+              activeMoodBoard?.entityType === 'project'
+                ? (workspaceProjectById[activeMoodBoard.entityId]?.name || 'Project')
+                : (selectedWorkspace?.name || 'Workspace')
+            }
+            workspaceProjectById={workspaceProjectById}
+            currentUid={currentUid}
+            canEdit={isPrivilegedMember}
+            memberByUid={memberByUid}
+            formatTime={formatTime}
+            busyKey={busyKey}
+            onCreateBoard={async (title) => {
+              if (!selectedWorkspaceId) return null
+              const id = await createWorkhubMoodBoard({
+                workspaceId: selectedWorkspaceId,
+                entityType: activeMoodBoard?.entityType ?? 'workspace',
+                entityId: activeMoodBoard?.entityId ?? selectedWorkspaceId,
+                title,
+                createdBy: currentUid,
+              })
+              setSelectedMoodBoardId(id)
+              return id
+            }}
+            onUploadImage={async (boardId, file) => {
+              const ext = file.name.split('.').pop() ?? 'jpg'
+              const storagePath = `workhub-moodboards/${selectedWorkspaceId}/${boardId}/${crypto.randomUUID()}.${ext}`
+              const storageRef = ref(storage, storagePath)
+              await uploadBytes(storageRef, file, { contentType: file.type || 'application/octet-stream' })
+              return await getDownloadURL(storageRef)
+            }}
+            onBoardDeleted={() => {
+              setSelectedMoodBoardId('')
+              setActiveSection('dashboard')
+            }}
+            discussionComments={comments}
+            discussionText={commentText}
+            onDiscussionTextChange={setCommentText}
+            onDiscussionSend={handleAddComment}
+            discussionBusy={busyKey === 'comment'}
+            discussionEditingId={editingCommentId}
+            discussionEditingText={editingCommentText}
+            onDiscussionEditStart={handleStartCommentEdit}
+            onDiscussionEditChange={setEditingCommentText}
+            onDiscussionEditCancel={handleCancelCommentEdit}
+            onDiscussionEditSave={handleSaveCommentEdit}
+            discussionEditBusyKey={busyKey}
           />
         )}
 
@@ -6317,8 +7272,9 @@ export default function WorkHubPage() {
               })()}
               <div className="workhub-status-tabs">
                 {(() => {
-                  const visibleStatusTabs = nonEmptyFilteredTaskStatuses
+                  const visibleStatusTabs = nonEmptyTaskStatusesForTabs
                   const showAllTab = visibleStatusTabs.length > 1
+                  const allTaskCount = taskFilterBaseTasks.length
 
                   return (
                     <>
@@ -6330,21 +7286,24 @@ export default function WorkHubPage() {
                           data-status-color="backlog"
                           style={{ ['--status-color' as string]: '#6b7280' }}
                         >
-                          All
+                          {`All (${allTaskCount})`}
                         </button>
                       )}
-                      {visibleStatusTabs.map((status) => (
-                        <button
-                          key={status.id}
-                          type="button"
-                          className={`workhub-status-tab${selectedTaskStatusTab === status.id ? ' is-active' : ''}`}
-                          onClick={() => setSelectedTaskStatusTab(status.id)}
-                          data-status-color={status.id}
-                          style={{ ['--status-color' as string]: status.color }}
-                        >
-                          {status.label}
-                        </button>
-                      ))}
+                      {visibleStatusTabs.map((status) => {
+                        const statusTaskCount = (taskFilterBaseTasksByStatus[status.id] || []).length
+                        return (
+                          <button
+                            key={status.id}
+                            type="button"
+                            className={`workhub-status-tab${selectedTaskStatusTab === status.id ? ' is-active' : ''}`}
+                            onClick={() => setSelectedTaskStatusTab(status.id)}
+                            data-status-color={status.id}
+                            style={{ ['--status-color' as string]: status.color }}
+                          >
+                            {`${status.label} (${statusTaskCount})`}
+                          </button>
+                        )
+                      })}
                     </>
                   )
                 })()}
@@ -6546,63 +7505,55 @@ export default function WorkHubPage() {
                     </div>
                   )}
                   <div className="workhub-detail-card">
+                    {!isMobileWorkhubLayout && (
+                      <div className="workhub-detail-card-head">
+                        <strong>Task details</strong>
+                        <div className="workhub-detail-card-head-actions">
+                          <span>Editable fields</span>
+                          <button
+                            type="button"
+                            className="workhub-detail-delete-task-btn"
+                            title="Delete task"
+                            onClick={() => setTaskDeleteConfirmOpen(true)}
+                          >
+                            🗑 Delete task
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     <div className="workhub-detail-icon-row">
                       <div className="workhub-detail-icon-wrap">
                         <button
                           type="button"
                           className="workhub-detail-icon-btn"
                           title={`Status: ${selectedTask.status}`}
-                          onClick={() => setDetailMenuOpen((current) => current === 'status' ? '' : 'status')}
+                          onClick={(e) => {
+                            const rect = e.currentTarget.getBoundingClientRect()
+                            if (detailMenuOpen === 'status') { setDetailMenuOpen(''); setDetailMenuCoords(null) }
+                            else { setDetailMenuOpen('status'); setDetailMenuCoords({ top: rect.bottom + 4, left: rect.left, right: window.innerWidth - rect.right }) }
+                          }}
                         >
-                          {getTaskStatusIcon(selectedTask.status)}
+                          <span className="workhub-detail-chip-label">Status</span>
+                          <span className="workhub-detail-chip-value">{workspaceTaskStatuses.find((value) => value.id === selectedTask.status)?.label || selectedTask.status}</span>
+                          <span className="workhub-detail-chip-edit" aria-hidden="true">▾</span>
                         </button>
-                        {detailMenuOpen === 'status' && (
-                          <div className="workhub-detail-icon-menu">
-                            {workspaceTaskStatuses.map((value) => (
-                              <button
-                                key={value.id}
-                                type="button"
-                                className={selectedTask.status === value.id ? 'is-active' : ''}
-                                onClick={() => {
-                                  void handleTaskUpdate(selectedTask, { status: value.id as WorkhubTaskStatus })
-                                  setDetailMenuOpen('')
-                                }}
-                              >
-                                <span>{getTaskStatusIcon(value.id)}</span>
-                                <span>{value.label}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
                       </div>
 
                       <div className="workhub-detail-icon-wrap">
                         <button
                           type="button"
-                          className={`workhub-detail-icon-btn workhub-priority-indicator priority-${selectedTask.priority}`}
+                          className="workhub-detail-icon-btn"
                           title={`Priority: ${PRIORITY_LABELS[selectedTask.priority]}`}
-                          onClick={() => setDetailMenuOpen((current) => current === 'priority' ? '' : 'priority')}
+                          onClick={(e) => {
+                            const rect = e.currentTarget.getBoundingClientRect()
+                            if (detailMenuOpen === 'priority') { setDetailMenuOpen(''); setDetailMenuCoords(null) }
+                            else { setDetailMenuOpen('priority'); setDetailMenuCoords({ top: rect.bottom + 4, left: rect.left, right: window.innerWidth - rect.right }) }
+                          }}
                         >
-                          {getPriorityIcon(selectedTask.priority)}
+                          <span className="workhub-detail-chip-label">Priority</span>
+                          <span className="workhub-detail-chip-value">{PRIORITY_LABELS[selectedTask.priority]}</span>
+                          <span className="workhub-detail-chip-edit" aria-hidden="true">▾</span>
                         </button>
-                        {detailMenuOpen === 'priority' && (
-                          <div className="workhub-detail-icon-menu">
-                            {(Object.keys(PRIORITY_LABELS) as WorkhubTaskPriority[]).map((value) => (
-                              <button
-                                key={value}
-                                type="button"
-                                className={selectedTask.priority === value ? 'is-active' : ''}
-                                onClick={() => {
-                                  void handleTaskUpdate(selectedTask, { priority: value })
-                                  setDetailMenuOpen('')
-                                }}
-                              >
-                                <span>{getPriorityIcon(value)}</span>
-                                <span>{PRIORITY_LABELS[value]}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
                       </div>
 
                       <div className="workhub-detail-icon-wrap">
@@ -6610,27 +7561,16 @@ export default function WorkHubPage() {
                           type="button"
                           className="workhub-detail-icon-btn"
                           title="Assignee"
-                          onClick={() => setDetailMenuOpen((current) => current === 'assignee' ? '' : 'assignee')}
+                          onClick={(e) => {
+                            const rect = e.currentTarget.getBoundingClientRect()
+                            if (detailMenuOpen === 'assignee') { setDetailMenuOpen(''); setDetailMenuCoords(null) }
+                            else { setDetailMenuOpen('assignee'); setDetailMenuCoords({ top: rect.bottom + 4, left: rect.left, right: window.innerWidth - rect.right }) }
+                          }}
                         >
-                          👤
+                          <span className="workhub-detail-chip-label">Assignee</span>
+                          <span className="workhub-detail-chip-value">{memberByUid[selectedTask.assigneeUid]?.displayName || memberByUid[selectedTask.assigneeUid]?.email || 'Unassigned'}</span>
+                          <span className="workhub-detail-chip-edit" aria-hidden="true">▾</span>
                         </button>
-                        {detailMenuOpen === 'assignee' && (
-                          <div className="workhub-detail-icon-menu">
-                            {selectedTaskAssignableMembers.map((item) => (
-                              <button
-                                key={item.uid}
-                                type="button"
-                                className={selectedTask.assigneeUid === item.uid ? 'is-active' : ''}
-                                onClick={() => {
-                                  void handleTaskUpdate(selectedTask, { assigneeUid: item.uid })
-                                  setDetailMenuOpen('')
-                                }}
-                              >
-                                {item.displayName || item.email}
-                              </button>
-                            ))}
-                          </div>
-                        )}
                       </div>
 
                       <div className="workhub-detail-icon-wrap">
@@ -6638,20 +7578,16 @@ export default function WorkHubPage() {
                           type="button"
                           className="workhub-detail-icon-btn"
                           title={`Due date: ${formatDueDateShort(selectedTask.dueDate || '')}`}
-                          onClick={() => setDetailMenuOpen((current) => current === 'dueDate' ? '' : 'dueDate')}
+                          onClick={(e) => {
+                            const rect = e.currentTarget.getBoundingClientRect()
+                            if (detailMenuOpen === 'dueDate') { setDetailMenuOpen(''); setDetailMenuCoords(null) }
+                            else { setDetailMenuOpen('dueDate'); setDetailMenuCoords({ top: rect.bottom + 4, left: rect.left, right: window.innerWidth - rect.right }) }
+                          }}
                         >
-                          📅
+                          <span className="workhub-detail-chip-label">Due date</span>
+                          <span className="workhub-detail-chip-value">{formatDueDateShort(selectedTask.dueDate || '')}</span>
+                          <span className="workhub-detail-chip-edit" aria-hidden="true">▾</span>
                         </button>
-                        {detailMenuOpen === 'dueDate' && (
-                          <div className="workhub-detail-icon-menu">
-                            <input
-                              type="date"
-                              value={selectedTask.dueDate || ''}
-                              onChange={(event) => void handleTaskUpdate(selectedTask, { dueDate: event.target.value })}
-                            />
-                            <button type="button" onClick={() => void handleTaskUpdate(selectedTask, { dueDate: '' })}>Clear</button>
-                          </div>
-                        )}
                       </div>
 
                       {isMobileWorkhubLayout && (
@@ -6662,7 +7598,8 @@ export default function WorkHubPage() {
                             title="Delete task"
                             onClick={() => setTaskDeleteConfirmOpen(true)}
                           >
-                            🗑
+                            <span className="workhub-detail-chip-label">Action</span>
+                            <span className="workhub-detail-chip-value">Delete</span>
                           </button>
                         </div>
                       )}
@@ -6690,460 +7627,202 @@ export default function WorkHubPage() {
                       onBlur={() => handleSelectedTaskDescriptionSave(selectedTask)}
                       placeholder="Task details"
                     />
-                    <div className="workhub-task-attachments">
-                      <div className="workhub-task-attachments-head">
-                        <button
-                          type="button"
-                          className="workhub-task-attachments-toggle"
-                          onClick={() => setTaskAttachmentsCollapsed((current) => !current)}
-                          aria-expanded={!taskAttachmentsCollapsed}
-                        >
-                          <span>Attachments & links</span>
-                          <span aria-hidden="true" className="workhub-task-attachments-toggle-caret">{taskAttachmentsCollapsed ? '▸' : '▾'}</span>
-                        </button>
-                        {!taskAttachmentsCollapsed && (
-                          <div className="workhub-view-mode-toggle">
-                            <button type="button" className={attachmentViewMode === 'list' ? 'active' : ''} onClick={() => setAttachmentViewMode('list')} title="Minimal List">List</button>
-                            <button type="button" className={attachmentViewMode === 'thumbnail' ? 'active' : ''} onClick={() => setAttachmentViewMode('thumbnail')} title="Small Thumbnails">Thumbs</button>
-                            <button type="button" className={attachmentViewMode === 'card' ? 'active' : ''} onClick={() => setAttachmentViewMode('card')} title="Cards">Cards</button>
-                          </div>
-                        )}
-                      </div>
-                      {!taskAttachmentsCollapsed && <div className="workhub-task-attachment-editor">
-                        <div className="workhub-checklist-url-row compact-row is-stacked">
-                          <input
-                            type="text"
-                            value={taskAttachmentTitleDrafts[selectedTask.id] || ''}
-                            onChange={(event) => setTaskAttachmentTitleDrafts((current) => ({ ...current, [selectedTask.id]: event.target.value }))}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter') {
-                                event.preventDefault()
-                                handleTaskAttachmentAdd(selectedTask)
-                              }
-                            }}
-                            placeholder="File title"
-                            className="workhub-task-attachment-title-input"
-                          />
-                        </div>
-                        <div className="workhub-checklist-url-row compact-row is-stacked">
-                          <input
-                            type="url"
-                            value={taskAttachmentDrafts[selectedTask.id] || ''}
-                            onChange={(event) => setTaskAttachmentDrafts((current) => ({ ...current, [selectedTask.id]: event.target.value }))}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter') {
-                                event.preventDefault()
-                                handleTaskAttachmentAdd(selectedTask)
-                              }
-                            }}
-                            placeholder="Attachment URL"
-                          />
-                        </div>
-                        <div className="workhub-checklist-url-row compact-row is-stacked workhub-task-file-path-row">
-                          <input
-                            type="text"
-                            value={taskAttachmentFilePathDrafts[selectedTask.id] || ''}
-                            placeholder="File path"
-                            readOnly
-                          />
-                          <label className="workhub-file-upload-btn">
-                            <input
-                              type="file"
-                              multiple
-                              onChange={(event) => {
-                                const files = Array.from(event.target.files || [])
-                                setTaskAttachmentFileDrafts((current) => ({ ...current, [selectedTask.id]: files }))
-                                setTaskAttachmentFilePathDrafts((current) => ({
-                                  ...current,
-                                  [selectedTask.id]: files.map((file) => file.name).join(', '),
-                                }))
-                                event.target.value = ''
-                              }}
-                              disabled={uploadingTaskAttachmentId === selectedTask.id}
-                            />
-                            Browse
-                          </label>
-                        </div>
-                        <div className="workhub-checklist-url-row compact-row is-stacked">
-                          <button type="button" onClick={() => handleTaskAttachmentAdd(selectedTask)}>➕ Add file</button>
-                        </div>
-                        <div className="workhub-checklist-url-row compact-row is-stacked">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const files = taskAttachmentFileDrafts[selectedTask.id] || []
-                              if (files.length === 0) return
-                              void (async () => {
-                                await handleTaskAttachmentFileUpload(selectedTask, files)
-                                setTaskAttachmentFileDrafts((current) => ({ ...current, [selectedTask.id]: [] }))
-                                setTaskAttachmentFilePathDrafts((current) => ({ ...current, [selectedTask.id]: '' }))
-                              })()
-                            }}
-                            disabled={uploadingTaskAttachmentId === selectedTask.id || (taskAttachmentFileDrafts[selectedTask.id] || []).length === 0}
-                          >
-                            {uploadingTaskAttachmentId === selectedTask.id ? 'Uploading…' : 'Upload'}
-                          </button>
-                        </div>
-                      </div>}
-                      {!taskAttachmentsCollapsed && getTaskAttachments(selectedTask).length > 0 && (
-                        <div className={`workhub-checklist-url-list view-${attachmentViewMode}`}>
-                          {getTaskAttachments(selectedTask).map((url) => {
-                            const attachmentTitle = getTaskAttachmentTitle(selectedTask, url)
-                            const review = attachmentReviews[url]
-                            const reviewCount = (review?.notes.trim() ? 1 : 0)
-                              + (review?.comments.length || 0)
-                              + (review?.markers.length || 0)
-                              + (review?.modificationChecks.length || 0)
-                            return (
-                              <div key={url} className="workhub-checklist-url-item workhub-task-image-item">
-                                {isImageAttachmentUrl(url) ? (
-                                  <button type="button" className="workhub-attachment-preview-btn" onClick={() => openAttachmentLightbox(url)}>
-                                    <img src={url} alt="Attachment preview" className="workhub-task-image-thumb" loading="lazy" />
-                                    <span className="workhub-attachment-copy">
-                                      <strong>{attachmentTitle}</strong>
-                                      <small>{url}</small>
-                                    </span>
-                                  </button>
-                                ) : (
-                                  <a href={url} target="_blank" rel="noreferrer" className="workhub-task-image-link">
-                                    <span className="workhub-task-attachment-icon">📎</span>
-                                    <span className="workhub-attachment-copy">
-                                      <strong>{attachmentTitle}</strong>
-                                      <small>{url}</small>
-                                    </span>
-                                  </a>
-                                )}
-                                {reviewCount > 0 && (
-                                  <span className="workhub-attachment-review-indicator" title={`${reviewCount} note${reviewCount === 1 ? '' : 's'} / annotations`}>
-                                    📝 {reviewCount}
-                                  </span>
-                                )}
-                                <button type="button" onClick={() => handleTaskAttachmentRemove(selectedTask, url)}>✕</button>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
-
-                      {!taskAttachmentsCollapsed && <div className="workhub-task-attachment-editor">
-                        <div className="workhub-checklist-url-row compact-row is-stacked">
-                          <input
-                            type="text"
-                            value={taskLinkTitleDrafts[selectedTask.id] || ''}
-                            onChange={(event) => setTaskLinkTitleDrafts((current) => ({ ...current, [selectedTask.id]: event.target.value }))}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter') {
-                                event.preventDefault()
-                                handleTaskLinkAdd(selectedTask)
-                              }
-                            }}
-                            placeholder="Link title"
-                          />
-                        </div>
-                        <div className="workhub-checklist-url-row compact-row">
-                          <input
-                            type="url"
-                            value={taskLinkDrafts[selectedTask.id] || ''}
-                            onChange={(event) => setTaskLinkDrafts((current) => ({ ...current, [selectedTask.id]: event.target.value }))}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter') {
-                                event.preventDefault()
-                                handleTaskLinkAdd(selectedTask)
-                              }
-                            }}
-                            placeholder="Task link URL"
-                          />
-                          <button type="button" onClick={() => handleTaskLinkAdd(selectedTask)}>
-                            {taskLinkEditingDrafts[selectedTask.id] ? 'Save' : '➕ Add link'}
-                          </button>
-                        </div>
-                        {taskLinkEditingDrafts[selectedTask.id] && (
-                          <div className="workhub-checklist-url-row compact-row is-stacked">
-                            <button type="button" className="workhub-ghost-btn" onClick={() => handleTaskLinkEditCancel(selectedTask.id)}>
-                              Cancel edit
-                            </button>
-                          </div>
-                        )}
-                      </div>}
-                      {!taskAttachmentsCollapsed && getTaskLinks(selectedTask).length > 0 && (
-                        <div className={`workhub-checklist-url-list view-${attachmentViewMode}`}>
-                          {getTaskLinks(selectedTask).map((link) => {
-                            const linkTitle = getTaskLinkTitle(selectedTask, link)
-                            const linkHost = getUrlHostLabel(link)
-                            const linkCreatorUid = selectedTask.linkCreatedBy?.[link] || selectedTask.createdBy
-                            const linkCreator = memberByUid[linkCreatorUid]
-                            const linkCreatorLabel = linkCreator?.displayName || linkCreator?.email || 'Unknown'
-                            const linkCreatorInitials = getInitials(linkCreator?.displayName || linkCreator?.email || 'Link')
-                            return (
-                              <div key={link} className="workhub-checklist-url-item workhub-task-image-item workhub-task-link-item">
-                                <a href={link} target="_blank" rel="noreferrer" className="workhub-task-image-link workhub-task-link-card" title={link}>
-                                  <span className="workhub-link-hero">
-                                    <span className="workhub-task-attachment-icon">🔗</span>
-                                    <span className="workhub-attachment-copy workhub-link-copy">
-                                      <strong>{linkTitle}</strong>
-                                      <small>{linkHost}</small>
-                                    </span>
-                                  </span>
-                                  {attachmentViewMode !== 'list' && (
-                                    <span className="workhub-link-meta">
-                                      <span className="workhub-link-meta-avatar">
-                                        {linkCreator?.photoURL
-                                          ? <img src={linkCreator.photoURL} alt={linkCreatorLabel} />
-                                          : <span>{linkCreatorInitials}</span>}
-                                      </span>
-                                      <span className="workhub-link-meta-copy">
-                                        <strong>{linkCreatorLabel}</strong>
-                                        <small>{formatTime(selectedTask.updatedAt)}</small>
-                                      </span>
-                                    </span>
-                                  )}
-                                </a>
-                                <div className="workhub-link-item-actions">
-                                  <button type="button" title="Edit link" aria-label="Edit link" onClick={() => handleTaskLinkEditStart(selectedTask, link)}>✎</button>
-                                  <button type="button" title="Remove link" aria-label="Remove link" onClick={() => handleTaskLinkRemove(selectedTask, link)}>✕</button>
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
                     <div className="workhub-detail-meta">
                       <span>{`${selectedTaskParentEntityLabel}: ${projectNameById[selectedTask.projectId] || `Unknown ${selectedTaskParentEntityLabel.toLowerCase()}`}`}</span>
-                      <span>Status: {workspaceTaskStatuses.find((value) => value.id === selectedTask.status)?.label || selectedTask.status}</span>
-                      <span>Priority: {PRIORITY_LABELS[selectedTask.priority]}</span>
                       <span>Assignee: {memberByUid[selectedTask.assigneeUid]?.displayName || memberByUid[selectedTask.assigneeUid]?.email || 'Unassigned'}</span>
                       <span>Due date: {formatDueDateShort(selectedTask.dueDate || '')}</span>
                       <span>Updated: {formatTime(selectedTask.updatedAt)}</span>
-                      {selectedTask.completedAt && <span>Completed: {formatTime(selectedTask.completedAt)}</span>}
                     </div>
                   </div>
 
-                  <div className="workhub-detail-card">
-                    {(() => {
-                      const checklist = buildChecklist(selectedTask)
-                      const checklistDoneCount = checklist.filter((item) => item.completed).length
-                      const checklistSummaryText = checklist.length > 0
-                        ? ` (${checklistDoneCount}/${checklist.length} completed)`
-                        : ''
-                      return (
-                        <>
-                          <h3>{`Checklist${checklistSummaryText}`}</h3>
-                          <div className="workhub-checklist-items">
-                            {checklist.length === 0 ? (
-                              <div className="workhub-empty-state">No checklist items yet.</div>
-                            ) : (
-                              checklist.map((item, index) => {
-                              const detailKey = getChecklistDetailKey(selectedTask.id, item.id)
-                              const detailsExpanded = expandedChecklistDetailKeys.includes(detailKey)
-                              return (
-                                <div key={item.id} className="workhub-checklist-item-wrap">
-                                  <div className={`workhub-checklist-item ${index % 2 === 0 ? 'even' : 'odd'}`}>
-                                    <div className="workhub-checklist-left">
-                                      <div className="workhub-checklist-item-main">
-                                        <input
-                                          type="checkbox"
-                                          checked={item.completed}
-                                          onChange={(event) => handleChecklistItemToggle(selectedTask, item.id, event.target.checked)}
-                                          onClick={(event) => event.stopPropagation()}
-                                        />
-                                        {editingChecklistScope === 'details' && editingChecklistTaskId === selectedTask.id && editingChecklistItemId === item.id ? (
-                                          <input
-                                            type="text"
-                                            value={editingChecklistItemText}
-                                            onChange={(event) => setEditingChecklistItemText(event.target.value)}
-                                            onKeyDown={(event) => {
-                                              event.stopPropagation()
-                                              if (event.key === 'Enter') {
-                                                event.preventDefault()
-                                                handleChecklistItemEditSave(selectedTask, item.id)
-                                              } else if (event.key === 'Escape') {
-                                                event.preventDefault()
-                                                handleChecklistItemEditCancel()
-                                              }
-                                            }}
-                                            onBlur={() => handleChecklistItemEditSave(selectedTask, item.id)}
-                                            className="workhub-checklist-edit-input"
-                                            autoFocus
-                                          />
-                                        ) : (
-                                          <span
-                                            className={`workhub-checklist-item-text${item.completed ? ' is-checked' : ''}`}
-                                            onDoubleClick={() => handleChecklistItemEditStart(selectedTask.id, item.id, item.text, 'details')}
-                                          >
-                                            {item.text}
-                                          </span>
-                                        )}
-                                      </div>
-                                    </div>
-                                    <div className="workhub-checklist-actions">
-                                      <button
-                                        type="button"
-                                        className="workhub-checklist-expand"
-                                        onClick={() => toggleChecklistItemDetails(selectedTask.id, item.id)}
-                                        title="Checklist item details"
-                                      >
-                                        {detailsExpanded ? '▾' : '▸'}
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className="workhub-checklist-edit"
-                                        onClick={(event) => {
-                                          event.stopPropagation()
-                                          handleChecklistItemEditStart(selectedTask.id, item.id, item.text, 'details')
-                                        }}
-                                        title="Edit checklist item"
-                                      >
-                                        ✏️
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className="workhub-checklist-remove"
-                                        onClick={(event) => {
-                                          event.stopPropagation()
-                                          handleChecklistRemove(selectedTask, item.id)
-                                        }}
-                                        title="Delete checklist item"
-                                      >
-                                        🗑️
-                                      </button>
-                                    </div>
-                                  </div>
-                                  {detailsExpanded && (
-                                    <div className="workhub-checklist-item-details">
-                                      <label className="workhub-checklist-detail-field">
-                                        <span>Details</span>
-                                        <textarea
-                                          value={checklistDetailsDrafts[detailKey] ?? (item.details || '')}
-                                          onChange={(event) => setChecklistDetailsDrafts((current) => ({ ...current, [detailKey]: event.target.value }))}
-                                          onBlur={() => handleChecklistItemDetailsSave(selectedTask, item.id)}
-                                          placeholder="Add item details"
-                                        />
-                                      </label>
+                  {renderDiscussionCard()}
 
-                                      <div className="workhub-checklist-url-row">
-                                        <input
-                                          type="url"
-                                          value={checklistAttachmentDrafts[detailKey] || ''}
-                                          onChange={(event) => setChecklistAttachmentDrafts((current) => ({ ...current, [detailKey]: event.target.value }))}
-                                          placeholder="Attachment URL"
-                                        />
-                                        <button type="button" onClick={() => handleChecklistAttachmentAdd(selectedTask, item.id)}>➕ Add URL</button>
-                                        <label className="workhub-file-upload-btn">
-                                          <input
-                                            type="file"
-                                            multiple
-                                            onChange={(event) => {
-                                              const files = Array.from(event.target.files || [])
-                                              if (files.length === 0) return
-                                              void handleChecklistAttachmentFileUpload(selectedTask, item.id, files)
-                                              event.target.value = ''
-                                            }}
-                                            disabled={uploadingChecklistAttachmentKey === detailKey}
-                                          />
-                                          {uploadingChecklistAttachmentKey === detailKey ? 'Uploading…' : 'Upload'}
-                                        </label>
-                                      </div>
-                                      {(item.attachments || []).length > 0 && (
-                                        <div className={`workhub-checklist-url-list view-${attachmentViewMode}`}>
-                                          {(item.attachments || []).map((url) => {
-                                            const review = attachmentReviews[url]
-                                            const reviewCount = (review?.notes.trim() ? 1 : 0)
-                                              + (review?.comments.length || 0)
-                                              + (review?.markers.length || 0)
-                                              + (review?.modificationChecks.length || 0)
-                                            return (
-                                              <div key={url} className="workhub-checklist-url-item workhub-task-image-item">
-                                                {isImageAttachmentUrl(url) ? (
-                                                  <button type="button" className="workhub-attachment-preview-btn" onClick={() => openAttachmentLightbox(url)}>
-                                                    <img src={url} alt="Checklist attachment preview" className="workhub-task-image-thumb" loading="lazy" />
-                                                    <span>{url}</span>
-                                                  </button>
-                                                ) : (
-                                                  <a href={url} target="_blank" rel="noreferrer" className="workhub-task-image-link">
-                                                    <span className="workhub-task-attachment-icon">📎</span>
-                                                    <span>{url}</span>
-                                                  </a>
-                                                )}
-                                                {reviewCount > 0 && (
-                                                  <span className="workhub-attachment-review-indicator" title={`${reviewCount} note${reviewCount === 1 ? '' : 's'} / annotations`}>
-                                                    📝 {reviewCount}
-                                                  </span>
-                                                )}
-                                                <button type="button" onClick={() => handleChecklistAttachmentRemove(selectedTask, item.id, url)}>✕</button>
-                                              </div>
-                                            )
-                                          })}
-                                        </div>
-                                      )}
+                  <WorkhubTaskAttachmentCard
+                    task={selectedTask}
+                    collapsed={taskAttachmentsCollapsed}
+                    onToggleCollapsed={() => setTaskAttachmentsCollapsed((current) => !current)}
+                    attachmentViewMode={attachmentViewMode}
+                    onAttachmentViewModeChange={setAttachmentViewMode}
+                    attachmentTitleDraft={taskAttachmentTitleDrafts[selectedTask.id] || ''}
+                    onAttachmentTitleDraftChange={(value) => setTaskAttachmentTitleDrafts((current) => ({ ...current, [selectedTask.id]: value }))}
+                    attachmentUrlDraft={taskAttachmentDrafts[selectedTask.id] || ''}
+                    onAttachmentUrlDraftChange={(value) => setTaskAttachmentDrafts((current) => ({ ...current, [selectedTask.id]: value }))}
+                    attachmentFilePathDraft={taskAttachmentFilePathDrafts[selectedTask.id] || ''}
+                    attachmentFileDrafts={taskAttachmentFileDrafts[selectedTask.id] || []}
+                    onAttachmentFileDraftsChange={(files) => setTaskAttachmentFileDrafts((current) => ({ ...current, [selectedTask.id]: files }))}
+                    onAttachmentFilePathDraftChange={(value) => setTaskAttachmentFilePathDrafts((current) => ({ ...current, [selectedTask.id]: value }))}
+                    uploadingTaskAttachmentId={uploadingTaskAttachmentId}
+                    onAddAttachment={() => handleTaskAttachmentAdd(selectedTask)}
+                    onUploadAttachmentFiles={() => {
+                      const files = taskAttachmentFileDrafts[selectedTask.id] || []
+                      if (files.length === 0) return
+                      void (async () => {
+                        await handleTaskAttachmentFileUpload(selectedTask, files)
+                        setTaskAttachmentFileDrafts((current) => ({ ...current, [selectedTask.id]: [] }))
+                        setTaskAttachmentFilePathDrafts((current) => ({ ...current, [selectedTask.id]: '' }))
+                      })()
+                    }}
+                    attachments={getTaskAttachments(selectedTask)}
+                    getAttachmentTitle={(url) => getTaskAttachmentTitle(selectedTask, url)}
+                    getAttachmentReviewCount={(url) => {
+                      const review = attachmentReviews[url]
+                      return (review?.notes.trim() ? 1 : 0)
+                        + (review?.comments.length || 0)
+                        + (review?.markers.length || 0)
+                        + (review?.modificationChecks.length || 0)
+                    }}
+                    isImageAttachmentUrl={isImageAttachmentUrl}
+                    onOpenAttachmentLightbox={openAttachmentLightbox}
+                    onRemoveAttachment={(url) => handleTaskAttachmentRemove(selectedTask, url)}
+                  />
 
-                                      <div className="workhub-checklist-url-row">
-                                        <input
-                                          type="url"
-                                          value={checklistLinkDrafts[detailKey] || ''}
-                                          onChange={(event) => setChecklistLinkDrafts((current) => ({ ...current, [detailKey]: event.target.value }))}
-                                          placeholder="Link URL"
-                                        />
-                                        <button type="button" onClick={() => handleChecklistLinkAdd(selectedTask, item.id)}>➕ Add link</button>
-                                      </div>
-                                      {(item.links || []).length > 0 && (
-                                        <div className="workhub-checklist-url-list">
-                                          {(item.links || []).map((link) => (
-                                            <div key={link} className="workhub-checklist-url-item">
-                                              <a href={link} target="_blank" rel="noreferrer">{link}</a>
-                                              <button type="button" onClick={() => handleChecklistLinkRemove(selectedTask, item.id, link)}>✕</button>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              )
-                              })
-                            )}
-                          </div>
-                        </>
-                      )
-                    })()}
-                    <div className="workhub-checklist-add">
-                      <input
-                        type="text"
-                        value={taskChecklistDrafts[selectedTask.id] || ''}
-                        placeholder="Add checklist item"
-                        onChange={(event) => setTaskChecklistDrafts((current) => ({ ...current, [selectedTask.id]: event.target.value }))}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') {
-                            event.preventDefault()
-                            handleChecklistAdd(selectedTask)
-                          }
-                        }}
-                      />
-                      <button type="button" onClick={() => handleChecklistAdd(selectedTask)} disabled={!taskChecklistDrafts[selectedTask.id]?.trim() || busyKey === 'task'}>
-                        Add
-                      </button>
+                  <div className="workhub-detail-card workhub-task-resource-card">
+                    <div className="workhub-task-attachments-head">
+                      <span>{`Links (${getTaskLinks(selectedTask).length})`}</span>
+                      <div className="workhub-view-mode-toggle">
+                        <button type="button" className={attachmentViewMode === 'list' ? 'active' : ''} onClick={() => setAttachmentViewMode('list')} title="Minimal List">List</button>
+                        <button type="button" className={attachmentViewMode === 'thumbnail' ? 'active' : ''} onClick={() => setAttachmentViewMode('thumbnail')} title="Small Thumbnails">Thumbs</button>
+                        <button type="button" className={attachmentViewMode === 'card' ? 'active' : ''} onClick={() => setAttachmentViewMode('card')} title="Cards">Cards</button>
+                      </div>
                     </div>
-                  </div>
-
-                  <div className="workhub-detail-card">
-                    <h3>Discussion</h3>
-                    <div className="workhub-comment-list">
-                      {comments.map((item) => (
-                        <div key={item.id} className="workhub-comment-item">
-                          <strong>{memberNameByUid[item.authorUid] || item.authorUid}</strong>
-                          <p>{item.body}</p>
-                          <span>{formatTime(item.createdAt)}</span>
+                    <div className="workhub-task-attachment-editor">
+                      <div className="workhub-checklist-url-row compact-row is-stacked">
+                        <input
+                          type="text"
+                          value={taskLinkTitleDrafts[selectedTask.id] || ''}
+                          onChange={(event) => setTaskLinkTitleDrafts((current) => ({ ...current, [selectedTask.id]: event.target.value }))}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault()
+                              handleTaskLinkAdd(selectedTask)
+                            }
+                          }}
+                          placeholder="Link title"
+                        />
+                      </div>
+                      <div className="workhub-checklist-url-row compact-row">
+                        <input
+                          type="url"
+                          value={taskLinkDrafts[selectedTask.id] || ''}
+                          onChange={(event) => setTaskLinkDrafts((current) => ({ ...current, [selectedTask.id]: event.target.value }))}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault()
+                              handleTaskLinkAdd(selectedTask)
+                            }
+                          }}
+                          placeholder="Task link URL"
+                        />
+                        <button type="button" onClick={() => handleTaskLinkAdd(selectedTask)}>
+                          {taskLinkEditingDrafts[selectedTask.id] ? 'Save' : 'Add link'}
+                        </button>
+                      </div>
+                      {taskLinkEditingDrafts[selectedTask.id] && (
+                        <div className="workhub-checklist-url-row compact-row is-stacked">
+                          <button type="button" className="workhub-ghost-btn" onClick={() => handleTaskLinkEditCancel(selectedTask.id)}>
+                            Cancel edit
+                          </button>
                         </div>
-                      ))}
-                      {comments.length === 0 && <div className="workhub-empty-state">No comments yet.</div>}
+                      )}
                     </div>
-                    <div className="workhub-mini-form">
-                      <textarea value={commentText} onChange={(event) => setCommentText(event.target.value)} placeholder="Add a comment..." />
-                      <button onClick={handleAddComment} disabled={busyKey === 'comment'}>
-                        {busyKey === 'comment' ? 'Sending...' : 'Send'}
-                      </button>
-                    </div>
+                    {getTaskLinks(selectedTask).length > 0 && (
+                      <div className={`workhub-checklist-url-list view-${attachmentViewMode}`}>
+                        {getTaskLinks(selectedTask).map((link) => {
+                          const linkTitle = getTaskLinkTitle(selectedTask, link)
+                          const linkHost = getUrlHostLabel(link)
+                          const linkCreatorUid = selectedTask.linkCreatedBy?.[link] || selectedTask.createdBy
+                          const linkCreator = memberByUid[linkCreatorUid]
+                          const linkCreatorLabel = linkCreator?.displayName || linkCreator?.email || 'Unknown'
+                          const linkCreatorInitials = getInitials(linkCreator?.displayName || linkCreator?.email || 'Link')
+                          return (
+                            <div key={link} className="workhub-checklist-url-item workhub-task-image-item workhub-task-link-item">
+                              <a href={link} target="_blank" rel="noreferrer" className="workhub-task-image-link workhub-task-link-card" title={link}>
+                                <span className="workhub-link-hero">
+                                  <span className="workhub-task-attachment-icon">🔗</span>
+                                  <span className="workhub-attachment-copy workhub-link-copy">
+                                    <strong>{linkTitle}</strong>
+                                    <small>{linkHost}</small>
+                                  </span>
+                                </span>
+                                {attachmentViewMode !== 'list' && (
+                                  <span className="workhub-link-meta" title={linkCreatorLabel}>
+                                    <span className="workhub-link-meta-avatar">
+                                      {linkCreator?.photoURL
+                                        ? <img src={linkCreator.photoURL} alt={linkCreatorLabel} />
+                                        : <span>{linkCreatorInitials}</span>}
+                                    </span>
+                                  </span>
+                                )}
+                              </a>
+                              <div className="workhub-link-item-actions">
+                                <button type="button" title="Edit link" aria-label="Edit link" onClick={() => handleTaskLinkEditStart(selectedTask, link)}>✏</button>
+                                <button
+                                  type="button"
+                                  title="Remove link"
+                                  aria-label="Remove link"
+                                  onClick={() => {
+                                    if (!window.confirm('Remove this link?')) return
+                                    handleTaskLinkRemove(selectedTask, link)
+                                  }}
+                                >
+                                  🗑
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                    {getTaskLinks(selectedTask).length === 0 && (
+                      <div className="workhub-empty-state">No links yet.</div>
+                    )}
                   </div>
+
+                  <WorkhubTaskChecklistCard
+                    task={selectedTask}
+                    checklist={buildChecklist(selectedTask)}
+                    getChecklistDetailKey={getChecklistDetailKey}
+                    expandedChecklistDetailKeys={expandedChecklistDetailKeys}
+                    onToggleChecklistItemDetails={toggleChecklistItemDetails}
+                    editingChecklistScope={editingChecklistScope}
+                    editingChecklistTaskId={editingChecklistTaskId}
+                    editingChecklistItemId={editingChecklistItemId}
+                    editingChecklistItemText={editingChecklistItemText}
+                    onEditingChecklistItemTextChange={setEditingChecklistItemText}
+                    onChecklistItemToggle={(itemId, checked) => handleChecklistItemToggle(selectedTask, itemId, checked)}
+                    onChecklistItemEditStart={handleChecklistItemEditStart}
+                    onChecklistItemEditSave={(itemId) => handleChecklistItemEditSave(selectedTask, itemId)}
+                    onChecklistItemEditCancel={handleChecklistItemEditCancel}
+                    onChecklistRemove={(itemId) => handleChecklistRemove(selectedTask, itemId)}
+                    checklistDetailsDrafts={checklistDetailsDrafts}
+                    onChecklistDetailsDraftChange={(detailKey, value) => setChecklistDetailsDrafts((current) => ({ ...current, [detailKey]: value }))}
+                    onChecklistItemDetailsSave={(itemId) => handleChecklistItemDetailsSave(selectedTask, itemId)}
+                    checklistAttachmentDrafts={checklistAttachmentDrafts}
+                    onChecklistAttachmentDraftChange={(detailKey, value) => setChecklistAttachmentDrafts((current) => ({ ...current, [detailKey]: value }))}
+                    onChecklistAttachmentAdd={(itemId) => handleChecklistAttachmentAdd(selectedTask, itemId)}
+                    onChecklistAttachmentFileUpload={(itemId, files) => { void handleChecklistAttachmentFileUpload(selectedTask, itemId, files) }}
+                    uploadingChecklistAttachmentKey={uploadingChecklistAttachmentKey}
+                    attachmentViewMode={attachmentViewMode}
+                    isImageAttachmentUrl={isImageAttachmentUrl}
+                    onOpenAttachmentLightbox={openAttachmentLightbox}
+                    getAttachmentReviewCount={(url) => {
+                      const review = attachmentReviews[url]
+                      return (review?.notes.trim() ? 1 : 0)
+                        + (review?.comments.length || 0)
+                        + (review?.markers.length || 0)
+                        + (review?.modificationChecks.length || 0)
+                    }}
+                    onChecklistAttachmentRemove={(itemId, url) => { if (window.confirm('Remove this attachment?')) handleChecklistAttachmentRemove(selectedTask, itemId, url) }}
+                    checklistLinkDrafts={checklistLinkDrafts}
+                    onChecklistLinkDraftChange={(detailKey, value) => setChecklistLinkDrafts((current) => ({ ...current, [detailKey]: value }))}
+                    onChecklistLinkAdd={(itemId) => handleChecklistLinkAdd(selectedTask, itemId)}
+                    onChecklistLinkRemove={(itemId, link) => { if (window.confirm('Remove this link?')) handleChecklistLinkRemove(selectedTask, itemId, link) }}
+                    taskChecklistDraft={taskChecklistDrafts[selectedTask.id] || ''}
+                    onTaskChecklistDraftChange={(value) => setTaskChecklistDrafts((current) => ({ ...current, [selectedTask.id]: value }))}
+                    onChecklistAdd={() => handleChecklistAdd(selectedTask)}
+                    checklistAddDisabled={!taskChecklistDrafts[selectedTask.id]?.trim() || busyKey === 'task'}
+                  />
+
                 </>
               ) : selectedProject ? (
                 <div className="workhub-detail-card">
@@ -7185,117 +7864,33 @@ export default function WorkHubPage() {
                     }}
                   />
 
+                  {renderDiscussionCard()}
+
                   <div className="workhub-detail-grid workhub-project-detail-grid">
                     <div className="workhub-span-2">
-                      <div className="workhub-task-attachments">
-                        <div className="workhub-task-attachments-head">
-                          <button
-                            type="button"
-                            className="workhub-task-attachments-toggle"
-                            onClick={() => setProjectAttachmentsCollapsed((current) => !current)}
-                            aria-expanded={!projectAttachmentsCollapsed}
-                          >
-                            <span>Attachments</span>
-                            <span aria-hidden="true" className="workhub-task-attachments-toggle-caret">{projectAttachmentsCollapsed ? '▸' : '▾'}</span>
-                          </button>
-                          {!projectAttachmentsCollapsed && selectedProjectAttachments.length > 0 && (
-                            <div className="workhub-view-mode-toggle">
-                              <button type="button" className={attachmentViewMode === 'list' ? 'active' : ''} onClick={() => setAttachmentViewMode('list')} title="Minimal List">List</button>
-                              <button type="button" className={attachmentViewMode === 'thumbnail' ? 'active' : ''} onClick={() => setAttachmentViewMode('thumbnail')} title="Small Thumbnails">Thumbs</button>
-                              <button type="button" className={attachmentViewMode === 'card' ? 'active' : ''} onClick={() => setAttachmentViewMode('card')} title="Cards">Cards</button>
-                            </div>
-                          )}
-                        </div>
-                        {!projectAttachmentsCollapsed && <div className="workhub-task-attachment-editor">
-                          <div className="workhub-checklist-url-row compact-row is-stacked">
-                            <input
-                              type="text"
-                              value={selectedProjectAttachmentTitleDraft}
-                              onChange={(event) => setSelectedProjectAttachmentTitleDraft(event.target.value)}
-                              placeholder="File title"
-                              disabled={!canEditSelectedProject}
-                            />
-                          </div>
-                          <div className="workhub-checklist-url-row compact-row is-stacked">
-                            <input
-                              type="url"
-                              value={selectedProjectAttachmentDraft}
-                              onChange={(event) => setSelectedProjectAttachmentDraft(event.target.value)}
-                              onKeyDown={(event) => {
-                                if (event.key === 'Enter') {
-                                  event.preventDefault()
-                                  void handleSelectedProjectAttachmentAdd()
-                                }
-                              }}
-                              placeholder="Attachment URL"
-                              disabled={!canEditSelectedProject}
-                            />
-                          </div>
-                          <div className="workhub-checklist-url-row compact-row is-stacked workhub-task-file-path-row">
-                            <input
-                              type="text"
-                              value={selectedProjectAttachmentFilePathDraft}
-                              readOnly
-                              placeholder="File path"
-                            />
-                            <label className="workhub-file-upload-btn">
-                              <input
-                                type="file"
-                                multiple
-                                disabled={!canEditSelectedProject || uploadingSelectedProjectAttachment}
-                                onChange={(event) => {
-                                  const files = Array.from(event.target.files || [])
-                                  setSelectedProjectAttachmentFileDrafts(files)
-                                  setSelectedProjectAttachmentFilePathDraft(files.map((file) => file.name).join(', '))
-                                  event.target.value = ''
-                                }}
-                              />
-                              Browse
-                            </label>
-                          </div>
-                          <div className="workhub-checklist-url-row compact-row is-stacked">
-                            <button type="button" onClick={() => { void handleSelectedProjectAttachmentAdd() }} disabled={!canEditSelectedProject}>➕ Add file</button>
-                          </div>
-                          <div className="workhub-checklist-url-row compact-row is-stacked">
-                            <button
-                              type="button"
-                              onClick={() => { void handleSelectedProjectAttachmentFileUpload() }}
-                              disabled={!canEditSelectedProject || uploadingSelectedProjectAttachment || selectedProjectAttachmentFileDrafts.length === 0}
-                            >
-                              {uploadingSelectedProjectAttachment ? 'Uploading…' : 'Upload'}
-                            </button>
-                          </div>
-                        </div>}
-                        {!projectAttachmentsCollapsed && selectedProjectAttachments.length > 0 && (
-                          <div className={`workhub-checklist-url-list view-${attachmentViewMode}`}>
-                            {selectedProjectAttachments.map((url) => {
-                              const attachmentTitle = selectedProject.attachmentTitles?.[url]?.trim() || deriveAttachmentTitle(url)
-                              return (
-                                <div key={url} className="workhub-checklist-url-item workhub-task-image-item">
-                                  {isImageAttachmentUrl(url) ? (
-                                    <button type="button" className="workhub-attachment-preview-btn" onClick={() => openAttachmentLightbox(url)}>
-                                      <img src={url} alt="Project attachment preview" className="workhub-task-image-thumb" loading="lazy" />
-                                      <span className="workhub-attachment-copy">
-                                        <strong>{attachmentTitle}</strong>
-                                        <small>{url}</small>
-                                      </span>
-                                    </button>
-                                  ) : (
-                                    <a href={url} target="_blank" rel="noreferrer" className="workhub-task-image-link">
-                                      <span className="workhub-task-attachment-icon">📎</span>
-                                      <span className="workhub-attachment-copy">
-                                        <strong>{attachmentTitle}</strong>
-                                        <small>{url}</small>
-                                      </span>
-                                    </a>
-                                  )}
-                                  {canEditSelectedProject && <button type="button" onClick={() => { void handleSelectedProjectAttachmentRemove(url) }}>✕</button>}
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )}
-                      </div>
+                      <WorkhubProjectAttachmentCard
+                        collapsed={projectAttachmentsCollapsed}
+                        onToggleCollapsed={() => setProjectAttachmentsCollapsed((current) => !current)}
+                        attachmentViewMode={attachmentViewMode}
+                        onAttachmentViewModeChange={setAttachmentViewMode}
+                        canEdit={canEditSelectedProject}
+                        attachmentTitleDraft={selectedProjectAttachmentTitleDraft}
+                        onAttachmentTitleDraftChange={setSelectedProjectAttachmentTitleDraft}
+                        attachmentUrlDraft={selectedProjectAttachmentDraft}
+                        onAttachmentUrlDraftChange={setSelectedProjectAttachmentDraft}
+                        attachmentFilePathDraft={selectedProjectAttachmentFilePathDraft}
+                        attachmentFileDrafts={selectedProjectAttachmentFileDrafts}
+                        onAttachmentFileDraftsChange={setSelectedProjectAttachmentFileDrafts}
+                        onAttachmentFilePathDraftChange={setSelectedProjectAttachmentFilePathDraft}
+                        uploadingAttachment={uploadingSelectedProjectAttachment}
+                        onAddAttachment={() => { void handleSelectedProjectAttachmentAdd() }}
+                        onUploadAttachments={() => { void handleSelectedProjectAttachmentFileUpload() }}
+                        attachments={selectedProjectAttachments}
+                        getAttachmentTitle={(url) => selectedProject.attachmentTitles?.[url]?.trim() || deriveAttachmentTitle(url)}
+                        isImageAttachmentUrl={isImageAttachmentUrl}
+                        onOpenAttachmentLightbox={openAttachmentLightbox}
+                        onRemoveAttachment={(url) => { void handleSelectedProjectAttachmentRemove(url) }}
+                      />
                     </div>
                   </div>
 
@@ -7412,8 +8007,8 @@ export default function WorkHubPage() {
                 <div className="workhub-empty-state">Select a workspace to view template-based home widgets.</div>
               )}
               <div className="workhub-home-actions">
-                <button className="workhub-primary-btn" onClick={openWorkspaceOverview} disabled={!selectedWorkspaceId}>Open workspace overview</button>
-                <button className="workhub-ghost-btn" onClick={() => setActiveSection('tasks')} disabled={!selectedWorkspaceId}>Go to tasks</button>
+                <button className="workhub-primary-btn" onClick={() => navigateToWorkspaceSection('dashboard')} disabled={!selectedWorkspaceId}>Open workspace overview</button>
+                <button className="workhub-ghost-btn" onClick={() => navigateToWorkspaceSection('tasks')} disabled={!selectedWorkspaceId}>Go to tasks</button>
                 <button className="workhub-ghost-btn" onClick={() => selectedWorkspaceId && openWorkspaceSettings(selectedWorkspaceId)} disabled={!selectedWorkspaceId}>Workspace settings</button>
               </div>
             </section>
@@ -7424,10 +8019,10 @@ export default function WorkHubPage() {
             <nav className="workhub-mobile-footer" aria-label="Mobile navigation">
               <button
                 type="button"
-                className={`workhub-mobile-footer-btn${activeSection === 'home' ? ' is-active' : ''}`}
+                className={`workhub-mobile-footer-btn${activeWorkspaceTab === 'home' ? ' is-active' : ''}`}
                 onClick={() => {
                   setQuickAddOpen(false)
-                  setActiveSection('home')
+                  navigateToWorkspaceSection('home')
                 }}
                 aria-label="Home"
                 title="Home"
@@ -7437,10 +8032,10 @@ export default function WorkHubPage() {
               </button>
               <button
                 type="button"
-                className={`workhub-mobile-footer-btn${activeSection === 'tasks' ? ' is-active' : ''}`}
+                className={`workhub-mobile-footer-btn${activeWorkspaceTab === 'tasks' ? ' is-active' : ''}`}
                 onClick={() => {
                   setQuickAddOpen(false)
-                  setActiveSection('tasks')
+                  navigateToWorkspaceSection('tasks')
                 }}
                 aria-label="Tasks"
                 title="Tasks"
@@ -7723,6 +8318,8 @@ export default function WorkHubPage() {
           settingsDescription={workspaceSettingsDescription}
           treeMetaDisplayMode={workspaceTreeMetaDisplayMode}
           taskDueDisplayMode={workspaceTaskDueDisplayMode}
+          moodBoardEnabled={workspaceMoodBoardEnabled}
+          onMoodBoardEnabledChange={setWorkspaceMoodBoardEnabled}
           projectColorMeanings={workspaceProjectColorMeaningDrafts}
           onClose={() => setWorkspaceSettingsId('')}
           onSettingsNameChange={setWorkspaceSettingsName}
@@ -7751,6 +8348,11 @@ export default function WorkHubPage() {
 
         <ProjectActionMenu
           projectId={actionMenuProjectId}
+          contextName={
+            actionMenuProjectId && actionMenuProjectId !== '__workspace__'
+              ? (workspaceProjectById[actionMenuProjectId]?.name ?? undefined)
+              : undefined
+          }
           workspaceType={selectedWorkspaceScopeType}
           workspaceTemplateId={selectedWorkspaceTemplateId}
           selectedProjectId={selectedProjectId}
@@ -7776,6 +8378,27 @@ export default function WorkHubPage() {
           }}
           onCreateTemplateEntity={(intent, projectId) => openWorkspaceTypeCreateDialog(intent, projectId || '')}
           onOpenSettings={(projectId) => setProjectAccessDialogId(projectId)}
+          moodBoardEnabled={selectedWorkspace?.moodBoardEnabled !== false}
+          onOpenMoodBoard={async (entityType, entityId) => {
+            // Find or create board for this entity, then navigate to moodboard panel
+            let board = workspaceMoodBoards.find((b) => b.entityType === entityType && b.entityId === entityId) ?? null
+            if (!board && selectedWorkspaceId) {
+              const label = entityType === 'workspace' ? (selectedWorkspace?.name || 'Workspace') : (workspaceProjectById[entityId]?.name || 'Project')
+              const newId = await createWorkhubMoodBoard({
+                workspaceId: selectedWorkspaceId,
+                entityType,
+                entityId,
+                title: `${label} — Mood Board`,
+                createdBy: currentUid,
+              })
+              setSelectedMoodBoardId(newId)
+            } else {
+              setSelectedMoodBoardId(board?.id ?? '')
+            }
+            setSelectedDocumentId('')
+            setSelectedTaskId('')
+            setActiveSection('moodboard')
+          }}
         />
 
         <ProjectSettingsDialog
@@ -8038,7 +8661,7 @@ export default function WorkHubPage() {
                 </div>
                 <div className="workhub-project-settings-actions">
                   <button className="workhub-ghost-btn" onClick={closeStatusDialog}>Cancel</button>
-                  <button className="workhub-primary-btn" disabled={busyKey === 'status'} onClick={() => { void handleSaveTaskStatuses() }}>
+                  <button type="button" className="workhub-primary-btn" disabled={busyKey === 'status'} onClick={() => { void handleSaveTaskStatuses() }}>
                     {busyKey === 'status' ? 'Saving…' : 'Save'}
                   </button>
                 </div>
@@ -8174,6 +8797,64 @@ export default function WorkHubPage() {
         )}
 
       </div>
+
+        {detailMenuOpen && detailMenuCoords && selectedTask && (
+          <>
+            <div
+              style={{ position: 'fixed', inset: 0, zIndex: 199 }}
+              onMouseDown={() => { setDetailMenuOpen(''); setDetailMenuCoords(null) }}
+            />
+            <div
+              className="workhub-detail-icon-menu workhub-detail-icon-menu-fixed"
+              style={{ position: 'fixed', top: detailMenuCoords.top, right: detailMenuCoords.right, zIndex: 200 }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              {detailMenuOpen === 'status' && workspaceTaskStatuses.map((value) => (
+                <button
+                  key={value.id}
+                  type="button"
+                  className={selectedTask.status === value.id ? 'is-active' : ''}
+                  onClick={() => { void handleTaskUpdate(selectedTask, { status: value.id as WorkhubTaskStatus }); setDetailMenuOpen(''); setDetailMenuCoords(null) }}
+                >
+                  <span>{getTaskStatusIcon(value.id)}</span>
+                  <span>{value.label}</span>
+                </button>
+              ))}
+              {detailMenuOpen === 'priority' && (Object.keys(PRIORITY_LABELS) as WorkhubTaskPriority[]).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={selectedTask.priority === value ? 'is-active' : ''}
+                  onClick={() => { void handleTaskUpdate(selectedTask, { priority: value }); setDetailMenuOpen(''); setDetailMenuCoords(null) }}
+                >
+                  <span>{getPriorityIcon(value)}</span>
+                  <span>{PRIORITY_LABELS[value]}</span>
+                </button>
+              ))}
+              {detailMenuOpen === 'assignee' && selectedTaskAssignableMembers.map((item) => (
+                <button
+                  key={item.uid}
+                  type="button"
+                  className={selectedTask.assigneeUid === item.uid ? 'is-active' : ''}
+                  onClick={() => { void handleTaskUpdate(selectedTask, { assigneeUid: item.uid }); setDetailMenuOpen(''); setDetailMenuCoords(null) }}
+                >
+                  {item.displayName || item.email}
+                </button>
+              ))}
+              {detailMenuOpen === 'dueDate' && (
+                <>
+                  <input
+                    type="date"
+                    value={selectedTask.dueDate || ''}
+                    onChange={(event) => void handleTaskUpdate(selectedTask, { dueDate: event.target.value })}
+                  />
+                  <button type="button" onClick={() => { void handleTaskUpdate(selectedTask, { dueDate: '' }); setDetailMenuOpen(''); setDetailMenuCoords(null) }}>Clear</button>
+                </>
+              )}
+            </div>
+          </>
+        )}
+
       <WorkhubStyles phoneMaxWidth={WORKHUB_PHONE_MAX_WIDTH} />
     </div>
   )

@@ -50,7 +50,7 @@ export interface WorkhubWorkspace {
   name: string
   description: string
   type: 'technical' | 'hr' | 'finance'
-  treeMetaDisplayMode?: 'counts' | 'countdown'
+  treeMetaDisplayMode?: 'counts' | 'countdown' | 'progress'
   taskDueDisplayMode?: 'remaining' | 'date'
   templateId?: string
   taskStatuses?: WorkhubTaskStatusConfig[]
@@ -58,6 +58,7 @@ export interface WorkhubWorkspace {
   accessMemberUids?: string[]
   memberAccessLevels?: Record<string, 'full' | 'custom'>
   invitedEmails?: string[]
+  moodBoardEnabled?: boolean
   createdBy: string
   createdAt?: unknown
 }
@@ -167,10 +168,14 @@ export interface WorkhubTaskChecklistItem {
 export interface WorkhubTaskComment {
   id: string
   workspaceId: string
-  taskId: string
+  taskId?: string
+  entityType?: 'task' | 'project' | 'document'
+  entityId?: string
   authorUid: string
   body: string
   createdAt?: unknown
+  updatedAt?: unknown
+  editedAt?: unknown
 }
 
 export interface WorkhubActivity {
@@ -742,15 +747,61 @@ export function subscribeWorkhubComments(taskId: string, onData: (items: Workhub
   })
 }
 
+export function subscribeWorkhubCommentsByEntity(
+  entityType: 'task' | 'project' | 'document',
+  entityId: string,
+  onData: (items: WorkhubTaskComment[]) => void,
+) {
+  const scopedQuery = entityType === 'task'
+    ? query(commentsCol, where('taskId', '==', entityId))
+    : query(commentsCol, where('entityType', '==', entityType), where('entityId', '==', entityId))
+
+  return onSnapshot(scopedQuery, (snap) => {
+    onData(sortByNewest(snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubTaskComment))))
+  })
+}
+
 export async function addWorkhubTaskComment(input: { workspaceId: string; taskId: string; authorUid: string; body: string }): Promise<string> {
-  const docRef = await addDoc(commentsCol, {
+  return addWorkhubComment({
     workspaceId: input.workspaceId,
-    taskId: input.taskId,
+    entityType: 'task',
+    entityId: input.taskId,
     authorUid: input.authorUid,
     body: input.body,
+  })
+}
+
+export async function addWorkhubComment(input: {
+  workspaceId: string
+  entityType: 'task' | 'project' | 'document'
+  entityId: string
+  authorUid: string
+  body: string
+}): Promise<string> {
+  const trimmedBody = input.body.trim()
+  const docRef = await addDoc(commentsCol, {
+    workspaceId: input.workspaceId,
+    taskId: input.entityType === 'task' ? input.entityId : '',
+    entityType: input.entityType,
+    entityId: input.entityId,
+    authorUid: input.authorUid,
+    body: trimmedBody,
     createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
   })
   return docRef.id
+}
+
+export async function updateWorkhubComment(commentId: string, patch: Pick<WorkhubTaskComment, 'body'>): Promise<void> {
+  await updateDoc(doc(db, 'workhub_task_comments', commentId), {
+    body: (patch.body || '').trim(),
+    updatedAt: serverTimestamp(),
+    editedAt: serverTimestamp(),
+  })
+}
+
+export async function deleteWorkhubComment(commentId: string): Promise<void> {
+  await deleteDoc(doc(db, 'workhub_task_comments', commentId))
 }
 
 export function subscribeWorkhubActivity(workspaceId: string, currentUid: string, canSeeAll: boolean, onData: (items: WorkhubActivity[]) => void) {
@@ -857,3 +908,123 @@ export function subscribeWorkhubProjectsMulti(workspaceIds: string[], currentUid
   })
   return () => unsubs.forEach(u => u())
 }
+
+// ── Mood Boards ────────────────────────────────────────────────────────────────
+
+export type WorkhubMoodBoardEntityType = 'workspace' | 'project' | 'task' | 'document'
+
+export interface WorkhubMoodBoardImage {
+  url: string
+  caption: string
+  addedBy: string
+  addedAt?: unknown
+}
+
+export interface WorkhubMoodBoard {
+  id: string
+  workspaceId: string
+  entityType: WorkhubMoodBoardEntityType
+  entityId: string
+  title: string
+  images: WorkhubMoodBoardImage[]
+  checklist?: WorkhubTaskChecklistItem[]
+  createdBy: string
+  createdAt?: unknown
+  updatedAt?: unknown
+}
+
+export function subscribeWorkhubMoodBoardsForWorkspace(
+  workspaceId: string,
+  onData: (boards: WorkhubMoodBoard[]) => void,
+) {
+  const q = query(
+    collection(db, 'workhub_mood_boards'),
+    where('workspaceId', '==', workspaceId),
+  )
+  return onSnapshot(q, (snap) => {
+    onData(snap.docs.map((d) => ({ id: d.id, ...d.data() } as WorkhubMoodBoard)))
+  })
+}
+
+export function subscribeWorkhubMoodBoard(
+  entityType: WorkhubMoodBoardEntityType,
+  entityId: string,
+  onData: (board: WorkhubMoodBoard | null) => void,
+) {
+  const q = query(
+    collection(db, 'workhub_mood_boards'),
+    where('entityType', '==', entityType),
+    where('entityId', '==', entityId),
+    limit(1),
+  )
+  return onSnapshot(q, (snap) => {
+    if (snap.empty) { onData(null); return }
+    const d = snap.docs[0]
+    onData({ id: d.id, ...d.data() } as WorkhubMoodBoard)
+  })
+}
+
+export async function createWorkhubMoodBoard(input: {
+  workspaceId: string
+  entityType: WorkhubMoodBoardEntityType
+  entityId: string
+  title: string
+  createdBy: string
+}): Promise<string> {
+  const ref = await addDoc(collection(db, 'workhub_mood_boards'), {
+    workspaceId: input.workspaceId,
+    entityType: input.entityType,
+    entityId: input.entityId,
+    title: input.title,
+    images: [],
+    checklist: [],
+    createdBy: input.createdBy,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  })
+  return ref.id
+}
+
+export async function updateWorkhubMoodBoardChecklist(
+  boardId: string,
+  checklist: WorkhubTaskChecklistItem[],
+): Promise<void> {
+  await updateDoc(doc(db, 'workhub_mood_boards', boardId), {
+    checklist,
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function addWorkhubMoodBoardImage(
+  boardId: string,
+  images: WorkhubMoodBoardImage[],
+  newImage: WorkhubMoodBoardImage,
+): Promise<void> {
+  await updateDoc(doc(db, 'workhub_mood_boards', boardId), {
+    images: [...images, newImage],
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function removeWorkhubMoodBoardImage(
+  boardId: string,
+  images: WorkhubMoodBoardImage[],
+  index: number,
+): Promise<void> {
+  await updateDoc(doc(db, 'workhub_mood_boards', boardId), {
+    images: images.filter((_, i) => i !== index),
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function updateWorkhubMoodBoardTitle(boardId: string, title: string): Promise<void> {
+  await updateDoc(doc(db, 'workhub_mood_boards', boardId), {
+    title,
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function deleteWorkhubMoodBoard(boardId: string): Promise<void> {
+  await deleteDoc(doc(db, 'workhub_mood_boards', boardId))
+}
+

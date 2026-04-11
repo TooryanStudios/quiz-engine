@@ -67,6 +67,45 @@ service cloud.firestore {
       );
     }
 
+    function workhubProjectDoc(projectId) {
+      return get(/databases/$(database)/documents/workhub_projects/$(projectId));
+    }
+
+    function workhubProjectExists(projectId) {
+      return exists(/databases/$(database)/documents/workhub_projects/$(projectId));
+    }
+
+    function canReadWorkhubProject(projectId) {
+      return isPrivilegedWorkhubMember() || (
+        canAccessWorkhub()
+        && workhubProjectExists(projectId)
+        && isVisibleWorkhubEntity(workhubProjectDoc(projectId).data)
+      );
+    }
+
+    function workhubDocumentDoc(documentId) {
+      return get(/databases/$(database)/documents/workhub_documents/$(documentId));
+    }
+
+    function workhubDocumentExists(documentId) {
+      return exists(/databases/$(database)/documents/workhub_documents/$(documentId));
+    }
+
+    function canReadWorkhubDocument(documentId) {
+      return isPrivilegedWorkhubMember() || (
+        canAccessWorkhub()
+        && workhubDocumentExists(documentId)
+        && isVisibleWorkhubEntity(workhubDocumentDoc(documentId).data)
+      );
+    }
+
+    function canReadWorkhubComment(data) {
+      return canReadWorkhubTask(data.taskId)
+        || (data.entityType == 'task' && canReadWorkhubTask(data.entityId))
+        || (data.entityType == 'project' && canReadWorkhubProject(data.entityId))
+        || (data.entityType == 'document' && canReadWorkhubDocument(data.entityId));
+    }
+
     function isValidVoiceTestRoom(roomId) {
       return roomId.matches('^test-[a-z0-9-]{3,36}$');
     }
@@ -180,7 +219,7 @@ service cloud.firestore {
     }
 
     match /workhub_task_comments/{commentId} {
-      allow read: if canReadWorkhubTask(resource.data.taskId);
+      allow read: if canReadWorkhubComment(resource.data);
       allow create, update, delete: if canAccessWorkhub();
     }
 
@@ -218,6 +257,11 @@ service cloud.firestore {
         allow read: if isPrivilegedWorkhubMember();
         allow create, update, delete: if isPrivilegedWorkhubMember();
       }
+    }
+
+    match /workhub_mood_boards/{boardId} {
+      allow read: if canAccessWorkhub();
+      allow create, update, delete: if canAccessWorkhub();
     }
   }
 }
