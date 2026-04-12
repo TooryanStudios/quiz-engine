@@ -14,12 +14,16 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       html.workhub-page-active body {
         overflow: hidden;
         overscroll-behavior: none;
-        position: fixed;
         width: 100%;
+          min-height: 100%;
         height: 100%;
       }
       .workhub-shell {
-        height: 100vh;
+          width: 100%;
+          max-width: 100vw;
+          max-width: 100dvw;
+          height: 100vh;
+          height: 100dvh;
         padding: 14px 8px 8px;
         background: linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
         color: #14213d;
