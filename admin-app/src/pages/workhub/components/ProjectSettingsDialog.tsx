@@ -1,4 +1,4 @@
-import type { WorkhubClient, WorkhubMember, WorkhubProject, WorkhubProjectIntent, WorkhubProjectPriority, WorkhubProjectType, WorkhubVisibility } from '../../../lib/workhubRepo'
+import type { WorkhubClient, WorkhubMember, WorkhubProject, WorkhubProjectIntent, WorkhubProjectPriority, WorkhubProjectType, WorkhubTaskStatusConfig, WorkhubVisibility } from '../../../lib/workhubRepo'
 import { PROJECT_PRIORITY_OPTIONS, type WorkhubProjectColorMeaning } from '../constants'
 import { BUILD_NUMBER, BUILD_TIME_UTC } from '../../../buildInfo'
 
@@ -23,12 +23,16 @@ export function ProjectSettingsDialog(props: {
   settingsType: WorkhubProjectType
   typeOptions: Array<{ value: WorkhubProjectType; label: string }>
   settingsPriority: WorkhubProjectPriority
+  settingsTenderNumber: string
+  settingsProposalId: string
   showMonetaryValue: boolean
   monetaryValueLabel: string
   settingsValueAmount: string
   settingsValueCurrency: string
   settingsMainPanelView: 'tasks' | 'dashboard'
   settingsTaskItemDisplayMode: 'inherit' | 'list' | 'cards' | 'grid'
+  settingsTaskStatuses: WorkhubTaskStatusConfig[] | null
+  workspaceTaskStatuses: WorkhubTaskStatusConfig[]
   settingsClientId: string
   settingsStorageMethod: 'firebase' | 'drive'
   accessVisibility: WorkhubVisibility
@@ -45,10 +49,15 @@ export function ProjectSettingsDialog(props: {
   onSubmissionTimeChange: (value: string) => void
   onTypeChange: (value: WorkhubProjectType) => void
   onPriorityChange: (value: WorkhubProjectPriority) => void
+  onTenderNumberChange: (value: string) => void
+  onProposalIdChange: (value: string) => void
   onValueAmountChange: (value: string) => void
   onValueCurrencyChange: (value: string) => void
   onMainPanelViewChange: (value: 'tasks' | 'dashboard') => void
   onTaskItemDisplayModeChange: (value: 'inherit' | 'list' | 'cards' | 'grid') => void
+  onTaskStatusesChange: (statuses: WorkhubTaskStatusConfig[] | null) => void
+  onApplyViewSettingsToSubItems?: () => void
+  applyViewSettingsBusy?: boolean
   onClientChange: (value: string) => void
   onCreateClientInline: (name: string) => Promise<string | null>
   onStorageMethodChange: (value: 'firebase' | 'drive') => void
@@ -129,6 +138,28 @@ export function ProjectSettingsDialog(props: {
                   <select name="projectSettingsType" value={props.settingsType} onChange={(event) => props.onTypeChange(event.target.value as WorkhubProjectType)}>
                     {props.typeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                   </select>
+                </label>
+              )}
+              {!isFolderContainer && (
+                <label className="workhub-col-span-3">
+                  <span>Tender / RFP number</span>
+                  <input
+                    name="projectSettingsTenderNumber"
+                    value={props.settingsTenderNumber}
+                    onChange={(event) => props.onTenderNumberChange(event.target.value)}
+                    placeholder="e.g. RFP-2026-041"
+                  />
+                </label>
+              )}
+              {!isFolderContainer && (
+                <label className="workhub-col-span-3">
+                  <span>Our proposal ID</span>
+                  <input
+                    name="projectSettingsProposalId"
+                    value={props.settingsProposalId}
+                    onChange={(event) => props.onProposalIdChange(event.target.value)}
+                    placeholder="e.g. QYAN-PR-117"
+                  />
                 </label>
               )}
 
@@ -281,6 +312,18 @@ export function ProjectSettingsDialog(props: {
                   </div>
                 </div>
                 {isFolderContainer && (
+                  <div style={{ marginTop: 8 }}>
+                    <button
+                      type="button"
+                      className="workhub-ghost-btn"
+                      onClick={() => props.onApplyViewSettingsToSubItems?.()}
+                      disabled={!props.onApplyViewSettingsToSubItems || !!props.applyViewSettingsBusy}
+                    >
+                      {props.applyViewSettingsBusy ? 'Applying…' : 'Apply current view settings to all sub-items'}
+                    </button>
+                  </div>
+                )}
+                {isFolderContainer && (
                   <label style={{ display: 'block', marginTop: 10 }}>
                     <span>Task items display mode</span>
                     <select
@@ -295,6 +338,89 @@ export function ProjectSettingsDialog(props: {
                     </select>
                   </label>
                 )}
+                <div className="workhub-project-statuses-section" style={{ marginTop: 14 }}>
+                  <div className="workhub-project-statuses-header">
+                    <span className="workhub-project-statuses-title">Task statuses</span>
+                    {props.settingsTaskStatuses === null ? (
+                      <span className="workhub-project-statuses-inherit-badge">Inheriting from parent / workspace</span>
+                    ) : (
+                      <span className="workhub-project-statuses-custom-badge">{props.settingsTaskStatuses.length} custom statuses</span>
+                    )}
+                  </div>
+                  {props.settingsTaskStatuses === null ? (
+                    <div className="workhub-project-statuses-inherit-preview">
+                      {props.workspaceTaskStatuses.map((s) => (
+                        <span key={s.id} className="workhub-project-statuses-inherit-chip" style={{ background: s.color + '22', color: s.color, borderColor: s.color + '55' }}>
+                          {s.label}
+                        </span>
+                      ))}
+                      <button
+                        type="button"
+                        className="workhub-project-statuses-override-btn"
+                        onClick={() => props.onTaskStatusesChange(props.workspaceTaskStatuses.map((s) => ({ ...s })))}
+                      >
+                        Override for this folder
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="workhub-project-statuses-custom-editor">
+                      {props.settingsTaskStatuses.map((status, index) => (
+                        <div key={status.id} className="workhub-project-status-row">
+                          <input
+                            type="color"
+                            value={status.color}
+                            onChange={(e) => {
+                              const next = props.settingsTaskStatuses!.map((s, i) => i === index ? { ...s, color: e.target.value } : s)
+                              props.onTaskStatusesChange(next)
+                            }}
+                            className="workhub-project-status-color-input"
+                          />
+                          <input
+                            type="text"
+                            value={status.label}
+                            placeholder="Status label"
+                            onChange={(e) => {
+                              const next = props.settingsTaskStatuses!.map((s, i) => i === index ? { ...s, label: e.target.value } : s)
+                              props.onTaskStatusesChange(next)
+                            }}
+                            className="workhub-project-status-label-input"
+                          />
+                          <button
+                            type="button"
+                            className="workhub-danger-btn workhub-project-status-remove-btn"
+                            disabled={props.settingsTaskStatuses!.length <= 1}
+                            onClick={() => props.onTaskStatusesChange(props.settingsTaskStatuses!.filter((_, i) => i !== index))}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                      <div className="workhub-project-statuses-actions">
+                        <button
+                          type="button"
+                          className="workhub-ghost-btn workhub-project-status-add-btn"
+                          onClick={() => {
+                            const colors = ['#6b7280', '#3b82f6', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6']
+                            const next = [
+                              ...props.settingsTaskStatuses!,
+                              { id: `status_${Date.now()}`, label: 'New status', color: colors[props.settingsTaskStatuses!.length % colors.length] },
+                            ]
+                            props.onTaskStatusesChange(next)
+                          }}
+                        >
+                          + Add status
+                        </button>
+                        <button
+                          type="button"
+                          className="workhub-ghost-btn"
+                          onClick={() => props.onTaskStatusesChange(null)}
+                        >
+                          Reset to inherited
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </details>
           </section>

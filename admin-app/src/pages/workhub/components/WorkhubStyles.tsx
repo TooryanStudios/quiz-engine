@@ -234,6 +234,14 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         border: 1px solid #d7e4fb;
         background: rgba(248, 251, 255, 0.96);
         backdrop-filter: blur(4px);
+        width: 100%;
+        box-sizing: border-box;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .workhub-shell.is-mobile .workhub-mobile-dashboard-actions > button {
+        flex: 1 1 calc(50% - 6px);
+        min-width: 0;
       }
       .workhub-mobile-workspace-panel-backdrop {
         position: fixed;
@@ -1084,6 +1092,31 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         overflow: hidden;
         flex: 1 1 0;
       }
+      .workhub-panel-head-controls {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .workhub-collapse-toggle {
+        width: 22px;
+        height: 22px;
+        border-radius: 7px;
+        border: 1px solid #d8e4fa;
+        background: #ffffff;
+        color: #29446f;
+        font-size: 0.74rem;
+        line-height: 1;
+        font-weight: 700;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: box-shadow 0.15s ease, filter 0.15s ease;
+      }
+      .workhub-collapse-toggle:hover {
+        box-shadow: 0 4px 10px rgba(35, 65, 120, 0.12);
+        filter: brightness(0.98);
+      }
       .workhub-detail-card h3 {
         margin: 0 0 16px 0;
         color: #17305c;
@@ -1435,9 +1468,9 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       .workhub-tree-overview {
         width: 100%;
         min-width: 0;
-        border: 1px solid #e1e8f2;
-        background: #fcfdff;
-        color: #253349;
+        border: 0;
+        background: linear-gradient(135deg, #4f8cff, #7b61ff);
+        color: #ffffff;
         border-radius: 9px;
         padding: 7px 10px;
         text-align: left;
@@ -1453,15 +1486,13 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         text-overflow: ellipsis;
       }
       .workhub-tree-overview:hover {
-        border-color: #cad5e3;
-        box-shadow: 0 1px 4px rgba(35, 50, 77, 0.05);
-        background: #f9fbfe;
+        box-shadow: 0 4px 10px rgba(35, 65, 120, 0.12);
+        filter: brightness(0.98);
       }
       .workhub-tree-overview.is-active {
-        background: #eef3fb;
-        border-color: #b7c7df;
-        color: #1f3a63;
-        box-shadow: inset 2px 0 0 #4f74bd;
+        background: linear-gradient(135deg, #3f79f0, #6a4ff0);
+        color: #ffffff;
+        box-shadow: 0 4px 10px rgba(35, 65, 120, 0.14);
       }
       .workhub-tree-overview-row {
         display: flex;
@@ -3621,6 +3652,171 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 10px;
       }
+      .workhub-proposal-focus-grid {
+        margin-top: 12px;
+        display: grid;
+        grid-template-columns: 1.2fr 1fr;
+        gap: 10px;
+      }
+      .workhub-proposal-focus-card {
+        min-height: 220px;
+      }
+      .workhub-proposal-focus-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .workhub-proposal-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid #d9e8ff;
+        background: #f4f8ff;
+        border-radius: 999px;
+        padding: 4px 8px;
+        font-size: 0.7rem;
+      }
+      .workhub-proposal-chip strong {
+        color: #4d648f;
+        font-weight: 700;
+      }
+      .workhub-proposal-chip em {
+        color: #1f3763;
+        font-style: normal;
+        font-weight: 600;
+      }
+      .workhub-proposal-deadline-row {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+      }
+      .workhub-proposal-deadline-col {
+        border: 1px solid #dfe9fb;
+        background: #ffffff;
+        border-radius: 8px;
+        padding: 7px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .workhub-proposal-deadline-col span {
+        font-size: 0.68rem;
+        color: #5e7397;
+      }
+      .workhub-proposal-deadline-col strong {
+        font-size: 0.79rem;
+        color: #21395f;
+      }
+      .workhub-proposal-deadline-col.is-countdown {
+        background: #eff6ff;
+      }
+      .workhub-proposal-deadline-col.is-countdown.is-over {
+        background: #fff0f0;
+        border-color: #ffd1d1;
+      }
+      .workhub-proposal-countdown-track {
+        margin-top: -2px;
+      }
+      .workhub-proposal-countdown-track span {
+        background: linear-gradient(90deg, #16a34a, #f59e0b, #ef4444);
+      }
+      .workhub-proposal-brief {
+        margin: 0;
+        font-size: 0.78rem;
+        line-height: 1.45;
+        color: #2e456c;
+        background: #f4f8ff;
+        border: 1px dashed #d5e5ff;
+        border-radius: 8px;
+        padding: 8px;
+      }
+      .workhub-proposal-doc-counters {
+        margin: 0;
+        gap: 6px;
+      }
+      .workhub-proposal-doc-list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+        margin-top: 2px;
+      }
+      .workhub-proposal-doc-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        border: 1px solid #dce8ff;
+        background: #ffffff;
+        border-radius: 8px;
+        padding: 6px 8px;
+        color: #21406a;
+        cursor: pointer;
+        text-align: left;
+      }
+      .workhub-proposal-doc-item:hover {
+        background: #f3f8ff;
+        border-color: #c9dbff;
+      }
+      .workhub-proposal-doc-icon {
+        font-size: 0.9rem;
+        line-height: 1;
+        flex-shrink: 0;
+      }
+      .workhub-proposal-doc-copy {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .workhub-proposal-doc-copy strong {
+        font-size: 0.71rem;
+        color: #1f3763;
+        font-weight: 700;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .workhub-proposal-doc-copy small {
+        font-size: 0.63rem;
+        color: #6a7fa0;
+      }
+      .workhub-proposal-thumb-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 7px;
+      }
+      .workhub-proposal-thumb {
+        margin: 0;
+        border: 1px solid #dce8ff;
+        background: #fff;
+        border-radius: 8px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+      .workhub-proposal-thumb img {
+        width: 100%;
+        aspect-ratio: 4 / 3;
+        object-fit: cover;
+        background: #edf3ff;
+      }
+      .workhub-proposal-thumb figcaption {
+        padding: 5px 6px 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .workhub-proposal-thumb figcaption strong {
+        font-size: 0.67rem;
+        color: #1f3763;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .workhub-proposal-thumb figcaption span {
+        font-size: 0.62rem;
+        color: #6a7fa0;
+      }
       .workhub-overview-card {
         border: 1px solid #dde9ff;
         background: #f9fbff;
@@ -3759,6 +3955,84 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         color: #7488ad;
         font-size: 0.7rem;
       }
+      .workhub-overview-card-full {
+        grid-column: 1 / -1;
+        min-height: auto;
+      }
+      .workhub-team-activity-wrap {
+        overflow-x: auto;
+      }
+      .workhub-team-activity-grid {
+        display: grid;
+        gap: 3px;
+        min-width: 300px;
+        align-items: center;
+      }
+      .workhub-tah-label-cell {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding-right: 6px;
+        overflow: hidden;
+        min-height: 18px;
+      }
+      .workhub-tah-avatar {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: #c6d8f4;
+        color: #1a3f6f;
+        font-size: 0.58rem;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        text-transform: uppercase;
+      }
+      .workhub-tah-name {
+        font-size: 0.74rem;
+        color: #2c4270;
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        flex: 1;
+      }
+      .workhub-tah-total {
+        font-size: 0.66rem;
+        color: #8aa8cc;
+        flex-shrink: 0;
+      }
+      .workhub-tah-day-head {
+        font-size: 0.58rem;
+        color: #9ab0cc;
+        text-align: center;
+        line-height: 1;
+        padding-bottom: 2px;
+        user-select: none;
+      }
+      .workhub-tah-day-head.is-weekend {
+        color: #b0a0cc;
+      }
+      .workhub-tah-cell {
+        height: 14px;
+        border-radius: 3px;
+        background: #eef3fc;
+        cursor: default;
+        transition: opacity 0.1s;
+      }
+      .workhub-tah-cell.is-weekend {
+        background: #e6e2f0;
+      }
+      .workhub-tah-cell.lv1 { background: #c5d8f5; }
+      .workhub-tah-cell.lv2 { background: #7faee6; }
+      .workhub-tah-cell.lv3 { background: #3a7bd4; }
+      .workhub-tah-cell.lv4 { background: #1355ae; }
+      .workhub-tah-cell.lv1.is-weekend { background: #b8cce8; }
+      .workhub-tah-cell.lv2.is-weekend { background: #6f98cc; }
+      .workhub-tah-cell.lv3.is-weekend { background: #2e66b8; }
+      .workhub-tah-cell.lv4.is-weekend { background: #0f438a; }
       .workhub-project-risk-list {
         display: flex;
         flex-direction: column;
@@ -4534,6 +4808,254 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         outline: 1px solid #2f4f84;
         outline-offset: 0;
         box-shadow: none;
+      }
+
+      /* Checklist item value input (finance mode) */
+      .workhub-checklist-value-input {
+        width: 76px;
+        height: 22px;
+        padding: 0 6px;
+        border: 1px solid #c8d9f0;
+        border-radius: 5px;
+        background: #f4f8ff;
+        font-size: 0.7rem;
+        color: #2c3f63;
+        text-align: right;
+        flex-shrink: 0;
+        appearance: textfield;
+      }
+      .workhub-checklist-value-input::-webkit-inner-spin-button,
+      .workhub-checklist-value-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+      .workhub-checklist-value-input:focus {
+        outline: 1px solid #2f4f84;
+        outline-offset: 0;
+        background: #fff;
+      }
+
+      /* Finance block in task detail panel */
+      .workhub-task-finance-block {
+        background: #f0f5ff;
+        border: 1px solid #d0dff5;
+        border-radius: 10px;
+        padding: 12px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-bottom: 2px;
+      }
+      .workhub-task-finance-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .workhub-task-finance-label {
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: #1d3d6a;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      .workhub-task-finance-currency {
+        font-size: 0.7rem;
+        font-weight: 600;
+        color: #5a7090;
+        background: #dde9fc;
+        padding: 2px 8px;
+        border-radius: 4px;
+      }
+      .workhub-task-finance-inputs {
+        display: grid;
+        grid-template-columns: 1fr 80px;
+        gap: 8px;
+      }
+      .workhub-task-finance-field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .workhub-task-finance-field > span {
+        font-size: 0.67rem;
+        color: #8fa0bc;
+        font-weight: 500;
+      }
+      .workhub-task-finance-field input {
+        border: 1px solid #c8d9f0;
+        border-radius: 6px;
+        background: #fff;
+        padding: 5px 8px;
+        font-size: 0.8rem;
+        color: #17305c;
+        width: 100%;
+      }
+      .workhub-task-finance-field input:focus {
+        outline: 1px solid #2f4f84;
+        outline-offset: 0;
+      }
+      .workhub-task-finance-summary {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .workhub-task-finance-track {
+        height: 6px;
+        background: #dde9fc;
+        border-radius: 3px;
+        overflow: hidden;
+      }
+      .workhub-task-finance-fill {
+        height: 100%;
+        background: #3b82f6;
+        border-radius: 3px;
+        transition: width 0.25s ease;
+      }
+      .workhub-task-finance-fill.is-over { background: #ef4444; }
+      .workhub-task-finance-pills {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .workhub-finance-pill {
+        font-size: 0.68rem;
+        padding: 2px 9px;
+        border-radius: 999px;
+        font-weight: 500;
+      }
+      .workhub-finance-pill.used { background: #ddeeff; color: #2563eb; }
+      .workhub-finance-pill.remaining { background: #dcfce7; color: #16a34a; }
+      .workhub-finance-pill.remaining.over { background: #fee2e2; color: #dc2626; }
+      .workhub-task-finance-hint {
+        font-size: 0.66rem;
+        color: #9fb0c8;
+        margin: 0;
+      }
+
+      /* Finance chip on task row cards */
+      .workhub-task-finance-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 7px;
+        border-radius: 6px;
+        background: #e8f0fe;
+        font-size: 0.65rem;
+        color: #2c5fcc;
+        cursor: default;
+        flex-shrink: 0;
+      }
+      .workhub-task-finance-chip.is-over { background: #fee2e2; color: #c0392b; }
+      .workhub-finance-chip-total { font-weight: 600; }
+      .workhub-finance-chip-bar {
+        width: 34px;
+        height: 4px;
+        background: #c2d4f7;
+        border-radius: 2px;
+        overflow: hidden;
+      }
+      .workhub-finance-chip-fill {
+        height: 100%;
+        background: #3b82f6;
+        border-radius: 2px;
+      }
+
+      /* Per-folder status editor in project settings */
+      .workhub-project-statuses-section {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .workhub-project-statuses-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .workhub-project-statuses-title {
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: #2c3f63;
+      }
+      .workhub-project-statuses-inherit-badge {
+        font-size: 0.68rem;
+        background: #e8f0fe;
+        color: #4472c4;
+        padding: 2px 8px;
+        border-radius: 5px;
+      }
+      .workhub-project-statuses-custom-badge {
+        font-size: 0.68rem;
+        background: #dcfce7;
+        color: #166534;
+        padding: 2px 8px;
+        border-radius: 5px;
+      }
+      .workhub-project-statuses-inherit-preview {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .workhub-project-statuses-inherit-chip {
+        font-size: 0.67rem;
+        padding: 2px 8px;
+        border-radius: 4px;
+        border: 1px solid;
+        font-weight: 500;
+      }
+      .workhub-project-statuses-override-btn {
+        font-size: 0.68rem;
+        padding: 3px 10px;
+        border: 1px solid #b0c8f0;
+        border-radius: 5px;
+        background: #fff;
+        color: #2c5fcc;
+        cursor: pointer;
+        margin-left: 4px;
+      }
+      .workhub-project-statuses-override-btn:hover { background: #e8f0fe; }
+      .workhub-project-statuses-custom-editor {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+      .workhub-project-status-row {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .workhub-project-status-color-input {
+        width: 32px;
+        height: 26px;
+        padding: 1px 2px;
+        border: 1px solid #c8d9f0;
+        border-radius: 4px;
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+      .workhub-project-status-label-input {
+        flex: 1;
+        min-width: 0;
+        border: 1px solid #c8d9f0;
+        border-radius: 5px;
+        padding: 4px 8px;
+        font-size: 0.78rem;
+        color: #17305c;
+      }
+      .workhub-project-status-label-input:focus { outline: 1px solid #2f4f84; outline-offset: 0; }
+      .workhub-project-status-remove-btn {
+        padding: 2px 8px;
+        font-size: 0.8rem;
+        line-height: 1;
+        min-width: 0;
+      }
+      .workhub-project-statuses-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 4px;
+        flex-wrap: wrap;
+      }
+      .workhub-project-status-add-btn {
+        font-size: 0.72rem;
+        padding: 3px 10px;
       }
       .workhub-task-title-edit-input {
         width: 100%;
@@ -9559,6 +10081,27 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
           opacity: 1;
         }
       }
+      @keyframes workhubMobileDrawerOut {
+        from {
+          transform: translateY(0);
+          opacity: 1;
+        }
+        to {
+          transform: translateY(28px);
+          opacity: 0;
+        }
+      }
+      @keyframes workhubMobileBackdropOut {
+        from { background: rgba(20, 32, 56, 0.34); }
+        to   { background: rgba(20, 32, 56, 0); }
+      }
+      .workhub-mobile-workspace-panel-backdrop.is-closing {
+        animation: workhubMobileBackdropOut 0.19s ease forwards;
+        pointer-events: none;
+      }
+      .workhub-mobile-workspace-panel-backdrop.is-closing .workhub-mobile-workspace-panel {
+        animation: workhubMobileDrawerOut 0.19s ease forwards;
+      }
       @media (max-width: ${phoneMaxWidth}px) {
         .workhub-shell-layout,
         .workhub-compact-grid,
@@ -9576,6 +10119,27 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
         .workhub-overview-dashboard {
+          grid-template-columns: 1fr;
+        }
+        .workhub-summary-strip {
+          flex-wrap: wrap;
+          overflow-x: visible;
+          touch-action: auto;
+        }
+        .workhub-summary-tile {
+          flex: 1 1 calc(50% - 6px);
+          min-width: 0;
+        }
+        .workhub-proposal-focus-grid {
+          grid-template-columns: 1fr;
+        }
+        .workhub-proposal-deadline-row {
+          grid-template-columns: 1fr;
+        }
+        .workhub-proposal-thumb-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .workhub-proposal-doc-list {
           grid-template-columns: 1fr;
         }
         .workhub-content-area {
@@ -9730,18 +10294,17 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
           grid-template-columns: 1fr;
         }
         .workhub-summary-strip {
-          display: flex;
-          flex-wrap: nowrap;
-          overflow-x: auto;
-          overflow-y: hidden;
+          flex-wrap: wrap;
+          overflow-x: visible;
+          overflow-y: visible;
+          touch-action: auto;
+          overscroll-behavior-x: auto;
           gap: 8px;
           padding-bottom: 2px;
-          -webkit-overflow-scrolling: touch;
-          touch-action: pan-x;
-          overscroll-behavior-x: contain;
         }
         .workhub-summary-strip .workhub-summary-tile {
-          flex: 0 0 170px;
+          flex: 1 1 calc(50% - 4px);
+          min-width: 0;
         }
         .workhub-overview-card {
           min-height: 0;
@@ -9858,14 +10421,15 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
           padding: 6px 9px;
           font-size: 0.75rem;
           border-radius: 9px;
-          border-color: #e1e8f2;
-          background: #fcfdff;
+          border: 0;
+          background: linear-gradient(135deg, #4f8cff, #7b61ff);
+          color: #ffffff;
           box-shadow: none;
         }
         .workhub-tree-overview.is-active {
-          background: #eef3fb;
-          border-color: #b7c7df;
-          box-shadow: inset 2px 0 0 #4f74bd;
+          background: linear-gradient(135deg, #3f79f0, #6a4ff0);
+          color: #ffffff;
+          box-shadow: 0 4px 10px rgba(35, 65, 120, 0.14);
         }
         .workhub-tree-group-toggle {
           min-height: 34px;

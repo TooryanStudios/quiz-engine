@@ -60,6 +60,7 @@ export interface WorkhubWorkspace {
   memberAccessLevels?: Record<string, 'full' | 'custom'>
   invitedEmails?: string[]
   moodBoardEnabled?: boolean
+  activityWindowDays?: 7 | 14 | 30
   createdBy: string
   createdAt?: unknown
 }
@@ -73,6 +74,8 @@ export interface WorkhubProject {
   taskItemDisplayMode?: 'inherit' | 'list' | 'cards' | 'grid'
   valueAmount?: number
   valueCurrency?: string
+  tenderNumber?: string
+  proposalId?: string
   name: string
   description: string
   color: string
@@ -85,6 +88,7 @@ export interface WorkhubProject {
   priority?: WorkhubProjectPriority
   clientId?: string
   notes?: string
+  taskStatuses?: WorkhubTaskStatusConfig[]
   attachments?: string[]
   attachmentTitles?: Record<string, string>
   driveFolderId?: string
@@ -151,6 +155,8 @@ export interface WorkhubTask {
   assigneeUid: string
   dueDate: string
   checklist?: WorkhubTaskChecklistItem[]
+  valueAmount?: number
+  valueCurrency?: string
   completedAt?: string
   createdBy: string
   createdAt?: unknown
@@ -161,6 +167,7 @@ export interface WorkhubTaskChecklistItem {
   id: string
   text: string
   completed: boolean
+  valueAmount?: number
   details?: string
   attachments?: string[]
   imageUrls?: string[]
@@ -391,7 +398,7 @@ export async function createWorkhubWorkspace(input: { name: string; description:
 
 export async function updateWorkhubWorkspace(
   workspaceId: string,
-  patch: Partial<Pick<WorkhubWorkspace, 'name' | 'description' | 'type' | 'treeMetaDisplayMode' | 'taskDueDisplayMode' | 'showProjectColorDots' | 'templateId' | 'taskStatuses' | 'projectColorMeanings' | 'accessMemberUids' | 'memberAccessLevels' | 'invitedEmails'>>,
+  patch: Partial<Pick<WorkhubWorkspace, 'name' | 'description' | 'type' | 'treeMetaDisplayMode' | 'taskDueDisplayMode' | 'showProjectColorDots' | 'templateId' | 'taskStatuses' | 'projectColorMeanings' | 'accessMemberUids' | 'memberAccessLevels' | 'invitedEmails' | 'activityWindowDays'>>,
 ) {
   await updateDoc(doc(db, 'workhub_workspaces', workspaceId), {
     ...patch,
@@ -519,6 +526,8 @@ export async function createWorkhubProject(input: {
   mainPanelView?: 'tasks' | 'dashboard'
   valueAmount?: number
   valueCurrency?: string
+  tenderNumber?: string
+  proposalId?: string
   name: string
   description: string
   color: string
@@ -540,6 +549,8 @@ export async function createWorkhubProject(input: {
     mainPanelView: input.mainPanelView || 'tasks',
     valueAmount: typeof input.valueAmount === 'number' && Number.isFinite(input.valueAmount) ? Math.max(0, input.valueAmount) : 0,
     valueCurrency: (input.valueCurrency || 'OMR').trim().toUpperCase(),
+    tenderNumber: (input.tenderNumber || '').trim(),
+    proposalId: (input.proposalId || '').trim(),
     name: input.name,
     description: input.description,
     color: input.color,
@@ -560,7 +571,7 @@ export async function createWorkhubProject(input: {
   return docRef.id
 }
 
-export async function updateWorkhubProject(projectId: string, patch: Partial<Pick<WorkhubProject, 'parentProjectId' | 'intent' | 'mainPanelView' | 'taskItemDisplayMode' | 'valueAmount' | 'valueCurrency' | 'name' | 'description' | 'color' | 'notes' | 'attachments' | 'attachmentTitles' | 'notesUpdatedBy' | 'visibility' | 'memberUids' | 'storageMethod' | 'projectStartDate' | 'projectDeadline' | 'projectType' | 'submissionTime' | 'priority' | 'clientId'>>) {
+export async function updateWorkhubProject(projectId: string, patch: Partial<Pick<WorkhubProject, 'parentProjectId' | 'intent' | 'mainPanelView' | 'taskItemDisplayMode' | 'valueAmount' | 'valueCurrency' | 'tenderNumber' | 'proposalId' | 'name' | 'description' | 'color' | 'notes' | 'attachments' | 'attachmentTitles' | 'notesUpdatedBy' | 'visibility' | 'memberUids' | 'storageMethod' | 'projectStartDate' | 'projectDeadline' | 'projectType' | 'submissionTime' | 'priority' | 'clientId' | 'taskStatuses'>>) {
   const payload: Record<string, unknown> = {
     ...patch,
     updatedAt: serverTimestamp(),
@@ -733,7 +744,7 @@ export async function createWorkhubTask(input: {
   return docRef.id
 }
 
-export async function updateWorkhubTask(taskId: string, patch: Partial<Pick<WorkhubTask, 'title' | 'description' | 'attachments' | 'attachmentTitles' | 'imageUrls' | 'links' | 'linkTitles' | 'linkCreatedBy' | 'status' | 'priority' | 'assigneeUid' | 'dueDate' | 'checklist' | 'completedAt' | 'sortOrder'>>) {
+export async function updateWorkhubTask(taskId: string, patch: Partial<Pick<WorkhubTask, 'title' | 'description' | 'attachments' | 'attachmentTitles' | 'imageUrls' | 'links' | 'linkTitles' | 'linkCreatedBy' | 'status' | 'priority' | 'assigneeUid' | 'dueDate' | 'valueAmount' | 'valueCurrency' | 'checklist' | 'completedAt' | 'sortOrder'>>) {
   await updateDoc(doc(db, 'workhub_tasks', taskId), {
     ...patch,
     updatedAt: serverTimestamp(),
@@ -812,7 +823,7 @@ export function subscribeWorkhubActivity(workspaceId: string, currentUid: string
   if (canSeeAll) {
     const q = query(activityCol, where('workspaceId', '==', workspaceId))
     return onSnapshot(q, (snap) => {
-      onData(sortByNewest(snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubActivity)).slice(0, 40)))
+      onData(sortByNewest(snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubActivity)).slice(0, 300)))
     })
   }
 
@@ -820,7 +831,7 @@ export function subscribeWorkhubActivity(workspaceId: string, currentUid: string
   const restrictedQuery = query(activityCol, where('workspaceId', '==', workspaceId), where('visibility', '==', 'restricted'), where('memberUids', 'array-contains', currentUid))
   let workspaceItems: WorkhubActivity[] = []
   let restrictedItems: WorkhubActivity[] = []
-  const emit = () => onData(mergeById([workspaceItems, restrictedItems]).slice(0, 40))
+  const emit = () => onData(mergeById([workspaceItems, restrictedItems]).slice(0, 300))
   const unsubWorkspace = onSnapshot(workspaceQuery, (snap) => {
     workspaceItems = snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubActivity))
     emit()

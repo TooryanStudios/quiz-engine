@@ -10,6 +10,8 @@ export interface WorkhubTemplateCreationDraft {
   name: string
   description: string
   clientId: string
+  tenderNumber: string
+  proposalId: string
   startDate: string
   deadline: string
   submissionTime: string
@@ -177,6 +179,24 @@ export function TemplateCreateDialog(props: {
                 <span>🧾 Proposal title</span>
                 <input value={props.draft.name} onChange={(event) => props.onDraftChange({ name: event.target.value })} placeholder="Proposal title" />
               </label>
+              <div className="workhub-field-grid two compact">
+                <label className="workhub-icon-field">
+                  <span>🔢 Tender / RFP number</span>
+                  <input
+                    value={props.draft.tenderNumber}
+                    onChange={(event) => props.onDraftChange({ tenderNumber: event.target.value })}
+                    placeholder="e.g. RFP-2026-041"
+                  />
+                </label>
+                <label className="workhub-icon-field">
+                  <span>🆔 Our proposal ID</span>
+                  <input
+                    value={props.draft.proposalId}
+                    onChange={(event) => props.onDraftChange({ proposalId: event.target.value })}
+                    placeholder="e.g. QYAN-PR-117"
+                  />
+                </label>
+              </div>
               {renderClientField(
                 props.draft,
                 props.clientOptions,

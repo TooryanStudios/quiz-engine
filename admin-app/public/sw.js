@@ -1,5 +1,5 @@
-const CACHE_NAME = 'qyan-v2'
-const RUNTIME_CACHE = 'qyan-runtime-v2'
+const CACHE_NAME = 'qyan-v4'
+const RUNTIME_CACHE = 'qyan-runtime-v4'
 
 // Assets to cache on install
 const PRECACHE_ASSETS = [
@@ -38,9 +38,39 @@ self.addEventListener('fetch', (event) => {
   // Skip non-GET requests
   if (request.method !== 'GET') return
 
-  // Never cache-bypass app bundles in SW to avoid stale chunk/runtime mismatches after deploys.
-  // Let the browser fetch these directly.
-  if (url.pathname.startsWith('/assets/') || /\.(js|css|map)$/i.test(url.pathname)) {
+  // Let browser handle full-page navigations directly.
+  // This avoids stale login/dashboard shells and reduces app-start latency in PWA mode.
+  if (request.mode === 'navigate' || request.destination === 'document') {
+    return
+  }
+
+  // Firebase auth helper endpoints must never be cached by SW.
+  if (url.pathname.startsWith('/__/auth/') || url.pathname.startsWith('/__/firebase/')) {
+    return
+  }
+
+  // Source maps: never cache.
+  if (/\.map$/i.test(url.pathname)) return
+
+  // Vite-hashed JS/CSS bundles: cache-first.
+  // Vite embeds a content hash in every asset filename (e.g. WorkHubPage-T1lsJYFT.js),
+  // so a new deploy always produces new URLs — no stale-chunk risk.
+  // Without this, an installed standalone PWA re-downloads the full bundle on every launch
+  // because the standalone session does not share the regular browser HTTP cache.
+  if (url.pathname.startsWith('/assets/') && /\.(js|css)$/i.test(url.pathname)) {
+    event.respondWith(
+      caches.open(CACHE_NAME).then((cache) =>
+        cache.match(request).then((cached) => {
+          if (cached) return cached
+          return fetch(request).then((response) => {
+            if (response && response.status === 200) {
+              cache.put(request, response.clone())
+            }
+            return response
+          })
+        })
+      )
+    )
     return
   }
 

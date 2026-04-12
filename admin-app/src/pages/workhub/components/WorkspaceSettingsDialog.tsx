@@ -26,6 +26,7 @@ export function WorkspaceSettingsDialog(props: {
   settingsDescription: string
   treeMetaDisplayMode: 'counts' | 'countdown' | 'progress'
   taskDueDisplayMode: 'remaining' | 'date'
+  activityWindowDays: 7 | 14 | 30
   moodBoardEnabled: boolean
   showProjectColorDots: boolean
   projectColorMeanings: WorkhubProjectColorMeaning[]
@@ -34,6 +35,7 @@ export function WorkspaceSettingsDialog(props: {
   onSettingsDescriptionChange: (value: string) => void
   onTreeMetaDisplayModeChange: (value: 'counts' | 'countdown' | 'progress') => void
   onTaskDueDisplayModeChange: (value: 'remaining' | 'date') => void
+  onActivityWindowDaysChange: (value: 7 | 14 | 30) => void
   onMoodBoardEnabledChange: (value: boolean) => void
   onShowProjectColorDotsChange: (value: boolean) => void
   onProjectColorMeaningChange: (index: number, patch: Partial<WorkhubProjectColorMeaning>) => void
@@ -111,6 +113,17 @@ export function WorkspaceSettingsDialog(props: {
               >
                 <option value="remaining">Show time left (days/hours)</option>
                 <option value="date">Show actual due date</option>
+              </select>
+            </label>
+            <label>
+              <span>Team activity window</span>
+              <select
+                value={props.activityWindowDays}
+                onChange={(event) => props.onActivityWindowDaysChange(Number(event.target.value) as 7 | 14 | 30)}
+              >
+                <option value={7}>Last 7 days</option>
+                <option value={14}>Last 14 days</option>
+                <option value={30}>Last 30 days</option>
               </select>
             </label>
             <label className="workhub-toggle-label">

@@ -10,10 +10,11 @@ interface TaskRowMeta {
   checklistImagesCount: number
   checklistLinksCount: number
   taskAttachmentCount: number
+  financeValue?: { totalValue: number; usedValue: number; remaining: number; currency: string } | null
 }
 const emptyTaskRowMeta: TaskRowMeta = {
   checklist: [], checklistDoneCount: 0, checklistDetailsCount: 0,
-  checklistImagesCount: 0, checklistLinksCount: 0, taskAttachmentCount: 0,
+  checklistImagesCount: 0, checklistLinksCount: 0, taskAttachmentCount: 0, financeValue: null,
 }
 
 interface TaskRowCallbacks {
@@ -46,6 +47,7 @@ interface TaskRowCallbacks {
   onChecklistRemove: (task: WorkhubTask, itemId: string) => void
   onChecklistAdd: (task: WorkhubTask) => void
   onChecklistDraftChange: (taskId: string, value: string) => void
+  onChecklistItemValueChange?: (task: WorkhubTask, itemId: string, value: number | null) => void
 }
 
 interface TaskRowProps {
@@ -72,6 +74,7 @@ interface TaskRowProps {
   assignableMembers: WorkhubMember[]
   taskCreator: WorkhubMember | undefined
   meta: TaskRowMeta
+  isFinanceLayout?: boolean
   callbacks: TaskRowCallbacks
 }
 
@@ -80,7 +83,7 @@ const TaskRow = memo(function TaskRow({
   statusMenuOpen, priorityMenuOpen, moreMenuOpen, assigneeMenuOpen,
   editingTitle, editingTitleText, checklistExpanded, checklistDraft,
   editingChecklistItemId, editingChecklistScope, editingChecklistText,
-  isTaskBusy, taskAssignee, taskCreator, assignableMembers, meta, callbacks,
+  isTaskBusy, taskAssignee, taskCreator, assignableMembers, meta, isFinanceLayout, callbacks,
 }: TaskRowProps) {
   const { checklist } = meta
   const assigneeLabel = taskAssignee?.displayName || taskAssignee?.email || 'Unassigned'
@@ -287,6 +290,23 @@ const TaskRow = memo(function TaskRow({
                 <span className="workhub-task-checklist-progress-label">{checklistDone}/{checklistTotal}</span>
               </span>
             )}
+            {meta.financeValue !== null && meta.financeValue !== undefined && meta.financeValue.totalValue > 0 && (
+              <span
+                className={`workhub-task-finance-chip${meta.financeValue.remaining < 0 ? ' is-over' : ''}`}
+                title={`${meta.financeValue.currency} ${meta.financeValue.totalValue.toFixed(2)} total · used ${meta.financeValue.usedValue.toFixed(2)} · remaining ${meta.financeValue.remaining.toFixed(2)}`}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <span className="workhub-finance-chip-total">{meta.financeValue.currency} {meta.financeValue.totalValue.toFixed(2)}</span>
+                {meta.financeValue.usedValue > 0 && (
+                  <span className="workhub-finance-chip-bar">
+                    <span
+                      className="workhub-finance-chip-fill"
+                      style={{ width: `${Math.min(100, Math.round((meta.financeValue.usedValue / meta.financeValue.totalValue) * 100))}%` }}
+                    />
+                  </span>
+                )}
+              </span>
+            )}
             <button
               className="workhub-checklist-toggle"
               onClick={(event) => { event.stopPropagation(); callbacks.onToggleChecklist(task.id) }}
@@ -337,6 +357,31 @@ const TaskRow = memo(function TaskRow({
                       </div>
                     </div>
                     <div className="workhub-checklist-actions">
+                      {isFinanceLayout && (
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.01}
+                          className="workhub-checklist-value-input"
+                          value={item.valueAmount ?? ''}
+                          placeholder="0.00"
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            const raw = e.target.value.trim()
+                            const parsed = raw === '' ? null : parseFloat(raw)
+                            if (callbacks.onChecklistItemValueChange) {
+                              callbacks.onChecklistItemValueChange(task, item.id, parsed !== null && !isNaN(parsed) ? parsed : null)
+                            }
+                          }}
+                          onBlur={(e) => {
+                            const raw = e.target.value.trim()
+                            const parsed = raw === '' ? null : parseFloat(raw)
+                            if (callbacks.onChecklistItemValueChange) {
+                              callbacks.onChecklistItemValueChange(task, item.id, parsed !== null && !isNaN(parsed) ? parsed : null)
+                            }
+                          }}
+                        />
+                      )}
                       <button
                         type="button"
                         className="workhub-checklist-edit"

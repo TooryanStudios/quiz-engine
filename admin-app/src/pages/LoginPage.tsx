@@ -18,6 +18,14 @@ export function LoginPage() {
   const location = useLocation()
   const { showToast, hideToast } = useToast()
   const isLocalDevHost = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
+  const isStandalonePwa = typeof window !== 'undefined' && (
+    window.matchMedia('(display-mode: standalone)').matches
+    || window.matchMedia('(display-mode: fullscreen)').matches
+    || window.matchMedia('(display-mode: minimal-ui)').matches
+    || ('standalone' in window.navigator && (window.navigator as { standalone?: boolean }).standalone === true)
+    || document.referrer.startsWith('android-app://')
+  )
+  const isIosDevice = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/i.test(navigator.userAgent)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [theme, setTheme] = useState<'dark'|'light'>('dark')
@@ -28,7 +36,11 @@ export function LoginPage() {
   const returnTo = (location.state as { returnTo?: string } | null)?.returnTo
   const getPostLoginPath = () => {
     if (typeof returnTo === 'string' && returnTo.startsWith('/')) {
-      return returnTo
+      const normalized = returnTo.trim()
+      if (normalized === '/login' || normalized.startsWith('/login?')) {
+        return '/dashboard'
+      }
+      return normalized
     }
     return '/dashboard'
   }
@@ -116,6 +128,22 @@ export function LoginPage() {
     setError('')
     setLoading(true)
 
+    // Popup auth is unreliable in installed PWAs and iOS webviews.
+    // Use redirect flow directly in those environments.
+    if (isStandalonePwa || isIosDevice) {
+      try {
+        localStorage.setItem(redirectPendingKey, String(Date.now()))
+        await authReady
+        await signInWithRedirect(auth, googleProvider)
+        return
+      } catch (err: unknown) {
+        if (err instanceof Error) setError(err.message)
+        else setError('فشل تسجيل الدخول. حاول مرة أخرى.')
+        setLoading(false)
+        return
+      }
+    }
+
     const hintTimer = setTimeout(() => {
       showToast({ message: 'إذا لم تفتح نافذة جوجل، يرجى التأكد من السماح بالنوافذ المنبثقة (Pop-ups) للموقع أو الانتظار قليلاً.', type: 'info', durationMs: 10000 })
     }, 4000)
@@ -133,6 +161,12 @@ export function LoginPage() {
         ? String((err as { code?: string }).code) : ''
       if (code === 'auth/popup-blocked' || code === 'auth/cancelled-popup-request') {
         showToast({ message: 'Popup was blocked. Redirecting…', type: 'info', durationMs: 3000 })
+        localStorage.setItem(redirectPendingKey, String(Date.now()))
+        await signInWithRedirect(auth, googleProvider)
+        return
+      }
+      if (code === 'auth/operation-not-supported-in-this-environment') {
+        showToast({ message: 'سيتم التحويل إلى تسجيل الدخول الآمن…', type: 'info', durationMs: 2500 })
         localStorage.setItem(redirectPendingKey, String(Date.now()))
         await signInWithRedirect(auth, googleProvider)
         return
