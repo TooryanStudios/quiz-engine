@@ -656,6 +656,18 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         min-height: 32px;
         padding: 0 8px;
         border-radius: 8px;
+        max-width: 180px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        overflow: hidden;
+      }
+      .workhub-mobile-context-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 140px;
+        display: block;
       }
       @media (max-width: ${phoneMaxWidth}px) {
         .workhub-shell.is-mobile .workhub-mobile-workspace-toggle span:last-child {

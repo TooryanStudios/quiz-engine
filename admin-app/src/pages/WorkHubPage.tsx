@@ -6113,9 +6113,24 @@ export default function WorkHubPage() {
 
   const handleMobileProjectSelect = useCallback((projectId: string) => {
     setGearMenuOpen(false)
-    navigateToWorkspaceSection(resolveProjectMainPanelSection(projectId), selectedWorkspaceId, projectId)
+    // On mobile, always navigate to the explicit tasks section URL so the
+    // section is encoded in the URL (kind='workspace') rather than inferred
+    // from the project's Firestore mainPanelView. This guarantees a visible
+    // content change regardless of how each project is configured.
+    setSelectedProjectId(projectId)
+    setSelectedNoteProjectId('')
+    setSelectedDocumentId('')
+    setSelectedTaskId('')
+    setSelectedMoodBoardId('')
+    setActiveSection('tasks')
+    setActiveWorkspaceTab('tasks')
+    setProjectsGroupExpanded(true)
+    setSidebarCollapsed(false)
+    if (selectedWorkspaceId) {
+      navigate(`/workhub/w/${encodeURIComponent(selectedWorkspaceId)}/s/tasks?p=${encodeURIComponent(projectId)}`)
+    }
     closeMobileWorkspacePanel()
-  }, [closeMobileWorkspacePanel, navigateToWorkspaceSection, resolveProjectMainPanelSection, selectedWorkspaceId])
+  }, [closeMobileWorkspacePanel, navigate, selectedWorkspaceId, setGearMenuOpen, setSelectedProjectId, setSelectedNoteProjectId, setSelectedDocumentId, setSelectedTaskId, setSelectedMoodBoardId, setActiveSection, setActiveWorkspaceTab, setProjectsGroupExpanded, setSidebarCollapsed])
 
   const handleMobileDocumentSelect = useCallback((documentId: string) => {
     setGearMenuOpen(false)
@@ -6465,7 +6480,9 @@ export default function WorkHubPage() {
                   aria-expanded={mobileWorkspacePanelOpen}
                 >
                   <span aria-hidden="true">☰</span>
-                  <span>Workspaces</span>
+                  <span className="workhub-mobile-context-label">
+                    {selectedProject ? selectedProject.name : (selectedWorkspace ? (workspaceDisplayNameById[selectedWorkspaceId] || selectedWorkspace.name) : 'Workspaces')}
+                  </span>
                 </button>
               </div>
             ) : (
