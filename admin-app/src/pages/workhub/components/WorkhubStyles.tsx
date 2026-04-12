@@ -277,7 +277,7 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         overflow: hidden;
         overscroll-behavior: contain;
         touch-action: pan-y;
-        animation: workhubMobileDrawerIn 0.18s ease;
+        animation: workhubMobileDrawerIn 0.3s cubic-bezier(0.22, 0.8, 0.24, 1);
       }
       .workhub-mobile-workspace-panel-head {
         border-bottom: 1px solid #e4ebf5;
@@ -10077,22 +10077,18 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       }
       @keyframes workhubMobileDrawerIn {
         from {
-          transform: translateY(18px);
-          opacity: 0.94;
+          transform: translateX(100%);
         }
         to {
-          transform: translateY(0);
-          opacity: 1;
+          transform: translateX(0);
         }
       }
       @keyframes workhubMobileDrawerOut {
         from {
-          transform: translateY(0);
-          opacity: 1;
+          transform: translateX(0);
         }
         to {
-          transform: translateY(28px);
-          opacity: 0;
+          transform: translateX(100%);
         }
       }
       @keyframes workhubMobileBackdropOut {
@@ -10100,11 +10096,11 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         to   { background: rgba(20, 32, 56, 0); }
       }
       .workhub-mobile-workspace-panel-backdrop.is-closing {
-        animation: workhubMobileBackdropOut 0.19s ease forwards;
+        animation: workhubMobileBackdropOut 0.3s ease forwards;
         pointer-events: none;
       }
       .workhub-mobile-workspace-panel-backdrop.is-closing .workhub-mobile-workspace-panel {
-        animation: workhubMobileDrawerOut 0.19s ease forwards;
+        animation: workhubMobileDrawerOut 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
       }
       @media (max-width: ${phoneMaxWidth}px) {
         .workhub-shell-layout,

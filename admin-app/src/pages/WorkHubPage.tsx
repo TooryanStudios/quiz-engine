@@ -1015,7 +1015,7 @@ export default function WorkHubPage() {
       setMobileWorkspacePanelOpen(false)
       setMobileWorkspacePanelClosing(false)
       mobileWorkspacePanelCloseTimerRef.current = null
-    }, 190)
+    }, 300)
   }, [])
   const [expandedTaskChecklistIds, setExpandedTaskChecklistIds] = useState<string[]>([])
   const [expandedChecklistDetailKeys, setExpandedChecklistDetailKeys] = useState<string[]>([])
@@ -6113,9 +6113,9 @@ export default function WorkHubPage() {
 
   const handleMobileProjectSelect = useCallback((projectId: string) => {
     setGearMenuOpen(false)
-    handleSelectProject(projectId)
+    navigateToWorkspaceSection(resolveProjectMainPanelSection(projectId), selectedWorkspaceId, projectId)
     closeMobileWorkspacePanel()
-  }, [handleSelectProject, closeMobileWorkspacePanel])
+  }, [closeMobileWorkspacePanel, navigateToWorkspaceSection, resolveProjectMainPanelSection, selectedWorkspaceId])
 
   const handleMobileDocumentSelect = useCallback((documentId: string) => {
     setGearMenuOpen(false)
@@ -6833,7 +6833,7 @@ export default function WorkHubPage() {
         <div
           ref={shellLayoutRef}
           className={`workhub-shell-layout${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}
-          style={!sidebarCollapsed ? { gridTemplateColumns: `${treePanelWidth}px 4px minmax(0, 1fr)` } : undefined}
+          style={!isMobileWorkhubLayout && !sidebarCollapsed ? { gridTemplateColumns: `${treePanelWidth}px 4px minmax(0, 1fr)` } : undefined}
         >
           {!isMobileWorkhubLayout && (
             <aside className={`workhub-panel workhub-tree-sidebar${sidebarCollapsed ? ' is-collapsed' : ''}`}>
