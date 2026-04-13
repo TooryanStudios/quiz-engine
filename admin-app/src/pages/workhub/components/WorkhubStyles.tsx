@@ -4034,21 +4034,35 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         min-height: auto;
       }
       .workhub-team-activity-wrap {
+        max-height: 280px;
+        overflow-y: auto;
         overflow-x: auto;
+        border: 1px solid #e8eff5;
+        border-radius: 8px;
+        padding: 6px 8px 6px 0;
+        background: #f5f9fd;
+        scrollbar-gutter: stable;
       }
       .workhub-team-activity-grid {
         display: grid;
         gap: 3px;
-        min-width: 300px;
+        width: max-content;
+        min-width: max-content;
         align-items: center;
+        padding-right: 6px;
       }
       .workhub-tah-label-cell {
         display: flex;
         align-items: center;
         gap: 6px;
         padding-right: 6px;
+        padding-left: 6px;
         overflow: hidden;
         min-height: 18px;
+        position: sticky;
+        left: 0;
+        z-index: 2;
+        background: #f5f9fd;
       }
       .workhub-tah-avatar {
         width: 20px;
@@ -4079,17 +4093,44 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         flex-shrink: 0;
       }
       .workhub-tah-day-head {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-end;
         font-size: 0.58rem;
         color: #9ab0cc;
         text-align: center;
         line-height: 1;
         padding-bottom: 2px;
         user-select: none;
+        min-width: 32px;
+        min-height: 24px;
+        position: relative;
       }
       .workhub-tah-day-head.is-weekend {
         color: #b0a0cc;
       }
+      .workhub-tah-day-head.is-month-start,
+      .workhub-tah-cell.is-month-start {
+        box-shadow: inset 1px 0 0 #8eaedc, inset 2px 0 0 rgba(255, 255, 255, 0.9);
+      }
+      .workhub-tah-month-label {
+        display: block;
+        min-height: 0.68rem;
+        font-size: 0.5rem;
+        line-height: 1;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #6c83ad;
+        margin-bottom: 2px;
+        opacity: 0;
+      }
+      .workhub-tah-month-label.is-visible {
+        opacity: 1;
+      }
       .workhub-tah-cell {
+        width: 32px;
         height: 14px;
         border-radius: 3px;
         background: #eef3fc;
@@ -7312,6 +7353,12 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         background: #f1f6ff;
         border-bottom: 1px solid #e0eafb;
       }
+      .workhub-task-group-head-left {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        min-width: 0;
+      }
       .workhub-task-group-head span {
         color: #5870a4;
         font-size: 0.7rem;
@@ -7327,9 +7374,58 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         align-items: center;
         gap: 6px;
         cursor: pointer;
+        flex-shrink: 0;
       }
       .workhub-task-group-toggle-caret {
         color: #7a8fb8;
+        font-size: 0.72rem;
+      }
+      /* collapsed collapsible (completed/done) group ─────────────────── */
+      .workhub-task-group.is-collapsible.is-collapsed {
+        border-color: #d0e8d8;
+        background: #f4fbf6;
+        margin-top: 10px;
+      }
+      .workhub-task-group.is-collapsible.is-collapsed .workhub-task-group-head {
+        background: linear-gradient(90deg, #eaf7ee 0%, #f4fbf6 100%);
+        border-bottom: none;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      .workhub-task-group.is-collapsible.is-collapsed .workhub-task-group-head:hover {
+        background: linear-gradient(90deg, #dbf2e3 0%, #ecf7ef 100%);
+      }
+      .workhub-task-group.is-collapsible.is-collapsed .workhub-task-group-head h3 {
+        color: #2a7a47;
+      }
+      .workhub-task-group-done-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 17px;
+        height: 17px;
+        border-radius: 50%;
+        background: #2a7a47;
+        color: #ffffff;
+        font-size: 0.58rem;
+        font-weight: 900;
+        line-height: 1;
+        flex-shrink: 0;
+      }
+      .workhub-task-group-done-hint {
+        font-size: 0.69rem;
+        color: #4e9165;
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .workhub-task-group.is-collapsible.is-collapsed .workhub-task-group-toggle {
+        color: #2a7a47;
+        background: rgba(42, 122, 71, 0.1);
+        border-radius: 999px;
+        padding: 2px 8px;
         font-size: 0.72rem;
       }
       .workhub-task-group-body {
@@ -7451,6 +7547,85 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         width: 100%;
         box-sizing: border-box;
       }
+      /* ── Finance layout: 6-column grid with value column ── */
+      .workhub-task-table-wrap.is-finance .workhub-task-table-head,
+      .workhub-task-table-wrap.is-finance .workhub-task-row-grid {
+        grid-template-columns: minmax(0, 2.8fr) 108px 72px minmax(108px, 1fr) 44px 44px;
+      }
+      /* Table-like vertical column separators in finance layout */
+      .workhub-task-table-wrap.is-finance .workhub-task-col.finance-value,
+      .workhub-task-table-wrap.is-finance .workhub-task-col.assignee,
+      .workhub-task-table-wrap.is-finance .workhub-task-col.due,
+      .workhub-task-table-wrap.is-finance .workhub-task-col.priority,
+      .workhub-task-table-wrap.is-finance .workhub-task-col.checklist-inline {
+        border-left: 1px solid #dde5f0;
+        padding-left: 6px;
+      }
+      /* Stronger row borders for table look */
+      .workhub-task-table-wrap.is-finance .workhub-task-row {
+        border-top: 1px solid #d6e0ef;
+      }
+      .workhub-task-table-wrap.is-finance .workhub-task-row:first-child {
+        border-top: 1px solid #d6e0ef;
+      }
+      /* Finance value column cell */
+      .workhub-task-col.finance-value {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        min-width: 0;
+        padding-right: 4px;
+      }
+      .workhub-finance-value-currency {
+        color: #7a8da8;
+        font-size: 0.67rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        flex-shrink: 0;
+        white-space: nowrap;
+      }
+      .workhub-finance-value-input {
+        flex: 1;
+        min-width: 0;
+        width: 100%;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        background: transparent;
+        color: #1e3a5c;
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-align: right;
+        padding: 2px 4px;
+        outline: none;
+        transition: border-color 0.15s, background 0.15s;
+        -moz-appearance: textfield;
+      }
+      .workhub-finance-value-input::-webkit-outer-spin-button,
+      .workhub-finance-value-input::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+      .workhub-finance-value-input:hover {
+        border-color: #b8ccdf;
+        background: #f0f5fb;
+      }
+      .workhub-finance-value-input:focus {
+        border-color: #4a7cbc;
+        background: #ffffff;
+        box-shadow: 0 0 0 2px rgba(74,124,188,0.18);
+      }
+      .workhub-finance-value-input::placeholder {
+        color: #b8c8d8;
+        font-weight: 400;
+      }
+      /* Group total badge */
+      .workhub-task-group-total {
+        color: #5a7aaa;
+        font-size: 0.75rem;
+        font-weight: 600;
+        margin-left: 8px;
+        white-space: nowrap;
+      }
       .workhub-col-more,
       .workhub-task-col.more {
         display: none;
@@ -7522,6 +7697,41 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       }
       .workhub-task-row.is-selected .workhub-task-row-title strong {
         color: #15386a;
+      }
+      /* ── completed / done status group — muted task rows ─────────────── */
+      .workhub-task-group.is-collapsible .workhub-task-row {
+        background: #f8f9fa;
+        border-top-color: #e8ecf0;
+      }
+      .workhub-task-group.is-collapsible .workhub-task-row.is-alt {
+        background: #f3f4f6;
+      }
+      .workhub-task-group.is-collapsible .workhub-task-row:hover {
+        background: #f0f4f8;
+      }
+      .workhub-task-group.is-collapsible .workhub-task-row-title strong {
+        color: #8a9ab8;
+        font-weight: 400;
+        text-decoration: line-through;
+        text-decoration-color: #b8c4d4;
+      }
+      .workhub-task-group.is-collapsible .workhub-task-row:hover .workhub-task-row-title strong {
+        color: #6a7e9e;
+      }
+      .workhub-task-group.is-collapsible .workhub-task-row.is-selected .workhub-task-row-title strong {
+        color: #4a6080;
+        text-decoration: none;
+      }
+      .workhub-task-group.is-collapsible .workhub-task-due-label,
+      .workhub-task-group.is-collapsible .workhub-task-due-btn,
+      .workhub-task-group.is-collapsible .workhub-tah-name {
+        opacity: 0.55;
+      }
+      .workhub-task-group.is-collapsible .workhub-assignee-badge img,
+      .workhub-task-group.is-collapsible .workhub-assignee-fallback,
+      .workhub-task-group.is-collapsible .workhub-assignee-initials {
+        opacity: 0.5;
+        filter: grayscale(0.6);
       }
       .workhub-task-row-main {
         display: flex;

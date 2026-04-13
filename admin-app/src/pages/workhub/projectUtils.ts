@@ -129,7 +129,7 @@ function getSortTimestamp(value: unknown): number {
   return 0
 }
 
-export function buildProjectTree(items: WorkhubProject[]): WorkhubProjectTreeNode[] {
+export function buildProjectTree(items: WorkhubProject[], stopDescendProjectIds?: ReadonlySet<string>): WorkhubProjectTreeNode[] {
   const sorted = [...items].sort((a, b) => {
     const aSortOrder = Number((a as WorkhubProject & { sortOrder?: unknown }).sortOrder)
     const bSortOrder = Number((b as WorkhubProject & { sortOrder?: unknown }).sortOrder)
@@ -161,7 +161,7 @@ export function buildProjectTree(items: WorkhubProject[]): WorkhubProjectTreeNod
   const build = (parentId: string): WorkhubProjectTreeNode[] => {
     return (byParent.get(parentId) || []).map((item) => ({
       ...item,
-      children: build(item.id),
+      children: stopDescendProjectIds?.has(item.id) ? [] : build(item.id),
     }))
   }
   return build('')

@@ -155,6 +155,8 @@ const MASTER_EMAIL = import.meta.env.VITE_MASTER_EMAIL as string | undefined
 const DEFAULT_SUBMISSION_TIME = '10:00'
 const WORKHUB_PHONE_MAX_WIDTH = 767
 const WORKHUB_DESKTOP_MIN_WIDTH = WORKHUB_PHONE_MAX_WIDTH + 1
+const DEFAULT_STATUS_TASK_RENDER_LIMIT = 80
+const STATUS_TASK_RENDER_INCREMENT = 80
 
 function getCurrentDateInputValue(): string {
   const now = new Date()
@@ -947,6 +949,7 @@ export default function WorkHubPage() {
   const [taskDueDate, setTaskDueDate] = useState(() => shiftDateInputValue(getCurrentDateInputValue(), 1))
   const [selectedTaskStatusTab, setSelectedTaskStatusTab] = useState<'all' | WorkhubTaskStatus>('all')
   const [expandedTaskStatusIds, setExpandedTaskStatusIds] = useState<string[]>([])
+  const [statusTaskRenderLimitById, setStatusTaskRenderLimitById] = useState<Record<string, number>>({})
   const [taskFilterMenuOpen, setTaskFilterMenuOpen] = useState(false)
   const [taskFilterRequireAttachments, setTaskFilterRequireAttachments] = useState(false)
   const [taskFilterRequireChecklist, setTaskFilterRequireChecklist] = useState(false)
@@ -1751,11 +1754,20 @@ export default function WorkHubPage() {
       .map((node) => node.id),
     [visibleProjectTree],
   )
+  const collapsedClosedRootIdSet = useMemo(
+    () => new Set(defaultCollapsedClosedRootIds.filter((id) => !expandedProjectIds.includes(id))),
+    [defaultCollapsedClosedRootIds, expandedProjectIds],
+  )
   const liveProjectTree = useMemo(() => {
-    if (!selectedProjectId || selectedProjectId === 'all') return visibleProjectTree
-    const hasDraftDeadline = typeof selectedProjectDeadlineDraft === 'string'
-    const hasDraftTime = typeof selectedProjectSubmissionTimeDraft === 'string'
-    if (!hasDraftDeadline && !hasDraftTime) return visibleProjectTree
+    const activeProject = selectedProjectId && selectedProjectId !== 'all'
+      ? (visibleWorkspaceProjects.find((project) => project.id === selectedProjectId) || null)
+      : null
+    const hasDraftDeadline = !!activeProject && selectedProjectDeadlineDraft !== (activeProject.projectDeadline || '')
+    const hasDraftTime = !!activeProject && selectedProjectSubmissionTimeDraft !== (activeProject.submissionTime || '')
+    if (!hasDraftDeadline && !hasDraftTime) {
+      if (collapsedClosedRootIdSet.size === 0) return visibleProjectTree
+      return buildProjectTree(visibleWorkspaceProjects, collapsedClosedRootIdSet)
+    }
     const patched = visibleWorkspaceProjects.map((project) => {
       if (project.id !== selectedProjectId) return project
       return {
@@ -1764,8 +1776,8 @@ export default function WorkHubPage() {
         ...(hasDraftTime ? { submissionTime: selectedProjectSubmissionTimeDraft } : {}),
       }
     })
-    return buildProjectTree(patched)
-  }, [visibleProjectTree, visibleWorkspaceProjects, selectedProjectId, selectedProjectDeadlineDraft, selectedProjectSubmissionTimeDraft])
+    return buildProjectTree(patched, collapsedClosedRootIdSet)
+  }, [collapsedClosedRootIdSet, visibleProjectTree, visibleWorkspaceProjects, selectedProjectId, selectedProjectDeadlineDraft, selectedProjectSubmissionTimeDraft])
   const flatVisibleProjectOptions = useMemo(() => flattenProjectTree(visibleProjectTree), [visibleProjectTree])
   const visibleProjectIds = useMemo(() => new Set(visibleWorkspaceProjects.map((item) => item.id)), [visibleWorkspaceProjects])
   const selectedProject = useMemo(() => visibleWorkspaceProjects.find((item) => item.id === selectedProjectId) || null, [selectedProjectId, visibleWorkspaceProjects])
@@ -1978,12 +1990,12 @@ export default function WorkHubPage() {
   }, [selectedProjectId, workspaceScopedTasks])
   const groupedProjectsWorkspace = selectedWorkspaceScopeType !== 'technical'
   const mirroredProjectRoots = useMemo(
-    () => (groupedProjectsWorkspace ? visibleProjectTree.filter((item) => item.workspaceId !== selectedWorkspaceId) : []),
-    [groupedProjectsWorkspace, selectedWorkspaceId, visibleProjectTree],
+    () => (groupedProjectsWorkspace ? liveProjectTree.filter((item) => item.workspaceId !== selectedWorkspaceId) : []),
+    [groupedProjectsWorkspace, liveProjectTree, selectedWorkspaceId],
   )
   const localWorkspaceRoots = useMemo(
-    () => (groupedProjectsWorkspace ? visibleProjectTree.filter((item) => item.workspaceId === selectedWorkspaceId) : visibleProjectTree),
-    [groupedProjectsWorkspace, selectedWorkspaceId, visibleProjectTree],
+    () => (groupedProjectsWorkspace ? liveProjectTree.filter((item) => item.workspaceId === selectedWorkspaceId) : liveProjectTree),
+    [groupedProjectsWorkspace, liveProjectTree, selectedWorkspaceId],
   )
   const workspaceTaskStatuses = useMemo(() => {
     if (Array.isArray(selectedWorkspace?.taskStatuses) && selectedWorkspace.taskStatuses.length > 0) {
@@ -2057,19 +2069,34 @@ export default function WorkHubPage() {
     if (selectedTaskStatusTab === 'all') return taskFilterBaseTasks
     return taskFilterBaseTasks.filter((item) => item.status === selectedTaskStatusTab)
   }, [selectedTaskStatusTab, taskFilterBaseTasks])
-  const filteredTasksByStatus = useMemo(() => {
-    const grouped: Record<string, WorkhubTask[]> = {}
+  const filteredTaskCountByStatus = useMemo(() => {
+    const grouped: Record<string, number> = {}
     for (const item of filteredTasks) {
-      if (!grouped[item.status]) grouped[item.status] = []
-      grouped[item.status].push(item)
+      grouped[item.status] = (grouped[item.status] || 0) + 1
     }
     return grouped
   }, [filteredTasks])
-  const taskFilterBaseTasksByStatus = useMemo(() => {
-    const grouped: Record<string, WorkhubTask[]> = {}
+  const financeStatusTotals = useMemo<Record<string, number>>(() => {
+    if (selectedWorkspaceScopeType !== 'finance') return {}
+    const totals: Record<string, number> = {}
+    for (const task of filteredTasks) {
+      if (typeof task.valueAmount === 'number' && Number.isFinite(task.valueAmount) && task.valueAmount > 0) {
+        totals[task.status] = Math.round(((totals[task.status] || 0) + task.valueAmount) * 100) / 100
+      }
+    }
+    return totals
+  }, [filteredTasks, selectedWorkspaceScopeType])
+  const financeWorkspaceCurrency = useMemo<string>(() => {
+    if (selectedWorkspaceScopeType !== 'finance') return ''
+    for (const task of filteredTasks) {
+      if (task.valueCurrency) return task.valueCurrency
+    }
+    return 'OMR'
+  }, [filteredTasks, selectedWorkspaceScopeType])
+  const taskFilterBaseTaskCountByStatus = useMemo(() => {
+    const grouped: Record<string, number> = {}
     for (const item of taskFilterBaseTasks) {
-      if (!grouped[item.status]) grouped[item.status] = []
-      grouped[item.status].push(item)
+      grouped[item.status] = (grouped[item.status] || 0) + 1
     }
     return grouped
   }, [taskFilterBaseTasks])
@@ -2079,12 +2106,12 @@ export default function WorkHubPage() {
       return token.includes('done') || token.includes('complete') || token.includes('closed')
     })
     if (completedCandidates.length === 0) return null
-    const withTasks = completedCandidates.find((status) => (taskFilterBaseTasksByStatus[status.id] || []).length > 0)
+    const withTasks = completedCandidates.find((status) => (taskFilterBaseTaskCountByStatus[status.id] || 0) > 0)
     return withTasks || completedCandidates[0] || null
-  }, [selectedProjectEffectiveTaskStatuses, taskFilterBaseTasksByStatus])
+  }, [selectedProjectEffectiveTaskStatuses, taskFilterBaseTaskCountByStatus])
   const completedHighlightCount = useMemo(
-    () => (completedStatusForHighlight ? (taskFilterBaseTasksByStatus[completedStatusForHighlight.id] || []).length : 0),
-    [completedStatusForHighlight, taskFilterBaseTasksByStatus],
+    () => (completedStatusForHighlight ? (taskFilterBaseTaskCountByStatus[completedStatusForHighlight.id] || 0) : 0),
+    [completedStatusForHighlight, taskFilterBaseTaskCountByStatus],
   )
   const collapsibleStatusIdSet = useMemo(() => new Set(
     selectedProjectEffectiveTaskStatuses
@@ -2101,6 +2128,31 @@ export default function WorkHubPage() {
     }
     return selectedProjectEffectiveTaskStatuses.filter((status) => status.id === selectedTaskStatusTab)
   }, [selectedTaskStatusTab, selectedProjectEffectiveTaskStatuses])
+  const expandedRenderableStatusIdSet = useMemo(() => {
+    if (selectedTaskStatusTab !== 'all') {
+      return new Set(renderedTaskStatuses.map((status) => status.id))
+    }
+    return new Set(
+      renderedTaskStatuses
+        .filter((status) => !collapsibleStatusIdSet.has(status.id) || expandedTaskStatusIds.includes(status.id))
+        .map((status) => status.id),
+    )
+  }, [collapsibleStatusIdSet, expandedTaskStatusIds, renderedTaskStatuses, selectedTaskStatusTab])
+  const renderedTaskListsByStatus = useMemo(() => {
+    const grouped: Record<string, WorkhubTask[]> = {}
+    const groupedCount: Record<string, number> = {}
+    if (expandedRenderableStatusIdSet.size === 0) return grouped
+    for (const item of filteredTasks) {
+      if (!expandedRenderableStatusIdSet.has(item.status)) continue
+      const currentCount = groupedCount[item.status] || 0
+      const limit = statusTaskRenderLimitById[item.status] || DEFAULT_STATUS_TASK_RENDER_LIMIT
+      if (currentCount >= limit) continue
+      if (!grouped[item.status]) grouped[item.status] = []
+      grouped[item.status].push(item)
+      groupedCount[item.status] = currentCount + 1
+    }
+    return grouped
+  }, [expandedRenderableStatusIdSet, filteredTasks, statusTaskRenderLimitById])
   // Pre-compute expensive per-task metadata — only recalculates when task DATA changes,
   // not when selectedTaskIds / other UI state changes.
   const taskMetaById = useMemo<Record<string, TaskRowMeta>>(() => {
@@ -2300,6 +2352,9 @@ export default function WorkHubPage() {
         item.id === itemId ? { ...item, valueAmount: value !== null ? value : undefined } : item,
       )
       void _cbRef.current.handleTaskUpdate(task, { checklist: next }, { silent: true })
+    },
+    onTaskValueChange: (task, value) => {
+      void _cbRef.current.handleTaskUpdate(task, { valueAmount: value !== null ? value : undefined }, { silent: true })
     },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [])
@@ -2939,8 +2994,9 @@ export default function WorkHubPage() {
   )
   const unreadCommentCountByTaskId = useMemo(() => {
     const counts: Record<string, number> = {}
-    notifications.forEach((item) => {
-      if (item.read || item.entityType !== 'comment' || !item.entityId) return
+    const unreadCommentNotifications = notifications.filter((item) => !item.read && item.entityType === 'comment' && !!item.entityId)
+    if (unreadCommentNotifications.length === 0) return counts
+    unreadCommentNotifications.forEach((item) => {
       const targetTask = taskById[item.entityId]
       if (!targetTask || targetTask.workspaceId !== selectedWorkspaceId) return
       counts[targetTask.id] = (counts[targetTask.id] || 0) + 1
@@ -2949,13 +3005,17 @@ export default function WorkHubPage() {
   }, [notifications, selectedWorkspaceId, taskById])
   const unreadCommentCountByProjectId = useMemo(() => {
     const counts: Record<string, number> = {}
+    if (Object.keys(unreadCommentCountByTaskId).length === 0) return counts
     Object.entries(unreadCommentCountByTaskId).forEach(([taskId, unreadCount]) => {
       const task = taskById[taskId]
       if (!task?.projectId || unreadCount <= 0) return
-      const lineage = collectProjectLineage(task.projectId, workspaceProjectById)
-      lineage.forEach((projectId) => {
-        counts[projectId] = (counts[projectId] || 0) + unreadCount
-      })
+      let pointerId = task.projectId
+      const visited = new Set<string>()
+      while (pointerId && !visited.has(pointerId)) {
+        visited.add(pointerId)
+        counts[pointerId] = (counts[pointerId] || 0) + unreadCount
+        pointerId = workspaceProjectById[pointerId]?.parentProjectId || ''
+      }
     })
     return counts
   }, [taskById, unreadCommentCountByTaskId, workspaceProjectById])
@@ -3085,6 +3145,7 @@ export default function WorkHubPage() {
       .sort((a, b) => b.totalInWindow - a.totalInWindow)
     return { days, rows, windowDays }
   }, [visibleActivity, workspaceAssignableMembers, memberNameByUid, selectedWorkspace?.activityWindowDays])
+  const displayedTeamActivityDays = useMemo(() => [...teamActivityHeatmap.days].reverse(), [teamActivityHeatmap.days])
   const overviewPriorityProjects = useMemo(() => {
     const now = Date.now()
     const oneDayMs = 24 * 60 * 60 * 1000
@@ -4329,8 +4390,11 @@ export default function WorkHubPage() {
       return
     }
 
-    setExpandedProjectIds(visibleProjectTree.map((item) => item.id))
-  }, [expandedProjectSelectionStorageKey, selectedWorkspaceId, visibleProjectTree, visibleWorkspaceProjects])
+    const defaultExpandedIds = visibleProjectTree
+      .map((item) => item.id)
+      .filter((id) => !defaultCollapsedClosedRootIds.includes(id))
+    setExpandedProjectIds(defaultExpandedIds)
+  }, [defaultCollapsedClosedRootIds, expandedProjectSelectionStorageKey, selectedWorkspaceId, visibleProjectTree, visibleWorkspaceProjects])
 
   useEffect(() => {
     if (!expandedProjectSelectionStorageKey || !selectedWorkspaceId) return
@@ -4444,29 +4508,18 @@ export default function WorkHubPage() {
   }, [selectedTaskId, visibleTasks])
 
   useEffect(() => {
-    if (defaultCollapsedClosedRootIds.length === 0) return
-    setExpandedProjectIds((current) => current.filter((id) => !defaultCollapsedClosedRootIds.includes(id) || id === selectedProjectId))
-  }, [defaultCollapsedClosedRootIds, selectedProjectId])
-
-  useEffect(() => {
-    const nextExpanded = selectedProjectEffectiveTaskStatuses
-      .map((status) => status.id)
-      .filter((statusId) => !collapsibleStatusIdSet.has(statusId))
-    setExpandedTaskStatusIds(nextExpanded)
-  }, [collapsibleStatusIdSet, selectedProjectEffectiveTaskStatuses])
-
-  useEffect(() => {
-    if (selectedTaskStatusTab === 'all') return
-    setExpandedTaskStatusIds((current) => current.includes(selectedTaskStatusTab)
-      ? current
-      : [...current, selectedTaskStatusTab])
-  }, [selectedTaskStatusTab])
-
-  useEffect(() => {
     if (selectedTaskStatusTab === 'all') return
     if (selectedProjectEffectiveTaskStatuses.some((status) => status.id === selectedTaskStatusTab)) return
     setSelectedTaskStatusTab('all')
   }, [selectedProjectEffectiveTaskStatuses, selectedTaskStatusTab])
+
+  useEffect(() => {
+    const next: Record<string, number> = {}
+    selectedProjectEffectiveTaskStatuses.forEach((status) => {
+      next[status.id] = DEFAULT_STATUS_TASK_RENDER_LIMIT
+    })
+    setStatusTaskRenderLimitById(next)
+  }, [selectedProjectEffectiveTaskStatuses])
 
   useEffect(() => {
     if (!selectedTask) {
@@ -7533,15 +7586,23 @@ export default function WorkHubPage() {
                           <div className="workhub-team-activity-wrap">
                             <div
                               className="workhub-team-activity-grid"
-                              style={{ gridTemplateColumns: `160px repeat(${teamActivityHeatmap.days.length}, minmax(0, 1fr))` }}
+                              style={{ gridTemplateColumns: `160px repeat(${teamActivityHeatmap.days.length}, 32px)` }}
                             >
                               <div className="workhub-tah-label-cell" />
-                              {teamActivityHeatmap.days.map((day) => {
+                              {displayedTeamActivityDays.map((day, index) => {
                                 const dow = new Date(day + 'T12:00:00').getDay()
                                 const isWeekend = dow === 0 || dow === 6
+                                const previousDay = displayedTeamActivityDays[index - 1]
+                                const isMonthStart = index === 0 || day.slice(5, 7) !== previousDay.slice(5, 7)
+                                const monthLabel = new Date(day + 'T12:00:00').toLocaleString(undefined, { month: 'short' })
                                 return (
-                                  <div key={day} className={`workhub-tah-day-head${isWeekend ? ' is-weekend' : ''}`} title={day}>
-                                    {day.slice(8)}
+                                  <div
+                                    key={day}
+                                    className={`workhub-tah-day-head${isWeekend ? ' is-weekend' : ''}${isMonthStart ? ' is-month-start' : ''}`}
+                                    title={day}
+                                  >
+                                    <span className={`workhub-tah-month-label${isMonthStart ? ' is-visible' : ''}`}>{isMonthStart ? monthLabel : ''}</span>
+                                    <span>{day.slice(8)}</span>
                                   </div>
                                 )
                               })}
@@ -7552,15 +7613,17 @@ export default function WorkHubPage() {
                                     <span className="workhub-tah-name">{row.name}</span>
                                     <span className="workhub-tah-total">{row.totalInWindow}</span>
                                   </div>
-                                  {row.dayCounts.map((count, i) => {
-                                    const day = teamActivityHeatmap.days[i]
+                                  {displayedTeamActivityDays.map((day, i) => {
+                                    const count = row.dayCounts[row.dayCounts.length - 1 - i] ?? 0
                                     const dow = new Date(day + 'T12:00:00').getDay()
                                     const isWeekend = dow === 0 || dow === 6
+                                    const previousDay = displayedTeamActivityDays[i - 1]
+                                    const isMonthStart = i === 0 || day.slice(5, 7) !== previousDay.slice(5, 7)
                                     const lv = count === 0 ? 0 : count === 1 ? 1 : count <= 3 ? 2 : count <= 6 ? 3 : 4
                                     return (
                                       <div
                                         key={day}
-                                        className={`workhub-tah-cell lv${lv}${isWeekend ? ' is-weekend' : ''}`}
+                                        className={`workhub-tah-cell lv${lv}${isWeekend ? ' is-weekend' : ''}${isMonthStart ? ' is-month-start' : ''}`}
                                         title={`${row.name} · ${day} · ${count} action${count !== 1 ? 's' : ''}`}
                                       />
                                     )
@@ -8087,7 +8150,7 @@ export default function WorkHubPage() {
                         </button>
                       )}
                       {visibleStatusTabs.map((status) => {
-                        const statusTaskCount = (taskFilterBaseTasksByStatus[status.id] || []).length
+                        const statusTaskCount = taskFilterBaseTaskCountByStatus[status.id] || 0
                         return (
                           <button
                             key={status.id}
@@ -8211,21 +8274,67 @@ export default function WorkHubPage() {
                     </>
                   )}
                 </div>
-                <div className="workhub-task-table-wrap">
+                <div className={`workhub-task-table-wrap${selectedWorkspaceScopeType === 'finance' ? ' is-finance' : ''}`}>
+                  {selectedWorkspaceScopeType === 'finance' && (
+                    <div className="workhub-task-table-head shared">
+                      <span className="workhub-select-all-head">
+                        <input
+                          type="checkbox"
+                          checked={selectedTaskCount > 0 && selectedTaskCount === filteredTasks.length}
+                          onChange={(e) => {
+                            if (e.target.checked) setSelectedTaskIds(filteredTasks.map((t) => t.id))
+                            else setSelectedTaskIds([])
+                          }}
+                          aria-label="Select all tasks"
+                        />
+                        Task name
+                      </span>
+                      <span>Value</span>
+                      <span>Assignee</span>
+                      <span>Due date</span>
+                      <span>Priority</span>
+                      <span>Items</span>
+                    </div>
+                  )}
                   {(() => {
                   return renderedTaskStatuses
-                    .map((status) => ({ status, statusTasks: filteredTasksByStatus[status.id] || [] }))
-                    .map(({ status, statusTasks }) => {
+                    .map((status) => ({
+                      status,
+                      statusTasks: renderedTaskListsByStatus[status.id] || [],
+                      statusTaskCount: filteredTaskCountByStatus[status.id] || 0,
+                    }))
+                    .map(({ status, statusTasks, statusTaskCount }) => {
                     const statusIsCollapsible = collapsibleStatusIdSet.has(status.id)
                     const statusIsExpanded = !statusIsCollapsible || selectedTaskStatusTab !== 'all' || expandedTaskStatusIds.includes(status.id)
+                    const isCollapsedCollapsible = statusIsCollapsible && !statusIsExpanded && selectedTaskStatusTab === 'all'
                     return (
-                      <section key={status.id} className="workhub-task-group compact-group">
-                        <div className="workhub-task-group-head">
-                          <h3 style={{ '--status-color': status.color } as any}>{status.label}</h3>
+                      <section key={status.id} className={`workhub-task-group compact-group${statusIsCollapsible ? ' is-collapsible' : ''}${isCollapsedCollapsible ? ' is-collapsed' : ''}`}>
+                        <div
+                          className="workhub-task-group-head"
+                          onClick={() => {
+                            if (!statusIsCollapsible || selectedTaskStatusTab !== 'all') return
+                            setExpandedTaskStatusIds((current) => current.includes(status.id)
+                              ? current.filter((item) => item !== status.id)
+                              : [...current, status.id])
+                          }}
+                        >
+                          <div className="workhub-task-group-head-left">
+                            {isCollapsedCollapsible && <span className="workhub-task-group-done-icon" aria-hidden="true">✓</span>}
+                            <h3 style={{ '--status-color': status.color } as any}>{status.label}</h3>
+                            {isCollapsedCollapsible && statusTaskCount > 0 && (
+                              <span className="workhub-task-group-done-hint">— {statusTaskCount} task{statusTaskCount === 1 ? '' : 's'} completed</span>
+                            )}
+                            {selectedWorkspaceScopeType === 'finance' && (financeStatusTotals[status.id] ?? 0) > 0 && (
+                              <span className="workhub-task-group-total">
+                                {financeWorkspaceCurrency} {(financeStatusTotals[status.id] ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            )}
+                          </div>
                           <button
                             type="button"
                             className="workhub-task-group-toggle"
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation()
                               if (!statusIsCollapsible || selectedTaskStatusTab !== 'all') return
                               setExpandedTaskStatusIds((current) => current.includes(status.id)
                                 ? current.filter((item) => item !== status.id)
@@ -8234,7 +8343,7 @@ export default function WorkHubPage() {
                             title={statusIsExpanded ? 'Collapse status' : 'Expand status'}
                             aria-label={statusIsExpanded ? `Collapse ${status.label}` : `Expand ${status.label}`}
                           >
-                            <span>{statusTasks.length}</span>
+                            <span>{statusTaskCount}</span>
                             {statusIsCollapsible && selectedTaskStatusTab === 'all' && (
                               <span className="workhub-task-group-toggle-caret" aria-hidden="true">{statusIsExpanded ? '▾' : '▸'}</span>
                             )}
@@ -8294,6 +8403,18 @@ export default function WorkHubPage() {
                             onDropToEnd={(statusId) => { void handleTaskReorder(dragTaskId, statusId, null) }}
                             onCommit={handleQuickAddTask}
                           />
+                          {statusTaskCount > statusTasks.length && (
+                            <button
+                              type="button"
+                              className="workhub-task-group-more-btn"
+                              onClick={() => setStatusTaskRenderLimitById((current) => ({
+                                ...current,
+                                [status.id]: (current[status.id] || DEFAULT_STATUS_TASK_RENDER_LIMIT) + STATUS_TASK_RENDER_INCREMENT,
+                              }))}
+                            >
+                              {`Show ${Math.min(STATUS_TASK_RENDER_INCREMENT, statusTaskCount - statusTasks.length)} more (${statusTasks.length}/${statusTaskCount})`}
+                            </button>
+                          )}
                             </>
                           )}
                         </div>

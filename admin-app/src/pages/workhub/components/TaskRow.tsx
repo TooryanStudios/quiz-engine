@@ -48,6 +48,7 @@ interface TaskRowCallbacks {
   onChecklistAdd: (task: WorkhubTask) => void
   onChecklistDraftChange: (taskId: string, value: string) => void
   onChecklistItemValueChange?: (task: WorkhubTask, itemId: string, value: number | null) => void
+  onTaskValueChange?: (task: WorkhubTask, value: number | null) => void
 }
 
 interface TaskRowProps {
@@ -167,6 +168,33 @@ const TaskRow = memo(function TaskRow({
               )}
             </div>
           </div>
+          {isFinanceLayout && (
+            <div className="workhub-task-col finance-value" onClick={(e) => e.stopPropagation()}>
+              <span className="workhub-finance-value-currency">{task.valueCurrency || 'OMR'}</span>
+              <input
+                key={task.valueAmount ?? 'empty'}
+                type="number"
+                min={0}
+                step={0.01}
+                className="workhub-finance-value-input"
+                defaultValue={task.valueAmount ?? ''}
+                placeholder="0.00"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => {
+                  e.stopPropagation()
+                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                  if (e.key === 'Escape') (e.target as HTMLInputElement).blur()
+                }}
+                onBlur={(e) => {
+                  const raw = e.target.value.trim()
+                  const parsed = raw === '' ? null : parseFloat(raw)
+                  if (callbacks.onTaskValueChange) {
+                    callbacks.onTaskValueChange(task, parsed !== null && !isNaN(parsed) ? parsed : null)
+                  }
+                }}
+              />
+            </div>
+          )}
           <div className="workhub-task-col assignee">
             <div className="workhub-task-people">
               {showCreatorSeparately && (
@@ -303,23 +331,6 @@ const TaskRow = memo(function TaskRow({
                   <span className="workhub-task-checklist-progress-fill" style={{ width: `${checklistProgressPercent}%` }} />
                 </span>
                 <span className="workhub-task-checklist-progress-label">{checklistDone}/{checklistTotal}</span>
-              </span>
-            )}
-            {meta.financeValue !== null && meta.financeValue !== undefined && meta.financeValue.totalValue > 0 && (
-              <span
-                className={`workhub-task-finance-chip${meta.financeValue.remaining < 0 ? ' is-over' : ''}`}
-                title={`${meta.financeValue.currency} ${meta.financeValue.totalValue.toFixed(2)} total · used ${meta.financeValue.usedValue.toFixed(2)} · remaining ${meta.financeValue.remaining.toFixed(2)}`}
-                onClick={(event) => event.stopPropagation()}
-              >
-                <span className="workhub-finance-chip-total">{meta.financeValue.currency} {meta.financeValue.totalValue.toFixed(2)}</span>
-                {meta.financeValue.usedValue > 0 && (
-                  <span className="workhub-finance-chip-bar">
-                    <span
-                      className="workhub-finance-chip-fill"
-                      style={{ width: `${Math.min(100, Math.round((meta.financeValue.usedValue / meta.financeValue.totalValue) * 100))}%` }}
-                    />
-                  </span>
-                )}
               </span>
             )}
             <button
