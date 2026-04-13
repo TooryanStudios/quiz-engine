@@ -1878,6 +1878,21 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         white-space: nowrap;
         text-overflow: ellipsis;
       }
+      .workhub-tree-node-comment-indicator {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        padding: 1px 6px;
+        border-radius: 999px;
+        border: 1px solid #f0bcc4;
+        background: #fff3f6;
+        color: #b1384f;
+        font-size: 0.58rem;
+        font-weight: 700;
+        line-height: 1;
+        flex: 0 0 auto;
+      }
       .workhub-tree-node-meta {
         display: inline-flex;
         align-items: center;
@@ -7304,6 +7319,21 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         font-size: 0.7rem;
         font-weight: 700;
       }
+      .workhub-task-group-toggle {
+        border: 0;
+        background: transparent;
+        color: #5870a4;
+        font-size: 0.7rem;
+        font-weight: 700;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+      }
+      .workhub-task-group-toggle-caret {
+        color: #7a8fb8;
+        font-size: 0.72rem;
+      }
       .workhub-task-group-body {
         padding: 0;
         display: flex;
@@ -8026,6 +8056,12 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       .workhub-task-due-label.is-set {
         color: #2d4670;
       }
+      .workhub-task-start-inline {
+        color: #667fae;
+        font-size: 0.66rem;
+        line-height: 1;
+        white-space: nowrap;
+      }
       .workhub-task-due-input {
         position: absolute;
         left: 0;
@@ -8050,6 +8086,20 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         min-width: 28px;
         padding: 2px 6px;
         justify-content: center;
+      }
+      .workhub-task-comment-unread-chip {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        border: 1px solid #f1b5bf;
+        background: #fff1f4;
+        color: #b1374d;
+        font-size: 0.62rem;
+        font-weight: 700;
+        line-height: 1;
+        padding: 2px 7px;
+        white-space: nowrap;
       }
       .workhub-task-sections.task-view-cards .workhub-task-checklist-progress-track,
       .workhub-task-sections.task-view-grid .workhub-task-checklist-progress-track {

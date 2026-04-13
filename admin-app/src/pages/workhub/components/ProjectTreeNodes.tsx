@@ -10,6 +10,7 @@ interface ProjectTreeNodesProps {
   selectedProjectId: string
   expandedProjectIds: string[]
   directTaskCountByProjectId: Record<string, number>
+  unreadCommentCountByProjectId?: Record<string, number>
   taskProgressByProjectId: Record<string, { done: number; total: number }>
   projectIntentById: Record<string, WorkhubProjectIntent>
   projectIntentIconById: Record<string, string>
@@ -95,6 +96,7 @@ export function ProjectTreeNodes({
   selectedProjectId,
   expandedProjectIds,
   directTaskCountByProjectId = {},
+  unreadCommentCountByProjectId = {},
   taskProgressByProjectId = {},
   projectIntentById = {},
   projectIntentIconById = {},
@@ -123,6 +125,7 @@ export function ProjectTreeNodes({
         const moodBoardCount = nodeMoodBoards.length
         const hasExpandableChildren = childCount > 0 || documentCount > 0 || moodBoardCount > 0
         const directTaskCount = directTaskCountByProjectId[node.id] || 0
+        const unreadCommentCount = unreadCommentCountByProjectId[node.id] || 0
         const progressSnapshot = taskProgressByProjectId[node.id] || { done: directTaskCount, total: directTaskCount }
         const totalTaskCount = Math.max(0, progressSnapshot.total)
         const doneTaskCount = Math.max(0, Math.min(progressSnapshot.done, totalTaskCount))
@@ -200,6 +203,15 @@ export function ProjectTreeNodes({
                   <span className="workhub-tree-node-title">
                       <span className={`workhub-tree-node-intent-icon is-${intentIconKind}-kind`} aria-hidden="true">{intentIcon}</span>
                     <span className="workhub-tree-node-title-text">{node.name}</span>
+                    {unreadCommentCount > 0 && (
+                      <span
+                        className="workhub-tree-node-comment-indicator"
+                        title={`${unreadCommentCount} unread comment${unreadCommentCount === 1 ? '' : 's'}`}
+                        aria-label={`${unreadCommentCount} unread comment${unreadCommentCount === 1 ? '' : 's'}`}
+                      >
+                        💬 {unreadCommentCount}
+                      </span>
+                    )}
                     {attachmentCount > 0 && (
                       <span
                         className="workhub-tree-node-attachment-indicator"
@@ -267,6 +279,7 @@ export function ProjectTreeNodes({
                   selectedProjectId={selectedProjectId}
                   expandedProjectIds={expandedProjectIds}
                   directTaskCountByProjectId={directTaskCountByProjectId}
+                  unreadCommentCountByProjectId={unreadCommentCountByProjectId}
                   taskProgressByProjectId={taskProgressByProjectId}
                   projectIntentById={projectIntentById}
                   projectIntentIconById={projectIntentIconById}

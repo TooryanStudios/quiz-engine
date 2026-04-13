@@ -153,6 +153,7 @@ export interface WorkhubTask {
   status: WorkhubTaskStatus
   priority: WorkhubTaskPriority
   assigneeUid: string
+  startDate?: string
   dueDate: string
   checklist?: WorkhubTaskChecklistItem[]
   valueAmount?: number
@@ -720,6 +721,7 @@ export async function createWorkhubTask(input: {
   status: WorkhubTaskStatus
   priority: WorkhubTaskPriority
   assigneeUid: string
+  startDate?: string
   dueDate: string
   checklist?: WorkhubTaskChecklistItem[]
   createdBy: string
@@ -735,6 +737,7 @@ export async function createWorkhubTask(input: {
     status: input.status || 'backlog',
     priority: input.priority,
     assigneeUid: input.assigneeUid,
+    startDate: input.startDate || '',
     dueDate: input.dueDate,
     checklist: input.checklist || [],
     createdBy: input.createdBy,
@@ -744,7 +747,7 @@ export async function createWorkhubTask(input: {
   return docRef.id
 }
 
-export async function updateWorkhubTask(taskId: string, patch: Partial<Pick<WorkhubTask, 'title' | 'description' | 'attachments' | 'attachmentTitles' | 'imageUrls' | 'links' | 'linkTitles' | 'linkCreatedBy' | 'status' | 'priority' | 'assigneeUid' | 'dueDate' | 'valueAmount' | 'valueCurrency' | 'checklist' | 'completedAt' | 'sortOrder'>>) {
+export async function updateWorkhubTask(taskId: string, patch: Partial<Pick<WorkhubTask, 'title' | 'description' | 'attachments' | 'attachmentTitles' | 'imageUrls' | 'links' | 'linkTitles' | 'linkCreatedBy' | 'status' | 'priority' | 'assigneeUid' | 'startDate' | 'dueDate' | 'valueAmount' | 'valueCurrency' | 'checklist' | 'completedAt' | 'sortOrder'>>) {
   await updateDoc(doc(db, 'workhub_tasks', taskId), {
     ...patch,
     updatedAt: serverTimestamp(),

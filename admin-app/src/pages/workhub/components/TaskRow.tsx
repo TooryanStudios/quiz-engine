@@ -74,6 +74,7 @@ interface TaskRowProps {
   assignableMembers: WorkhubMember[]
   taskCreator: WorkhubMember | undefined
   meta: TaskRowMeta
+  unreadCommentCount?: number
   isFinanceLayout?: boolean
   callbacks: TaskRowCallbacks
 }
@@ -83,7 +84,7 @@ const TaskRow = memo(function TaskRow({
   statusMenuOpen, priorityMenuOpen, moreMenuOpen, assigneeMenuOpen,
   editingTitle, editingTitleText, checklistExpanded, checklistDraft,
   editingChecklistItemId, editingChecklistScope, editingChecklistText,
-  isTaskBusy, taskAssignee, taskCreator, assignableMembers, meta, isFinanceLayout, callbacks,
+  isTaskBusy, taskAssignee, taskCreator, assignableMembers, meta, unreadCommentCount = 0, isFinanceLayout, callbacks,
 }: TaskRowProps) {
   const { checklist } = meta
   const assigneeLabel = taskAssignee?.displayName || taskAssignee?.email || 'Unassigned'
@@ -246,6 +247,11 @@ const TaskRow = memo(function TaskRow({
               >
                 {dueLabel}
               </button>
+              {task.startDate && (
+                <span className="workhub-task-start-inline" title={`Start date: ${formatDueDateShort(task.startDate)}`}>
+                  ▶ {formatDueDateShort(task.startDate)}
+                </span>
+              )}
               {checklistTotal > 0 && (
                 <span className="workhub-task-title-checklist-progress" title={`${checklistDone} of ${checklistTotal} checklist items done`}>
                   <span className="workhub-task-checklist-progress-track" aria-hidden="true">
@@ -273,6 +279,15 @@ const TaskRow = memo(function TaskRow({
             </span>
           </div>
           <div className="workhub-task-col checklist-inline">
+            {unreadCommentCount > 0 && (
+              <span
+                className="workhub-task-comment-unread-chip"
+                title={`${unreadCommentCount} unread comment${unreadCommentCount === 1 ? '' : 's'}`}
+                aria-label={`${unreadCommentCount} unread comment${unreadCommentCount === 1 ? '' : 's'}`}
+              >
+                💬 {unreadCommentCount}
+              </span>
+            )}
             {totalAttachmentCount > 0 && (
               <span
                 className="workhub-task-attachment-chip"

@@ -28,6 +28,7 @@ export function CreateDialog(props: {
   taskProjectId: string
   taskAssigneeUid: string
   taskPriority: WorkhubTaskPriority
+  taskStartDate: string
   taskDueDate: string
   taskStatusOptions: WorkhubTaskStatusConfig[]
   projectColorOptions: string[]
@@ -59,6 +60,7 @@ export function CreateDialog(props: {
   onTaskProjectIdChange: (value: string) => void
   onTaskAssigneeChange: (value: string) => void
   onTaskPriorityChange: (value: WorkhubTaskPriority) => void
+  onTaskStartDateChange: (value: string) => void
   onTaskDueDateChange: (value: string) => void
   onCreateProject: () => void
   onCreateProjectKeepOpen: () => void
@@ -250,11 +252,17 @@ export function CreateDialog(props: {
                 </label>
                 <div className="workhub-field-grid two compact">
                   <label className="workhub-icon-field">
+                    <span>🚀 Start date</span>
+                    <input name="taskStartDate" type="date" value={props.taskStartDate} onChange={(event) => props.onTaskStartDateChange(event.target.value)} />
+                  </label>
+                  <label className="workhub-icon-field">
                     <span>🚩 Priority</span>
                     <select name="taskPriority" value={props.taskPriority} onChange={(event) => props.onTaskPriorityChange(event.target.value as WorkhubTaskPriority)}>
                       {Object.entries(PRIORITY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                     </select>
                   </label>
+                </div>
+                <div className="workhub-field-grid two compact">
                   <label className="workhub-icon-field">
                     <span>📌 Status</span>
                     <select name="taskStatus" value={props.taskStatus} onChange={(event) => props.onTaskStatusChange(event.target.value as WorkhubTaskStatus)}>

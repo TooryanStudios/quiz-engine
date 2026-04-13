@@ -27,6 +27,7 @@ import {
   subscribeWorkhubClientsMulti,
   subscribeWorkhubDocuments,
   getWorkhubDocumentById,
+  markWorkhubNotificationRead,
   subscribeWorkhubNotifications,
   subscribeWorkhubProjectsMulti,
   subscribeWorkhubTasks,
@@ -159,6 +160,17 @@ function getCurrentDateInputValue(): string {
   const now = new Date()
   const timezoneOffsetMs = now.getTimezoneOffset() * 60_000
   return new Date(now.getTime() - timezoneOffsetMs).toISOString().slice(0, 10)
+}
+
+function shiftDateInputValue(baseDate: string, daysDelta: number): string {
+  const trimmed = baseDate.trim()
+  if (!trimmed) return ''
+  const parsed = Date.parse(`${trimmed}T00:00:00`)
+  if (!Number.isFinite(parsed)) return ''
+  const target = new Date(parsed)
+  target.setDate(target.getDate() + daysDelta)
+  const timezoneOffsetMs = target.getTimezoneOffset() * 60_000
+  return new Date(target.getTime() - timezoneOffsetMs).toISOString().slice(0, 10)
 }
 
 function resolveWorkspaceScopeType(
@@ -931,8 +943,10 @@ export default function WorkHubPage() {
   const [taskStatus, setTaskStatus] = useState<WorkhubTaskStatus>('backlog')
   const [taskPriority, setTaskPriority] = useState<WorkhubTaskPriority>('medium')
   const [taskAssigneeUid, setTaskAssigneeUid] = useState('')
-  const [taskDueDate, setTaskDueDate] = useState('')
+  const [taskStartDate, setTaskStartDate] = useState(getCurrentDateInputValue())
+  const [taskDueDate, setTaskDueDate] = useState(() => shiftDateInputValue(getCurrentDateInputValue(), 1))
   const [selectedTaskStatusTab, setSelectedTaskStatusTab] = useState<'all' | WorkhubTaskStatus>('all')
+  const [expandedTaskStatusIds, setExpandedTaskStatusIds] = useState<string[]>([])
   const [taskFilterMenuOpen, setTaskFilterMenuOpen] = useState(false)
   const [taskFilterRequireAttachments, setTaskFilterRequireAttachments] = useState(false)
   const [taskFilterRequireChecklist, setTaskFilterRequireChecklist] = useState(false)
@@ -1705,6 +1719,12 @@ export default function WorkHubPage() {
     navigateToProfile: () => navigate('/profile'),
     showToast,
   })
+  const handleNotificationMenuItemClick = useCallback(async (item: WorkhubNotification) => {
+    if (!item.read) {
+      await markWorkhubNotificationRead(item.id).catch(() => undefined)
+    }
+    await handleNotificationClick(item)
+  }, [handleNotificationClick])
   const {
     selectedTemplate: selectedCreateWorkspaceTemplate,
     templates: workspaceTemplateDefinitions,
@@ -1725,6 +1745,12 @@ export default function WorkHubPage() {
     return map
   }, [visibleWorkspaceProjects])
   const visibleProjectTree = useMemo(() => buildProjectTree(visibleWorkspaceProjects), [visibleWorkspaceProjects])
+  const defaultCollapsedClosedRootIds = useMemo(
+    () => visibleProjectTree
+      .filter((node) => /closed/i.test((node.name || '').trim()))
+      .map((node) => node.id),
+    [visibleProjectTree],
+  )
   const liveProjectTree = useMemo(() => {
     if (!selectedProjectId || selectedProjectId === 'all') return visibleProjectTree
     const hasDraftDeadline = typeof selectedProjectDeadlineDraft === 'string'
@@ -2050,7 +2076,7 @@ export default function WorkHubPage() {
   const completedStatusForHighlight = useMemo(() => {
     const completedCandidates = selectedProjectEffectiveTaskStatuses.filter((status) => {
       const token = `${status.id} ${status.label}`.toLowerCase()
-      return token.includes('done') || token.includes('complete')
+      return token.includes('done') || token.includes('complete') || token.includes('closed')
     })
     if (completedCandidates.length === 0) return null
     const withTasks = completedCandidates.find((status) => (taskFilterBaseTasksByStatus[status.id] || []).length > 0)
@@ -2060,6 +2086,14 @@ export default function WorkHubPage() {
     () => (completedStatusForHighlight ? (taskFilterBaseTasksByStatus[completedStatusForHighlight.id] || []).length : 0),
     [completedStatusForHighlight, taskFilterBaseTasksByStatus],
   )
+  const collapsibleStatusIdSet = useMemo(() => new Set(
+    selectedProjectEffectiveTaskStatuses
+      .filter((status) => {
+        const token = `${status.id} ${status.label}`.toLowerCase()
+        return token.includes('done') || token.includes('complete') || token.includes('closed')
+      })
+      .map((status) => status.id),
+  ), [selectedProjectEffectiveTaskStatuses])
   const renderedTaskStatuses = useMemo(() => {
     if (selectedTaskStatusTab === 'all') {
       if (selectedProjectEffectiveTaskStatuses.length > 0) return selectedProjectEffectiveTaskStatuses
@@ -2899,6 +2933,32 @@ export default function WorkHubPage() {
     () => notifications.filter((item) => !item.read).length,
     [notifications],
   )
+  const taskById = useMemo(
+    () => Object.fromEntries(tasks.map((item) => [item.id, item])) as Record<string, WorkhubTask>,
+    [tasks],
+  )
+  const unreadCommentCountByTaskId = useMemo(() => {
+    const counts: Record<string, number> = {}
+    notifications.forEach((item) => {
+      if (item.read || item.entityType !== 'comment' || !item.entityId) return
+      const targetTask = taskById[item.entityId]
+      if (!targetTask || targetTask.workspaceId !== selectedWorkspaceId) return
+      counts[targetTask.id] = (counts[targetTask.id] || 0) + 1
+    })
+    return counts
+  }, [notifications, selectedWorkspaceId, taskById])
+  const unreadCommentCountByProjectId = useMemo(() => {
+    const counts: Record<string, number> = {}
+    Object.entries(unreadCommentCountByTaskId).forEach(([taskId, unreadCount]) => {
+      const task = taskById[taskId]
+      if (!task?.projectId || unreadCount <= 0) return
+      const lineage = collectProjectLineage(task.projectId, workspaceProjectById)
+      lineage.forEach((projectId) => {
+        counts[projectId] = (counts[projectId] || 0) + unreadCount
+      })
+    })
+    return counts
+  }, [taskById, unreadCommentCountByTaskId, workspaceProjectById])
   const overviewStatusBuckets = useMemo(() => {
     const statusCounts = new Map<string, number>()
     visibleTasks.forEach((task) => {
@@ -2911,6 +2971,15 @@ export default function WorkHubPage() {
       count: statusCounts.get(status.id) || 0,
     }))
   }, [visibleTasks, workspaceTaskStatuses])
+
+  useEffect(() => {
+    if (!selectedTaskId) return
+    const unreadTaskCommentNotifications = notifications.filter(
+      (item) => !item.read && item.entityType === 'comment' && item.entityId === selectedTaskId,
+    )
+    if (unreadTaskCommentNotifications.length === 0) return
+    void Promise.all(unreadTaskCommentNotifications.map((item) => markWorkhubNotificationRead(item.id).catch(() => undefined)))
+  }, [notifications, selectedTaskId])
   const overviewPriorityBuckets = useMemo(() => {
     const priorities: Array<{ id: WorkhubTaskPriority; label: string; count: number; color: string }> = [
       { id: 'urgent', label: 'Urgent', count: 0, color: '#ef4444' },
@@ -4375,6 +4444,25 @@ export default function WorkHubPage() {
   }, [selectedTaskId, visibleTasks])
 
   useEffect(() => {
+    if (defaultCollapsedClosedRootIds.length === 0) return
+    setExpandedProjectIds((current) => current.filter((id) => !defaultCollapsedClosedRootIds.includes(id) || id === selectedProjectId))
+  }, [defaultCollapsedClosedRootIds, selectedProjectId])
+
+  useEffect(() => {
+    const nextExpanded = selectedProjectEffectiveTaskStatuses
+      .map((status) => status.id)
+      .filter((statusId) => !collapsibleStatusIdSet.has(statusId))
+    setExpandedTaskStatusIds(nextExpanded)
+  }, [collapsibleStatusIdSet, selectedProjectEffectiveTaskStatuses])
+
+  useEffect(() => {
+    if (selectedTaskStatusTab === 'all') return
+    setExpandedTaskStatusIds((current) => current.includes(selectedTaskStatusTab)
+      ? current
+      : [...current, selectedTaskStatusTab])
+  }, [selectedTaskStatusTab])
+
+  useEffect(() => {
     if (selectedTaskStatusTab === 'all') return
     if (selectedProjectEffectiveTaskStatuses.some((status) => status.id === selectedTaskStatusTab)) return
     setSelectedTaskStatusTab('all')
@@ -5086,6 +5174,7 @@ export default function WorkHubPage() {
           status: taskStatus,
           priority: taskPriority,
           assigneeUid,
+          startDate: taskStartDate,
           dueDate: taskDueDate,
           createdBy: auth.currentUser.uid,
         })
@@ -5124,7 +5213,9 @@ export default function WorkHubPage() {
       setTaskStatus(defaultTaskStatusId)
       setTaskPriority('medium')
       setTaskAssigneeUid(auth.currentUser.uid)
-      setTaskDueDate('')
+      const today = getCurrentDateInputValue()
+      setTaskStartDate(today)
+      setTaskDueDate(shiftDateInputValue(today, 1))
       if (createdTaskIds.length > 0) {
         setSelectedTaskId(createdTaskIds[createdTaskIds.length - 1])
       }
@@ -5180,7 +5271,8 @@ export default function WorkHubPage() {
           status: input.statusId as WorkhubTaskStatus,
           priority: input.priority,
           assigneeUid,
-          dueDate: input.dueDate,
+          startDate: getCurrentDateInputValue(),
+          dueDate: input.dueDate || shiftDateInputValue(getCurrentDateInputValue(), 1),
           createdBy: auth.currentUser.uid,
         })
         createdTaskIds.push(taskId)
@@ -5860,12 +5952,26 @@ export default function WorkHubPage() {
     }
   }
 
+  function handleTaskStartDateChange(value: string) {
+    setTaskStartDate(value)
+    const suggestedDueDate = shiftDateInputValue(value, 1)
+    if (!suggestedDueDate) return
+    setTaskDueDate((current) => {
+      if (!current) return suggestedDueDate
+      if (current <= value) return suggestedDueDate
+      return current
+    })
+  }
+
   function openCreateTaskDialog(projectId = '') {
     setQuickAddOpen(false)
     if (projectId) {
       setSelectedProjectId(projectId)
       setSelectedNoteProjectId(projectId)
     }
+    const today = getCurrentDateInputValue()
+    setTaskStartDate(today)
+    setTaskDueDate(shiftDateInputValue(today, 1))
     setCreateDialogType('task')
     setCreateDialogOpen(true)
   }
@@ -6551,7 +6657,7 @@ export default function WorkHubPage() {
                         key={item.id}
                         type="button"
                         className={`workhub-notify-item${item.read ? '' : ' is-unread'}`}
-                        onClick={() => { void handleNotificationClick(item) }}
+                        onClick={() => { void handleNotificationMenuItemClick(item) }}
                       >
                         <div className="workhub-notify-item-main">
                           <span
@@ -6760,6 +6866,7 @@ export default function WorkHubPage() {
                         selectedProjectId={selectedProjectId}
                         expandedProjectIds={expandedProjectIds}
                         directTaskCountByProjectId={workspaceTaskCountByProjectId}
+                        unreadCommentCountByProjectId={unreadCommentCountByProjectId}
                         taskProgressByProjectId={workspaceTaskProgressByProjectId}
                         projectIntentById={projectIntentById}
                         projectIntentIconById={projectIntentIconById}
@@ -6941,6 +7048,7 @@ export default function WorkHubPage() {
                                 selectedProjectId={selectedProjectId}
                                 expandedProjectIds={expandedProjectIds}
                                 directTaskCountByProjectId={workspaceTaskCountByProjectId}
+                                unreadCommentCountByProjectId={unreadCommentCountByProjectId}
                                 taskProgressByProjectId={workspaceTaskProgressByProjectId}
                                 projectIntentById={projectIntentById}
                                 projectIntentIconById={projectIntentIconById}
@@ -6973,6 +7081,7 @@ export default function WorkHubPage() {
                             selectedProjectId={selectedProjectId}
                             expandedProjectIds={expandedProjectIds}
                             directTaskCountByProjectId={workspaceTaskCountByProjectId}
+                            unreadCommentCountByProjectId={unreadCommentCountByProjectId}
                             taskProgressByProjectId={workspaceTaskProgressByProjectId}
                             projectIntentById={projectIntentById}
                             projectIntentIconById={projectIntentIconById}
@@ -7000,6 +7109,7 @@ export default function WorkHubPage() {
                       selectedProjectId={selectedProjectId}
                       expandedProjectIds={expandedProjectIds}
                       directTaskCountByProjectId={workspaceTaskCountByProjectId}
+                      unreadCommentCountByProjectId={unreadCommentCountByProjectId}
                       taskProgressByProjectId={workspaceTaskProgressByProjectId}
                       projectIntentById={projectIntentById}
                       projectIntentIconById={projectIntentIconById}
@@ -8106,13 +8216,33 @@ export default function WorkHubPage() {
                   return renderedTaskStatuses
                     .map((status) => ({ status, statusTasks: filteredTasksByStatus[status.id] || [] }))
                     .map(({ status, statusTasks }) => {
+                    const statusIsCollapsible = collapsibleStatusIdSet.has(status.id)
+                    const statusIsExpanded = !statusIsCollapsible || selectedTaskStatusTab !== 'all' || expandedTaskStatusIds.includes(status.id)
                     return (
                       <section key={status.id} className="workhub-task-group compact-group">
                         <div className="workhub-task-group-head">
                           <h3 style={{ '--status-color': status.color } as any}>{status.label}</h3>
-                          <span>{statusTasks.length}</span>
+                          <button
+                            type="button"
+                            className="workhub-task-group-toggle"
+                            onClick={() => {
+                              if (!statusIsCollapsible || selectedTaskStatusTab !== 'all') return
+                              setExpandedTaskStatusIds((current) => current.includes(status.id)
+                                ? current.filter((item) => item !== status.id)
+                                : [...current, status.id])
+                            }}
+                            title={statusIsExpanded ? 'Collapse status' : 'Expand status'}
+                            aria-label={statusIsExpanded ? `Collapse ${status.label}` : `Expand ${status.label}`}
+                          >
+                            <span>{statusTasks.length}</span>
+                            {statusIsCollapsible && selectedTaskStatusTab === 'all' && (
+                              <span className="workhub-task-group-toggle-caret" aria-hidden="true">{statusIsExpanded ? '▾' : '▸'}</span>
+                            )}
+                          </button>
                         </div>
                         <div className="workhub-task-group-body">
+                          {statusIsExpanded && (
+                            <>
                           {statusTasks.map((task, index) => (
                             <TaskRow
                               key={task.id}
@@ -8139,6 +8269,7 @@ export default function WorkHubPage() {
                               assignableMembers={assignableMembersByProjectId[task.projectId] || workspaceAssignableMembers}
                               taskCreator={memberByUid[task.createdBy]}
                               meta={taskMetaById[task.id] ?? emptyTaskRowMeta}
+                              unreadCommentCount={unreadCommentCountByTaskId[task.id] || 0}
                               isFinanceLayout={selectedWorkspaceScopeType === 'finance'}
                               callbacks={taskRowCallbacks}
                             />
@@ -8163,6 +8294,8 @@ export default function WorkHubPage() {
                             onDropToEnd={(statusId) => { void handleTaskReorder(dragTaskId, statusId, null) }}
                             onCommit={handleQuickAddTask}
                           />
+                            </>
+                          )}
                         </div>
                       </section>
                     )
@@ -8470,8 +8603,8 @@ export default function WorkHubPage() {
                       <div className="workhub-detail-meta">
                         <span>{`${selectedTaskParentEntityLabel}: ${projectNameById[selectedTask.projectId] || `Unknown ${selectedTaskParentEntityLabel.toLowerCase()}`}`}</span>
                         <span>Assignee: {memberByUid[selectedTask.assigneeUid]?.displayName || memberByUid[selectedTask.assigneeUid]?.email || 'Unassigned'}</span>
+                        <span>Start date: {formatDueDateShort(selectedTask.startDate || '')}</span>
                         <span>Due date: {formatDueDateShort(selectedTask.dueDate || '')}</span>
-                        <span>Created: {formatTime(selectedTask.createdAt)}</span>
                         <span>Updated: {formatTime(selectedTask.updatedAt)}</span>
                       </div>
                     </details>
@@ -9066,6 +9199,7 @@ export default function WorkHubPage() {
           taskProjectId={taskDialogProjectId}
           taskAssigneeUid={taskAssigneeUid}
           taskPriority={taskPriority}
+          taskStartDate={taskStartDate}
           taskDueDate={taskDueDate}
           taskStatusOptions={workspaceTaskStatuses}
           projectColorOptions={selectedWorkspaceProjectColorOptions}
@@ -9100,6 +9234,7 @@ export default function WorkHubPage() {
           onTaskProjectIdChange={setSelectedProjectId}
           onTaskAssigneeChange={setTaskAssigneeUid}
           onTaskPriorityChange={setTaskPriority}
+          onTaskStartDateChange={handleTaskStartDateChange}
           onTaskDueDateChange={setTaskDueDate}
           onCreateProject={() => { void handleCreateProject() }}
           onCreateProjectKeepOpen={() => { void handleCreateProject({ keepDialogOpen: true }) }}
