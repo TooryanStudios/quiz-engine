@@ -2051,6 +2051,19 @@ export default function WorkHubPage() {
     () => selectedProjectEffectiveTaskStatuses.filter((status) => (taskFilterBaseTasksByStatus[status.id] || []).length > 0),
     [taskFilterBaseTasksByStatus, selectedProjectEffectiveTaskStatuses],
   )
+  const completedStatusForHighlight = useMemo(() => {
+    const completedCandidates = selectedProjectEffectiveTaskStatuses.filter((status) => {
+      const token = `${status.id} ${status.label}`.toLowerCase()
+      return token.includes('done') || token.includes('complete')
+    })
+    if (completedCandidates.length === 0) return null
+    const withTasks = completedCandidates.find((status) => (taskFilterBaseTasksByStatus[status.id] || []).length > 0)
+    return withTasks || completedCandidates[0] || null
+  }, [selectedProjectEffectiveTaskStatuses, taskFilterBaseTasksByStatus])
+  const completedHighlightCount = useMemo(
+    () => (completedStatusForHighlight ? (taskFilterBaseTasksByStatus[completedStatusForHighlight.id] || []).length : 0),
+    [completedStatusForHighlight, taskFilterBaseTasksByStatus],
+  )
   const renderedTaskStatuses = useMemo(() => {
     if (selectedTaskStatusTab === 'all') {
       if (nonEmptyTaskStatusesForTabs.length > 0) return nonEmptyTaskStatusesForTabs
@@ -4371,13 +4384,16 @@ export default function WorkHubPage() {
       if (fallbackStatusId) setSelectedTaskStatusTab(fallbackStatusId)
       return
     }
-    if (filteredTasks.length === 0) {
-      const firstStatusId = workspaceTaskStatuses[0]?.id || ''
-      if (firstStatusId && selectedTaskStatusTab !== firstStatusId) {
-        setSelectedTaskStatusTab(firstStatusId)
+    if (selectedTaskStatusTab !== 'all' && nonEmptyTaskStatusesForTabs.length > 0) {
+      const isSelectedStatusVisible = nonEmptyTaskStatusesForTabs.some((status) => status.id === selectedTaskStatusTab)
+      if (!isSelectedStatusVisible) {
+        const fallbackStatusId = nonEmptyTaskStatusesForTabs[0]?.id || ''
+        if (fallbackStatusId && selectedTaskStatusTab !== fallbackStatusId) {
+          setSelectedTaskStatusTab(fallbackStatusId)
+        }
       }
     }
-  }, [filteredTasks.length, nonEmptyTaskStatusesForTabs, selectedTaskStatusTab, workspaceTaskStatuses])
+  }, [nonEmptyTaskStatusesForTabs, selectedTaskStatusTab, workspaceTaskStatuses])
 
   useEffect(() => {
     if (!selectedTask) {
@@ -7990,6 +8006,20 @@ export default function WorkHubPage() {
                           </button>
                         )
                       })}
+                      {completedStatusForHighlight && completedHighlightCount > 0 && (
+                        <button
+                          type="button"
+                          className={`workhub-completed-highlight${selectedTaskStatusTab === completedStatusForHighlight.id ? ' is-active' : ''}`}
+                          onClick={() => setSelectedTaskStatusTab(completedStatusForHighlight.id)}
+                          title="Open completed tasks"
+                        >
+                          <span className="workhub-completed-highlight-icon" aria-hidden="true">✓</span>
+                          <span>{`${completedHighlightCount} completed`}</span>
+                          {selectedTaskStatusTab !== completedStatusForHighlight.id && (
+                            <span className="workhub-completed-highlight-cta">View</span>
+                          )}
+                        </button>
+                      )}
                     </>
                   )
                   })()}

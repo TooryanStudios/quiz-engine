@@ -3013,6 +3013,49 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         cursor: pointer;
         transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease;
       }
+      .workhub-completed-highlight {
+        margin-left: auto;
+        height: 28px;
+        border-radius: 999px;
+        border: 1px solid #cfe6d8;
+        background: #f3fbf6;
+        color: #245f39;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 10px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+      }
+      .workhub-completed-highlight:hover {
+        border-color: #9bd5b3;
+        background: #e8f7ee;
+      }
+      .workhub-completed-highlight.is-active {
+        border-color: #68b38e;
+        background: #def2e7;
+      }
+      .workhub-completed-highlight-icon {
+        width: 16px;
+        height: 16px;
+        border-radius: 999px;
+        background: #2d8f5d;
+        color: #fff;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.62rem;
+        line-height: 1;
+      }
+      .workhub-completed-highlight-cta {
+        color: #1f7a4b;
+        opacity: 0.9;
+      }
+      .workhub-completed-highlight + .workhub-task-filter-wrap {
+        margin-left: 8px;
+      }
       .workhub-task-filter-wrap {
         position: relative;
         margin-left: auto;
