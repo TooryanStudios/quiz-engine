@@ -36,14 +36,11 @@ export function useGoogleSignIn() {
 
     onStart?.()
 
-    // In PWA standalone mode popups are blocked — go straight to redirect flow
-    if (isStandalone) {
-      localStorage.setItem(AUTH_REDIRECT_PENDING_KEY, String(Date.now()))
-      await authReady
-      await signInWithRedirect(auth, googleProvider)
-      return
-    }
-
+    // Always try signInWithPopup first (including PWA standalone mode).
+    // signInWithRedirect is NOT used as primary for standalone PWA because on iOS the
+    // standalone WKWebView has isolated localStorage from Safari — the redirect completes
+    // in a Safari browser tab, but that auth state is invisible to the PWA tab, causing
+    // an infinite sign-in loop.
     let hintTimer: ReturnType<typeof setTimeout> | undefined
     hintTimer = setTimeout(() => {
       showToast({
@@ -77,9 +74,15 @@ export function useGoogleSignIn() {
         : ''
 
       if (code === 'auth/popup-blocked' || code === 'auth/cancelled-popup-request') {
-        showToast({ message: 'تم حظر النافذة المنبثقة. سيتم إعادة التوجيه…', type: 'info', durationMs: 3000 })
-        localStorage.setItem(AUTH_REDIRECT_PENDING_KEY, String(Date.now()))
-        await signInWithRedirect(auth, googleProvider)
+        if (isStandalone) {
+          // Redirect from standalone PWA is broken on iOS (isolated WKWebView storage).
+          if (onError) onError('تعذّر فتح نافذة تسجيل الدخول. افتح التطبيق في متصفحك وسجّل الدخول أولاً.')
+          else showToast({ message: 'تعذّر فتح نافذة تسجيل الدخول. افتح التطبيق في متصفحك وسجّل الدخول أولاً.', type: 'error' })
+        } else {
+          showToast({ message: 'تم حظر النافذة المنبثقة. سيتم إعادة التوجيه…', type: 'info', durationMs: 3000 })
+          localStorage.setItem(AUTH_REDIRECT_PENDING_KEY, String(Date.now()))
+          await signInWithRedirect(auth, googleProvider)
+        }
         return
       }
 

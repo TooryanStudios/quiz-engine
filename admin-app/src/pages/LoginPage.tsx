@@ -25,7 +25,6 @@ export function LoginPage() {
     || ('standalone' in window.navigator && (window.navigator as { standalone?: boolean }).standalone === true)
     || document.referrer.startsWith('android-app://')
   )
-  const isIosDevice = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/i.test(navigator.userAgent)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [theme, setTheme] = useState<'dark'|'light'>('dark')
@@ -128,22 +127,15 @@ export function LoginPage() {
     setError('')
     setLoading(true)
 
-    // Popup auth is unreliable in installed PWAs and iOS webviews.
-    // Use redirect flow directly in those environments.
-    if (isStandalonePwa || isIosDevice) {
-      try {
-        localStorage.setItem(redirectPendingKey, String(Date.now()))
-        await authReady
-        await signInWithRedirect(auth, googleProvider)
-        return
-      } catch (err: unknown) {
-        if (err instanceof Error) setError(err.message)
-        else setError('فشل تسجيل الدخول. حاول مرة أخرى.')
-        setLoading(false)
-        return
-      }
-    }
-
+    // Always use signInWithPopup as primary (even in standalone PWA / iOS).
+    // signInWithRedirect is NOT used as primary because:
+    //   - On iOS, the standalone PWA (WKWebView) has isolated localStorage from Safari
+    //     browser. Redirect completes in Safari's session; the PWA never sees the auth
+    //     state → infinite sign-in loop.
+    //   - On Android Chrome PWA, redirect leaves the standalone context unreliably.
+    // Popup stays within the session and returns the credential via postMessage, which
+    // works in all modern PWA implementations (tested Chrome Custom Tab on Android, and
+    // Safari new-tab popup on iOS 14.3+).
     const hintTimer = setTimeout(() => {
       showToast({ message: 'إذا لم تفتح نافذة جوجل، يرجى التأكد من السماح بالنوافذ المنبثقة (Pop-ups) للموقع أو الانتظار قليلاً.', type: 'info', durationMs: 10000 })
     }, 4000)
@@ -160,15 +152,25 @@ export function LoginPage() {
       const code = typeof err === 'object' && err !== null && 'code' in err
         ? String((err as { code?: string }).code) : ''
       if (code === 'auth/popup-blocked' || code === 'auth/cancelled-popup-request') {
-        showToast({ message: 'Popup was blocked. Redirecting…', type: 'info', durationMs: 3000 })
-        localStorage.setItem(redirectPendingKey, String(Date.now()))
-        await signInWithRedirect(auth, googleProvider)
+        if (isStandalonePwa) {
+          // Redirect from standalone PWA is broken on iOS (isolated WKWebView storage).
+          // Direct the user to sign in via their browser first.
+          setError('تعذّر فتح نافذة تسجيل الدخول. افتح التطبيق في متصفحك (Safari/Chrome) وسجّل الدخول، ثم أعد تشغيل التطبيق من الشاشة الرئيسية.')
+        } else {
+          showToast({ message: 'Popup was blocked. Redirecting…', type: 'info', durationMs: 3000 })
+          localStorage.setItem(redirectPendingKey, String(Date.now()))
+          await signInWithRedirect(auth, googleProvider)
+        }
         return
       }
       if (code === 'auth/operation-not-supported-in-this-environment') {
-        showToast({ message: 'سيتم التحويل إلى تسجيل الدخول الآمن…', type: 'info', durationMs: 2500 })
-        localStorage.setItem(redirectPendingKey, String(Date.now()))
-        await signInWithRedirect(auth, googleProvider)
+        if (isStandalonePwa) {
+          setError('تعذّر فتح نافذة تسجيل الدخول. افتح التطبيق في متصفحك وسجّل الدخول أولاً، ثم أعد تشغيل التطبيق.')
+        } else {
+          showToast({ message: 'سيتم التحويل إلى تسجيل الدخول الآمن…', type: 'info', durationMs: 2500 })
+          localStorage.setItem(redirectPendingKey, String(Date.now()))
+          await signInWithRedirect(auth, googleProvider)
+        }
         return
       }
       if (code === 'auth/unauthorized-domain') {

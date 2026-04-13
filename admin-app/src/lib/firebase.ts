@@ -4,14 +4,14 @@ import { initializeFirestore, memoryLocalCache, persistentLocalCache, persistent
 import { getFunctions } from 'firebase/functions'
 import { getStorage } from 'firebase/storage'
 
-const isLocalHost = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
-const runtimeAuthDomain = typeof window !== 'undefined' && !isLocalHost
-  ? window.location.hostname
-  : import.meta.env.VITE_FIREBASE_AUTH_DOMAIN
-
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: runtimeAuthDomain,
+  // Always use the env-configured auth domain (should be qyan-om.firebaseapp.com).
+  // DO NOT override with window.location.hostname — this was found to cause an infinite
+  // sign-in loop in PWA/standalone mode on iOS because the standalone WKWebView has
+  // isolated localStorage from Safari, so redirect auth state set in Safari is never
+  // visible to the PWA session. Popup-based auth uses postMessage and works correctly.
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
