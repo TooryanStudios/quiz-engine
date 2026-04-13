@@ -2047,10 +2047,6 @@ export default function WorkHubPage() {
     }
     return grouped
   }, [taskFilterBaseTasks])
-  const nonEmptyTaskStatusesForTabs = useMemo(
-    () => selectedProjectEffectiveTaskStatuses.filter((status) => (taskFilterBaseTasksByStatus[status.id] || []).length > 0),
-    [taskFilterBaseTasksByStatus, selectedProjectEffectiveTaskStatuses],
-  )
   const completedStatusForHighlight = useMemo(() => {
     const completedCandidates = selectedProjectEffectiveTaskStatuses.filter((status) => {
       const token = `${status.id} ${status.label}`.toLowerCase()
@@ -2066,11 +2062,11 @@ export default function WorkHubPage() {
   )
   const renderedTaskStatuses = useMemo(() => {
     if (selectedTaskStatusTab === 'all') {
-      if (nonEmptyTaskStatusesForTabs.length > 0) return nonEmptyTaskStatusesForTabs
+      if (selectedProjectEffectiveTaskStatuses.length > 0) return selectedProjectEffectiveTaskStatuses
       return selectedProjectEffectiveTaskStatuses[0] ? [selectedProjectEffectiveTaskStatuses[0]] : []
     }
     return selectedProjectEffectiveTaskStatuses.filter((status) => status.id === selectedTaskStatusTab)
-  }, [nonEmptyTaskStatusesForTabs, selectedTaskStatusTab, selectedProjectEffectiveTaskStatuses])
+  }, [selectedTaskStatusTab, selectedProjectEffectiveTaskStatuses])
   // Pre-compute expensive per-task metadata — only recalculates when task DATA changes,
   // not when selectedTaskIds / other UI state changes.
   const taskMetaById = useMemo<Record<string, TaskRowMeta>>(() => {
@@ -4379,21 +4375,10 @@ export default function WorkHubPage() {
   }, [selectedTaskId, visibleTasks])
 
   useEffect(() => {
-    if (selectedTaskStatusTab === 'all' && nonEmptyTaskStatusesForTabs.length <= 1) {
-      const fallbackStatusId = nonEmptyTaskStatusesForTabs[0]?.id || workspaceTaskStatuses[0]?.id || ''
-      if (fallbackStatusId) setSelectedTaskStatusTab(fallbackStatusId)
-      return
-    }
-    if (selectedTaskStatusTab !== 'all' && nonEmptyTaskStatusesForTabs.length > 0) {
-      const isSelectedStatusVisible = nonEmptyTaskStatusesForTabs.some((status) => status.id === selectedTaskStatusTab)
-      if (!isSelectedStatusVisible) {
-        const fallbackStatusId = nonEmptyTaskStatusesForTabs[0]?.id || ''
-        if (fallbackStatusId && selectedTaskStatusTab !== fallbackStatusId) {
-          setSelectedTaskStatusTab(fallbackStatusId)
-        }
-      }
-    }
-  }, [nonEmptyTaskStatusesForTabs, selectedTaskStatusTab, workspaceTaskStatuses])
+    if (selectedTaskStatusTab === 'all') return
+    if (selectedProjectEffectiveTaskStatuses.some((status) => status.id === selectedTaskStatusTab)) return
+    setSelectedTaskStatusTab('all')
+  }, [selectedProjectEffectiveTaskStatuses, selectedTaskStatusTab])
 
   useEffect(() => {
     if (!selectedTask) {
@@ -7974,7 +7959,7 @@ export default function WorkHubPage() {
                 })()}
                 <div className="workhub-status-tabs">
                   {(() => {
-                  const visibleStatusTabs = nonEmptyTaskStatusesForTabs
+                  const visibleStatusTabs = selectedProjectEffectiveTaskStatuses
                   const showAllTab = visibleStatusTabs.length > 1
                   const allTaskCount = taskFilterBaseTasks.length
 
@@ -8010,13 +7995,15 @@ export default function WorkHubPage() {
                         <button
                           type="button"
                           className={`workhub-completed-highlight${selectedTaskStatusTab === completedStatusForHighlight.id ? ' is-active' : ''}`}
-                          onClick={() => setSelectedTaskStatusTab(completedStatusForHighlight.id)}
+                          onClick={() => setSelectedTaskStatusTab((current) => current === completedStatusForHighlight.id ? 'all' : completedStatusForHighlight.id)}
                           title="Open completed tasks"
                         >
                           <span className="workhub-completed-highlight-icon" aria-hidden="true">✓</span>
-                          <span>{`${completedHighlightCount} completed`}</span>
-                          {selectedTaskStatusTab !== completedStatusForHighlight.id && (
-                            <span className="workhub-completed-highlight-cta">View</span>
+                          <span>{`Team wins ${completedHighlightCount}`}</span>
+                          {selectedTaskStatusTab === completedStatusForHighlight.id ? (
+                            <span className="workhub-completed-highlight-cta">Back to board</span>
+                          ) : (
+                            <span className="workhub-completed-highlight-cta">View completed</span>
                           )}
                         </button>
                       )}

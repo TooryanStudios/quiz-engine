@@ -3017,9 +3017,9 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         margin-left: auto;
         height: 28px;
         border-radius: 999px;
-        border: 1px solid #cfe6d8;
-        background: #f3fbf6;
-        color: #245f39;
+        border: 1px solid #d5d9b5;
+        background: linear-gradient(135deg, #fffdf4 0%, #f5f8e8 100%);
+        color: #5a5a1f;
         display: inline-flex;
         align-items: center;
         gap: 6px;
@@ -3030,19 +3030,19 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
       }
       .workhub-completed-highlight:hover {
-        border-color: #9bd5b3;
-        background: #e8f7ee;
+        border-color: #c2c88f;
+        background: linear-gradient(135deg, #fffbe9 0%, #eef3d9 100%);
       }
       .workhub-completed-highlight.is-active {
-        border-color: #68b38e;
-        background: #def2e7;
+        border-color: #aab164;
+        background: linear-gradient(135deg, #f8f2d8 0%, #e6ecc8 100%);
       }
       .workhub-completed-highlight-icon {
         width: 16px;
         height: 16px;
         border-radius: 999px;
-        background: #2d8f5d;
-        color: #fff;
+        background: linear-gradient(160deg, #76802d 0%, #5b6320 100%);
+        color: #f7f8e6;
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -3050,8 +3050,10 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         line-height: 1;
       }
       .workhub-completed-highlight-cta {
-        color: #1f7a4b;
-        opacity: 0.9;
+        color: #6a7229;
+        opacity: 0.95;
+        border-left: 1px solid #d6dbb0;
+        padding-left: 6px;
       }
       .workhub-completed-highlight + .workhub-task-filter-wrap {
         margin-left: 8px;
