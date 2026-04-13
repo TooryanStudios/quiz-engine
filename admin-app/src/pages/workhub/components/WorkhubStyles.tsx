@@ -51,7 +51,6 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         height: auto;
         min-height: 56px;
         flex-shrink: 0;
-        border-bottom: 1px solid #e0e8f7;
         margin-bottom: 6px;
       }
       .workhub-topbar-main {
@@ -114,7 +113,6 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         overflow-x: auto;
         overflow-y: hidden;
         padding: 2px 1px 0;
-        border-bottom: 1px solid #e3ecfb;
         scrollbar-width: thin;
       }
       .workhub-workspace-tabs::-webkit-scrollbar {
