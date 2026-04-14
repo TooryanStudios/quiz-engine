@@ -723,6 +723,8 @@ export async function createWorkhubTask(input: {
   assigneeUid: string
   startDate?: string
   dueDate: string
+  valueAmount?: number
+  valueCurrency?: string
   checklist?: WorkhubTaskChecklistItem[]
   createdBy: string
 }): Promise<string> {
@@ -739,6 +741,8 @@ export async function createWorkhubTask(input: {
     assigneeUid: input.assigneeUid,
     startDate: input.startDate || '',
     dueDate: input.dueDate,
+    valueAmount: typeof input.valueAmount === 'number' ? input.valueAmount : undefined,
+    valueCurrency: input.valueCurrency || undefined,
     checklist: input.checklist || [],
     createdBy: input.createdBy,
     createdAt: serverTimestamp(),

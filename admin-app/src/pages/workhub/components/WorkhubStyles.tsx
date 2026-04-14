@@ -4462,9 +4462,31 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         align-items: stretch;
         border-radius: 10px;
       }
+      .workhub-project-card.compact-card.is-category-card.is-proposal-card {
+        min-height: 118px;
+      }
       .workhub-project-card.compact-card.is-category-card:hover {
         border-color: color-mix(in srgb, var(--workhub-category-accent, #8aaef1) 65%, #c9d8f4 35%);
         background: #f7f9ff;
+      }
+      .workhub-inline-children-block {
+        margin-top: 10px;
+        border: 1px solid #dbe6f6;
+        border-radius: 12px;
+        background: #fbfdff;
+        padding: 8px;
+      }
+      .workhub-inline-children-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+      }
+      .workhub-inline-children-head h3 {
+        margin: 0;
+        font-size: 0.95rem;
+        font-weight: 800;
+        color: #1d3969;
       }
       .workhub-category-card-title-row {
         width: 100%;
@@ -4532,12 +4554,43 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         min-width: 0;
         flex: 1 1 0;
       }
+      .workhub-project-card.compact-card.is-category-card.is-proposal-card .workhub-project-title-row {
+        flex: 0 0 auto;
+      }
+      .workhub-project-card.compact-card.is-category-card.is-proposal-card .workhub-project-title-row strong {
+        line-height: 1.3;
+      }
+      .workhub-project-card-days-left {
+        display: block;
+        margin-top: 5px;
+        font-size: 0.68rem;
+        font-weight: 800;
+        color: #254f88;
+        white-space: nowrap;
+      }
+      .workhub-project-card-days-left.is-near {
+        color: #b4232f;
+      }
+      .workhub-project-card-days-left.is-overdue {
+        color: #a01822;
+      }
+      .workhub-project-card-date {
+        display: block;
+        margin-top: 1px;
+        font-size: 0.59rem;
+        color: #6f85a6;
+        white-space: nowrap;
+      }
       .workhub-project-card-progress-row {
         display: flex;
         align-items: center;
         gap: 7px;
         flex-shrink: 0;
         padding-top: 8px;
+      }
+      .workhub-project-card.compact-card.is-category-card.is-proposal-card .workhub-project-card-progress-row {
+        margin-top: auto;
+        padding-top: 10px;
       }
       .workhub-project-card-progress-track {
         flex: 1 1 auto;
@@ -4840,6 +4893,17 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         justify-content: flex-start;
         text-align: left;
       }
+      .workhub-checklist-item-value {
+        margin-left: auto;
+        font-size: 0.64rem;
+        font-weight: 700;
+        color: #2f5b9a;
+        background: #eef4ff;
+        border: 1px solid #d5e2f8;
+        border-radius: 999px;
+        padding: 1px 7px;
+        white-space: nowrap;
+      }
       .workhub-checklist-left input[type="checkbox"] {
         margin: 0;
         flex: 0 0 14px;
@@ -4945,6 +5009,34 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         outline: 1px solid #2f4f84;
         outline-offset: 0;
         background: #fff;
+      }
+      .workhub-checklist-value-input-wrap {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        border: 1px solid #c8d9f0;
+        border-radius: 5px;
+        background: #f4f8ff;
+        padding: 0 5px;
+        height: 22px;
+      }
+      .workhub-checklist-value-prefix {
+        font-size: 0.63rem;
+        font-weight: 700;
+        color: #5f789f;
+        line-height: 1;
+        white-space: nowrap;
+      }
+      .workhub-checklist-value-input-wrap .workhub-checklist-value-input {
+        width: 64px;
+        border: 0;
+        background: transparent;
+        height: 20px;
+        padding: 0;
+      }
+      .workhub-checklist-value-input-wrap .workhub-checklist-value-input:focus {
+        outline: none;
+        background: transparent;
       }
 
       /* Finance block in task detail panel */
@@ -6095,8 +6187,13 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         background: #f7faff;
         color: #33537f;
         border-radius: 6px;
-        font-size: 0.66rem;
-        padding: 3px 7px;
+        font-size: 0.76rem;
+        width: 24px;
+        height: 24px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
       }
       .workhub-task-checklist-card .workhub-checklist-item-details {
         margin-top: 6px;
@@ -6107,6 +6204,25 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       }
       .workhub-task-checklist-card .workhub-checklist-add {
         margin-top: 10px;
+      }
+      .workhub-task-checklist-card .workhub-checklist-add.is-finance-add {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 96px auto;
+        gap: 6px;
+        align-items: center;
+      }
+      .workhub-task-checklist-card .workhub-checklist-add.is-finance-add .workhub-checklist-value-input-wrap {
+        width: 100%;
+        height: 30px;
+      }
+      .workhub-task-checklist-card .workhub-checklist-add.is-finance-add .workhub-checklist-value-input-wrap .workhub-checklist-value-input {
+        font-size: 0.72rem;
+      }
+      .workhub-task-checklist-card .workhub-checklist-add.is-finance-add input[type="text"] {
+        min-height: 30px;
+      }
+      .workhub-task-checklist-card .workhub-checklist-add.is-finance-add button {
+        min-height: 30px;
       }
       .workhub-discussion-card .workhub-comment-list-chat {
         display: flex;
@@ -7449,6 +7565,38 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         opacity: 0.55;
         pointer-events: none;
       }
+      .workhub-quick-add-finance-value-wrap {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        border: 1px solid #d2dff3;
+        border-radius: 6px;
+        background: #f5f9ff;
+        padding: 0 6px;
+        height: 26px;
+        width: 100%;
+        max-width: 112px;
+      }
+      .workhub-quick-add-value-input {
+        width: 100%;
+        min-width: 0;
+        border: 0;
+        background: transparent;
+        color: #17305c;
+        font: inherit;
+        font-size: 0.72rem;
+        font-weight: 600;
+        text-align: right;
+        appearance: textfield;
+      }
+      .workhub-quick-add-value-input::-webkit-outer-spin-button,
+      .workhub-quick-add-value-input::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+      .workhub-quick-add-value-input:focus {
+        outline: none;
+      }
       .workhub-quick-add-title-input {
         background: transparent;
         border-color: transparent;
@@ -7681,6 +7829,7 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         background: #dfe8f8;
         border-color: #8ea4c8;
         box-shadow: inset 3px 0 0 #4f74bd;
+        transition: none;
       }
       .workhub-task-row.is-checked {
         background: #e7eef9;
@@ -7821,6 +7970,7 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       .workhub-task-sections.task-view-cards .workhub-task-row.is-selected {
         border-color: #8aa8da;
         box-shadow: inset 3px 0 0 #4f74bd;
+        transition: none;
       }
       .workhub-task-sections.task-view-cards .workhub-task-row-main {
         padding: 16px;
@@ -7962,6 +8112,10 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         justify-content: center;
         align-items: center;
         gap: 4px;
+      }
+      .workhub-task-table-wrap.is-finance .workhub-task-row-draft .workhub-task-col.checklist-inline {
+        justify-content: flex-end;
+        gap: 6px;
       }
       .workhub-task-checklist-progress {
         display: inline-flex;

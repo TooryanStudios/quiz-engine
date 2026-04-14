@@ -35,7 +35,11 @@ export interface WorkhubTaskChecklistCardProps {
   onChecklistLinkRemove: (itemId: string, link: string) => void
   taskChecklistDraft: string
   onTaskChecklistDraftChange: (value: string) => void
-  onChecklistAdd: () => void
+  isFinanceLayout?: boolean
+  taskChecklistValueDraft?: string
+  onTaskChecklistValueDraftChange?: (value: string) => void
+  financeCurrency?: string
+  onChecklistAdd: (valueAmount?: number | null) => void
   checklistAddDisabled: boolean
 }
 
@@ -74,6 +78,10 @@ export function WorkhubTaskChecklistCard({
   onChecklistLinkRemove,
   taskChecklistDraft,
   onTaskChecklistDraftChange,
+  isFinanceLayout = false,
+  taskChecklistValueDraft = '',
+  onTaskChecklistValueDraftChange,
+  financeCurrency = 'OMR',
   onChecklistAdd,
   checklistAddDisabled,
 }: WorkhubTaskChecklistCardProps) {
@@ -136,6 +144,11 @@ export function WorkhubTaskChecklistCard({
                           {item.text}
                         </span>
                       )}
+                      {isFinanceLayout && typeof item.valueAmount === 'number' && Number.isFinite(item.valueAmount) && (
+                        <span className="workhub-checklist-item-value" title="Checklist value">
+                          {financeCurrency} {item.valueAmount.toFixed(2)}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="workhub-checklist-actions">
@@ -145,7 +158,7 @@ export function WorkhubTaskChecklistCard({
                       onClick={() => onToggleChecklistItemDetails(task.id, item.id)}
                       title="Checklist item details"
                     >
-                      {detailsExpanded ? 'Hide' : 'Details'}
+                      {detailsExpanded ? '▾' : '▸'}
                     </button>
                     <button
                       type="button"
@@ -156,7 +169,7 @@ export function WorkhubTaskChecklistCard({
                       }}
                       title="Edit checklist item"
                     >
-                      Edit
+                      ✏
                     </button>
                     <button
                       type="button"
@@ -167,7 +180,7 @@ export function WorkhubTaskChecklistCard({
                       }}
                       title="Delete checklist item"
                     >
-                      Remove
+                      🗑
                     </button>
                   </div>
                 </div>
@@ -261,7 +274,7 @@ export function WorkhubTaskChecklistCard({
           })
         )}
       </div>
-      <div className="workhub-checklist-add">
+      <div className={`workhub-checklist-add${isFinanceLayout ? ' is-finance-add' : ''}`}>
         <input
           type="text"
           value={taskChecklistDraft}
@@ -270,11 +283,43 @@ export function WorkhubTaskChecklistCard({
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
               event.preventDefault()
-              onChecklistAdd()
+              const raw = (taskChecklistValueDraft || '').trim()
+              const parsed = raw === '' ? null : Number(raw)
+              onChecklistAdd(parsed !== null && Number.isFinite(parsed) && parsed >= 0 ? parsed : null)
             }
           }}
         />
-        <button type="button" onClick={onChecklistAdd} disabled={checklistAddDisabled}>
+        {isFinanceLayout && (
+          <div className="workhub-checklist-value-input-wrap">
+            <span className="workhub-checklist-value-prefix">{financeCurrency}</span>
+            <input
+              type="number"
+              min={0}
+              step={0.01}
+              className="workhub-checklist-value-input"
+              value={taskChecklistValueDraft}
+              placeholder="0.00"
+              onChange={(event) => onTaskChecklistValueDraftChange?.(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  const raw = (taskChecklistValueDraft || '').trim()
+                  const parsed = raw === '' ? null : Number(raw)
+                  onChecklistAdd(parsed !== null && Number.isFinite(parsed) && parsed >= 0 ? parsed : null)
+                }
+              }}
+            />
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => {
+            const raw = (taskChecklistValueDraft || '').trim()
+            const parsed = raw === '' ? null : Number(raw)
+            onChecklistAdd(parsed !== null && Number.isFinite(parsed) && parsed >= 0 ? parsed : null)
+          }}
+          disabled={checklistAddDisabled}
+        >
           Add item
         </button>
       </div>

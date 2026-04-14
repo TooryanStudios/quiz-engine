@@ -601,15 +601,15 @@ function parseWorkhubPathname(pathname: string, search = ''): WorkhubParsedRoute
     }
 
     if (marker === 'd' && value) {
-      return { source: 'canonical', kind: 'document', wsId, projId: 'all', section: 'notes', entityId: value }
+      return { source: 'canonical', kind: 'document', wsId, projId: normalizedContextProjectId, section: 'notes', entityId: value }
     }
 
     if (marker === 'm' && value) {
-      return { source: 'canonical', kind: 'moodboard', wsId, projId: 'all', section: 'moodboard', entityId: value }
+      return { source: 'canonical', kind: 'moodboard', wsId, projId: normalizedContextProjectId, section: 'moodboard', entityId: value }
     }
 
     if (marker === 't' && value) {
-      return { source: 'canonical', kind: 'task', wsId, projId: 'all', section: 'tasks', entityId: value }
+      return { source: 'canonical', kind: 'task', wsId, projId: normalizedContextProjectId, section: 'tasks', entityId: value }
     }
 
     return { source: 'canonical', kind: 'workspace', wsId, projId: normalizedContextProjectId, section: 'dashboard', entityId: '' }
@@ -650,6 +650,11 @@ function buildWorkhubRouteSearch(projId: string): string {
   return `?${params.toString()}`
 }
 
+function buildWorkhubEntityRouteSearch(projId: string): string {
+  const params = new URLSearchParams({ p: projId && projId !== 'all' ? projId : 'all' })
+  return `?${params.toString()}`
+}
+
 function buildWorkhubPathname(wsId: string, projId: string, section: string, entityId = ''): string {
   if (!wsId) return '/workhub'
 
@@ -659,15 +664,15 @@ function buildWorkhubPathname(wsId: string, projId: string, section: string, ent
   const normalizedSection = isWorkhubWorkspaceSection(section) ? section : 'dashboard'
 
   if (normalizedSection === 'notes' && encodedEntityId) {
-    return `/workhub/w/${encodedWorkspaceId}/d/${encodedEntityId}`
+    return `/workhub/w/${encodedWorkspaceId}/d/${encodedEntityId}${buildWorkhubEntityRouteSearch(projId)}`
   }
 
   if (section === 'moodboard' && encodedEntityId) {
-    return `/workhub/w/${encodedWorkspaceId}/m/${encodedEntityId}`
+    return `/workhub/w/${encodedWorkspaceId}/m/${encodedEntityId}${buildWorkhubEntityRouteSearch(projId)}`
   }
 
   if (normalizedSection === 'tasks' && encodedEntityId) {
-    return `/workhub/w/${encodedWorkspaceId}/t/${encodedEntityId}`
+    return `/workhub/w/${encodedWorkspaceId}/t/${encodedEntityId}${buildWorkhubEntityRouteSearch(projId)}`
   }
 
   if ((normalizedSection === 'tasks' || normalizedSection === 'dashboard') && encodedProjectId) {
@@ -867,6 +872,7 @@ export default function WorkHubPage() {
   const location = useLocation()
   const navigationType = useNavigationType()
   const { showToast } = useToast()
+  const workhubDebugEnabled = import.meta.env.DEV && typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
   const [userEmail, setUserEmail] = useState('')
   const [userName, setUserName] = useState('')
   const [member, setMember] = useState<WorkhubMember | null>(null)
@@ -923,6 +929,7 @@ export default function WorkHubPage() {
   const [workspaceMemberAccessLevels, setWorkspaceMemberAccessLevels] = useState<Record<string, 'full' | 'custom'>>({})
   const [workspaceInviteEmails, setWorkspaceInviteEmails] = useState<string[]>([])
   const [workspaceInviteEmailDraft, setWorkspaceInviteEmailDraft] = useState('')
+  const taskSelectionPerfRef = useRef<{ taskId: string; startedAt: number } | null>(null)
   const [workspaceDeleteTypedName, setWorkspaceDeleteTypedName] = useState('')
   const [workspaceDeletePhrase, setWorkspaceDeletePhrase] = useState('')
   const [workspaceDeleteAcknowledge, setWorkspaceDeleteAcknowledge] = useState(false)
@@ -1037,6 +1044,7 @@ export default function WorkHubPage() {
   const [expandedTaskChecklistIds, setExpandedTaskChecklistIds] = useState<string[]>([])
   const [expandedChecklistDetailKeys, setExpandedChecklistDetailKeys] = useState<string[]>([])
   const [taskChecklistDrafts, setTaskChecklistDrafts] = useState<Record<string, string>>({})
+  const [taskChecklistValueDrafts, setTaskChecklistValueDrafts] = useState<Record<string, string>>({})
   const [taskAttachmentDrafts, setTaskAttachmentDrafts] = useState<Record<string, string>>({})
   const [taskAttachmentTitleDrafts, setTaskAttachmentTitleDrafts] = useState<Record<string, string>>({})
   const [taskAttachmentFileDrafts, setTaskAttachmentFileDrafts] = useState<Record<string, File[]>>({})
@@ -1267,8 +1275,64 @@ export default function WorkHubPage() {
   }, [globalFinderOpen])
 
   useEffect(() => {
+    if (!workhubDebugEnabled) return
+    const mountAt = performance.now()
+    console.info('[WorkHubDebug] mount', {
+      path: `${location.pathname}${location.search}`,
+      navigationType,
+      mountAt,
+    })
+    return () => {
+      console.info('[WorkHubDebug] unmount', {
+        path: `${location.pathname}${location.search}`,
+        livedMs: Math.round(performance.now() - mountAt),
+      })
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    if (!workhubDebugEnabled) return
+    console.info('[WorkHubDebug] route', {
+      path: `${location.pathname}${location.search}`,
+      navigationType,
+      memberLoading,
+      selectedWorkspaceId,
+      selectedProjectId,
+      selectedTaskId,
+    })
+  }, [location.pathname, location.search, memberLoading, navigationType, selectedProjectId, selectedTaskId, selectedWorkspaceId, workhubDebugEnabled])
+
+  useEffect(() => {
+    if (!workhubDebugEnabled) return
+    console.info('[WorkHubDebug] memberLoading', {
+      memberLoading,
+      hasMember: !!member,
+      path: `${location.pathname}${location.search}`,
+    })
+  }, [location.pathname, location.search, member, memberLoading, workhubDebugEnabled])
+
+  useEffect(() => {
+    if (!workhubDebugEnabled || !selectedTaskId) return
+    const selection = taskSelectionPerfRef.current
+    window.requestAnimationFrame(() => {
+      console.info('[WorkHubDebug] selectedTask paint', {
+        taskId: selectedTaskId,
+        elapsedMs: selection?.taskId === selectedTaskId ? Math.round(performance.now() - selection.startedAt) : null,
+        path: `${location.pathname}${location.search}`,
+      })
+    })
+  }, [location.pathname, location.search, selectedTaskId, workhubDebugEnabled])
+
+  useEffect(() => {
     let unsubMember: (() => void) | null = null
     const unsub = onAuthStateChanged(auth, (user) => {
+      if (workhubDebugEnabled) {
+        console.info('[WorkHubDebug] auth state changed', {
+          hasUser: !!user,
+          path: `${window.location.pathname}${window.location.search}`,
+        })
+      }
       if (unsubMember) {
         unsubMember()
         unsubMember = null
@@ -1287,6 +1351,13 @@ export default function WorkHubPage() {
       setUserEmail(user.email || '')
       setUserName(user.displayName || user.email?.split('@')[0] || 'Member')
       unsubMember = subscribeOwnWorkhubMember(user.uid, (next) => {
+        if (workhubDebugEnabled) {
+          console.info('[WorkHubDebug] member subscription resolved', {
+            hasMember: !!next,
+            status: next?.status || '',
+            path: `${window.location.pathname}${window.location.search}`,
+          })
+        }
         setMember(next)
         setMemberLoading(false)
       })
@@ -1295,7 +1366,7 @@ export default function WorkHubPage() {
       if (unsubMember) unsubMember()
       unsub()
     }
-  }, [navigate])
+  }, [navigate, workhubDebugEnabled])
 
   useEffect(() => {
     if (!member || member.status !== 'approved') return
@@ -2212,6 +2283,13 @@ export default function WorkHubPage() {
       void _cbRef.current.handleTaskReorder(dragTaskId, taskStatus, taskId)
     },
     onRowClick: (taskId) => {
+      if (workhubDebugEnabled) {
+        taskSelectionPerfRef.current = { taskId, startedAt: performance.now() }
+        console.info('[WorkHubDebug] row click', {
+          taskId,
+          path: `${location.pathname}${location.search}`,
+        })
+      }
       setSelectedTaskId(taskId)
       setOpenTaskMoreMenuId('')
       setOpenTaskStatusMenuId('')
@@ -2678,11 +2756,40 @@ export default function WorkHubPage() {
     const normalizedCompletion = Math.max(0, Math.min(100, completionPercent))
     const isCompleted = progress.total > 0 && normalizedCompletion >= 100
     const completionLabel = progress.total > 0 ? `${normalizedCompletion}%` : '--'
+    const isProposalTemplate = selectedWorkspaceTemplateId === 'proposals_leads'
+    const deadlineMs = isProposalTemplate ? resolveProjectDeadlineMs(project) : Number.NaN
+    const hasDeadline = Number.isFinite(deadlineMs)
+    const deadlineDate = formatProjectDeadlineDate(project.projectDeadline || '')
+    const deltaMs = hasDeadline ? (deadlineMs - Date.now()) : Number.NaN
+    const absMs = hasDeadline ? Math.abs(deltaMs) : 0
+    const isOverdue = hasDeadline ? deltaMs < 0 : false
+    const nearDeadlineMs = 72 * 60 * 60 * 1000
+    const isNearDeadline = hasDeadline && !isOverdue && absMs <= nearDeadlineMs
+    const totalHours = hasDeadline ? Math.max(0, Math.floor(absMs / (1000 * 60 * 60))) : 0
+    const monthHours = 24 * 30
+    const months = Math.floor(totalHours / monthHours)
+    const afterMonthsHours = totalHours - (months * monthHours)
+    const days = Math.floor(afterMonthsHours / 24)
+    const hours = afterMonthsHours % 24
+    const monthPart = months > 0 ? `${months}mo` : ''
+    const dayPart = days > 0 ? `${days}d` : ''
+    const hourPart = `${hours}h`
+    const deadlineText = !hasDeadline
+      ? 'No deadline'
+      : [monthPart, dayPart, hourPart].filter(Boolean).join(' ').trim() || '0h'
+    const submissionTimeValue = (project.submissionTime || '').trim()
+    const submissionTimeLabel = submissionTimeValue
+      ? new Intl.DateTimeFormat('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      }).format(new Date(`2000-01-01T${submissionTimeValue}`))
+      : ''
 
     return (
       <article
         key={project.id}
-        className={`workhub-project-card compact-card is-clickable is-category-card depth-${Math.min(depth, 4)}`}
+        className={`workhub-project-card compact-card is-clickable is-category-card${isProposalTemplate ? ' is-proposal-card' : ''} depth-${Math.min(depth, 4)}`}
         style={{ ['--workhub-category-accent' as string]: project.color }}
         role="button"
         tabIndex={0}
@@ -2699,6 +2806,12 @@ export default function WorkHubPage() {
             <span className="workhub-project-category-icon" aria-hidden="true">{intentMeta.icon || '📁'}</span>
             <strong>{project.name}</strong>
           </div>
+          {isProposalTemplate && hasDeadline && (
+            <>
+              <strong className={`workhub-project-card-days-left workhub-ltr-token${isOverdue ? ' is-overdue' : ''}${isNearDeadline ? ' is-near' : ''}`}>{deadlineText}</strong>
+              {deadlineDate && <span className="workhub-project-card-date workhub-ltr-token">{deadlineDate}{submissionTimeLabel ? ` | ${submissionTimeLabel}` : ''}</span>}
+            </>
+          )}
           <div className="workhub-project-card-progress-row">
             <div className="workhub-project-card-progress-track">
               <div
@@ -3758,6 +3871,7 @@ export default function WorkHubPage() {
   const previousSelectedSectionParamRef = useRef<string | null>(null)
   const prevSelectedWorkspaceIdRef = useRef(selectedWorkspaceId)
   const prevSelectedProjectIdRef = useRef(selectedProjectId)
+  const prevSelectedEntityIdRef = useRef('')
   const isWorkspaceSelectionResolved = useMemo(() => {
     if (!selectedWorkspaceId) return false
     return visibleWorkspaces.some((item) => item.id === selectedWorkspaceId)
@@ -4014,6 +4128,13 @@ export default function WorkHubPage() {
   useEffect(() => {
     if (!selectedEntityParam) return
 
+    const resolvedContextProjectId = (
+      selectedProjectParam
+      && (selectedProjectParam === 'all' || visibleProjectIds.has(selectedProjectParam))
+    )
+      ? selectedProjectParam
+      : ''
+
     if (parsedWorkhubPath.kind === 'document') {
       const targetDocument = workspaceDocumentById[selectedEntityParam]
       if (!targetDocument) return
@@ -4021,9 +4142,9 @@ export default function WorkHubPage() {
         const lineage = collectProjectLineage(targetDocument.projectId, workspaceProjectById)
         setExpandedProjectIds((current) => Array.from(new Set([...current, ...lineage])))
       }
-      const nextProjectId = targetDocument.projectId && visibleProjectIds.has(targetDocument.projectId)
+      const nextProjectId = resolvedContextProjectId || (targetDocument.projectId && visibleProjectIds.has(targetDocument.projectId)
         ? targetDocument.projectId
-        : 'all'
+        : 'all')
       setSelectedProjectId(nextProjectId)
       setSelectedNoteProjectId(targetDocument.projectId || '')
       setSelectedTaskId('')
@@ -4036,9 +4157,9 @@ export default function WorkHubPage() {
     if (parsedWorkhubPath.kind === 'moodboard') {
       const targetBoard = workspaceMoodBoards.find((item) => item.id === selectedEntityParam)
       if (!targetBoard) return
-      const nextProjectId = targetBoard.entityType === 'project' && visibleProjectIds.has(targetBoard.entityId)
+      const nextProjectId = resolvedContextProjectId || (targetBoard.entityType === 'project' && visibleProjectIds.has(targetBoard.entityId)
         ? targetBoard.entityId
-        : 'all'
+        : 'all')
       setSelectedProjectId(nextProjectId)
       setSelectedNoteProjectId(targetBoard.entityType === 'project' ? targetBoard.entityId : '')
       setSelectedMoodBoardId(targetBoard.id)
@@ -4055,9 +4176,9 @@ export default function WorkHubPage() {
         const lineage = collectProjectLineage(targetTask.projectId, workspaceProjectById)
         setExpandedProjectIds((current) => Array.from(new Set([...current, ...lineage])))
       }
-      const nextProjectId = targetTask.projectId && visibleProjectIds.has(targetTask.projectId)
+      const nextProjectId = resolvedContextProjectId || (targetTask.projectId && visibleProjectIds.has(targetTask.projectId)
         ? targetTask.projectId
-        : 'all'
+        : 'all')
       setSelectedProjectId(nextProjectId)
       setSelectedNoteProjectId(targetTask.projectId || '')
       setSelectedTaskId(targetTask.id)
@@ -4069,6 +4190,7 @@ export default function WorkHubPage() {
   }, [
     parsedWorkhubPath.kind,
     selectedEntityParam,
+    selectedProjectParam,
     tasks,
     visibleProjectIds,
     workspaceDocumentById,
@@ -4112,11 +4234,15 @@ export default function WorkHubPage() {
       : (activeSection === 'moodboard'
         ? selectedMoodBoardId
         : (activeSection === 'tasks' ? selectedTaskId : ''))
+    const prevEntityId = prevSelectedEntityIdRef.current
+    prevSelectedEntityIdRef.current = expectedEntityParam
+    const entityChangedThisRender = prevEntityId !== expectedEntityParam
 
     if (
       navigationType === 'POP'
       && !workspaceChangedThisRender
       && !projectChangedThisRender
+      && !entityChangedThisRender
       && (
         (!!selectedWorkspaceParam && selectedWorkspaceId !== selectedWorkspaceParam)
         || (!!selectedProjectParam && expectedProjectParam !== selectedProjectParam)
@@ -4136,6 +4262,14 @@ export default function WorkHubPage() {
       && selectedProjectParam !== 'all'
       && expectedProjectParam !== selectedProjectParam
       && !projectChangedThisRender
+    ) {
+      return
+    }
+
+    if (
+      !!selectedEntityParam
+      && expectedEntityParam !== selectedEntityParam
+      && !entityChangedThisRender
     ) {
       return
     }
@@ -5326,6 +5460,8 @@ export default function WorkHubPage() {
           assigneeUid,
           startDate: getCurrentDateInputValue(),
           dueDate: input.dueDate || shiftDateInputValue(getCurrentDateInputValue(), 1),
+          valueAmount: selectedWorkspaceScopeType === 'finance' ? input.valueAmount : undefined,
+          valueCurrency: selectedWorkspaceScopeType === 'finance' ? (input.valueCurrency || 'OMR') : undefined,
           createdBy: auth.currentUser.uid,
         })
         createdTaskIds.push(taskId)
@@ -7333,6 +7469,17 @@ export default function WorkHubPage() {
                       )}
                     </>
                   )}
+                  {selectedWorkspaceTemplateId === 'proposals_leads' && selectedProject && (
+                    <div className="workhub-inline-children-block">
+                      <div className="workhub-inline-children-head">
+                        <h3>{selectedDashboardChildrenTitle}</h3>
+                      </div>
+                      <div className="workhub-project-card-grid">
+                        {selectedBranchChildProjects.map((project) => renderDashboardProjectCard(project, 0))}
+                        {selectedBranchChildProjects.length === 0 && <div className="workhub-empty-state">No child projects here yet.</div>}
+                      </div>
+                    </div>
+                  )}
                   {selectedProject && selectedProjectDashboardSummary && (
                     <div className="workhub-proposal-focus-grid">
                       <article className="workhub-overview-card workhub-proposal-focus-card">
@@ -7638,17 +7785,19 @@ export default function WorkHubPage() {
                   )}
                 </section>
 
-                <section className="workhub-panel">
-                  <div className="workhub-panel-head compact">
-                    <div>
-                      <h2>{selectedDashboardChildrenTitle}</h2>
+                {!(selectedWorkspaceTemplateId === 'proposals_leads' && selectedProject) && (
+                  <section className="workhub-panel">
+                    <div className="workhub-panel-head compact">
+                      <div>
+                        <h2>{selectedDashboardChildrenTitle}</h2>
+                      </div>
                     </div>
-                  </div>
-                  <div className="workhub-project-card-grid">
-                    {selectedBranchChildProjects.map((project) => renderDashboardProjectCard(project, 0))}
-                    {selectedBranchChildProjects.length === 0 && <div className="workhub-empty-state">No child projects here yet.</div>}
-                  </div>
-                </section>
+                    <div className="workhub-project-card-grid">
+                      {selectedBranchChildProjects.map((project) => renderDashboardProjectCard(project, 0))}
+                      {selectedBranchChildProjects.length === 0 && <div className="workhub-empty-state">No child projects here yet.</div>}
+                    </div>
+                  </section>
+                )}
               </main>
             )}
 
@@ -8393,6 +8542,8 @@ export default function WorkHubPage() {
                             defaultProjectId={quickAddDefaultProjectId}
                             selectedProjectId={selectedProjectId}
                             selectedTaskStatusTab={selectedTaskStatusTab}
+                            isFinanceLayout={selectedWorkspaceScopeType === 'finance'}
+                            financeCurrency={financeWorkspaceCurrency || 'OMR'}
                             currentUid={auth.currentUser?.uid || ''}
                             activeDragTaskId={dragTaskId}
                             activeDragStatusId={dragStatusId}
@@ -8731,6 +8882,75 @@ export default function WorkHubPage() {
                     </details>
                   </div>
 
+                  <WorkhubTaskChecklistCard
+                    task={selectedTask}
+                    checklist={buildChecklist(selectedTask)}
+                    getChecklistDetailKey={getChecklistDetailKey}
+                    expandedChecklistDetailKeys={expandedChecklistDetailKeys}
+                    onToggleChecklistItemDetails={toggleChecklistItemDetails}
+                    editingChecklistScope={editingChecklistScope}
+                    editingChecklistTaskId={editingChecklistTaskId}
+                    editingChecklistItemId={editingChecklistItemId}
+                    editingChecklistItemText={editingChecklistItemText}
+                    onEditingChecklistItemTextChange={setEditingChecklistItemText}
+                    onChecklistItemToggle={(itemId, checked) => handleChecklistItemToggle(selectedTask, itemId, checked)}
+                    onChecklistItemEditStart={handleChecklistItemEditStart}
+                    onChecklistItemEditSave={(itemId) => handleChecklistItemEditSave(selectedTask, itemId)}
+                    onChecklistItemEditCancel={handleChecklistItemEditCancel}
+                    onChecklistRemove={(itemId) => handleChecklistRemove(selectedTask, itemId)}
+                    checklistDetailsDrafts={checklistDetailsDrafts}
+                    onChecklistDetailsDraftChange={(detailKey, value) => setChecklistDetailsDrafts((current) => ({ ...current, [detailKey]: value }))}
+                    onChecklistItemDetailsSave={(itemId) => handleChecklistItemDetailsSave(selectedTask, itemId)}
+                    checklistAttachmentDrafts={checklistAttachmentDrafts}
+                    onChecklistAttachmentDraftChange={(detailKey, value) => setChecklistAttachmentDrafts((current) => ({ ...current, [detailKey]: value }))}
+                    onChecklistAttachmentAdd={(itemId) => handleChecklistAttachmentAdd(selectedTask, itemId)}
+                    onChecklistAttachmentFileUpload={(itemId, files) => { void handleChecklistAttachmentFileUpload(selectedTask, itemId, files) }}
+                    uploadingChecklistAttachmentKey={uploadingChecklistAttachmentKey}
+                    attachmentViewMode={attachmentViewMode}
+                    isImageAttachmentUrl={isImageAttachmentUrl}
+                    onOpenAttachmentLightbox={openAttachmentLightbox}
+                    getAttachmentReviewCount={(url) => {
+                      const review = attachmentReviews[url]
+                      return (review?.notes.trim() ? 1 : 0)
+                        + (review?.comments.length || 0)
+                        + (review?.markers.length || 0)
+                        + (review?.modificationChecks.length || 0)
+                    }}
+                    onChecklistAttachmentRemove={(itemId, url) => { if (window.confirm('Remove this attachment?')) handleChecklistAttachmentRemove(selectedTask, itemId, url) }}
+                    checklistLinkDrafts={checklistLinkDrafts}
+                    onChecklistLinkDraftChange={(detailKey, value) => setChecklistLinkDrafts((current) => ({ ...current, [detailKey]: value }))}
+                    onChecklistLinkAdd={(itemId) => handleChecklistLinkAdd(selectedTask, itemId)}
+                    onChecklistLinkRemove={(itemId, link) => { if (window.confirm('Remove this link?')) handleChecklistLinkRemove(selectedTask, itemId, link) }}
+                    taskChecklistDraft={taskChecklistDrafts[selectedTask.id] || ''}
+                    onTaskChecklistDraftChange={(value) => setTaskChecklistDrafts((current) => ({ ...current, [selectedTask.id]: value }))}
+                    isFinanceLayout={selectedWorkspaceScopeType === 'finance'}
+                    taskChecklistValueDraft={taskChecklistValueDrafts[selectedTask.id] || ''}
+                    onTaskChecklistValueDraftChange={(value) => setTaskChecklistValueDrafts((current) => ({ ...current, [selectedTask.id]: value }))}
+                    financeCurrency={selectedTask.valueCurrency || 'OMR'}
+                    onChecklistAdd={(valueAmount) => {
+                      if (selectedWorkspaceScopeType !== 'finance') {
+                        handleChecklistAdd(selectedTask)
+                        return
+                      }
+                      const draft = (taskChecklistDrafts[selectedTask.id] || '').trim()
+                      if (!draft) return
+                      const normalizedValue = typeof valueAmount === 'number' && Number.isFinite(valueAmount) && valueAmount >= 0
+                        ? Math.round(valueAmount * 100) / 100
+                        : undefined
+                      const newItem: WorkhubTaskChecklistItem = {
+                        id: `chk_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                        text: draft,
+                        completed: false,
+                        valueAmount: normalizedValue,
+                      }
+                      const next = [...buildChecklist(selectedTask), newItem]
+                      setTaskChecklistDrafts((current) => ({ ...current, [selectedTask.id]: '' }))
+                      setTaskChecklistValueDrafts((current) => ({ ...current, [selectedTask.id]: '' }))
+                      void handleTaskUpdate(selectedTask, { checklist: next }, { silent: true })
+                    }}
+                    checklistAddDisabled={!taskChecklistDrafts[selectedTask.id]?.trim() || busyKey === 'task'}
+                  />
+
                   {renderDiscussionCard()}
 
                   <WorkhubTaskAttachmentCard
@@ -8873,51 +9093,6 @@ export default function WorkHubPage() {
                       <div className="workhub-empty-state">No links yet.</div>
                     )}
                   </div>
-
-                  <WorkhubTaskChecklistCard
-                    task={selectedTask}
-                    checklist={buildChecklist(selectedTask)}
-                    getChecklistDetailKey={getChecklistDetailKey}
-                    expandedChecklistDetailKeys={expandedChecklistDetailKeys}
-                    onToggleChecklistItemDetails={toggleChecklistItemDetails}
-                    editingChecklistScope={editingChecklistScope}
-                    editingChecklistTaskId={editingChecklistTaskId}
-                    editingChecklistItemId={editingChecklistItemId}
-                    editingChecklistItemText={editingChecklistItemText}
-                    onEditingChecklistItemTextChange={setEditingChecklistItemText}
-                    onChecklistItemToggle={(itemId, checked) => handleChecklistItemToggle(selectedTask, itemId, checked)}
-                    onChecklistItemEditStart={handleChecklistItemEditStart}
-                    onChecklistItemEditSave={(itemId) => handleChecklistItemEditSave(selectedTask, itemId)}
-                    onChecklistItemEditCancel={handleChecklistItemEditCancel}
-                    onChecklistRemove={(itemId) => handleChecklistRemove(selectedTask, itemId)}
-                    checklistDetailsDrafts={checklistDetailsDrafts}
-                    onChecklistDetailsDraftChange={(detailKey, value) => setChecklistDetailsDrafts((current) => ({ ...current, [detailKey]: value }))}
-                    onChecklistItemDetailsSave={(itemId) => handleChecklistItemDetailsSave(selectedTask, itemId)}
-                    checklistAttachmentDrafts={checklistAttachmentDrafts}
-                    onChecklistAttachmentDraftChange={(detailKey, value) => setChecklistAttachmentDrafts((current) => ({ ...current, [detailKey]: value }))}
-                    onChecklistAttachmentAdd={(itemId) => handleChecklistAttachmentAdd(selectedTask, itemId)}
-                    onChecklistAttachmentFileUpload={(itemId, files) => { void handleChecklistAttachmentFileUpload(selectedTask, itemId, files) }}
-                    uploadingChecklistAttachmentKey={uploadingChecklistAttachmentKey}
-                    attachmentViewMode={attachmentViewMode}
-                    isImageAttachmentUrl={isImageAttachmentUrl}
-                    onOpenAttachmentLightbox={openAttachmentLightbox}
-                    getAttachmentReviewCount={(url) => {
-                      const review = attachmentReviews[url]
-                      return (review?.notes.trim() ? 1 : 0)
-                        + (review?.comments.length || 0)
-                        + (review?.markers.length || 0)
-                        + (review?.modificationChecks.length || 0)
-                    }}
-                    onChecklistAttachmentRemove={(itemId, url) => { if (window.confirm('Remove this attachment?')) handleChecklistAttachmentRemove(selectedTask, itemId, url) }}
-                    checklistLinkDrafts={checklistLinkDrafts}
-                    onChecklistLinkDraftChange={(detailKey, value) => setChecklistLinkDrafts((current) => ({ ...current, [detailKey]: value }))}
-                    onChecklistLinkAdd={(itemId) => handleChecklistLinkAdd(selectedTask, itemId)}
-                    onChecklistLinkRemove={(itemId, link) => { if (window.confirm('Remove this link?')) handleChecklistLinkRemove(selectedTask, itemId, link) }}
-                    taskChecklistDraft={taskChecklistDrafts[selectedTask.id] || ''}
-                    onTaskChecklistDraftChange={(value) => setTaskChecklistDrafts((current) => ({ ...current, [selectedTask.id]: value }))}
-                    onChecklistAdd={() => handleChecklistAdd(selectedTask)}
-                    checklistAddDisabled={!taskChecklistDrafts[selectedTask.id]?.trim() || busyKey === 'task'}
-                  />
 
                 </>
               ) : selectedProject ? (

@@ -10,6 +10,8 @@ export interface QuickAddTaskSubmitInput {
   priority: WorkhubTaskPriority
   dueDate: string
   projectId: string
+  valueAmount?: number
+  valueCurrency?: string
 }
 
 const QuickAddTaskRow = memo(function QuickAddTaskRow(props: {
@@ -21,6 +23,8 @@ const QuickAddTaskRow = memo(function QuickAddTaskRow(props: {
   defaultProjectId: string
   selectedProjectId: string
   selectedTaskStatusTab: 'all' | WorkhubTaskStatus
+  isFinanceLayout?: boolean
+  financeCurrency?: string
   currentUid: string
   activeDragTaskId: string
   activeDragStatusId: string
@@ -31,15 +35,24 @@ const QuickAddTaskRow = memo(function QuickAddTaskRow(props: {
   onDropToEnd: (statusId: string) => void
   onCommit: (input: QuickAddTaskSubmitInput) => Promise<boolean | undefined>
 }) {
-  const { status, assignableMembersByProjectId, workspaceAssignableMembers, memberByUid, flatVisibleProjectOptions, defaultProjectId, selectedProjectId, currentUid, activeDragTaskId, activeDragStatusId, dropTargetKey, focusTrigger, onFocusHandled, onDragOverEnd, onDropToEnd, onCommit } = props
+  const { status, assignableMembersByProjectId, workspaceAssignableMembers, memberByUid, flatVisibleProjectOptions, defaultProjectId, selectedProjectId, isFinanceLayout = false, financeCurrency = 'OMR', currentUid, activeDragTaskId, activeDragStatusId, dropTargetKey, focusTrigger, onFocusHandled, onDragOverEnd, onDropToEnd, onCommit } = props
   const [title, setTitle] = useState('')
   const [assigneeUid, setAssigneeUid] = useState('')
   const [priority, setPriority] = useState<WorkhubTaskPriority>('medium')
   const [dueDate, setDueDate] = useState('')
   const [projectId, setProjectId] = useState('')
+  const [valueAmountDraft, setValueAmountDraft] = useState('')
   const [assigneeMenuOpen, setAssigneeMenuOpen] = useState(false)
   const [priorityMenuOpen, setPriorityMenuOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const isCommittingRef = useRef(false)
+  const skipNextBlurCommitRef = useRef(false)
+  const titleDraftRef = useRef('')
+  const assigneeDraftRef = useRef('')
+  const priorityDraftRef = useRef<WorkhubTaskPriority>('medium')
+  const dueDateDraftRef = useRef('')
+  const projectDraftRef = useRef('')
+  const valueAmountDraftRef = useRef('')
   const rootRef = useRef<HTMLElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
   const showDetails = title.trim().length > 0
@@ -59,45 +72,97 @@ const QuickAddTaskRow = memo(function QuickAddTaskRow(props: {
 
   useEffect(() => {
     if (quickAddAssignableMembers.length === 0) {
-      if (assigneeUid) setAssigneeUid('')
+      if (assigneeUid) {
+        setAssigneeUid('')
+        assigneeDraftRef.current = ''
+      }
       return
     }
     if (assigneeUid && quickAddAssignableMembers.some((member) => member.uid === assigneeUid)) return
     if (canAssignCurrentUser) {
-      if (assigneeUid !== '') setAssigneeUid('')
+      if (assigneeUid !== '') {
+        setAssigneeUid('')
+        assigneeDraftRef.current = ''
+      }
       return
     }
     const fallbackUid = quickAddAssignableMembers[0]?.uid || ''
     if (fallbackUid !== assigneeUid) {
       setAssigneeUid(fallbackUid)
+      assigneeDraftRef.current = fallbackUid
     }
   }, [assigneeUid, canAssignCurrentUser, quickAddAssignableMembers])
 
   const resetDraft = () => {
     setTitle('')
+    titleDraftRef.current = ''
     setAssigneeUid('')
+    assigneeDraftRef.current = ''
     setPriority('medium')
+    priorityDraftRef.current = 'medium'
     setDueDate('')
+    dueDateDraftRef.current = ''
     setProjectId('')
+    projectDraftRef.current = ''
+    setValueAmountDraft('')
+    valueAmountDraftRef.current = ''
     setAssigneeMenuOpen(false)
     setPriorityMenuOpen(false)
   }
 
   const commitWithTitle = async (rawTitle: string) => {
     const trimmedTitle = normalizeTaskTitle(rawTitle)
-    if (!trimmedTitle || submitting) return false
+    if (!trimmedTitle || submitting || isCommittingRef.current) return false
+    isCommittingRef.current = true
+    skipNextBlurCommitRef.current = true
+    const snapshot = {
+      title: titleDraftRef.current,
+      assigneeUid: assigneeDraftRef.current,
+      priority: priorityDraftRef.current,
+      dueDate: dueDateDraftRef.current,
+      projectId: projectDraftRef.current,
+      valueAmountDraft: valueAmountDraftRef.current,
+    }
+    setTitle('')
+    titleDraftRef.current = ''
+    setValueAmountDraft('')
+    valueAmountDraftRef.current = ''
+    setAssigneeMenuOpen(false)
+    setPriorityMenuOpen(false)
     setSubmitting(true)
-    const created = await onCommit({
-      statusId: status.id,
-      title: trimmedTitle,
-      assigneeUid,
-      priority,
-      dueDate,
-      projectId,
-    })
-    setSubmitting(false)
-    if (created) resetDraft()
-    return Boolean(created)
+    try {
+      const parsedValue = Number(snapshot.valueAmountDraft)
+      const created = await onCommit({
+        statusId: status.id,
+        title: trimmedTitle,
+        assigneeUid: snapshot.assigneeUid,
+        priority: snapshot.priority,
+        dueDate: snapshot.dueDate,
+        projectId: snapshot.projectId,
+        valueAmount: isFinanceLayout && Number.isFinite(parsedValue) && parsedValue >= 0 ? Math.round(parsedValue * 100) / 100 : undefined,
+        valueCurrency: isFinanceLayout ? financeCurrency : undefined,
+      })
+      if (created) {
+        resetDraft()
+        return true
+      }
+      setTitle(snapshot.title)
+      titleDraftRef.current = snapshot.title
+      setAssigneeUid(snapshot.assigneeUid)
+      assigneeDraftRef.current = snapshot.assigneeUid
+      setPriority(snapshot.priority)
+      priorityDraftRef.current = snapshot.priority
+      setDueDate(snapshot.dueDate)
+      dueDateDraftRef.current = snapshot.dueDate
+      setProjectId(snapshot.projectId)
+      projectDraftRef.current = snapshot.projectId
+      setValueAmountDraft(snapshot.valueAmountDraft)
+      valueAmountDraftRef.current = snapshot.valueAmountDraft
+      return false
+    } finally {
+      setSubmitting(false)
+      isCommittingRef.current = false
+    }
   }
 
   const commitDraft = async (rawTitle?: string) => commitWithTitle(typeof rawTitle === 'string' ? rawTitle : title)
@@ -118,9 +183,14 @@ const QuickAddTaskRow = memo(function QuickAddTaskRow(props: {
       }}
       onBlurCapture={() => {
         window.setTimeout(() => {
+          if (skipNextBlurCommitRef.current) {
+            skipNextBlurCommitRef.current = false
+            return
+          }
+          if (isCommittingRef.current) return
           const active = document.activeElement
           if (rootRef.current?.contains(active)) return
-          const currentInputValue = inputRef.current?.value || title
+          const currentInputValue = titleDraftRef.current
           if (currentInputValue.trim()) {
             void commitDraft(currentInputValue)
           } else {
@@ -142,7 +212,10 @@ const QuickAddTaskRow = memo(function QuickAddTaskRow(props: {
                 className="workhub-task-title-edit-input workhub-quick-add-title-input"
                 placeholder="+ Add task…"
                 value={title}
-                onChange={(event) => setTitle(event.target.value)}
+                onChange={(event) => {
+                  setTitle(event.target.value)
+                  titleDraftRef.current = event.target.value
+                }}
                 onPaste={(event) => {
                   const pastedText = event.clipboardData.getData('text')
                   if (!/\r?\n/.test(pastedText)) return
@@ -163,19 +236,41 @@ const QuickAddTaskRow = memo(function QuickAddTaskRow(props: {
               />
             </div>
           </div>
-          <div className="workhub-task-col status">
-            {showDetails ? (
-              <button
-                type="button"
-                className="workhub-task-status-btn workhub-task-status-btn-static"
-                style={{ '--status-color': status.color } as React.CSSProperties}
-                tabIndex={-1}
-                aria-label={`Status: ${status.label}`}
-              >
-                <span className="status-dot" />
-              </button>
-            ) : <span className="workhub-quick-add-placeholder" />}
-          </div>
+          {isFinanceLayout ? (
+            <div className="workhub-task-col finance-value">
+              {showDetails ? (
+                <div className="workhub-quick-add-finance-value-wrap" title="Task value">
+                  <span className="workhub-finance-value-currency">{financeCurrency}</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    className="workhub-quick-add-value-input"
+                    value={valueAmountDraft}
+                    onChange={(event) => {
+                      setValueAmountDraft(event.target.value)
+                      valueAmountDraftRef.current = event.target.value
+                    }}
+                    placeholder="0.00"
+                  />
+                </div>
+              ) : <span className="workhub-quick-add-placeholder" />}
+            </div>
+          ) : (
+            <div className="workhub-task-col status">
+              {showDetails ? (
+                <button
+                  type="button"
+                  className="workhub-task-status-btn workhub-task-status-btn-static"
+                  style={{ '--status-color': status.color } as React.CSSProperties}
+                  tabIndex={-1}
+                  aria-label={`Status: ${status.label}`}
+                >
+                  <span className="status-dot" />
+                </button>
+              ) : <span className="workhub-quick-add-placeholder" />}
+            </div>
+          )}
           <div className="workhub-task-col assignee">
             {showDetails ? (
               <div className="workhub-quick-add-menu-wrap">
@@ -202,6 +297,7 @@ const QuickAddTaskRow = memo(function QuickAddTaskRow(props: {
                         className={!assigneeUid ? 'is-active' : ''}
                         onClick={() => {
                           setAssigneeUid('')
+                          assigneeDraftRef.current = ''
                           setAssigneeMenuOpen(false)
                         }}
                       >
@@ -216,6 +312,7 @@ const QuickAddTaskRow = memo(function QuickAddTaskRow(props: {
                         className={assigneeUid === member.uid ? 'is-active' : ''}
                         onClick={() => {
                           setAssigneeUid(member.uid)
+                          assigneeDraftRef.current = member.uid
                           setAssigneeMenuOpen(false)
                         }}
                       >
@@ -234,7 +331,10 @@ const QuickAddTaskRow = memo(function QuickAddTaskRow(props: {
           </div>
           <div className="workhub-task-col due">
             {showDetails ? (
-              <input className="workhub-quick-add-date" type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} />
+              <input className="workhub-quick-add-date" type="date" value={dueDate} onChange={(event) => {
+                setDueDate(event.target.value)
+                dueDateDraftRef.current = event.target.value
+              }} />
             ) : <span className="workhub-quick-add-placeholder" />}
           </div>
           <div className="workhub-task-col priority">
@@ -260,6 +360,7 @@ const QuickAddTaskRow = memo(function QuickAddTaskRow(props: {
                         className={priority === priorityValue ? 'is-active' : ''}
                         onClick={() => {
                           setPriority(priorityValue)
+                          priorityDraftRef.current = priorityValue
                           setPriorityMenuOpen(false)
                         }}
                       >
@@ -273,22 +374,48 @@ const QuickAddTaskRow = memo(function QuickAddTaskRow(props: {
             ) : <span className="workhub-quick-add-placeholder" />}
           </div>
           <div className="workhub-task-col checklist-inline">
-            {showDetails && selectedProjectId === 'all' && flatVisibleProjectOptions.length > 1 ? (
-              <select className="workhub-quick-add-select workhub-quick-add-project-select" value={projectId} onChange={(event) => setProjectId(event.target.value)}>
-                <option value="">Auto</option>
-                {flatVisibleProjectOptions.map((project) => (
-                  <option key={project.id} value={project.id}>{project.name}</option>
-                ))}
-              </select>
-            ) : <span className="workhub-quick-add-inline-note">{showDetails ? 'List later' : ''}</span>}
-          </div>
-          <div className="workhub-task-col actions-inline">
             {showDetails ? (
-              <button type="button" className="workhub-quick-add-confirm" disabled={submitting} onClick={() => { void commitDraft() }}>
-                {submitting ? '...' : 'Add'}
-              </button>
+              <>
+                {selectedProjectId === 'all' && flatVisibleProjectOptions.length > 1 ? (
+                  <select className="workhub-quick-add-select workhub-quick-add-project-select" value={projectId} onChange={(event) => {
+                    setProjectId(event.target.value)
+                    projectDraftRef.current = event.target.value
+                  }}>
+                    <option value="">Auto</option>
+                    {flatVisibleProjectOptions.map((project) => (
+                      <option key={project.id} value={project.id}>{project.name}</option>
+                    ))}
+                  </select>
+                ) : <span className="workhub-quick-add-inline-note">List later</span>}
+                {isFinanceLayout && (
+                  <button
+                    type="button"
+                    className="workhub-quick-add-confirm"
+                    disabled={submitting}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => { void commitDraft() }}
+                  >
+                    {submitting ? '...' : 'Add'}
+                  </button>
+                )}
+              </>
             ) : <span className="workhub-quick-add-placeholder" />}
           </div>
+          {!isFinanceLayout && (
+            <div className="workhub-task-col actions-inline">
+              {showDetails ? (
+                <button
+                  type="button"
+                  className="workhub-quick-add-confirm"
+                  disabled={submitting}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => { void commitDraft() }}
+                >
+                  {submitting ? '...' : 'Add'}
+                </button>
+              ) : <span className="workhub-quick-add-placeholder" />}
+            </div>
+          )}
         </div>
       </div>
     </article>

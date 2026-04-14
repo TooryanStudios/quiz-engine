@@ -110,6 +110,7 @@ function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
   const navigate = useNavigate()
   const location = useLocation()
+  const workhubDebugEnabled = import.meta.env.DEV && typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
   const isLocalDevHost = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
   const isLocalPlayTestPath = location.pathname === '/play-test' || location.pathname.startsWith('/play-test/')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -323,6 +324,14 @@ function App() {
     setMobileHeaderCompact(false)
   }, [location.pathname])
 
+  useEffect(() => {
+    if (!workhubDebugEnabled || !isWorkHubPage) return
+    console.info('[AppDebug] workhub auth state', {
+      path: `${location.pathname}${location.search}`,
+      userState: user === undefined ? 'pending' : (user ? 'signed-in' : 'signed-out'),
+    })
+  }, [isWorkHubPage, location.pathname, location.search, user, workhubDebugEnabled])
+
   // Keep layout shell in sync with viewport width so mobile and desktop can use
   // completely different structures without changing page logic.
   useEffect(() => {
@@ -412,9 +421,7 @@ function App() {
                   note={isAr ? 'جارٍ تحميل WorkHub…' : 'Loading WorkHub…'}
                 />
               }>
-                <Routes>
-                  <Route path="/workhub/*" element={<WorkHubPage />} />
-                </Routes>
+                <WorkHubPage />
               </Suspense>
             </ErrorBoundary>
             <Dialog />
