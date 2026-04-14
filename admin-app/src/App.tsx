@@ -30,6 +30,7 @@ const AILabPage       = lazy(() => import('./pages/AILabPage'))
 const CoverGenLabPage = lazy(() => import('./pages/CoverGenLabPage'))
 const PlayTestPage    = lazy(() => import('./pages/PlayTestPage'))
 const GameEmbedPage   = lazy(() => import('./pages/GameEmbedPage'))
+const ScannerPage     = lazy(() => import('./scanner/ScannerPage').then(m => ({ default: m.ScannerPage })))
 
 const MASTER_EMAIL = import.meta.env.VITE_MASTER_EMAIL as string | undefined
 const MASTER_PATH  = import.meta.env.VITE_MASTER_PATH  as string | undefined
@@ -176,6 +177,7 @@ function App() {
   const isLoginPage   = location.pathname === '/login'
   const isMasterPage  = MASTER_PATH ? location.pathname.startsWith(MASTER_PATH) : false
   const isWorkHubPage = location.pathname === '/workhub' || location.pathname.startsWith('/workhub/')
+  const isScannerPage = location.pathname === '/scanner' || location.pathname.startsWith('/scanner/')
   const isEmbeddedPreview = location.pathname.startsWith('/preview/') && new URLSearchParams(location.search).get('embedded') === '1'
   const isGameEmbed = location.pathname.startsWith('/embed') || location.pathname.startsWith('/play')
   const allowUnauthedLocalPlayTest = isLocalDevHost && isLocalPlayTestPath
@@ -211,6 +213,7 @@ function App() {
     else if (path.startsWith('/cover-gen-lab')) nextTitle = 'Cover Generator'
     else if (path.startsWith('/game-modes')) nextTitle = 'Game Modes'
     else if (path.startsWith('/play-test')) nextTitle = 'Play Test'
+    else if (path.startsWith('/scanner')) nextTitle = 'Scanner'
     else if (path.startsWith('/preview')) nextTitle = 'Preview'
     else if (path.startsWith('/play') || path.startsWith('/embed')) nextTitle = 'Game'
     else if (isMasterPage) nextTitle = 'Master Admin'
@@ -428,6 +431,17 @@ function App() {
           </div>
         </DialogProvider>
       </ToastProvider>
+    )
+  }
+
+  // ── Standalone Scanner — no sidebar, no app chrome ──
+  if (isScannerPage) {
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={<div style={{ background: '#0a0a0a', height: '100vh' }} />}>
+          <ScannerPage />
+        </Suspense>
+      </ErrorBoundary>
     )
   }
 
