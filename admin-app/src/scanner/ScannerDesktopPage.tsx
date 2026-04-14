@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { scanImage, type ScanMode, type ScanResult } from './openai'
+import { subscribeMobileScannerResults } from './realtimeBridge'
 import './ScannerDesktop.css'
 
 const ENV_API_KEY = (import.meta.env.VITE_OPENAI_API_KEY as string | undefined) ?? ''
@@ -271,7 +272,10 @@ function ResultsRole() {
   const [lastScanMs, setLastScanMs] = useState<number | null>(null)
   const [lastTotalMs, setLastTotalMs] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [mobileSyncState, setMobileSyncState] = useState<'idle' | 'connected' | 'no-auth'>('idle')
+  const [lastMobileSyncAt, setLastMobileSyncAt] = useState<number | null>(null)
   const busyRef = useRef(false)
+  const lastMobileEventIdRef = useRef<string | null>(null)
 
   const apiKey = ENV_API_KEY || lsKey
 
@@ -364,12 +368,76 @@ function ResultsRole() {
     }, [processRequest]),
   )
 
+  useEffect(() => {
+    const unsubscribe = subscribeMobileScannerResults(
+      payload => {
+        if (!payload) return
+        if (payload.eventId === lastMobileEventIdRef.current) return
+        lastMobileEventIdRef.current = payload.eventId
+
+        setMobileSyncState('connected')
+        setLastMobileSyncAt(payload.publishedAtMs)
+        setIsScanning(false)
+        setLastImage(null)
+        setLastScanMs(payload.scanMs)
+        setLastTotalMs(payload.totalMs)
+        setMode(payload.mode)
+        localStorage.setItem(LS_MODE, payload.mode)
+
+        if (!payload.ok) {
+          setLastResult(null)
+          setError(payload.error || 'Mobile scan failed.')
+          return
+        }
+
+        setError(null)
+
+        if (payload.mode === 'reasoning') {
+          setLastResult({
+            mode: 'reasoning',
+            rawText: payload.rawText,
+            answer: payload.answer,
+            explanation: payload.explanation,
+          })
+        } else {
+          setLastResult({
+            mode: 'simplified',
+            rawText: payload.rawText,
+          })
+        }
+      },
+      () => {
+        setMobileSyncState('no-auth')
+      },
+      syncError => {
+        setMobileSyncState('idle')
+        setError(current => current ?? `Mobile sync error: ${syncError}`)
+      },
+    )
+
+    return () => unsubscribe()
+  }, [])
+
+  const mobileSyncText =
+    mobileSyncState === 'connected'
+      ? (lastMobileSyncAt
+          ? `Connected. Last mobile update at ${new Date(lastMobileSyncAt).toLocaleTimeString()}.`
+          : 'Connected. Waiting for mobile scanner results.')
+      : mobileSyncState === 'no-auth'
+        ? 'Sign in on both mobile and desktop with the same account to sync live results.'
+        : 'Initializing mobile live sync...'
+
   return (
     <div className="scd-results-root">
       <header>
         <h2>Scanner Results</h2>
         <p>Waiting for images from the floating capture button.</p>
       </header>
+
+      <section className="scd-live-sync-box">
+        <strong>Mobile Live Sync</strong>
+        <p>{mobileSyncText}</p>
+      </section>
 
       <section className="scd-controls-row">
         <button

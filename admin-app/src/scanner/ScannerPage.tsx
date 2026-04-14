@@ -7,6 +7,7 @@
 import React, { useState, useCallback, useEffect } from 'react'
 import { useCamera } from './useCamera'
 import { scanImage, type ScanResult, type ScanMode } from './openai'
+import { publishMobileScannerResult } from './realtimeBridge'
 import {
   addHistoryItem,
   clearHistoryItems,
@@ -355,16 +356,12 @@ function CameraView({
   onCapture: () => void
 }) {
   const { videoRef, canvasRef, isReady, error } = camera
-  const canTapCapture = isReady && !isScanning && !error
 
   return (
     <div className={`sc-camera-view${orientation === 'landscape' ? ' sc-camera-view-landscape' : ''}`}>
       <canvas ref={canvasRef as React.RefObject<HTMLCanvasElement>} style={{ display: 'none' }} />
 
-      <div
-        className={`sc-video-wrapper${canTapCapture ? ' sc-video-wrapper-ready' : ''}`}
-        onClick={canTapCapture ? onCapture : undefined}
-      >
+      <div className="sc-video-wrapper">
         {error ? (
           <div className="sc-camera-error">
             <span className="sc-error-icon">⊘</span>
@@ -464,6 +461,37 @@ export function ScannerPage() {
     await refreshHistory()
   }, [refreshHistory])
 
+  const publishLiveResult = useCallback((result: ScanResult, timingData: ScanTiming) => {
+    void publishMobileScannerResult({
+      mode: result.mode,
+      rawText: result.rawText,
+      answer: result.mode === 'reasoning' ? result.answer : '',
+      explanation: result.mode === 'reasoning' ? result.explanation : '',
+      captureMs: timingData.captureMs,
+      scanMs: timingData.scanMs,
+      totalMs: timingData.totalMs,
+      autoRotated: timingData.autoRotated,
+      ok: true,
+    }).catch(() => {
+      // Desktop sync is best-effort and must not block scanner UX.
+    })
+  }, [])
+
+  const publishLiveError = useCallback((timingData: ScanTiming, message: string) => {
+    void publishMobileScannerResult({
+      mode,
+      rawText: '',
+      captureMs: timingData.captureMs,
+      scanMs: timingData.scanMs,
+      totalMs: timingData.totalMs,
+      autoRotated: timingData.autoRotated,
+      ok: false,
+      error: message,
+    }).catch(() => {
+      // Desktop sync is best-effort and must not block scanner UX.
+    })
+  }, [mode])
+
   const handleCapture = useCallback(async () => {
     if (!apiKey) { setShowSettings(true); return }
 
@@ -496,20 +524,24 @@ export function ScannerPage() {
       setScreen('result')
 
       void persistHistory(frame, result, timingData)
+      publishLiveResult(result, timingData)
     } catch (err) {
-      setScanError(err instanceof Error ? err.message : 'Unknown error')
-      setTiming({
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+      const timingData: ScanTiming = {
         captureMs,
         scanMs: performance.now() - scanStart,
         totalMs: performance.now() - totalStart,
         autoRotated,
-      })
+      }
+      setScanError(errorMessage)
+      setTiming(timingData)
       setScreen('result')
+      publishLiveError(timingData, errorMessage)
     } finally {
       setIsScanning(false)
       setFrozenFrame(null)
     }
-  }, [camera, apiKey, mode, persistHistory])
+  }, [camera, apiKey, mode, persistHistory, publishLiveError, publishLiveResult])
 
   const handleScanAgain = useCallback(() => {
     setScanResult(null)
@@ -547,6 +579,8 @@ export function ScannerPage() {
   }, [])
 
   const handleClearHistory = useCallback(() => {
+    const confirmed = window.confirm('Clear all scanner history on this device? This cannot be undone.')
+    if (!confirmed) return
     void clearHistoryItems().then(() => setHistory([]))
   }, [])
 
