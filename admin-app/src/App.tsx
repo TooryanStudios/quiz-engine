@@ -31,6 +31,7 @@ const CoverGenLabPage = lazy(() => import('./pages/CoverGenLabPage'))
 const PlayTestPage    = lazy(() => import('./pages/PlayTestPage'))
 const GameEmbedPage   = lazy(() => import('./pages/GameEmbedPage'))
 const ScannerPage     = lazy(() => import('./scanner/ScannerPage').then(m => ({ default: m.ScannerPage })))
+const ScannerDesktopPage = lazy(() => import('./scanner/ScannerDesktopPage').then(m => ({ default: m.ScannerDesktopPage })))
 
 const MASTER_EMAIL = import.meta.env.VITE_MASTER_EMAIL as string | undefined
 const MASTER_PATH  = import.meta.env.VITE_MASTER_PATH  as string | undefined
@@ -178,6 +179,7 @@ function App() {
   const isMasterPage  = MASTER_PATH ? location.pathname.startsWith(MASTER_PATH) : false
   const isWorkHubPage = location.pathname === '/workhub' || location.pathname.startsWith('/workhub/')
   const isScannerPage = location.pathname === '/scanner' || location.pathname.startsWith('/scanner/')
+  const isScannerDesktopPage = location.pathname === '/scanner/desktop' || location.pathname.startsWith('/scanner/desktop/')
   const isEmbeddedPreview = location.pathname.startsWith('/preview/') && new URLSearchParams(location.search).get('embedded') === '1'
   const isGameEmbed = location.pathname.startsWith('/embed') || location.pathname.startsWith('/play')
   const allowUnauthedLocalPlayTest = isLocalDevHost && isLocalPlayTestPath
@@ -439,7 +441,7 @@ function App() {
     return (
       <ErrorBoundary>
         <Suspense fallback={<div style={{ background: '#0a0a0a', height: '100vh' }} />}>
-          <ScannerPage />
+          {isScannerDesktopPage ? <ScannerDesktopPage /> : <ScannerPage />}
         </Suspense>
       </ErrorBoundary>
     )

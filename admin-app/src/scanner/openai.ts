@@ -1,33 +1,50 @@
-export interface ScanResult {
+export type ScanMode = 'simplified' | 'reasoning'
+
+export interface SimplifiedResult {
+  mode: 'simplified'
   rawText: string
-  structured: StructuredField[]
-  summary: string
 }
 
-export interface StructuredField {
-  label: string
-  value: string
+export interface ReasoningResult {
+  mode: 'reasoning'
+  rawText: string
+  answer: string
+  explanation: string
 }
 
-const SYSTEM_PROMPT = `You are a document scanner AI. The user will provide an image.
-Your job is to:
-1. Extract ALL visible text from the image accurately.
-2. Identify and structure key fields (names, dates, amounts, addresses, IDs, totals, labels, etc.).
-3. Write a one-sentence summary of what the document/image is.
+export type ScanResult = SimplifiedResult | ReasoningResult
+
+// ── Simplified: extract text only, minimal tokens, fast ──────────────────────
+
+const SIMPLIFIED_SYSTEM = `Extract all visible text from the image exactly as written.
+Respond ONLY with valid JSON: {"rawText": "all text here verbatim"}
+If no text is visible respond with: {"rawText": ""}`
+
+// ── Reasoning: solve the problem in the image ─────────────────────────────────
+
+const REASONING_SYSTEM = `You are a problem-solving AI. The image contains a question, quiz, math problem, exam question, or any problem that needs to be solved.
+1. Read the full question/problem from the image.
+2. Solve it step by step.
+3. Give the final answer clearly.
 
 Respond ONLY with valid JSON in this exact format:
 {
-  "rawText": "all extracted text here, verbatim",
-  "structured": [
-    { "label": "Field Name", "value": "extracted value" }
-  ],
-  "summary": "One sentence description of what this document/image is."
+  "rawText": "the full question/problem text as written in the image",
+  "answer": "the final answer — concise and direct",
+  "explanation": "brief step-by-step reasoning (2-4 sentences max)"
 }
 
-If no text is visible, set rawText to "" and structured to [].`
+If the image does not contain a solvable problem, set answer to "" and explanation to "No solvable problem detected."`
 
-export async function scanImage(base64DataUrl: string, apiKey: string): Promise<ScanResult> {
+export async function scanImage(
+  base64DataUrl: string,
+  apiKey: string,
+  mode: ScanMode = 'simplified',
+): Promise<ScanResult> {
   const base64 = base64DataUrl.replace(/^data:image\/\w+;base64,/, '')
+
+  const systemPrompt = mode === 'simplified' ? SIMPLIFIED_SYSTEM : REASONING_SYSTEM
+  const maxTokens = mode === 'simplified' ? 400 : 900
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -37,9 +54,9 @@ export async function scanImage(base64DataUrl: string, apiKey: string): Promise<
     },
     body: JSON.stringify({
       model: 'gpt-4o',
-      max_tokens: 1500,
+      max_tokens: maxTokens,
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: systemPrompt },
         {
           role: 'user',
           content: [
@@ -47,10 +64,15 @@ export async function scanImage(base64DataUrl: string, apiKey: string): Promise<
               type: 'image_url',
               image_url: {
                 url: `data:image/jpeg;base64,${base64}`,
-                detail: 'high',
+                detail: mode === 'simplified' ? 'low' : 'high',
               },
             },
-            { type: 'text', text: 'Please extract and structure all text from this image.' },
+            {
+              type: 'text',
+              text: mode === 'simplified'
+                ? 'Extract all text.'
+                : 'Read and solve the problem in this image.',
+            },
           ],
         },
       ],
@@ -71,11 +93,22 @@ export async function scanImage(base64DataUrl: string, apiKey: string): Promise<
 
   const content = data.choices[0]?.message?.content ?? ''
   const jsonMatch = content.match(/\{[\s\S]*\}/)
-  if (!jsonMatch) throw new Error('Could not parse response from AI. Try scanning again.')
+  if (!jsonMatch) throw new Error('Could not parse AI response. Try again.')
 
   try {
-    return JSON.parse(jsonMatch[0]) as ScanResult
+    const parsed = JSON.parse(jsonMatch[0]) as Record<string, string>
+    if (mode === 'simplified') {
+      return { mode: 'simplified', rawText: parsed.rawText ?? '' }
+    } else {
+      return {
+        mode: 'reasoning',
+        rawText: parsed.rawText ?? '',
+        answer: parsed.answer ?? '',
+        explanation: parsed.explanation ?? '',
+      }
+    }
   } catch {
-    throw new Error('AI returned an unexpected format. Try scanning again.')
+    throw new Error('AI returned an unexpected format. Try again.')
   }
 }
+

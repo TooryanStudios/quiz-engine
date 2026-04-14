@@ -2,6 +2,16 @@ import { useRef, useState, useCallback, useEffect } from 'react'
 
 export type CameraFacing = 'environment' | 'user'
 
+export interface CaptureFrameOptions {
+  normalizeUpright?: boolean
+}
+
+export interface CaptureFrameResult {
+  dataUrl: string
+  wasAutoRotated: boolean
+  rotationApplied: number
+}
+
 export interface UseCameraReturn {
   videoRef: React.RefObject<HTMLVideoElement | null>
   canvasRef: React.RefObject<HTMLCanvasElement | null>
@@ -11,7 +21,27 @@ export interface UseCameraReturn {
   startCamera: (facing?: CameraFacing) => Promise<void>
   stopCamera: () => void
   flipCamera: () => void
-  captureFrame: () => string | null
+  captureFrame: (maxWidth?: number, options?: CaptureFrameOptions) => CaptureFrameResult | null
+}
+
+function normalizeAngle(angle: number) {
+  const normalized = ((angle % 360) + 360) % 360
+  if (normalized === 270) return -90
+  if (normalized === 180) return 180
+  if (normalized === 90) return 90
+  return 0
+}
+
+function getScreenRotationAngle() {
+  if (typeof window === 'undefined') return 0
+
+  const modernAngle = window.screen.orientation?.angle
+  if (typeof modernAngle === 'number') return normalizeAngle(modernAngle)
+
+  const legacyWindow = window as Window & { orientation?: number }
+  if (typeof legacyWindow.orientation === 'number') return normalizeAngle(legacyWindow.orientation)
+
+  return 0
 }
 
 export function useCamera(): UseCameraReturn {
@@ -71,19 +101,46 @@ export function useCamera(): UseCameraReturn {
     startCamera(next)
   }, [facing, startCamera])
 
-  const captureFrame = useCallback((): string | null => {
+  const captureFrame = useCallback((
+    maxWidth = 1280,
+    options: CaptureFrameOptions = {},
+  ): CaptureFrameResult | null => {
     const video = videoRef.current
     const canvas = canvasRef.current
     if (!video || !canvas || !isReady) return null
 
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
+    const scale = maxWidth < video.videoWidth ? maxWidth / video.videoWidth : 1
+    const drawWidth = Math.round(video.videoWidth * scale)
+    const drawHeight = Math.round(video.videoHeight * scale)
+    const screenAngle = getScreenRotationAngle()
+    const shouldRotate = options.normalizeUpright === true && Math.abs(screenAngle) === 90
+
+    canvas.width = shouldRotate ? drawHeight : drawWidth
+    canvas.height = shouldRotate ? drawWidth : drawHeight
 
     const ctx = canvas.getContext('2d')
     if (!ctx) return null
 
+    if (shouldRotate) {
+      const correctionAngle = -screenAngle
+      ctx.save()
+      ctx.translate(canvas.width / 2, canvas.height / 2)
+      ctx.rotate((correctionAngle * Math.PI) / 180)
+      ctx.drawImage(video, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight)
+      ctx.restore()
+      return {
+        dataUrl: canvas.toDataURL('image/jpeg', 0.88),
+        wasAutoRotated: true,
+        rotationApplied: correctionAngle,
+      }
+    }
+
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-    return canvas.toDataURL('image/jpeg', 0.92)
+    return {
+      dataUrl: canvas.toDataURL('image/jpeg', 0.88),
+      wasAutoRotated: false,
+      rotationApplied: 0,
+    }
   }, [isReady])
 
   useEffect(() => {

@@ -1,34 +1,119 @@
-/**
- * Scanner — self-contained image scanner page.
- *
+﻿/**
+ * Scanner - self-contained image scanner page.
  * Hosted at /scanner within the QYan app.
- * To remove: delete src/scanner/, remove the /scanner route and import from App.tsx,
- * and remove VITE_OPENAI_API_KEY from .env.local.
- *
- * API key resolution order:
- *   1. VITE_OPENAI_API_KEY environment variable (set in .env.local for prod)
- *   2. localStorage fallback — user can enter their own key via the settings panel
+ * To remove: delete src/scanner/, remove the /scanner route and import from App.tsx.
  */
 
 import React, { useState, useCallback, useEffect } from 'react'
 import { useCamera } from './useCamera'
-import { scanImage, type ScanResult } from './openai'
+import { scanImage, type ScanResult, type ScanMode } from './openai'
+import {
+  addHistoryItem,
+  clearHistoryItems,
+  listHistoryItems,
+  type ScannerHistoryItem,
+} from './historyStore'
 import './Scanner.css'
 
 const ENV_API_KEY = (import.meta.env.VITE_OPENAI_API_KEY as string | undefined) ?? ''
 const LS_KEY = 'scanner_openai_key'
+const LS_MODE = 'scanner_mode'
 
-// ─── Settings panel ────────────────────────────────────────────────────
+interface ScanTiming {
+  captureMs: number
+  scanMs: number
+  totalMs: number
+  autoRotated: boolean
+}
+
+type DeviceOrientation = 'portrait' | 'landscape'
+
+interface OrientationDiagnostics {
+  layout: DeviceOrientation
+  typeLabel: string
+  angle: number
+  source: 'screen-orientation' | 'viewport-fallback'
+}
+
+function normalizeAngle(angle: number) {
+  const normalized = ((angle % 360) + 360) % 360
+  if (normalized === 270) return -90
+  return normalized
+}
+
+function detectOrientationDiagnostics(): OrientationDiagnostics {
+  if (typeof window === 'undefined') {
+    return {
+      layout: 'portrait',
+      typeLabel: 'portrait-primary',
+      angle: 0,
+      source: 'viewport-fallback',
+    }
+  }
+
+  const orientationType = window.screen.orientation?.type
+  if (typeof orientationType === 'string') {
+    const angle = normalizeAngle(window.screen.orientation?.angle ?? 0)
+    return {
+      layout: orientationType.startsWith('landscape') ? 'landscape' : 'portrait',
+      typeLabel: orientationType,
+      angle,
+      source: 'screen-orientation',
+    }
+  }
+
+  const layout = window.innerWidth > window.innerHeight ? 'landscape' : 'portrait'
+  return {
+    layout,
+    typeLabel: layout === 'landscape' ? 'landscape-fallback' : 'portrait-fallback',
+    angle: layout === 'landscape' ? 90 : 0,
+    source: 'viewport-fallback',
+  }
+}
+
+function formatDuration(ms: number) {
+  if (ms < 1000) return `${Math.round(ms)} ms`
+  return `${(ms / 1000).toFixed(2)} s`
+}
+
+async function buildHistoryPreview(imageDataUrl: string, maxWidth = 620): Promise<string> {
+  if (typeof window === 'undefined') return imageDataUrl
+
+  return new Promise(resolve => {
+    const img = new Image()
+    img.onload = () => {
+      const scale = maxWidth < img.width ? maxWidth / img.width : 1
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.round(img.width * scale)
+      canvas.height = Math.round(img.height * scale)
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        resolve(imageDataUrl)
+        return
+      }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      resolve(canvas.toDataURL('image/jpeg', 0.74))
+    }
+    img.onerror = () => resolve(imageDataUrl)
+    img.src = imageDataUrl
+  })
+}
+
+// --- Settings panel ---
 
 function SettingsPanel({
   envKeySet,
   currentKey,
-  onSave,
+  mode,
+  onSaveKey,
+  onSaveMode,
   onClose,
 }: {
   envKeySet: boolean
   currentKey: string
-  onSave: (key: string) => void
+  mode: ScanMode
+  onSaveKey: (key: string) => void
+  onSaveMode: (mode: ScanMode) => void
   onClose: () => void
 }) {
   const [value, setValue] = useState(currentKey)
@@ -38,18 +123,45 @@ function SettingsPanel({
     <div className="sc-settings-overlay">
       <div className="sc-settings-panel">
         <div className="sc-settings-header">
-          <h2>API Key</h2>
+          <h2>Settings</h2>
           <button className="sc-btn-close" onClick={onClose} aria-label="Close">✕</button>
         </div>
 
-        {envKeySet ? (
-          <div className="sc-env-badge">
-            ✓ API key loaded from environment
+        <div className="sc-mode-section">
+          <p className="sc-mode-label">Scan Mode</p>
+          <div className="sc-mode-toggle">
+            <button
+              className={`sc-mode-btn ${mode === 'simplified' ? 'active' : ''}`}
+              onClick={() => onSaveMode('simplified')}
+            >
+              <span className="sc-mode-icon">⚡</span>
+              <span>
+                <strong>Simplified</strong>
+                <small>Extract visible text - fast</small>
+              </span>
+            </button>
+            <button
+              className={`sc-mode-btn ${mode === 'reasoning' ? 'active' : ''}`}
+              onClick={() => onSaveMode('reasoning')}
+            >
+              <span className="sc-mode-icon">🧠</span>
+              <span>
+                <strong>Reasoning</strong>
+                <small>Solve questions and quizzes</small>
+              </span>
+            </button>
           </div>
+        </div>
+
+        <div className="sc-settings-divider" />
+        <p className="sc-settings-section-title">API Key</p>
+
+        {envKeySet ? (
+          <div className="sc-env-badge">API key loaded from environment</div>
         ) : (
           <>
             <p className="sc-settings-note">
-              Your key is stored only in your browser's local storage and sent directly to OpenAI.
+              Your key is stored only in your browser local storage and sent directly to OpenAI.
             </p>
             <div className="sc-key-row">
               <input
@@ -62,13 +174,13 @@ function SettingsPanel({
                 autoComplete="off"
               />
               <button className="sc-btn-show" onClick={() => setShow(s => !s)} aria-label={show ? 'Hide' : 'Show'}>
-                {show ? '🙈' : '👁'}
+                {show ? 'hide' : 'show'}
               </button>
             </div>
             <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="sc-get-key-link">
-              Get an API key →
+              Get an API key
             </a>
-            <button className="sc-btn-save" onClick={() => onSave(value.trim())} disabled={!value.trim()}>
+            <button className="sc-btn-save" onClick={() => onSaveKey(value.trim())} disabled={!value.trim()}>
               Save Key
             </button>
           </>
@@ -78,20 +190,29 @@ function SettingsPanel({
   )
 }
 
-// ─── Result panel ───────────────────────────────────────────────────────
+// --- Result panel ---
 
 function ResultPanel({
   result,
   capturedImageUrl,
+  timing,
+  history,
+  isScanning,
   error,
   onScanAgain,
+  onOpenHistoryItem,
+  onClearHistory,
 }: {
   result: ScanResult | null
   capturedImageUrl: string | null
+  timing: ScanTiming | null
+  history: ScannerHistoryItem[]
+  isScanning: boolean
   error: string | null
   onScanAgain: () => void
+  onOpenHistoryItem: (item: ScannerHistoryItem) => void
+  onClearHistory: () => void
 }) {
-  const [tab, setTab] = useState<'fields' | 'raw'>('fields')
   const [copied, setCopied] = useState(false)
 
   const copy = async (text: string) => {
@@ -104,85 +225,143 @@ function ResultPanel({
     <div className="sc-result-panel">
       {capturedImageUrl && (
         <div className="sc-thumb-wrapper">
+          {timing && (
+            <div className="sc-thumb-metrics">
+              Capture {formatDuration(timing.captureMs)} | AI {formatDuration(timing.scanMs)} | Total {formatDuration(timing.totalMs)}
+              {timing.autoRotated ? ' | Auto-rotated 90°' : ''}
+            </div>
+          )}
           <img src={capturedImageUrl} alt="Captured" className="sc-thumb" />
+        </div>
+      )}
+
+      {(error || result) && (
+        <button className="sc-btn-scan-again sc-btn-scan-again-inline" onClick={onScanAgain}>Capture Again</button>
+      )}
+
+      {isScanning && (
+        <div className="sc-result-pending">
+          <p>Reasoning in progress. You can prepare the next shot from the camera side.</p>
         </div>
       )}
 
       {error ? (
         <div className="sc-result-error">
           <p className="sc-result-error-msg">{error}</p>
-          <button className="sc-btn-scan-again" onClick={onScanAgain}>Try Again</button>
         </div>
       ) : result ? (
         <>
-          <div className="sc-summary">
-            <span className="sc-summary-icon">◈</span>
-            <p>{result.summary}</p>
-          </div>
+          {result.mode === 'reasoning' && (
+            <>
+              {result.answer ? (
+                <div className="sc-answer-card">
+                  <p className="sc-answer-label">Answer</p>
+                  <p className="sc-answer-text">{result.answer}</p>
+                  {result.explanation ? (
+                    <p className="sc-explanation">{result.explanation}</p>
+                  ) : null}
+                  <button className="sc-btn-copy" onClick={() => copy(result.answer + '\n\n' + result.explanation)}>
+                    {copied ? 'Copied' : 'Copy Answer'}
+                  </button>
+                </div>
+              ) : null}
+              {result.rawText ? (
+                <div className="sc-raw-wrapper">
+                  <p className="sc-raw-label">Question text</p>
+                  <pre className="sc-raw-text">{result.rawText}</pre>
+                </div>
+              ) : null}
+            </>
+          )}
 
-          <div className="sc-tabs">
-            <button className={`sc-tab ${tab === 'fields' ? 'active' : ''}`} onClick={() => setTab('fields')}>
-              Extracted Fields
-            </button>
-            <button className={`sc-tab ${tab === 'raw' ? 'active' : ''}`} onClick={() => setTab('raw')}>
-              Raw Text
-            </button>
-          </div>
-
-          {tab === 'fields' ? (
-            <div className="sc-fields">
-              {result.structured.length === 0 ? (
-                <p className="sc-no-fields">No structured fields detected.</p>
-              ) : (
-                result.structured.map((f, i) => (
-                  <div key={i} className="sc-field-row">
-                    <span className="sc-field-label">{f.label}</span>
-                    <span className="sc-field-value">{f.value}</span>
-                  </div>
-                ))
-              )}
-              {result.structured.length > 0 && (
-                <button className="sc-btn-copy" onClick={() => copy(result.structured.map(f => `${f.label}: ${f.value}`).join('\n'))}>
-                  {copied ? '✓ Copied' : 'Copy Fields'}
-                </button>
-              )}
-            </div>
-          ) : (
+          {result.mode === 'simplified' && (
             <div className="sc-raw-wrapper">
-              <pre className="sc-raw-text">{result.rawText || '(no text found)'}</pre>
-              {result.rawText && (
-                <button className="sc-btn-copy" onClick={() => copy(result.rawText)}>
-                  {copied ? '✓ Copied' : 'Copy Text'}
-                </button>
+              {result.rawText ? (
+                <>
+                  <pre className="sc-raw-text">{result.rawText}</pre>
+                  <button className="sc-btn-copy" onClick={() => copy(result.rawText)}>
+                    {copied ? 'Copied' : 'Copy Text'}
+                  </button>
+                </>
+              ) : (
+                <p className="sc-no-fields">No text detected in image.</p>
               )}
             </div>
           )}
 
-          <button className="sc-btn-scan-again" onClick={onScanAgain}>Scan Another</button>
+          <div className="sc-history-section">
+            <div className="sc-history-header">
+              <p>History (local on this device)</p>
+              {history.length > 0 && (
+                <button className="sc-history-clear" onClick={onClearHistory}>Clear</button>
+              )}
+            </div>
+
+            {history.length === 0 ? (
+              <p className="sc-history-empty">No saved captures yet.</p>
+            ) : (
+              <div className="sc-history-list">
+                {history.map(item => (
+                  <button
+                    key={item.id}
+                    className="sc-history-item"
+                    onClick={() => onOpenHistoryItem(item)}
+                    title="Open this history item"
+                  >
+                    <img src={item.imageDataUrl} alt="History capture" className="sc-history-thumb" />
+                    <div className="sc-history-body">
+                      <p className="sc-history-row">
+                        <span>{new Date(item.createdAt).toLocaleString()}</span>
+                        <span>{item.mode === 'simplified' ? 'Simplified' : 'Reasoning'}</span>
+                      </p>
+                      <p className="sc-history-title">
+                        {item.mode === 'reasoning'
+                          ? (item.answer || item.rawText || 'No answer')
+                          : (item.rawText || 'No text detected')}
+                      </p>
+                      <p className="sc-history-meta">
+                        Capture {formatDuration(item.captureMs)} | AI {formatDuration(item.scanMs)}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </>
       ) : null}
     </div>
   )
 }
 
-// ─── Camera view ────────────────────────────────────────────────────────
+// --- Camera view ---
 
 function CameraView({
   camera,
   isScanning,
+  frozenFrame,
+  orientation,
+  mode,
   onCapture,
 }: {
   camera: ReturnType<typeof useCamera>
   isScanning: boolean
+  frozenFrame: string | null
+  orientation: DeviceOrientation
+  mode: ScanMode
   onCapture: () => void
 }) {
   const { videoRef, canvasRef, isReady, error, flipCamera } = camera
+  const canTapCapture = isReady && !isScanning && !error
 
   return (
-    <div className="sc-camera-view">
+    <div className={`sc-camera-view${orientation === 'landscape' ? ' sc-camera-view-landscape' : ''}`}>
       <canvas ref={canvasRef as React.RefObject<HTMLCanvasElement>} style={{ display: 'none' }} />
 
-      <div className="sc-video-wrapper">
+      <div
+        className={`sc-video-wrapper${canTapCapture ? ' sc-video-wrapper-ready' : ''}`}
+        onClick={canTapCapture ? onCapture : undefined}
+      >
         {error ? (
           <div className="sc-camera-error">
             <span className="sc-error-icon">⊘</span>
@@ -191,6 +370,9 @@ function CameraView({
         ) : (
           <>
             <video ref={videoRef as React.RefObject<HTMLVideoElement>} className="sc-video" autoPlay playsInline muted />
+            {frozenFrame && (
+              <img src={frozenFrame} className="sc-frozen-frame" alt="" />
+            )}
             <div className="sc-frame">
               <div className="sc-corner tl" />
               <div className="sc-corner tr" />
@@ -198,29 +380,36 @@ function CameraView({
               <div className="sc-corner br" />
               {isScanning && <div className="sc-scan-line" />}
             </div>
+
+            <div className="sc-mode-badge">
+              {mode === 'simplified' ? '⚡ Simplified' : '🧠 Reasoning'}
+            </div>
+
+            <div className="sc-controls" onClick={e => e.stopPropagation()}>
+              <button className="sc-btn-flip" onClick={flipCamera} disabled={isScanning} aria-label="Flip camera">↺</button>
+              <button
+                className={`sc-btn-capture${isScanning ? ' scanning' : ''}`}
+                onClick={onCapture}
+                disabled={!isReady || isScanning || !!error}
+                aria-label="Capture and scan"
+              >
+                {isScanning ? <span className="sc-spinner" /> : <span className="sc-shutter" />}
+              </button>
+            </div>
+
+            {isScanning && (
+              <p className="sc-scanning-label">
+                {mode === 'simplified' ? 'Extracting text...' : 'Solving...'}
+              </p>
+            )}
           </>
         )}
       </div>
-
-      <div className="sc-controls">
-        <button className="sc-btn-flip" onClick={flipCamera} disabled={isScanning} aria-label="Flip camera">↺</button>
-        <button
-          className={`sc-btn-capture${isScanning ? ' scanning' : ''}`}
-          onClick={onCapture}
-          disabled={!isReady || isScanning || !!error}
-          aria-label="Capture and scan"
-        >
-          {isScanning ? <span className="sc-spinner" /> : <span className="sc-shutter" />}
-        </button>
-        <div style={{ width: 48 }} />
-      </div>
-
-      {isScanning && <p className="sc-scanning-label">Analyzing image…</p>}
     </div>
   )
 }
 
-// ─── Main ScannerPage ───────────────────────────────────────────────────
+// --- Main ScannerPage ---
 
 export function ScannerPage() {
   const camera = useCamera()
@@ -229,40 +418,134 @@ export function ScannerPage() {
   const [isScanning, setIsScanning] = useState(false)
   const [scanResult, setScanResult] = useState<ScanResult | null>(null)
   const [capturedImageUrl, setCapturedImageUrl] = useState<string | null>(null)
+  const [frozenFrame, setFrozenFrame] = useState<string | null>(null)
   const [scanError, setScanError] = useState<string | null>(null)
+  const [timing, setTiming] = useState<ScanTiming | null>(null)
+  const [history, setHistory] = useState<ScannerHistoryItem[]>([])
+  const [orientationInfo, setOrientationInfo] = useState<OrientationDiagnostics>(() => detectOrientationDiagnostics())
   const [showSettings, setShowSettings] = useState(false)
-
   const [lsKey, setLsKey] = useState<string>(() => localStorage.getItem(LS_KEY) ?? '')
+  const [mode, setMode] = useState<ScanMode>(() => (localStorage.getItem(LS_MODE) as ScanMode) ?? 'simplified')
+  const orientation = orientationInfo.layout
+  const isLandscape = orientation === 'landscape'
+
   const apiKey = ENV_API_KEY || lsKey
+  const showApiBanner = !apiKey && (screen === 'camera' || isLandscape)
+
+  const refreshHistory = useCallback(async () => {
+    const items = await listHistoryItems()
+    setHistory(items)
+  }, [])
+
+  const persistHistory = useCallback(async (
+    imageDataUrl: string,
+    result: ScanResult,
+    timingData: ScanTiming,
+  ) => {
+    const preview = await buildHistoryPreview(imageDataUrl)
+
+    const entry: ScannerHistoryItem = {
+      id: `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+      createdAt: Date.now(),
+      mode: result.mode,
+      imageDataUrl: preview,
+      rawText: result.rawText,
+      answer: result.mode === 'reasoning' ? result.answer : '',
+      explanation: result.mode === 'reasoning' ? result.explanation : '',
+      captureMs: timingData.captureMs,
+      scanMs: timingData.scanMs,
+      totalMs: timingData.totalMs,
+      autoRotated: timingData.autoRotated,
+    }
+
+    await addHistoryItem(entry)
+    await refreshHistory()
+  }, [refreshHistory])
 
   const handleCapture = useCallback(async () => {
     if (!apiKey) { setShowSettings(true); return }
 
-    const frame = camera.captureFrame()
-    if (!frame) return
+    const totalStart = performance.now()
+    const maxWidth = mode === 'simplified' ? 900 : 1280
+    const captureStart = performance.now()
+    const capture = camera.captureFrame(maxWidth, { normalizeUpright: true })
+    const captureMs = performance.now() - captureStart
+    if (!capture) return
 
+    const frame = capture.dataUrl
+    const autoRotated = capture.wasAutoRotated
+
+    setFrozenFrame(frame)
     setCapturedImageUrl(frame)
     setIsScanning(true)
     setScanError(null)
     setScanResult(null)
+    setTiming(null)
 
+    const scanStart = performance.now()
     try {
-      const result = await scanImage(frame, apiKey)
+      const result = await scanImage(frame, apiKey, mode)
+      const scanMs = performance.now() - scanStart
+      const totalMs = performance.now() - totalStart
+      const timingData: ScanTiming = { captureMs, scanMs, totalMs, autoRotated }
+
       setScanResult(result)
+      setTiming(timingData)
       setScreen('result')
+
+      void persistHistory(frame, result, timingData)
     } catch (err) {
       setScanError(err instanceof Error ? err.message : 'Unknown error')
+      setTiming({
+        captureMs,
+        scanMs: performance.now() - scanStart,
+        totalMs: performance.now() - totalStart,
+        autoRotated,
+      })
       setScreen('result')
     } finally {
       setIsScanning(false)
+      setFrozenFrame(null)
     }
-  }, [camera, apiKey])
+  }, [camera, apiKey, mode, persistHistory])
 
   const handleScanAgain = useCallback(() => {
     setScanResult(null)
     setScanError(null)
     setCapturedImageUrl(null)
+    setFrozenFrame(null)
+    setTiming(null)
     setScreen('camera')
+  }, [])
+
+  const handleOpenHistoryItem = useCallback((item: ScannerHistoryItem) => {
+    setCapturedImageUrl(item.imageDataUrl)
+    setScanError(null)
+    setTiming({
+      captureMs: item.captureMs,
+      scanMs: item.scanMs,
+      totalMs: item.totalMs,
+      autoRotated: item.autoRotated,
+    })
+    setMode(item.mode)
+    localStorage.setItem(LS_MODE, item.mode)
+
+    if (item.mode === 'reasoning') {
+      setScanResult({
+        mode: 'reasoning',
+        rawText: item.rawText,
+        answer: item.answer,
+        explanation: item.explanation,
+      })
+    } else {
+      setScanResult({ mode: 'simplified', rawText: item.rawText })
+    }
+
+    setScreen('result')
+  }, [])
+
+  const handleClearHistory = useCallback(() => {
+    void clearHistoryItems().then(() => setHistory([]))
   }, [])
 
   const handleSaveKey = useCallback((key: string) => {
@@ -271,49 +554,92 @@ export function ScannerPage() {
     setShowSettings(false)
   }, [])
 
-  // Stop camera when navigating away
+  const handleSaveMode = useCallback((m: ScanMode) => {
+    localStorage.setItem(LS_MODE, m)
+    setMode(m)
+  }, [])
+
   useEffect(() => () => camera.stopCamera(), []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const needsKey = !apiKey
+  useEffect(() => {
+    void refreshHistory()
+  }, [refreshHistory])
+
+  useEffect(() => {
+    const handleOrientationChange = () => {
+      setOrientationInfo(detectOrientationDiagnostics())
+    }
+
+    // Primary listener required by the requested implementation.
+    window.addEventListener('orientationchange', handleOrientationChange)
+    // Resize listener keeps fallback orientation detection current on unsupported browsers.
+    window.addEventListener('resize', handleOrientationChange)
+    handleOrientationChange()
+
+    return () => {
+      window.removeEventListener('orientationchange', handleOrientationChange)
+      window.removeEventListener('resize', handleOrientationChange)
+    }
+  }, [])
 
   return (
-    <div className="scanner-root">
-      {/* Header */}
-      <header className="sc-header">
-        <div style={{ width: 40 }}>
-          {screen === 'result' && (
-            <button className="sc-btn-back" onClick={handleScanAgain} aria-label="Back">←</button>
-          )}
-        </div>
-        <h1 className="sc-title">Scanner</h1>
-        <button
-          className={`sc-btn-settings${needsKey ? ' sc-pulse' : ''}`}
-          onClick={() => setShowSettings(true)}
-          aria-label="Settings"
-        >
-          ⚙
-        </button>
-      </header>
+    <div className={`scanner-root ${orientation === 'landscape' ? 'sc-orientation-landscape' : 'sc-orientation-portrait'}`}>
+      <button
+        className={`sc-btn-settings sc-btn-settings-floating${!apiKey ? ' sc-pulse' : ''}`}
+        onClick={() => setShowSettings(true)}
+        aria-label="Settings"
+      >
+        ⚙
+      </button>
 
-      {needsKey && screen === 'camera' && (
+      <div className={`sc-rotation-indicator${showApiBanner ? ' with-banner' : ''}`} role="status" aria-live="polite">
+        {orientationInfo.typeLabel} | {orientationInfo.angle}° | {orientationInfo.source === 'screen-orientation' ? 'screen' : 'fallback'}
+      </div>
+
+      {showApiBanner && (
         <div className="sc-api-banner" onClick={() => setShowSettings(true)}>
-          Tap to set your OpenAI API key to enable scanning →
+          Tap to set your OpenAI API key
         </div>
       )}
 
       <main className="sc-main">
-        {screen === 'camera' ? (
-          <CameraView camera={camera} isScanning={isScanning} onCapture={handleCapture} />
-        ) : (
-          <ResultPanel result={scanResult} capturedImageUrl={capturedImageUrl} error={scanError} onScanAgain={handleScanAgain} />
-        )}
+        <div className={`sc-screen sc-screen-camera${(screen === 'camera' || isLandscape) ? ' active' : ' hidden'}`}>
+          <CameraView
+            camera={camera}
+            isScanning={isScanning}
+            frozenFrame={frozenFrame}
+            orientation={orientation}
+            mode={mode}
+            onCapture={handleCapture}
+          />
+        </div>
+        <div
+          className={`sc-screen sc-screen-result${(
+            screen === 'result'
+            || (isLandscape && (isScanning || !!capturedImageUrl || !!scanResult || !!scanError))
+          ) ? ' active' : ' hidden'}`}
+        >
+          <ResultPanel
+            result={scanResult}
+            capturedImageUrl={capturedImageUrl}
+            timing={timing}
+            history={history}
+            isScanning={isScanning}
+            error={scanError}
+            onScanAgain={handleScanAgain}
+            onOpenHistoryItem={handleOpenHistoryItem}
+            onClearHistory={handleClearHistory}
+          />
+        </div>
       </main>
 
       {showSettings && (
         <SettingsPanel
           envKeySet={!!ENV_API_KEY}
           currentKey={lsKey}
-          onSave={handleSaveKey}
+          mode={mode}
+          onSaveKey={handleSaveKey}
+          onSaveMode={handleSaveMode}
           onClose={() => setShowSettings(false)}
         />
       )}

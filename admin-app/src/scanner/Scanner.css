@@ -12,7 +12,7 @@
   --sc-text-muted: #888;
   --sc-red: #f55;
   --sc-radius: 12px;
-  --sc-header: 52px;
+  --sc-header: 0px;
 
   position: fixed;
   inset: 0;
@@ -29,50 +29,51 @@
   direction: ltr;
 }
 
-/* ── Header ── */
-.sc-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: var(--sc-header);
-  padding: 0 16px;
-  background: var(--sc-bg);
-  border-bottom: 1px solid var(--sc-border);
-  flex-shrink: 0;
-  z-index: 10;
-}
-
-.sc-title {
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--sc-text);
-}
-
-.sc-btn-back {
-  background: none;
-  border: none;
-  color: var(--sc-accent);
-  font-size: 22px;
-  cursor: pointer;
-  padding: 8px;
-  line-height: 1;
-  border-radius: 8px;
-}
-
 .sc-btn-settings {
-  background: none;
-  border: none;
-  color: var(--sc-text-muted);
-  font-size: 20px;
+  background: rgba(7, 10, 15, 0.72);
+  border: 1px solid rgba(148, 173, 204, 0.35);
+  color: #dde9f8;
+  font-size: 30px;
   cursor: pointer;
-  padding: 8px;
-  border-radius: 8px;
-  transition: color 0.2s;
+  width: 54px;
+  height: 54px;
+  border-radius: 14px;
+  transition: transform 0.16s, background 0.2s;
+  backdrop-filter: blur(5px);
 }
-.sc-btn-settings:hover { color: var(--sc-text); }
+.sc-btn-settings:hover { background: rgba(15, 22, 33, 0.92); transform: scale(1.02); }
 .sc-btn-settings.sc-pulse { color: var(--sc-accent); animation: sc-pulse 2s infinite; }
+
+.sc-btn-settings-floating {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 16;
+}
+
+.sc-rotation-indicator {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 16;
+  background: rgba(7, 10, 16, 0.78);
+  border: 1px solid rgba(133, 166, 202, 0.4);
+  border-radius: 10px;
+  color: #d9e8fa;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  padding: 6px 9px;
+  line-height: 1.3;
+  max-width: calc(100% - 86px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  backdrop-filter: blur(4px);
+}
+
+.sc-rotation-indicator.with-banner {
+  top: 44px;
+}
 
 @keyframes sc-pulse {
   0%, 100% { opacity: 1; }
@@ -80,17 +81,31 @@
 }
 
 .sc-api-banner {
+  position: absolute;
+  top: 72px;
+  left: 12px;
+  right: 76px;
+  z-index: 14;
   background: var(--sc-accent-dim);
   color: var(--sc-accent);
-  font-size: 13px;
-  padding: 10px 16px;
+  font-size: 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
   cursor: pointer;
   text-align: center;
-  flex-shrink: 0;
   border-bottom: 1px solid var(--sc-border);
 }
 
 .sc-main { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+
+.sc-screen {
+  height: 100%;
+  min-height: 0;
+}
+
+.sc-screen.hidden {
+  display: none;
+}
 
 /* ── Camera view ── */
 .sc-camera-view { display: flex; flex-direction: column; height: 100%; }
@@ -100,6 +115,11 @@
   position: relative;
   overflow: hidden;
   background: #000;
+  min-height: 0;
+}
+
+.sc-video-wrapper-ready {
+  cursor: pointer;
 }
 
 .sc-video {
@@ -155,16 +175,28 @@
 
 /* Controls */
 .sc-controls {
+  position: absolute;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 20px 32px;
-  background: var(--sc-bg);
-  flex-shrink: 0;
+  justify-content: center;
+  gap: 14px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: rgba(8, 12, 18, 0.52);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(5px);
+  z-index: 7;
+}
+
+.sc-controls button {
+  pointer-events: auto;
 }
 
 .sc-btn-flip {
-  width: 48px; height: 48px;
+  width: 46px; height: 46px;
   border-radius: 50%;
   border: 1.5px solid var(--sc-border);
   background: var(--sc-surface);
@@ -178,7 +210,7 @@
 .sc-btn-flip:disabled { opacity: 0.3; cursor: not-allowed; }
 
 .sc-btn-capture {
-  width: 72px; height: 72px;
+  width: 68px; height: 68px;
   border-radius: 50%;
   border: 3px solid var(--sc-accent);
   background: transparent;
@@ -191,7 +223,7 @@
 .sc-btn-capture.scanning { border-color: var(--sc-text-muted); }
 
 .sc-shutter {
-  width: 48px; height: 48px;
+  width: 44px; height: 44px;
   border-radius: 50%;
   background: var(--sc-accent);
   display: block;
@@ -209,12 +241,18 @@
 @keyframes sc-spin { to { transform: rotate(360deg); } }
 
 .sc-scanning-label {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 95px);
+  z-index: 7;
   text-align: center;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--sc-accent);
   letter-spacing: 0.05em;
-  padding: 0 0 12px;
-  background: var(--sc-bg);
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(5, 9, 13, 0.7);
 }
 
 /* ── Result panel ── */
@@ -229,12 +267,30 @@
 }
 
 .sc-thumb-wrapper {
+  position: relative;
   border-radius: var(--sc-radius);
   overflow: hidden;
   max-height: 180px;
   flex-shrink: 0;
   border: 1px solid var(--sc-border);
 }
+
+.sc-thumb-metrics {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 2;
+  background: rgba(5, 8, 12, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9px;
+  padding: 6px 9px;
+  color: #dbe9f8;
+  font-size: 12px;
+  line-height: 1.4;
+  backdrop-filter: blur(4px);
+}
+
 .sc-thumb {
   width: 100%;
   height: 180px;
@@ -343,7 +399,25 @@
 }
 .sc-btn-scan-again:hover { background: rgba(68, 170, 255, 0.25); }
 
+.sc-btn-scan-again-inline {
+  margin-top: 0;
+}
+
 .sc-result-error { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 24px 0; }
+.sc-result-pending {
+  border: 1px solid rgba(90, 156, 229, 0.4);
+  background: rgba(42, 90, 143, 0.22);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.sc-result-pending p {
+  margin: 0;
+  color: #b9d4f0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .sc-result-error-msg {
   background: rgba(255,85,85,0.1);
   border: 1px solid rgba(255,85,85,0.3);
@@ -356,7 +430,210 @@
   text-align: center;
 }
 
-/* ── Settings overlay ── */
+/* Frozen frame — shown immediately on capture over the live video */
+.sc-frozen-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 2;
+}
+
+/* Mode badge on camera view */
+.sc-mode-badge {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.55);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--sc-text-muted);
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+  z-index: 3;
+}
+
+/* ── Mode toggle in settings ── */
+.sc-mode-section { display: flex; flex-direction: column; gap: 10px; }
+.sc-mode-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--sc-text-muted); font-weight: 600; }
+
+.sc-mode-toggle { display: flex; flex-direction: column; gap: 6px; }
+
+.sc-mode-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--sc-surface2);
+  border: 1.5px solid var(--sc-border);
+  border-radius: var(--sc-radius);
+  padding: 12px 14px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s;
+  color: var(--sc-text);
+}
+.sc-mode-btn.active {
+  border-color: var(--sc-accent);
+  background: var(--sc-accent-dim);
+}
+.sc-mode-btn strong { display: block; font-size: 14px; color: var(--sc-text); }
+.sc-mode-btn small { display: block; font-size: 12px; color: var(--sc-text-muted); margin-top: 2px; }
+.sc-mode-icon { font-size: 20px; flex-shrink: 0; }
+
+.sc-settings-divider { height: 1px; background: var(--sc-border); margin: 4px 0; }
+.sc-settings-section-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--sc-text-muted); font-weight: 600; }
+
+/* ── Reasoning result ── */
+.sc-answer-card {
+  background: var(--sc-surface);
+  border: 1.5px solid var(--sc-accent);
+  border-radius: var(--sc-radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sc-answer-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--sc-accent);
+  font-weight: 700;
+}
+.sc-answer-text {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--sc-text);
+  line-height: 1.3;
+  word-break: break-word;
+}
+.sc-explanation {
+  font-size: 13px;
+  color: var(--sc-text-muted);
+  line-height: 1.6;
+  border-top: 1px solid var(--sc-border);
+  padding-top: 10px;
+}
+
+.sc-raw-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--sc-text-muted);
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.sc-history-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid var(--sc-border);
+  padding-top: 12px;
+}
+
+.sc-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sc-history-header p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--sc-text-muted);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.sc-history-clear {
+  border: 1px solid var(--sc-border);
+  background: var(--sc-surface);
+  color: var(--sc-text-muted);
+  border-radius: 8px;
+  font-size: 12px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.sc-history-clear:hover {
+  color: var(--sc-text);
+}
+
+.sc-history-empty {
+  margin: 0;
+  color: var(--sc-text-muted);
+  font-size: 13px;
+}
+
+.sc-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sc-history-item {
+  width: 100%;
+  display: flex;
+  gap: 10px;
+  background: var(--sc-surface);
+  border: 1px solid var(--sc-border);
+  border-radius: 10px;
+  padding: 8px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sc-history-item:hover {
+  border-color: #3f4c5a;
+}
+
+.sc-history-thumb {
+  width: 66px;
+  height: 66px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.sc-history-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.sc-history-row {
+  margin: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--sc-text-muted);
+}
+
+.sc-history-title {
+  margin: 0;
+  color: var(--sc-text);
+  font-size: 13px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sc-history-meta {
+  margin: 0;
+  color: var(--sc-text-muted);
+  font-size: 11px;
+}
 .sc-settings-overlay {
   position: absolute;
   inset: 0;
@@ -365,6 +642,127 @@
   align-items: flex-end;
   z-index: 20;
   backdrop-filter: blur(4px);
+}
+
+/* Orientation-aware layout fitting */
+.sc-orientation-landscape {
+  --sc-header: 0px;
+  --sc-result-pane-width: 48%;
+  max-width: none;
+}
+
+.sc-orientation-landscape .sc-main {
+  flex-direction: row;
+}
+
+.sc-orientation-landscape .sc-screen-camera {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.sc-orientation-landscape .sc-screen-result.active {
+  display: block;
+  flex: 0 0 var(--sc-result-pane-width);
+  width: var(--sc-result-pane-width);
+  min-width: 250px;
+  max-width: 56%;
+  background: #0d121a;
+  border-left: 1px solid var(--sc-border);
+}
+
+.sc-orientation-landscape .sc-screen-result .sc-result-panel {
+  padding-top: 62px;
+}
+
+.sc-orientation-landscape .sc-api-banner {
+  top: 10px;
+  right: 86px;
+  left: 10px;
+  font-size: 11px;
+}
+
+.sc-orientation-landscape .sc-frame {
+  inset: 9%;
+}
+
+.sc-orientation-landscape .sc-controls {
+  left: 0;
+  right: 0;
+  transform: none;
+  bottom: 10px;
+  justify-content: space-between;
+  gap: 0;
+  padding: 0 14px;
+  border: none;
+  border-radius: 0;
+  background: none;
+  backdrop-filter: none;
+  pointer-events: none;
+}
+
+.sc-orientation-landscape .sc-btn-flip {
+  width: 52px;
+  height: 52px;
+  font-size: 22px;
+}
+
+.sc-orientation-landscape .sc-btn-capture {
+  width: 74px;
+  height: 74px;
+}
+
+.sc-orientation-landscape .sc-shutter {
+  width: 48px;
+  height: 48px;
+}
+
+.sc-orientation-landscape .sc-mode-badge {
+  top: 7px;
+  font-size: 11px;
+  padding: 4px 10px;
+}
+
+.sc-orientation-landscape .sc-scanning-label {
+  bottom: 76px;
+  font-size: 11px;
+}
+
+.sc-orientation-landscape .sc-btn-settings {
+  width: 48px;
+  height: 48px;
+  font-size: 26px;
+}
+
+.sc-orientation-landscape .sc-rotation-indicator {
+  max-width: 48%;
+  top: 10px;
+}
+
+.sc-orientation-landscape .sc-rotation-indicator.with-banner {
+  top: 44px;
+}
+
+@media (min-width: 700px) {
+  .sc-orientation-landscape {
+    --sc-result-pane-width: 42%;
+  }
+}
+
+@media (min-width: 1024px) {
+  .sc-orientation-landscape {
+    --sc-result-pane-width: 36%;
+  }
+
+  .sc-orientation-landscape .sc-screen-result.active {
+    max-width: 42%;
+  }
+}
+
+@media (max-width: 420px) {
+  .sc-controls {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
 }
 .sc-settings-panel {
   width: 100%;
