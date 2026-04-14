@@ -238,6 +238,12 @@
   color: #ff9aa0;
 }
 
+.scd-empty {
+  margin-top: 12px;
+  color: #9fb2c8;
+  font-size: 13px;
+}
+
 .scd-image-preview {
   margin-top: 12px;
   border: 1px solid #2d4159;
