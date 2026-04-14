@@ -651,9 +651,9 @@ export function ScannerPage() {
 
   const authBannerStyle: React.CSSProperties = {
     position: 'absolute',
-    top: 8,
+    top: 76,
     left: 10,
-    right: 80,
+    right: 10,
     zIndex: 16,
     display: 'flex',
     alignItems: 'center',

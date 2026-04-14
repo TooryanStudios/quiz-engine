@@ -6,6 +6,17 @@ import type { ScanMode, ScanResult } from './openai'
 import { subscribeMobileScannerResults } from './realtimeBridge'
 import './ScannerDesktop.css'
 
+interface DesktopHistoryItem {
+  id: string
+  mode: ScanMode
+  result: ScanResult | null
+  scanMs: number
+  totalMs: number
+  createdAt: number
+  ok: boolean
+  error: string
+}
+
 function formatMs(ms: number) {
   if (ms < 1000) return `${Math.round(ms)} ms`
   return `${(ms / 1000).toFixed(2)} s`
@@ -46,6 +57,8 @@ function ResultsRole() {
   const [error, setError] = useState<string | null>(null)
   const [mobileSyncState, setMobileSyncState] = useState<'idle' | 'connected' | 'no-auth'>('idle')
   const [lastMobileSyncAt, setLastMobileSyncAt] = useState<number | null>(null)
+  const [history, setHistory] = useState<DesktopHistoryItem[]>([])
+  const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null)
   const [authUser, setAuthUser] = useState<User | null>(null)
   const [authResolved, setAuthResolved] = useState(false)
   const lastMobileEventIdRef = useRef<string | null>(null)
@@ -76,6 +89,37 @@ function ResultsRole() {
         setLastTotalMs(payload.totalMs)
         setLastMode(payload.mode)
 
+        let parsedResult: ScanResult | null = null
+        if (payload.ok) {
+          if (payload.mode === 'reasoning') {
+            parsedResult = {
+              mode: 'reasoning',
+              rawText: payload.rawText,
+              answer: payload.answer,
+              explanation: payload.explanation,
+            }
+          } else {
+            parsedResult = {
+              mode: 'simplified',
+              rawText: payload.rawText,
+            }
+          }
+        }
+
+        const historyItem: DesktopHistoryItem = {
+          id: payload.eventId,
+          mode: payload.mode,
+          result: parsedResult,
+          scanMs: payload.scanMs,
+          totalMs: payload.totalMs,
+          createdAt: payload.publishedAtMs,
+          ok: payload.ok,
+          error: payload.error || '',
+        }
+
+        setHistory(current => [historyItem, ...current.filter(item => item.id !== historyItem.id)].slice(0, 24))
+        setActiveHistoryId(historyItem.id)
+
         if (!payload.ok) {
           setLastResult(null)
           setError(payload.error || 'Mobile scan failed.')
@@ -83,20 +127,7 @@ function ResultsRole() {
         }
 
         setError(null)
-
-        if (payload.mode === 'reasoning') {
-          setLastResult({
-            mode: 'reasoning',
-            rawText: payload.rawText,
-            answer: payload.answer,
-            explanation: payload.explanation,
-          })
-        } else {
-          setLastResult({
-            mode: 'simplified',
-            rawText: payload.rawText,
-          })
-        }
+        setLastResult(parsedResult)
       },
       () => {
         setMobileSyncState('no-auth')
@@ -127,6 +158,30 @@ function ResultsRole() {
       ? `Signed in: ${authUser.email || authUser.displayName || authUser.uid}`
       : 'Not signed in. Sign in on mobile and desktop with the same account for live sync.'
 
+  const syncIndicatorClass =
+    mobileSyncState === 'connected'
+      ? 'connected'
+      : mobileSyncState === 'no-auth'
+        ? 'no-auth'
+        : 'idle'
+
+  const openHistoryItem = (item: DesktopHistoryItem) => {
+    setActiveHistoryId(item.id)
+    setLastMode(item.mode)
+    setLastScanMs(item.scanMs)
+    setLastTotalMs(item.totalMs)
+    setLastMobileSyncAt(item.createdAt)
+
+    if (!item.ok) {
+      setLastResult(null)
+      setError(item.error || 'Mobile scan failed.')
+      return
+    }
+
+    setError(null)
+    setLastResult(item.result)
+  }
+
   return (
     <div className="scd-results-root">
       <header>
@@ -142,9 +197,44 @@ function ResultsRole() {
       </section>
 
       <section className="scd-live-sync-box">
-        <strong>Mobile Live Sync</strong>
+        <strong>
+          <span className={`scd-sync-dot ${syncIndicatorClass}`} />
+          Mobile Live Sync
+        </strong>
         <p>{mobileSyncText}</p>
       </section>
+
+      {history.length > 0 ? (
+        <section className="scd-history-strip">
+          {history.map(item => {
+            const isReasoning = item.mode === 'reasoning'
+            const cardTitle = item.ok
+              ? (isReasoning
+                  ? (item.result?.mode === 'reasoning' ? item.result.answer || 'No answer' : 'No answer')
+                  : (item.result?.rawText || 'No text'))
+              : (item.error || 'Scan failed')
+
+            return (
+              <button
+                key={item.id}
+                className={`scd-history-card${activeHistoryId === item.id ? ' active' : ''}`}
+                onClick={() => openHistoryItem(item)}
+              >
+                <p className="scd-history-time">{new Date(item.createdAt).toLocaleTimeString()}</p>
+                <p className="scd-history-title">{cardTitle}</p>
+                <p className="scd-history-meta">{isReasoning ? 'Reasoning' : 'Simplified'}</p>
+              </button>
+            )
+          })}
+        </section>
+      ) : null}
+
+      {lastResult?.mode === 'reasoning' ? (
+        <section className="scd-answer-hero">
+          <p className="scd-answer-hero-label">Answer</p>
+          <p className="scd-answer-hero-text">{lastResult.answer || 'No answer detected'}</p>
+        </section>
+      ) : null}
 
       <section className="scd-metrics">
         <div>
