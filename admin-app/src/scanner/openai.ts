@@ -30,11 +30,10 @@ const REASONING_SYSTEM = `You are a problem-solving AI. The image contains a que
 Respond ONLY with valid JSON in this exact format:
 {
   "rawText": "the full question/problem text as written in the image",
-  "answer": "the final answer — concise and direct",
-  "explanation": "brief step-by-step reasoning (2-4 sentences max)"
+  "answer": "the final answer only, concise and direct"
 }
 
-If the image does not contain a solvable problem, set answer to "" and explanation to "No solvable problem detected."`
+If the image does not contain a solvable problem, set answer to "".`
 
 export async function scanImage(
   base64DataUrl: string,
@@ -104,7 +103,7 @@ export async function scanImage(
         mode: 'reasoning',
         rawText: parsed.rawText ?? '',
         answer: parsed.answer ?? '',
-        explanation: parsed.explanation ?? '',
+        explanation: '',
       }
     }
   } catch {
