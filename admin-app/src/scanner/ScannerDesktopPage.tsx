@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import { onAuthStateChanged, type User } from 'firebase/auth'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { auth } from '../lib/firebase'
 import type { ScanMode, ScanResult } from './openai'
 import { subscribeMobileScannerResults } from './realtimeBridge'
 import './ScannerDesktop.css'
@@ -34,6 +37,8 @@ function ResultView({
 }
 
 function ResultsRole() {
+  const navigate = useNavigate()
+  const location = useLocation()
   const [lastMode, setLastMode] = useState<ScanMode | null>(null)
   const [lastResult, setLastResult] = useState<ScanResult | null>(null)
   const [lastScanMs, setLastScanMs] = useState<number | null>(null)
@@ -41,7 +46,22 @@ function ResultsRole() {
   const [error, setError] = useState<string | null>(null)
   const [mobileSyncState, setMobileSyncState] = useState<'idle' | 'connected' | 'no-auth'>('idle')
   const [lastMobileSyncAt, setLastMobileSyncAt] = useState<number | null>(null)
+  const [authUser, setAuthUser] = useState<User | null>(null)
+  const [authResolved, setAuthResolved] = useState(false)
   const lastMobileEventIdRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, user => {
+      setAuthUser(user)
+      setAuthResolved(true)
+    })
+    return () => unsubscribe()
+  }, [])
+
+  const handleSignIn = () => {
+    const returnTo = `${location.pathname}${location.search}`
+    navigate('/login', { state: { returnTo } })
+  }
 
   useEffect(() => {
     const unsubscribe = subscribeMobileScannerResults(
@@ -91,7 +111,9 @@ function ResultsRole() {
   }, [])
 
   const mobileSyncText =
-    mobileSyncState === 'connected'
+    !authResolved
+      ? 'Checking authentication...'
+      : mobileSyncState === 'connected'
       ? (lastMobileSyncAt
           ? `Connected. Last mobile update at ${new Date(lastMobileSyncAt).toLocaleTimeString()}.`
           : 'Connected. Waiting for mobile scanner results.')
@@ -99,12 +121,25 @@ function ResultsRole() {
         ? 'Sign in on both mobile and desktop with the same account to sync live results.'
         : 'Initializing mobile live sync...'
 
+  const authText = !authResolved
+    ? 'Checking account...'
+    : authUser
+      ? `Signed in: ${authUser.email || authUser.displayName || authUser.uid}`
+      : 'Not signed in. Sign in on mobile and desktop with the same account for live sync.'
+
   return (
     <div className="scd-results-root">
       <header>
         <h2>Desktop Scanner</h2>
         <p>Live results from mobile scanner via Firebase.</p>
       </header>
+
+      <section className="scd-auth-box">
+        <p>{authText}</p>
+        {!authUser && authResolved ? (
+          <button className="scd-auth-btn" onClick={handleSignIn}>Sign In</button>
+        ) : null}
+      </section>
 
       <section className="scd-live-sync-box">
         <strong>Mobile Live Sync</strong>

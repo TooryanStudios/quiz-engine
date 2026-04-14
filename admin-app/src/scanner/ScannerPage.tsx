@@ -5,6 +5,9 @@
  */
 
 import React, { useState, useCallback, useEffect } from 'react'
+import { onAuthStateChanged, type User } from 'firebase/auth'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { auth } from '../lib/firebase'
 import { useCamera } from './useCamera'
 import { scanImage, type ScanResult, type ScanMode } from './openai'
 import { publishMobileScannerResult } from './realtimeBridge'
@@ -412,6 +415,8 @@ function CameraView({
 
 export function ScannerPage() {
   const camera = useCamera()
+  const navigate = useNavigate()
+  const location = useLocation()
 
   const [screen, setScreen] = useState<'camera' | 'result'>('camera')
   const [isScanning, setIsScanning] = useState(false)
@@ -426,6 +431,8 @@ export function ScannerPage() {
   const [lsKey, setLsKey] = useState<string>(() => localStorage.getItem(LS_KEY) ?? '')
   const [mode, setMode] = useState<ScanMode>(() => (localStorage.getItem(LS_MODE) as ScanMode) ?? 'simplified')
   const [showCapturedImage, setShowCapturedImage] = useState<boolean>(() => localStorage.getItem(LS_SHOW_CAPTURED_IMAGE) === '1')
+  const [authUser, setAuthUser] = useState<User | null>(null)
+  const [authResolved, setAuthResolved] = useState(false)
   const isLandscape = orientation === 'landscape'
 
   const apiKey = ENV_API_KEY || lsKey
@@ -623,8 +630,69 @@ export function ScannerPage() {
     }
   }, [])
 
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, user => {
+      setAuthUser(user)
+      setAuthResolved(true)
+    })
+    return () => unsubscribe()
+  }, [])
+
+  const handleSignIn = useCallback(() => {
+    const returnTo = `${location.pathname}${location.search}`
+    navigate('/login', { state: { returnTo } })
+  }, [location.pathname, location.search, navigate])
+
+  const authText = !authResolved
+    ? 'Checking account...'
+    : authUser
+      ? `Signed in: ${authUser.email || authUser.displayName || authUser.uid}`
+      : 'Not signed in. Sign in on mobile and desktop with the same account for live sync.'
+
+  const authBannerStyle: React.CSSProperties = {
+    position: 'absolute',
+    top: 8,
+    left: 10,
+    right: 80,
+    zIndex: 16,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    background: 'rgba(10, 17, 27, 0.78)',
+    border: '1px solid rgba(107, 142, 182, 0.35)',
+    borderRadius: 10,
+    padding: '6px 9px',
+  }
+
+  const authTextStyle: React.CSSProperties = {
+    margin: 0,
+    fontSize: 11,
+    color: '#d7e4f5',
+    lineHeight: 1.3,
+    flex: 1,
+  }
+
+  const authButtonStyle: React.CSSProperties = {
+    border: '1px solid #4f7297',
+    background: '#1c3047',
+    color: '#f2f7fd',
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: 600,
+    letterSpacing: '0.02em',
+    padding: '5px 10px',
+    cursor: 'pointer',
+  }
+
   return (
     <div className={`scanner-root ${orientation === 'landscape' ? 'sc-orientation-landscape' : 'sc-orientation-portrait'}`}>
+      <div style={authBannerStyle}>
+        <p style={authTextStyle}>{authText}</p>
+        {!authUser && authResolved ? (
+          <button style={authButtonStyle} onClick={handleSignIn}>Sign In</button>
+        ) : null}
+      </div>
+
       <div className="sc-top-actions">
         <button
           className="sc-btn-top sc-btn-top-flip"

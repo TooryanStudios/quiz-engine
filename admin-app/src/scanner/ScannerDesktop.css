@@ -132,6 +132,39 @@
   font-size: 13px;
 }
 
+.scd-auth-box {
+  margin-top: 12px;
+  border: 1px solid #2d415a;
+  border-radius: 10px;
+  background: #121d2b;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.scd-auth-box p {
+  margin: 0;
+  flex: 1;
+  color: #d6e4f2;
+  font-size: 12px;
+}
+
+.scd-auth-btn {
+  background: #203a56;
+  border: 1px solid #3c5d81;
+  color: #eff6ff;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.scd-auth-btn:hover {
+  background: #2b4d71;
+}
+
 .scd-live-sync-box {
   margin-top: 12px;
   border: 1px solid #2d415a;
