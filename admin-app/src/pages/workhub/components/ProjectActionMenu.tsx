@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { WorkhubTemplateCreationIntent } from '../templateCreationMeta'
 import type { WorkhubWorkspaceTemplateId } from '../workspaceTemplates'
 
@@ -8,7 +9,7 @@ interface WorkhubTemplateCreateActionOption {
   intent: WorkhubTemplateCreationIntent
 }
 
-export function ProjectActionMenu(props: {
+export const ProjectActionMenu = memo(function ProjectActionMenu(props: {
   projectId: string | null
   workspaceType: 'technical' | 'hr' | 'finance'
   workspaceTemplateId: WorkhubWorkspaceTemplateId
@@ -219,4 +220,4 @@ export function ProjectActionMenu(props: {
       </div>
     </div>
   )
-}
+})

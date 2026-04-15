@@ -1,2 +1,2 @@
-export const BUILD_NUMBER = '39'
-export const BUILD_TIME_UTC = '2026-04-12 11:00:15 UTC'
+export const BUILD_NUMBER = '44'
+export const BUILD_TIME_UTC = '2026-04-15 12:57:17 UTC'

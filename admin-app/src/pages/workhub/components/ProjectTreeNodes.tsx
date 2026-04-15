@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { MouseEvent } from 'react'
 import type { WorkhubDocument, WorkhubMoodBoard, WorkhubProjectIntent } from '../../../lib/workhubRepo'
 import type { WorkhubProjectColorMeaning } from '../constants'
@@ -89,7 +90,7 @@ function formatCountdownMeta(
   }
 }
 
-export function ProjectTreeNodes({
+export const ProjectTreeNodes = memo(function ProjectTreeNodes({
   nodes,
   treeMetaDisplayMode,
   showProjectColorDots = true,
@@ -270,10 +271,12 @@ export function ProjectTreeNodes({
                 )}
               </div>
             </div>
-            {childCount > 0 && isExpanded && (
-              <div className="workhub-tree-children">
-                <ProjectTreeNodes
-                  nodes={node.children}
+            {childCount > 0 && (
+              <div className={`workhub-tree-expand-wrap${isExpanded ? ' is-open' : ''}`}>
+                <div className="workhub-tree-expand-inner">
+                  <div className="workhub-tree-children">
+                    <ProjectTreeNodes
+                      nodes={node.children}
                   treeMetaDisplayMode={treeMetaDisplayMode}
                   depth={depth + 1}
                   selectedProjectId={selectedProjectId}
@@ -296,11 +299,15 @@ export function ProjectTreeNodes({
                   onToggleExpansion={onToggleExpansion}
                   onOpenActionMenu={onOpenActionMenu}
                   onOpenSettings={onOpenSettings}
-                />
+                    />
+                  </div>
+                </div>
               </div>
             )}
-            {(documentCount > 0 || moodBoardCount > 0) && isExpanded && (
-              <div className="workhub-tree-doc-sublist" style={{ marginLeft: `${36 + (depth * 14)}px` }}>
+            {(documentCount > 0 || moodBoardCount > 0) && (
+              <div className={`workhub-tree-expand-wrap${isExpanded ? ' is-open' : ''}`}>
+                <div className="workhub-tree-expand-inner">
+                  <div className="workhub-tree-doc-sublist" style={{ marginLeft: `${36 + (depth * 14)}px` }}>
                 {nodeDocuments.map((document) => (
                   <button
                     key={document.id}
@@ -334,10 +341,12 @@ export function ProjectTreeNodes({
                   </button>
                 ))}
               </div>
+            </div>
+          </div>
             )}
           </div>
         )
       })}
     </>
   )
-}
+})

@@ -47,6 +47,7 @@ const QuickAddTaskRow = memo(function QuickAddTaskRow(props: {
   const [submitting, setSubmitting] = useState(false)
   const isCommittingRef = useRef(false)
   const skipNextBlurCommitRef = useRef(false)
+  const contextScopeRef = useRef(`${selectedProjectId}|${defaultProjectId}`)
   const titleDraftRef = useRef('')
   const assigneeDraftRef = useRef('')
   const priorityDraftRef = useRef<WorkhubTaskPriority>('medium')
@@ -110,6 +111,13 @@ const QuickAddTaskRow = memo(function QuickAddTaskRow(props: {
     setPriorityMenuOpen(false)
   }
 
+  useEffect(() => {
+    const nextScope = `${selectedProjectId}|${defaultProjectId}`
+    if (contextScopeRef.current === nextScope) return
+    contextScopeRef.current = nextScope
+    resetDraft()
+  }, [defaultProjectId, selectedProjectId])
+
   const commitWithTitle = async (rawTitle: string) => {
     const trimmedTitle = normalizeTaskTitle(rawTitle)
     if (!trimmedTitle || submitting || isCommittingRef.current) return false
@@ -170,7 +178,7 @@ const QuickAddTaskRow = memo(function QuickAddTaskRow(props: {
   return (
     <article
       ref={rootRef}
-      className={`workhub-task-row workhub-task-row-draft${showDetails ? ' is-selected' : ''}${dropTargetKey === `end:${status.id}` ? ' is-drop-target' : ''}`}
+      className={`workhub-task-row workhub-task-row-draft${showDetails ? ' is-selected' : ''}${assigneeMenuOpen || priorityMenuOpen ? ' has-open-menu' : ''}${dropTargetKey === `end:${status.id}` ? ' is-drop-target' : ''}`}
       onDragOver={(event) => {
         if (!activeDragTaskId || activeDragStatusId !== status.id) return
         event.preventDefault()

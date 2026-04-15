@@ -76,20 +76,15 @@ async function getSmtpTransporter() {
   return smtpTransporter
 }
 
-async function sendNotificationEmail(params: {
+async function deliverEmailMessage(params: {
   to: string | string[]
   subject: string
   text: string
   html: string
 }) {
-  if (!parseBooleanEnv(emailNotificationsEnabledParam.value(), false)) {
-    return
-  }
-
   const from = smtpFromParam.value().trim()
   if (!from) {
-    console.warn('[email] Skipping send: SMTP_FROM is not configured.')
-    return
+    throw new Error('SMTP_FROM is not configured.')
   }
 
   const recipients = Array.isArray(params.to) ? params.to : [params.to]
@@ -100,24 +95,411 @@ async function sendNotificationEmail(params: {
   ))
 
   if (!validRecipients.length) {
-    console.warn('[email] Skipping send: no valid recipients found.')
-    return
+    throw new Error('No valid recipients found.')
+  }
+
+  // --- Gmail 500/day Limit Safeguard ---
+  const todayKey = new Date().toISOString().split('T')[0]
+  const statsRef = admin.firestore().collection('system_config').doc(`mail_stats_${todayKey}`)
+  const statsDoc = await statsRef.get()
+  const todayCount = statsDoc.exists ? statsDoc.data()?.count || 0 : 0
+  const upcomingTotal = todayCount + validRecipients.length
+
+  if (upcomingTotal > 490) {
+    console.warn(`[deliverEmailMessage] Daily email safeguard triggered. (${todayCount} sent today + ${validRecipients.length} pending > 490). Email dropped.`)
+
+    const limitNotified = statsDoc.exists ? !!statsDoc.data()?.limitNotified : false
+    if (!limitNotified) {
+      const msg = 'Daily email sending limit (490) reached. Outbound emails are paused.'
+      const adminEmail = masterEmailParam.value().trim()
+
+      if (adminEmail) {
+        // Send a one-off final email using nodemailer directly, bypassing our internal guard
+        try {
+          const alertTransporter = await getSmtpTransporter()
+          await alertTransporter.sendMail({
+            from,
+            to: adminEmail,
+            subject: '[URGENT] WorkHub Email Limit Reached',
+            text: msg,
+            html: `<p><strong>${msg}</strong></p><p>Please switch your SMTP provider to SendGrid, Resend, or Mailgun to lift this limit.</p>`
+          })
+        } catch (err) {
+          console.error('[deliverEmailMessage] Alert email failed', err)
+        }
+        
+        // Send an in-app notification to the master admin
+        try {
+          const membersSnap = await admin.firestore().collection('workhub_members').where('email', '==', adminEmail).limit(1).get()
+          if (!membersSnap.empty) {
+            const adminUid = membersSnap.docs[0].id
+            await admin.firestore().collection('workhub_notifications').add({
+              recipientUid: adminUid,
+              actorUid: 'system',
+              entityType: 'system_alert',
+              entityId: todayKey,
+              action: 'alert',
+              message: msg,
+              isRead: false,
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            })
+          }
+        } catch (err) {
+          console.error('[deliverEmailMessage] In-app notification alert failed', err)
+        }
+      }
+
+      // Mark that we alerted the admin today to avoid bombardment
+      await statsRef.set({ limitNotified: true }, { merge: true })
+    }
+
+    return { recipients: [], suppressed: true, reason: 'daily_limit_reached' }
+  }
+
+  const transporter = await getSmtpTransporter()
+  await transporter.verify()
+  const replyTo = smtpReplyToParam.value().trim()
+  await transporter.sendMail({
+    from,
+    to: validRecipients,
+    replyTo: replyTo || undefined,
+    subject: params.subject,
+    text: params.text,
+    html: params.html,
+  })
+
+  await statsRef.set({
+    count: admin.firestore.FieldValue.increment(validRecipients.length),
+    lastPulse: admin.firestore.FieldValue.serverTimestamp()
+  }, { merge: true })
+
+  return { recipients: validRecipients, suppressed: false }
+}
+
+async function sendNotificationEmail(params: {
+  to: string | string[]
+  subject: string
+  text: string
+  html: string
+}) {
+  if (!parseBooleanEnv(emailNotificationsEnabledParam.value(), false)) {
+    return false
   }
 
   try {
-    const transporter = await getSmtpTransporter()
-    const replyTo = smtpReplyToParam.value().trim()
-    await transporter.sendMail({
-      from,
-      to: validRecipients,
-      replyTo: replyTo || undefined,
-      subject: params.subject,
-      text: params.text,
-      html: params.html,
-    })
+    await deliverEmailMessage(params)
+    return true
   } catch (error) {
     console.error('[email] Failed to send notification email.', error)
+    return false
   }
+}
+
+function truncateEmailText(value: string, maxLength = 120) {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  if (trimmed.length <= maxLength) return trimmed
+  return `${trimmed.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`
+}
+
+function withTrailingPeriod(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`
+}
+
+function startCaseFromSlug(value: string) {
+  return value
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (match) => match.toUpperCase())
+}
+
+type WorkhubNotificationRecord = {
+  workspaceId?: string
+  recipientUid?: string
+  actorUid?: string
+  entityType?: 'workspace' | 'project' | 'task' | 'comment' | 'member' | 'document' | string
+  entityId?: string
+  projectId?: string
+  action?: string
+  message?: string
+  commentPreview?: string
+}
+
+// ---------------------------------------------------------------------------
+// Branded HTML email builder
+// ---------------------------------------------------------------------------
+function buildEmailHtml(params: {
+  recipientName: string
+  headline: string
+  bodyText?: string
+  contextRows: Array<{ label: string; value: string }>
+  commentPreview?: string
+  ctaLabel: string
+  ctaUrl: string
+  workspaceName: string
+  preferencesUrl: string
+}): string {
+  const rows = params.contextRows
+    .map(
+      (row) =>
+        `<tr><td style="padding:3px 0;font-size:13px;color:#374151;"><span style="display:inline-block;min-width:80px;color:#9ca3af;font-size:12px;">${escapeHtml(row.label)}</span>${escapeHtml(row.value)}</td></tr>`,
+    )
+    .join('')
+
+  const contextBlock = rows
+    ? `<table cellpadding="0" cellspacing="0" role="presentation" style="width:100%;background:#f7f9fd;border:1px solid #e2eaf7;border-radius:6px;padding:10px 14px;margin-top:16px;">${rows}</table>`
+    : ''
+
+  const commentBlock = params.commentPreview
+    ? `<blockquote style="margin:20px 0 0;padding:12px 16px;border-left:3px solid #1e3a5f;background:#eef3fc;border-radius:0 6px 6px 0;font-size:14px;color:#374151;line-height:1.55;font-style:italic;">${escapeHtml(params.commentPreview)}</blockquote>`
+    : ''
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+</head>
+<body style="margin:0;padding:0;background:#f1f5fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f1f5fb;padding:40px 16px;">
+    <tr>
+      <td align="center">
+        <table width="560" cellpadding="0" cellspacing="0" role="presentation" style="background:#ffffff;border-radius:10px;overflow:hidden;width:100%;max-width:560px;box-shadow:0 2px 12px rgba(20,40,80,0.08);">
+
+          <!-- Header -->
+          <tr>
+            <td style="background:#1e3a5f;padding:18px 32px;line-height:1;">
+              <span style="color:#ffffff;font-size:17px;font-weight:700;letter-spacing:0.2px;">WorkHub</span>
+              <span style="color:#6b91b8;font-size:13px;margin-left:10px;">· ${escapeHtml(params.workspaceName)}</span>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding:28px 32px 32px;">
+              <p style="margin:0 0 4px;font-size:12px;color:#9ca3af;">Hi ${escapeHtml(params.recipientName)},</p>
+              <h2 style="margin:0 0 12px;font-size:17px;font-weight:700;color:#111827;line-height:1.3;">${escapeHtml(params.headline)}</h2>
+              ${params.bodyText ? `<p style="margin:0;font-size:14px;color:#4b5563;line-height:1.6;">${escapeHtml(params.bodyText)}</p>` : ''}
+              ${contextBlock}
+              ${commentBlock}
+              <!-- CTA -->
+              <table cellpadding="0" cellspacing="0" role="presentation" style="margin-top:28px;">
+                <tr>
+                  <td style="background:#1e3a5f;border-radius:7px;">
+                    <a href="${params.ctaUrl}" style="display:inline-block;padding:11px 26px;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;letter-spacing:0.1px;">${escapeHtml(params.ctaLabel)}</a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background:#f7f9fd;border-top:1px solid #e2eaf7;padding:14px 32px;">
+              <p style="margin:0;font-size:11px;color:#b0b8cc;line-height:1.5;">
+                You're receiving this because you're a WorkHub member.
+                <a href="${params.preferencesUrl}" style="color:#7a94bc;text-decoration:underline;">Manage email preferences</a>
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`
+}
+
+type WorkhubWorkspaceRecord = {
+  name?: string
+}
+
+type WorkhubProjectRecord = {
+  name?: string
+}
+
+type WorkhubTaskRecord = {
+  title?: string
+}
+
+type WorkhubDocumentRecord = {
+  title?: string
+}
+
+type WorkhubMemberProfile = {
+  email?: string
+  displayName?: string
+  emailAccessEnabled?: boolean
+  emailActivityEnabled?: boolean
+}
+
+async function getOptionalDoc<T>(path: string): Promise<T | null> {
+  const snap = await admin.firestore().doc(path).get()
+  return snap.exists ? (snap.data() as T) : null
+}
+
+async function getWorkhubMemberContact(uid: string) {
+  if (!uid) return { email: null, displayName: null, emailAccessEnabled: undefined, emailActivityEnabled: undefined }
+  const member = await getOptionalDoc<WorkhubMemberProfile>(`workhub_members/${uid}`)
+  return {
+    email: toValidEmail(member?.email),
+    displayName: member?.displayName?.trim() || null,
+    emailAccessEnabled: member?.emailAccessEnabled,
+    emailActivityEnabled: member?.emailActivityEnabled,
+  }
+}
+
+function getWorkhubActorLabel(actor: { displayName: string | null; email: string | null }) {
+  return actor.displayName || actor.email || 'A teammate'
+}
+
+function shouldEmailWorkhubNotification(notification: WorkhubNotificationRecord) {
+  const entityType = (notification.entityType || '').trim().toLowerCase()
+  const action = (notification.action || '').trim().toLowerCase()
+  if (!entityType || !action) return false
+  if (entityType === 'member' && (action === 'approved' || action === 'suspended')) {
+    return false
+  }
+  return ['workspace', 'project', 'task', 'comment', 'document'].includes(entityType)
+}
+
+async function notifyMemberAboutWorkhubNotification(notification: WorkhubNotificationRecord) {
+  if (!shouldEmailWorkhubNotification(notification)) return false
+
+  const recipientUid = typeof notification.recipientUid === 'string' ? notification.recipientUid.trim() : ''
+  const actorUid = typeof notification.actorUid === 'string' ? notification.actorUid.trim() : ''
+  const workspaceId = typeof notification.workspaceId === 'string' ? notification.workspaceId.trim() : ''
+  const entityType = typeof notification.entityType === 'string' ? notification.entityType.trim().toLowerCase() : ''
+  const entityId = typeof notification.entityId === 'string' ? notification.entityId.trim() : ''
+  const projectId = typeof notification.projectId === 'string' ? notification.projectId.trim() : ''
+  const action = typeof notification.action === 'string' ? notification.action.trim() : ''
+  const rawMessage = typeof notification.message === 'string' ? notification.message.trim() : ''
+  const commentPreview = typeof notification.commentPreview === 'string' ? notification.commentPreview.trim() : ''
+  if (!recipientUid || !rawMessage) return false
+
+  const recipientPromise = getWorkhubMemberContact(recipientUid)
+  const actorPromise = getWorkhubMemberContact(actorUid)
+  const workspacePromise = workspaceId
+    ? getOptionalDoc<WorkhubWorkspaceRecord>(`workhub_workspaces/${workspaceId}`)
+    : Promise.resolve(null)
+  const projectPromise = entityType === 'project'
+    ? getOptionalDoc<WorkhubProjectRecord>(`workhub_projects/${entityId}`)
+    : Promise.resolve(null)
+  const taskPromise = entityType === 'task' || entityType === 'comment'
+    ? getOptionalDoc<WorkhubTaskRecord>(`workhub_tasks/${entityId}`)
+    : Promise.resolve(null)
+  const documentPromise = entityType === 'document'
+    ? getOptionalDoc<WorkhubDocumentRecord>(`workhub_documents/${entityId}`)
+    : Promise.resolve(null)
+
+  const [recipient, actor, workspace, project, task, document] = await Promise.all([
+    recipientPromise,
+    actorPromise,
+    workspacePromise,
+    projectPromise,
+    taskPromise,
+    documentPromise,
+  ])
+
+  if (!recipient.email) return false
+  if (!normalizeWorkhubEmailPreference(recipient.emailActivityEnabled)) return false
+
+  const recipientName = recipient.displayName || 'there'
+  const actorName = getWorkhubActorLabel(actor)
+  const workspaceName = workspace?.name?.trim() || 'WorkHub'
+  const entityTitle = entityType === 'project'
+    ? project?.name?.trim() || ''
+    : entityType === 'task' || entityType === 'comment'
+      ? task?.title?.trim() || ''
+      : entityType === 'document'
+        ? document?.title?.trim() || ''
+        : ''
+  const entityLabel = entityType === 'comment'
+    ? 'Task'
+    : entityType
+      ? startCaseFromSlug(entityType)
+      : 'Item'
+
+  // Build subject: action-oriented, scannable
+  const headlineVerb = action === 'comment'
+    ? 'commented on'
+    : action === 'task_resolved'
+      ? 'resolved'
+      : action === 'task_update'
+        ? 'assigned you to'
+        : rawMessage
+  const headline = `${actorName} ${headlineVerb}${entityTitle ? ` "${truncateEmailText(entityTitle, 60)}"` : ''}`
+  const subject = `[WorkHub] ${truncateEmailText(headline, 100)}`
+
+  const workhubBaseUrl = 'https://qyan-om.web.app/workhub'
+  const preferencesUrl = `${workhubBaseUrl}#settings`
+
+  // Build a direct deep-link to the task when we have workspace + task + project IDs
+  const taskDeepLink =
+    (entityType === 'task' || entityType === 'comment') && workspaceId && entityId && projectId
+      ? `${workhubBaseUrl}/w/${encodeURIComponent(workspaceId)}/t/${encodeURIComponent(entityId)}?p=${encodeURIComponent(projectId)}`
+      : null
+  const workhubUrl = taskDeepLink ?? workhubBaseUrl
+
+  const isComment = action === 'comment'
+
+  // For comment notifications: task title is already in the headline — only show workspace in context rows
+  const contextRows: Array<{ label: string; value: string }> = isComment
+    ? [{ label: 'Workspace', value: workspaceName }]
+    : [
+        { label: 'Workspace', value: workspaceName },
+        ...(entityTitle ? [{ label: entityLabel, value: entityTitle }] : []),
+      ]
+
+  // For comment notifications: omit body paragraph (headline says it all); blockquote carries the message
+  const bodyText = isComment
+    ? undefined
+    : withTrailingPeriod(`${actorName} ${rawMessage}`)
+
+  // Determine CTA label based on entity
+  const ctaLabel = entityType === 'comment' || entityType === 'task'
+    ? 'View task'
+    : entityType === 'document'
+      ? 'Open document'
+      : 'Open WorkHub'
+
+  // Plain-text version
+  const plainLines = [
+    `Hi ${recipientName},`,
+    '',
+    withTrailingPeriod(`${actorName} ${rawMessage}`),
+    ...(commentPreview ? ['', `"${commentPreview}"`] : []),
+    '',
+    `Workspace: ${workspaceName}`,
+    ...(!isComment && entityTitle ? [`${entityLabel}: ${entityTitle}`] : []),
+    '',
+    `${ctaLabel}: ${workhubUrl}`,
+    '',
+    `Manage email preferences: ${preferencesUrl}`,
+  ]
+
+  await sendNotificationEmail({
+    to: recipient.email,
+    subject,
+    text: plainLines.join('\n'),
+    html: buildEmailHtml({
+      recipientName,
+      headline,
+      bodyText,
+      contextRows,
+      commentPreview: commentPreview || undefined,
+      ctaLabel,
+      ctaUrl: workhubUrl,
+      workspaceName,
+      preferencesUrl,
+    }),
+  })
+
+  return true
 }
 
 async function notifyAdminAboutWorkhubAccessRequest(params: {
@@ -131,32 +513,41 @@ async function notifyAdminAboutWorkhubAccessRequest(params: {
 
   const requesterName = params.displayName.trim() || '(no display name)'
   const requesterEmail = params.email.trim() || '(no email)'
-  const inviteLabel = params.hasWorkspaceInvite ? 'Yes' : 'No'
+  const inviteLabel = params.hasWorkspaceInvite ? 'Yes — workspace invite found' : 'No'
   const reviewUrl = 'https://qyan-om.web.app/workhub'
+
+  const contextRows = [
+    { label: 'Name', value: requesterName },
+    { label: 'Email', value: requesterEmail },
+    { label: 'UID', value: params.uid },
+    { label: 'Has invite', value: inviteLabel },
+  ]
+
+  const plainLines = [
+    'A user has requested WorkHub access and is waiting for approval.',
+    '',
+    `Name: ${requesterName}`,
+    `Email: ${requesterEmail}`,
+    `UID: ${params.uid}`,
+    `Workspace invite: ${inviteLabel}`,
+    '',
+    `Review request: ${reviewUrl}`,
+  ]
 
   await sendNotificationEmail({
     to: adminEmail,
-    subject: `[WorkHub] New access request: ${requesterName}`,
-    text: [
-      'A user requested WorkHub access.',
-      '',
-      `UID: ${params.uid}`,
-      `Display name: ${requesterName}`,
-      `Email: ${requesterEmail}`,
-      `Workspace invite detected: ${inviteLabel}`,
-      '',
-      `Review request: ${reviewUrl}`,
-    ].join('\n'),
-    html: [
-      '<p>A user requested <strong>WorkHub access</strong>.</p>',
-      '<ul>',
-      `<li><strong>UID:</strong> ${escapeHtml(params.uid)}</li>`,
-      `<li><strong>Display name:</strong> ${escapeHtml(requesterName)}</li>`,
-      `<li><strong>Email:</strong> ${escapeHtml(requesterEmail)}</li>`,
-      `<li><strong>Workspace invite detected:</strong> ${escapeHtml(inviteLabel)}</li>`,
-      '</ul>',
-      `<p><a href="${reviewUrl}">Review request in WorkHub</a></p>`,
-    ].join(''),
+    subject: `[WorkHub] Access request — ${requesterName}`,
+    text: plainLines.join('\n'),
+    html: buildEmailHtml({
+      recipientName: 'Admin',
+      headline: `New access request from ${requesterName}`,
+      bodyText: 'A user has requested WorkHub access and is waiting for your approval.',
+      contextRows,
+      ctaLabel: 'Review request',
+      ctaUrl: reviewUrl,
+      workspaceName: 'WorkHub',
+      preferencesUrl: reviewUrl,
+    }),
   })
 }
 
@@ -164,40 +555,51 @@ async function notifyMemberAboutWorkhubStatusChange(params: {
   toEmail: string
   displayName: string
   status: WorkhubMemberStatus
+  emailAccessEnabled?: boolean
 }) {
+  if (!normalizeWorkhubEmailPreference(params.emailAccessEnabled)) return
+
   const memberEmail = toValidEmail(params.toEmail)
   if (!memberEmail) return
 
   const memberName = params.displayName.trim() || 'there'
-  const statusLabel = params.status === 'approved' ? 'approved' : 'suspended'
-  const actionText = params.status === 'approved'
-    ? 'Your WorkHub access has been approved. You can sign in and start working.'
-    : 'Your WorkHub access has been suspended. If this looks wrong, contact your administrator.'
-  const subject = params.status === 'approved'
-    ? '[WorkHub] Access approved'
-    : '[WorkHub] Access suspended'
+  const isApproved = params.status === 'approved'
+  const headline = isApproved
+    ? 'Your WorkHub access has been approved'
+    : 'Your WorkHub access has been suspended'
+  const bodyText = isApproved
+    ? 'You now have access to WorkHub. Sign in and start collaborating with your team.'
+    : 'Your WorkHub account has been suspended. Contact your administrator if you believe this is an error.'
+  const subject = isApproved ? '[WorkHub] Access approved — you\'re in' : '[WorkHub] Access suspended'
   const workhubUrl = 'https://qyan-om.web.app/workhub'
+  const preferencesUrl = `${workhubUrl}#settings`
+
+  const plainLines = [
+    `Hi ${memberName},`,
+    '',
+    bodyText,
+    '',
+    isApproved ? `Open WorkHub: ${workhubUrl}` : `Contact admin if needed.`,
+    '',
+    `Manage email preferences: ${preferencesUrl}`,
+  ]
 
   await sendNotificationEmail({
     to: memberEmail,
     subject,
-    text: [
-      `Hi ${memberName},`,
-      '',
-      actionText,
-      `Current status: ${statusLabel}`,
-      '',
-      `Open WorkHub: ${workhubUrl}`,
-    ].join('\n'),
-    html: [
-      `<p>Hi ${escapeHtml(memberName)},</p>`,
-      `<p>${escapeHtml(actionText)}</p>`,
-      `<p><strong>Current status:</strong> ${escapeHtml(statusLabel)}</p>`,
-      `<p><a href="${workhubUrl}">Open WorkHub</a></p>`,
-    ].join(''),
+    text: plainLines.join('\n'),
+    html: buildEmailHtml({
+      recipientName: memberName,
+      headline,
+      bodyText,
+      contextRows: [],
+      ctaLabel: isApproved ? 'Open WorkHub' : 'Contact administrator',
+      ctaUrl: workhubUrl,
+      workspaceName: 'WorkHub',
+      preferencesUrl,
+    }),
   })
 }
-
 // Vertex AI Imagen — uses the Cloud Function's built-in service account (ADC).
 // No extra API key needed; the service account just needs the "Vertex AI User" role in IAM.
 async function geminiGenerateImage(params: { apiKey: string; prompt: string }) {
@@ -485,6 +887,8 @@ type WorkhubMemberRecord = {
   photoURL: string
   status: WorkhubMemberStatus
   role: WorkhubMemberRole
+  emailAccessEnabled?: boolean
+  emailActivityEnabled?: boolean
   requestedAt: admin.firestore.FieldValue | admin.firestore.Timestamp | null
   approvedAt?: admin.firestore.FieldValue | admin.firestore.Timestamp | null
   approvedBy?: string | null
@@ -515,6 +919,10 @@ function normalizeWorkhubRole(value: unknown): WorkhubMemberRole {
   return value === 'manager' || value === 'admin' ? value : 'member'
 }
 
+function normalizeWorkhubEmailPreference(value: unknown, defaultValue = true) {
+  return typeof value === 'boolean' ? value : defaultValue
+}
+
 function mapWorkhubMember(uid: string, data: Partial<WorkhubMemberRecord> | undefined) {
   return {
     uid,
@@ -523,6 +931,8 @@ function mapWorkhubMember(uid: string, data: Partial<WorkhubMemberRecord> | unde
     photoURL: typeof data?.photoURL === 'string' ? data.photoURL : '',
     status: normalizeWorkhubStatus(data?.status),
     role: normalizeWorkhubRole(data?.role),
+    emailAccessEnabled: normalizeWorkhubEmailPreference(data?.emailAccessEnabled),
+    emailActivityEnabled: normalizeWorkhubEmailPreference(data?.emailActivityEnabled),
     requestedAt: data?.requestedAt ?? null,
     approvedAt: data?.approvedAt ?? null,
     approvedBy: typeof data?.approvedBy === 'string' ? data.approvedBy : null,
@@ -567,6 +977,8 @@ export const requestWorkhubAccess = onCall({ region: 'us-central1', cors: true }
       photoURL,
       status: nextStatus,
       role: nextRole,
+      emailAccessEnabled: normalizeWorkhubEmailPreference(existing?.emailAccessEnabled),
+      emailActivityEnabled: normalizeWorkhubEmailPreference(existing?.emailActivityEnabled),
       requestedAt: existing?.requestedAt ?? admin.firestore.FieldValue.serverTimestamp(),
       approvedAt: nextStatus === 'approved'
         ? (existing?.approvedAt ?? admin.firestore.FieldValue.serverTimestamp())
@@ -584,6 +996,8 @@ export const requestWorkhubAccess = onCall({ region: 'us-central1', cors: true }
       photoURL,
       status: nextStatus,
       role: nextRole,
+      emailAccessEnabled: normalizeWorkhubEmailPreference(existing?.emailAccessEnabled),
+      emailActivityEnabled: normalizeWorkhubEmailPreference(existing?.emailActivityEnabled),
       approvedBy: nextStatus === 'approved' ? (existing?.approvedBy ?? (isMasterEmail ? uid : 'workspace_invite')) : null,
     })
     const shouldNotifyAdmin = member.status === 'pending' && !existing?.requestedAt
@@ -642,6 +1056,7 @@ export const setWorkhubMemberStatus = onCall<SetWorkhubMemberStatusRequest, Prom
         toEmail: existing.email || '',
         displayName: existing.displayName || '',
         status,
+        emailAccessEnabled: normalizeWorkhubEmailPreference(existing.emailAccessEnabled),
       })
     }
 
@@ -653,6 +1068,123 @@ export const setWorkhubMemberStatus = onCall<SetWorkhubMemberStatusRequest, Prom
     }
   },
 )
+
+type UpdateOwnWorkhubEmailPreferencesRequest = {
+  emailAccessEnabled?: boolean
+  emailActivityEnabled?: boolean
+}
+
+export const updateOwnWorkhubEmailPreferences = onCall<UpdateOwnWorkhubEmailPreferencesRequest, Promise<{ member: ReturnType<typeof mapWorkhubMember> }>>(
+  { region: 'us-central1', cors: true },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', 'Must be signed in.')
+    }
+    if (request.data?.emailAccessEnabled !== undefined && typeof request.data.emailAccessEnabled !== 'boolean') {
+      throw new HttpsError('invalid-argument', 'emailAccessEnabled must be a boolean.')
+    }
+    if (request.data?.emailActivityEnabled !== undefined && typeof request.data.emailActivityEnabled !== 'boolean') {
+      throw new HttpsError('invalid-argument', 'emailActivityEnabled must be a boolean.')
+    }
+
+    const ref = workhubMemberRef(request.auth.uid)
+    const snap = await ref.get()
+    if (!snap.exists) {
+      throw new HttpsError('not-found', 'WorkHub member record not found.')
+    }
+
+    const existing = snap.data() as Partial<WorkhubMemberRecord>
+    const emailAccessEnabled = normalizeWorkhubEmailPreference(
+      request.data?.emailAccessEnabled,
+      normalizeWorkhubEmailPreference(existing.emailAccessEnabled),
+    )
+    const emailActivityEnabled = normalizeWorkhubEmailPreference(
+      request.data?.emailActivityEnabled,
+      normalizeWorkhubEmailPreference(existing.emailActivityEnabled),
+    )
+
+    await ref.set({
+      emailAccessEnabled,
+      emailActivityEnabled,
+      lastSeenAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true })
+
+    return {
+      member: mapWorkhubMember(request.auth.uid, {
+        ...existing,
+        emailAccessEnabled,
+        emailActivityEnabled,
+      }),
+    }
+  },
+)
+
+type SendWorkhubTestEmailRequest = {
+  toEmail?: string
+}
+
+type SendWorkhubTestEmailResponse = {
+  toEmail: string
+  message: string
+}
+
+export const sendWorkhubTestEmail = onCall<SendWorkhubTestEmailRequest, Promise<SendWorkhubTestEmailResponse>>(
+  { region: 'us-central1', cors: true },
+  async (request) => {
+    assertMasterAdmin(request)
+
+    const requestedToEmail = typeof request.data?.toEmail === 'string' ? request.data.toEmail.trim() : ''
+    const fallbackAuthEmail = typeof request.auth?.token?.email === 'string' ? request.auth.token.email : ''
+    const targetEmail = toValidEmail(requestedToEmail || fallbackAuthEmail || masterEmailParam.value())
+
+    if (!targetEmail) {
+      throw new HttpsError('invalid-argument', 'A valid recipient email is required.')
+    }
+
+    try {
+      await deliverEmailMessage({
+        to: targetEmail,
+        subject: '[WorkHub] SMTP test email',
+        text: [
+          'This is a WorkHub SMTP test email from Firebase Cloud Functions.',
+          '',
+          `Recipient: ${targetEmail}`,
+          `Triggered by: ${request.auth?.uid || 'unknown'}`,
+          `Timestamp (UTC): ${new Date().toISOString()}`,
+          '',
+          'If you received this, SMTP delivery from Cloud Functions is working.',
+        ].join('\n'),
+        html: [
+          '<p>This is a <strong>WorkHub SMTP test email</strong> from Firebase Cloud Functions.</p>',
+          '<ul>',
+          `<li><strong>Recipient:</strong> ${escapeHtml(targetEmail)}</li>`,
+          `<li><strong>Triggered by:</strong> ${escapeHtml(request.auth?.uid || 'unknown')}</li>`,
+          `<li><strong>Timestamp (UTC):</strong> ${escapeHtml(new Date().toISOString())}</li>`,
+          '</ul>',
+          '<p>If you received this, SMTP delivery from Cloud Functions is working.</p>',
+        ].join(''),
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to send test email.'
+      throw new HttpsError('internal', message)
+    }
+
+    return {
+      toEmail: targetEmail,
+      message: `Test email sent to ${targetEmail}.`,
+    }
+  },
+)
+
+export const onWorkhubNotificationCreated = functionsV1
+  .region('us-central1')
+  .firestore
+  .document('workhub_notifications/{notificationId}')
+  .onCreate(async (snap) => {
+    const notification = snap.data() as WorkhubNotificationRecord | undefined
+    if (!notification) return
+    await notifyMemberAboutWorkhubNotification(notification)
+  })
 
 type UploadWorkhubAttachmentToDriveRequest = {
   fileName: string

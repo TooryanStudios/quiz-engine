@@ -60,7 +60,7 @@ When the admin app runs on localhost, launch/share links will automatically targ
 
 ## WorkHub email notifications (Cloud Functions)
 
-WorkHub access request and approval/suspension notifications are sent from Firebase Cloud Functions using SMTP.
+WorkHub email notifications are sent from Firebase Cloud Functions using SMTP.
 
 Set these values in `functions/.env` (or with your deployed function params):
 
@@ -79,7 +79,14 @@ Notes:
 - `EMAIL_NOTIFICATIONS_ENABLED` must be `true` to send emails.
 - `MASTER_EMAIL` receives new pending WorkHub access request notifications.
 - Users receive email when their WorkHub status changes to `approved` or `suspended`.
+- Users also receive email for in-app WorkHub notifications such as task creation, task updates, comments, and project settings updates.
+- Approved members can turn activity emails and access-status emails on or off from the WorkHub notification menu.
+- The Master Admin overview page includes a `Send test email` action that sends a real SMTP message through Cloud Functions.
 - Notification send failures are logged, but they do not block WorkHub actions.
+
+Deployment:
+- If you change anything under `functions/`, deploy Firebase Functions as well as hosting.
+- Typical email-related deploy command: `firebase deploy --project qyan-om --only functions,hosting`
 
 ## Firestore data model
 

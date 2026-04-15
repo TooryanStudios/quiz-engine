@@ -83,13 +83,11 @@ export function useWorkhubUiInteractionHandlers({
     if (notification.entityType === 'document') {
       const targetDocument = documents.find((item) => item.id === notification.entityId)
       if (!targetDocument) {
-        console.log('[Notification] document not in documents list, calling openDocumentFromNotification for', notification.entityId, 'docs count:', documents.length)
         const opened = await openDocumentFromNotification(notification)
         if (opened) return
         showToast({ type: 'error', message: 'This document is no longer available.' })
         return
       }
-      console.log('[Notification] document found in documents (inline path): id', targetDocument.id, 'title', targetDocument.title, 'body length', (targetDocument.body || '').length)
 
       const targetProjectId = targetDocument.projectId && visibleWorkspaceProjects.some((item) => item.id === targetDocument.projectId)
         ? targetDocument.projectId

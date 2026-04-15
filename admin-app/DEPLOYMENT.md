@@ -28,14 +28,24 @@ npm run build
 **✓ Verify**: Output must show `✓ built in X.XXs` with **no TypeScript errors**  
 **✗ If build fails**: Fix TypeScript errors before proceeding
 
-### 4. Deploy to Firebase (qyan-om)
+### 4. Build Firebase Functions (when `functions/` changed)
 ```powershell
-firebase deploy --project qyan-om --only hosting
+cd functions
+npm run build
+cd ..
+```
+
+**✓ Verify**: Output completes with no TypeScript errors  
+**✗ If build fails**: Fix function errors before proceeding
+
+### 5. Deploy to Firebase (qyan-om)
+```powershell
+firebase deploy --project qyan-om --only functions,hosting
 ```
 
 **✓ Verify**: Output shows `Deploy complete!` and `Hosting URL: https://qyan-om.web.app`
 
-### 5. Push to GitHub
+### 6. Push to GitHub
 ```powershell
 cd ..
 git push
@@ -53,10 +63,19 @@ git add -A
 git commit -m "your change description here"
 cd admin-app
 npm run build
-firebase deploy --project qyan-om --only hosting
+cd functions
+npm run build
+cd ..
+firebase deploy --project qyan-om --only functions,hosting
 cd ..
 git push
 ```
+
+## WorkHub Email Deployment
+
+- WorkHub email delivery runs in Firebase Functions, so hosting-only deploys will not publish email code changes.
+- Required SMTP values live in `functions/.env` for local use and must also be present in the deployed Firebase environment before function deployment.
+- After deployment, open the Master Admin overview page and use `Send test email` to verify live SMTP delivery.
 
 ---
 
@@ -94,6 +113,7 @@ git push
 ## Notes
 
 - Always **build before deploy** - Firebase deploys the `dist/` folder
+- If email behavior changed, also build and deploy `functions/`
 - Admin app changes **only** affect `qyan-om` project
 - Game server (public/server) auto-deploys via Render when you push to GitHub
 - Keep commit messages clear and concise

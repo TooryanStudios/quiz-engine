@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import type { WorkhubMember, WorkhubTaskComment } from '../../../lib/workhubRepo'
 
 export interface WorkhubDiscussionCardProps {
@@ -20,6 +21,12 @@ export interface WorkhubDiscussionCardProps {
   composerBusy: boolean
   composerPlaceholder?: string
   emptyStateText?: string
+  // Notify-recipients selector (only rendered when notifyCandidates is provided)
+  notifyMode?: 'all' | 'selected' | 'none'
+  notifyUids?: string[]
+  notifyCandidates?: Array<{ uid: string; label: string }>
+  onNotifyModeChange?: (mode: 'all' | 'selected' | 'none') => void
+  onNotifyUidsChange?: (uids: string[]) => void
 }
 
 export function WorkhubDiscussionCard({
@@ -42,7 +49,24 @@ export function WorkhubDiscussionCard({
   composerBusy,
   composerPlaceholder = 'Write an update for your team...',
   emptyStateText = 'No messages yet. Start the discussion.',
+  notifyMode = 'all',
+  notifyUids = [],
+  notifyCandidates,
+  onNotifyModeChange,
+  onNotifyUidsChange,
 }: WorkhubDiscussionCardProps) {
+  const [notifyDropdownOpen, setNotifyDropdownOpen] = useState(false)
+  const notifyRowRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!notifyDropdownOpen) return
+    function handleOutsideClick(e: MouseEvent) {
+      if (notifyRowRef.current && !notifyRowRef.current.contains(e.target as Node)) {
+        setNotifyDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleOutsideClick)
+    return () => document.removeEventListener('mousedown', handleOutsideClick)
+  }, [notifyDropdownOpen])
   function getInitials(value: string): string {
     const parts = value.trim().split(/\s+/).filter(Boolean)
     if (parts.length === 0) return '?'
@@ -141,6 +165,63 @@ export function WorkhubDiscussionCard({
             }
           }}
         />
+        {notifyCandidates !== undefined && (
+          <div className="workhub-composer-notify-row" ref={notifyRowRef}>
+            <span className="workhub-composer-notify-label">Notify</span>
+            <div
+              className="workhub-composer-notify-trigger"
+              role="button"
+              tabIndex={0}
+              onClick={() => setNotifyDropdownOpen((v) => !v)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setNotifyDropdownOpen((v) => !v) }}
+            >
+              {notifyMode === 'all'
+                ? 'All involved'
+                : notifyMode === 'none'
+                  ? 'No one'
+                  : `${notifyUids.length} selected`}
+              <span className="workhub-composer-notify-chevron" aria-hidden>▾</span>
+            </div>
+            {notifyDropdownOpen && (
+              <div className="workhub-composer-notify-menu">
+                <button
+                  type="button"
+                  className={`workhub-composer-notify-option${notifyMode === 'all' ? ' is-active' : ''}`}
+                  onClick={() => { onNotifyModeChange?.('all'); setNotifyDropdownOpen(false) }}
+                >
+                  All involved
+                </button>
+                <button
+                  type="button"
+                  className={`workhub-composer-notify-option${notifyMode === 'none' ? ' is-active' : ''}`}
+                  onClick={() => { onNotifyModeChange?.('none'); setNotifyDropdownOpen(false) }}
+                >
+                  No one
+                </button>
+                <div className="workhub-composer-notify-divider" />
+                {notifyCandidates.map((candidate) => {
+                  const checked = notifyMode === 'selected' && notifyUids.includes(candidate.uid)
+                  return (
+                    <label key={candidate.uid} className="workhub-composer-notify-check">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          const next = e.target.checked
+                            ? [...notifyUids, candidate.uid]
+                            : notifyUids.filter((u) => u !== candidate.uid)
+                          onNotifyUidsChange?.(next)
+                          if (notifyMode !== 'selected') onNotifyModeChange?.('selected')
+                        }}
+                      />
+                      {candidate.label}
+                    </label>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
         <button type="button" onClick={() => { void onComposerSend() }} disabled={composerBusy || !composerText.trim()}>
           {composerBusy ? 'Sending...' : 'Send'}
         </button>

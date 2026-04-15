@@ -39,6 +39,8 @@ export interface WorkhubMember {
   photoURL: string
   status: WorkhubMemberStatus
   role: WorkhubMemberRole
+  emailAccessEnabled?: boolean
+  emailActivityEnabled?: boolean
   requestedAt?: unknown
   approvedAt?: unknown
   approvedBy?: string
@@ -162,6 +164,8 @@ export interface WorkhubTask {
   createdBy: string
   createdAt?: unknown
   updatedAt?: unknown
+  notifyMode?: 'all' | 'selected' | 'none'
+  notifyUids?: string[]
 }
 
 export interface WorkhubTaskChecklistItem {
@@ -369,6 +373,12 @@ export async function requestWorkhubAccess(): Promise<WorkhubMember> {
 
 export async function setWorkhubMemberStatus(input: { uid: string; status: WorkhubMemberStatus; role?: WorkhubMemberRole }): Promise<WorkhubMember> {
   const fn = httpsCallable<typeof input, { member: WorkhubMember }>(functions, 'setWorkhubMemberStatus')
+  const result = await fn(input)
+  return result.data.member
+}
+
+export async function updateOwnWorkhubEmailPreferences(input: { emailAccessEnabled?: boolean; emailActivityEnabled?: boolean }): Promise<WorkhubMember> {
+  const fn = httpsCallable<typeof input, { member: WorkhubMember }>(functions, 'updateOwnWorkhubEmailPreferences')
   const result = await fn(input)
   return result.data.member
 }
@@ -767,6 +777,17 @@ export async function createWorkhubTask(input: {
   return docRef.id
 }
 
+export async function saveWorkhubTaskNotifyPrefs(
+  taskId: string,
+  mode: 'all' | 'selected' | 'none',
+  uids: string[],
+) {
+  await updateDoc(doc(db, 'workhub_tasks', taskId), {
+    notifyMode: mode,
+    notifyUids: uids,
+  })
+}
+
 export async function updateWorkhubTask(taskId: string, patch: Partial<Pick<WorkhubTask, 'title' | 'description' | 'attachments' | 'attachmentTitles' | 'imageUrls' | 'links' | 'linkTitles' | 'linkCreatedBy' | 'status' | 'priority' | 'assigneeUid' | 'startDate' | 'dueDate' | 'valueAmount' | 'valueCurrency' | 'checklist' | 'completedAt' | 'sortOrder'>>) {
   const normalizedPatch: Record<string, unknown> = {
     ...patch,
@@ -922,8 +943,10 @@ export async function createWorkhubNotifications(input: {
   recipientUids: string[]
   entityType: WorkhubNotification['entityType']
   entityId: string
+  projectId?: string
   action: string
   message: string
+  commentPreview?: string
 }) {
   const targets = Array.from(new Set(input.recipientUids.filter((uid) => !!uid && uid !== input.actorUid)))
   if (targets.length === 0) return
@@ -933,8 +956,10 @@ export async function createWorkhubNotifications(input: {
     actorUid: input.actorUid,
     entityType: input.entityType,
     entityId: input.entityId,
+    ...(input.projectId ? { projectId: input.projectId } : {}),
     action: input.action,
     message: input.message,
+    ...(input.commentPreview ? { commentPreview: input.commentPreview } : {}),
     read: false,
     createdAt: serverTimestamp(),
   })))

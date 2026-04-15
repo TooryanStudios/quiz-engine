@@ -718,6 +718,12 @@ export async function addCreditsToUser(uid: string, amount: number, reason?: str
   return result.data.creditsRemaining
 }
 
+export async function sendWorkhubTestEmail(toEmail?: string): Promise<{ toEmail: string; message: string }> {
+  const fn = httpsCallable<{ toEmail?: string }, { toEmail: string; message: string }>(functions, 'sendWorkhubTestEmail')
+  const result = await fn({ toEmail })
+  return result.data
+}
+
 // ── Total users count ─────────────────────────────────────────────────────────
 
 export async function getTotalUsersCount(): Promise<number> {

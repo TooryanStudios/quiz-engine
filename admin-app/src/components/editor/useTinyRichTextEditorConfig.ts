@@ -78,6 +78,7 @@ export function useTinyRichTextEditorConfig({
     ].join(';'),
     contextmenu: 'link image table',
     image_caption: true,
+    directionality: 'rtl',
     placeholder,
     content_style: [
       "body {",
@@ -86,6 +87,8 @@ export function useTinyRichTextEditorConfig({
       '  line-height: 1.7;',
       '  color: #1f355f;',
       '  margin: 12px;',
+      '  direction: rtl;',
+      '  text-align: right;',
       '}',
     ].join(' '),
   }), [minHeight, placeholder])

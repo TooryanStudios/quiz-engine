@@ -103,10 +103,6 @@
   min-height: 0;
 }
 
-.sc-video-wrapper-ready {
-  cursor: pointer;
-}
-
 .sc-video {
   width: 100%;
   height: 100%;
@@ -176,7 +172,7 @@
 }
 
 .sc-btn-capture {
-  width: 68px; height: 68px;
+  width: 92px; height: 92px;
   border-radius: 50%;
   border: 3px solid var(--sc-accent);
   background: transparent;
@@ -189,7 +185,7 @@
 .sc-btn-capture.scanning { border-color: var(--sc-text-muted); }
 
 .sc-shutter {
-  width: 44px; height: 44px;
+  width: 58px; height: 58px;
   border-radius: 50%;
   background: var(--sc-accent);
   display: block;
@@ -367,16 +363,17 @@
 
 .sc-btn-capture-again-primary {
   width: 100%;
+  min-height: 86px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  padding: 13px 14px;
-  border: 3px solid var(--sc-accent);
+  padding: 16px 14px;
+  border: 4px solid var(--sc-accent);
   border-radius: 999px;
   background: transparent;
   color: var(--sc-accent);
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 700;
   letter-spacing: 0.03em;
   cursor: pointer;
@@ -387,8 +384,8 @@
 }
 
 .sc-btn-capture-again-dot {
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   background: var(--sc-accent);
   display: inline-block;
@@ -685,13 +682,13 @@
 }
 
 .sc-orientation-landscape .sc-btn-capture {
-  width: 74px;
-  height: 74px;
+  width: 84px;
+  height: 84px;
 }
 
 .sc-orientation-landscape .sc-shutter {
-  width: 48px;
-  height: 48px;
+  width: 54px;
+  height: 54px;
 }
 
 .sc-orientation-landscape .sc-mode-badge {

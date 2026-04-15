@@ -1,4 +1,5 @@
-import { memo } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { WorkhubMember, WorkhubTask, WorkhubTaskChecklistItem, WorkhubTaskPriority, WorkhubTaskStatus } from '../../../lib/workhubRepo'
 import { PRIORITY_LABELS, getPriorityIcon } from '../constants'
 import { formatDueDateShort, formatTaskDueDisplay, getInitials, normalizeTaskTitle } from '../taskUtils'
@@ -88,6 +89,8 @@ const TaskRow = memo(function TaskRow({
   isTaskBusy, taskAssignee, taskCreator, assignableMembers, meta, unreadCommentCount = 0, isFinanceLayout, callbacks,
 }: TaskRowProps) {
   const { checklist } = meta
+  const assigneeBtnRef = useRef<HTMLButtonElement | null>(null)
+  const [assigneeMenuStyle, setAssigneeMenuStyle] = useState<React.CSSProperties>({})
   const assigneeLabel = taskAssignee?.displayName || taskAssignee?.email || 'Unassigned'
   const creatorLabel = taskCreator?.displayName || taskCreator?.email || 'Unknown'
   const showCreatorSeparately = taskCreator && taskCreator.uid !== task.assigneeUid
@@ -100,6 +103,21 @@ const TaskRow = memo(function TaskRow({
   const checklistProgressPercent = checklistTotal > 0
     ? Math.max(8, Math.round((checklistDone / checklistTotal) * 100))
     : 0
+
+  useEffect(() => {
+    if (!assigneeMenuOpen) return
+    const btn = assigneeBtnRef.current
+    if (!btn) return
+    const r = btn.getBoundingClientRect()
+    const menuH = Math.min(300, window.innerHeight * 0.42)
+    const spaceBelow = window.innerHeight - r.bottom
+    const goUp = spaceBelow < menuH + 8 && r.top > spaceBelow
+    if (goUp) {
+      setAssigneeMenuStyle({ position: 'fixed', bottom: window.innerHeight - r.top + 4, left: r.left, minWidth: 160, zIndex: 9999 })
+    } else {
+      setAssigneeMenuStyle({ position: 'fixed', top: r.bottom + 4, left: r.left, minWidth: 160, zIndex: 9999 })
+    }
+  }, [assigneeMenuOpen, assignableMembers.length])
 
   return (
     <article
@@ -205,6 +223,7 @@ const TaskRow = memo(function TaskRow({
                 </span>
               )}
               <button
+                ref={assigneeBtnRef}
                 type="button"
                 className={`workhub-assignee-badge workhub-task-assignee-btn${assigneeIsCreator ? ' is-creator' : ''}`}
                 aria-label={`Assignee: ${assigneeLabel}`}
@@ -218,8 +237,12 @@ const TaskRow = memo(function TaskRow({
                   : <span className="workhub-assignee-fallback">👤</span>}
               </button>
             </div>
-            {assigneeMenuOpen && (
-              <div className="workhub-task-assignee-menu" onClick={(event) => event.stopPropagation()}>
+            {assigneeMenuOpen && createPortal(
+              <div
+                className="workhub-task-assignee-menu"
+                style={assigneeMenuStyle}
+                onClick={(event) => event.stopPropagation()}
+              >
                 <button
                   type="button"
                   className={!task.assigneeUid ? 'is-active' : ''}
@@ -237,7 +260,8 @@ const TaskRow = memo(function TaskRow({
                     {member.displayName || member.email}
                   </button>
                 ))}
-              </div>
+              </div>,
+              document.body
             )}
           </div>
           <div className="workhub-task-col due">
