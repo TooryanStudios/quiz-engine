@@ -872,7 +872,10 @@ export default function WorkHubPage() {
   const location = useLocation()
   const navigationType = useNavigationType()
   const { showToast } = useToast()
-  const workhubDebugEnabled = import.meta.env.DEV && typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
+  // navigateRef ensures the auth listener effect never re-runs due to React Router
+  // re-creating the navigate function on every URL change (useNavigateUnstable behaviour).
+  const navigateRef = useRef(navigate)
+  navigateRef.current = navigate
   const [userEmail, setUserEmail] = useState('')
   const [userName, setUserName] = useState('')
   const [member, setMember] = useState<WorkhubMember | null>(null)
@@ -929,7 +932,6 @@ export default function WorkHubPage() {
   const [workspaceMemberAccessLevels, setWorkspaceMemberAccessLevels] = useState<Record<string, 'full' | 'custom'>>({})
   const [workspaceInviteEmails, setWorkspaceInviteEmails] = useState<string[]>([])
   const [workspaceInviteEmailDraft, setWorkspaceInviteEmailDraft] = useState('')
-  const taskSelectionPerfRef = useRef<{ taskId: string; startedAt: number } | null>(null)
   const [workspaceDeleteTypedName, setWorkspaceDeleteTypedName] = useState('')
   const [workspaceDeletePhrase, setWorkspaceDeletePhrase] = useState('')
   const [workspaceDeleteAcknowledge, setWorkspaceDeleteAcknowledge] = useState(false)
@@ -1015,6 +1017,7 @@ export default function WorkHubPage() {
   const [actionMenuProjectId, setActionMenuProjectId] = useState<string | null>(null)
   const [actionMenuPosition, setActionMenuPosition] = useState({ x: 0, y: 0 })
   const [workspaceMoodBoards, setWorkspaceMoodBoards] = useState<WorkhubMoodBoard[]>([])
+  const moodBoardsCacheByWorkspaceRef = useRef<Record<string, WorkhubMoodBoard[]>>({})
   const [selectedMoodBoardId, setSelectedMoodBoardId] = useState('')
   const [, setQuickAddOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -1275,64 +1278,8 @@ export default function WorkHubPage() {
   }, [globalFinderOpen])
 
   useEffect(() => {
-    if (!workhubDebugEnabled) return
-    const mountAt = performance.now()
-    console.info('[WorkHubDebug] mount', {
-      path: `${location.pathname}${location.search}`,
-      navigationType,
-      mountAt,
-    })
-    return () => {
-      console.info('[WorkHubDebug] unmount', {
-        path: `${location.pathname}${location.search}`,
-        livedMs: Math.round(performance.now() - mountAt),
-      })
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  useEffect(() => {
-    if (!workhubDebugEnabled) return
-    console.info('[WorkHubDebug] route', {
-      path: `${location.pathname}${location.search}`,
-      navigationType,
-      memberLoading,
-      selectedWorkspaceId,
-      selectedProjectId,
-      selectedTaskId,
-    })
-  }, [location.pathname, location.search, memberLoading, navigationType, selectedProjectId, selectedTaskId, selectedWorkspaceId, workhubDebugEnabled])
-
-  useEffect(() => {
-    if (!workhubDebugEnabled) return
-    console.info('[WorkHubDebug] memberLoading', {
-      memberLoading,
-      hasMember: !!member,
-      path: `${location.pathname}${location.search}`,
-    })
-  }, [location.pathname, location.search, member, memberLoading, workhubDebugEnabled])
-
-  useEffect(() => {
-    if (!workhubDebugEnabled || !selectedTaskId) return
-    const selection = taskSelectionPerfRef.current
-    window.requestAnimationFrame(() => {
-      console.info('[WorkHubDebug] selectedTask paint', {
-        taskId: selectedTaskId,
-        elapsedMs: selection?.taskId === selectedTaskId ? Math.round(performance.now() - selection.startedAt) : null,
-        path: `${location.pathname}${location.search}`,
-      })
-    })
-  }, [location.pathname, location.search, selectedTaskId, workhubDebugEnabled])
-
-  useEffect(() => {
     let unsubMember: (() => void) | null = null
     const unsub = onAuthStateChanged(auth, (user) => {
-      if (workhubDebugEnabled) {
-        console.info('[WorkHubDebug] auth state changed', {
-          hasUser: !!user,
-          path: `${window.location.pathname}${window.location.search}`,
-        })
-      }
       if (unsubMember) {
         unsubMember()
         unsubMember = null
@@ -1342,7 +1289,7 @@ export default function WorkHubPage() {
         setMemberLoading(false)
         setBootstrappingMasterAccess(false)
         setMasterBootstrapAttempted(false)
-        navigate('/login', { replace: true, state: { returnTo: '/workhub' } })
+        navigateRef.current('/login', { replace: true, state: { returnTo: '/workhub' } })
         return
       }
       setMemberLoading(true)
@@ -1351,13 +1298,6 @@ export default function WorkHubPage() {
       setUserEmail(user.email || '')
       setUserName(user.displayName || user.email?.split('@')[0] || 'Member')
       unsubMember = subscribeOwnWorkhubMember(user.uid, (next) => {
-        if (workhubDebugEnabled) {
-          console.info('[WorkHubDebug] member subscription resolved', {
-            hasMember: !!next,
-            status: next?.status || '',
-            path: `${window.location.pathname}${window.location.search}`,
-          })
-        }
         setMember(next)
         setMemberLoading(false)
       })
@@ -1366,7 +1306,8 @@ export default function WorkHubPage() {
       if (unsubMember) unsubMember()
       unsub()
     }
-  }, [navigate, workhubDebugEnabled])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     if (!member || member.status !== 'approved') return
@@ -1490,8 +1431,24 @@ export default function WorkHubPage() {
       setWorkspaceMoodBoards([])
       return
     }
-    return subscribeWorkhubMoodBoardsForWorkspace(selectedWorkspaceId, setWorkspaceMoodBoards)
+
+    const cachedBoards = moodBoardsCacheByWorkspaceRef.current[selectedWorkspaceId]
+    if (cachedBoards) {
+      setWorkspaceMoodBoards(cachedBoards)
+    } else {
+      setWorkspaceMoodBoards([])
+    }
+
+    return subscribeWorkhubMoodBoardsForWorkspace(selectedWorkspaceId, (boards) => {
+      moodBoardsCacheByWorkspaceRef.current[selectedWorkspaceId] = boards
+      setWorkspaceMoodBoards(boards)
+    })
   }, [selectedWorkspaceId])
+
+  useEffect(() => {
+    if (member?.status === 'approved') return
+    moodBoardsCacheByWorkspaceRef.current = {}
+  }, [member?.status])
 
   useEffect(() => {
     if (!member || member.status !== 'approved') return
@@ -1753,10 +1710,8 @@ export default function WorkHubPage() {
   const openDocumentFromNotification = useCallback(async (notification: WorkhubNotification) => {
     const targetDocument = await getWorkhubDocumentById(notification.entityId)
     if (!targetDocument) {
-      console.log('[Notification] getWorkhubDocumentById returned null for', notification.entityId)
       return false
     }
-    console.log('[Notification] openDocumentFromNotification: doc', targetDocument.id, 'workspace', targetDocument.workspaceId, 'title', targetDocument.title, 'body length', (targetDocument.body || '').length)
 
     setPendingNotificationDocument(targetDocument)
     setSelectedWorkspaceId(targetDocument.workspaceId)
@@ -2283,13 +2238,6 @@ export default function WorkHubPage() {
       void _cbRef.current.handleTaskReorder(dragTaskId, taskStatus, taskId)
     },
     onRowClick: (taskId) => {
-      if (workhubDebugEnabled) {
-        taskSelectionPerfRef.current = { taskId, startedAt: performance.now() }
-        console.info('[WorkHubDebug] row click', {
-          taskId,
-          path: `${location.pathname}${location.search}`,
-        })
-      }
       setSelectedTaskId(taskId)
       setOpenTaskMoreMenuId('')
       setOpenTaskStatusMenuId('')
@@ -7536,7 +7484,39 @@ export default function WorkHubPage() {
                       <article className="workhub-overview-card workhub-proposal-focus-card">
                         <div className="workhub-overview-head">
                           <h3>Documents and mood boards</h3>
-                          <span>{selectedProjectDashboardMedia.length} previews</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span>{selectedProjectDashboardMedia.length} previews</span>
+                            {isPrivilegedMember && selectedWorkspace?.moodBoardEnabled !== false && (
+                              <button
+                                type="button"
+                                className="workhub-primary-mini"
+                                title="Open mood board to add attachments"
+                                onClick={async () => {
+                                  const existingBoard = workspaceMoodBoards.find(
+                                    (b) => b.entityType === 'project' && b.entityId === selectedProjectId,
+                                  )
+                                  if (existingBoard) {
+                                    handleSelectMoodBoardFromTree(existingBoard.id)
+                                  } else if (selectedWorkspaceId) {
+                                    const projectName = workspaceProjectById[selectedProjectId]?.name || 'Project'
+                                    const newId = await createWorkhubMoodBoard({
+                                      workspaceId: selectedWorkspaceId,
+                                      entityType: 'project',
+                                      entityId: selectedProjectId,
+                                      title: `${projectName} — Mood Board`,
+                                      createdBy: currentUid,
+                                    })
+                                    setSelectedMoodBoardId(newId)
+                                    setSelectedDocumentId('')
+                                    setSelectedTaskId('')
+                                    setActiveSection('moodboard')
+                                  }
+                                }}
+                              >
+                                + Add attachment
+                              </button>
+                            )}
+                          </div>
                         </div>
                         <div className="workhub-summary-strip workhub-proposal-doc-counters">
                           <div className="workhub-summary-tile"><strong>{selectedProjectDashboardRelatedCounts.docs}</strong><span>Docs</span></div>
@@ -8206,12 +8186,23 @@ export default function WorkHubPage() {
               const ext = file.name.split('.').pop() ?? 'jpg'
               const storagePath = `workhub-moodboards/${selectedWorkspaceId}/${boardId}/${crypto.randomUUID()}.${ext}`
               const storageRef = ref(storage, storagePath)
-              await uploadBytes(storageRef, file, { contentType: file.type || 'application/octet-stream' })
+              await uploadBytes(storageRef, file, {
+                contentType: file.type || 'application/octet-stream',
+                cacheControl: 'public,max-age=31536000,immutable',
+              })
               return await getDownloadURL(storageRef)
             }}
             onBoardDeleted={() => {
               setSelectedMoodBoardId('')
               setActiveSection('dashboard')
+            }}
+            onOpenAttachmentLightbox={openAttachmentLightbox}
+            getAttachmentReviewCount={(url) => {
+              const review = attachmentReviews[url]
+              return (review?.notes.trim() ? 1 : 0)
+                + (review?.comments.length || 0)
+                + (review?.markers.length || 0)
+                + (review?.modificationChecks.length || 0)
             }}
             discussionComments={comments}
             discussionText={commentText}
@@ -8533,7 +8524,7 @@ export default function WorkHubPage() {
                             />
                           ))}
                           <QuickAddTaskRow
-                            key={`quick-add-${status.id}`}
+                            key={`quick-add-${selectedWorkspaceId}-${selectedProjectId}-${status.id}`}
                             status={status}
                             assignableMembersByProjectId={assignableMembersByProjectId}
                             workspaceAssignableMembers={workspaceAssignableMembers}
