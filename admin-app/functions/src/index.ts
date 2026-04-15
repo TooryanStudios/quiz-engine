@@ -3,6 +3,7 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https'
 import { defineString } from 'firebase-functions/params'
 import * as functionsV1 from 'firebase-functions/v1'
 import nodemailer from 'nodemailer'
+import sharp from 'sharp'
 
 
 admin.initializeApp()
@@ -1471,5 +1472,116 @@ export const generateQuestionMediaImage = onCall<GenerateQuestionMediaImageReque
       reason: 'ai_question_media_image',
     })
     return { imageUrl, storagePath }
+  },
+)
+
+type CropImageForClientRequest = {
+  imageUrl: string
+  cropPixels: {
+    x: number
+    y: number
+    width: number
+    height: number
+  }
+  preferredMimeType?: string
+}
+
+type CropImageForClientResponse = {
+  base64Image: string
+  contentType: 'image/png' | 'image/jpeg'
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value))
+}
+
+function validateCropImageUrl(rawUrl: string): URL {
+  let parsed: URL
+  try {
+    parsed = new URL(rawUrl)
+  } catch {
+    throw new HttpsError('invalid-argument', 'imageUrl must be a valid URL.')
+  }
+
+  const allowedHosts = new Set([
+    'firebasestorage.googleapis.com',
+    'storage.googleapis.com',
+  ])
+
+  if (!allowedHosts.has(parsed.hostname)) {
+    throw new HttpsError('permission-denied', 'Only Firebase Storage URLs are allowed for crop fallback.')
+  }
+
+  return parsed
+}
+
+export const cropImageForClient = onCall<CropImageForClientRequest, Promise<CropImageForClientResponse>>(
+  { region: 'us-central1', cors: true },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', 'Must be signed in.')
+    }
+
+    const imageUrl = typeof request.data?.imageUrl === 'string' ? request.data.imageUrl.trim() : ''
+    if (!imageUrl) {
+      throw new HttpsError('invalid-argument', 'imageUrl is required.')
+    }
+    const safeUrl = validateCropImageUrl(imageUrl)
+
+    const cropPixelsRaw = request.data?.cropPixels
+    if (!cropPixelsRaw || typeof cropPixelsRaw !== 'object') {
+      throw new HttpsError('invalid-argument', 'cropPixels is required.')
+    }
+
+    const xRaw = Number((cropPixelsRaw as CropImageForClientRequest['cropPixels']).x)
+    const yRaw = Number((cropPixelsRaw as CropImageForClientRequest['cropPixels']).y)
+    const widthRaw = Number((cropPixelsRaw as CropImageForClientRequest['cropPixels']).width)
+    const heightRaw = Number((cropPixelsRaw as CropImageForClientRequest['cropPixels']).height)
+    if (![xRaw, yRaw, widthRaw, heightRaw].every((value) => Number.isFinite(value))) {
+      throw new HttpsError('invalid-argument', 'cropPixels values must be finite numbers.')
+    }
+
+    const sourceRes = await fetch(safeUrl.toString(), { signal: AbortSignal.timeout(20000) })
+    if (!sourceRes.ok) {
+      throw new HttpsError('failed-precondition', `Failed to load source image (${sourceRes.status}).`)
+    }
+
+    const sourceBuffer = Buffer.from(await sourceRes.arrayBuffer())
+    const sourceImage = sharp(sourceBuffer, { failOn: 'none' })
+    const metadata = await sourceImage.metadata()
+    const sourceWidth = metadata.width || 0
+    const sourceHeight = metadata.height || 0
+    if (sourceWidth <= 0 || sourceHeight <= 0) {
+      throw new HttpsError('failed-precondition', 'Source image has invalid dimensions.')
+    }
+
+    const left = clampNumber(Math.floor(xRaw), 0, sourceWidth - 1)
+    const top = clampNumber(Math.floor(yRaw), 0, sourceHeight - 1)
+    const requestedWidth = Math.max(1, Math.floor(widthRaw))
+    const requestedHeight = Math.max(1, Math.floor(heightRaw))
+    const cropWidth = Math.max(1, Math.min(requestedWidth, sourceWidth - left))
+    const cropHeight = Math.max(1, Math.min(requestedHeight, sourceHeight - top))
+
+    const preferredMimeType = request.data?.preferredMimeType === 'image/png' ? 'image/png' : 'image/jpeg'
+    const croppedImage = sourceImage.extract({ left, top, width: cropWidth, height: cropHeight })
+
+    let outputBuffer: Buffer
+    let contentType: 'image/png' | 'image/jpeg'
+    if (preferredMimeType === 'image/png') {
+      outputBuffer = await croppedImage.png({ compressionLevel: 9 }).toBuffer()
+      contentType = 'image/png'
+    } else {
+      outputBuffer = await croppedImage.jpeg({ quality: 92, mozjpeg: true }).toBuffer()
+      contentType = 'image/jpeg'
+    }
+
+    if (outputBuffer.byteLength > 7 * 1024 * 1024) {
+      throw new HttpsError('resource-exhausted', 'Cropped image is too large for transfer. Reduce crop area and retry.')
+    }
+
+    return {
+      base64Image: outputBuffer.toString('base64'),
+      contentType,
+    }
   },
 )

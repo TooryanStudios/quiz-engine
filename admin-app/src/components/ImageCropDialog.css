@@ -1,0 +1,33 @@
+.image-crop-dialog-cropper {
+  border: 1px solid #d7e0eb;
+  border-radius: 12px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #f8fbff 0%, #edf3fa 100%);
+}
+
+.image-crop-dialog-cropper .ReactCrop {
+  display: flex;
+  justify-content: center;
+  background: linear-gradient(180deg, #f8fbff 0%, #edf3fa 100%);
+}
+
+.image-crop-dialog-cropper .ReactCrop__crop-mask {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.image-crop-dialog-cropper .ReactCrop__crop-selection {
+  border: 2px solid #0b5fff;
+  box-shadow: 0 0 0 1px rgba(11, 95, 255, 0.35);
+}
+
+.image-crop-dialog-cropper .ReactCrop__drag-handle {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: #0b5fff;
+}
+
+.image-crop-dialog-cropper .ReactCrop__drag-bar {
+  background: rgba(11, 95, 255, 0.5);
+}
