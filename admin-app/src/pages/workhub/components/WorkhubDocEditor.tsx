@@ -307,11 +307,11 @@ export function WorkhubDocEditor({
                   aria-label="Save document"
                   disabled={!selectedDocument || selectedDocumentReadOnly || !selectedDocumentChanged || busyKey === `document:${selectedDocument?.id || ''}`}
                   onClick={() => { void handleSaveSelectedDocument() }}
-                  style={selectedDocument?.type === 'note' ? { display: 'none' } : undefined}
+                  style={{ display: 'none' }}
                 >
                   {busyKey === `document:${selectedDocument?.id || ''}` ? '⏳' : '💾'}
                 </button>
-                {selectedDocument?.type === 'note' && (
+                {selectedDocument && (
                   <span className="workhub-note-autosave-status" aria-live="polite">
                     {noteAutoSaveStatus === 'saving' ? 'Saving…' : noteAutoSaveStatus === 'saved' ? '✓ Saved' : ''}
                   </span>

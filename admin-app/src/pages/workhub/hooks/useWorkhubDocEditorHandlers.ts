@@ -149,22 +149,20 @@ export function useWorkhubDocEditorHandlers({
 
   useEffect(() => {
     if (!selectedDocument) {
-      console.log('[DocEditor] selectedDocument cleared → wiping drafts')
       setSelectedDocumentTitleDraft('')
       setSelectedDocumentBodyDraft('')
       return
     }
     const bodyHtml = toDocumentBodyEditorHtml(selectedDocument.body || '')
-    console.log('[DocEditor] selectedDocument changed → id:', selectedDocument.id, 'body length:', (selectedDocument.body || '').length, 'bodyHtml length:', bodyHtml.length)
     setSelectedDocumentTitleDraft(selectedDocument.title)
     setSelectedDocumentBodyDraft(bodyHtml)
   }, [selectedDocument?.body, selectedDocument?.id, selectedDocument?.title])
 
-  // Auto-save for notes: debounced 1.5s after typing stops, no toast
+  // Auto-save for all document types: debounced 800ms after typing stops, no toast
   const [noteAutoSaveStatus, setNoteAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
-    if (!selectedDocument || selectedDocument.type !== 'note') return
+    if (!selectedDocument) return
     if (selectedDocumentReadOnly) return
     if (!selectedDocumentChanged) return
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current)

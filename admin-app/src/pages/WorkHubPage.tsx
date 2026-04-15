@@ -3350,9 +3350,7 @@ export default function WorkHubPage() {
     [documents, pendingNotificationDocument, selectedWorkspaceId],
   )
   const workspaceLevelDocuments = useMemo(() => {
-    return [...workspaceDocuments]
-      .filter((item) => !item.projectId)
-      .sort((left, right) => getUnknownTimeValue(right.updatedAt || right.createdAt) - getUnknownTimeValue(left.updatedAt || left.createdAt))
+    return workspaceDocuments.filter((item) => !item.projectId)
   }, [workspaceDocuments])
   const workspaceDocumentsByProjectId = useMemo(() => {
     const grouped: Record<string, WorkhubDocument[]> = {}
@@ -3361,9 +3359,6 @@ export default function WorkHubPage() {
       if (!visibleProjectIds.has(item.projectId)) return
       if (!grouped[item.projectId]) grouped[item.projectId] = []
       grouped[item.projectId].push(item)
-    })
-    Object.values(grouped).forEach((items) => {
-      items.sort((left, right) => getUnknownTimeValue(right.updatedAt || right.createdAt) - getUnknownTimeValue(left.updatedAt || left.createdAt))
     })
     return grouped
   }, [visibleProjectIds, workspaceDocuments])
@@ -3466,11 +3461,7 @@ export default function WorkHubPage() {
       if (pendingNotificationDocument?.id === item.id) return true
       return selectedProjectBranchIds.has(item.projectId)
     })
-    return [...filtered].sort((left, right) => {
-      const rightValue = getUnknownTimeValue(right.updatedAt || right.createdAt)
-      const leftValue = getUnknownTimeValue(left.updatedAt || left.createdAt)
-      return rightValue - leftValue
-    })
+    return filtered
   }, [pendingNotificationDocument, selectedProjectBranchIds, selectedProjectId, workspaceDocuments])
   const selectedDocument = useMemo(
     () => {

@@ -1,4 +1,4 @@
-import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, limit, onSnapshot, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
+import { addDoc, collection, deleteDoc, deleteField, doc, getDoc, getDocs, limit, onSnapshot, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { db, functions } from './firebase'
 
@@ -277,16 +277,8 @@ function sortTasks(items: WorkhubTask[]): WorkhubTask[] {
   })
 }
 
-function getDocumentOrderValue(document: Pick<WorkhubDocument, 'updatedAt' | 'createdAt'>): number {
-  return getTimeValue(document.updatedAt || document.createdAt)
-}
-
 function sortDocuments(items: WorkhubDocument[]): WorkhubDocument[] {
-  return [...items].sort((a, b) => {
-    const orderDelta = getDocumentOrderValue(b) - getDocumentOrderValue(a)
-    if (orderDelta !== 0) return orderDelta
-    return getTimeValue(b.createdAt) - getTimeValue(a.createdAt)
-  })
+  return [...items].sort((a, b) => getTimeValue(a.createdAt) - getTimeValue(b.createdAt))
 }
 
 function mergeDocumentsById(groups: WorkhubDocument[][]) {
@@ -332,6 +324,29 @@ function mergeClientsById(groups: WorkhubClient[][]) {
     map.set(item.id, item)
   })
   return sortClients(Array.from(map.values()))
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object') return false
+  const proto = Object.getPrototypeOf(value)
+  return proto === Object.prototype || proto === null
+}
+
+function stripUndefinedDeep<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => stripUndefinedDeep(item))
+      .filter((item) => item !== undefined) as T
+  }
+
+  if (!isPlainObject(value)) return value
+
+  const next: Record<string, unknown> = {}
+  Object.entries(value).forEach(([key, entryValue]) => {
+    if (entryValue === undefined) return
+    next[key] = stripUndefinedDeep(entryValue)
+  })
+  return next as T
 }
 
 export function subscribeOwnWorkhubMember(uid: string, onData: (member: WorkhubMember | null) => void) {
@@ -728,7 +743,7 @@ export async function createWorkhubTask(input: {
   checklist?: WorkhubTaskChecklistItem[]
   createdBy: string
 }): Promise<string> {
-  const docRef = await addDoc(tasksCol, {
+  const payload = stripUndefinedDeep({
     workspaceId: input.workspaceId,
     projectId: input.projectId,
     sortOrder: input.sortOrder ?? Date.now(),
@@ -741,21 +756,36 @@ export async function createWorkhubTask(input: {
     assigneeUid: input.assigneeUid,
     startDate: input.startDate || '',
     dueDate: input.dueDate,
-    valueAmount: typeof input.valueAmount === 'number' ? input.valueAmount : undefined,
-    valueCurrency: input.valueCurrency || undefined,
+    valueAmount: typeof input.valueAmount === 'number' && Number.isFinite(input.valueAmount) ? input.valueAmount : undefined,
+    valueCurrency: (input.valueCurrency || '').trim().toUpperCase() || undefined,
     checklist: input.checklist || [],
     createdBy: input.createdBy,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })
+  const docRef = await addDoc(tasksCol, payload)
   return docRef.id
 }
 
 export async function updateWorkhubTask(taskId: string, patch: Partial<Pick<WorkhubTask, 'title' | 'description' | 'attachments' | 'attachmentTitles' | 'imageUrls' | 'links' | 'linkTitles' | 'linkCreatedBy' | 'status' | 'priority' | 'assigneeUid' | 'startDate' | 'dueDate' | 'valueAmount' | 'valueCurrency' | 'checklist' | 'completedAt' | 'sortOrder'>>) {
-  await updateDoc(doc(db, 'workhub_tasks', taskId), {
+  const normalizedPatch: Record<string, unknown> = {
     ...patch,
+  }
+
+  // Explicit undefined from UI means "clear this field".
+  if (Object.prototype.hasOwnProperty.call(patch, 'valueAmount') && patch.valueAmount === undefined) {
+    normalizedPatch.valueAmount = deleteField()
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'valueCurrency') && patch.valueCurrency === undefined) {
+    normalizedPatch.valueCurrency = deleteField()
+  }
+
+  const payload = stripUndefinedDeep({
+    ...normalizedPatch,
     updatedAt: serverTimestamp(),
   })
+
+  await updateDoc(doc(db, 'workhub_tasks', taskId), payload)
 }
 
 export async function deleteWorkhubTask(taskId: string) {
@@ -936,10 +966,16 @@ export function subscribeWorkhubProjectsMulti(workspaceIds: string[], currentUid
 export type WorkhubMoodBoardEntityType = 'workspace' | 'project' | 'task' | 'document'
 
 export interface WorkhubMoodBoardImage {
+  id?: string
   url: string
   caption: string
   addedBy: string
   addedAt?: unknown
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+  z?: number
 }
 
 export interface WorkhubMoodBoard {
@@ -1035,6 +1071,16 @@ export async function removeWorkhubMoodBoardImage(
 ): Promise<void> {
   await updateDoc(doc(db, 'workhub_mood_boards', boardId), {
     images: images.filter((_, i) => i !== index),
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function updateWorkhubMoodBoardImages(
+  boardId: string,
+  images: WorkhubMoodBoardImage[],
+): Promise<void> {
+  await updateDoc(doc(db, 'workhub_mood_boards', boardId), {
+    images,
     updatedAt: serverTimestamp(),
   })
 }
