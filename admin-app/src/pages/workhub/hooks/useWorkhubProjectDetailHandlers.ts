@@ -5,13 +5,12 @@ import {
 } from 'react'
 import {
   createWorkhubActivity,
-  createWorkhubNotifications,
   updateWorkhubProject,
   type WorkhubProject,
   type WorkhubProjectIntent,
   type WorkhubProjectType,
 } from '../../../lib/workhubRepo'
-import { isStartAfterEnd, isValidHexColor, normalizeMemberUids } from '../projectUtils'
+import { isStartAfterEnd, isValidHexColor } from '../projectUtils'
 
 function parseMonetaryAmountInput(value: string): number | null {
   const normalized = value.trim()
@@ -146,17 +145,6 @@ export function useWorkhubProjectDetailHandlers({
         message: `${nextName} settings were updated`,
         visibility: selectedProject.visibility,
         memberUids: selectedProject.memberUids,
-      })
-      await createWorkhubNotifications({
-        workspaceId: selectedWorkspaceId,
-        actorUid: currentUserUid,
-        recipientUids: selectedProject.visibility === 'restricted'
-          ? normalizeMemberUids(selectedProject.memberUids)
-          : normalizeMemberUids(selectedWorkspaceAccessMemberUids),
-        entityType: 'project',
-        entityId: selectedProject.id,
-        action: 'settings_update',
-        message: `updated settings for project "${nextName}"`,
       })
       showToast({ type: 'success', message: 'Project details updated.' })
     } catch (error) {

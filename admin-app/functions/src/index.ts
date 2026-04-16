@@ -360,11 +360,25 @@ function getWorkhubActorLabel(actor: { displayName: string | null; email: string
 function shouldEmailWorkhubNotification(notification: WorkhubNotificationRecord) {
   const entityType = (notification.entityType || '').trim().toLowerCase()
   const action = (notification.action || '').trim().toLowerCase()
+  const rawMessage = (notification.message || '').trim().toLowerCase()
   if (!entityType || !action) return false
   if (entityType === 'member' && (action === 'approved' || action === 'suspended')) {
     return false
   }
-  return ['workspace', 'project', 'task', 'comment', 'document'].includes(entityType)
+
+  if (action === 'share' && entityType === 'document') {
+    return true
+  }
+
+  if (action === 'task_update' && entityType === 'task' && rawMessage.startsWith('assigned you to task')) {
+    return true
+  }
+
+  if (action === 'approved' && entityType === 'workspace') {
+    return true
+  }
+
+  return false
 }
 
 async function notifyMemberAboutWorkhubNotification(notification: WorkhubNotificationRecord) {

@@ -5749,21 +5749,6 @@ export default function WorkHubPage() {
           visibility: targetProject?.visibility || 'workspace',
           memberUids: targetProject?.memberUids || [],
         })
-        await createWorkhubNotifications({
-          workspaceId: selectedWorkspaceId,
-          actorUid: auth.currentUser.uid,
-          recipientUids: resolveCreatedTaskNotificationRecipients({
-            visibility: targetProject?.visibility || 'workspace',
-            memberUids: targetProject?.memberUids || [],
-            projectMemberUids: targetProject?.memberUids || [],
-            assigneeUid,
-            createdBy: auth.currentUser.uid,
-          }),
-          entityType: 'task',
-          entityId: taskId,
-          action: 'create',
-          message: `created task \"${title}\"`,
-        })
       }
       setTaskTitle('')
       setTaskDescription('')
@@ -5852,21 +5837,6 @@ export default function WorkHubPage() {
           visibility: targetProject.visibility || 'workspace',
           memberUids: targetProject.memberUids || [],
         })
-        await createWorkhubNotifications({
-          workspaceId: selectedWorkspaceId,
-          actorUid: auth.currentUser.uid,
-          recipientUids: resolveCreatedTaskNotificationRecipients({
-            visibility: targetProject.visibility || 'workspace',
-            memberUids: targetProject.memberUids || [],
-            projectMemberUids: targetProject.memberUids || [],
-            assigneeUid,
-            createdBy: auth.currentUser.uid,
-          }),
-          entityType: 'task',
-          entityId: taskId,
-          action: 'create',
-          message: `created task \"${title}\"`,
-        })
       }
       if (createdTaskIds.length > 0) {
         setSelectedTaskId(createdTaskIds[createdTaskIds.length - 1])
@@ -5918,28 +5888,6 @@ export default function WorkHubPage() {
       if (typeof updates.title === 'string' && updates.title.trim() !== task.title.trim()) changedLabels.push('title')
       if (changedLabels.length > 0 && selectedWorkspaceId) {
         const assigneeChanging = typeof updates.assigneeUid === 'string' && updates.assigneeUid !== task.assigneeUid
-        const otherLabels = changedLabels.filter((l) => l !== 'assignee')
-
-        // Broadcast non-assignee changes to normal stakeholders
-        if (otherLabels.length > 0) {
-          const nextStatus = typeof updates.status === 'string' ? updates.status : task.status
-          const normalizedStatus = nextStatus.toLowerCase()
-          const resolved = normalizedStatus.includes('done') || normalizedStatus.includes('complete') || normalizedStatus.includes('resolved')
-          const updateSummary = resolved && updates.status && updates.status !== task.status
-            ? `resolved task \"${task.title}\"`
-            : `updated ${otherLabels.join(', ')} on task \"${task.title}\"`
-          // Strip assigneeUid from updates so the new assignee is not injected into the broadcast recipients
-          const { assigneeUid: _drop, ...updatesForBroadcast } = updates
-          await createWorkhubNotifications({
-            workspaceId: selectedWorkspaceId,
-            actorUid: auth.currentUser.uid,
-            recipientUids: resolveTaskNotificationRecipients(task, assigneeChanging ? updatesForBroadcast : updates),
-            entityType: 'task',
-            entityId: task.id,
-            action: resolved ? 'task_resolved' : 'task_update',
-            message: updateSummary,
-          })
-        }
 
         // Only notify the newly assigned user — no one else needs to know about assignee changes
         if (assigneeChanging && updates.assigneeUid) {
@@ -5992,15 +5940,6 @@ export default function WorkHubPage() {
         entityId: selectedTasks[0].id,
         action: 'bulk_status_update',
         message: `Moved ${selectedTasks.length} task${selectedTasks.length === 1 ? '' : 's'} to ${workspaceTaskStatuses.find((item) => item.id === statusId)?.label || statusId}`,
-      })
-      await createWorkhubNotifications({
-        workspaceId: selectedWorkspaceId,
-        actorUid: auth.currentUser.uid,
-        recipientUids: normalizeMemberUids(selectedTasks.flatMap((task) => resolveTaskNotificationRecipients(task, { status: statusId }))),
-        entityType: 'task',
-        entityId: selectedTasks[0].id,
-        action: 'bulk_status_update',
-        message: `moved ${selectedTasks.length} task${selectedTasks.length === 1 ? '' : 's'} to ${workspaceTaskStatuses.find((item) => item.id === statusId)?.label || statusId}`,
       })
       showToast({ type: 'success', message: `Updated ${selectedTasks.length} task${selectedTasks.length === 1 ? '' : 's'}.` })
       clearTaskSelection()
@@ -6286,17 +6225,6 @@ export default function WorkHubPage() {
         message: `${entityLabel} ${settingsProjectName.trim()} settings were updated`,
         visibility: accessVisibility,
         memberUids,
-      })
-      await createWorkhubNotifications({
-        workspaceId: selectedWorkspaceId,
-        actorUid: auth.currentUser.uid,
-        recipientUids: accessVisibility === 'restricted'
-          ? normalizeMemberUids(memberUids)
-          : normalizeMemberUids(selectedWorkspace?.accessMemberUids || []),
-        entityType: 'project',
-        entityId: selectedAccessProject.id,
-        action: 'settings_update',
-        message: `updated settings for ${entityLabelLower} "${settingsProjectName.trim()}"`,
       })
       let deliveryFolderCreated = false
       let deliveryFolderWarning = ''
@@ -6909,27 +6837,6 @@ export default function WorkHubPage() {
       ...scopedRecipientUids,
       task.assigneeUid,
       typeof updates?.assigneeUid === 'string' ? updates.assigneeUid : '',
-    ])
-  }
-
-  function resolveCreatedTaskNotificationRecipients(input: {
-    visibility: WorkhubVisibility
-    memberUids: string[]
-    projectMemberUids: string[]
-    assigneeUid: string
-    createdBy: string
-  }) {
-    const workspaceRecipientUids = normalizeMemberUids(selectedWorkspace?.accessMemberUids || [])
-    const restrictedRecipientUids = normalizeMemberUids([
-      ...input.memberUids,
-      ...input.projectMemberUids,
-      input.createdBy,
-      input.assigneeUid,
-    ])
-    const scopedRecipientUids = input.visibility === 'restricted' ? restrictedRecipientUids : workspaceRecipientUids
-    return normalizeMemberUids([
-      ...scopedRecipientUids,
-      input.assigneeUid,
     ])
   }
 
