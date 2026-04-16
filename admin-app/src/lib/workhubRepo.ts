@@ -115,6 +115,13 @@ export interface WorkhubDocumentEditEntry {
   at: string
 }
 
+export interface WorkhubDocumentTab {
+  id: string
+  title: string
+  icon?: string
+  body: string
+}
+
 export interface WorkhubDocument {
   id: string
   workspaceId: string
@@ -122,6 +129,7 @@ export interface WorkhubDocument {
   type?: 'document' | 'note'
   title: string
   body: string
+  tabs?: WorkhubDocumentTab[]
   checklist?: WorkhubDocumentChecklistItem[]
   attachments?: string[]
   links?: string[]
@@ -287,6 +295,16 @@ function sortTasks(items: WorkhubTask[]): WorkhubTask[] {
 
 function sortDocuments(items: WorkhubDocument[]): WorkhubDocument[] {
   return [...items].sort((a, b) => getTimeValue(a.createdAt) - getTimeValue(b.createdAt))
+}
+
+function sortMoodBoards(items: WorkhubMoodBoard[]): WorkhubMoodBoard[] {
+  return [...items].sort((left, right) => {
+    const createdDelta = getTimeValue(right.createdAt) - getTimeValue(left.createdAt)
+    if (createdDelta !== 0) return createdDelta
+    const titleDelta = (left.title || '').localeCompare(right.title || '')
+    if (titleDelta !== 0) return titleDelta
+    return left.id.localeCompare(right.id)
+  })
 }
 
 function mergeDocumentsById(groups: WorkhubDocument[][]) {
@@ -704,7 +722,7 @@ export async function getWorkhubDocumentById(documentId: string): Promise<Workhu
 
 export async function updateWorkhubDocument(
   documentId: string,
-  patch: Partial<Pick<WorkhubDocument, 'projectId' | 'title' | 'body' | 'checklist' | 'attachments' | 'links' | 'editedBy' | 'isLocked' | 'lockedBy' | 'lockedAt' | 'shareToken' | 'shareEnabled' | 'visibility' | 'memberUids' | 'editMemberUids' | 'notifyMode' | 'notifyUids'>>,
+  patch: Partial<Pick<WorkhubDocument, 'projectId' | 'title' | 'body' | 'tabs' | 'checklist' | 'attachments' | 'links' | 'editedBy' | 'isLocked' | 'lockedBy' | 'lockedAt' | 'shareToken' | 'shareEnabled' | 'visibility' | 'memberUids' | 'editMemberUids' | 'notifyMode' | 'notifyUids'>>,
 ) {
   const payload: Record<string, unknown> = {
     ...patch,
@@ -1053,7 +1071,7 @@ export function subscribeWorkhubMoodBoardsForWorkspace(
     where('workspaceId', '==', workspaceId),
   )
   return onSnapshot(q, (snap) => {
-    onData(snap.docs.map((d) => ({ id: d.id, ...d.data() } as WorkhubMoodBoard)))
+    onData(sortMoodBoards(snap.docs.map((d) => ({ id: d.id, ...d.data() } as WorkhubMoodBoard))))
   })
 }
 

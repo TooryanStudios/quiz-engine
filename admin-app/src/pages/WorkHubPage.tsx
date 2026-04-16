@@ -3614,15 +3614,11 @@ export default function WorkHubPage() {
       if (!grouped[item.entityId]) grouped[item.entityId] = []
       grouped[item.entityId].push(item)
     })
-    Object.values(grouped).forEach((items) => {
-      items.sort((left, right) => getUnknownTimeValue(right.updatedAt || right.createdAt) - getUnknownTimeValue(left.updatedAt || left.createdAt))
-    })
     return grouped
   }, [visibleProjectIds, workspaceMoodBoards])
   const workspaceLevelMoodBoards = useMemo(() => {
     return [...workspaceMoodBoards]
       .filter((item) => !item.entityId || !visibleProjectIds.has(item.entityId))
-      .sort((left, right) => getUnknownTimeValue(right.updatedAt || right.createdAt) - getUnknownTimeValue(left.updatedAt || left.createdAt))
   }, [visibleProjectIds, workspaceMoodBoards])
   const selectedProjectDashboardMedia = useMemo(() => {
     if (!selectedProject) return [] as Array<{ id: string; url: string; label: string; source: string }>
@@ -10017,21 +10013,27 @@ export default function WorkHubPage() {
           onOpenSettings={(projectId) => setProjectAccessDialogId(projectId)}
           moodBoardEnabled={selectedWorkspace?.moodBoardEnabled !== false}
           onOpenMoodBoard={async (entityType, entityId) => {
-            // Find or create board for this entity, then navigate to moodboard panel
-            let board = workspaceMoodBoards.find((b) => b.entityType === entityType && b.entityId === entityId) ?? null
-            if (!board && selectedWorkspaceId) {
-              const label = entityType === 'workspace' ? (selectedWorkspace?.name || 'Workspace') : (workspaceProjectById[entityId]?.name || 'Project')
-              const newId = await createWorkhubMoodBoard({
-                workspaceId: selectedWorkspaceId,
-                entityType,
-                entityId,
-                title: `${label} — Mood Board`,
-                createdBy: currentUid,
-              })
-              setSelectedMoodBoardId(newId)
-            } else {
-              setSelectedMoodBoardId(board?.id ?? '')
-            }
+            if (!selectedWorkspaceId) return
+            const normalizedEntityId = entityType === 'workspace'
+              ? selectedWorkspaceId
+              : entityId
+            const label = entityType === 'workspace'
+              ? (selectedWorkspace?.name || 'Workspace')
+              : (workspaceProjectById[normalizedEntityId]?.name || 'Project')
+            const existingCount = workspaceMoodBoards.filter((board) => (
+              board.entityType === entityType && board.entityId === normalizedEntityId
+            )).length
+            const nextTitle = existingCount === 0
+              ? `${label} — Mood Board`
+              : `${label} — Mood Board ${existingCount + 1}`
+            const newId = await createWorkhubMoodBoard({
+              workspaceId: selectedWorkspaceId,
+              entityType,
+              entityId: normalizedEntityId,
+              title: nextTitle,
+              createdBy: currentUid,
+            })
+            setSelectedMoodBoardId(newId)
             setSelectedDocumentId('')
             setSelectedTaskId('')
             setActiveSection('moodboard')

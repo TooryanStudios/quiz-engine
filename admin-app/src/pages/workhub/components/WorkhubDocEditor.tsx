@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { UseWorkhubDocEditorHandlersOutput } from '../hooks/useWorkhubDocEditorHandlers'
-import type { WorkhubDocument, WorkhubMember, WorkhubProject, WorkhubTaskComment } from '../../../lib/workhubRepo'
+import type { WorkhubDocument, WorkhubDocumentTab, WorkhubMember, WorkhubProject, WorkhubTaskComment } from '../../../lib/workhubRepo'
 import { TinyRichTextEditor } from '../../../components/editor/TinyRichTextEditor'
+import { EmojiPickerPopover, EMOJI_SET_DOCUMENTS } from '../../../components/EmojiPickerPopover'
 import { WorkhubAttachmentCard } from './WorkhubAttachmentCard'
 import { WorkhubChecklistCard } from './WorkhubChecklistCard'
 import { WorkhubDiscussionCard } from './WorkhubDiscussionCard'
@@ -51,6 +52,10 @@ export function WorkhubDocEditor({
   selectedDocumentReadOnly,
   setSelectedDocumentTitleDraft,
   setSelectedDocumentBodyDraft,
+  documentTabsDraft,
+  activeTabId,
+  setDocumentTabsDraft,
+  setActiveTabId,
   closeSelectedDocument,
   handleSaveSelectedDocument,
   handleToggleSelectedDocumentLock,
@@ -120,6 +125,14 @@ export function WorkhubDocEditor({
   currentUid,
 }: WorkhubDocEditorProps) {
   const [mobileDocDetailsOpen, setMobileDocDetailsOpen] = useState(false)
+  // Tab rename state
+  const [renamingTabId, setRenamingTabId] = useState<string | null>(null)
+  const [renamingTabTitle, setRenamingTabTitle] = useState('')
+  const renameInputRef = useRef<HTMLInputElement>(null)
+  // Icon picker state
+  const [iconPickerTabId, setIconPickerTabId] = useState<string | null>(null)
+  // Drag-to-reorder state
+  const dragTabIdRef = useRef<string | null>(null)
   const shareSelectedCount = Object.keys(shareDocAccessDraftByUid).length
   const isQuickNote = selectedDocument?.type === 'note'
   const selectedShareEntry = Object.entries(shareDocAccessDraftByUid)[0] || null
@@ -132,6 +145,104 @@ export function WorkhubDocEditor({
   useEffect(() => {
     setMobileDocDetailsOpen(false)
   }, [selectedDocument?.id])
+
+  useEffect(() => {
+    if (renamingTabId && renameInputRef.current) {
+      renameInputRef.current.focus()
+      renameInputRef.current.select()
+    }
+  }, [renamingTabId])
+
+  // --- Tab management helpers ---
+  function handleAddTab() {
+    if (!selectedDocument || selectedDocumentReadOnly) return
+    const hasTabs = documentTabsDraft.length > 0
+    const newTabId = `tab_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    if (!hasTabs) {
+      // First time: convert current body into first tab, then add a second empty tab
+      const firstTabId = `tab_${Date.now() - 1}_${Math.random().toString(36).slice(2, 8)}`
+      const firstTab: WorkhubDocumentTab = { id: firstTabId, title: 'Main', body: selectedDocumentBodyDraft }
+      const newTab: WorkhubDocumentTab = { id: newTabId, title: 'Tab 2', body: '' }
+      setDocumentTabsDraft([firstTab, newTab])
+      setActiveTabId(firstTabId)
+    } else {
+      const newTab: WorkhubDocumentTab = { id: newTabId, title: `Tab ${documentTabsDraft.length + 1}`, body: '' }
+      // Flush current editor content to active tab before appending
+      const updatedTabs = documentTabsDraft.map((t) =>
+        t.id === activeTabId ? { ...t, body: selectedDocumentBodyDraft } : t,
+      )
+      setDocumentTabsDraft([...updatedTabs, newTab])
+    }
+  }
+
+  function handleSwitchTab(tabId: string) {
+    if (tabId === activeTabId) return
+    // Flush current body to the active tab
+    const updatedTabs = documentTabsDraft.map((t) =>
+      t.id === activeTabId ? { ...t, body: selectedDocumentBodyDraft } : t,
+    )
+    const target = updatedTabs.find((t) => t.id === tabId)
+    setDocumentTabsDraft(updatedTabs)
+    setActiveTabId(tabId)
+    setSelectedDocumentBodyDraft(target?.body || '')
+  }
+
+  function handleDeleteTab(tabId: string) {
+    if (documentTabsDraft.length <= 1) return
+    const nextTabs = documentTabsDraft.filter((t) => t.id !== tabId)
+    // If deleting active tab, switch to the first remaining tab
+    if (tabId === activeTabId) {
+      const next = nextTabs[0]
+      setActiveTabId(next.id)
+      setSelectedDocumentBodyDraft(next.body || '')
+    }
+    setDocumentTabsDraft(nextTabs)
+  }
+
+  function handleStartRename(tab: WorkhubDocumentTab) {
+    setRenamingTabId(tab.id)
+    setRenamingTabTitle(tab.title)
+  }
+
+  function handleCommitRename() {
+    if (!renamingTabId) return
+    const trimmed = renamingTabTitle.trim()
+    if (trimmed) {
+      setDocumentTabsDraft((prev) => prev.map((t) => t.id === renamingTabId ? { ...t, title: trimmed } : t))
+    }
+    setRenamingTabId(null)
+    setRenamingTabTitle('')
+  }
+
+  function handleTabDragStart(tabId: string) {
+    dragTabIdRef.current = tabId
+  }
+
+  function handleTabDragOver(e: React.DragEvent, targetTabId: string) {
+    e.preventDefault()
+    if (!dragTabIdRef.current || dragTabIdRef.current === targetTabId) return
+    const from = documentTabsDraft.findIndex((t) => t.id === dragTabIdRef.current)
+    const to = documentTabsDraft.findIndex((t) => t.id === targetTabId)
+    if (from === -1 || to === -1) return
+    const next = [...documentTabsDraft]
+    const [moved] = next.splice(from, 1)
+    next.splice(to, 0, moved)
+    dragTabIdRef.current = moved.id
+    setDocumentTabsDraft(next)
+  }
+
+  function handleTabDragEnd() {
+    dragTabIdRef.current = null
+  }
+
+  function handleEditorChange(value: string) {
+    setSelectedDocumentBodyDraft(value)
+    if (documentTabsDraft.length > 0 && activeTabId) {
+      setDocumentTabsDraft((prev) =>
+        prev.map((t) => t.id === activeTabId ? { ...t, body: value } : t),
+      )
+    }
+  }
 
   useEffect(() => {
     if (!isQuickNote) return
@@ -322,6 +433,7 @@ export function WorkhubDocEditor({
                     {busyKey === `document-lock:${selectedDocument.id}` ? '⏳' : (selectedDocumentLocked ? '🔓' : '🔒')}
                   </button>
                 ) : null}
+
                 {selectedDocument && selectedDocumentCanEdit && !selectedDocumentLocked ? (
                   <button
                     className="workhub-danger-btn workhub-doc-tool-btn"
@@ -368,7 +480,7 @@ export function WorkhubDocEditor({
               <TinyRichTextEditor
                 className={`workhub-document-body-editor${selectedDocumentReadOnly ? ' is-locked' : ''}`}
                 value={selectedDocumentBodyDraft}
-                onChange={setSelectedDocumentBodyDraft}
+                onChange={handleEditorChange}
                 disabled={selectedDocumentReadOnly}
                 minHeight={460}
                 placeholder="Write scope of work, requirements, assumptions, or any project details..."
@@ -433,6 +545,123 @@ export function WorkhubDocEditor({
                     </div>
                   </div>
                 )}
+
+                <div className="workhub-detail-card workhub-doc-tabs-card">
+                  <div className="workhub-doc-tabs-card-head">
+                    <h3>Tabs</h3>
+                    {!selectedDocumentReadOnly && (
+                      <button
+                        type="button"
+                        className="workhub-ghost-mini"
+                        onClick={handleAddTab}
+                        title={documentTabsDraft.length === 0 ? 'Enable tabs for this document' : 'Add a new tab'}
+                        aria-label="Add tab"
+                      >
+                        ＋ Add
+                      </button>
+                    )}
+                  </div>
+
+                  {documentTabsDraft.length === 0 ? (
+                    <p className="workhub-doc-tabs-empty">No tabs yet. Add a tab to split this document into sections.</p>
+                  ) : (
+                    <div className="workhub-doc-tabs-list">
+                      {documentTabsDraft.map((tab) => (
+                        <div
+                          key={tab.id}
+                          className={`workhub-doc-tab-row${tab.id === activeTabId ? ' is-active' : ''}`}
+                          draggable={!selectedDocumentReadOnly}
+                          onDragStart={() => handleTabDragStart(tab.id)}
+                          onDragOver={(e) => handleTabDragOver(e, tab.id)}
+                          onDragEnd={handleTabDragEnd}
+                        >
+                          {/* Drag handle */}
+                          {!selectedDocumentReadOnly && (
+                            <span className="workhub-doc-tab-row-drag" aria-hidden="true" title="Drag to reorder">⠿</span>
+                          )}
+
+                          {/* Icon badge — click to open picker */}
+                          <button
+                            type="button"
+                            className="workhub-doc-tab-row-icon-btn"
+                            title="Set icon"
+                            aria-label="Set tab icon"
+                            disabled={selectedDocumentReadOnly}
+                            onClick={() => setIconPickerTabId(iconPickerTabId === tab.id ? null : tab.id)}
+                          >
+                            {tab.icon ?? '📄'}
+                          </button>
+
+                          {/* Title — click to navigate, double-click to rename */}
+                          {renamingTabId === tab.id ? (
+                            <input
+                              ref={renameInputRef}
+                              className="workhub-doc-tab-rename-input"
+                              value={renamingTabTitle}
+                              onChange={(e) => setRenamingTabTitle(e.target.value)}
+                              onBlur={handleCommitRename}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') { e.preventDefault(); handleCommitRename() }
+                                if (e.key === 'Escape') { setRenamingTabId(null); setRenamingTabTitle('') }
+                              }}
+                            />
+                          ) : (
+                            <button
+                              type="button"
+                              className="workhub-doc-tab-row-title"
+                              onClick={() => handleSwitchTab(tab.id)}
+                              onDoubleClick={() => { if (!selectedDocumentReadOnly) handleStartRename(tab) }}
+                              title={tab.id === activeTabId ? 'Currently viewing' : 'Switch to this tab'}
+                            >
+                              {tab.title}
+                            </button>
+                          )}
+
+                          {/* Actions */}
+                          {!selectedDocumentReadOnly && (
+                            <div className="workhub-doc-tab-row-actions">
+                              <button
+                                type="button"
+                                className="workhub-ghost-mini"
+                                title="Rename"
+                                aria-label="Rename tab"
+                                onClick={() => handleStartRename(tab)}
+                              >
+                                ✎
+                              </button>
+                              {documentTabsDraft.length > 1 && (
+                                <button
+                                  type="button"
+                                  className="workhub-ghost-mini is-danger"
+                                  title="Remove tab"
+                                  aria-label="Remove tab"
+                                  onClick={() => handleDeleteTab(tab.id)}
+                                >
+                                  ×
+                                </button>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Icon picker popup */}
+                          {iconPickerTabId === tab.id && (
+                            <EmojiPickerPopover
+                              value={tab.icon}
+                              emojis={EMOJI_SET_DOCUMENTS}
+                              onSelect={(emoji) => {
+                                setDocumentTabsDraft((prev) => prev.map((t) => t.id === tab.id ? { ...t, icon: emoji } : t))
+                              }}
+                              onClear={tab.icon ? () => {
+                                setDocumentTabsDraft((prev) => prev.map((t) => t.id === tab.id ? { ...t, icon: undefined } : t))
+                              } : undefined}
+                              onClose={() => setIconPickerTabId(null)}
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
                 <WorkhubChecklistCard
                   title="Checklist"

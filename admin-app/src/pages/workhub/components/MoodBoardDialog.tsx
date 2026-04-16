@@ -57,7 +57,15 @@ type MarqueeInteraction = {
   kind: 'marquee'
 }
 
-type CanvasInteraction = MoveInteraction | ResizeInteraction | MarqueeInteraction
+type PanInteraction = {
+  kind: 'pan'
+  startClientX: number
+  startClientY: number
+  startScrollLeft: number
+  startScrollTop: number
+}
+
+type CanvasInteraction = MoveInteraction | ResizeInteraction | MarqueeInteraction | PanInteraction
 
 const LARGE_DEFAULT_SIZE = { width: 340, height: 240 }
 const LARGE_MIN_SIZE = { width: 220, height: 160 }
@@ -83,6 +91,55 @@ function fallbackMoodBoardImageId(image: WorkhubMoodBoardImage, index: number): 
 function createMoodBoardImageId(file: File): string {
   const seed = `${file.name}|${file.size}|${file.type}|${Date.now()}|${Math.random().toString(36).slice(2, 9)}`
   return `img-${stableHash(seed)}`
+}
+
+function createMoodBoardRemoteImageId(url: string): string {
+  const seed = `${url}|${Date.now()}|${Math.random().toString(36).slice(2, 9)}`
+  return `img-${stableHash(seed)}`
+}
+
+function normalizeImageUrlInput(value: string): string | null {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  try {
+    const parsed = new URL(trimmed)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
+    return parsed.toString()
+  } catch {
+    return null
+  }
+}
+
+function deriveImageCaptionFromUrl(url: string): string {
+  try {
+    const parsed = new URL(url)
+    const lastSegment = parsed.pathname.split('/').filter(Boolean).pop()
+    if (lastSegment) return decodeURIComponent(lastSegment)
+    return parsed.hostname
+  } catch {
+    return 'Remote image'
+  }
+}
+
+function firstValidImageUrl(candidates: string[]): string | null {
+  for (const candidate of candidates) {
+    const normalized = normalizeImageUrlInput(candidate)
+    if (normalized) return normalized
+  }
+  return null
+}
+
+function extractImageUrlFromHtml(html: string): string | null {
+  if (!html) return null
+  const imageSrcMatch = html.match(/<img[^>]+src=["']([^"']+)["']/i)
+  if (imageSrcMatch?.[1]) {
+    return normalizeImageUrlInput(imageSrcMatch[1])
+  }
+  const anchorHrefMatch = html.match(/<a[^>]+href=["']([^"']+)["']/i)
+  if (anchorHrefMatch?.[1]) {
+    return normalizeImageUrlInput(anchorHrefMatch[1])
+  }
+  return null
 }
 
 function defaultCanvasSize(_layout: MoodBoardImageLayoutMode) {
@@ -202,12 +259,17 @@ export function MoodBoardPanel({
   discussionEditBusyKey,
 }: MoodBoardPanelProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const moodBoardBodyRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
   const dropDragDepthRef = useRef(0)
   const interactionRef = useRef<CanvasInteraction | null>(null)
   const selectedIdsRef = useRef<string[]>([])
   const marqueeBaseSelectionRef = useRef<string[]>([])
   const persistTimerRef = useRef<number | null>(null)
+  const titlePersistTimerRef = useRef<number | null>(null)
+  const titleSavedIndicatorTimerRef = useRef<number | null>(null)
+  const titleDraftRef = useRef('')
+  const titleSavedValueRef = useRef((board?.title ?? '').trim())
   const [imageLayout, setImageLayout] = useState<MoodBoardImageLayoutMode>(() => {
     if (typeof window === 'undefined') return 'compact'
     const saved = window.localStorage.getItem('workhub:moodboard:imageLayout')
@@ -238,13 +300,22 @@ export function MoodBoardPanel({
   })
   const [marqueeRect, setMarqueeRect] = useState<BoxSelectionRect | null>(null)
   const [dragging, setDragging] = useState(false)
+  const [isMiddleMousePanning, setIsMiddleMousePanning] = useState(false)
   const [isDropTargetActive, setIsDropTargetActive] = useState(false)
-  const [titleDraft, setTitleDraft] = useState<string | null>(null)
+  const [titleDraft, setTitleDraft] = useState(board?.title ?? '')
   const [titleSaving, setTitleSaving] = useState(false)
+  const [titleSaveError, setTitleSaveError] = useState<string | null>(null)
+  const [showTitleSavedIndicator, setShowTitleSavedIndicator] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [urlDraft, setUrlDraft] = useState('')
+  const [addingUrl, setAddingUrl] = useState(false)
+  const [urlDialogOpen, setUrlDialogOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [shareOpen, setShareOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [selectedImageUrlDraft, setSelectedImageUrlDraft] = useState('')
+  const [selectedImageUrlSaving, setSelectedImageUrlSaving] = useState(false)
+  const moodBoardScrollStorageKey = board?.id ? `workhub:moodboard:scroll:${board.id}:${imageLayout}` : ''
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -259,6 +330,26 @@ export function MoodBoardPanel({
   useEffect(() => {
     selectedIdsRef.current = selectedIds
   }, [selectedIds])
+
+  useEffect(() => {
+    titleDraftRef.current = titleDraft
+  }, [titleDraft])
+
+  useEffect(() => {
+    titleSavedValueRef.current = (board?.title ?? '').trim()
+    setTitleDraft(board?.title ?? '')
+    setTitleSaveError(null)
+    setTitleSaving(false)
+    setShowTitleSavedIndicator(false)
+    if (titlePersistTimerRef.current) {
+      window.clearTimeout(titlePersistTimerRef.current)
+      titlePersistTimerRef.current = null
+    }
+    if (titleSavedIndicatorTimerRef.current) {
+      window.clearTimeout(titleSavedIndicatorTimerRef.current)
+      titleSavedIndicatorTimerRef.current = null
+    }
+  }, [board?.id])
 
   useEffect(() => {
     const normalized = normalizeBoardImages(board?.images ?? [], imageLayout)
@@ -315,6 +406,69 @@ export function MoodBoardPanel({
     }
   }, [board, canEdit, canvasImages])
 
+  useEffect(() => {
+    const bodyEl = moodBoardBodyRef.current
+    if (!bodyEl || !moodBoardScrollStorageKey || typeof window === 'undefined') return
+
+    const persistScrollPosition = () => {
+      try {
+        window.localStorage.setItem(moodBoardScrollStorageKey, JSON.stringify({
+          left: bodyEl.scrollLeft,
+          top: bodyEl.scrollTop,
+        }))
+      } catch {
+        // Ignore storage write errors.
+      }
+    }
+
+    bodyEl.addEventListener('scroll', persistScrollPosition, { passive: true })
+    return () => {
+      bodyEl.removeEventListener('scroll', persistScrollPosition)
+    }
+  }, [moodBoardScrollStorageKey])
+
+  useEffect(() => {
+    const bodyEl = moodBoardBodyRef.current
+    if (!bodyEl || !moodBoardScrollStorageKey || typeof window === 'undefined') return
+
+    function applyScrollRestore() {
+      try {
+        const saved = window.localStorage.getItem(moodBoardScrollStorageKey)
+        if (!saved) {
+          bodyEl!.scrollLeft = 0
+          bodyEl!.scrollTop = 0
+          return
+        }
+        const parsed = JSON.parse(saved) as { left?: unknown; top?: unknown }
+        const targetLeft = typeof parsed.left === 'number' ? parsed.left : 0
+        const targetTop = typeof parsed.top === 'number' ? parsed.top : 0
+        bodyEl!.scrollLeft = targetLeft
+        bodyEl!.scrollTop = targetTop
+      } catch {
+        bodyEl!.scrollLeft = 0
+        bodyEl!.scrollTop = 0
+      }
+    }
+
+    // Double rAF ensures the browser has committed layout (canvas height applied)
+    // before we attempt to restore scroll position. Timeout fallback handles
+    // cases where image content loads slightly after the initial paint.
+    let frameId = 0
+    let timerId = 0
+    frameId = window.requestAnimationFrame(() => {
+      frameId = window.requestAnimationFrame(() => {
+        applyScrollRestore()
+        // Re-apply after 200ms in case canvas is still sizing itself
+        timerId = window.setTimeout(applyScrollRestore, 200)
+      })
+    })
+
+    return () => {
+      if (frameId) window.cancelAnimationFrame(frameId)
+      if (timerId) window.clearTimeout(timerId)
+    }
+  }, [moodBoardScrollStorageKey, board?.images.length, imageLayout])
+
   const isCanvasMode = imageLayout === 'large'
 
   const sortedCanvasImages = useMemo(() => {
@@ -366,6 +520,10 @@ export function MoodBoardPanel({
   useEffect(() => {
     setSelectedImageCaptionDraft(selectedCanvasImage?.caption || '')
   }, [selectedCanvasImage?.id, selectedCanvasImage?.caption])
+
+  useEffect(() => {
+    setSelectedImageUrlDraft(selectedCanvasImage?.url || '')
+  }, [selectedCanvasImage?.id, selectedCanvasImage?.url])
 
   // When the user switches to a different board, reload from localStorage.
   useEffect(() => {
@@ -457,6 +615,15 @@ export function MoodBoardPanel({
     function handlePointerMove(event: PointerEvent) {
       const interaction = interactionRef.current
       if (!interaction) return
+
+      if (interaction.kind === 'pan') {
+        const bodyEl = moodBoardBodyRef.current
+        if (!bodyEl) return
+        bodyEl.scrollLeft = interaction.startScrollLeft - (event.clientX - interaction.startClientX)
+        bodyEl.scrollTop = interaction.startScrollTop - (event.clientY - interaction.startClientY)
+        return
+      }
+
       const point = pointToCanvas(event.clientX, event.clientY)
       if (!point) return
 
@@ -516,6 +683,7 @@ export function MoodBoardPanel({
     function handlePointerUp() {
       interactionRef.current = null
       setDragging(false)
+      setIsMiddleMousePanning(false)
       setMarqueeRect(null)
     }
 
@@ -527,19 +695,108 @@ export function MoodBoardPanel({
     }
   }, [dragging, marqueeRect, canvasHeight, imageLayout, canvasImages])
 
-  const displayTitle = titleDraft ?? board?.title ?? ''
-  const titleChanged = titleDraft !== null && titleDraft.trim() !== (board?.title ?? '')
+  function handleMiddleMousePanStart(event: React.PointerEvent<HTMLElement>) {
+    if (event.button !== 1) return false
+    const bodyEl = moodBoardBodyRef.current
+    if (!bodyEl) return false
+    interactionRef.current = {
+      kind: 'pan',
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startScrollLeft: bodyEl.scrollLeft,
+      startScrollTop: bodyEl.scrollTop,
+    }
+    setDragging(true)
+    setIsMiddleMousePanning(true)
+    event.preventDefault()
+    return true
+  }
 
-  async function handleSaveTitle() {
-    if (!board || !titleDraft || !titleDraft.trim()) return
+  const displayTitle = titleDraft
+  const normalizedTitleDraft = titleDraft.trim()
+  const titleChanged = normalizedTitleDraft !== titleSavedValueRef.current
+  const titleCanSave = !!board && !!normalizedTitleDraft && titleChanged
+  const isTransientSavedStatus = !titleSaveError && !titleSaving && !titleChanged && showTitleSavedIndicator
+  const titleStatusText = titleSaveError
+    ? 'Save failed'
+    : titleSaving
+      ? 'Saving...'
+      : titleChanged
+        ? 'Unsaved'
+        : 'Saved'
+  const showTitleStatus = !!titleSaveError || titleSaving || titleChanged || showTitleSavedIndicator
+
+  function clearTitlePersistTimer() {
+    if (titlePersistTimerRef.current) {
+      window.clearTimeout(titlePersistTimerRef.current)
+      titlePersistTimerRef.current = null
+    }
+  }
+
+  function revertTitleDraft() {
+    clearTitlePersistTimer()
+    if (titleSavedIndicatorTimerRef.current) {
+      window.clearTimeout(titleSavedIndicatorTimerRef.current)
+      titleSavedIndicatorTimerRef.current = null
+    }
+    setShowTitleSavedIndicator(false)
+    setTitleSaveError(null)
+    setTitleDraft(board?.title ?? '')
+  }
+
+  async function handleSaveTitle(nextValue = titleDraftRef.current) {
+    clearTitlePersistTimer()
+    if (!board || !canEdit) return
+    const trimmedTitle = nextValue.trim()
+    if (!trimmedTitle) {
+      revertTitleDraft()
+      return
+    }
+    if (trimmedTitle === titleSavedValueRef.current) {
+      if (titleDraftRef.current !== trimmedTitle) {
+        setTitleDraft(trimmedTitle)
+      }
+      setTitleSaveError(null)
+      return
+    }
     setTitleSaving(true)
+    setTitleSaveError(null)
     try {
-      await updateWorkhubMoodBoardTitle(board.id, titleDraft.trim())
-      setTitleDraft(null)
+      await updateWorkhubMoodBoardTitle(board.id, trimmedTitle)
+      titleSavedValueRef.current = trimmedTitle
+      setTitleDraft(trimmedTitle)
+      setTitleSaveError(null)
+      setShowTitleSavedIndicator(true)
+      if (titleSavedIndicatorTimerRef.current) {
+        window.clearTimeout(titleSavedIndicatorTimerRef.current)
+      }
+      titleSavedIndicatorTimerRef.current = window.setTimeout(() => {
+        setShowTitleSavedIndicator(false)
+        titleSavedIndicatorTimerRef.current = null
+      }, 1400)
+    } catch (err) {
+      if (titleSavedIndicatorTimerRef.current) {
+        window.clearTimeout(titleSavedIndicatorTimerRef.current)
+        titleSavedIndicatorTimerRef.current = null
+      }
+      setShowTitleSavedIndicator(false)
+      setTitleSaveError(err instanceof Error ? err.message : 'Autosave failed')
     } finally {
       setTitleSaving(false)
     }
   }
+
+  useEffect(() => {
+    if (!board || !canEdit || titleSaving) return
+    clearTitlePersistTimer()
+    if (!titleCanSave) return
+    titlePersistTimerRef.current = window.setTimeout(() => {
+      void handleSaveTitle(titleDraftRef.current)
+    }, 520)
+    return () => {
+      clearTitlePersistTimer()
+    }
+  }, [board, canEdit, titleCanSave, titleSaving, normalizedTitleDraft])
 
   async function handleDelete() {
     if (!board) return
@@ -556,6 +813,28 @@ export function MoodBoardPanel({
   function hasFilesPayload(event: React.DragEvent<HTMLElement>): boolean {
     const types = Array.from(event.dataTransfer?.types ?? [])
     return types.includes('Files')
+  }
+
+  function resolveDraggedImageUrl(event: React.DragEvent<HTMLElement>): string | null {
+    const uriList = event.dataTransfer.getData('text/uri-list')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith('#'))
+    const plainText = event.dataTransfer.getData('text/plain').trim()
+    const html = event.dataTransfer.getData('text/html')
+    return firstValidImageUrl([
+      ...uriList,
+      plainText,
+      extractImageUrlFromHtml(html) || '',
+    ])
+  }
+
+  function hasUrlPayload(event: React.DragEvent<HTMLElement>): boolean {
+    return !!resolveDraggedImageUrl(event)
+  }
+
+  function hasSupportedDropPayload(event: React.DragEvent<HTMLElement>): boolean {
+    return hasFilesPayload(event) || hasUrlPayload(event)
   }
 
   function isImageFile(file: File): boolean {
@@ -610,28 +889,86 @@ export function MoodBoardPanel({
     }
   }
 
+  async function addMoodBoardImageFromUrl(rawUrl: string) {
+    const normalizedUrl = normalizeImageUrlInput(rawUrl)
+    if (!normalizedUrl) {
+      setError('Enter a valid image URL starting with http:// or https://')
+      return
+    }
+
+    setError(null)
+    setAddingUrl(true)
+    try {
+      let boardId = board?.id ?? null
+      if (!boardId) {
+        const defaultTitle = 'Mood Board'
+        boardId = await onCreateBoard(defaultTitle)
+        if (!boardId) throw new Error('Could not create mood board')
+      }
+
+      const existingImages = board?.images ?? []
+      const defaults = defaultCanvasSize(imageLayout)
+      const index = existingImages.length
+      const row = Math.floor(index / 3)
+      const col = index % 3
+      const newImageId = createMoodBoardRemoteImageId(normalizedUrl)
+      const newImage: WorkhubMoodBoardImage = {
+        id: newImageId,
+        url: normalizedUrl,
+        caption: deriveImageCaptionFromUrl(normalizedUrl),
+        addedBy: currentUid,
+        addedAt: new Date().toISOString(),
+        x: 18 + col * (defaults.width + 28),
+        y: 18 + row * (defaults.height + 28),
+        width: defaults.width,
+        height: defaults.height,
+        z: index + 1,
+      }
+      await addWorkhubMoodBoardImage(boardId, existingImages, newImage)
+      setSelectedIds([newImageId])
+      setSelectedImageId(newImageId)
+      setUrlDraft('')
+      setUrlDialogOpen(false)
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setAddingUrl(false)
+    }
+  }
+
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? [])
     if (!files.length) return
     await uploadMoodBoardFiles(files)
   }
 
+  function handleMoodBoardPaste(event: React.ClipboardEvent<HTMLDivElement>) {
+    if (!canEdit) return
+    const target = event.target as HTMLElement | null
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+    const text = event.clipboardData.getData('text/plain').trim()
+    const normalizedUrl = normalizeImageUrlInput(text)
+    if (!normalizedUrl) return
+    event.preventDefault()
+    void addMoodBoardImageFromUrl(normalizedUrl)
+  }
+
   function handleGridDragEnter(event: React.DragEvent<HTMLDivElement>) {
-    if (!canEdit || !hasFilesPayload(event)) return
+    if (!canEdit || !hasSupportedDropPayload(event)) return
     event.preventDefault()
     dropDragDepthRef.current += 1
     setIsDropTargetActive(true)
   }
 
   function handleGridDragOver(event: React.DragEvent<HTMLDivElement>) {
-    if (!canEdit || !hasFilesPayload(event)) return
+    if (!canEdit || !hasSupportedDropPayload(event)) return
     event.preventDefault()
     event.dataTransfer.dropEffect = 'copy'
     if (!isDropTargetActive) setIsDropTargetActive(true)
   }
 
   function handleGridDragLeave(event: React.DragEvent<HTMLDivElement>) {
-    if (!canEdit || !hasFilesPayload(event)) return
+    if (!canEdit || !hasSupportedDropPayload(event)) return
     event.preventDefault()
     dropDragDepthRef.current = Math.max(0, dropDragDepthRef.current - 1)
     if (dropDragDepthRef.current === 0) {
@@ -640,14 +977,19 @@ export function MoodBoardPanel({
   }
 
   function handleGridDrop(event: React.DragEvent<HTMLDivElement>) {
-    if (!canEdit || !hasFilesPayload(event)) return
+    if (!canEdit || !hasSupportedDropPayload(event)) return
     event.preventDefault()
     event.stopPropagation()
     dropDragDepthRef.current = 0
     setIsDropTargetActive(false)
     const files = Array.from(event.dataTransfer.files ?? [])
-    if (!files.length) return
-    void uploadMoodBoardFiles(files)
+    if (files.length > 0) {
+      void uploadMoodBoardFiles(files)
+      return
+    }
+    const draggedUrl = resolveDraggedImageUrl(event)
+    if (!draggedUrl) return
+    void addMoodBoardImageFromUrl(draggedUrl)
   }
 
   async function handleRemoveImage(index: number, imageId?: string) {
@@ -689,7 +1031,44 @@ export function MoodBoardPanel({
     }
   }
 
+  async function handleSaveSelectedImageUrl() {
+    if (!board || !selectedCanvasImage || !canEdit || selectedImageUrlSaving) return
+    const normalizedUrl = normalizeImageUrlInput(selectedImageUrlDraft)
+    if (!normalizedUrl) {
+      setError('Enter a valid image URL starting with http:// or https://')
+      return
+    }
+    if (normalizedUrl === selectedCanvasImage.url) return
+    setError(null)
+    setSelectedImageUrlSaving(true)
+    try {
+      const nextImages = board.images.map((img, i) => {
+        const imageId = fallbackMoodBoardImageId(img, i)
+        if (imageId !== selectedCanvasImage.id) return img
+        return {
+          ...img,
+          id: img.id || selectedCanvasImage.id,
+          url: normalizedUrl,
+        }
+      })
+      await updateWorkhubMoodBoardImages(board.id, nextImages)
+
+      setImageBgMap((prev) => {
+        if (!(selectedCanvasImage.url in prev)) return prev
+        const next = { ...prev, [normalizedUrl]: prev[selectedCanvasImage.url] }
+        delete next[selectedCanvasImage.url]
+        saveBgMap(next)
+        return next
+      })
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setSelectedImageUrlSaving(false)
+    }
+  }
+
   function handleCanvasPointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (handleMiddleMousePanStart(event)) return
     if (event.button !== 0) return
     if (event.target !== event.currentTarget) return
 
@@ -715,6 +1094,7 @@ export function MoodBoardPanel({
   }
 
   function handleCompactGridPointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (handleMiddleMousePanStart(event)) return
     if (event.button !== 0) return
     if (event.target !== event.currentTarget) return
     setSelectedIds([])
@@ -722,6 +1102,7 @@ export function MoodBoardPanel({
   }
 
   function handleCanvasItemPointerDown(event: React.PointerEvent<HTMLDivElement>, imageId: string) {
+    if (handleMiddleMousePanStart(event)) return
     if (!isCanvasMode || !canEdit) return
     if (event.button !== 0) return
     if ((event.target as HTMLElement).closest('.workhub-moodboard-image-remove, .workhub-moodboard-resize-handle')) return
@@ -765,6 +1146,7 @@ export function MoodBoardPanel({
   }
 
   function handleResizePointerDown(event: React.PointerEvent<HTMLButtonElement>, imageId: string) {
+    if (handleMiddleMousePanStart(event)) return
     if (!isCanvasMode || !canEdit) return
     if (event.button !== 0) return
     const point = pointToCanvas(event.clientX, event.clientY)
@@ -811,12 +1193,39 @@ export function MoodBoardPanel({
           <div className="workhub-panel-head">
             <div className="workhub-documents-head-main">
               {canEdit ? (
-                <input
-                  className="workhub-documents-title-input"
-                  value={displayTitle}
-                  placeholder="Mood board name…"
-                  onChange={(e) => setTitleDraft(e.target.value)}
-                />
+                <>
+                  <input
+                    className="workhub-documents-title-input"
+                    value={displayTitle}
+                    placeholder="Mood board name…"
+                    onChange={(e) => {
+                      setTitleSaveError(null)
+                      setShowTitleSavedIndicator(false)
+                      setTitleDraft(e.target.value)
+                    }}
+                    onBlur={() => { void handleSaveTitle() }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault()
+                        void handleSaveTitle()
+                        event.currentTarget.blur()
+                      }
+                      if (event.key === 'Escape') {
+                        event.preventDefault()
+                        revertTitleDraft()
+                        event.currentTarget.blur()
+                      }
+                    }}
+                  />
+                  {showTitleStatus && (
+                    <span
+                      className={`workhub-note-autosave-status${titleSaveError ? ' is-error' : ''}${isTransientSavedStatus ? ' is-transient' : ''}`}
+                      aria-live="polite"
+                    >
+                      {titleStatusText}
+                    </span>
+                  )}
+                </>
               ) : (
                 <h2 style={{ margin: 0 }}>{displayTitle || 'Mood Board'}</h2>
               )}
@@ -842,18 +1251,19 @@ export function MoodBoardPanel({
                   {deleting ? '⏳' : '🗑'}
                 </button>
               )}
-              {/* Save title */}
-              <button
-                className="workhub-primary-btn workhub-doc-tool-btn"
-                title="Save name"
-                aria-label="Save name"
-                disabled={!titleChanged || titleSaving}
-                onClick={() => { void handleSaveTitle() }}
-              >
-                {titleSaving ? '⏳' : '💾'}
-              </button>
             </div>
           </div>
+
+          {canEdit && (
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="workhub-moodboard-hidden-file-input"
+              onChange={(e) => { void handleFileChange(e) }}
+            />
+          )}
 
           {/* Share popover */}
           {shareOpen && board && (
@@ -868,25 +1278,93 @@ export function MoodBoardPanel({
             </div>
           )}
 
+          {urlDialogOpen && canEdit && (
+            <div className="workhub-moodboard-url-dialog-backdrop" onClick={() => setUrlDialogOpen(false)}>
+              <div className="workhub-moodboard-url-dialog" onClick={(event) => event.stopPropagation()}>
+                <div className="workhub-moodboard-url-dialog-head">
+                  <strong>Add image URL</strong>
+                  <button
+                    type="button"
+                    className="workhub-share-doc-close"
+                    onClick={() => setUrlDialogOpen(false)}
+                    aria-label="Close add URL dialog"
+                  >✕</button>
+                </div>
+                <div className="workhub-moodboard-url-dialog-body">
+                  <input
+                    type="url"
+                    className="workhub-input"
+                    value={urlDraft}
+                    onChange={(event) => setUrlDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key !== 'Enter') return
+                      event.preventDefault()
+                      void addMoodBoardImageFromUrl(urlDraft)
+                    }}
+                    placeholder="Paste image URL here"
+                    autoFocus
+                  />
+                  <div className="workhub-moodboard-url-hint">Paste any direct image URL. You can still paste a URL directly into the mood board area too.</div>
+                </div>
+                <div className="workhub-moodboard-url-dialog-actions">
+                  <button
+                    type="button"
+                    className="workhub-ghost-btn"
+                    onClick={() => setUrlDialogOpen(false)}
+                  >Cancel</button>
+                  <button
+                    type="button"
+                    className="workhub-primary-btn"
+                    onClick={() => { void addMoodBoardImageFromUrl(urlDraft) }}
+                    disabled={addingUrl || !urlDraft.trim()}
+                  >
+                    {addingUrl ? 'Adding…' : 'Add URL'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {activeError && (
             <div className="workhub-moodboard-error">{activeError}</div>
           )}
 
           <div className="workhub-moodboard-view-options" role="group" aria-label="Mood board view options">
-            <div className="workhub-moodboard-view-group" role="group" aria-label="Image size options">
-              <span>Image size</span>
+            <div className="workhub-moodboard-view-group workhub-moodboard-view-group-main" role="group" aria-label="Image size options">
               <button
                 type="button"
                 className={`workhub-moodboard-view-chip${imageLayout === 'compact' ? ' is-active' : ''}`}
                 onClick={() => setImageLayout('compact')}
                 aria-pressed={imageLayout === 'compact'}
-              >Compact</button>
+                aria-label="Grid layout"
+                title="Grid layout"
+              >Grid</button>
               <button
                 type="button"
                 className={`workhub-moodboard-view-chip${imageLayout === 'large' ? ' is-active' : ''}`}
                 onClick={() => setImageLayout('large')}
                 aria-pressed={imageLayout === 'large'}
-              >Large</button>
+                aria-label="Canvas layout"
+                title="Canvas layout"
+              >Canvas</button>
+              {canEdit && (
+                <div className="workhub-moodboard-inline-actions" role="group" aria-label="Mood board image actions">
+                  <button
+                    type="button"
+                    className="workhub-ghost-btn workhub-doc-tool-btn workhub-moodboard-head-action"
+                    title="Upload images"
+                    aria-label="Upload images"
+                    onClick={() => fileInputRef.current?.click()}
+                  >📤 Upload</button>
+                  <button
+                    type="button"
+                    className="workhub-ghost-btn workhub-doc-tool-btn workhub-moodboard-head-action"
+                    title="Add image by URL"
+                    aria-label="Add image by URL"
+                    onClick={() => setUrlDialogOpen(true)}
+                  >🌐 Add URL</button>
+                </div>
+              )}
             </div>
 
             <label className="workhub-moodboard-grid-toggle">
@@ -895,23 +1373,29 @@ export function MoodBoardPanel({
                 checked={showGridBackground}
                 onChange={(e) => setShowGridBackground(e.target.checked)}
               />
-              <span>Grid background</span>
+              <span className="workhub-moodboard-grid-toggle-label">Show Grid</span>
             </label>
           </div>
 
           {/* Image grid body */}
           <div
-            className={`workhub-moodboard-body${showGridBackground ? ' has-grid-background' : ''}${isCanvasMode ? ' is-canvas-mode' : ''}${isDropTargetActive ? ' is-drop-target' : ''}`}
+            ref={moodBoardBodyRef}
+            className={`workhub-moodboard-body${showGridBackground ? ' has-grid-background' : ''}${isCanvasMode ? ' is-canvas-mode' : ''}${isDropTargetActive ? ' is-drop-target' : ''}${isMiddleMousePanning ? ' is-middle-mouse-panning' : ''}`}
             onDragEnter={handleGridDragEnter}
             onDragOver={handleGridDragOver}
             onDragLeave={handleGridDragLeave}
             onDrop={handleGridDrop}
+            onPaste={handleMoodBoardPaste}
+            onPointerDown={(event) => { void handleMiddleMousePanStart(event) }}
+            onAuxClick={(event) => {
+              if (event.button === 1) event.preventDefault()
+            }}
           >
             {(!board || board.images.length === 0) && !uploading && (
               <div className="workhub-moodboard-empty">
                 <div style={{ fontSize: '2.5rem', marginBottom: 10 }}>🖼️</div>
                 <div>No images yet.</div>
-                {canEdit && <div style={{ marginTop: 4, fontSize: '0.78rem', color: '#aac0dc' }}>Use the upload zone below to add images.</div>}
+                {canEdit && <div style={{ marginTop: 4, fontSize: '0.78rem', color: '#aac0dc' }}>Use the header buttons to upload an image or add one by URL.</div>}
               </div>
             )}
 
@@ -954,7 +1438,7 @@ export function MoodBoardPanel({
               <>
                 <div className="workhub-moodboard-canvas-help">
                   {canEdit
-                    ? 'Drag to move. Use corner handles to resize. Drag on empty space to box-select and move selected images together.'
+                    ? 'Drag to move. Use corner handles to resize. Drag on empty space to box-select. Use the middle mouse button to pan around the canvas.'
                     : 'Canvas mode shows full images without cropping.'}
                 </div>
                 <div
@@ -1028,21 +1512,6 @@ export function MoodBoardPanel({
               <div style={{ textAlign: 'center', color: '#6a88b8', fontSize: '0.82rem', padding: '12px 0' }}>
                 Uploading…
               </div>
-            )}
-
-            {canEdit && (
-              <label className="workhub-moodboard-upload-zone">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={(e) => { void handleFileChange(e) }}
-                />
-                <div style={{ fontSize: '1.5rem', marginBottom: 6 }}>+</div>
-                <div>Click to upload images</div>
-                <div style={{ fontSize: '0.7rem', marginTop: 4, color: '#aac0dc' }}>PNG, JPG, GIF, WebP — multiple allowed</div>
-              </label>
             )}
           </div>
         </section>
@@ -1136,10 +1605,25 @@ export function MoodBoardPanel({
                           }}
                           placeholder="Image name"
                         />
+                        <input
+                          type="url"
+                          className="workhub-input"
+                          value={selectedImageUrlDraft}
+                          onChange={(event) => setSelectedImageUrlDraft(event.target.value)}
+                          onBlur={() => { void handleSaveSelectedImageUrl() }}
+                          onKeyDown={(event) => {
+                            if (event.key !== 'Enter') return
+                            event.preventDefault()
+                            void handleSaveSelectedImageUrl()
+                          }}
+                          placeholder="Image URL"
+                        />
+                        {selectedImageUrlSaving && <span className="workhub-moodboard-inline-status">Saving URL…</span>}
                       </div>
                     ) : (
                       <div className="workhub-detail-meta">
                         <span>Name: {selectedCanvasImage.caption || 'Untitled image'}</span>
+                        <span className="workhub-moodboard-url-token">URL: {selectedCanvasImage.url}</span>
                       </div>
                     )}
                     <div className="workhub-detail-meta">

@@ -8,6 +8,7 @@ import {
   type WorkhubDocument,
   type WorkhubDocumentChecklistItem,
   type WorkhubDocumentEditEntry,
+  type WorkhubDocumentTab,
   type WorkhubVisibility,
 } from '../../../lib/workhubRepo'
 import { normalizeDocumentBodyForStorage, toDocumentBodyEditorHtml } from '../docEditorBody'
@@ -56,6 +57,11 @@ export interface UseWorkhubDocEditorHandlersOutput {
 
   setSelectedDocumentTitleDraft: React.Dispatch<React.SetStateAction<string>>
   setSelectedDocumentBodyDraft: React.Dispatch<React.SetStateAction<string>>
+
+  documentTabsDraft: WorkhubDocumentTab[]
+  activeTabId: string
+  setDocumentTabsDraft: React.Dispatch<React.SetStateAction<WorkhubDocumentTab[]>>
+  setActiveTabId: React.Dispatch<React.SetStateAction<string>>
 
   closeSelectedDocument: () => void
   handleSaveSelectedDocument: () => Promise<void>
@@ -113,6 +119,13 @@ export function useWorkhubDocEditorHandlers({
 }: UseWorkhubDocEditorHandlersInput): UseWorkhubDocEditorHandlersOutput {
   const [selectedDocumentTitleDraft, setSelectedDocumentTitleDraft] = useState('')
   const [selectedDocumentBodyDraft, setSelectedDocumentBodyDraft] = useState('')
+  const [documentTabsDraft, setDocumentTabsDraft] = useState<WorkhubDocumentTab[]>([])
+  const [activeTabId, setActiveTabId] = useState<string>('')
+  // Stable refs so async callbacks always read latest values
+  const documentTabsDraftRef = useRef<WorkhubDocumentTab[]>([])
+  const activeTabIdRef = useRef<string>('')
+  useEffect(() => { documentTabsDraftRef.current = documentTabsDraft }, [documentTabsDraft])
+  useEffect(() => { activeTabIdRef.current = activeTabId }, [activeTabId])
   const [docChecklistDraft, setDocChecklistDraft] = useState('')
   const [docAttachmentDraft, setDocAttachmentDraft] = useState('')
   const [docLinkDraft, setDocLinkDraft] = useState('')
@@ -144,6 +157,23 @@ export function useWorkhubDocEditorHandlers({
 
   const selectedDocumentChanged = (() => {
     if (!selectedDocument) return false
+    if (documentTabsDraft.length > 0) {
+      if (selectedDocumentTitleDraft.trim() !== selectedDocument.title) return true
+      const savedTabs = Array.isArray(selectedDocument.tabs) ? selectedDocument.tabs : []
+      if (savedTabs.length !== documentTabsDraft.length) return true
+      for (let i = 0; i < documentTabsDraft.length; i++) {
+        const draft = documentTabsDraft[i]
+        const saved = savedTabs[i]
+        if (!saved || draft.id !== saved.id) return true
+        if (draft.title !== saved.title) return true
+        if ((draft.icon || '') !== (saved.icon || '')) return true
+        const draftBody = normalizeDocumentBodyForStorage(
+          draft.id === activeTabId ? selectedDocumentBodyDraft : draft.body,
+        )
+        if (draftBody !== normalizeDocumentBodyForStorage(saved.body || '')) return true
+      }
+      return false
+    }
     const savedBody = normalizeDocumentBodyForStorage(toDocumentBodyEditorHtml(selectedDocument.body || ''))
     const draftBody = normalizeDocumentBodyForStorage(selectedDocumentBodyDraft)
     return draftBody !== savedBody || selectedDocumentTitleDraft.trim() !== selectedDocument.title
@@ -153,32 +183,57 @@ export function useWorkhubDocEditorHandlers({
     if (!selectedDocument) {
       setSelectedDocumentTitleDraft('')
       setSelectedDocumentBodyDraft('')
+      setDocumentTabsDraft([])
+      setActiveTabId('')
       return
     }
-    const bodyHtml = toDocumentBodyEditorHtml(selectedDocument.body || '')
     setSelectedDocumentTitleDraft(selectedDocument.title)
-    setSelectedDocumentBodyDraft(bodyHtml)
-  }, [selectedDocument?.body, selectedDocument?.id, selectedDocument?.title])
+    const hasTabs = Array.isArray(selectedDocument.tabs) && selectedDocument.tabs.length > 0
+    if (hasTabs) {
+      const tabs = selectedDocument.tabs!
+      setDocumentTabsDraft(tabs)
+      const firstId = tabs[0].id
+      setActiveTabId(firstId)
+      setSelectedDocumentBodyDraft(tabs[0].body || '')
+    } else {
+      setDocumentTabsDraft([])
+      setActiveTabId('')
+      setSelectedDocumentBodyDraft(toDocumentBodyEditorHtml(selectedDocument.body || ''))
+    }
+  // Re-init when switching documents; title re-syncs too
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDocument?.id, selectedDocument?.title])
 
   // Auto-save for all document types: debounced 800ms after typing stops, no toast
   const [noteAutoSaveStatus, setNoteAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // Keep a stable ref to the latest draft values so flush-on-close always writes current content
-  const pendingSaveRef = useRef<{ docId: string; title: string; body: string } | null>(null)
+  const pendingSaveRef = useRef<{ docId: string; title: string; body: string; tabs: WorkhubDocumentTab[] | null } | null>(null)
   useEffect(() => {
     if (!selectedDocument) return
     if (selectedDocumentReadOnly) return
     if (!selectedDocumentChanged) return
     const nextTitle = selectedDocumentTitleDraft.trim() || selectedDocument.title
     const nextBody = normalizeDocumentBodyForStorage(selectedDocumentBodyDraft)
-    pendingSaveRef.current = { docId: selectedDocument.id, title: nextTitle, body: nextBody }
+    const hasTabs = documentTabsDraftRef.current.length > 0
+    const tabsForSave = hasTabs
+      ? documentTabsDraftRef.current.map((t) =>
+          t.id === activeTabIdRef.current ? { ...t, body: nextBody } : t,
+        )
+      : null
+    pendingSaveRef.current = { docId: selectedDocument.id, title: nextTitle, body: nextBody, tabs: tabsForSave }
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current)
     setNoteAutoSaveStatus('idle')
     autoSaveTimerRef.current = setTimeout(async () => {
+      const save = pendingSaveRef.current
       pendingSaveRef.current = null
+      if (!save) return
       try {
         setNoteAutoSaveStatus('saving')
-        await updateWorkhubDocument(selectedDocument.id, { title: nextTitle, body: nextBody })
+        if (save.tabs && save.tabs.length > 0) {
+          await updateWorkhubDocument(save.docId, { title: save.title, tabs: save.tabs })
+        } else {
+          await updateWorkhubDocument(save.docId, { title: save.title, body: save.body })
+        }
         setNoteAutoSaveStatus('saved')
       } catch {
         setNoteAutoSaveStatus('idle')
@@ -186,7 +241,7 @@ export function useWorkhubDocEditorHandlers({
     }, 800)
     return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDocumentBodyDraft, selectedDocumentTitleDraft])
+  }, [selectedDocumentBodyDraft, selectedDocumentTitleDraft, documentTabsDraft])
 
   useEffect(() => {
     if (!shareDocDialogOpen || !selectedDocument) return
@@ -220,9 +275,13 @@ export function useWorkhubDocEditorHandlers({
       autoSaveTimerRef.current = null
     }
     if (pendingSaveRef.current) {
-      const { docId, title, body } = pendingSaveRef.current
+      const { docId, title, body, tabs } = pendingSaveRef.current
       pendingSaveRef.current = null
-      void updateWorkhubDocument(docId, { title, body })
+      if (tabs && tabs.length > 0) {
+        void updateWorkhubDocument(docId, { title, tabs })
+      } else {
+        void updateWorkhubDocument(docId, { title, body })
+      }
     }
     setShareDocDialogOpen(false)
     setSelectedDocumentId('')
@@ -236,7 +295,6 @@ export function useWorkhubDocEditorHandlers({
     }
 
     const nextTitle = selectedDocumentTitleDraft.trim()
-    const nextBody = normalizeDocumentBodyForStorage(selectedDocumentBodyDraft)
     if (!nextTitle) {
       showToast({ type: 'error', message: 'Document title is required.' })
       return
@@ -254,7 +312,16 @@ export function useWorkhubDocEditorHandlers({
 
     setBusyKey(`document:${selectedDocument.id}`)
     try {
-      await updateWorkhubDocument(selectedDocument.id, { title: nextTitle, body: nextBody, visibility, memberUids })
+      const hasTabs = documentTabsDraftRef.current.length > 0
+      const nextBody = normalizeDocumentBodyForStorage(selectedDocumentBodyDraft)
+      if (hasTabs) {
+        const savedTabs = documentTabsDraftRef.current.map((t) =>
+          t.id === activeTabIdRef.current ? { ...t, body: nextBody } : t,
+        )
+        await updateWorkhubDocument(selectedDocument.id, { title: nextTitle, tabs: savedTabs, visibility, memberUids })
+      } else {
+        await updateWorkhubDocument(selectedDocument.id, { title: nextTitle, body: nextBody, visibility, memberUids })
+      }
       await createActivity({
         workspaceId: selectedWorkspaceId,
         actorUid: auth.currentUser.uid,
@@ -602,6 +669,11 @@ export function useWorkhubDocEditorHandlers({
 
     setSelectedDocumentTitleDraft,
     setSelectedDocumentBodyDraft,
+
+    documentTabsDraft,
+    activeTabId,
+    setDocumentTabsDraft,
+    setActiveTabId,
 
     closeSelectedDocument,
     handleSaveSelectedDocument,

@@ -132,7 +132,7 @@ export const ProjectActionMenu = memo(function ProjectActionMenu(props: {
                 onClick={() => { props.onClose(); props.onOpenMoodBoard('workspace', selectedWorkspaceProjectId || '__workspace__') }}
               >
                 <span className="workhub-action-card-icon">🎨</span>
-                <span className="workhub-action-card-label">Mood board</span>
+                <span className="workhub-action-card-label">New mood board</span>
               </button>
             )}
           </div>
@@ -207,7 +207,7 @@ export const ProjectActionMenu = memo(function ProjectActionMenu(props: {
               onClick={() => { props.onClose(); props.onOpenMoodBoard('project', props.projectId || '') }}
             >
               <span className="workhub-action-card-icon">🎨</span>
-              <span className="workhub-action-card-label">Mood board</span>
+              <span className="workhub-action-card-label">New mood board</span>
             </button>
           )}
           {props.canManageProject && (
