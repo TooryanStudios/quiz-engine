@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { WorkhubMember, WorkhubTaskComment } from '../../../lib/workhubRepo'
+
+const PAGE_SIZE = 6
 
 export interface WorkhubDiscussionCardProps {
   title?: string
@@ -15,9 +17,7 @@ export interface WorkhubDiscussionCardProps {
   onEditCancel: () => void
   onEditSave: (comment: WorkhubTaskComment) => Promise<void>
   editBusyKey: string
-  composerText: string
-  onComposerTextChange: (value: string) => void
-  onComposerSend: () => Promise<void>
+  onComposerSend: (text: string) => Promise<void>
   composerBusy: boolean
   composerPlaceholder?: string
   emptyStateText?: string
@@ -43,8 +43,6 @@ export function WorkhubDiscussionCard({
   onEditCancel,
   onEditSave,
   editBusyKey,
-  composerText,
-  onComposerTextChange,
   onComposerSend,
   composerBusy,
   composerPlaceholder = 'Write an update for your team...',
@@ -56,7 +54,13 @@ export function WorkhubDiscussionCard({
   onNotifyUidsChange,
 }: WorkhubDiscussionCardProps) {
   const [notifyDropdownOpen, setNotifyDropdownOpen] = useState(false)
+  const [localComposerText, setLocalComposerText] = useState('')
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
   const notifyRowRef = useRef<HTMLDivElement>(null)
+
+  // Reset visible count when the entity changes (different task/doc opened)
+  const firstCommentId = comments[0]?.id
+  useEffect(() => { setVisibleCount(PAGE_SIZE) }, [firstCommentId])
   useEffect(() => {
     if (!notifyDropdownOpen) return
     function handleOutsideClick(e: MouseEvent) {
@@ -74,14 +78,36 @@ export function WorkhubDiscussionCard({
     return `${parts[0][0] || ''}${parts[1][0] || ''}`.toUpperCase()
   }
 
+  // Sort oldest-first, then show latest PAGE_SIZE (bottom of list = newest)
+  const sortedComments = useMemo(() =>
+    [...comments].sort((a, b) => {
+      const ta = (a.createdAt as { seconds?: number } | null)?.seconds ?? 0
+      const tb = (b.createdAt as { seconds?: number } | null)?.seconds ?? 0
+      return ta - tb
+    }),
+    [comments],
+  )
+  const totalCount = sortedComments.length
+  const hiddenCount = Math.max(0, totalCount - visibleCount)
+  const visibleComments = sortedComments.slice(hiddenCount)
+
   return (
     <div className="workhub-detail-card workhub-discussion-card">
       <div className="workhub-task-attachments-head">
         <span>{title}</span>
-        <span>{`${comments.length} message${comments.length === 1 ? '' : 's'}`}</span>
+        <span>{`${totalCount} message${totalCount === 1 ? '' : 's'}`}</span>
       </div>
       <div className="workhub-comment-list workhub-comment-list-chat">
-        {comments.map((item) => {
+        {hiddenCount > 0 && (
+          <button
+            type="button"
+            className="workhub-show-more-btn"
+            onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}
+          >
+            Show {Math.min(hiddenCount, PAGE_SIZE)} older message{Math.min(hiddenCount, PAGE_SIZE) === 1 ? '' : 's'}
+          </button>
+        )}
+        {visibleComments.map((item) => {
           const isOwnMessage = item.authorUid === currentUid
           const isEditing = editingId === item.id
           const author = memberByUid[item.authorUid]
@@ -151,17 +177,20 @@ export function WorkhubDiscussionCard({
             </div>
           )
         })}
-        {comments.length === 0 && <div className="workhub-empty-state">{emptyStateText}</div>}
+        {totalCount === 0 && <div className="workhub-empty-state">{emptyStateText}</div>}
       </div>
       <div className="workhub-comment-composer">
         <textarea
-          value={composerText}
-          onChange={(event) => onComposerTextChange(event.target.value)}
+          value={localComposerText}
+          onChange={(event) => setLocalComposerText(event.target.value)}
           placeholder={composerPlaceholder}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault()
-              void onComposerSend()
+              const text = localComposerText.trim()
+              if (!text) return
+              setLocalComposerText('')
+              void onComposerSend(text).catch(() => setLocalComposerText(text))
             }
           }}
         />
@@ -222,7 +251,12 @@ export function WorkhubDiscussionCard({
             )}
           </div>
         )}
-        <button type="button" onClick={() => { void onComposerSend() }} disabled={composerBusy || !composerText.trim()}>
+        <button type="button" onClick={() => {
+          const text = localComposerText.trim()
+          if (!text) return
+          setLocalComposerText('')
+          void onComposerSend(text).catch(() => setLocalComposerText(text))
+        }} disabled={composerBusy || !localComposerText.trim()}>
           {composerBusy ? 'Sending...' : 'Send'}
         </button>
       </div>

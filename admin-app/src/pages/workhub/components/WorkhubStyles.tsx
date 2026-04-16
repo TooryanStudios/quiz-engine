@@ -2381,6 +2381,83 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         flex-direction: column;
         gap: 8px;
       }
+      .workhub-status-options {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 6px;
+      }
+      .workhub-status-option {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 34px;
+        padding: 0 12px;
+        border: 1px solid #d9e4f7;
+        border-radius: 999px;
+        background: #ffffff;
+        color: #28456f;
+        font: inherit;
+        font-size: 0.74rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+      }
+      .workhub-status-option:hover {
+        border-color: #aac1ea;
+        background: #f8fbff;
+      }
+      .workhub-status-option.active {
+        border-color: #2b5ea7;
+        background: #eef4ff;
+        box-shadow: 0 0 0 1px rgba(43, 94, 167, 0.12);
+      }
+      .workhub-status-option-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        flex: 0 0 auto;
+        box-shadow: inset 0 0 0 1px rgba(31, 50, 94, 0.14);
+      }
+      .workhub-status-option-label {
+        line-height: 1.1;
+      }
+      .workhub-project-settings-suggestion {
+        margin-top: 6px;
+        border: 1px solid #dce7fa;
+        border-radius: 10px;
+        background: #f8fbff;
+        padding: 10px 12px;
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .workhub-project-settings-suggestion.is-applied {
+        background: #f4fbf6;
+        border-color: #d6eadb;
+      }
+      .workhub-project-settings-suggestion-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        min-width: 0;
+      }
+      .workhub-project-settings-suggestion-copy strong {
+        font-size: 0.74rem;
+        color: #1f3f70;
+      }
+      .workhub-project-settings-suggestion-copy span {
+        font-size: 0.69rem;
+        color: #5f749a;
+        line-height: 1.35;
+      }
+      .workhub-project-settings-suggestion-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        flex: 0 0 auto;
+      }
       .workhub-project-settings-advanced {
         border: 1px solid #e6ebf5;
         border-radius: 8px;
@@ -2403,6 +2480,45 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         display: flex;
         flex-direction: column;
         gap: 5px;
+      }
+      .workhub-project-settings-link-field {
+        min-width: 0;
+      }
+      .workhub-project-settings-link-row,
+      .workhub-project-settings-link-editor-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+      .workhub-project-settings-link-editor-row input {
+        flex: 1;
+        min-width: 0;
+      }
+      .workhub-project-settings-link-value {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: #24508d;
+        text-decoration: none;
+        border: 1px solid #dce7fa;
+        border-radius: 8px;
+        background: #ffffff;
+        padding: 8px 10px;
+        font-size: 0.74rem;
+        line-height: 1.2;
+      }
+      .workhub-project-settings-link-value:hover {
+        text-decoration: underline;
+        background: #f8fbff;
+      }
+      .workhub-project-settings-link-edit-btn {
+        flex: 0 0 auto;
+        min-width: 28px;
+        padding-left: 7px;
+        padding-right: 7px;
       }
       .workhub-project-settings-delete-action {
         flex: 1;
@@ -4906,6 +5022,27 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       .workhub-project-card.compact-card.is-category-card.is-proposal-card .workhub-project-card-progress-row {
         margin-top: auto;
         padding-top: 10px;
+      }
+      .workhub-project-card-value-row {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        flex-shrink: 0;
+        margin-top: auto;
+        padding-top: 10px;
+      }
+      .workhub-project-card-value-label {
+        font-size: 0.58rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #7a8fad;
+      }
+      .workhub-project-card-value-text {
+        font-size: 0.72rem;
+        font-weight: 800;
+        color: #1f3f70;
+        white-space: nowrap;
       }
       .workhub-project-card-progress-track {
         flex: 1 1 auto;
@@ -9061,8 +9198,8 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         margin-top: 8px;
       }
       .workhub-doc-detail-rail {
-        flex: 0 0 270px;
-        width: 270px;
+        flex: 0 0 248px;
+        width: 248px;
         display: flex;
         flex-direction: column;
         gap: 0;
@@ -9253,19 +9390,27 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         align-items: center;
       }
       .workhub-documents-title-input {
-        width: min(520px, 100%);
-        border: 1px solid #d7e2f1;
-        border-radius: 7px;
-        padding: 6px 9px;
+        width: min(580px, 100%);
+        border: none;
+        border-bottom: 2px solid transparent;
+        border-radius: 0;
+        padding: 3px 2px;
         font: inherit;
-        font-size: var(--workhub-doc-title-size);
-        line-height: 1.2;
-        font-weight: 500;
-        color: #2a3d5c;
-        background: #ffffff;
+        font-size: 1.05rem;
+        line-height: 1.25;
+        font-weight: 700;
+        color: #1a2d4e;
+        background: transparent;
+        transition: border-color 0.15s;
+      }
+      .workhub-documents-title-input:focus {
+        outline: none;
+        border-bottom-color: #3b7ee6;
+      }
+      .workhub-documents-title-input:not(:disabled):hover {
+        border-bottom-color: #cdd9ef;
       }
       .workhub-documents-title-input:disabled {
-        background: #f5f8fd;
         color: #617392;
         cursor: not-allowed;
       }
@@ -9402,60 +9547,74 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         display: flex;
         flex-direction: column;
       }
-      .workhub-quick-note-modal {
-        width: min(860px, calc(100vw - 24px));
-        height: calc(100dvh - 24px);
-        max-height: calc(100dvh - 24px);
+      .workhub-modal.workhub-quick-note-modal {
+        width: min(780px, calc(100vw - 20px));
+        height: min(72vh, 680px);
+        max-height: min(72vh, 680px);
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: 6px;
         overflow: hidden;
+        padding: 14px 16px 12px;
+        border-radius: 14px;
       }
       .workhub-quick-note-head {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 10px;
+        gap: 8px;
         flex-shrink: 0;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #e8eef8;
       }
       .workhub-quick-note-head-left {
         display: flex;
         align-items: center;
-        gap: 10px;
+        gap: 8px;
         flex: 1 1 auto;
         min-width: 0;
       }
       .workhub-quick-note-head h2 {
         margin: 0;
-        font-size: 1.35rem;
+        font-size: 0.88rem;
         font-weight: 700;
         color: #1d2d44;
         white-space: nowrap;
+        letter-spacing: 0.01em;
+        text-transform: uppercase;
+        opacity: 0.55;
       }
       .workhub-quick-note-location {
         display: inline-flex;
         align-items: center;
-        padding: 3px 9px;
+        padding: 2px 8px;
         border-radius: 999px;
         background: #edf2fb;
         color: #3a5a8c;
-        font-size: 0.72rem;
+        font-size: 0.68rem;
         font-weight: 600;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        max-width: 220px;
+        max-width: 200px;
       }
       .workhub-quick-note-close {
-        min-width: 36px;
-        height: 36px;
-        padding: 0 10px;
+        min-width: 28px;
+        height: 28px;
+        width: 28px;
+        padding: 0;
         flex-shrink: 0;
+        font-size: 0.75rem;
+        border-radius: 6px;
+        opacity: 0.5;
+      }
+      .workhub-quick-note-close:hover {
+        opacity: 1;
       }
       .workhub-quick-note-editor {
         flex: 1 1 auto;
         min-height: 0;
-        margin-top: 0;
+        margin-top: 4px;
       }
       .workhub-quick-note-editor .tox .tox-editor-header,
       .workhub-quick-note-editor .tox .tox-statusbar {
@@ -9484,26 +9643,41 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 10px;
+        gap: 8px;
         flex-shrink: 0;
-        padding-top: 8px;
+        padding-top: 7px;
         border-top: 1px solid #e4ebf7;
       }
       .workhub-quick-note-foot-left {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 6px;
+      }
+      .workhub-quick-note-esc-hint {
+        font-size: 0.62rem;
+        color: #9aabc4;
+        white-space: nowrap;
+      }
+      .workhub-quick-note-esc-hint kbd {
+        display: inline-block;
+        padding: 1px 4px;
+        border: 1px solid #c8d8ef;
+        border-radius: 3px;
+        font-size: 0.6rem;
+        font-family: inherit;
+        color: #7a92b5;
+        background: #f3f7fc;
       }
       .workhub-quick-note-share-btn {
         position: relative;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        width: 36px;
-        height: 36px;
-        min-width: 36px;
+        width: 30px;
+        height: 30px;
+        min-width: 30px;
         padding: 0;
-        border-radius: 8px;
+        border-radius: 7px;
         color: #4a6a9c;
       }
       .workhub-quick-note-share-btn:hover {
@@ -9530,12 +9704,14 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         display: flex;
         align-items: center;
         justify-content: flex-end;
-        gap: 8px;
+        gap: 6px;
       }
       .workhub-quick-note-actions .workhub-primary-btn,
       .workhub-quick-note-actions .workhub-danger-btn {
-        min-width: 96px;
-        height: 36px;
+        min-width: 72px;
+        height: 30px;
+        font-size: 0.75rem;
+        padding: 0 12px;
       }
       .workhub-document-body-editor .tox {
         flex: 1 1 auto;
@@ -9707,6 +9883,68 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         flex-wrap: wrap;
         justify-content: flex-end;
       }
+      .workhub-share-doc-form-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .workhub-share-doc-form-row {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        min-width: 0;
+      }
+      .workhub-share-doc-form-row > span {
+        font-size: 0.7rem;
+        font-weight: 700;
+        color: #476286;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .workhub-share-doc-select {
+        width: 100%;
+        min-width: 0;
+        padding: 9px 10px;
+        border: 1px solid #c8d8f0;
+        border-radius: 8px;
+        background: #f7faff;
+        color: #183154;
+        font-size: 0.78rem;
+        outline: none;
+      }
+      .workhub-share-doc-select:focus {
+        border-color: #8aa9da;
+        box-shadow: 0 0 0 3px rgba(74, 118, 194, 0.12);
+      }
+      .workhub-share-doc-selected {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 12px;
+        border: 1px solid #dbe6f7;
+        border-radius: 10px;
+        background: #f8fbff;
+      }
+      .workhub-share-doc-selected-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        min-width: 0;
+      }
+      .workhub-share-doc-selected-copy strong {
+        font-size: 0.78rem;
+        color: #1b3157;
+        line-height: 1.2;
+      }
+      .workhub-share-doc-selected-copy small {
+        font-size: 0.68rem;
+        color: #6a7f9f;
+        line-height: 1.2;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
       .workhub-share-doc-members {
         border: 1px solid #dbe6f7;
         border-radius: 8px;
@@ -9771,6 +10009,11 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         border-color: #8aa6d8;
         background: #e8f0ff;
         color: #1f4f9e;
+      }
+      @media (max-width: 720px) {
+        .workhub-share-doc-form-grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
       }
       .workhub-empty-state,
       .workhub-empty-column,
@@ -11533,6 +11776,13 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         .workhub-project-settings-bottom-grid {
           grid-template-columns: 1fr;
           gap: 10px;
+        }
+        .workhub-project-settings-suggestion {
+          flex-direction: column;
+        }
+        .workhub-project-settings-suggestion-actions {
+          width: 100%;
+          justify-content: flex-start;
         }
         .workhub-project-settings-sticky-actions {
           justify-content: stretch;

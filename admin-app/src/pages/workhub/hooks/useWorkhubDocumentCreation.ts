@@ -63,6 +63,8 @@ export function useWorkhubDocumentCreation({
     const memberUids = visibility === 'restricted'
       ? normalizeMemberUids(targetProject?.memberUids?.length ? targetProject.memberUids : [currentUserUid])
       : []
+    const notifyUids = normalizeMemberUids(memberUids).filter((uid) => uid !== currentUserUid)
+    const notifyMode = notifyUids.length > 0 ? 'selected' : 'all'
 
     setBusyKey('document:create')
     try {
@@ -73,6 +75,8 @@ export function useWorkhubDocumentCreation({
         body: documentBodyDraft,
         visibility,
         memberUids,
+        notifyMode,
+        notifyUids,
         createdBy: currentUserUid,
       })
 
@@ -119,6 +123,8 @@ export function useWorkhubDocumentCreation({
     const memberUids = visibility === 'restricted'
       ? normalizeMemberUids(targetProject?.memberUids?.length ? targetProject.memberUids : [currentUserUid])
       : []
+    const notifyUids = normalizeMemberUids(memberUids).filter((uid) => uid !== currentUserUid)
+    const notifyMode = notifyUids.length > 0 ? 'selected' : 'all'
 
     const title = 'New document'
     setBusyKey('document:create')
@@ -130,6 +136,8 @@ export function useWorkhubDocumentCreation({
         body: '',
         visibility,
         memberUids,
+        notifyMode,
+        notifyUids,
         createdBy: currentUserUid,
       })
 
@@ -169,6 +177,8 @@ export function useWorkhubDocumentCreation({
     const memberUids = visibility === 'restricted'
       ? normalizeMemberUids(targetProject?.memberUids?.length ? targetProject.memberUids : [currentUserUid])
       : []
+    const notifyUids = normalizeMemberUids(memberUids).filter((uid) => uid !== currentUserUid)
+    const notifyMode = notifyUids.length > 0 ? 'selected' : 'all'
 
     const now = new Date()
     const dateLabel = now.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -184,6 +194,8 @@ export function useWorkhubDocumentCreation({
         body: '',
         visibility,
         memberUids,
+        notifyMode,
+        notifyUids,
         createdBy: currentUserUid,
       })
 

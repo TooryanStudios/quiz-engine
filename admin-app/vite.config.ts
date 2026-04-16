@@ -36,7 +36,7 @@ export default defineConfig({
     },
   },
   server: {
-    port: 3000,
+    port: 4273,
     proxy: {
       '/runtime': {
         target: 'http://localhost:3001',

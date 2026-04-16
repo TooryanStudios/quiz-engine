@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import type { WorkhubClient, WorkhubMember, WorkhubProject, WorkhubProjectIntent, WorkhubProjectPriority, WorkhubProjectType, WorkhubTaskStatusConfig, WorkhubVisibility } from '../../../lib/workhubRepo'
 import { PROJECT_PRIORITY_OPTIONS, type WorkhubProjectColorMeaning } from '../constants'
 import { BUILD_NUMBER, BUILD_TIME_UTC } from '../../../buildInfo'
@@ -16,6 +17,16 @@ export function ProjectSettingsDialog(props: {
   settingsName: string
   settingsDescription: string
   settingsColor: string
+  statusSuggestion?: {
+    title: string
+    description: string
+    buttonLabel: string
+    applied: boolean
+    appliedLabel?: string
+    onApply?: () => void
+    onCancel?: () => void
+    cancelLabel?: string
+  } | null
   settingsParentId: string
   settingsDeadline: string
   settingsDeadlineLabel: string
@@ -25,6 +36,8 @@ export function ProjectSettingsDialog(props: {
   settingsPriority: WorkhubProjectPriority
   settingsTenderNumber: string
   settingsProposalId: string
+  settingsTechnicalProposalUrl: string
+  settingsFinancialProposalUrl: string
   showMonetaryValue: boolean
   monetaryValueLabel: string
   settingsValueAmount: string
@@ -51,6 +64,8 @@ export function ProjectSettingsDialog(props: {
   onPriorityChange: (value: WorkhubProjectPriority) => void
   onTenderNumberChange: (value: string) => void
   onProposalIdChange: (value: string) => void
+  onTechnicalProposalUrlChange: (value: string) => void
+  onFinancialProposalUrlChange: (value: string) => void
   onValueAmountChange: (value: string) => void
   onValueCurrencyChange: (value: string) => void
   onMainPanelViewChange: (value: 'tasks' | 'dashboard') => void
@@ -79,6 +94,80 @@ export function ProjectSettingsDialog(props: {
   }
   const isFolderContainer = props.intent === 'project'
   const hasDeleteBlockers = props.childCount > 0 || props.taskCount > 0
+  const [advancedOpen, setAdvancedOpen] = useState(props.intent === 'proposal')
+  const [editingTechnicalProposalUrl, setEditingTechnicalProposalUrl] = useState(props.settingsTechnicalProposalUrl.trim().length === 0)
+  const [editingFinancialProposalUrl, setEditingFinancialProposalUrl] = useState(props.settingsFinancialProposalUrl.trim().length === 0)
+
+  useEffect(() => {
+    setAdvancedOpen(props.intent === 'proposal')
+  }, [props.intent, props.project.id])
+
+  useEffect(() => {
+    setEditingTechnicalProposalUrl(props.settingsTechnicalProposalUrl.trim().length === 0)
+  }, [props.project.id, props.settingsTechnicalProposalUrl])
+
+  useEffect(() => {
+    setEditingFinancialProposalUrl(props.settingsFinancialProposalUrl.trim().length === 0)
+  }, [props.project.id, props.settingsFinancialProposalUrl])
+
+  function renderProposalUrlField(input: {
+    label: string
+    value: string
+    name: string
+    placeholder: string
+    editing: boolean
+    onEditToggle: (next: boolean) => void
+    onChange: (value: string) => void
+  }) {
+    const trimmedValue = input.value.trim()
+    if (!input.editing && trimmedValue) {
+      return (
+        <label className="workhub-span-2 workhub-project-settings-link-field">
+          <span>{input.label}</span>
+          <div className="workhub-project-settings-link-row">
+            <a href={trimmedValue} target="_blank" rel="noreferrer" className="workhub-project-settings-link-value" title={trimmedValue}>
+              {trimmedValue}
+            </a>
+            <button
+              type="button"
+              className="workhub-ghost-mini workhub-project-settings-link-edit-btn"
+              onClick={() => input.onEditToggle(true)}
+              aria-label={`Edit ${input.label}`}
+              title={`Edit ${input.label}`}
+            >
+              ✏
+            </button>
+          </div>
+        </label>
+      )
+    }
+
+    return (
+      <label className="workhub-span-2 workhub-project-settings-link-field">
+        <span>{input.label}</span>
+        <div className="workhub-project-settings-link-editor-row">
+          <input
+            name={input.name}
+            type="url"
+            value={input.value}
+            onChange={(event) => input.onChange(event.target.value)}
+            placeholder={input.placeholder}
+          />
+          {trimmedValue && (
+            <button
+              type="button"
+              className="workhub-ghost-mini workhub-project-settings-link-edit-btn"
+              onClick={() => input.onEditToggle(false)}
+              aria-label={`Done editing ${input.label}`}
+              title={`Done editing ${input.label}`}
+            >
+              ✓
+            </button>
+          )}
+        </div>
+      </label>
+    )
+  }
 
   return (
     <div className="workhub-modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) props.onClose() }}>
@@ -244,21 +333,27 @@ export function ProjectSettingsDialog(props: {
               </label>
 
               <div className="workhub-project-settings-color-field">
-                <span>Status color</span>
-                <div className="workhub-color-pills">
+                <span>Status</span>
+                <div className="workhub-status-options">
                   {props.projectColors.map((color) => {
-                    const colorMeaning = colorMeaningByColor.get(color.toLowerCase())
-                    const colorLabel = colorMeaning ? `${colorMeaning.label}: ${colorMeaning.hint}` : color
+                    const colorMeaning = colorMeaningByColor.get(color.toLowerCase()) || {
+                      color,
+                      label: color,
+                      hint: color,
+                    }
+                    const colorLabel = `${colorMeaning.label}: ${colorMeaning.hint}`
                     return (
                       <button
                         key={color}
                         type="button"
-                        className={`workhub-color-pill${props.settingsColor === color ? ' active' : ''}`}
-                        style={{ background: color }}
+                        className={`workhub-status-option${props.settingsColor === color ? ' active' : ''}`}
                         onClick={() => props.onColorChange(color)}
                         title={colorLabel}
                         aria-label={colorLabel}
-                      />
+                      >
+                        <span className="workhub-status-option-dot" style={{ background: color }} aria-hidden="true" />
+                        <span className="workhub-status-option-label">{colorMeaning.label}</span>
+                      </button>
                     )
                   })}
                 </div>
@@ -266,10 +361,30 @@ export function ProjectSettingsDialog(props: {
                   <strong>{selectedColorMeaning.label}</strong>
                   <span>{selectedColorMeaning.hint}</span>
                 </div>
+                {props.statusSuggestion && (
+                  <div className={`workhub-project-settings-suggestion${props.statusSuggestion.applied ? ' is-applied' : ''}`}>
+                    <div className="workhub-project-settings-suggestion-copy">
+                      <strong>{props.statusSuggestion.title}</strong>
+                      <span>{props.statusSuggestion.applied ? (props.statusSuggestion.appliedLabel || props.statusSuggestion.description) : props.statusSuggestion.description}</span>
+                    </div>
+                    <div className="workhub-project-settings-suggestion-actions">
+                      {!props.statusSuggestion.applied && props.statusSuggestion.onApply && props.statusSuggestion.buttonLabel && (
+                        <button type="button" className="workhub-primary-mini" onClick={props.statusSuggestion.onApply}>
+                          {props.statusSuggestion.buttonLabel}
+                        </button>
+                      )}
+                      {props.statusSuggestion.applied && props.statusSuggestion.onCancel && (
+                        <button type="button" className="workhub-ghost-mini" onClick={props.statusSuggestion.onCancel}>
+                          {props.statusSuggestion.cancelLabel || 'Cancel'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
-            <details className="workhub-project-settings-advanced">
+            <details className="workhub-project-settings-advanced" open={advancedOpen} onToggle={(event) => setAdvancedOpen((event.currentTarget as HTMLDetailsElement).open)}>
               <summary>Advanced options</summary>
               <div className="workhub-settings-group-body">
                 {props.showMonetaryValue && (
@@ -290,6 +405,24 @@ export function ProjectSettingsDialog(props: {
                         placeholder="0"
                       />
                     </label>
+                    {props.intent === 'proposal' && renderProposalUrlField({
+                      label: 'Technical proposal URL',
+                      value: props.settingsTechnicalProposalUrl,
+                      name: 'projectSettingsTechnicalProposalUrl',
+                      placeholder: 'https://...',
+                      editing: editingTechnicalProposalUrl,
+                      onEditToggle: setEditingTechnicalProposalUrl,
+                      onChange: props.onTechnicalProposalUrlChange,
+                    })}
+                    {props.intent === 'proposal' && renderProposalUrlField({
+                      label: 'Financial proposal URL',
+                      value: props.settingsFinancialProposalUrl,
+                      name: 'projectSettingsFinancialProposalUrl',
+                      placeholder: 'https://...',
+                      editing: editingFinancialProposalUrl,
+                      onEditToggle: setEditingFinancialProposalUrl,
+                      onChange: props.onFinancialProposalUrlChange,
+                    })}
                   </div>
                 )}
                 <div>

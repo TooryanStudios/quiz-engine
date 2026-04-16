@@ -40,6 +40,7 @@ export interface UseWorkhubDocEditorHandlersInput {
     entityId: string
     action: string
     message: string
+    commentPreview?: string
   }) => Promise<void>
   deleteDocument: (documentId: string) => Promise<void>
   normalizeMemberUids: (uids: string[]) => string[]
@@ -66,6 +67,7 @@ export interface UseWorkhubDocEditorHandlersOutput {
   shareDocAccessDraftByUid: Record<string, WorkhubDocumentShareAccess>
   setShareDocDialogOpen: React.Dispatch<React.SetStateAction<boolean>>
   handleToggleShareDocMember: (uid: string) => void
+  handleSelectShareDocMember: (uid: string) => void
   handleSetShareDocMemberAccess: (uid: string, access: WorkhubDocumentShareAccess) => void
   handleSaveDocInternalShare: () => Promise<void>
 
@@ -161,15 +163,19 @@ export function useWorkhubDocEditorHandlers({
   // Auto-save for all document types: debounced 800ms after typing stops, no toast
   const [noteAutoSaveStatus, setNoteAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Keep a stable ref to the latest draft values so flush-on-close always writes current content
+  const pendingSaveRef = useRef<{ docId: string; title: string; body: string } | null>(null)
   useEffect(() => {
     if (!selectedDocument) return
     if (selectedDocumentReadOnly) return
     if (!selectedDocumentChanged) return
+    const nextTitle = selectedDocumentTitleDraft.trim() || selectedDocument.title
+    const nextBody = normalizeDocumentBodyForStorage(selectedDocumentBodyDraft)
+    pendingSaveRef.current = { docId: selectedDocument.id, title: nextTitle, body: nextBody }
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current)
     setNoteAutoSaveStatus('idle')
     autoSaveTimerRef.current = setTimeout(async () => {
-      const nextTitle = selectedDocumentTitleDraft.trim() || selectedDocument.title
-      const nextBody = normalizeDocumentBodyForStorage(selectedDocumentBodyDraft)
+      pendingSaveRef.current = null
       try {
         setNoteAutoSaveStatus('saving')
         await updateWorkhubDocument(selectedDocument.id, { title: nextTitle, body: nextBody })
@@ -195,10 +201,10 @@ export function useWorkhubDocEditorHandlers({
     const candidateUidSet = new Set(workhubShareCandidates.map((item) => item.uid))
     const editSet = new Set(editMemberUids)
     const nextDraft: Record<string, WorkhubDocumentShareAccess> = {}
-    viewMemberUids.forEach((uid) => {
-      if (!candidateUidSet.has(uid)) return
-      nextDraft[uid] = editSet.has(uid) ? 'edit' : 'view'
-    })
+    const initialUid = viewMemberUids.find((uid) => candidateUidSet.has(uid)) || ''
+    if (initialUid) {
+      nextDraft[initialUid] = editSet.has(initialUid) ? 'edit' : 'view'
+    }
     setShareDocAccessDraftByUid(nextDraft)
   }, [
     normalizeMemberUids,
@@ -208,6 +214,16 @@ export function useWorkhubDocEditorHandlers({
   ])
 
   function closeSelectedDocument() {
+    // Flush any pending debounced save immediately before closing
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current)
+      autoSaveTimerRef.current = null
+    }
+    if (pendingSaveRef.current) {
+      const { docId, title, body } = pendingSaveRef.current
+      pendingSaveRef.current = null
+      void updateWorkhubDocument(docId, { title, body })
+    }
     setShareDocDialogOpen(false)
     setSelectedDocumentId('')
   }
@@ -336,23 +352,30 @@ export function useWorkhubDocEditorHandlers({
     if (!selectedDocumentCanEdit) return
     setShareDocAccessDraftByUid((current) => {
       if (current[uid]) {
-        const next = { ...current }
-        delete next[uid]
-        return next
+        return {}
       }
       return {
-        ...current,
         [uid]: 'edit',
+      }
+    })
+  }
+
+  function handleSelectShareDocMember(uid: string) {
+    if (!selectedDocumentCanEdit) return
+    const nextUid = uid.trim()
+    setShareDocAccessDraftByUid((current) => {
+      if (!nextUid) return {}
+      return {
+        [nextUid]: current[nextUid] || Object.values(current)[0] || 'edit',
       }
     })
   }
 
   function handleSetShareDocMemberAccess(uid: string, access: WorkhubDocumentShareAccess) {
     if (!selectedDocumentCanEdit) return
-    setShareDocAccessDraftByUid((current) => ({
-      ...current,
+    setShareDocAccessDraftByUid({
       [uid]: access,
-    }))
+    })
   }
 
   async function handleSaveDocInternalShare() {
@@ -382,6 +405,8 @@ export function useWorkhubDocEditorHandlers({
         visibility: hasSelectedRecipients ? 'restricted' : 'workspace',
         memberUids: hasSelectedRecipients ? memberUids : [],
         editMemberUids: hasSelectedRecipients ? editMemberUids : [],
+        notifyMode: hasSelectedRecipients ? 'selected' : 'all',
+        notifyUids: hasSelectedRecipients ? sharedMemberUids : [],
         shareEnabled: false,
         shareToken: null,
       })
@@ -400,6 +425,9 @@ export function useWorkhubDocEditorHandlers({
       })
 
       if (hasSelectedRecipients && editRecipientUids.length > 0) {
+        const bodyPreview = selectedDocument.body
+          ? selectedDocument.body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+          : undefined
         await createNotifications({
           workspaceId: selectedWorkspaceId,
           actorUid,
@@ -407,11 +435,15 @@ export function useWorkhubDocEditorHandlers({
           entityType: 'document',
           entityId: selectedDocument.id,
           action: 'share',
-          message: `granted edit access to document "${selectedDocument.title}"`,
+          message: `shared "${selectedDocument.title}" with you. Please check the document. (edit access)`,
+          ...(bodyPreview ? { commentPreview: bodyPreview } : {}),
         })
       }
 
       if (hasSelectedRecipients && viewRecipientUids.length > 0) {
+        const bodyPreview = selectedDocument.body
+          ? selectedDocument.body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+          : undefined
         await createNotifications({
           workspaceId: selectedWorkspaceId,
           actorUid,
@@ -419,7 +451,8 @@ export function useWorkhubDocEditorHandlers({
           entityType: 'document',
           entityId: selectedDocument.id,
           action: 'share',
-          message: `granted view access to document "${selectedDocument.title}"`,
+          message: `shared "${selectedDocument.title}" with you. Please check the document. (view access)`,
+          ...(bodyPreview ? { commentPreview: bodyPreview } : {}),
         })
       }
 
@@ -427,7 +460,7 @@ export function useWorkhubDocEditorHandlers({
       showToast({
         type: 'success',
         message: hasSelectedRecipients
-          ? 'Document shared inside WorkHub.'
+          ? 'Document shared. The recipient will receive email and in-app notification.'
           : 'Internal sharing cleared. The document is now available to the workspace.',
       })
     } catch (error) {
@@ -580,6 +613,7 @@ export function useWorkhubDocEditorHandlers({
     shareDocAccessDraftByUid,
     setShareDocDialogOpen,
     handleToggleShareDocMember,
+    handleSelectShareDocMember,
     handleSetShareDocMemberAccess,
     handleSaveDocInternalShare,
 

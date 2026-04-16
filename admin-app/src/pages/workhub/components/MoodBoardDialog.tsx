@@ -156,10 +156,13 @@ export interface MoodBoardPanelProps {
   getAttachmentReviewCount: (url: string) => number
   // Discussion
   discussionComments: WorkhubTaskComment[]
-  discussionText: string
-  onDiscussionTextChange: (value: string) => void
-  onDiscussionSend: () => Promise<void>
+  onDiscussionSend: (text: string) => Promise<void>
   discussionBusy: boolean
+  discussionNotifyMode?: 'all' | 'selected' | 'none'
+  discussionNotifyUids?: string[]
+  discussionNotifyCandidates?: Array<{ uid: string; label: string }>
+  onDiscussionNotifyModeChange?: (mode: 'all' | 'selected' | 'none') => void
+  onDiscussionNotifyUidsChange?: (uids: string[]) => void
   discussionEditingId: string
   discussionEditingText: string
   onDiscussionEditStart: (comment: WorkhubTaskComment) => void
@@ -183,10 +186,13 @@ export function MoodBoardPanel({
   onOpenAttachmentLightbox,
   getAttachmentReviewCount,
   discussionComments,
-  discussionText,
-  onDiscussionTextChange,
   onDiscussionSend,
   discussionBusy,
+  discussionNotifyMode,
+  discussionNotifyUids,
+  discussionNotifyCandidates,
+  onDiscussionNotifyModeChange,
+  onDiscussionNotifyUidsChange,
   discussionEditingId,
   discussionEditingText,
   onDiscussionEditStart,
@@ -1173,6 +1179,7 @@ export function MoodBoardPanel({
                 comments={discussionComments}
                 currentUid={currentUid}
                 memberByUid={memberByUid}
+                showAuthorAvatar
                 formatTime={formatTime}
                 editingId={discussionEditingId}
                 editingText={discussionEditingText}
@@ -1181,10 +1188,13 @@ export function MoodBoardPanel({
                 onEditCancel={onDiscussionEditCancel}
                 onEditSave={onDiscussionEditSave}
                 editBusyKey={discussionEditBusyKey}
-                composerText={discussionText}
-                onComposerTextChange={onDiscussionTextChange}
                 onComposerSend={onDiscussionSend}
                 composerBusy={discussionBusy}
+                notifyMode={discussionNotifyMode}
+                notifyUids={discussionNotifyUids}
+                notifyCandidates={discussionNotifyCandidates}
+                onNotifyModeChange={onDiscussionNotifyModeChange}
+                onNotifyUidsChange={onDiscussionNotifyUidsChange}
                 composerPlaceholder="Add a comment..."
                 emptyStateText="No comments yet."
               />

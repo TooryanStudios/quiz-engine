@@ -78,6 +78,8 @@ export interface WorkhubProject {
   valueCurrency?: string
   tenderNumber?: string
   proposalId?: string
+  technicalProposalUrl?: string
+  financialProposalUrl?: string
   name: string
   description: string
   color: string
@@ -132,6 +134,8 @@ export interface WorkhubDocument {
   visibility: WorkhubVisibility
   memberUids: string[]
   editMemberUids?: string[]
+  notifyMode?: 'all' | 'selected' | 'none'
+  notifyUids?: string[]
   createdBy: string
   createdAt?: unknown
   updatedAt?: unknown
@@ -554,6 +558,8 @@ export async function createWorkhubProject(input: {
   valueCurrency?: string
   tenderNumber?: string
   proposalId?: string
+  technicalProposalUrl?: string
+  financialProposalUrl?: string
   name: string
   description: string
   color: string
@@ -577,6 +583,8 @@ export async function createWorkhubProject(input: {
     valueCurrency: (input.valueCurrency || 'OMR').trim().toUpperCase(),
     tenderNumber: (input.tenderNumber || '').trim(),
     proposalId: (input.proposalId || '').trim(),
+    technicalProposalUrl: (input.technicalProposalUrl || '').trim(),
+    financialProposalUrl: (input.financialProposalUrl || '').trim(),
     name: input.name,
     description: input.description,
     color: input.color,
@@ -597,7 +605,7 @@ export async function createWorkhubProject(input: {
   return docRef.id
 }
 
-export async function updateWorkhubProject(projectId: string, patch: Partial<Pick<WorkhubProject, 'parentProjectId' | 'intent' | 'mainPanelView' | 'taskItemDisplayMode' | 'valueAmount' | 'valueCurrency' | 'tenderNumber' | 'proposalId' | 'name' | 'description' | 'color' | 'notes' | 'attachments' | 'attachmentTitles' | 'notesUpdatedBy' | 'visibility' | 'memberUids' | 'storageMethod' | 'projectStartDate' | 'projectDeadline' | 'projectType' | 'submissionTime' | 'priority' | 'clientId' | 'taskStatuses'>>) {
+export async function updateWorkhubProject(projectId: string, patch: Partial<Pick<WorkhubProject, 'parentProjectId' | 'intent' | 'mainPanelView' | 'taskItemDisplayMode' | 'valueAmount' | 'valueCurrency' | 'tenderNumber' | 'proposalId' | 'technicalProposalUrl' | 'financialProposalUrl' | 'name' | 'description' | 'color' | 'notes' | 'attachments' | 'attachmentTitles' | 'notesUpdatedBy' | 'visibility' | 'memberUids' | 'storageMethod' | 'projectStartDate' | 'projectDeadline' | 'projectType' | 'submissionTime' | 'priority' | 'clientId' | 'taskStatuses'>>) {
   const payload: Record<string, unknown> = {
     ...patch,
     updatedAt: serverTimestamp(),
@@ -655,6 +663,8 @@ export async function createWorkhubDocument(input: {
   body: string
   visibility: WorkhubVisibility
   memberUids: string[]
+  notifyMode?: 'all' | 'selected' | 'none'
+  notifyUids?: string[]
   createdBy: string
 }): Promise<string> {
   const docRef = await addDoc(documentsCol, {
@@ -669,6 +679,8 @@ export async function createWorkhubDocument(input: {
     visibility: input.visibility,
     memberUids: input.memberUids,
     editMemberUids: input.visibility === 'restricted' ? input.memberUids : [],
+    notifyMode: input.notifyMode || 'all',
+    notifyUids: input.notifyUids || [],
     createdBy: input.createdBy,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -692,7 +704,7 @@ export async function getWorkhubDocumentById(documentId: string): Promise<Workhu
 
 export async function updateWorkhubDocument(
   documentId: string,
-  patch: Partial<Pick<WorkhubDocument, 'projectId' | 'title' | 'body' | 'checklist' | 'attachments' | 'links' | 'editedBy' | 'isLocked' | 'lockedBy' | 'lockedAt' | 'shareToken' | 'shareEnabled' | 'visibility' | 'memberUids' | 'editMemberUids'>>,
+  patch: Partial<Pick<WorkhubDocument, 'projectId' | 'title' | 'body' | 'checklist' | 'attachments' | 'links' | 'editedBy' | 'isLocked' | 'lockedBy' | 'lockedAt' | 'shareToken' | 'shareEnabled' | 'visibility' | 'memberUids' | 'editMemberUids' | 'notifyMode' | 'notifyUids'>>,
 ) {
   const payload: Record<string, unknown> = {
     ...patch,
@@ -702,6 +714,18 @@ export async function updateWorkhubDocument(
     payload.projectId = patch.projectId || null
   }
   await updateDoc(doc(db, 'workhub_documents', documentId), payload)
+}
+
+export async function saveWorkhubDocumentNotifyPrefs(
+  documentId: string,
+  mode: 'all' | 'selected' | 'none',
+  uids: string[],
+) {
+  await updateDoc(doc(db, 'workhub_documents', documentId), {
+    notifyMode: mode,
+    notifyUids: uids,
+    updatedAt: serverTimestamp(),
+  })
 }
 
 export async function deleteWorkhubDocument(documentId: string) {
@@ -751,6 +775,8 @@ export async function createWorkhubTask(input: {
   valueAmount?: number
   valueCurrency?: string
   checklist?: WorkhubTaskChecklistItem[]
+  notifyMode?: 'all' | 'selected' | 'none'
+  notifyUids?: string[]
   createdBy: string
 }): Promise<string> {
   const payload = stripUndefinedDeep({
@@ -769,6 +795,8 @@ export async function createWorkhubTask(input: {
     valueAmount: typeof input.valueAmount === 'number' && Number.isFinite(input.valueAmount) ? input.valueAmount : undefined,
     valueCurrency: (input.valueCurrency || '').trim().toUpperCase() || undefined,
     checklist: input.checklist || [],
+    notifyMode: input.notifyMode || 'all',
+    notifyUids: input.notifyUids || [],
     createdBy: input.createdBy,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),

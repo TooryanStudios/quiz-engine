@@ -1,4 +1,4 @@
-import * as admin from 'firebase-admin'
+﻿import * as admin from 'firebase-admin'
 import { onCall, HttpsError } from 'firebase-functions/v2/https'
 import { defineString } from 'firebase-functions/params'
 import * as functionsV1 from 'firebase-functions/v1'
@@ -272,7 +272,7 @@ function buildEmailHtml(params: {
           <!-- Header -->
           <tr>
             <td style="background:#1e3a5f;padding:18px 32px;line-height:1;">
-              <span style="color:#ffffff;font-size:17px;font-weight:700;letter-spacing:0.2px;">WorkHub</span>
+              <span style="color:#ffffff;font-size:17px;font-weight:700;letter-spacing:0.2px;">Tooryan WorkHub</span>
               <span style="color:#6b91b8;font-size:13px;margin-left:10px;">· ${escapeHtml(params.workspaceName)}</span>
             </td>
           </tr>
@@ -300,7 +300,7 @@ function buildEmailHtml(params: {
           <tr>
             <td style="background:#f7f9fd;border-top:1px solid #e2eaf7;padding:14px 32px;">
               <p style="margin:0;font-size:11px;color:#b0b8cc;line-height:1.5;">
-                You're receiving this because you're a WorkHub member.
+                You're receiving this because you're a Tooryan WorkHub member.
                 <a href="${params.preferencesUrl}" style="color:#7a94bc;text-decoration:underline;">Manage email preferences</a>
               </p>
             </td>
@@ -410,7 +410,7 @@ async function notifyMemberAboutWorkhubNotification(notification: WorkhubNotific
 
   const recipientName = recipient.displayName || 'there'
   const actorName = getWorkhubActorLabel(actor)
-  const workspaceName = workspace?.name?.trim() || 'WorkHub'
+  const workspaceName = workspace?.name?.trim() || 'Tooryan WorkHub'
   const entityTitle = entityType === 'project'
     ? project?.name?.trim() || ''
     : entityType === 'task' || entityType === 'comment'
@@ -431,9 +431,13 @@ async function notifyMemberAboutWorkhubNotification(notification: WorkhubNotific
       ? 'resolved'
       : action === 'task_update'
         ? 'assigned you to'
-        : rawMessage
-  const headline = `${actorName} ${headlineVerb}${entityTitle ? ` "${truncateEmailText(entityTitle, 60)}"` : ''}`
-  const subject = `[WorkHub] ${truncateEmailText(headline, 100)}`
+        : action === 'share'
+          ? 'shared'
+          : rawMessage
+  const headline = action === 'share'
+    ? `${actorName} shared "${truncateEmailText(entityTitle || 'a document', 60)}" with you`
+    : `${actorName} ${headlineVerb}${entityTitle ? ` "${truncateEmailText(entityTitle, 60)}"` : ''}`
+  const subject = `[Tooryan WorkHub] ${truncateEmailText(headline, 100)}`
 
   const workhubBaseUrl = 'https://qyan-om.web.app/workhub'
   const preferencesUrl = `${workhubBaseUrl}#settings`
@@ -446,17 +450,21 @@ async function notifyMemberAboutWorkhubNotification(notification: WorkhubNotific
   const workhubUrl = taskDeepLink ?? workhubBaseUrl
 
   const isComment = action === 'comment'
+  const isShare = action === 'share'
 
-  // For comment notifications: task title is already in the headline — only show workspace in context rows
   const contextRows: Array<{ label: string; value: string }> = isComment
     ? [{ label: 'Workspace', value: workspaceName }]
-    : [
-        { label: 'Workspace', value: workspaceName },
-        ...(entityTitle ? [{ label: entityLabel, value: entityTitle }] : []),
-      ]
+    : isShare
+      ? [
+          { label: 'Workspace', value: workspaceName },
+          { label: 'Access', value: rawMessage.includes('edit access') ? 'Edit' : 'View' },
+        ]
+      : [
+          { label: 'Workspace', value: workspaceName },
+          ...(entityTitle ? [{ label: entityLabel, value: entityTitle }] : []),
+        ]
 
-  // For comment notifications: omit body paragraph (headline says it all); blockquote carries the message
-  const bodyText = isComment
+  const bodyText = (isComment || isShare)
     ? undefined
     : withTrailingPeriod(`${actorName} ${rawMessage}`)
 
@@ -465,7 +473,7 @@ async function notifyMemberAboutWorkhubNotification(notification: WorkhubNotific
     ? 'View task'
     : entityType === 'document'
       ? 'Open document'
-      : 'Open WorkHub'
+      : 'Open Tooryan WorkHub'
 
   // Plain-text version
   const plainLines = [
@@ -536,7 +544,7 @@ async function notifyAdminAboutWorkhubAccessRequest(params: {
 
   await sendNotificationEmail({
     to: adminEmail,
-    subject: `[WorkHub] Access request — ${requesterName}`,
+    subject: `[Tooryan WorkHub] Access request — ${requesterName}`,
     text: plainLines.join('\n'),
     html: buildEmailHtml({
       recipientName: 'Admin',
@@ -545,7 +553,7 @@ async function notifyAdminAboutWorkhubAccessRequest(params: {
       contextRows,
       ctaLabel: 'Review request',
       ctaUrl: reviewUrl,
-      workspaceName: 'WorkHub',
+      workspaceName: 'Tooryan WorkHub',
       preferencesUrl: reviewUrl,
     }),
   })
@@ -565,12 +573,12 @@ async function notifyMemberAboutWorkhubStatusChange(params: {
   const memberName = params.displayName.trim() || 'there'
   const isApproved = params.status === 'approved'
   const headline = isApproved
-    ? 'Your WorkHub access has been approved'
-    : 'Your WorkHub access has been suspended'
+    ? 'Your Tooryan WorkHub access has been approved'
+    : 'Your Tooryan WorkHub access has been suspended'
   const bodyText = isApproved
-    ? 'You now have access to WorkHub. Sign in and start collaborating with your team.'
-    : 'Your WorkHub account has been suspended. Contact your administrator if you believe this is an error.'
-  const subject = isApproved ? '[WorkHub] Access approved — you\'re in' : '[WorkHub] Access suspended'
+    ? 'You now have access to Tooryan WorkHub. Sign in and start collaborating with your team.'
+    : 'Your Tooryan WorkHub account has been suspended. Contact your administrator if you believe this is an error.'
+  const subject = isApproved ? '[Tooryan WorkHub] Access approved — you\'re in' : '[Tooryan WorkHub] Access suspended'
   const workhubUrl = 'https://qyan-om.web.app/workhub'
   const preferencesUrl = `${workhubUrl}#settings`
 
@@ -579,7 +587,7 @@ async function notifyMemberAboutWorkhubStatusChange(params: {
     '',
     bodyText,
     '',
-    isApproved ? `Open WorkHub: ${workhubUrl}` : `Contact admin if needed.`,
+    isApproved ? `Open Tooryan WorkHub: ${workhubUrl}` : `Contact admin if needed.`,
     '',
     `Manage email preferences: ${preferencesUrl}`,
   ]
@@ -593,9 +601,9 @@ async function notifyMemberAboutWorkhubStatusChange(params: {
       headline,
       bodyText,
       contextRows: [],
-      ctaLabel: isApproved ? 'Open WorkHub' : 'Contact administrator',
+      ctaLabel: isApproved ? 'Open Tooryan WorkHub' : 'Contact administrator',
       ctaUrl: workhubUrl,
-      workspaceName: 'WorkHub',
+      workspaceName: 'Tooryan WorkHub',
       preferencesUrl,
     }),
   })
@@ -1144,9 +1152,9 @@ export const sendWorkhubTestEmail = onCall<SendWorkhubTestEmailRequest, Promise<
     try {
       await deliverEmailMessage({
         to: targetEmail,
-        subject: '[WorkHub] SMTP test email',
+        subject: '[Tooryan WorkHub] SMTP test email',
         text: [
-          'This is a WorkHub SMTP test email from Firebase Cloud Functions.',
+          'This is a Tooryan WorkHub SMTP test email from Firebase Cloud Functions.',
           '',
           `Recipient: ${targetEmail}`,
           `Triggered by: ${request.auth?.uid || 'unknown'}`,
@@ -1155,7 +1163,7 @@ export const sendWorkhubTestEmail = onCall<SendWorkhubTestEmailRequest, Promise<
           'If you received this, SMTP delivery from Cloud Functions is working.',
         ].join('\n'),
         html: [
-          '<p>This is a <strong>WorkHub SMTP test email</strong> from Firebase Cloud Functions.</p>',
+          '<p>This is a <strong>Tooryan WorkHub SMTP test email</strong> from Firebase Cloud Functions.</p>',
           '<ul>',
           `<li><strong>Recipient:</strong> ${escapeHtml(targetEmail)}</li>`,
           `<li><strong>Triggered by:</strong> ${escapeHtml(request.auth?.uid || 'unknown')}</li>`,

@@ -6,8 +6,6 @@ import { WorkhubAttachmentCard } from './WorkhubAttachmentCard'
 import { WorkhubChecklistCard } from './WorkhubChecklistCard'
 import { WorkhubDiscussionCard } from './WorkhubDiscussionCard'
 
-// ── Props ─────────────────────────────────────────────────────────────────────
-
 interface WorkhubDocEditorProps extends UseWorkhubDocEditorHandlersOutput {
   selectedDocument: WorkhubDocument | undefined
   scopedWorkspaceDocuments: WorkhubDocument[]
@@ -27,10 +25,13 @@ interface WorkhubDocEditorProps extends UseWorkhubDocEditorHandlersOutput {
   openDocumentCreateDialog: (projectId: string) => void
   isMobileLayout: boolean
   discussionComments: WorkhubTaskComment[]
-  discussionText: string
-  onDiscussionTextChange: (value: string) => void
-  onDiscussionSend: () => Promise<void>
+  onDiscussionSend: (text: string) => Promise<void>
   discussionBusy: boolean
+  discussionNotifyMode?: 'all' | 'selected' | 'none'
+  discussionNotifyUids?: string[]
+  discussionNotifyCandidates?: Array<{ uid: string; label: string }>
+  onDiscussionNotifyModeChange?: (mode: 'all' | 'selected' | 'none') => void
+  onDiscussionNotifyUidsChange?: (uids: string[]) => void
   discussionEditingId: string
   discussionEditingText: string
   onDiscussionEditStart: (comment: WorkhubTaskComment) => void
@@ -41,10 +42,7 @@ interface WorkhubDocEditorProps extends UseWorkhubDocEditorHandlersOutput {
   currentUid: string
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
-
 export function WorkhubDocEditor({
-  // From hook output
   selectedDocumentTitleDraft,
   selectedDocumentBodyDraft,
   selectedDocumentChanged,
@@ -62,6 +60,7 @@ export function WorkhubDocEditor({
   shareDocAccessDraftByUid,
   setShareDocDialogOpen,
   handleToggleShareDocMember,
+  handleSelectShareDocMember,
   handleSetShareDocMemberAccess,
   handleSaveDocInternalShare,
   docChecklistDraft,
@@ -86,7 +85,6 @@ export function WorkhubDocEditor({
   handleDocLinkAdd,
   handleDocLinkRemove,
   noteAutoSaveStatus,
-  // Extra page-level props
   selectedDocument,
   scopedWorkspaceDocuments,
   selectedProjectId,
@@ -105,10 +103,13 @@ export function WorkhubDocEditor({
   openDocumentCreateDialog,
   isMobileLayout,
   discussionComments,
-  discussionText,
-  onDiscussionTextChange,
   onDiscussionSend,
   discussionBusy,
+  discussionNotifyMode,
+  discussionNotifyUids,
+  discussionNotifyCandidates,
+  onDiscussionNotifyModeChange,
+  onDiscussionNotifyUidsChange,
   discussionEditingId,
   discussionEditingText,
   onDiscussionEditStart,
@@ -121,10 +122,44 @@ export function WorkhubDocEditor({
   const [mobileDocDetailsOpen, setMobileDocDetailsOpen] = useState(false)
   const shareSelectedCount = Object.keys(shareDocAccessDraftByUid).length
   const isQuickNote = selectedDocument?.type === 'note'
+  const selectedShareEntry = Object.entries(shareDocAccessDraftByUid)[0] || null
+  const selectedShareUid = selectedShareEntry?.[0] || ''
+  const selectedShareAccess = selectedShareEntry?.[1] || 'edit'
+  const selectedShareMember = selectedShareUid
+    ? workhubShareCandidates.find((item) => item.uid === selectedShareUid)
+    : undefined
 
   useEffect(() => {
     setMobileDocDetailsOpen(false)
   }, [selectedDocument?.id])
+
+  useEffect(() => {
+    if (!isQuickNote) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closeSelectedDocument()
+        return
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault()
+        void handleSaveSelectedDocument()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [isQuickNote, closeSelectedDocument, handleSaveSelectedDocument])
+
+  useEffect(() => {
+    if (isQuickNote) return
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault()
+        void handleSaveSelectedDocument()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [isQuickNote, handleSaveSelectedDocument])
 
   if (isQuickNote && selectedDocument) {
     const projectName = selectedDocument.projectId ? (workspaceProjectById[selectedDocument.projectId]?.name || 'project') : null
@@ -134,9 +169,10 @@ export function WorkhubDocEditor({
           <div className="workhub-quick-note-head">
             <div className="workhub-quick-note-head-left">
               <h2>Quick note</h2>
-              {projectName && (
-                <span className="workhub-quick-note-location">{projectName}</span>
-              )}
+              {projectName && <span className="workhub-quick-note-location">{projectName}</span>}
+              <span className="workhub-note-autosave-status" aria-live="polite">
+                {noteAutoSaveStatus === 'saving' ? 'Saving…' : noteAutoSaveStatus === 'saved' ? '✓ Saved' : ''}
+              </span>
             </div>
             <button
               type="button"
@@ -175,12 +211,11 @@ export function WorkhubDocEditor({
                     <line x1="10.3" y1="3.9" x2="5.7" y2="7.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                     <line x1="5.7" y1="8.9" x2="10.3" y2="12.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                   </svg>
-                  {shareSelectedCount > 0 && (
-                    <span className="workhub-quick-note-share-count">{shareSelectedCount}</span>
-                  )}
+                  {shareSelectedCount > 0 && <span className="workhub-quick-note-share-count">{shareSelectedCount}</span>}
                 </button>
               )}
             </div>
+            <span className="workhub-quick-note-esc-hint"><kbd>Esc</kbd> to close · <kbd>Ctrl S</kbd> to save</span>
             <div className="workhub-quick-note-actions">
               {selectedDocumentCanEdit && !selectedDocumentLocked ? (
                 <button
@@ -330,16 +365,14 @@ export function WorkhubDocEditor({
             </div>
 
             {selectedDocument ? (
-              <>
-                <TinyRichTextEditor
-                  className={`workhub-document-body-editor${selectedDocumentReadOnly ? ' is-locked' : ''}`}
-                  value={selectedDocumentBodyDraft}
-                  onChange={setSelectedDocumentBodyDraft}
-                  disabled={selectedDocumentReadOnly}
-                  minHeight={460}
-                  placeholder="Write scope of work, requirements, assumptions, or any project details..."
-                />
-              </>
+              <TinyRichTextEditor
+                className={`workhub-document-body-editor${selectedDocumentReadOnly ? ' is-locked' : ''}`}
+                value={selectedDocumentBodyDraft}
+                onChange={setSelectedDocumentBodyDraft}
+                disabled={selectedDocumentReadOnly}
+                minHeight={460}
+                placeholder="Write scope of work, requirements, assumptions, or any project details..."
+              />
             ) : scopedWorkspaceDocuments.length === 0 ? (
               <div className="workhub-empty-state workhub-documents-empty-state">No documents yet. Use New document to add your first one.</div>
             ) : (
@@ -347,7 +380,6 @@ export function WorkhubDocEditor({
             )}
           </section>
 
-          {/* Document detail rail */}
           <aside
             className={`workhub-doc-detail-rail${isMobileLayout ? ' is-mobile-drawer' : ''}${isMobileLayout && mobileDocDetailsOpen ? ' is-open' : ''}`}
             aria-hidden={isMobileLayout && !mobileDocDetailsOpen}
@@ -373,7 +405,6 @@ export function WorkhubDocEditor({
 
             {selectedDocument ? (
               <>
-                {/* Meta */}
                 <details className="workhub-detail-collapsible-info">
                   <summary>{selectedDocument.type === 'note' ? 'Note information' : 'Document information'}</summary>
                   <div className="workhub-detail-meta">
@@ -389,7 +420,6 @@ export function WorkhubDocEditor({
                   </div>
                 </details>
 
-                {/* Edit history */}
                 {Array.isArray(selectedDocument.editedBy) && selectedDocument.editedBy.length > 0 && (
                   <div className="workhub-detail-card">
                     <h3>Edit history</h3>
@@ -404,7 +434,6 @@ export function WorkhubDocEditor({
                   </div>
                 )}
 
-                {/* Checklist */}
                 <WorkhubChecklistCard
                   title="Checklist"
                   items={getDocChecklist(selectedDocument)}
@@ -434,11 +463,11 @@ export function WorkhubDocEditor({
                   }}
                 />
 
-                {/* Discussion */}
                 <WorkhubDiscussionCard
                   comments={discussionComments}
                   currentUid={currentUid}
                   memberByUid={memberByUid}
+                  showAuthorAvatar
                   formatTime={formatTime}
                   editingId={discussionEditingId}
                   editingText={discussionEditingText}
@@ -447,13 +476,15 @@ export function WorkhubDocEditor({
                   onEditCancel={onDiscussionEditCancel}
                   onEditSave={onDiscussionEditSave}
                   editBusyKey={discussionEditBusyKey}
-                  composerText={discussionText}
-                  onComposerTextChange={onDiscussionTextChange}
                   onComposerSend={onDiscussionSend}
                   composerBusy={discussionBusy}
+                  notifyMode={discussionNotifyMode}
+                  notifyUids={discussionNotifyUids}
+                  notifyCandidates={discussionNotifyCandidates}
+                  onNotifyModeChange={onDiscussionNotifyModeChange}
+                  onNotifyUidsChange={onDiscussionNotifyUidsChange}
                 />
 
-                {/* Attachments */}
                 <WorkhubAttachmentCard
                   title="Attachments"
                   attachments={selectedDocument.attachments || []}
@@ -470,7 +501,6 @@ export function WorkhubDocEditor({
                   onRemove={handleDocAttachmentRemove}
                 />
 
-                {/* Links */}
                 <div className="workhub-detail-card">
                   <h3>Links</h3>
                   {!selectedDocumentReadOnly && (
@@ -525,89 +555,82 @@ export function WorkhubDocEditor({
         </div>
       </main>
 
-      {/* Share document dialog */}
       {shareDocDialogOpen && selectedDocument && (
         <div className="workhub-share-doc-overlay" onClick={() => setShareDocDialogOpen(false)}>
           <div className="workhub-share-doc-dialog" onClick={(e) => e.stopPropagation()}>
             <div className="workhub-share-doc-head">
-              <span>Share inside WorkHub</span>
+              <span>Share — <em>{selectedDocument.title}</em></span>
               <button type="button" className="workhub-share-doc-close" onClick={() => setShareDocDialogOpen(false)}>✕</button>
             </div>
-            <p className="workhub-share-doc-title">"{selectedDocument.title}"</p>
-            <p className="workhub-share-doc-desc">
-              Choose any WorkHub members and set whether they can view or edit. Leave the list empty to remove internal sharing and keep the document available to the workspace.
-            </p>
-            <p className="workhub-share-doc-desc">Selected members: {shareSelectedCount}</p>
 
-            <div className="workhub-share-doc-members">
-              {workhubShareCandidates.length === 0 ? (
-                <div className="workhub-empty-state">No WorkHub members are available for sharing.</div>
-              ) : (
-                workhubShareCandidates.map((member) => {
-                  const access = shareDocAccessDraftByUid[member.uid]
-                  const isSelected = access === 'view' || access === 'edit'
-                  const memberLabel = member.displayName || member.email || member.uid
-                  return (
-                    <div key={member.uid} className="workhub-share-doc-member-row">
-                      <label className="workhub-share-doc-member-main">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          disabled={!selectedDocumentCanEdit}
-                          onChange={() => handleToggleShareDocMember(member.uid)}
-                        />
-                        <span className="workhub-share-doc-member-copy">
-                          <strong>{memberLabel}</strong>
-                          {member.email && <small>{member.email}</small>}
-                        </span>
-                      </label>
+            {selectedDocumentCanEdit && (
+              <div className="workhub-share-doc-form-grid">
+                <label className="workhub-share-doc-form-row">
+                  <span>Share with</span>
+                  <select
+                    className="workhub-share-doc-select"
+                    value={selectedShareUid}
+                    onChange={(e) => handleSelectShareDocMember(e.target.value)}
+                  >
+                    <option value="">No one</option>
+                    {workhubShareCandidates.map((member) => {
+                      const label = member.displayName || member.email || member.uid
+                      return <option key={member.uid} value={member.uid}>{label}</option>
+                    })}
+                  </select>
+                </label>
+                {selectedShareUid && (
+                  <label className="workhub-share-doc-form-row">
+                    <span>Access</span>
+                    <select
+                      className="workhub-share-doc-select"
+                      value={selectedShareAccess}
+                      onChange={(e) => handleSetShareDocMemberAccess(selectedShareUid, e.target.value === 'view' ? 'view' : 'edit')}
+                    >
+                      <option value="edit">Edit</option>
+                      <option value="view">View</option>
+                    </select>
+                  </label>
+                )}
+              </div>
+            )}
 
-                      {isSelected && (
-                        <div className="workhub-share-doc-member-access">
-                          <button
-                            type="button"
-                            className={`workhub-ghost-btn${access === 'view' ? ' is-active' : ''}`}
-                            disabled={!selectedDocumentCanEdit}
-                            onClick={() => handleSetShareDocMemberAccess(member.uid, 'view')}
-                          >
-                            View
-                          </button>
-                          <button
-                            type="button"
-                            className={`workhub-ghost-btn${access === 'edit' ? ' is-active' : ''}`}
-                            disabled={!selectedDocumentCanEdit}
-                            onClick={() => handleSetShareDocMemberAccess(member.uid, 'edit')}
-                          >
-                            Edit
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })
-              )}
-            </div>
+            {selectedShareMember && (
+              <div className="workhub-share-doc-selected">
+                <div className="workhub-share-doc-selected-copy">
+                  <strong>{selectedShareMember.displayName || selectedShareMember.email || selectedShareMember.uid}</strong>
+                  <small>{selectedShareMember.email || 'Internal WorkHub member'}</small>
+                </div>
+                {selectedDocumentCanEdit && (
+                  <button
+                    type="button"
+                    className="workhub-ghost-btn"
+                    onClick={() => handleToggleShareDocMember(selectedShareUid)}
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+            )}
+
+            {shareSelectedCount === 0 && (
+              <p className="workhub-share-doc-desc">Select one colleague from the list. They will receive an email and an internal notification to check this document.</p>
+            )}
 
             <div className="workhub-share-doc-actions">
-              <button
-                type="button"
-                className="workhub-ghost-btn"
-                onClick={() => setShareDocDialogOpen(false)}
-              >
-                Cancel
-              </button>
+              <button type="button" className="workhub-ghost-btn" onClick={() => setShareDocDialogOpen(false)}>Cancel</button>
               <button
                 type="button"
                 className="workhub-primary-btn"
                 disabled={!selectedDocumentCanEdit || shareDocSaving}
                 onClick={() => { void handleSaveDocInternalShare() }}
               >
-                {shareDocSaving ? 'Saving…' : 'Save sharing'}
+                {shareDocSaving ? 'Saving…' : shareSelectedCount > 0 ? 'Share document' : 'Clear sharing'}
               </button>
             </div>
 
             {!selectedDocumentCanEdit && (
-              <p className="workhub-share-doc-desc">You currently have view-only access and cannot change sharing.</p>
+              <p className="workhub-share-doc-desc">You have view-only access and cannot change sharing.</p>
             )}
           </div>
         </div>
