@@ -37,7 +37,7 @@ export function useWorkhubTaskFilter({
     if (Array.isArray(selectedWorkspace?.taskStatuses) && (selectedWorkspace?.taskStatuses?.length ?? 0) > 0) {
       return selectedWorkspace!.taskStatuses!.map((item) => ({ ...item }))
     }
-    return buildWorkspaceTaskStatuses('workspace_default', selectedWorkspaceScopeType)
+    return buildWorkspaceTaskStatuses('workspace_default', selectedWorkspaceScopeType as 'technical' | 'hr' | 'finance')
   }, [selectedWorkspace?.id, selectedWorkspace?.taskStatuses, selectedWorkspaceScopeType])
 
   const effectiveStatusesByProjectId = useMemo(() => {

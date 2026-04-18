@@ -75,7 +75,7 @@ export interface WorkhubTaskDetailPanelProps {
   checklistAttachmentDrafts: Record<string, string>
   setChecklistAttachmentDrafts: Dispatch<SetStateAction<Record<string, string>>>
   handleChecklistAttachmentAdd: (task: WorkhubTask, itemId: string) => void
-  handleChecklistAttachmentFileUpload: (task: WorkhubTask, itemId: string, files: FileList) => Promise<void>
+  handleChecklistAttachmentFileUpload: (task: WorkhubTask, itemId: string, files: File[]) => Promise<void>
   uploadingChecklistAttachmentKey: string
   attachmentViewMode: string
   isImageAttachmentUrl: (url: string) => boolean
@@ -620,9 +620,9 @@ export const WorkhubTaskDetailPanel = memo(function WorkhubTaskDetailPanel({
         task={selectedTask}
         checklist={buildChecklist(selectedTask)}
         getChecklistDetailKey={getChecklistDetailKey}
-        expandedChecklistDetailKeys={expandedChecklistDetailKeys}
+        expandedChecklistDetailKeys={[...expandedChecklistDetailKeys]}
         onToggleChecklistItemDetails={toggleChecklistItemDetails}
-        editingChecklistScope={editingChecklistScope}
+        editingChecklistScope={editingChecklistScope as 'inline' | 'details' | null}
         editingChecklistTaskId={editingChecklistTaskId}
         editingChecklistItemId={editingChecklistItemId}
         editingChecklistItemText={editingChecklistItemText}
@@ -640,7 +640,7 @@ export const WorkhubTaskDetailPanel = memo(function WorkhubTaskDetailPanel({
         onChecklistAttachmentAdd={(itemId) => handleChecklistAttachmentAdd(selectedTask, itemId)}
         onChecklistAttachmentFileUpload={(itemId, files) => { void handleChecklistAttachmentFileUpload(selectedTask, itemId, files) }}
         uploadingChecklistAttachmentKey={uploadingChecklistAttachmentKey}
-        attachmentViewMode={attachmentViewMode}
+        attachmentViewMode={attachmentViewMode as 'list' | 'thumbnail' | 'card'}
         isImageAttachmentUrl={isImageAttachmentUrl}
         onOpenAttachmentLightbox={openAttachmentLightbox}
         getAttachmentReviewCount={(url) => computeAttachmentReviewCount(attachmentReviews, url)}
@@ -685,8 +685,8 @@ export const WorkhubTaskDetailPanel = memo(function WorkhubTaskDetailPanel({
         task={selectedTask}
         collapsed={taskAttachmentsCollapsed}
         onToggleCollapsed={() => setTaskAttachmentsCollapsed((current: boolean) => !current)}
-        attachmentViewMode={attachmentViewMode}
-        onAttachmentViewModeChange={setAttachmentViewMode}
+        attachmentViewMode={attachmentViewMode as 'list' | 'thumbnail' | 'card'}
+        onAttachmentViewModeChange={setAttachmentViewMode as (mode: 'list' | 'thumbnail' | 'card') => void}
         attachmentTitleDraft={taskAttachmentTitleDrafts[selectedTask.id] || ''}
         onAttachmentTitleDraftChange={(value) => setTaskAttachmentTitleDrafts((current: Record<string, string>) => ({ ...current, [selectedTask.id]: value }))}
         attachmentUrlDraft={taskAttachmentDrafts[selectedTask.id] || ''}

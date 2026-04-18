@@ -20,7 +20,7 @@ interface UseWorkhubSelectedProjectContextParams {
   visibleProjectById: Record<string, WorkhubProject>
   visibleProjectsByParent: Map<string, WorkhubProject[]>
   visibleWorkspaceProjects: WorkhubProject[]
-  flatVisibleProjectOptions: WorkhubProject[]
+  flatVisibleProjectOptions: Array<{ id: string; name: string; depth: number }>
   workspaceByIdForFiltering: Record<string, WorkhubWorkspace>
   selectedWorkspaceTemplateIntentSet: Set<WorkhubProjectIntent>
   selectedWorkspaceTemplateId: WorkhubWorkspaceTemplateId

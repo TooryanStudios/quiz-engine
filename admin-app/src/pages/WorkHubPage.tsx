@@ -91,24 +91,21 @@ import {
   PROJECT_COLORS,
   PROJECT_TYPE_OPTIONS,
   PROJECT_PRIORITY_OPTIONS,
-  PROJECT_PRIORITY_RANK,
   DEFAULT_SUBMISSION_TIME,
   resolveProjectColorMeanings,
   type WorkhubProjectColorMeaning,
 } from './workhub/constants'
-import { buildWorkspaceTaskStatuses, cloneDefaultTaskStatuses } from './workhub/statusTemplates'
+import { cloneDefaultTaskStatuses } from './workhub/statusTemplates'
 import {
   DEFAULT_WORKHUB_WORKSPACE_TEMPLATE_ID,
   resolveWorkhubWorkspaceTemplateIcon,
   resolveWorkhubWorkspaceTemplateForWorkspace,
   type WorkhubWorkspaceTemplateId,
 } from './workhub/workspaceTemplates'
-import { buildWorkhubHomeWidgets } from './workhub/homeTemplateWidgets'
 import {
   formatProjectDeadlineDate,
   formatTime,
   getInitials,
-  isEffectivelyEmptyTaskTitle,
   isImageAttachmentUrl,
   normalizeTaskTitle,
   resolveProjectDeadlineMs,
@@ -129,7 +126,6 @@ import {
   normalizeMemberUids,
   resolveEffectiveProjectIntent,
   WORKHUB_INTENT_ALLOWED_PROJECT_TYPES,
-  buildProjectDescriptionFromIntentDrafts,
   splitTemplateDescriptionForIntent,
 } from './workhub/projectUtils'
 import { useWorkhubProjectTree } from './workhub/hooks/useWorkhubProjectTree'
@@ -949,7 +945,7 @@ export default function WorkHubPage() {
     handleTaskUpdate: (task: WorkhubTask, updates: Partial<WorkhubTask>, options?: { silent?: boolean }) => Promise<void>
     handleBulkStatusChange: (statusId: WorkhubTaskStatus) => Promise<void>
     handleTaskReorder: (draggedId: string, statusId: string, targetTaskId: string | null) => Promise<void>
-    handleQuickAddTask: (input: QuickAddTaskSubmitInput) => Promise<false | void>
+    handleQuickAddTask: (input: QuickAddTaskSubmitInput) => Promise<boolean | void>
     clearTaskSelection: () => void
     handleBulkDeleteSelected: () => Promise<void>
     handleDeleteSingleTask: (task: WorkhubTask) => Promise<void>
@@ -1446,7 +1442,6 @@ export default function WorkHubPage() {
     setGlobalFinderOpen,
     globalFinderQuery,
     setGlobalFinderQuery,
-    globalFinderActiveIndex,
     setGlobalFinderActiveIndex,
     globalFinderInputRef,
     globalFinderEntries,
@@ -1558,7 +1553,6 @@ export default function WorkHubPage() {
     visibleProjectsByParent,
     visibleProjectTree,
     defaultCollapsedClosedRootIds,
-    collapsedClosedRootIdSet,
     liveProjectTree,
     flatVisibleProjectOptions,
     visibleProjectIds,
@@ -1589,10 +1583,8 @@ export default function WorkHubPage() {
     projectIntentIconById,
     projectSelectorIconById,
     selectedProjectIntentMeta,
-    selectedProjectLineage,
     taskContextTrail,
     quickTaskViewTargetProject,
-    resolveTaskItemDisplayMode,
     taskItemDisplayMode,
     selectedProjectPeriodLabel,
     selectedProjectSubmissionTimeLabel,
@@ -1601,7 +1593,6 @@ export default function WorkHubPage() {
     flatVisibleProjectOptionsWithIcons,
     selectedProjectComposedDescriptionDraft,
     selectedProjectTypeOptions,
-    selectedProjectChildren,
   } = useWorkhubSelectedProjectContext({
     selectedProject,
     visibleProjectById,
@@ -1619,12 +1610,9 @@ export default function WorkHubPage() {
   })
   const {
     workspaceTaskStatuses,
-    effectiveStatusesByProjectId,
     selectedProjectEffectiveTaskStatuses,
     defaultTaskStatusId,
-    workspaceScopedTasks,
     workspaceTaskCountByProjectId,
-    workspaceDoneTaskCountByProjectId,
     workspaceTaskProgressByProjectId,
     visibleTasks,
     taskCountByStatus,
@@ -2770,17 +2758,11 @@ export default function WorkHubPage() {
     overviewCompletionRate,
     tasksByAssignee,
     restrictedProjectsCount,
-    visibleActivity,
     overviewRecentTimeline,
     teamActivityHeatmap,
     displayedTeamActivityDays,
     overviewPriorityProjects,
     displayedOverviewPriorityProjects,
-    overduePriorityProjectsCount,
-    nearTermPriorityProjectsCount,
-    homeWidgetTaskStatusCounts,
-    homeWidgetTaskStatusLabels,
-    workspaceClientCount,
     homeTemplateWidgets,
   } = useWorkhubDashboardStats({
     visibleTasks,
