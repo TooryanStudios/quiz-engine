@@ -47,9 +47,6 @@ interface UseWorkhubTaskDetailHandlersParams {
   setEditingChecklistItemId: Dispatch<SetStateAction<string | null>>
   setEditingChecklistScope: Dispatch<SetStateAction<'inline' | 'details' | null>>
   setEditingChecklistItemText: Dispatch<SetStateAction<string>>
-  selectedTaskDescriptionDraft: string
-  selectedTaskTitleDraft: string
-  setSelectedTaskTitleDraft: Dispatch<SetStateAction<string>>
   setUploadingTaskAttachmentId: Dispatch<SetStateAction<string>>
   setUploadingChecklistAttachmentKey: Dispatch<SetStateAction<string>>
   attachmentDeletePrompt: AttachmentDeletePrompt
@@ -84,9 +81,6 @@ export function useWorkhubTaskDetailHandlers({
   setEditingChecklistItemId,
   setEditingChecklistScope,
   setEditingChecklistItemText,
-  selectedTaskDescriptionDraft,
-  selectedTaskTitleDraft,
-  setSelectedTaskTitleDraft,
   setUploadingTaskAttachmentId,
   setUploadingChecklistAttachmentKey,
   attachmentDeletePrompt,
@@ -355,21 +349,18 @@ export function useWorkhubTaskDetailHandlers({
     setAttachmentDeletePrompt(null)
   }, [attachmentDeletePrompt, handleTaskUpdate, setAttachmentDeletePrompt, showToast])
 
-  const handleSelectedTaskDescriptionSave = useCallback((task: WorkhubTask) => {
-    const nextDescription = selectedTaskDescriptionDraft.trim()
+  const handleSelectedTaskDescriptionSave = useCallback((task: WorkhubTask, descriptionDraft: string) => {
+    const nextDescription = descriptionDraft.trim()
     if (nextDescription === (task.description || '')) return
     void handleTaskUpdate(task, { description: nextDescription }, { silent: true })
-  }, [handleTaskUpdate, selectedTaskDescriptionDraft])
+  }, [handleTaskUpdate])
 
-  const handleSelectedTaskTitleSave = useCallback((task: WorkhubTask) => {
-    const nextTitle = normalizeTaskTitle(selectedTaskTitleDraft.replace(/\r\n/g, '\n'))
-    if (!nextTitle) {
-      setSelectedTaskTitleDraft(task.title)
-      return
-    }
+  const handleSelectedTaskTitleSave = useCallback((task: WorkhubTask, titleDraft: string) => {
+    const nextTitle = normalizeTaskTitle(titleDraft.replace(/\r\n/g, '\n'))
+    if (!nextTitle) return
     if (nextTitle === normalizeTaskTitle((task.title || '').replace(/\r\n/g, '\n'))) return
     void handleTaskUpdate(task, { title: nextTitle }, { silent: true })
-  }, [handleTaskUpdate, selectedTaskTitleDraft, setSelectedTaskTitleDraft])
+  }, [handleTaskUpdate])
 
   const handleTaskLinkEditStart = useCallback((task: WorkhubTask, link: string) => {
     setTaskLinkDrafts((current) => ({ ...current, [task.id]: link }))

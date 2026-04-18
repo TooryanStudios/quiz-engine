@@ -1,4 +1,100 @@
-import type { WorkhubProject, WorkhubWorkspace } from '../../lib/workhubRepo'
+import type { WorkhubProject, WorkhubProjectIntent, WorkhubProjectType, WorkhubWorkspace } from '../../lib/workhubRepo'
+import type { WorkhubTemplateCreationIntent } from './templateCreationMeta'
+import { resolveWorkhubWorkspaceTemplateForWorkspace } from './workspaceTemplates'
+
+export interface WorkhubDetailFieldDefinition {
+  label: string
+  descriptionKey: string
+}
+
+export const WORKHUB_INTENT_DETAIL_FIELDS: Record<WorkhubProjectIntent, WorkhubDetailFieldDefinition[]> = {
+  project: [],
+  proposal: [
+    { label: 'Estimated value', descriptionKey: 'estimated value' },
+  ],
+  lead: [
+    { label: 'Lead source', descriptionKey: 'lead source' },
+    { label: 'Qualification notes', descriptionKey: 'qualification notes' },
+  ],
+  finance_invoice_stream: [
+    { label: 'Billing cycle', descriptionKey: 'billing cycle' },
+    { label: 'Approval owner', descriptionKey: 'approval owner' },
+  ],
+  finance_payment_cycle: [
+    { label: 'Payment owner', descriptionKey: 'payment owner' },
+  ],
+  marketing_campaign: [
+    { label: 'Campaign objective', descriptionKey: 'campaign objective' },
+    { label: 'Primary channel', descriptionKey: 'primary channel' },
+  ],
+  marketing_content_stream: [
+    { label: 'Channel', descriptionKey: 'channel' },
+    { label: 'Cadence', descriptionKey: 'cadence' },
+  ],
+  hr_requisition: [
+    { label: 'Department', descriptionKey: 'department' },
+    { label: 'Hiring manager', descriptionKey: 'hiring manager' },
+  ],
+  hr_onboarding_track: [
+    { label: 'Onboarding owner', descriptionKey: 'onboarding owner' },
+  ],
+}
+
+export const WORKHUB_INTENT_ALLOWED_PROJECT_TYPES: Partial<Record<WorkhubProjectIntent, WorkhubProjectType[]>> = {
+  proposal: ['tender'],
+  lead: ['lead'],
+  finance_invoice_stream: ['direct_award'],
+  finance_payment_cycle: ['other'],
+  marketing_campaign: ['other'],
+  marketing_content_stream: ['other'],
+  hr_requisition: ['other'],
+  hr_onboarding_track: ['other'],
+}
+
+export function buildProjectDescriptionFromIntentDrafts(
+  intent: WorkhubProjectIntent,
+  narrative: string,
+  detailsByKey: Record<string, string>,
+): string {
+  const lines: string[] = []
+  if (narrative.trim()) lines.push(narrative.trim())
+  WORKHUB_INTENT_DETAIL_FIELDS[intent].forEach((field) => {
+    const value = (detailsByKey[field.descriptionKey] || '').trim()
+    if (!value) return
+    lines.push(`${field.label}: ${value}`)
+  })
+  return lines.join('\n')
+}
+
+export function splitTemplateDescriptionForIntent(
+  intent: WorkhubProjectIntent,
+  description: string,
+): { narrative: string; detailsByKey: Record<string, string> } {
+  const normalizedDescription = description.trim()
+  if (!normalizedDescription) return { narrative: '', detailsByKey: {} }
+
+  const intentFields = WORKHUB_INTENT_DETAIL_FIELDS[intent]
+  if (intentFields.length === 0) return { narrative: normalizedDescription, detailsByKey: {} }
+
+  const supportedKeys = new Set(intentFields.map((field) => field.descriptionKey))
+  const narrativeLines: string[] = []
+  const detailsByKey: Record<string, string> = {}
+
+  normalizedDescription
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .forEach((line) => {
+      const separatorIndex = line.indexOf(':')
+      if (separatorIndex <= 0) { narrativeLines.push(line); return }
+      const key = line.slice(0, separatorIndex).trim().toLowerCase()
+      const value = line.slice(separatorIndex + 1).trim()
+      if (!supportedKeys.has(key) || !value) { narrativeLines.push(line); return }
+      detailsByKey[key] = value
+    })
+
+  return { narrative: narrativeLines.join('\n').trim(), detailsByKey }
+}
 
 export function isValidHexColor(value: string): boolean {
   return /^#[0-9a-fA-F]{6}$/.test(value)
@@ -198,4 +294,40 @@ export function collectProjectLineage(projectId: string, byId: Record<string, Wo
     pointer = byId[pointer.parentProjectId]
   }
   return lineage
+}
+
+export function inferLegacyProjectIntent(
+  project: Pick<WorkhubProject, 'workspaceId' | 'projectType'>,
+  workspaceById: Record<string, Pick<WorkhubWorkspace, 'type' | 'templateId'> | undefined>,
+): WorkhubProjectIntent {
+  const workspace = workspaceById[project.workspaceId]
+  const workspaceTemplateId = resolveWorkhubWorkspaceTemplateForWorkspace(workspace).templateId
+  switch (workspaceTemplateId) {
+    case 'proposals_leads':
+      return project.projectType === 'lead' ? 'lead' : 'proposal'
+    case 'finance':
+      return project.projectType === 'direct_award' ? 'finance_invoice_stream' : 'finance_payment_cycle'
+    case 'marketing':
+      return 'marketing_campaign'
+    case 'hr':
+      return 'hr_requisition'
+    case 'empty':
+    case 'projects':
+    default:
+      return 'project'
+  }
+}
+
+export function resolveEffectiveProjectIntent(
+  project: Pick<WorkhubProject, 'workspaceId' | 'projectType' | 'intent'>,
+  workspaceById: Record<string, Pick<WorkhubWorkspace, 'type' | 'templateId'> | undefined>,
+  allowedIntents: Set<WorkhubTemplateCreationIntent>,
+): WorkhubProjectIntent {
+  if (project.intent === 'project') {
+    return 'project'
+  }
+  if (project.intent && allowedIntents.has(project.intent)) {
+    return project.intent
+  }
+  return inferLegacyProjectIntent(project, workspaceById)
 }

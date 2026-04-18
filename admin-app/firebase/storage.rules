@@ -86,6 +86,12 @@ service firebase.storage {
       allow write: if canWriteWorkhubAttachment();
     }
 
+    // WorkHub workspace asset library (logos, shared images)
+    match /workhub-assets/{allPaths=**} {
+      allow read: if true;
+      allow write: if canWriteWorkhubAttachment();
+    }
+
     // Legacy WorkHub attachment path kept for backwards compatibility
     match /workhub/{allPaths=**} {
       allow read: if true;

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 // ─── Default emoji sets ───────────────────────────────────────────────────────
 
@@ -34,6 +35,12 @@ export interface EmojiPickerPopoverProps {
   columns?: number
   /** Show search input. Default true. */
   showSearch?: boolean
+  /**
+   * When provided the popover renders via a React portal attached to
+   * document.body and positions itself (fixed) below this element.
+   * This escapes any overflow:hidden / scroll-container clipping.
+   */
+  anchorEl?: HTMLElement | null
 }
 
 export function EmojiPickerPopover({
@@ -44,9 +51,23 @@ export function EmojiPickerPopover({
   emojis = EMOJI_SET_GENERAL,
   columns = 5,
   showSearch = true,
+  anchorEl,
 }: EmojiPickerPopoverProps) {
   const [query, setQuery] = useState('')
   const rootRef = useRef<HTMLDivElement>(null)
+
+  // Compute fixed position from anchor element
+  const [fixedStyle, setFixedStyle] = useState<React.CSSProperties>({})
+  useEffect(() => {
+    if (!anchorEl) return
+    const rect = anchorEl.getBoundingClientRect()
+    setFixedStyle({
+      position: 'fixed',
+      top: rect.bottom + 4,
+      left: rect.left,
+      zIndex: 9999,
+    })
+  }, [anchorEl])
 
   // Close on outside click
   useEffect(() => {
@@ -72,11 +93,11 @@ export function EmojiPickerPopover({
     ? emojis.filter((e) => e.includes(query.trim()))
     : emojis
 
-  return (
+  const popover = (
     <div
       ref={rootRef}
       className="wh-emoji-picker"
-      style={{ '--wh-emoji-cols': columns } as React.CSSProperties}
+      style={{ '--wh-emoji-cols': columns, ...fixedStyle } as React.CSSProperties}
       role="dialog"
       aria-label="Pick an emoji"
       onClick={(e) => e.stopPropagation()}
@@ -121,4 +142,10 @@ export function EmojiPickerPopover({
       )}
     </div>
   )
+
+  if (anchorEl) {
+    return createPortal(popover, document.body)
+  }
+
+  return popover
 }

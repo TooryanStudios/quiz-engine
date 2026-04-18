@@ -30,6 +30,10 @@ interface ProjectTreeNodesProps {
   depth?: number
 }
 
+function getDocumentIcon(document: Pick<WorkhubDocument, 'type' | 'icon'>) {
+  return (document.icon || '').trim() || (document.type === 'note' ? '🗒️' : '📝')
+}
+
 function parseProjectSubmissionTimestamp(projectDeadline?: string, submissionTime?: string): number | null {
   const deadline = (projectDeadline || '').trim()
   if (!deadline) return null
@@ -320,7 +324,7 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
                     title={document.title}
                   >
                     <span className="workhub-tree-doc-subitem-title">
-                      📝 {document.title}
+                      {getDocumentIcon(document)} {document.title}
                       {!!document.attachments?.length && <span className="workhub-tree-doc-attachment-indicator" title={`${document.attachments.length} attachment${document.attachments.length === 1 ? '' : 's'}`}>📎</span>}
                     </span>
                     {document.isLocked && <span className="workhub-tree-doc-lock-badge" title="Locked">🔒</span>}

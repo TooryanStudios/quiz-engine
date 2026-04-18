@@ -1,4 +1,6 @@
+import { useRef } from 'react'
 import { Editor } from '@tinymce/tinymce-react'
+import type { Editor as TinyMCEEditor } from 'tinymce'
 import { useTinyRichTextEditorConfig } from './useTinyRichTextEditorConfig'
 
 interface TinyRichTextEditorProps {
@@ -9,6 +11,7 @@ interface TinyRichTextEditorProps {
   placeholder?: string
   className?: string
   autoFocus?: boolean
+  onReady?: (editor: TinyMCEEditor) => void
 }
 
 export function TinyRichTextEditor({
@@ -19,7 +22,9 @@ export function TinyRichTextEditor({
   placeholder = 'Start writing...',
   className,
   autoFocus = false,
+  onReady,
 }: TinyRichTextEditorProps) {
+  const editorRef = useRef<TinyMCEEditor | null>(null)
   const { apiKey, scriptSrc, init } = useTinyRichTextEditorConfig({
     disabled,
     minHeight,
@@ -36,6 +41,8 @@ export function TinyRichTextEditor({
         disabled={disabled}
         init={init}
         onInit={(_event, editor) => {
+          editorRef.current = editor
+          onReady?.(editor)
           if (!autoFocus || disabled) return
           window.setTimeout(() => {
             editor.focus()

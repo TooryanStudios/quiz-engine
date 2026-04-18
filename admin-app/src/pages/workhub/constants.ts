@@ -166,3 +166,5 @@ export const PROJECT_PRIORITY_RANK: Record<WorkhubProjectPriority, number> = {
   medium: 2,
   low: 1,
 }
+
+export const DEFAULT_SUBMISSION_TIME = '10:00'

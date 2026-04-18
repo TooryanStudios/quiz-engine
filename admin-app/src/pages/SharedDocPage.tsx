@@ -1,10 +1,12 @@
 import { onSnapshot, query, collection, where, limit } from 'firebase/firestore'
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
+import type { Editor as TinyMCEEditor } from 'tinymce'
 import { db } from '../lib/firebase'
 import { updateWorkhubDocument } from '../lib/workhubRepo'
 import type { WorkhubDocument } from '../lib/workhubRepo'
 import { TinyRichTextEditor } from '../components/editor/TinyRichTextEditor'
+import { WorkhubDocumentAiPanel } from './workhub/components/WorkhubDocumentAiPanel'
 import { normalizeDocumentBodyForStorage, toDocumentBodyEditorHtml } from './workhub/docEditorBody'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -31,6 +33,7 @@ export default function SharedDocPage() {
   const [bodyDraft, setBodyDraft] = useState('')
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState('')
+  const [documentEditor, setDocumentEditor] = useState<TinyMCEEditor | null>(null)
   const lastSyncedDocId = useRef<string | null>(null)
 
   // ── Subscribe to document by share token via Firestore (live updates) ──
@@ -56,6 +59,7 @@ export default function SharedDocPage() {
       if (lastSyncedDocId.current !== d.id) {
         lastSyncedDocId.current = d.id
         setBodyDraft(toDocumentBodyEditorHtml(d.body || ''))
+        setDocumentEditor(null)
       }
     }, () => {
       setDoc('not-found')
@@ -150,6 +154,15 @@ export default function SharedDocPage() {
           disabled={isLocked}
           minHeight={520}
           placeholder="Start writing..."
+          onReady={setDocumentEditor}
+        />
+        <WorkhubDocumentAiPanel
+          editor={documentEditor}
+          documentTitle={titleDraft.trim() || resolvedDoc.title}
+          documentBody={bodyDraft}
+          activeTabTitle="Shared document"
+          readOnly={isLocked}
+          persistenceKey={`shared:${resolvedDoc.id}:${token || 'shared'}`}
         />
       </div>
     </div>

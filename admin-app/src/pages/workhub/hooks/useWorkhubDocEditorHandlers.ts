@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { ref as storageRef, uploadBytes, getDownloadURL, listAll } from 'firebase/storage'
 import { auth } from '../../../lib/firebase'
 import { storage } from '../../../lib/firebase'
 import {
@@ -8,10 +8,156 @@ import {
   type WorkhubDocument,
   type WorkhubDocumentChecklistItem,
   type WorkhubDocumentEditEntry,
+  type WorkhubDocumentMasterPageVariant,
+  type WorkhubDocumentMasterPage,
+  type WorkhubDocumentPrintBlock,
   type WorkhubDocumentTab,
   type WorkhubVisibility,
 } from '../../../lib/workhubRepo'
 import { normalizeDocumentBodyForStorage, toDocumentBodyEditorHtml } from '../docEditorBody'
+
+function getDocumentTabMemoryKey(documentId: string) {
+  return `workhub:documentActiveTab:${documentId}`
+}
+
+const DEFAULT_DOCUMENT_MASTER_PAGE: WorkhubDocumentMasterPage = {
+  pageSize: 'A4',
+  orientation: 'portrait',
+  marginTopMm: 8,
+  marginRightMm: 16,
+  marginBottomMm: 8,
+  marginLeftMm: 16,
+  showCoverPage: false,
+  coverDateMode: 'none',
+  showWatermark: false,
+  watermarkLogoUrl: '',
+  watermarkScale: 50,
+  watermarkOpacity: 8,
+  watermarkLayout: 'center',
+  watermarkCornerOpacity: 5,
+  watermarkCornerScale: 30,
+  firstPage: {
+    showHeader: false,
+    showFooter: false,
+    showPageNumbers: false,
+    header: {
+      mode: 'structured',
+      html: '',
+      logoUrl: '',
+      title: '',
+      subtitle: '',
+      address: '',
+      signatureLabel: '',
+      showDocumentTitle: false,
+    },
+    footer: {
+      mode: 'structured',
+      html: '',
+      logoUrl: '',
+      title: '',
+      subtitle: '',
+      address: '',
+      signatureLabel: '',
+      showDocumentTitle: false,
+    },
+  },
+  laterPages: {
+    showHeader: false,
+    showFooter: false,
+    showPageNumbers: false,
+    header: {
+      mode: 'structured',
+      html: '',
+      logoUrl: '',
+      title: '',
+      subtitle: '',
+      address: '',
+      signatureLabel: '',
+      showDocumentTitle: false,
+    },
+    footer: {
+      mode: 'structured',
+      html: '',
+      logoUrl: '',
+      title: '',
+      subtitle: '',
+      address: '',
+      signatureLabel: '',
+      showDocumentTitle: false,
+    },
+  },
+}
+
+function normalizeDocumentPrintBlock(value: WorkhubDocumentPrintBlock | null | undefined, legacyHtml = ''): WorkhubDocumentPrintBlock {
+  const next = value || {}
+  return {
+    mode: next.mode || ((next.html || legacyHtml).trim() ? 'html' : 'structured'),
+    html: (next.html || legacyHtml || '').trim(),
+    logoUrl: (next.logoUrl || '').trim(),
+    title: (next.title || '').trim(),
+    subtitle: (next.subtitle || '').trim(),
+    address: (next.address || '').trim(),
+    signatureLabel: (next.signatureLabel || '').trim(),
+    showDocumentTitle: Boolean(next.showDocumentTitle),
+  }
+}
+
+function normalizeDocumentMasterPageVariant(
+  value: WorkhubDocumentMasterPageVariant | null | undefined,
+  legacy: Pick<WorkhubDocumentMasterPage, 'showHeader' | 'showFooter' | 'showPageNumbers' | 'headerHtml' | 'footerHtml'>,
+): WorkhubDocumentMasterPageVariant {
+  const next = value || {}
+  return {
+    showHeader: typeof next.showHeader === 'boolean' ? next.showHeader : Boolean(legacy.showHeader),
+    showFooter: typeof next.showFooter === 'boolean' ? next.showFooter : Boolean(legacy.showFooter),
+    showPageNumbers: typeof next.showPageNumbers === 'boolean' ? next.showPageNumbers : Boolean(legacy.showPageNumbers),
+    header: normalizeDocumentPrintBlock(next.header, legacy.headerHtml || ''),
+    footer: normalizeDocumentPrintBlock(next.footer, legacy.footerHtml || ''),
+  }
+}
+
+function normalizeDocumentMasterPage(value: WorkhubDocumentMasterPage | null | undefined): WorkhubDocumentMasterPage {
+  const next = value || {}
+  const toMargin = (margin: number | undefined, fallback: number) => {
+    if (typeof margin !== 'number' || Number.isNaN(margin)) return fallback
+    return Math.min(40, Math.max(8, Math.round(margin)))
+  }
+  const legacy = {
+    showHeader: next.showHeader,
+    showFooter: next.showFooter,
+    showPageNumbers: next.showPageNumbers,
+    headerHtml: next.headerHtml,
+    footerHtml: next.footerHtml,
+  }
+  const normalizedFirstPage = normalizeDocumentMasterPageVariant(next.firstPage, legacy)
+  const normalizedLaterPages = normalizeDocumentMasterPageVariant(next.laterPages, legacy)
+  return {
+    pageSize: next.pageSize || DEFAULT_DOCUMENT_MASTER_PAGE.pageSize,
+    orientation: next.orientation || DEFAULT_DOCUMENT_MASTER_PAGE.orientation,
+    marginTopMm: toMargin(next.marginTopMm, DEFAULT_DOCUMENT_MASTER_PAGE.marginTopMm || 8),
+    marginRightMm: toMargin(next.marginRightMm, DEFAULT_DOCUMENT_MASTER_PAGE.marginRightMm || 16),
+    marginBottomMm: toMargin(next.marginBottomMm, DEFAULT_DOCUMENT_MASTER_PAGE.marginBottomMm || 8),
+    marginLeftMm: toMargin(next.marginLeftMm, DEFAULT_DOCUMENT_MASTER_PAGE.marginLeftMm || 16),
+    firstPage: normalizedFirstPage,
+    laterPages: normalizedLaterPages,
+    showCoverPage: Boolean(next.showCoverPage),
+    coverDateMode: next.coverDateMode || 'none',
+    showWatermark: Boolean(next.showWatermark),
+    watermarkLogoUrl: (next.watermarkLogoUrl || '').trim(),
+    watermarkScale: typeof next.watermarkScale === 'number' ? Math.min(100, Math.max(10, next.watermarkScale)) : 50,
+    watermarkOpacity: typeof next.watermarkOpacity === 'number' ? Math.min(30, Math.max(1, next.watermarkOpacity)) : 8,
+    watermarkLayout: next.watermarkLayout || 'center',
+    watermarkCornerOpacity: typeof next.watermarkCornerOpacity === 'number' ? Math.min(20, Math.max(1, next.watermarkCornerOpacity)) : 5,
+    watermarkCornerScale: typeof next.watermarkCornerScale === 'number' ? Math.min(80, Math.max(10, next.watermarkCornerScale)) : 30,
+  }
+}
+
+function areDocumentMasterPagesEqual(
+  left: WorkhubDocumentMasterPage | null | undefined,
+  right: WorkhubDocumentMasterPage | null | undefined,
+) {
+  return JSON.stringify(normalizeDocumentMasterPage(left)) === JSON.stringify(normalizeDocumentMasterPage(right))
+}
 
 export type WorkhubDocumentShareAccess = 'view' | 'edit'
 
@@ -57,6 +203,8 @@ export interface UseWorkhubDocEditorHandlersOutput {
 
   setSelectedDocumentTitleDraft: React.Dispatch<React.SetStateAction<string>>
   setSelectedDocumentBodyDraft: React.Dispatch<React.SetStateAction<string>>
+  selectedDocumentMasterPageDraft: WorkhubDocumentMasterPage
+  setSelectedDocumentMasterPageDraft: React.Dispatch<React.SetStateAction<WorkhubDocumentMasterPage>>
 
   documentTabsDraft: WorkhubDocumentTab[]
   activeTabId: string
@@ -85,16 +233,23 @@ export interface UseWorkhubDocEditorHandlersOutput {
   setEditingDocChecklistItemText: React.Dispatch<React.SetStateAction<string>>
   getDocChecklist: (doc: WorkhubDocument | undefined) => WorkhubDocumentChecklistItem[]
   handleDocChecklistAdd: () => void
+  handleDocChecklistBulkAdd: (items: string[]) => Promise<number>
   handleDocChecklistToggle: (itemId: string, checked: boolean) => void
   handleDocChecklistRemove: (itemId: string) => void
   handleDocChecklistEditSave: (itemId: string) => void
 
   docAttachmentDraft: string
   uploadingDocAttachment: boolean
+  uploadingDocumentAssetImage: boolean
+  workspaceAssetLibraryUrls: string[]
+  workspaceAssetLibraryLoading: boolean
+  uploadingWorkspaceAssetLibraryImage: boolean
   setDocAttachmentDraft: React.Dispatch<React.SetStateAction<string>>
   handleDocAttachmentAdd: () => void
   handleDocAttachmentRemove: (url: string) => void
   handleDocAttachmentFileUpload: (files: File[]) => Promise<void>
+  handleDocumentAssetImageUpload: (file: File) => Promise<string | null>
+  handleWorkspaceAssetLibraryImageUpload: (file: File) => Promise<string | null>
 
   docLinkDraft: string
   setDocLinkDraft: React.Dispatch<React.SetStateAction<string>>
@@ -119,6 +274,7 @@ export function useWorkhubDocEditorHandlers({
 }: UseWorkhubDocEditorHandlersInput): UseWorkhubDocEditorHandlersOutput {
   const [selectedDocumentTitleDraft, setSelectedDocumentTitleDraft] = useState('')
   const [selectedDocumentBodyDraft, setSelectedDocumentBodyDraft] = useState('')
+  const [selectedDocumentMasterPageDraft, setSelectedDocumentMasterPageDraft] = useState<WorkhubDocumentMasterPage>(DEFAULT_DOCUMENT_MASTER_PAGE)
   const [documentTabsDraft, setDocumentTabsDraft] = useState<WorkhubDocumentTab[]>([])
   const [activeTabId, setActiveTabId] = useState<string>('')
   // Stable refs so async callbacks always read latest values
@@ -130,6 +286,10 @@ export function useWorkhubDocEditorHandlers({
   const [docAttachmentDraft, setDocAttachmentDraft] = useState('')
   const [docLinkDraft, setDocLinkDraft] = useState('')
   const [uploadingDocAttachment, setUploadingDocAttachment] = useState(false)
+  const [uploadingDocumentAssetImage, setUploadingDocumentAssetImage] = useState(false)
+  const [workspaceAssetLibraryUrls, setWorkspaceAssetLibraryUrls] = useState<string[]>([])
+  const [workspaceAssetLibraryLoading, setWorkspaceAssetLibraryLoading] = useState(false)
+  const [uploadingWorkspaceAssetLibraryImage, setUploadingWorkspaceAssetLibraryImage] = useState(false)
   const [editingDocChecklistItemId, setEditingDocChecklistItemId] = useState<string | null>(null)
   const [editingDocChecklistItemText, setEditingDocChecklistItemText] = useState('')
   const [shareDocDialogOpen, setShareDocDialogOpen] = useState(false)
@@ -176,25 +336,32 @@ export function useWorkhubDocEditorHandlers({
     }
     const savedBody = normalizeDocumentBodyForStorage(toDocumentBodyEditorHtml(selectedDocument.body || ''))
     const draftBody = normalizeDocumentBodyForStorage(selectedDocumentBodyDraft)
-    return draftBody !== savedBody || selectedDocumentTitleDraft.trim() !== selectedDocument.title
+    return (
+      draftBody !== savedBody
+      || selectedDocumentTitleDraft.trim() !== selectedDocument.title
+      || !areDocumentMasterPagesEqual(selectedDocumentMasterPageDraft, selectedDocument.masterPage)
+    )
   })()
 
   useEffect(() => {
     if (!selectedDocument) {
       setSelectedDocumentTitleDraft('')
       setSelectedDocumentBodyDraft('')
+      setSelectedDocumentMasterPageDraft(DEFAULT_DOCUMENT_MASTER_PAGE)
       setDocumentTabsDraft([])
       setActiveTabId('')
       return
     }
     setSelectedDocumentTitleDraft(selectedDocument.title)
+    setSelectedDocumentMasterPageDraft(normalizeDocumentMasterPage(selectedDocument.masterPage))
     const hasTabs = Array.isArray(selectedDocument.tabs) && selectedDocument.tabs.length > 0
     if (hasTabs) {
       const tabs = selectedDocument.tabs!
       setDocumentTabsDraft(tabs)
-      const firstId = tabs[0].id
-      setActiveTabId(firstId)
-      setSelectedDocumentBodyDraft(tabs[0].body || '')
+      const rememberedTabId = localStorage.getItem(getDocumentTabMemoryKey(selectedDocument.id)) || ''
+      const rememberedTab = tabs.find((tab) => tab.id === rememberedTabId) || tabs[0]
+      setActiveTabId(rememberedTab.id)
+      setSelectedDocumentBodyDraft(rememberedTab.body || '')
     } else {
       setDocumentTabsDraft([])
       setActiveTabId('')
@@ -204,23 +371,70 @@ export function useWorkhubDocEditorHandlers({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDocument?.id, selectedDocument?.title])
 
+  useEffect(() => {
+    if (!selectedDocument?.id) return
+    if (!activeTabId) return
+    if (documentTabsDraft.length === 0) return
+    localStorage.setItem(getDocumentTabMemoryKey(selectedDocument.id), activeTabId)
+  }, [activeTabId, documentTabsDraft.length, selectedDocument?.id])
+
+  useEffect(() => {
+    if (!selectedWorkspaceId) {
+      setWorkspaceAssetLibraryUrls([])
+      return
+    }
+    let cancelled = false
+    async function loadWorkspaceAssetLibrary() {
+      setWorkspaceAssetLibraryLoading(true)
+      try {
+        const libraryRef = storageRef(storage, `workhub-assets/${selectedWorkspaceId}/library`)
+        const listing = await listAll(libraryRef)
+        const urls = await Promise.all(listing.items.map((item) => getDownloadURL(item)))
+        if (!cancelled) {
+          setWorkspaceAssetLibraryUrls(Array.from(new Set(urls)))
+        }
+      } catch {
+        if (!cancelled) setWorkspaceAssetLibraryUrls([])
+      } finally {
+        if (!cancelled) setWorkspaceAssetLibraryLoading(false)
+      }
+    }
+    void loadWorkspaceAssetLibrary()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedWorkspaceId])
+
   // Auto-save for all document types: debounced 800ms after typing stops, no toast
   const [noteAutoSaveStatus, setNoteAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pendingSaveRef = useRef<{ docId: string; title: string; body: string; tabs: WorkhubDocumentTab[] | null } | null>(null)
+  const pendingSaveRef = useRef<{
+    docId: string
+    title: string
+    body: string
+    tabs: WorkhubDocumentTab[] | null
+    masterPage: WorkhubDocumentMasterPage
+  } | null>(null)
   useEffect(() => {
     if (!selectedDocument) return
     if (selectedDocumentReadOnly) return
     if (!selectedDocumentChanged) return
     const nextTitle = selectedDocumentTitleDraft.trim() || selectedDocument.title
     const nextBody = normalizeDocumentBodyForStorage(selectedDocumentBodyDraft)
+    const nextMasterPage = normalizeDocumentMasterPage(selectedDocumentMasterPageDraft)
     const hasTabs = documentTabsDraftRef.current.length > 0
     const tabsForSave = hasTabs
       ? documentTabsDraftRef.current.map((t) =>
           t.id === activeTabIdRef.current ? { ...t, body: nextBody } : t,
         )
       : null
-    pendingSaveRef.current = { docId: selectedDocument.id, title: nextTitle, body: nextBody, tabs: tabsForSave }
+    pendingSaveRef.current = {
+      docId: selectedDocument.id,
+      title: nextTitle,
+      body: nextBody,
+      tabs: tabsForSave,
+      masterPage: nextMasterPage,
+    }
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current)
     setNoteAutoSaveStatus('idle')
     autoSaveTimerRef.current = setTimeout(async () => {
@@ -230,9 +444,9 @@ export function useWorkhubDocEditorHandlers({
       try {
         setNoteAutoSaveStatus('saving')
         if (save.tabs && save.tabs.length > 0) {
-          await updateWorkhubDocument(save.docId, { title: save.title, tabs: save.tabs })
+          await updateWorkhubDocument(save.docId, { title: save.title, tabs: save.tabs, masterPage: save.masterPage })
         } else {
-          await updateWorkhubDocument(save.docId, { title: save.title, body: save.body })
+          await updateWorkhubDocument(save.docId, { title: save.title, body: save.body, masterPage: save.masterPage })
         }
         setNoteAutoSaveStatus('saved')
       } catch {
@@ -241,7 +455,7 @@ export function useWorkhubDocEditorHandlers({
     }, 800)
     return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDocumentBodyDraft, selectedDocumentTitleDraft, documentTabsDraft])
+  }, [selectedDocumentBodyDraft, selectedDocumentTitleDraft, selectedDocumentMasterPageDraft, documentTabsDraft])
 
   useEffect(() => {
     if (!shareDocDialogOpen || !selectedDocument) return
@@ -275,12 +489,12 @@ export function useWorkhubDocEditorHandlers({
       autoSaveTimerRef.current = null
     }
     if (pendingSaveRef.current) {
-      const { docId, title, body, tabs } = pendingSaveRef.current
+      const { docId, title, body, tabs, masterPage } = pendingSaveRef.current
       pendingSaveRef.current = null
       if (tabs && tabs.length > 0) {
-        void updateWorkhubDocument(docId, { title, tabs })
+        void updateWorkhubDocument(docId, { title, tabs, masterPage })
       } else {
-        void updateWorkhubDocument(docId, { title, body })
+        void updateWorkhubDocument(docId, { title, body, masterPage })
       }
     }
     setShareDocDialogOpen(false)
@@ -314,13 +528,26 @@ export function useWorkhubDocEditorHandlers({
     try {
       const hasTabs = documentTabsDraftRef.current.length > 0
       const nextBody = normalizeDocumentBodyForStorage(selectedDocumentBodyDraft)
+      const nextMasterPage = normalizeDocumentMasterPage(selectedDocumentMasterPageDraft)
       if (hasTabs) {
         const savedTabs = documentTabsDraftRef.current.map((t) =>
           t.id === activeTabIdRef.current ? { ...t, body: nextBody } : t,
         )
-        await updateWorkhubDocument(selectedDocument.id, { title: nextTitle, tabs: savedTabs, visibility, memberUids })
+        await updateWorkhubDocument(selectedDocument.id, {
+          title: nextTitle,
+          tabs: savedTabs,
+          masterPage: nextMasterPage,
+          visibility,
+          memberUids,
+        })
       } else {
-        await updateWorkhubDocument(selectedDocument.id, { title: nextTitle, body: nextBody, visibility, memberUids })
+        await updateWorkhubDocument(selectedDocument.id, {
+          title: nextTitle,
+          body: nextBody,
+          masterPage: nextMasterPage,
+          visibility,
+          memberUids,
+        })
       }
       await createActivity({
         workspaceId: selectedWorkspaceId,
@@ -575,6 +802,37 @@ export function useWorkhubDocEditorHandlers({
     void updateDocumentDetail({ checklist: nextChecklist })
   }
 
+  async function handleDocChecklistBulkAdd(items: string[]) {
+    if (!selectedDocument || selectedDocumentReadOnly) return 0
+
+    const normalizedItems = items
+      .map((item) => item.trim())
+      .filter(Boolean)
+
+    if (normalizedItems.length === 0) return 0
+
+    const existingChecklist = getDocChecklist(selectedDocument)
+    const existingTextSet = new Set(existingChecklist.map((item) => item.text.trim().toLowerCase()))
+    const seenNewText = new Set<string>()
+    const nextItems: WorkhubDocumentChecklistItem[] = []
+
+    normalizedItems.forEach((text) => {
+      const normalizedText = text.toLowerCase()
+      if (existingTextSet.has(normalizedText) || seenNewText.has(normalizedText)) return
+      seenNewText.add(normalizedText)
+      nextItems.push({
+        id: `dc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        text,
+        completed: false,
+      })
+    })
+
+    if (nextItems.length === 0) return 0
+
+    await updateDocumentDetail({ checklist: [...existingChecklist, ...nextItems] })
+    return nextItems.length
+  }
+
   function handleDocChecklistToggle(itemId: string, checked: boolean) {
     if (!selectedDocument || selectedDocumentReadOnly) return
     const nextChecklist = getDocChecklist(selectedDocument).map((item) => (
@@ -643,6 +901,68 @@ export function useWorkhubDocEditorHandlers({
     }
   }
 
+  async function handleDocumentAssetImageUpload(file: File): Promise<string | null> {
+    if (!selectedDocument || selectedDocumentReadOnly) return null
+    if (!file.type.startsWith('image/')) {
+      showToast({ type: 'error', message: 'Only image files can be used as logos.' })
+      return null
+    }
+    const maxBytes = 4 * 1024 * 1024
+    if (file.size > maxBytes) {
+      showToast({ type: 'error', message: 'Logo size must be 4 MB or smaller.' })
+      return null
+    }
+
+    setUploadingDocumentAssetImage(true)
+    try {
+      const extension = file.name.split('.').pop() || 'png'
+      const path = `workhub-documents/${selectedWorkspaceId}/${selectedDocument.id}/assets/${crypto.randomUUID()}.${extension}`
+      const fileRef = storageRef(storage, path)
+      await uploadBytes(fileRef, file, { contentType: file.type || 'image/png' })
+      const url = await getDownloadURL(fileRef)
+      const nextAttachments = Array.from(new Set([...(selectedDocument.attachments || []), url]))
+      await updateDocumentDetail({ attachments: nextAttachments })
+      showToast({ type: 'success', message: 'Logo asset uploaded.' })
+      return url
+    } catch (error) {
+      showToast({ type: 'error', message: error instanceof Error ? error.message : 'Could not upload logo asset.' })
+      return null
+    } finally {
+      setUploadingDocumentAssetImage(false)
+    }
+  }
+
+  async function handleWorkspaceAssetLibraryImageUpload(file: File): Promise<string | null> {
+    if (selectedDocumentReadOnly) return null
+    if (!selectedWorkspaceId) return null
+    if (!file.type.startsWith('image/')) {
+      showToast({ type: 'error', message: 'Only image files can be added to the workspace asset library.' })
+      return null
+    }
+    const maxBytes = 6 * 1024 * 1024
+    if (file.size > maxBytes) {
+      showToast({ type: 'error', message: 'Workspace asset size must be 6 MB or smaller.' })
+      return null
+    }
+
+    setUploadingWorkspaceAssetLibraryImage(true)
+    try {
+      const extension = file.name.split('.').pop() || 'png'
+      const path = `workhub-assets/${selectedWorkspaceId}/library/${crypto.randomUUID()}.${extension}`
+      const fileRef = storageRef(storage, path)
+      await uploadBytes(fileRef, file, { contentType: file.type || 'image/png' })
+      const url = await getDownloadURL(fileRef)
+      setWorkspaceAssetLibraryUrls((current) => Array.from(new Set([url, ...current])))
+      showToast({ type: 'success', message: 'Workspace asset uploaded.' })
+      return url
+    } catch (error) {
+      showToast({ type: 'error', message: error instanceof Error ? error.message : 'Could not upload workspace asset.' })
+      return null
+    } finally {
+      setUploadingWorkspaceAssetLibraryImage(false)
+    }
+  }
+
   function handleDocLinkAdd() {
     if (!selectedDocument || selectedDocumentReadOnly) return
     const url = docLinkDraft.trim()
@@ -669,6 +989,8 @@ export function useWorkhubDocEditorHandlers({
 
     setSelectedDocumentTitleDraft,
     setSelectedDocumentBodyDraft,
+  selectedDocumentMasterPageDraft,
+  setSelectedDocumentMasterPageDraft,
 
     documentTabsDraft,
     activeTabId,
@@ -697,16 +1019,23 @@ export function useWorkhubDocEditorHandlers({
     setEditingDocChecklistItemText,
     getDocChecklist,
     handleDocChecklistAdd,
+    handleDocChecklistBulkAdd,
     handleDocChecklistToggle,
     handleDocChecklistRemove,
     handleDocChecklistEditSave,
 
     docAttachmentDraft,
     uploadingDocAttachment,
+    uploadingDocumentAssetImage,
+    workspaceAssetLibraryUrls,
+    workspaceAssetLibraryLoading,
+    uploadingWorkspaceAssetLibraryImage,
     setDocAttachmentDraft,
     handleDocAttachmentAdd,
     handleDocAttachmentRemove,
     handleDocAttachmentFileUpload,
+    handleDocumentAssetImageUpload,
+    handleWorkspaceAssetLibraryImageUpload,
 
     docLinkDraft,
     setDocLinkDraft,

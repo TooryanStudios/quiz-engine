@@ -21,6 +21,7 @@
     "@stripe/stripe-js": "^8.8.0",
     "@tinymce/tinymce-react": "^6.3.0",
     "firebase": "^12.9.0",
+    "pagedjs": "^0.4.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-easy-crop": "^5.5.6",

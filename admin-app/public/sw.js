@@ -125,8 +125,13 @@ self.addEventListener('fetch', (event) => {
         return response
       })
       .catch(() => {
-        // Fallback to cache if network fails
-        return caches.match(request)
+        // Fallback to cache if network fails; return 503 if nothing cached
+        return caches.match(request).then((cached) =>
+          cached || new Response('Offline – resource not cached', {
+            status: 503,
+            headers: { 'Content-Type': 'text/plain' },
+          })
+        )
       })
   )
 })

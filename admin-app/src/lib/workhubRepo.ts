@@ -73,7 +73,7 @@ export interface WorkhubProject {
   parentProjectId?: string | null
   intent?: WorkhubProjectIntent
   mainPanelView?: 'tasks' | 'dashboard'
-  taskItemDisplayMode?: 'inherit' | 'list' | 'cards' | 'grid'
+  taskItemDisplayMode?: 'inherit' | 'list' | 'cards' | 'grid' | 'timeline'
   valueAmount?: number
   valueCurrency?: string
   tenderNumber?: string
@@ -122,14 +122,85 @@ export interface WorkhubDocumentTab {
   body: string
 }
 
+export type WorkhubDocumentPageSize = 'A4' | 'Letter' | 'Legal' | 'A3'
+export type WorkhubDocumentPageOrientation = 'portrait' | 'landscape'
+export type WorkhubDocumentPrintContentMode = 'structured' | 'html'
+
+export interface WorkhubDocumentPrintBlock {
+  mode?: WorkhubDocumentPrintContentMode
+  html?: string
+  logoUrl?: string
+  title?: string
+  subtitle?: string
+  address?: string
+  signatureLabel?: string
+  showDocumentTitle?: boolean
+}
+
+export interface WorkhubDocumentMasterPageVariant {
+  showHeader?: boolean
+  showFooter?: boolean
+  showPageNumbers?: boolean
+  header?: WorkhubDocumentPrintBlock
+  footer?: WorkhubDocumentPrintBlock
+}
+
+export interface WorkhubDocumentMasterPage {
+  pageSize?: WorkhubDocumentPageSize
+  orientation?: WorkhubDocumentPageOrientation
+  marginTopMm?: number
+  marginRightMm?: number
+  marginBottomMm?: number
+  marginLeftMm?: number
+  firstPage?: WorkhubDocumentMasterPageVariant
+  laterPages?: WorkhubDocumentMasterPageVariant
+
+  // Cover page
+  showCoverPage?: boolean
+  /** Which date to display on the cover: 'none' | 'creation' | 'print' */
+  coverDateMode?: 'none' | 'creation' | 'print'
+  /** Whether to show the document name on the cover page. Default true. */
+  coverShowDocumentName?: boolean
+  /** Whether to show the active tab name on the cover page. Default true. */
+  coverShowTabName?: boolean
+  /** Visual theme for the cover page. One of the COVER_THEMES ids. Default 'warm'. */
+  coverTheme?: string
+  /** Custom tag line shown above the title on the cover page. */
+  coverTagLine?: string
+
+  // Watermark
+  showWatermark?: boolean
+  /** URL of the image to use as a per-page watermark (typically outline logo). */
+  watermarkLogoUrl?: string
+  /** Scale of the center watermark as a percentage 10–100. Default 50. */
+  watermarkScale?: number
+  /** Opacity of the center watermark as a percentage 1–30. Default 8. */
+  watermarkOpacity?: number
+  /** Layout mode: 'center' = single centered mark, 'triple' = center + top-right + bottom-left corners. */
+  watermarkLayout?: 'center' | 'triple'
+  /** Opacity of the corner watermarks as a percentage 1–20. Default 5. */
+  watermarkCornerOpacity?: number
+  /** Size of the corner watermarks as a percentage of page width 10–80. Default 30. */
+  watermarkCornerScale?: number
+
+  // Legacy flat fields kept for backward compatibility with Phase 1 documents.
+  headerHtml?: string
+  footerHtml?: string
+  showHeader?: boolean
+  showFooter?: boolean
+  showPageNumbers?: boolean
+}
+
 export interface WorkhubDocument {
   id: string
   workspaceId: string
   projectId?: string | null
   type?: 'document' | 'note'
+  icon?: string
   title: string
   body: string
   tabs?: WorkhubDocumentTab[]
+  masterPage?: WorkhubDocumentMasterPage
   checklist?: WorkhubDocumentChecklistItem[]
   attachments?: string[]
   links?: string[]
@@ -677,8 +748,10 @@ export async function createWorkhubDocument(input: {
   workspaceId: string
   projectId?: string | null
   type?: 'document' | 'note'
+  icon?: string
   title: string
   body: string
+  masterPage?: WorkhubDocumentMasterPage
   visibility: WorkhubVisibility
   memberUids: string[]
   notifyMode?: 'all' | 'selected' | 'none'
@@ -689,8 +762,10 @@ export async function createWorkhubDocument(input: {
     workspaceId: input.workspaceId,
     projectId: input.projectId || null,
     type: input.type || 'document',
+    icon: (input.icon || '').trim() || null,
     title: input.title,
     body: input.body,
+    masterPage: input.masterPage || null,
     isLocked: false,
     lockedBy: null,
     lockedAt: null,
@@ -722,7 +797,7 @@ export async function getWorkhubDocumentById(documentId: string): Promise<Workhu
 
 export async function updateWorkhubDocument(
   documentId: string,
-  patch: Partial<Pick<WorkhubDocument, 'projectId' | 'title' | 'body' | 'tabs' | 'checklist' | 'attachments' | 'links' | 'editedBy' | 'isLocked' | 'lockedBy' | 'lockedAt' | 'shareToken' | 'shareEnabled' | 'visibility' | 'memberUids' | 'editMemberUids' | 'notifyMode' | 'notifyUids'>>,
+  patch: Partial<Pick<WorkhubDocument, 'projectId' | 'icon' | 'title' | 'body' | 'tabs' | 'masterPage' | 'checklist' | 'attachments' | 'links' | 'editedBy' | 'isLocked' | 'lockedBy' | 'lockedAt' | 'shareToken' | 'shareEnabled' | 'visibility' | 'memberUids' | 'editMemberUids' | 'notifyMode' | 'notifyUids'>>,
 ) {
   const payload: Record<string, unknown> = {
     ...patch,
@@ -730,6 +805,9 @@ export async function updateWorkhubDocument(
   }
   if (Object.prototype.hasOwnProperty.call(patch, 'projectId')) {
     payload.projectId = patch.projectId || null
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'icon')) {
+    payload.icon = (patch.icon || '').trim() || null
   }
   await updateDoc(doc(db, 'workhub_documents', documentId), payload)
 }

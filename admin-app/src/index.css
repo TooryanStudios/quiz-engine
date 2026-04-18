@@ -116,6 +116,11 @@ textarea::placeholder {
   height: 7px;
 }
 
+.workhub-doc-ai-tools-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
 *::-webkit-scrollbar-track {
   background: transparent;
 }
@@ -131,6 +136,26 @@ textarea::placeholder {
   background: var(--border-strong);
   background-clip: padding-box;
 }
+.workhub-doc-ai-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.workhub-doc-ai-language-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 260px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid #dbe5f4;
+  border-radius: 10px;
+  background: #fbfdff;
+  color: #4e678a;
+  cursor: pointer;
+}
 
 h2 {
   margin: 0 0 10px;
@@ -138,6 +163,21 @@ h2 {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+@keyframes workhub-doc-ai-pulse {
+  0% {
+    transform: scale(0.75);
+    opacity: 0.9;
+  }
+  70% {
+    transform: scale(1.45);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.45);
+    opacity: 0;
+  }
 }
 
 p {
@@ -149,6 +189,693 @@ p {
   min-height: 100vh;
   background: #f7f9fd;
   display: flex;
+}
+.workhub-doc-ai-panel {
+  margin-top: 8px;
+  border: 1px solid #d7e2f3;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #fbfdff 0%, #f6f9fe 100%);
+  overflow: hidden;
+}
+.workhub-doc-ai-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+}
+.workhub-doc-ai-toggle {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #244165;
+  cursor: pointer;
+  text-align: left;
+}
+.workhub-doc-ai-toggle-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+.workhub-doc-ai-column-head-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.workhub-doc-ai-head-action {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #cbd9ec;
+  border-radius: 999px;
+  background: #f7faff;
+  color: #35517e;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+}
+.workhub-doc-ai-head-action svg {
+  display: block;
+}
+.workhub-doc-ai-head-action:hover {
+  background: #f5f8ff;
+  color: #34527e;
+}
+.workhub-doc-ai-toggle-copy strong {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #23446d;
+}
+.workhub-doc-ai-toggle-copy span {
+  font-size: 0.72rem;
+  color: #6e84a7;
+}
+.workhub-doc-ai-toggle-state {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #edf3ff;
+  color: #2c5b9f;
+  font-size: 1rem;
+  font-weight: 700;
+}
+.workhub-doc-ai-resize-handle {
+  height: 6px;
+  cursor: ns-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border-bottom: 1px solid #e2e9f6;
+  user-select: none;
+  touch-action: none;
+  transition: background 0.15s;
+}
+.workhub-doc-ai-resize-handle::before {
+  content: '';
+  width: 28px;
+  height: 2px;
+  border-radius: 999px;
+  background: #d3deef;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.7);
+  transition: background 0.15s;
+}
+.workhub-doc-ai-resize-handle:hover {
+  background: rgba(79, 116, 189, 0.06);
+}
+.workhub-doc-ai-resize-handle:hover::before,
+.workhub-doc-ai-resize-handle:active::before {
+  background: #7ea6ea;
+}
+.workhub-doc-ai-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 6px;
+  padding: 0 8px 8px;
+  min-height: 0;
+}
+.workhub-doc-ai-column {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-top: 6px;
+}
+.workhub-doc-ai-column-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.workhub-doc-ai-column-head h3 {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #486281;
+}
+.workhub-doc-ai-column-head span {
+  font-size: 0.7rem;
+  color: #7b8faa;
+}
+.workhub-doc-ai-mode-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px;
+  border: 1px solid #dbe5f4;
+  border-radius: 999px;
+  background: #f7faff;
+  align-self: flex-start;
+}
+.workhub-doc-ai-mode-btn {
+  min-height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #5f7698;
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+.workhub-doc-ai-mode-btn.is-active {
+  background: #fff;
+  color: #234c89;
+  box-shadow: 0 1px 3px rgba(56, 88, 138, 0.12);
+}
+.workhub-doc-ai-mode-note {
+  margin: 0;
+  font-size: 0.69rem;
+  line-height: 1.45;
+  color: #6c82a3;
+}
+.workhub-doc-ai-tools-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.workhub-doc-ai-tools-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid #dbe5f4;
+  border-radius: 8px;
+  background: #f9fbff;
+  color: #37547f;
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 800;
+  cursor: pointer;
+  text-align: left;
+}
+.workhub-doc-ai-tools-toggle:hover {
+  background: #f3f7ff;
+  border-color: #c8d7ee;
+}
+.workhub-doc-ai-tools-toggle-state {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #edf3ff;
+  color: #2b5a9c;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+.workhub-doc-ai-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.workhub-doc-ai-quick-action {
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid #d5e0f1;
+  border-radius: 999px;
+  background: #fff;
+  color: #31517f;
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, opacity 0.16s ease;
+}
+.workhub-doc-ai-quick-action:hover:not(:disabled) {
+  background: #f4f8ff;
+  border-color: #b8cbeb;
+}
+.workhub-doc-ai-quick-action:disabled {
+  opacity: 0.56;
+  cursor: not-allowed;
+}
+.workhub-doc-ai-scope-note {
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #6780a2;
+}
+.workhub-doc-ai-destination-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid #e0e8f6;
+  border-radius: 8px;
+  background: #fbfdff;
+  font-size: 0.69rem;
+  color: #5b7395;
+}
+.workhub-doc-ai-destination-options {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.workhub-doc-ai-destination-option {
+  min-height: 22px;
+  padding: 0 8px;
+  border: 1px solid #d6e1f1;
+  border-radius: 999px;
+  background: #fff;
+  color: #35517e;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.workhub-doc-ai-destination-option.is-active {
+  background: #edf4ff;
+  border-color: #92b1e9;
+  color: #234c89;
+}
+.workhub-doc-ai-textarea {
+  width: 100%;
+  min-height: 64px;
+  flex: 1 1 auto;
+  resize: vertical;
+  border: 1px solid #cfdbee;
+  border-radius: 10px;
+  background: #fff;
+  color: #213b60;
+  font: inherit;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  padding: 7px 9px;
+}
+.workhub-doc-ai-textarea:disabled {
+  background: #f4f7fb;
+  color: #8a9ab2;
+}
+.workhub-doc-ai-live-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px 9px;
+  border: 1px solid #dbe5f4;
+  border-radius: 10px;
+  background: #f8fbff;
+  color: #35517e;
+}
+.workhub-doc-ai-live-transcript strong {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #5e7394;
+}
+.workhub-doc-ai-live-transcript span {
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: #223b60;
+  white-space: pre-wrap;
+}
+.workhub-doc-ai-language-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid #dbe5f4;
+  border-radius: 10px;
+  background: #fbfdff;
+  color: #4e678a;
+  cursor: pointer;
+}
+.workhub-doc-ai-language-option input {
+  margin: 2px 0 0;
+}
+.workhub-doc-ai-language-option > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.workhub-doc-ai-language-option strong {
+  font-size: 0.72rem;
+  color: #244165;
+}
+.workhub-doc-ai-language-option span span {
+  font-size: 0.68rem;
+  line-height: 1.4;
+  color: #7387a4;
+}
+.workhub-doc-ai-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.workhub-doc-ai-attach-btn {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px dashed #99b3df;
+  border-radius: 999px;
+  background: #f7faff;
+  color: #31598f;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.workhub-doc-ai-attach-btn.is-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.workhub-doc-ai-attachment-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.workhub-doc-ai-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #39597f;
+  font-size: 0.72rem;
+}
+.workhub-doc-ai-attachment-chip button {
+  border: 0;
+  background: transparent;
+  color: #7c91af;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0;
+  line-height: 1;
+}
+.workhub-doc-ai-note {
+  margin: 0;
+  font-size: 0.69rem;
+  line-height: 1.45;
+  color: #7185a2;
+}
+.workhub-doc-ai-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding-top: 6px;
+}
+.workhub-doc-ai-btn {
+  min-height: 36px;
+  border-radius: 10px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, opacity 0.16s ease;
+}
+.workhub-doc-ai-btn:disabled {
+  opacity: 0.56;
+  cursor: not-allowed;
+}
+.workhub-doc-ai-btn-primary {
+  background: linear-gradient(135deg, #7f8cff 0%, #6b79ff 100%);
+  border-color: #7f8cff;
+  color: #fff;
+}
+.workhub-doc-ai-btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #7382ff 0%, #5f6eff 100%);
+}
+.workhub-doc-ai-btn-secondary {
+  background: #fff;
+  border-color: #d5e0f1;
+  color: #35517e;
+}
+.workhub-doc-ai-btn-secondary:hover:not(:disabled) {
+  background: #f7faff;
+}
+.workhub-doc-ai-send-btn {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.workhub-doc-ai-send-btn svg,
+.workhub-doc-ai-voice-btn svg {
+  display: block;
+}
+.workhub-doc-ai-voice-btn {
+  position: relative;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.workhub-doc-ai-voice-btn-top {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
+}
+.workhub-doc-ai-voice-btn.is-listening {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #fff;
+}
+.workhub-doc-ai-voice-pulse {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #ef4444;
+  opacity: 0;
+  pointer-events: none;
+}
+.workhub-doc-ai-voice-btn-top .workhub-doc-ai-voice-pulse {
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+}
+.workhub-doc-ai-voice-btn.is-listening .workhub-doc-ai-voice-pulse {
+  opacity: 1;
+  animation: workhub-doc-ai-pulse 1.35s ease-out infinite;
+}
+.workhub-doc-ai-response-pane {
+  min-height: 64px;
+  flex: 1 1 auto;
+  overflow: auto;
+  border: 1px solid #d8e2f1;
+  border-radius: 10px;
+  background: #fff;
+  padding: 7px 9px;
+}
+.workhub-doc-ai-empty-state {
+  min-height: 108px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  color: #788ba4;
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+.workhub-doc-ai-entry + .workhub-doc-ai-entry {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #ebf0f7;
+}
+.workhub-doc-ai-entry-label {
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #627992;
+}
+.workhub-doc-ai-entry-label.is-response {
+  margin-top: 8px;
+}
+.workhub-doc-ai-entry-prompt {
+  margin: 4px 0 0;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: #203b60;
+  white-space: pre-wrap;
+}
+.workhub-doc-ai-selection-preview {
+  margin-top: 8px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  background: #f6f9fd;
+  border: 1px solid #e6edf7;
+}
+.workhub-doc-ai-selection-preview strong {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #6e819a;
+}
+.workhub-doc-ai-selection-preview p {
+  margin: 6px 0 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: #425a7b;
+  white-space: pre-wrap;
+}
+.workhub-doc-ai-entry-response {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: inherit;
+  font-size: 0.76rem;
+  line-height: 1.52;
+  color: #213a5e;
+}
+.workhub-doc-ai-entry-response-preview {
+  margin: 4px 0 0;
+  font-size: 0.76rem;
+  line-height: 1.52;
+  color: #213a5e;
+}
+.workhub-doc-ai-entry-response-preview p {
+  margin: 0 0 0.7em;
+  color: inherit;
+}
+.workhub-doc-ai-entry-response-preview ul,
+.workhub-doc-ai-entry-response-preview ol {
+  margin: 0;
+  padding-inline-start: 1.4em;
+}
+.workhub-doc-ai-entry-response-preview li + li {
+  margin-top: 0.38em;
+}
+.workhub-doc-ai-entry-response-preview ul.tox-checklist {
+  padding-inline-start: 0;
+}
+.workhub-doc-ai-entry-response-preview ul.tox-checklist > li {
+  list-style: none;
+  position: relative;
+  padding-inline-start: 1.55em;
+}
+.workhub-doc-ai-entry-response-preview ul.tox-checklist > li::before {
+  content: '☐';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+  color: #5c74a0;
+}
+.workhub-doc-ai-entry-response-preview ul.tox-checklist > li.tox-checklist--checked::before {
+  content: '☑';
+}
+.workhub-doc-ai-entry-response-preview table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 2px;
+}
+.workhub-doc-ai-entry-response-preview th,
+.workhub-doc-ai-entry-response-preview td {
+  border: 1px solid #d9e3f2;
+  padding: 8px 10px;
+  text-align: start;
+  vertical-align: top;
+}
+.workhub-doc-ai-entry-response-preview th {
+  background: #f4f8ff;
+  font-weight: 800;
+}
+.workhub-doc-ai-entry-status {
+  margin-top: 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #6f839f;
+}
+.workhub-doc-ai-entry-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+.workhub-doc-ai-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.workhub-doc-ai-error {
+  padding: 9px 10px;
+  border-radius: 10px;
+  background: #fff4f3;
+  border: 1px solid #f2c8c3;
+  color: #9b4037;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+.workhub-doc-ai-footer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+@media (max-width: 900px) {
+  .workhub-doc-ai-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .workhub-doc-ai-actions {
+    padding-top: 0;
+    justify-content: flex-start;
+  }
+  .workhub-doc-ai-send-btn,
+  .workhub-doc-ai-voice-btn {
+    width: 40px;
+  }
+  .workhub-doc-ai-response-pane {
+    max-height: none;
+  }
+}
+.shared-doc-shell {
   flex-direction: column;
   font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
   font-size: 14px;

@@ -4,6 +4,65 @@ import type { WorkhubMember, WorkhubTask, WorkhubTaskChecklistItem, WorkhubTaskP
 import { PRIORITY_LABELS, getPriorityIcon } from '../constants'
 import { formatDueDateShort, formatTaskDueDisplay, getInitials, normalizeTaskTitle } from '../taskUtils'
 
+function parseTaskDateValue(value?: string, endOfDay = false): number | null {
+  const normalized = (value || '').trim()
+  if (!normalized) return null
+  const parsed = Date.parse(`${normalized}T${endOfDay ? '23:59:59' : '00:00:00'}`)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function getTaskRemainingTimeMeta(startDate?: string, dueDate?: string) {
+  const dueMs = parseTaskDateValue(dueDate, true)
+  if (!dueMs) {
+    return {
+      percent: 0,
+      centerValue: '--',
+      centerCaption: 'open',
+      textLabel: 'No deadline',
+      isOverdue: false,
+      hasDueDate: false,
+    }
+  }
+
+  const now = Date.now()
+  const remainingMs = dueMs - now
+  if (remainingMs <= 0) {
+    return {
+      percent: 0,
+      centerValue: '0%',
+      centerCaption: 'left',
+      textLabel: 'Overdue',
+      isOverdue: true,
+      hasDueDate: true,
+    }
+  }
+
+  const startMs = parseTaskDateValue(startDate, false)
+  const totalMs = startMs && startMs < dueMs
+    ? Math.max(dueMs - startMs, 1)
+    : 14 * 24 * 60 * 60 * 1000
+  const percent = Math.max(0, Math.min(100, Math.round((remainingMs / totalMs) * 100)))
+
+  const oneHour = 60 * 60 * 1000
+  const oneDay = 24 * oneHour
+  const totalHours = Math.ceil(remainingMs / oneHour)
+  const totalDays = Math.ceil(remainingMs / oneDay)
+  const centerValue = remainingMs < oneDay
+    ? `${Math.max(1, totalHours)}h`
+    : totalDays < 31
+      ? `${Math.max(1, totalDays)}d`
+      : `${Math.max(1, Math.ceil(totalDays / 30))}m`
+
+  return {
+    percent,
+    centerValue,
+    centerCaption: 'left',
+    textLabel: formatTaskDueDisplay(dueDate || '', 'remaining'),
+    isOverdue: false,
+    hasDueDate: true,
+  }
+}
+
 interface TaskRowMeta {
   checklist: WorkhubTaskChecklistItem[]
   checklistDoneCount: number
@@ -55,6 +114,7 @@ interface TaskRowCallbacks {
 interface TaskRowProps {
   task: WorkhubTask
   dueDisplayMode: 'remaining' | 'date'
+  displayMode?: 'list' | 'cards' | 'grid' | 'timeline'
   index: number
   isChecked: boolean
   isSelected: boolean
@@ -82,7 +142,7 @@ interface TaskRowProps {
 }
 
 const TaskRow = memo(function TaskRow({
-  task, dueDisplayMode, index, isChecked, isSelected, isDropTarget, isDragSource,
+  task, dueDisplayMode, displayMode = 'list', index, isChecked, isSelected, isDropTarget, isDragSource,
   statusMenuOpen, priorityMenuOpen, moreMenuOpen, assigneeMenuOpen,
   editingTitle, editingTitleText, checklistExpanded, checklistDraft,
   editingChecklistItemId, editingChecklistScope, editingChecklistText,
@@ -103,6 +163,39 @@ const TaskRow = memo(function TaskRow({
   const checklistProgressPercent = checklistTotal > 0
     ? Math.max(8, Math.round((checklistDone / checklistTotal) * 100))
     : 0
+  const isCardDisplay = displayMode === 'cards'
+  const remainingTimeMeta = getTaskRemainingTimeMeta(task.startDate, task.dueDate)
+  const dueDateLabel = task.dueDate ? formatDueDateShort(task.dueDate) : 'No deadline'
+  const ringRadius = 28
+  const ringCircumference = 2 * Math.PI * ringRadius
+  const ringOffset = ringCircumference - ((remainingTimeMeta.percent / 100) * ringCircumference)
+
+  const assigneeMenu = assigneeMenuOpen && createPortal(
+    <div
+      className="workhub-task-assignee-menu"
+      style={assigneeMenuStyle}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <button
+        type="button"
+        className={!task.assigneeUid ? 'is-active' : ''}
+        onClick={() => callbacks.onAssigneeSelect(task, '')}
+      >
+        Unassigned
+      </button>
+      {assignableMembers.map((member) => (
+        <button
+          key={member.uid}
+          type="button"
+          className={task.assigneeUid === member.uid ? 'is-active' : ''}
+          onClick={() => callbacks.onAssigneeSelect(task, member.uid)}
+        >
+          {member.displayName || member.email}
+        </button>
+      ))}
+    </div>,
+    document.body,
+  )
 
   useEffect(() => {
     if (!assigneeMenuOpen) return
@@ -135,237 +228,369 @@ const TaskRow = memo(function TaskRow({
           callbacks.onDoubleClickRow(task.id)
         }}
       >
-        <div className="workhub-task-row-grid">
-          <div className="workhub-task-col details">
-            <button
-              type="button"
-              className="workhub-task-drag-handle"
-              draggable
-              onClick={(event) => event.stopPropagation()}
-              onDragStart={(event) => { event.stopPropagation(); callbacks.onDragStart(event, task.id, task.status) }}
-              onDragEnd={() => callbacks.onDragEnd()}
-              aria-label="Drag to reorder"
-            >
-              ⋮⋮
-            </button>
-            <input
-              type="checkbox"
-              checked={isChecked}
-              onChange={(event) => callbacks.onCheckboxChange(task.id, event.target.checked)}
-              onClick={(event) => event.stopPropagation()}
-            />
-            <div
-              className="workhub-task-row-title"
-              onDoubleClick={(event) => {
-                event.stopPropagation()
-                if (!editingTitle) callbacks.onTitleEditStart(task)
-              }}
-            >
-              {editingTitle ? (
+        {isCardDisplay ? (
+          <div className="workhub-task-card-layout">
+            <div className="workhub-task-card-main-col">
+              <div className="workhub-task-col details workhub-task-card-details">
                 <input
-                  type="text"
-                  className="workhub-task-title-edit-input"
-                  value={editingTitleText}
-                  onChange={(event) => callbacks.onTitleEditTextChange(event.target.value)}
+                  type="checkbox"
+                  checked={isChecked}
+                  onChange={(event) => callbacks.onCheckboxChange(task.id, event.target.checked)}
                   onClick={(event) => event.stopPropagation()}
-                  onDoubleClick={(event) => event.stopPropagation()}
-                  onKeyDown={(event) => {
-                    event.stopPropagation()
-                    if (event.key === 'Enter') { event.preventDefault(); callbacks.onTitleEditSave(task) }
-                    else if (event.key === 'Escape') { event.preventDefault(); callbacks.onTitleEditCancel() }
-                  }}
-                  onBlur={() => callbacks.onTitleEditSave(task)}
-                  autoFocus
                 />
-              ) : (
-                <strong
-                  onDoubleClick={(event) => { event.stopPropagation(); callbacks.onTitleEditStart(task) }}
+                <div
+                  className="workhub-task-row-title workhub-task-card-title"
+                  onDoubleClick={(event) => {
+                    event.stopPropagation()
+                    if (!editingTitle) callbacks.onTitleEditStart(task)
+                  }}
                 >
-                  {normalizeTaskTitle(task.title || '') || 'Untitled task'}
-                </strong>
-              )}
-            </div>
-          </div>
-          {isFinanceLayout && (
-            <div className="workhub-task-col finance-value" onClick={(e) => e.stopPropagation()}>
-              <span className="workhub-finance-value-currency">{task.valueCurrency || 'OMR'}</span>
-              <input
-                key={task.valueAmount ?? 'empty'}
-                type="number"
-                min={0}
-                step={0.01}
-                className="workhub-finance-value-input"
-                defaultValue={task.valueAmount ?? ''}
-                placeholder="0.00"
-                onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => {
-                  e.stopPropagation()
-                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-                  if (e.key === 'Escape') (e.target as HTMLInputElement).blur()
-                }}
-                onBlur={(e) => {
-                  const raw = e.target.value.trim()
-                  const parsed = raw === '' ? null : parseFloat(raw)
-                  if (callbacks.onTaskValueChange) {
-                    callbacks.onTaskValueChange(task, parsed !== null && !isNaN(parsed) ? parsed : null)
-                  }
-                }}
-              />
-            </div>
-          )}
-          <div className="workhub-task-col assignee">
-            <div className="workhub-task-people">
-              {showCreatorSeparately && (
-                <span className="workhub-assignee-badge workhub-task-creator-badge">
-                  {taskCreator!.photoURL
-                    ? <img src={taskCreator!.photoURL} alt={creatorLabel} />
-                    : <span className="workhub-assignee-initials">{getInitials(creatorLabel)}</span>}
-                </span>
-              )}
-              <button
-                ref={assigneeBtnRef}
-                type="button"
-                className={`workhub-assignee-badge workhub-task-assignee-btn${assigneeIsCreator ? ' is-creator' : ''}`}
-                aria-label={`Assignee: ${assigneeLabel}`}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  callbacks.onOpenAssigneeMenu(task.id)
-                }}
-              >
-                {taskAssignee?.photoURL
-                  ? <img src={taskAssignee.photoURL} alt={assigneeLabel} />
-                  : <span className="workhub-assignee-fallback">👤</span>}
-              </button>
-            </div>
-            {assigneeMenuOpen && createPortal(
-              <div
-                className="workhub-task-assignee-menu"
-                style={assigneeMenuStyle}
-                onClick={(event) => event.stopPropagation()}
-              >
+                  {editingTitle ? (
+                    <input
+                      type="text"
+                      className="workhub-task-title-edit-input"
+                      value={editingTitleText}
+                      onChange={(event) => callbacks.onTitleEditTextChange(event.target.value)}
+                      onClick={(event) => event.stopPropagation()}
+                      onDoubleClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => {
+                        event.stopPropagation()
+                        if (event.key === 'Enter') { event.preventDefault(); callbacks.onTitleEditSave(task) }
+                        else if (event.key === 'Escape') { event.preventDefault(); callbacks.onTitleEditCancel() }
+                      }}
+                      onBlur={() => callbacks.onTitleEditSave(task)}
+                      autoFocus
+                    />
+                  ) : (
+                    <strong onDoubleClick={(event) => { event.stopPropagation(); callbacks.onTitleEditStart(task) }}>
+                      {normalizeTaskTitle(task.title || '') || 'Untitled task'}
+                    </strong>
+                  )}
+                </div>
+              </div>
+
+              <div className="workhub-task-card-meta-grid">
+                <button
+                  ref={assigneeBtnRef}
+                  type="button"
+                  className="workhub-task-card-meta-item is-assignee"
+                  aria-label={`Assignee: ${assigneeLabel}`}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    callbacks.onOpenAssigneeMenu(task.id)
+                  }}
+                >
+                  <span className="workhub-task-card-meta-icon" aria-hidden="true">
+                    {taskAssignee?.photoURL
+                      ? <img src={taskAssignee.photoURL} alt={assigneeLabel} className="workhub-task-card-meta-avatar" />
+                      : <span className="workhub-task-card-meta-avatar-fallback">👤</span>}
+                  </span>
+                  <span className="workhub-task-card-meta-copy">{assigneeLabel}</span>
+                </button>
+
                 <button
                   type="button"
-                  className={!task.assigneeUid ? 'is-active' : ''}
-                  onClick={() => callbacks.onAssigneeSelect(task, '')}
+                  className="workhub-task-card-meta-item is-deadline"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    const container = event.currentTarget.closest('.workhub-task-card-meta-item')
+                    const input = container?.querySelector('.workhub-task-due-input') as HTMLInputElement | null
+                    if (!input) return
+                    const pickerInput = input as HTMLInputElement & { showPicker?: () => void }
+                    pickerInput.showPicker?.()
+                    input.focus()
+                  }}
+                  title={task.dueDate ? `Due date: ${formatDueDateShort(task.dueDate)}` : 'Set due date'}
                 >
-                  Unassigned
+                  <span className="workhub-task-card-meta-icon" aria-hidden="true">📅</span>
+                  <span className="workhub-task-card-meta-copy">{dueDateLabel}</span>
+                  <input
+                    type="date"
+                    className="workhub-task-due-input"
+                    value={task.dueDate || ''}
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={(event) => callbacks.onDueDateChange(task, event.target.value)}
+                    aria-label={task.dueDate ? `Due date: ${formatDueDateShort(task.dueDate)}` : 'Set due date'}
+                  />
                 </button>
-                {assignableMembers.map((member) => (
-                  <button
-                    key={member.uid}
-                    type="button"
-                    className={task.assigneeUid === member.uid ? 'is-active' : ''}
-                    onClick={() => callbacks.onAssigneeSelect(task, member.uid)}
+
+                <span className="workhub-task-card-meta-item is-time" title={remainingTimeMeta.textLabel}>
+                  <span className="workhub-task-card-meta-icon" aria-hidden="true">⏱</span>
+                  <span className="workhub-task-card-meta-copy">{remainingTimeMeta.textLabel}</span>
+                </span>
+
+                <span className="workhub-task-card-meta-item is-priority" aria-label={`Priority: ${PRIORITY_LABELS[task.priority]}`}>
+                  <span className="workhub-task-card-meta-icon" aria-hidden="true">{getPriorityIcon(task.priority)}</span>
+                  <span className="workhub-task-card-meta-copy">{PRIORITY_LABELS[task.priority]}</span>
+                </span>
+              </div>
+
+              <div className="workhub-task-card-supporting">
+                {unreadCommentCount > 0 && (
+                  <span
+                    className="workhub-task-comment-unread-chip"
+                    title={`${unreadCommentCount} unread comment${unreadCommentCount === 1 ? '' : 's'}`}
+                    aria-label={`${unreadCommentCount} unread comment${unreadCommentCount === 1 ? '' : 's'}`}
                   >
-                    {member.displayName || member.email}
-                  </button>
-                ))}
-              </div>,
-              document.body
-            )}
+                    💬 {unreadCommentCount}
+                  </span>
+                )}
+                {totalAttachmentCount > 0 && (
+                  <span
+                    className="workhub-task-attachment-chip"
+                    title={`${totalAttachmentCount} attachment${totalAttachmentCount === 1 ? '' : 's'}`}
+                    aria-label={`${totalAttachmentCount} attachment${totalAttachmentCount === 1 ? '' : 's'}`}
+                  >
+                    📎 {totalAttachmentCount}
+                  </span>
+                )}
+                {checklistTotal > 0 && (
+                  <span className="workhub-task-checklist-progress" title={`${checklistDone} of ${checklistTotal} checklist items completed`}>
+                    <span className="workhub-task-checklist-progress-track" aria-hidden="true">
+                      <span className="workhub-task-checklist-progress-fill" style={{ width: `${checklistProgressPercent}%` }} />
+                    </span>
+                    <span className="workhub-task-checklist-progress-label">{checklistDone}/{checklistTotal}</span>
+                  </span>
+                )}
+                <button
+                  className="workhub-checklist-toggle"
+                  onClick={(event) => { event.stopPropagation(); callbacks.onToggleChecklist(task.id) }}
+                  aria-label="Toggle checklist"
+                >
+                  {checklistTotal}
+                </button>
+              </div>
+            </div>
+
+            <div className="workhub-task-card-time-col" aria-label={`Remaining time ${remainingTimeMeta.textLabel}`}>
+              <div className={`workhub-task-time-ring${remainingTimeMeta.isOverdue ? ' is-overdue' : ''}${!remainingTimeMeta.hasDueDate ? ' is-empty' : ''}`}>
+                <svg viewBox="0 0 72 72" aria-hidden="true">
+                  <circle className="workhub-task-time-ring-track" cx="36" cy="36" r={ringRadius} />
+                  <circle
+                    className="workhub-task-time-ring-progress"
+                    cx="36"
+                    cy="36"
+                    r={ringRadius}
+                    style={{ strokeDasharray: `${ringCircumference} ${ringCircumference}`, strokeDashoffset: ringOffset }}
+                  />
+                </svg>
+                <div className="workhub-task-time-ring-center">
+                  <strong>{remainingTimeMeta.centerValue}</strong>
+                  <span>{remainingTimeMeta.centerCaption}</span>
+                </div>
+              </div>
+            </div>
+
+            {assigneeMenu}
           </div>
-          <div className="workhub-task-col due">
-            <div className="workhub-task-due-inline">
+        ) : (
+          <div className="workhub-task-row-grid">
+            <div className="workhub-task-col details">
               <button
                 type="button"
-                className="workhub-task-due-picker-trigger"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  const container = event.currentTarget.closest('.workhub-task-due-inline')
-                  const input = container?.querySelector('.workhub-task-due-input') as HTMLInputElement | null
-                  if (!input) return
-                  const pickerInput = input as HTMLInputElement & { showPicker?: () => void }
-                  pickerInput.showPicker?.()
-                  input.focus()
-                }}
-                aria-label="Open due date picker"
+                className="workhub-task-drag-handle"
+                draggable
+                onClick={(event) => event.stopPropagation()}
+                onDragStart={(event) => { event.stopPropagation(); callbacks.onDragStart(event, task.id, task.status) }}
+                onDragEnd={() => callbacks.onDragEnd()}
+                aria-label="Drag to reorder"
               >
-                📅
+                ⋮⋮
               </button>
-              <button
-                type="button"
-                className={`workhub-task-due-label${task.dueDate ? ' is-set' : ''}`}
-                onClick={(event) => {
+              <input
+                type="checkbox"
+                checked={isChecked}
+                onChange={(event) => callbacks.onCheckboxChange(task.id, event.target.checked)}
+                onClick={(event) => event.stopPropagation()}
+              />
+              <div
+                className="workhub-task-row-title"
+                onDoubleClick={(event) => {
                   event.stopPropagation()
-                  const container = event.currentTarget.closest('.workhub-task-due-inline')
-                  const input = container?.querySelector('.workhub-task-due-input') as HTMLInputElement | null
-                  if (!input) return
-                  const pickerInput = input as HTMLInputElement & { showPicker?: () => void }
-                  pickerInput.showPicker?.()
-                  input.focus()
+                  if (!editingTitle) callbacks.onTitleEditStart(task)
                 }}
-                title={task.dueDate ? `Due date: ${formatDueDateShort(task.dueDate)}` : 'Set due date'}
-                aria-label={task.dueDate ? `Due date ${dueLabel}` : 'Set due date'}
               >
-                {dueLabel}
-              </button>
-              {task.startDate && (
-                <span className="workhub-task-start-inline" title={`Start date: ${formatDueDateShort(task.startDate)}`}>
-                  ▶ {formatDueDateShort(task.startDate)}
+                {editingTitle ? (
+                  <input
+                    type="text"
+                    className="workhub-task-title-edit-input"
+                    value={editingTitleText}
+                    onChange={(event) => callbacks.onTitleEditTextChange(event.target.value)}
+                    onClick={(event) => event.stopPropagation()}
+                    onDoubleClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => {
+                      event.stopPropagation()
+                      if (event.key === 'Enter') { event.preventDefault(); callbacks.onTitleEditSave(task) }
+                      else if (event.key === 'Escape') { event.preventDefault(); callbacks.onTitleEditCancel() }
+                    }}
+                    onBlur={() => callbacks.onTitleEditSave(task)}
+                    autoFocus
+                  />
+                ) : (
+                  <strong
+                    onDoubleClick={(event) => { event.stopPropagation(); callbacks.onTitleEditStart(task) }}
+                  >
+                    {normalizeTaskTitle(task.title || '') || 'Untitled task'}
+                  </strong>
+                )}
+              </div>
+            </div>
+            {isFinanceLayout && (
+              <div className="workhub-task-col finance-value" onClick={(e) => e.stopPropagation()}>
+                <span className="workhub-finance-value-currency">{task.valueCurrency || 'OMR'}</span>
+                <input
+                  key={task.valueAmount ?? 'empty'}
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  className="workhub-finance-value-input"
+                  defaultValue={task.valueAmount ?? ''}
+                  placeholder="0.00"
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    e.stopPropagation()
+                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                    if (e.key === 'Escape') (e.target as HTMLInputElement).blur()
+                  }}
+                  onBlur={(e) => {
+                    const raw = e.target.value.trim()
+                    const parsed = raw === '' ? null : parseFloat(raw)
+                    if (callbacks.onTaskValueChange) {
+                      callbacks.onTaskValueChange(task, parsed !== null && !isNaN(parsed) ? parsed : null)
+                    }
+                  }}
+                />
+              </div>
+            )}
+            <div className="workhub-task-col assignee">
+              <div className="workhub-task-people">
+                {showCreatorSeparately && (
+                  <span className="workhub-assignee-badge workhub-task-creator-badge">
+                    {taskCreator!.photoURL
+                      ? <img src={taskCreator!.photoURL} alt={creatorLabel} />
+                      : <span className="workhub-assignee-initials">{getInitials(creatorLabel)}</span>}
+                  </span>
+                )}
+                <button
+                  ref={assigneeBtnRef}
+                  type="button"
+                  className={`workhub-assignee-badge workhub-task-assignee-btn${assigneeIsCreator ? ' is-creator' : ''}`}
+                  aria-label={`Assignee: ${assigneeLabel}`}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    callbacks.onOpenAssigneeMenu(task.id)
+                  }}
+                >
+                  {taskAssignee?.photoURL
+                    ? <img src={taskAssignee.photoURL} alt={assigneeLabel} />
+                    : <span className="workhub-assignee-fallback">👤</span>}
+                </button>
+              </div>
+              {assigneeMenu}
+            </div>
+            <div className="workhub-task-col due">
+              <div className="workhub-task-due-inline">
+                <button
+                  type="button"
+                  className="workhub-task-due-picker-trigger"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    const container = event.currentTarget.closest('.workhub-task-due-inline')
+                    const input = container?.querySelector('.workhub-task-due-input') as HTMLInputElement | null
+                    if (!input) return
+                    const pickerInput = input as HTMLInputElement & { showPicker?: () => void }
+                    pickerInput.showPicker?.()
+                    input.focus()
+                  }}
+                  aria-label="Open due date picker"
+                >
+                  📅
+                </button>
+                <button
+                  type="button"
+                  className={`workhub-task-due-label${task.dueDate ? ' is-set' : ''}`}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    const container = event.currentTarget.closest('.workhub-task-due-inline')
+                    const input = container?.querySelector('.workhub-task-due-input') as HTMLInputElement | null
+                    if (!input) return
+                    const pickerInput = input as HTMLInputElement & { showPicker?: () => void }
+                    pickerInput.showPicker?.()
+                    input.focus()
+                  }}
+                  title={task.dueDate ? `Due date: ${formatDueDateShort(task.dueDate)}` : 'Set due date'}
+                  aria-label={task.dueDate ? `Due date ${dueLabel}` : 'Set due date'}
+                >
+                  {dueLabel}
+                </button>
+                {task.startDate && (
+                  <span className="workhub-task-start-inline" title={`Start date: ${formatDueDateShort(task.startDate)}`}>
+                    ▶ {formatDueDateShort(task.startDate)}
+                  </span>
+                )}
+                {checklistTotal > 0 && (
+                  <span className="workhub-task-title-checklist-progress" title={`${checklistDone} of ${checklistTotal} checklist items done`}>
+                    <span className="workhub-task-checklist-progress-track" aria-hidden="true">
+                      <span className="workhub-task-checklist-progress-fill" style={{ width: `${checklistProgressPercent}%` }} />
+                    </span>
+                    <span className="workhub-task-checklist-progress-label">{checklistDone}/{checklistTotal}</span>
+                  </span>
+                )}
+                <input
+                  type="date"
+                  className="workhub-task-due-input"
+                  value={task.dueDate || ''}
+                  onClick={(event) => event.stopPropagation()}
+                  onChange={(event) => callbacks.onDueDateChange(task, event.target.value)}
+                  aria-label={task.dueDate ? `Due date: ${formatDueDateShort(task.dueDate)}` : 'Set due date'}
+                />
+              </div>
+            </div>
+            <div className="workhub-task-col priority">
+              <span
+                className={`workhub-priority-indicator priority-${task.priority}`}
+                aria-label={`Priority: ${PRIORITY_LABELS[task.priority]}`}
+              >
+                {getPriorityIcon(task.priority)}
+              </span>
+            </div>
+            <div className="workhub-task-col checklist-inline">
+              {unreadCommentCount > 0 && (
+                <span
+                  className="workhub-task-comment-unread-chip"
+                  title={`${unreadCommentCount} unread comment${unreadCommentCount === 1 ? '' : 's'}`}
+                  aria-label={`${unreadCommentCount} unread comment${unreadCommentCount === 1 ? '' : 's'}`}
+                >
+                  💬 {unreadCommentCount}
+                </span>
+              )}
+              {totalAttachmentCount > 0 && (
+                <span
+                  className="workhub-task-attachment-chip"
+                  title={`${totalAttachmentCount} attachment${totalAttachmentCount === 1 ? '' : 's'}`}
+                  aria-label={`${totalAttachmentCount} attachment${totalAttachmentCount === 1 ? '' : 's'}`}
+                >
+                  📎
                 </span>
               )}
               {checklistTotal > 0 && (
-                <span className="workhub-task-title-checklist-progress" title={`${checklistDone} of ${checklistTotal} checklist items done`}>
+                <span className="workhub-task-checklist-progress" title={`${checklistDone} of ${checklistTotal} checklist items completed`}>
                   <span className="workhub-task-checklist-progress-track" aria-hidden="true">
                     <span className="workhub-task-checklist-progress-fill" style={{ width: `${checklistProgressPercent}%` }} />
                   </span>
                   <span className="workhub-task-checklist-progress-label">{checklistDone}/{checklistTotal}</span>
                 </span>
               )}
-              <input
-                type="date"
-                className="workhub-task-due-input"
-                value={task.dueDate || ''}
-                onClick={(event) => event.stopPropagation()}
-                onChange={(event) => callbacks.onDueDateChange(task, event.target.value)}
-                aria-label={task.dueDate ? `Due date: ${formatDueDateShort(task.dueDate)}` : 'Set due date'}
-              />
+              <button
+                className="workhub-checklist-toggle"
+                onClick={(event) => { event.stopPropagation(); callbacks.onToggleChecklist(task.id) }}
+                aria-label="Toggle checklist"
+              >
+                {checklistTotal}
+              </button>
             </div>
           </div>
-          <div className="workhub-task-col priority">
-            <span
-              className={`workhub-priority-indicator priority-${task.priority}`}
-              aria-label={`Priority: ${PRIORITY_LABELS[task.priority]}`}
-            >
-              {getPriorityIcon(task.priority)}
-            </span>
-          </div>
-          <div className="workhub-task-col checklist-inline">
-            {unreadCommentCount > 0 && (
-              <span
-                className="workhub-task-comment-unread-chip"
-                title={`${unreadCommentCount} unread comment${unreadCommentCount === 1 ? '' : 's'}`}
-                aria-label={`${unreadCommentCount} unread comment${unreadCommentCount === 1 ? '' : 's'}`}
-              >
-                💬 {unreadCommentCount}
-              </span>
-            )}
-            {totalAttachmentCount > 0 && (
-              <span
-                className="workhub-task-attachment-chip"
-                title={`${totalAttachmentCount} attachment${totalAttachmentCount === 1 ? '' : 's'}`}
-                aria-label={`${totalAttachmentCount} attachment${totalAttachmentCount === 1 ? '' : 's'}`}
-              >
-                📎
-              </span>
-            )}
-            {checklistTotal > 0 && (
-              <span className="workhub-task-checklist-progress" title={`${checklistDone} of ${checklistTotal} checklist items completed`}>
-                <span className="workhub-task-checklist-progress-track" aria-hidden="true">
-                  <span className="workhub-task-checklist-progress-fill" style={{ width: `${checklistProgressPercent}%` }} />
-                </span>
-                <span className="workhub-task-checklist-progress-label">{checklistDone}/{checklistTotal}</span>
-              </span>
-            )}
-            <button
-              className="workhub-checklist-toggle"
-              onClick={(event) => { event.stopPropagation(); callbacks.onToggleChecklist(task.id) }}
-              aria-label="Toggle checklist"
-            >
-              {checklistTotal}
-            </button>
-          </div>
-        </div>
+        )}
         {checklistExpanded && (
           <div className="workhub-task-checklist" onClick={(event) => event.stopPropagation()}>
             {checklist.length === 0 ? (
