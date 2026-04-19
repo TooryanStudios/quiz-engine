@@ -3,9 +3,15 @@ import { ref as storageRef, uploadBytes, getDownloadURL, listAll } from 'firebas
 import { auth } from '../../../lib/firebase'
 import { storage } from '../../../lib/firebase'
 import {
+  createWorkhubDocument,
+  deleteWorkhubDocumentDraft,
+  getWorkhubDocumentDraft,
+  getWorkhubDocumentReferencesBySource,
+  saveWorkhubDocumentDraft,
   updateWorkhubDocument,
   type WorkhubActivity,
   type WorkhubDocument,
+  type WorkhubDocumentDraft,
   type WorkhubDocumentChecklistItem,
   type WorkhubDocumentEditEntry,
   type WorkhubDocumentMasterPageVariant,
@@ -18,6 +24,20 @@ import { normalizeDocumentBodyForStorage, toDocumentBodyEditorHtml } from '../do
 
 function getDocumentTabMemoryKey(documentId: string) {
   return `workhub:documentActiveTab:${documentId}`
+}
+
+function getDocumentDraftMemoryKey(documentId: string) {
+  return `workhub:documentDraft:${documentId}`
+}
+
+interface LocalDocumentDraftSnapshot {
+  docId: string
+  updatedAt: number
+  title: string
+  body: string
+  tabs: WorkhubDocumentTab[]
+  activeTabId: string
+  masterPage: WorkhubDocumentMasterPage
 }
 
 const DEFAULT_DOCUMENT_MASTER_PAGE: WorkhubDocumentMasterPage = {
@@ -161,11 +181,20 @@ function areDocumentMasterPagesEqual(
 
 export type WorkhubDocumentShareAccess = 'view' | 'edit'
 
+export interface CopyToFolderProject {
+  id: string
+  name: string
+  workspaceId: string
+}
+
 export interface UseWorkhubDocEditorHandlersInput {
   selectedDocument: WorkhubDocument | undefined
   selectedWorkspaceId: string
   workspaceProjectById: Record<string, { visibility?: WorkhubVisibility; memberUids?: string[]; name?: string }>
   workhubShareCandidates: Array<{ uid: string }>
+  allWorkspaceProjects: CopyToFolderProject[]
+  allWorkspaceIds: Array<{ id: string; name: string }>
+  isPrivilegedMember: boolean
   showToast: (opts: { type: 'success' | 'error' | 'warning'; message: string }) => void
   setBusyKey: (key: string) => void
   setSelectedDocumentId: (id: string) => void
@@ -257,6 +286,31 @@ export interface UseWorkhubDocEditorHandlersOutput {
   handleDocLinkRemove: (url: string) => void
 
   noteAutoSaveStatus: 'idle' | 'saving' | 'saved'
+  selectedDocumentHasOutgoingReferences: boolean
+  sourceReferencedTabIds: string[]
+  publicReferenceAutoSaveBlocked: boolean
+  recoverableDraftAvailable: boolean
+  recoverableDraftUpdatedAt: number | null
+  handleRestoreRecoverableDraft: () => void
+  handleDiscardRecoverableDraft: () => void
+
+  canUnlockDocument: boolean
+
+  copyToFolderDialogOpen: boolean
+  copyToFolderSaving: boolean
+  copyToFolderWorkspaceId: string
+  copyToFolderProjectId: string
+  copyTabMode: 'all' | 'active' | 'select'
+  copyTabSelection: string[]
+  sourceReferenceDocuments: WorkhubDocument[]
+  setCopyToFolderDialogOpen: React.Dispatch<React.SetStateAction<boolean>>
+  setCopyToFolderWorkspaceId: React.Dispatch<React.SetStateAction<string>>
+  setCopyToFolderProjectId: React.Dispatch<React.SetStateAction<string>>
+  setCopyTabMode: React.Dispatch<React.SetStateAction<'all' | 'active' | 'select'>>
+  setCopyTabSelection: React.Dispatch<React.SetStateAction<string[]>>
+  handleCopyDocumentToFolder: () => Promise<void>
+  handleRemoveDocumentReference: (referenceDocumentId: string) => Promise<void>
+  handleOpenReferenceSourceDocument: () => void
 }
 
 export function useWorkhubDocEditorHandlers({
@@ -264,6 +318,8 @@ export function useWorkhubDocEditorHandlers({
   selectedWorkspaceId,
   workspaceProjectById,
   workhubShareCandidates,
+  allWorkspaceProjects,
+  isPrivilegedMember,
   showToast,
   setBusyKey,
   setSelectedDocumentId,
@@ -295,8 +351,18 @@ export function useWorkhubDocEditorHandlers({
   const [shareDocDialogOpen, setShareDocDialogOpen] = useState(false)
   const [shareDocSaving, setShareDocSaving] = useState(false)
   const [shareDocAccessDraftByUid, setShareDocAccessDraftByUid] = useState<Record<string, WorkhubDocumentShareAccess>>({})
+  const [copyToFolderDialogOpen, setCopyToFolderDialogOpen] = useState(false)
+  const [copyToFolderSaving, setCopyToFolderSaving] = useState(false)
+  const [copyToFolderWorkspaceId, setCopyToFolderWorkspaceId] = useState('')
+  const [copyToFolderProjectId, setCopyToFolderProjectId] = useState('')
+  const [copyTabMode, setCopyTabMode] = useState<'all' | 'active' | 'select'>('select')
+  const [copyTabSelection, setCopyTabSelection] = useState<string[]>([])
+  const [sourceReferenceDocuments, setSourceReferenceDocuments] = useState<WorkhubDocument[]>([])
+  const [sourceReferencedTabIds, setSourceReferencedTabIds] = useState<string[]>([])
+  const [recoverableDraft, setRecoverableDraft] = useState<LocalDocumentDraftSnapshot | null>(null)
 
   const selectedDocumentLocked = !!selectedDocument?.isLocked
+  const selectedDocumentIsReference = !!selectedDocument?.referenceSourceDocumentId
   const currentUid = auth.currentUser?.uid || ''
 
   const selectedDocumentCanEdit = useMemo(() => {
@@ -314,6 +380,184 @@ export function useWorkhubDocEditorHandlers({
   }, [currentUid, normalizeMemberUids, selectedDocument])
 
   const selectedDocumentReadOnly = selectedDocumentLocked || !selectedDocumentCanEdit
+  const selectedDocumentHasOutgoingReferences = !selectedDocumentIsReference
+    && (!!selectedDocument?.hasOutgoingReferences || sourceReferenceDocuments.length > 0)
+  const publicReferenceAutoSaveBlocked = selectedDocumentHasOutgoingReferences
+    && (documentTabsDraft.length === 0 || sourceReferencedTabIds.includes(activeTabId))
+  const canUnlockDocument = !selectedDocumentIsReference && selectedDocumentLocked && (currentUid === selectedDocument?.createdBy || isPrivilegedMember)
+
+  async function refreshSourceReferenceDocuments() {
+    if (!selectedDocument?.id || selectedDocument.referenceSourceDocumentId) {
+      setSourceReferenceDocuments([])
+      setSourceReferencedTabIds([])
+      return
+    }
+    try {
+      const refs = await getWorkhubDocumentReferencesBySource(selectedDocument.id)
+      setSourceReferenceDocuments(refs)
+      const sourceTabs = Array.isArray(selectedDocument.tabs) ? selectedDocument.tabs : []
+      const allSourceTabIds = sourceTabs.map((tab) => tab.id)
+      const referencedTabIdSet = new Set<string>()
+      for (const refDoc of refs) {
+        const selectedTabIds = Array.isArray(refDoc.referenceTabIds) ? refDoc.referenceTabIds : []
+        if (selectedTabIds.length > 0) {
+          selectedTabIds.forEach((tabId) => referencedTabIdSet.add(tabId))
+        } else {
+          allSourceTabIds.forEach((tabId) => referencedTabIdSet.add(tabId))
+        }
+      }
+      setSourceReferencedTabIds(Array.from(referencedTabIdSet))
+
+      const hasOutgoingReferences = refs.length > 0
+      if (Boolean(selectedDocument.hasOutgoingReferences) !== hasOutgoingReferences) {
+        await updateWorkhubDocument(selectedDocument.id, { hasOutgoingReferences })
+      }
+    } catch {
+      setSourceReferenceDocuments([])
+      setSourceReferencedTabIds([])
+    }
+  }
+
+  useEffect(() => {
+    if (!selectedDocument?.id || selectedDocumentIsReference) {
+      setSourceReferenceDocuments([])
+      setSourceReferencedTabIds([])
+      return
+    }
+    void refreshSourceReferenceDocuments()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDocument?.id, selectedDocumentIsReference])
+
+  useEffect(() => {
+    if (!copyToFolderDialogOpen || !selectedDocument?.id || selectedDocumentIsReference) return
+    void refreshSourceReferenceDocuments()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [copyToFolderDialogOpen, selectedDocument?.id, selectedDocumentIsReference])
+
+  function buildNotificationPreview(value: string) {
+    return value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 320)
+  }
+
+  function resolveRecipientsByNotifyMode(doc: WorkhubDocument, fallbackAllUids: string[]) {
+    const mode = doc.notifyMode || 'all'
+    if (mode === 'none') return [] as string[]
+    if (mode === 'selected') {
+      return normalizeMemberUids(Array.isArray(doc.notifyUids) ? doc.notifyUids : [])
+    }
+    return normalizeMemberUids(fallbackAllUids)
+  }
+
+  function resolveReferenceRecipientsForAllMode(refDoc: WorkhubDocument) {
+    return normalizeMemberUids([
+      ...(Array.isArray(refDoc.memberUids) ? refDoc.memberUids : []),
+      ...(Array.isArray(refDoc.editMemberUids) ? refDoc.editMemberUids : []),
+      refDoc.createdBy,
+    ])
+  }
+
+  async function notifySourceUpdateRecipients(params: {
+    sourceDocument: WorkhubDocument
+    references: WorkhubDocument[]
+    actorUid: string
+    updatedTabTitle?: string
+    updatedBody: string
+  }) {
+    const sourceAllCandidates = workhubShareCandidates.map((candidate) => candidate.uid)
+    const sourceRecipients = resolveRecipientsByNotifyMode(params.sourceDocument, sourceAllCandidates)
+      .filter((uid) => uid !== params.actorUid)
+    const scopeLabel = params.updatedTabTitle ? `tab "${params.updatedTabTitle}"` : 'document'
+    const sourcePreview = buildNotificationPreview(params.updatedBody)
+    if (sourceRecipients.length > 0) {
+      await createNotifications({
+        workspaceId: params.sourceDocument.workspaceId,
+        actorUid: params.actorUid,
+        recipientUids: sourceRecipients,
+        entityType: 'document',
+        entityId: params.sourceDocument.id,
+        action: 'reference_publish',
+        message: `published updates to ${scopeLabel} in "${params.sourceDocument.title}".`,
+        ...(sourcePreview ? { commentPreview: sourcePreview } : {}),
+      })
+    }
+
+    for (const refDoc of params.references) {
+      const fallbackRecipients = resolveReferenceRecipientsForAllMode(refDoc)
+      const recipients = resolveRecipientsByNotifyMode(refDoc, fallbackRecipients)
+        .filter((uid) => uid !== params.actorUid)
+      if (recipients.length === 0) continue
+      await createNotifications({
+        workspaceId: refDoc.workspaceId,
+        actorUid: params.actorUid,
+        recipientUids: recipients,
+        entityType: 'document',
+        entityId: refDoc.id,
+        action: 'reference_sync',
+        message: `published source updates to referenced document "${refDoc.title || params.sourceDocument.title}".`,
+        ...(sourcePreview ? { commentPreview: sourcePreview } : {}),
+      })
+    }
+  }
+
+  async function syncReferencesFromSource(params: {
+    sourceDocumentId: string
+    sourceWorkspaceId: string
+    sourceProjectId?: string | null
+    title: string
+    body: string
+    tabs: WorkhubDocumentTab[] | null
+    masterPage: WorkhubDocumentMasterPage
+    icon?: string
+    actorUid: string
+  }): Promise<WorkhubDocument[]> {
+    const refs = await getWorkhubDocumentReferencesBySource(params.sourceDocumentId)
+    if (refs.length === 0) {
+      if (selectedDocument?.id === params.sourceDocumentId && selectedDocument.hasOutgoingReferences) {
+        await updateWorkhubDocument(params.sourceDocumentId, { hasOutgoingReferences: false })
+      }
+      return []
+    }
+
+    if (selectedDocument?.id === params.sourceDocumentId && !selectedDocument.hasOutgoingReferences) {
+      await updateWorkhubDocument(params.sourceDocumentId, { hasOutgoingReferences: true })
+    }
+
+    for (const refDoc of refs) {
+      const selectedTabIds = Array.isArray(refDoc.referenceTabIds) ? refDoc.referenceTabIds : []
+      const sourceTabs = Array.isArray(params.tabs) ? params.tabs : []
+      const sourceHasTabs = sourceTabs.length > 0
+      const tabsForReference = sourceTabs.length > 0
+        ? (selectedTabIds.length > 0
+          ? sourceTabs.filter((tab) => selectedTabIds.includes(tab.id))
+          : sourceTabs)
+        : []
+
+      const nextPatch: Parameters<typeof updateWorkhubDocument>[1] = {
+        title: params.title,
+        icon: params.icon || '',
+        masterPage: params.masterPage,
+        body: sourceHasTabs ? '' : params.body,
+        tabs: sourceHasTabs ? tabsForReference : [],
+        isLocked: true,
+        lockedBy: params.actorUid,
+        lockedAt: new Date().toISOString() as unknown as undefined,
+        referenceSourceDocumentId: params.sourceDocumentId,
+        referenceSourceWorkspaceId: params.sourceWorkspaceId,
+        referenceSourceProjectId: params.sourceProjectId || null,
+      }
+
+      await updateWorkhubDocument(refDoc.id, nextPatch)
+      await createActivity({
+        workspaceId: refDoc.workspaceId,
+        actorUid: params.actorUid,
+        entityType: 'document',
+        entityId: refDoc.id,
+        action: 'reference_sync',
+        message: `Updated referenced document ${params.title}`,
+      })
+    }
+
+    return refs
+  }
 
   const selectedDocumentChanged = (() => {
     if (!selectedDocument) return false
@@ -343,6 +587,191 @@ export function useWorkhubDocEditorHandlers({
     )
   })()
 
+  function getTabsWithActiveBodySnapshot() {
+    if (documentTabsDraftRef.current.length === 0) return [] as WorkhubDocumentTab[]
+    return documentTabsDraftRef.current.map((tab) => (
+      tab.id === activeTabIdRef.current
+        ? { ...tab, body: normalizeDocumentBodyForStorage(selectedDocumentBodyDraft) }
+        : { ...tab, body: normalizeDocumentBodyForStorage(tab.body || '') }
+    ))
+  }
+
+  function getLocalDraftSnapshot(document: WorkhubDocument): LocalDocumentDraftSnapshot {
+    return {
+      docId: document.id,
+      updatedAt: Date.now(),
+      title: selectedDocumentTitleDraft.trim() || document.title,
+      body: normalizeDocumentBodyForStorage(selectedDocumentBodyDraft),
+      tabs: getTabsWithActiveBodySnapshot(),
+      activeTabId: activeTabIdRef.current,
+      masterPage: normalizeDocumentMasterPage(selectedDocumentMasterPageDraft),
+    }
+  }
+
+  function getUnknownTimeValue(value: unknown): number {
+    if (!value) return 0
+    if (typeof value === 'object' && value !== null && 'toMillis' in value && typeof (value as { toMillis?: unknown }).toMillis === 'function') {
+      return (value as { toMillis: () => number }).toMillis()
+    }
+    if (typeof value === 'object' && value !== null && 'seconds' in value) {
+      const seconds = Number((value as { seconds?: unknown }).seconds || 0)
+      const nanoseconds = Number((value as { nanoseconds?: unknown }).nanoseconds || 0)
+      return (seconds * 1000) + Math.floor(nanoseconds / 1_000_000)
+    }
+    if (typeof value === 'string') {
+      const parsed = Date.parse(value)
+      return Number.isFinite(parsed) ? parsed : 0
+    }
+    return 0
+  }
+
+  function writeLocalDraftFallback(document: WorkhubDocument) {
+    const snapshot = getLocalDraftSnapshot(document)
+    try {
+      localStorage.setItem(getDocumentDraftMemoryKey(document.id), JSON.stringify(snapshot))
+    } catch {
+      // Ignore storage quota and serialization errors.
+    }
+  }
+
+  function clearLocalDraftFallback(documentId: string) {
+    try {
+      localStorage.removeItem(getDocumentDraftMemoryKey(documentId))
+    } catch {
+      // Ignore storage errors.
+    }
+  }
+
+  function normalizeLocalDraft(raw: Partial<LocalDocumentDraftSnapshot> | null | undefined, source: WorkhubDocument): LocalDocumentDraftSnapshot | null {
+    if (!raw || raw.docId !== source.id) return null
+    return {
+      docId: source.id,
+      updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : Date.now(),
+      title: typeof raw.title === 'string' ? raw.title : source.title,
+      body: typeof raw.body === 'string' ? raw.body : normalizeDocumentBodyForStorage(toDocumentBodyEditorHtml(source.body || '')),
+      tabs: Array.isArray(raw.tabs)
+        ? raw.tabs
+            .filter((tab) => tab && typeof tab.id === 'string' && typeof tab.title === 'string')
+            .map((tab) => ({
+              id: tab.id,
+              title: tab.title,
+              ...(tab.icon ? { icon: tab.icon } : {}),
+              body: normalizeDocumentBodyForStorage(tab.body || ''),
+            }))
+        : [],
+      activeTabId: typeof raw.activeTabId === 'string' ? raw.activeTabId : '',
+      masterPage: normalizeDocumentMasterPage(raw.masterPage),
+    }
+  }
+
+  function normalizeServerDraft(raw: WorkhubDocumentDraft | null, source: WorkhubDocument): LocalDocumentDraftSnapshot | null {
+    if (!raw || raw.documentId !== source.id) return null
+    return {
+      docId: source.id,
+      updatedAt: getUnknownTimeValue(raw.updatedAt) || Date.now(),
+      title: (raw.title || '').trim() || source.title,
+      body: normalizeDocumentBodyForStorage(raw.body || ''),
+      tabs: Array.isArray(raw.tabs)
+        ? raw.tabs
+            .filter((tab) => tab && typeof tab.id === 'string' && typeof tab.title === 'string')
+            .map((tab) => ({
+              id: tab.id,
+              title: tab.title,
+              ...(tab.icon ? { icon: tab.icon } : {}),
+              body: normalizeDocumentBodyForStorage(tab.body || ''),
+            }))
+        : [],
+      activeTabId: typeof raw.activeTabId === 'string' ? raw.activeTabId : '',
+      masterPage: normalizeDocumentMasterPage(raw.masterPage),
+    }
+  }
+
+  async function saveRecoverableDraft(document: WorkhubDocument) {
+    const snapshot = getLocalDraftSnapshot(document)
+    const uid = auth.currentUser?.uid || ''
+    if (!uid) {
+      writeLocalDraftFallback(document)
+      return
+    }
+    try {
+      await saveWorkhubDocumentDraft({
+        workspaceId: document.workspaceId,
+        documentId: document.id,
+        userUid: uid,
+        title: snapshot.title,
+        body: snapshot.body,
+        tabs: snapshot.tabs,
+        activeTabId: snapshot.activeTabId,
+        masterPage: snapshot.masterPage,
+      })
+      clearLocalDraftFallback(document.id)
+    } catch {
+      writeLocalDraftFallback(document)
+    }
+  }
+
+  async function clearRecoverableDraft(documentId: string) {
+    clearLocalDraftFallback(documentId)
+    const uid = auth.currentUser?.uid || ''
+    if (!uid) return
+    try {
+      await deleteWorkhubDocumentDraft(documentId, uid)
+    } catch {
+      // Ignore transient network failures.
+    }
+  }
+
+  function doesLocalDraftDifferFromSource(document: WorkhubDocument, draft: LocalDocumentDraftSnapshot) {
+    const sourceTitle = document.title
+    const sourceBody = normalizeDocumentBodyForStorage(toDocumentBodyEditorHtml(document.body || ''))
+    const sourceTabs = Array.isArray(document.tabs) ? document.tabs : []
+    const sourceMasterPage = normalizeDocumentMasterPage(document.masterPage)
+
+    if (draft.title !== sourceTitle) return true
+    if (!areDocumentMasterPagesEqual(draft.masterPage, sourceMasterPage)) return true
+
+    if (sourceTabs.length !== draft.tabs.length) return true
+    if (sourceTabs.length > 0) {
+      for (let i = 0; i < sourceTabs.length; i += 1) {
+        const sourceTab = sourceTabs[i]
+        const draftTab = draft.tabs[i]
+        if (!draftTab) return true
+        if (sourceTab.id !== draftTab.id) return true
+        if (sourceTab.title !== draftTab.title) return true
+        if ((sourceTab.icon || '') !== (draftTab.icon || '')) return true
+        if (normalizeDocumentBodyForStorage(sourceTab.body || '') !== normalizeDocumentBodyForStorage(draftTab.body || '')) return true
+      }
+      return false
+    }
+
+    return draft.body !== sourceBody
+  }
+
+  function handleRestoreRecoverableDraft() {
+    if (!selectedDocument || !recoverableDraft || recoverableDraft.docId !== selectedDocument.id) return
+    setSelectedDocumentTitleDraft(recoverableDraft.title)
+    setSelectedDocumentMasterPageDraft(normalizeDocumentMasterPage(recoverableDraft.masterPage))
+    if (recoverableDraft.tabs.length > 0) {
+      const nextTabs = recoverableDraft.tabs.map((tab) => ({ ...tab }))
+      const nextActiveTabId = nextTabs.find((tab) => tab.id === recoverableDraft.activeTabId)?.id || nextTabs[0].id
+      const nextActiveTab = nextTabs.find((tab) => tab.id === nextActiveTabId)
+      setDocumentTabsDraft(nextTabs)
+      setActiveTabId(nextActiveTabId)
+      setSelectedDocumentBodyDraft(nextActiveTab?.body || '')
+    } else {
+      setDocumentTabsDraft([])
+      setActiveTabId('')
+      setSelectedDocumentBodyDraft(recoverableDraft.body || '')
+    }
+    setRecoverableDraft(null)
+  }
+
+  function handleDiscardRecoverableDraft() {
+    if (!selectedDocument) return
+    void clearRecoverableDraft(selectedDocument.id)
+    setRecoverableDraft(null)
+  }
+
   useEffect(() => {
     if (!selectedDocument) {
       setSelectedDocumentTitleDraft('')
@@ -350,6 +779,7 @@ export function useWorkhubDocEditorHandlers({
       setSelectedDocumentMasterPageDraft(DEFAULT_DOCUMENT_MASTER_PAGE)
       setDocumentTabsDraft([])
       setActiveTabId('')
+      setRecoverableDraft(null)
       return
     }
     setSelectedDocumentTitleDraft(selectedDocument.title)
@@ -367,9 +797,87 @@ export function useWorkhubDocEditorHandlers({
       setActiveTabId('')
       setSelectedDocumentBodyDraft(toDocumentBodyEditorHtml(selectedDocument.body || ''))
     }
+
+    let cancelled = false
+    const doc = selectedDocument
+    async function loadRecoverableDraft() {
+      const uid = auth.currentUser?.uid || ''
+      let normalizedDraft: LocalDocumentDraftSnapshot | null = null
+
+      if (uid) {
+        try {
+          const serverDraft = await getWorkhubDocumentDraft(doc.id, uid)
+          normalizedDraft = normalizeServerDraft(serverDraft, doc)
+        } catch {
+          normalizedDraft = null
+        }
+      }
+
+      if (!normalizedDraft) {
+        try {
+          const rawFallback = localStorage.getItem(getDocumentDraftMemoryKey(doc.id))
+          normalizedDraft = normalizeLocalDraft(rawFallback ? (JSON.parse(rawFallback) as Partial<LocalDocumentDraftSnapshot>) : null, doc)
+        } catch {
+          normalizedDraft = null
+        }
+      }
+
+      if (cancelled) return
+
+      if (!normalizedDraft) {
+        setRecoverableDraft(null)
+      } else if (doesLocalDraftDifferFromSource(doc, normalizedDraft)) {
+        setRecoverableDraft(normalizedDraft)
+      } else {
+        void clearRecoverableDraft(doc.id)
+        setRecoverableDraft(null)
+      }
+    }
+
+    void loadRecoverableDraft()
   // Re-init when switching documents; title re-syncs too
   // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      cancelled = true
+    }
   }, [selectedDocument?.id, selectedDocument?.title])
+
+  const localDraftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!selectedDocument) return
+    if (selectedDocumentReadOnly) return
+
+    if (localDraftTimerRef.current) {
+      clearTimeout(localDraftTimerRef.current)
+      localDraftTimerRef.current = null
+    }
+
+    if (!selectedDocumentChanged) {
+      void clearRecoverableDraft(selectedDocument.id)
+      return
+    }
+
+    localDraftTimerRef.current = setTimeout(() => {
+      void saveRecoverableDraft(selectedDocument)
+    }, 650)
+
+    return () => {
+      if (localDraftTimerRef.current) {
+        clearTimeout(localDraftTimerRef.current)
+        localDraftTimerRef.current = null
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    selectedDocument?.id,
+    selectedDocumentReadOnly,
+    selectedDocumentChanged,
+    selectedDocumentTitleDraft,
+    selectedDocumentBodyDraft,
+    selectedDocumentMasterPageDraft,
+    documentTabsDraft,
+    activeTabId,
+  ])
 
   useEffect(() => {
     if (!selectedDocument?.id) return
@@ -377,6 +885,20 @@ export function useWorkhubDocEditorHandlers({
     if (documentTabsDraft.length === 0) return
     localStorage.setItem(getDocumentTabMemoryKey(selectedDocument.id), activeTabId)
   }, [activeTabId, documentTabsDraft.length, selectedDocument?.id])
+
+  useEffect(() => {
+    if (!selectedDocument) return
+    if (selectedDocumentReadOnly) return
+    if (!selectedDocumentChanged) return
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload)
+    }
+  }, [selectedDocument, selectedDocumentChanged, selectedDocumentReadOnly])
 
   useEffect(() => {
     if (!selectedWorkspaceId) {
@@ -419,10 +941,22 @@ export function useWorkhubDocEditorHandlers({
     if (!selectedDocument) return
     if (selectedDocumentReadOnly) return
     if (!selectedDocumentChanged) return
+    const hasTabs = documentTabsDraftRef.current.length > 0
+    const currentTabId = activeTabIdRef.current
+    const isPublicReferenceScope = selectedDocumentHasOutgoingReferences
+      && (!hasTabs || (currentTabId ? sourceReferencedTabIds.includes(currentTabId) : false))
+    if (isPublicReferenceScope) {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current)
+        autoSaveTimerRef.current = null
+      }
+      pendingSaveRef.current = null
+      setNoteAutoSaveStatus('idle')
+      return
+    }
     const nextTitle = selectedDocumentTitleDraft.trim() || selectedDocument.title
     const nextBody = normalizeDocumentBodyForStorage(selectedDocumentBodyDraft)
     const nextMasterPage = normalizeDocumentMasterPage(selectedDocumentMasterPageDraft)
-    const hasTabs = documentTabsDraftRef.current.length > 0
     const tabsForSave = hasTabs
       ? documentTabsDraftRef.current.map((t) =>
           t.id === activeTabIdRef.current ? { ...t, body: nextBody } : t,
@@ -448,6 +982,20 @@ export function useWorkhubDocEditorHandlers({
         } else {
           await updateWorkhubDocument(save.docId, { title: save.title, body: save.body, masterPage: save.masterPage })
         }
+        await clearRecoverableDraft(save.docId)
+        if (selectedDocument && !selectedDocument.referenceSourceDocumentId && auth.currentUser?.uid) {
+          await syncReferencesFromSource({
+            sourceDocumentId: selectedDocument.id,
+            sourceWorkspaceId: selectedDocument.workspaceId,
+            sourceProjectId: selectedDocument.projectId || null,
+            title: save.title,
+            body: save.body,
+            tabs: save.tabs,
+            masterPage: save.masterPage,
+            icon: selectedDocument.icon,
+            actorUid: auth.currentUser.uid,
+          })
+        }
         setNoteAutoSaveStatus('saved')
       } catch {
         setNoteAutoSaveStatus('idle')
@@ -455,7 +1003,7 @@ export function useWorkhubDocEditorHandlers({
     }, 800)
     return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDocumentBodyDraft, selectedDocumentTitleDraft, selectedDocumentMasterPageDraft, documentTabsDraft])
+  }, [selectedDocumentBodyDraft, selectedDocumentTitleDraft, selectedDocumentMasterPageDraft, documentTabsDraft, selectedDocumentHasOutgoingReferences, sourceReferencedTabIds])
 
   useEffect(() => {
     if (!shareDocDialogOpen || !selectedDocument) return
@@ -483,6 +1031,9 @@ export function useWorkhubDocEditorHandlers({
   ])
 
   function closeSelectedDocument() {
+    if (selectedDocument && selectedDocumentChanged && !selectedDocumentReadOnly) {
+      void saveRecoverableDraft(selectedDocument)
+    }
     // Flush any pending debounced save immediately before closing
     if (autoSaveTimerRef.current) {
       clearTimeout(autoSaveTimerRef.current)
@@ -491,10 +1042,12 @@ export function useWorkhubDocEditorHandlers({
     if (pendingSaveRef.current) {
       const { docId, title, body, tabs, masterPage } = pendingSaveRef.current
       pendingSaveRef.current = null
-      if (tabs && tabs.length > 0) {
-        void updateWorkhubDocument(docId, { title, tabs, masterPage })
-      } else {
-        void updateWorkhubDocument(docId, { title, body, masterPage })
+      if (!publicReferenceAutoSaveBlocked) {
+        if (tabs && tabs.length > 0) {
+          void updateWorkhubDocument(docId, { title, tabs, masterPage })
+        } else {
+          void updateWorkhubDocument(docId, { title, body, masterPage })
+        }
       }
     }
     setShareDocDialogOpen(false)
@@ -523,12 +1076,27 @@ export function useWorkhubDocEditorHandlers({
           : [auth.currentUser.uid],
       )
       : []
+    const hasTabs = documentTabsDraftRef.current.length > 0
+    const currentTabId = activeTabIdRef.current
+    const activeTabDraft = hasTabs ? documentTabsDraftRef.current.find((tab) => tab.id === currentTabId) || null : null
+    const isPublicReferenceScope = selectedDocumentHasOutgoingReferences
+      && (!hasTabs || (currentTabId ? sourceReferencedTabIds.includes(currentTabId) : false))
+
+    if (isPublicReferenceScope) {
+      const confirmationMessage = hasTabs && activeTabDraft
+        ? `This tab (${activeTabDraft.title}) is public and referenced in other folders. Publishing will sync changes and notify recipients. Continue?`
+        : 'This document is public and referenced in other folders. Publishing will sync changes and notify recipients. Continue?'
+      if (!window.confirm(confirmationMessage)) {
+        showToast({ type: 'warning', message: 'Publish cancelled. Open "Reference in folder" to stop sharing if needed.' })
+        return
+      }
+    }
 
     setBusyKey(`document:${selectedDocument.id}`)
     try {
-      const hasTabs = documentTabsDraftRef.current.length > 0
       const nextBody = normalizeDocumentBodyForStorage(selectedDocumentBodyDraft)
       const nextMasterPage = normalizeDocumentMasterPage(selectedDocumentMasterPageDraft)
+      let syncedReferences: WorkhubDocument[] = []
       if (hasTabs) {
         const savedTabs = documentTabsDraftRef.current.map((t) =>
           t.id === activeTabIdRef.current ? { ...t, body: nextBody } : t,
@@ -540,6 +1108,19 @@ export function useWorkhubDocEditorHandlers({
           visibility,
           memberUids,
         })
+        if (!selectedDocument.referenceSourceDocumentId) {
+          syncedReferences = await syncReferencesFromSource({
+            sourceDocumentId: selectedDocument.id,
+            sourceWorkspaceId: selectedDocument.workspaceId,
+            sourceProjectId: selectedDocument.projectId || null,
+            title: nextTitle,
+            body: nextBody,
+            tabs: savedTabs,
+            masterPage: nextMasterPage,
+            icon: selectedDocument.icon,
+            actorUid: auth.currentUser.uid,
+          })
+        }
       } else {
         await updateWorkhubDocument(selectedDocument.id, {
           title: nextTitle,
@@ -547,6 +1128,28 @@ export function useWorkhubDocEditorHandlers({
           masterPage: nextMasterPage,
           visibility,
           memberUids,
+        })
+        if (!selectedDocument.referenceSourceDocumentId) {
+          syncedReferences = await syncReferencesFromSource({
+            sourceDocumentId: selectedDocument.id,
+            sourceWorkspaceId: selectedDocument.workspaceId,
+            sourceProjectId: selectedDocument.projectId || null,
+            title: nextTitle,
+            body: nextBody,
+            tabs: null,
+            masterPage: nextMasterPage,
+            icon: selectedDocument.icon,
+            actorUid: auth.currentUser.uid,
+          })
+        }
+      }
+      if (!selectedDocument.referenceSourceDocumentId && syncedReferences.length > 0) {
+        await notifySourceUpdateRecipients({
+          sourceDocument: selectedDocument,
+          references: syncedReferences,
+          actorUid: auth.currentUser.uid,
+          updatedTabTitle: activeTabDraft?.title,
+          updatedBody: nextBody,
         })
       }
       await createActivity({
@@ -559,7 +1162,12 @@ export function useWorkhubDocEditorHandlers({
         visibility,
         memberUids,
       })
-      showToast({ type: 'success', message: 'Document saved.' })
+      await clearRecoverableDraft(selectedDocument.id)
+      setRecoverableDraft(null)
+      showToast({
+        type: 'success',
+        message: isPublicReferenceScope ? 'Document published and references were notified.' : 'Document saved.',
+      })
     } catch (error) {
       showToast({ type: 'error', message: error instanceof Error ? error.message : 'Could not save document.' })
     } finally {
@@ -571,6 +1179,15 @@ export function useWorkhubDocEditorHandlers({
     if (!auth.currentUser || !selectedWorkspaceId || !selectedDocument) return
     if (!selectedDocumentCanEdit) {
       showToast({ type: 'warning', message: 'You only have view access to this document.' })
+      return
+    }
+    if (selectedDocument.referenceSourceDocumentId) {
+      showToast({ type: 'warning', message: 'Referenced documents are always read-only. Edit the original document instead.' })
+      return
+    }
+    // Unlocking is restricted to the creator or privileged members
+    if (selectedDocument.isLocked && selectedDocument.createdBy !== currentUid && !isPrivilegedMember) {
+      showToast({ type: 'warning', message: 'Only the document creator or an admin can unlock this.' })
       return
     }
 
@@ -979,6 +1596,129 @@ export function useWorkhubDocEditorHandlers({
     void updateDocumentDetail({ links: nextLinks })
   }
 
+  async function handleCopyDocumentToFolder() {
+    if (!selectedDocument || !auth.currentUser) return
+    if (selectedDocument.referenceSourceDocumentId) {
+      showToast({ type: 'warning', message: 'Cannot create a reference from an already referenced document.' })
+      return
+    }
+    if (!copyToFolderWorkspaceId) {
+      showToast({ type: 'warning', message: 'Select a workspace first.' })
+      return
+    }
+    const targetProject = allWorkspaceProjects.find((p) => p.id === copyToFolderProjectId && p.workspaceId === copyToFolderWorkspaceId)
+    if (!targetProject) {
+      showToast({ type: 'warning', message: 'Select a folder for the reference.' })
+      return
+    }
+    setCopyToFolderSaving(true)
+    try {
+      const allTabs: WorkhubDocumentTab[] = Array.isArray(selectedDocument.tabs) ? selectedDocument.tabs : []
+      if (allTabs.length > 0 && copyTabMode === 'select' && copyTabSelection.length === 0) {
+        showToast({ type: 'warning', message: 'Choose at least one tab to reference.' })
+        return
+      }
+      // Determine which tabs to reference based on mode
+      let sourceTabs: WorkhubDocumentTab[] = []
+      if (allTabs.length > 0) {
+        if (copyTabMode === 'active') {
+          sourceTabs = allTabs.filter((t) => t.id === activeTabId)
+        } else if (copyTabMode === 'select') {
+          sourceTabs = allTabs.filter((t) => copyTabSelection.includes(t.id))
+        } else {
+          sourceTabs = allTabs
+        }
+      }
+      const sourceHasTabs = allTabs.length > 0
+      const tabsToReference: WorkhubDocumentTab[] = sourceTabs.map((t) => ({
+        id: t.id,
+        title: t.title,
+        ...(t.icon ? { icon: t.icon } : {}),
+        body: t.body ?? '',
+      }))
+      const newDocId = await createWorkhubDocument({
+        workspaceId: copyToFolderWorkspaceId,
+        projectId: targetProject.id,
+        type: (selectedDocument.type === 'note' ? 'note' : 'document') as 'document' | 'note',
+        icon: selectedDocument.icon || '🔗',
+        title: selectedDocument.title,
+        body: sourceHasTabs ? '' : (selectedDocument.body || ''),
+        masterPage: selectedDocument.masterPage ?? undefined,
+        visibility: 'workspace',
+        memberUids: [],
+        createdBy: auth.currentUser.uid,
+      })
+      const referencePatch: Parameters<typeof updateWorkhubDocument>[1] = {
+        isLocked: true,
+        lockedBy: auth.currentUser.uid,
+        lockedAt: new Date().toISOString() as unknown as undefined,
+        referenceSourceDocumentId: selectedDocument.id,
+        referenceSourceWorkspaceId: selectedDocument.workspaceId,
+        referenceSourceProjectId: selectedDocument.projectId || null,
+        referenceTabIds: sourceHasTabs ? tabsToReference.map((tab) => tab.id) : [],
+        body: sourceHasTabs ? '' : (selectedDocument.body || ''),
+        tabs: sourceHasTabs ? tabsToReference : [],
+      }
+      await updateWorkhubDocument(newDocId, referencePatch)
+
+      await createActivity({
+        workspaceId: copyToFolderWorkspaceId,
+        actorUid: auth.currentUser.uid,
+        entityType: 'document',
+        entityId: newDocId,
+        action: 'reference_create',
+        message: `Referenced document ${selectedDocument.title}`,
+      })
+
+      await updateWorkhubDocument(selectedDocument.id, { hasOutgoingReferences: true })
+      await refreshSourceReferenceDocuments()
+      setCopyToFolderDialogOpen(false)
+      showToast({ type: 'success', message: `Referenced in "${targetProject.name}" (read-only).` })
+    } catch (err) {
+      console.error('[copyToFolder]', err)
+      showToast({ type: 'error', message: 'Could not create reference.' })
+    } finally {
+      setCopyToFolderSaving(false)
+    }
+  }
+
+  async function handleRemoveDocumentReference(referenceDocumentId: string) {
+    if (!selectedDocument || !auth.currentUser) return
+    if (!selectedDocumentCanEdit) {
+      showToast({ type: 'warning', message: 'You only have view access to this document.' })
+      return
+    }
+    setBusyKey(`document-reference-remove:${referenceDocumentId}`)
+    try {
+      await deleteDocument(referenceDocumentId)
+      await createActivity({
+        workspaceId: selectedDocument.workspaceId,
+        actorUid: auth.currentUser.uid,
+        entityType: 'document',
+        entityId: selectedDocument.id,
+        action: 'reference_remove',
+        message: `Stopped a reference for document ${selectedDocument.title}`,
+      })
+      await refreshSourceReferenceDocuments()
+      showToast({ type: 'success', message: 'Reference removed.' })
+    } catch (error) {
+      showToast({ type: 'error', message: error instanceof Error ? error.message : 'Could not remove reference.' })
+    } finally {
+      setBusyKey('')
+    }
+  }
+
+  function handleOpenReferenceSourceDocument() {
+    const sourceDocumentId = selectedDocument?.referenceSourceDocumentId
+    const sourceWorkspaceId = selectedDocument?.referenceSourceWorkspaceId
+    if (!sourceDocumentId) return
+    if (sourceWorkspaceId && sourceWorkspaceId !== selectedWorkspaceId) {
+      showToast({ type: 'warning', message: 'Source document is in another workspace. Switch workspaces to open it.' })
+      return
+    }
+    setSelectedDocumentId(sourceDocumentId)
+  }
+
   return {
     selectedDocumentTitleDraft,
     selectedDocumentBodyDraft,
@@ -1043,5 +1783,30 @@ export function useWorkhubDocEditorHandlers({
     handleDocLinkRemove,
 
     noteAutoSaveStatus,
+    selectedDocumentHasOutgoingReferences,
+    sourceReferencedTabIds,
+    publicReferenceAutoSaveBlocked,
+    recoverableDraftAvailable: !!recoverableDraft,
+    recoverableDraftUpdatedAt: recoverableDraft?.updatedAt ?? null,
+    handleRestoreRecoverableDraft,
+    handleDiscardRecoverableDraft,
+
+    canUnlockDocument,
+
+    copyToFolderDialogOpen,
+    copyToFolderSaving,
+    copyToFolderWorkspaceId,
+    copyToFolderProjectId,
+    copyTabMode,
+    copyTabSelection,
+    sourceReferenceDocuments,
+    setCopyToFolderDialogOpen,
+    setCopyToFolderWorkspaceId,
+    setCopyToFolderProjectId,
+    setCopyTabMode,
+    setCopyTabSelection,
+    handleCopyDocumentToFolder,
+    handleRemoveDocumentReference,
+    handleOpenReferenceSourceDocument,
   }
 }

@@ -213,6 +213,24 @@ service cloud.firestore {
       allow create, delete: if canAccessWorkhub();
     }
 
+    match /workhub_document_drafts/{draftId} {
+      allow read: if canAccessWorkhub()
+        && resource.data.userUid == request.auth.uid
+        && resource.data.documentId is string
+        && canReadWorkhubDocument(resource.data.documentId);
+      allow create: if canAccessWorkhub()
+        && request.resource.data.userUid == request.auth.uid
+        && request.resource.data.documentId is string
+        && canReadWorkhubDocument(request.resource.data.documentId);
+      allow update: if canAccessWorkhub()
+        && resource.data.userUid == request.auth.uid
+        && request.resource.data.userUid == resource.data.userUid
+        && request.resource.data.documentId == resource.data.documentId
+        && request.resource.data.workspaceId == resource.data.workspaceId
+        && canReadWorkhubDocument(resource.data.documentId);
+      allow delete: if canAccessWorkhub() && resource.data.userUid == request.auth.uid;
+    }
+
     match /workhub_tasks/{taskId} {
       allow read: if isPrivilegedWorkhubMember() || (canAccessWorkhub() && isVisibleWorkhubEntity(resource.data));
       allow create, update, delete: if canAccessWorkhub();

@@ -16,6 +16,7 @@ export interface UseTinyRichTextEditorConfigOutput {
 }
 
 export function useTinyRichTextEditorConfig({
+  disabled = false,
   minHeight = 520,
   placeholder = 'Start writing...',
 }: UseTinyRichTextEditorConfigInput): UseTinyRichTextEditorConfigOutput {
@@ -35,6 +36,7 @@ export function useTinyRichTextEditorConfig({
     statusbar: false,
     elementpath: false,
     resize: false,
+    disabled,
     min_height: minHeight,
     // Use horizontal scroll on narrow screens instead of wrapping controls.
     toolbar_mode: 'scrolling',
@@ -54,17 +56,19 @@ export function useTinyRichTextEditorConfig({
       'directionality',
       'code',
     ],
-    toolbar: [
-      'undo redo',
-      'blocks fontfamily fontsize',
-      'bold italic underline strikethrough forecolor backcolor',
-      'alignleft aligncenter alignright alignjustify',
-      'bullist numlist checklist outdent indent',
-      'link image table charmap',
-      'ltr rtl',
-      'removeformat linespacing',
-      'code',
-    ].join(' | '),
+    toolbar: disabled
+      ? false
+      : [
+          'undo redo',
+          'blocks fontfamily fontsize',
+          'bold italic underline strikethrough forecolor backcolor',
+          'alignleft aligncenter alignright alignjustify',
+          'bullist numlist checklist outdent indent',
+          'link image table charmap',
+          'ltr rtl',
+          'removeformat linespacing',
+          'code',
+        ].join(' | '),
     block_formats: 'Paragraph=p; Heading 1=h1; Heading 2=h2; Heading 3=h3; Heading 4=h4',
     font_size_formats: '12px 14px 16px 18px 20px 24px 28px 32px',
     font_family_formats: [
@@ -84,7 +88,7 @@ export function useTinyRichTextEditorConfig({
       "Times New Roman=Times New Roman, Times, serif",
       "Courier New=Courier New, Courier, monospace",
     ].join(';'),
-    contextmenu: 'link image table',
+    contextmenu: disabled ? false : 'link image table',
     image_caption: true,
     directionality: 'rtl',
     placeholder,
@@ -143,7 +147,7 @@ export function useTinyRichTextEditorConfig({
       '::-webkit-scrollbar-thumb { background: #c2d0e8; border-radius: 99px; }',
       '::-webkit-scrollbar-thumb:hover { background: #a0b4d6; }',
     ].join(' '),
-  }), [minHeight, placeholder])
+  }), [disabled, minHeight, placeholder])
 
   return { apiKey, scriptSrc, init }
 }

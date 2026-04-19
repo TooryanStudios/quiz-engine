@@ -1,0 +1,6 @@
+node_modules
+.env
+firebase-debug.log
+firebase-debug.*.log
+# server/ is populated by scripts/sync-chatbot-server.mjs — do not commit
+server/

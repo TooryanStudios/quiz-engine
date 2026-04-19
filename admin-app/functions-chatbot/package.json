@@ -1,0 +1,17 @@
+{
+  "name": "functions-chatbot",
+  "type": "module",
+  "version": "1.0.0",
+  "main": "index.js",
+  "engines": {
+    "node": "22"
+  },
+  "dependencies": {
+    "admin-app": "file:..",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "firebase-functions": "^7.0.6"
+  },
+  "private": true
+}

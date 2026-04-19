@@ -22,6 +22,49 @@ type MasterPageVariantKey = 'firstPage' | 'laterPages'
 type MasterPageSectionKey = 'header' | 'footer'
 type DetailRailTab = 'details' | 'ai'
 
+interface NormalizedPrintBlock {
+  mode: 'html' | 'structured'
+  html: string
+  logoUrl: string
+  title: string
+  subtitle: string
+  address: string
+  signatureLabel: string
+  showDocumentTitle: boolean
+}
+
+interface NormalizedMasterPageVariant {
+  showHeader: boolean
+  showFooter: boolean
+  showPageNumbers: boolean
+  header: NormalizedPrintBlock
+  footer: NormalizedPrintBlock
+}
+
+interface NormalizedMasterPage {
+  pageSize: NonNullable<WorkhubDocumentMasterPage['pageSize']>
+  orientation: NonNullable<WorkhubDocumentMasterPage['orientation']>
+  marginTopMm: number
+  marginRightMm: number
+  marginBottomMm: number
+  marginLeftMm: number
+  firstPage: NormalizedMasterPageVariant
+  laterPages: NormalizedMasterPageVariant
+  showCoverPage: boolean
+  coverDateMode: NonNullable<WorkhubDocumentMasterPage['coverDateMode']>
+  coverShowDocumentName: boolean
+  coverShowTabName: boolean
+  coverTheme: CoverThemeId
+  coverTagLine: string
+  showWatermark: boolean
+  watermarkLogoUrl: string
+  watermarkScale: number
+  watermarkOpacity: number
+  watermarkLayout: NonNullable<WorkhubDocumentMasterPage['watermarkLayout']>
+  watermarkCornerOpacity: number
+  watermarkCornerScale: number
+}
+
 type BrowserSpeechRecognition = {
   continuous: boolean
   interimResults: boolean
@@ -100,48 +143,7 @@ function resolveHeaderSpeechLanguage(params: {
 }
 
 function escapeHtmlForEditor(text: string) {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-    .replace(/\r\n|\r|\n/g, '<br>')
-}
-
-type NormalizedPrintBlock = Required<WorkhubDocumentPrintBlock>
-type NormalizedMasterPageVariant = {
-  showHeader: boolean
-  showFooter: boolean
-  showPageNumbers: boolean
-  header: NormalizedPrintBlock
-  footer: NormalizedPrintBlock
-}
-
-type NormalizedMasterPage = {
-  pageSize: NonNullable<WorkhubDocumentMasterPage['pageSize']>
-  orientation: NonNullable<WorkhubDocumentMasterPage['orientation']>
-  marginTopMm: number
-  marginRightMm: number
-  marginBottomMm: number
-  marginLeftMm: number
-  firstPage: NormalizedMasterPageVariant
-  laterPages: NormalizedMasterPageVariant
-  // Cover page
-  showCoverPage: boolean
-  coverDateMode: NonNullable<WorkhubDocumentMasterPage['coverDateMode']>
-  coverShowDocumentName: boolean
-  coverShowTabName: boolean
-  coverTheme: CoverThemeId
-  coverTagLine: string
-  // Watermark
-  showWatermark: boolean
-  watermarkLogoUrl: string
-  watermarkScale: number
-  watermarkOpacity: number
-  watermarkLayout: NonNullable<WorkhubDocumentMasterPage['watermarkLayout']>
-  watermarkCornerOpacity: number
-  watermarkCornerScale: number
+  return '<p>' + escapeHtml(text).replace(/\n/g, '</p><p>') + '</p>'
 }
 
 const PAGE_SIZE_MM: Record<NormalizedMasterPage['pageSize'], { width: number; height: number }> = {
@@ -1361,6 +1363,24 @@ interface WorkhubDocEditorProps extends UseWorkhubDocEditorHandlersOutput {
   onDiscussionEditSave: (comment: WorkhubTaskComment) => Promise<void>
   discussionEditBusyKey: string
   currentUid: string
+  isPrivilegedMember: boolean
+  allWorkspaceIds: Array<{ id: string; name: string }>
+  allWorkspaceProjects: Array<{ id: string; name: string; workspaceId: string }>
+  canUnlockDocument: boolean
+  copyToFolderDialogOpen: boolean
+  copyToFolderSaving: boolean
+  copyToFolderWorkspaceId: string
+  copyToFolderProjectId: string
+  copyTabMode: 'all' | 'active' | 'select'
+  copyTabSelection: string[]
+  setCopyToFolderDialogOpen: React.Dispatch<React.SetStateAction<boolean>>
+  setCopyToFolderWorkspaceId: React.Dispatch<React.SetStateAction<string>>
+  setCopyToFolderProjectId: React.Dispatch<React.SetStateAction<string>>
+  setCopyTabMode: React.Dispatch<React.SetStateAction<'all' | 'active' | 'select'>>
+  setCopyTabSelection: React.Dispatch<React.SetStateAction<string[]>>
+  sourceReferenceDocuments: WorkhubDocument[]
+  handleCopyDocumentToFolder: () => Promise<void>
+  handleRemoveDocumentReference: (referenceDocumentId: string) => Promise<void>
 }
 
 export function WorkhubDocEditor({
@@ -1419,6 +1439,13 @@ export function WorkhubDocEditor({
   handleDocLinkAdd,
   handleDocLinkRemove,
   noteAutoSaveStatus,
+  selectedDocumentHasOutgoingReferences,
+  sourceReferencedTabIds,
+  publicReferenceAutoSaveBlocked,
+  recoverableDraftAvailable,
+  recoverableDraftUpdatedAt,
+  handleRestoreRecoverableDraft,
+  handleDiscardRecoverableDraft,
   selectedDocument,
   scopedWorkspaceDocuments,
   selectedProjectId,
@@ -1454,6 +1481,24 @@ export function WorkhubDocEditor({
   onDiscussionEditSave,
   discussionEditBusyKey,
   currentUid,
+  allWorkspaceIds,
+  allWorkspaceProjects,
+  canUnlockDocument,
+  copyToFolderDialogOpen,
+  copyToFolderSaving,
+  copyToFolderWorkspaceId,
+  copyToFolderProjectId,
+  copyTabMode,
+  copyTabSelection,
+  setCopyToFolderDialogOpen,
+  setCopyToFolderWorkspaceId,
+  setCopyToFolderProjectId,
+  setCopyTabMode,
+  setCopyTabSelection,
+  sourceReferenceDocuments,
+  handleCopyDocumentToFolder,
+  handleRemoveDocumentReference,
+  handleOpenReferenceSourceDocument,
 }: WorkhubDocEditorProps) {
   const [mobileDocDetailsOpen, setMobileDocDetailsOpen] = useState(false)
   const [detailRailTab, setDetailRailTab] = useState<DetailRailTab>('details')
@@ -1544,10 +1589,36 @@ export function WorkhubDocEditor({
     : undefined
   const selectedDocumentIcon = selectedDocument?.icon || (selectedDocument?.type === 'note' ? '����ï¸' : '📝')
   const activeTab = documentTabsDraft.length > 0 ? documentTabsDraft.find((tab) => tab.id === activeTabId) || null : null
+  const showPublicSourceWarning = Boolean(selectedDocument && selectedDocumentHasOutgoingReferences && !selectedDocument.referenceSourceDocumentId)
+  const autoSaveStatusText = publicReferenceAutoSaveBlocked && selectedDocumentChanged
+    ? 'Autosave paused for public content. Publish manually.'
+    : (noteAutoSaveStatus === 'saving' ? 'Saving…' : noteAutoSaveStatus === 'saved' ? '✔ Saved' : '')
+  const recoverableDraftTimeLabel = recoverableDraftUpdatedAt
+    ? new Date(recoverableDraftUpdatedAt).toLocaleString()
+    : ''
   const aiPanelPersistenceKey = selectedDocument ? `workhub:${selectedDocument.id}:${activeTab?.id || 'body'}` : undefined
+  const [showPublishWarningBox, setShowPublishWarningBox] = useState(false)
+  const [publishWarningShownForVisit, setPublishWarningShownForVisit] = useState(false)
+  const shouldTriggerPublishWarningBox = publicReferenceAutoSaveBlocked && selectedDocumentChanged && !publishWarningShownForVisit
   const headerSpeechRecognitionSupported = useMemo(() => Boolean(getSpeechRecognitionCtor()), [])
   const pendingRestoreTimerRef = useRef<number | null>(null)
   const restoringRef = useRef(false)
+
+  useEffect(() => {
+    setShowPublishWarningBox(false)
+    setPublishWarningShownForVisit(false)
+  }, [selectedDocument?.id])
+
+  useEffect(() => {
+    if (shouldTriggerPublishWarningBox) {
+      setShowPublishWarningBox(true)
+      setPublishWarningShownForVisit(true)
+    }
+  }, [shouldTriggerPublishWarningBox])
+
+  function dismissPublishWarningForVisit() {
+    setShowPublishWarningBox(false)
+  }
 
   function getEditorStateKey(docId: string | null | undefined, tabId: string | null | undefined) {
     if (!docId) return null
@@ -1975,6 +2046,13 @@ export function WorkhubDocEditor({
 
   function handleDeleteTab(tabId: string) {
     if (documentTabsDraft.length <= 1) return
+    if (selectedDocumentHasOutgoingReferences) {
+      const isPublicTab = sourceReferencedTabIds.includes(tabId)
+      const warning = isPublicTab
+        ? 'This tab is currently public and referenced in other folders. Deleting it will remove it from those places. Continue?'
+        : 'This document is referenced by other folders. Deleting tabs can impact shared copies. Continue?'
+      if (!window.confirm(warning)) return
+    }
     setPendingDeleteTabId(tabId)
   }
 
@@ -2301,8 +2379,8 @@ export function WorkhubDocEditor({
             <div className="workhub-quick-note-head-left">
               <h2>Quick note</h2>
               {projectName && <span className="workhub-quick-note-location">{projectName}</span>}
-              <span className="workhub-note-autosave-status" aria-live="polite">
-                {noteAutoSaveStatus === 'saving' ? 'Saving…' : noteAutoSaveStatus === 'saved' ? '✔ Saved' : ''}
+              <span className={`workhub-note-autosave-status${publicReferenceAutoSaveBlocked && selectedDocumentChanged ? ' is-error' : ''}`} aria-live="polite">
+                {autoSaveStatusText}
               </span>
             </div>
             <button
@@ -2314,6 +2392,52 @@ export function WorkhubDocEditor({
               ✕
             </button>
           </div>
+
+          {recoverableDraftAvailable && (
+            <div className="workhub-draft-restore-banner" role="status" aria-live="polite">
+              <strong>Recovered draft available{recoverableDraftTimeLabel ? ` (${recoverableDraftTimeLabel})` : ''}.</strong>
+              <div className="workhub-draft-restore-actions">
+                <button type="button" className="workhub-primary-mini" onClick={handleRestoreRecoverableDraft}>Restore draft</button>
+                <button type="button" className="workhub-ghost-mini" onClick={handleDiscardRecoverableDraft}>Discard draft</button>
+              </div>
+            </div>
+          )}
+
+          {showPublishWarningBox && publicReferenceAutoSaveBlocked && selectedDocumentChanged && (
+            <div className="workhub-reference-publish-warning" role="status" aria-live="polite">
+              <strong>Public update pending.</strong>
+              <span>This content is referenced by other folders. Autosave is paused until you publish.</span>
+              <button
+                type="button"
+                className="workhub-primary-mini"
+                onClick={() => {
+                  dismissPublishWarningForVisit()
+                  void handleSaveSelectedDocument()
+                }}
+              >
+                Publish update
+              </button>
+              <button
+                type="button"
+                className="workhub-ghost-mini"
+                onClick={() => {
+                  dismissPublishWarningForVisit()
+                  setCopyTabMode('select')
+                  setCopyTabSelection([])
+                  setCopyToFolderDialogOpen(true)
+                }}
+              >
+                Manage references
+              </button>
+              <button
+                type="button"
+                className="workhub-ghost-mini"
+                onClick={dismissPublishWarningForVisit}
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
 
           <TinyRichTextEditor
             className={`workhub-document-body-editor workhub-quick-note-editor${selectedDocumentReadOnly ? ' is-locked' : ''}`}
@@ -2434,39 +2558,62 @@ export function WorkhubDocEditor({
                       placeholder="Document name"
                       disabled={selectedDocumentReadOnly}
                     />
+                    {showPublicSourceWarning && (
+                      <span className="workhub-public-source-chip" title="This is a public source document with active references.">🌐 Public source</span>
+                    )}
+                    {documentTabsDraft.length > 1 && (
+                      <label className="workhub-documents-tab-select-wrap">
+                        <span>Display tab</span>
+                        <select
+                          className="workhub-documents-tab-select"
+                          value={activeTabId || documentTabsDraft[0]?.id || ''}
+                          onChange={(event) => handleSwitchTab(event.target.value)}
+                        >
+                          {documentTabsDraft.map((tab) => (
+                            <option key={tab.id} value={tab.id}>
+                              {(tab.icon ? `${tab.icon} ` : '') + tab.title + (sourceReferencedTabIds.includes(tab.id) ? ' 🌐' : '')}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
                   </div>
                 ) : (
                   <h2>Documents</h2>
                 )}
               </div>
               <div className="workhub-panel-tools">
-                <button
-                  className="workhub-ghost-btn workhub-doc-tool-btn"
-                  title="New document"
-                  aria-label="New document"
-                  onClick={() => openDocumentCreateDialog(selectedProjectId !== 'all' ? selectedProjectId : '')}
-                >
-                  {'📁'}
-                </button>
-                <button
-                  type="button"
-                  className={`workhub-doc-ai-btn workhub-doc-ai-btn-secondary workhub-doc-ai-voice-btn${isHeaderVoiceListening ? ' is-listening' : ''}`}
-                  title={isHeaderVoiceListening ? 'Stop voice recording' : 'Start voice recording'}
-                  aria-label={isHeaderVoiceListening ? 'Stop voice recording' : 'Start voice recording'}
-                  disabled={!selectedDocument || !documentEditor || !headerSpeechRecognitionSupported}
-                  onClick={() => {
-                    handleHeaderVoiceInput()
-                  }}
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M12 4a3 3 0 0 1 3 3v4a3 3 0 1 1-6 0V7a3 3 0 0 1 3-3Z" stroke="currentColor" strokeWidth="1.8" />
-                    <path d="M6 11a6 6 0 0 0 12 0" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                    <path d="M12 17v3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                    <path d="M9 20h6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                  </svg>
-                  <span className="workhub-doc-ai-voice-pulse" aria-hidden="true" />
-                </button>
-                {selectedDocument ? (
+                {!selectedDocumentLocked && (
+                  <button
+                    className="workhub-ghost-btn workhub-doc-tool-btn"
+                    title="New document"
+                    aria-label="New document"
+                    onClick={() => openDocumentCreateDialog(selectedProjectId !== 'all' ? selectedProjectId : '')}
+                  >
+                    {'📁'}
+                  </button>
+                )}
+                {!selectedDocumentLocked && (
+                  <button
+                    type="button"
+                    className={`workhub-doc-ai-btn workhub-doc-ai-btn-secondary workhub-doc-ai-voice-btn${isHeaderVoiceListening ? ' is-listening' : ''}`}
+                    title={isHeaderVoiceListening ? 'Stop voice recording' : 'Start voice recording'}
+                    aria-label={isHeaderVoiceListening ? 'Stop voice recording' : 'Start voice recording'}
+                    disabled={!selectedDocument || !documentEditor || !headerSpeechRecognitionSupported}
+                    onClick={() => {
+                      handleHeaderVoiceInput()
+                    }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M12 4a3 3 0 0 1 3 3v4a3 3 0 1 1-6 0V7a3 3 0 0 1 3-3Z" stroke="currentColor" strokeWidth="1.8" />
+                      <path d="M6 11a6 6 0 0 0 12 0" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                      <path d="M12 17v3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                      <path d="M9 20h6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                    </svg>
+                    <span className="workhub-doc-ai-voice-pulse" aria-hidden="true" />
+                  </button>
+                )}
+                {selectedDocument && !selectedDocumentLocked ? (
                   <button
                     className="workhub-ghost-btn workhub-doc-tool-btn"
                     onClick={() => { setShareDocDialogOpen(true) }}
@@ -2477,15 +2624,42 @@ export function WorkhubDocEditor({
                     {'🔗'}
                   </button>
                 ) : null}
-                {selectedDocument && selectedDocumentCanEdit ? (
+                {selectedDocument && !selectedDocumentLocked ? (
+                  <button
+                    className="workhub-ghost-btn workhub-doc-tool-btn"
+                    onClick={() => {
+                      setCopyTabMode('select')
+                      setCopyTabSelection([])
+                      setCopyToFolderDialogOpen(true)
+                    }}
+                    title="Reference in folder"
+                    aria-label="Reference document in folder"
+                  >
+                    {'📂'}
+                  </button>
+                ) : null}
+                {/* Lock — anyone who can edit can lock */}
+                {selectedDocument && selectedDocumentCanEdit && !selectedDocumentLocked ? (
                   <button
                     className="workhub-ghost-btn workhub-doc-tool-btn"
                     disabled={busyKey === `document-lock:${selectedDocument.id}`}
                     onClick={() => { void handleToggleSelectedDocumentLock() }}
-                    title={selectedDocumentLocked ? 'Unlock document' : 'Lock document'}
-                    aria-label={selectedDocumentLocked ? 'Unlock document' : 'Lock document'}
+                    title="Lock document"
+                    aria-label="Lock document"
                   >
-                    {busyKey === `document-lock:${selectedDocument.id}` ? '⏳' : (selectedDocumentLocked ? '🔓' : '🔒')}
+                    {busyKey === `document-lock:${selectedDocument.id}` ? '⏳' : '🔒'}
+                  </button>
+                ) : null}
+                {/* Unlock — only creator or admins */}
+                {selectedDocument && canUnlockDocument ? (
+                  <button
+                    className="workhub-ghost-btn workhub-doc-tool-btn"
+                    disabled={busyKey === `document-lock:${selectedDocument.id}`}
+                    onClick={() => { void handleToggleSelectedDocumentLock() }}
+                    title="Unlock document"
+                    aria-label="Unlock document"
+                  >
+                    {busyKey === `document-lock:${selectedDocument.id}` ? '⏳' : '🔓'}
                   </button>
                 ) : null}
 
@@ -2530,33 +2704,83 @@ export function WorkhubDocEditor({
                     </svg>
                   </button>
                 )}
-                <button
-                  className="workhub-primary-btn workhub-doc-tool-btn"
-                  title="Save document"
-                  aria-label="Save document"
-                  disabled={!selectedDocument || selectedDocumentReadOnly || !selectedDocumentChanged || busyKey === `document:${selectedDocument?.id || ''}`}
-                  onClick={() => { void handleSaveSelectedDocument() }}
-                  style={{ display: 'none' }}
-                >
-                  {busyKey === `document:${selectedDocument?.id || ''}` ? '⏳' : '💾'}
-                </button>
-                {selectedDocument && (
-                  <span className="workhub-note-autosave-status" aria-live="polite">
-                    {noteAutoSaveStatus === 'saving' ? 'Saving…' : noteAutoSaveStatus === 'saved' ? '✔ Saved' : ''}
-                  </span>
-                )}
-                {isMobileLayout && selectedDocument && (
-                  <button
-                    className="workhub-ghost-btn workhub-doc-tool-btn"
-                    onClick={() => setMobileDocDetailsOpen(true)}
-                    title="Details"
-                    aria-label="Details"
-                  >
-                    ⚙ï¸
-                  </button>
+                {!selectedDocumentLocked && (
+                  <>
+                    <button
+                      className="workhub-primary-btn workhub-doc-tool-btn"
+                      title="Save document"
+                      aria-label="Save document"
+                      disabled={!selectedDocument || selectedDocumentReadOnly || !selectedDocumentChanged || busyKey === `document:${selectedDocument?.id || ''}`}
+                      onClick={() => { void handleSaveSelectedDocument() }}
+                      style={{ display: 'none' }}
+                    >
+                      {busyKey === `document:${selectedDocument?.id || ''}` ? '⏳' : '💾'}
+                    </button>
+                    {selectedDocument && (
+                      <span className={`workhub-note-autosave-status${publicReferenceAutoSaveBlocked && selectedDocumentChanged ? ' is-error' : ''}`} aria-live="polite">
+                        {autoSaveStatusText}
+                      </span>
+                    )}
+                    {isMobileLayout && selectedDocument && (
+                      <button
+                        className="workhub-ghost-btn workhub-doc-tool-btn"
+                        onClick={() => setMobileDocDetailsOpen(true)}
+                        title="Details"
+                        aria-label="Details"
+                      >
+                        ⚙️
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             </div>
+
+            {recoverableDraftAvailable && (
+              <div className="workhub-draft-restore-banner" role="status" aria-live="polite">
+                <strong>Recovered draft available{recoverableDraftTimeLabel ? ` (${recoverableDraftTimeLabel})` : ''}.</strong>
+                <div className="workhub-draft-restore-actions">
+                  <button type="button" className="workhub-primary-mini" onClick={handleRestoreRecoverableDraft}>Restore draft</button>
+                  <button type="button" className="workhub-ghost-mini" onClick={handleDiscardRecoverableDraft}>Discard draft</button>
+                </div>
+              </div>
+            )}
+
+            {showPublishWarningBox && publicReferenceAutoSaveBlocked && selectedDocumentChanged && (
+              <div className="workhub-reference-publish-warning" role="status" aria-live="polite">
+                <strong>Public update pending.</strong>
+                <span>This content is referenced by other folders. Autosave is paused until you publish.</span>
+                <button
+                  type="button"
+                  className="workhub-primary-mini"
+                  onClick={() => {
+                    dismissPublishWarningForVisit()
+                    void handleSaveSelectedDocument()
+                  }}
+                >
+                  Publish update
+                </button>
+                <button
+                  type="button"
+                  className="workhub-ghost-mini"
+                  onClick={() => {
+                    dismissPublishWarningForVisit()
+                    setCopyTabMode('select')
+                    setCopyTabSelection([])
+                    setCopyToFolderDialogOpen(true)
+                  }}
+                >
+                  Manage references
+                </button>
+                <button
+                  type="button"
+                  className="workhub-ghost-mini"
+                  onClick={dismissPublishWarningForVisit}
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
 
             {selectedDocument ? (
               printPreviewMode ? (
@@ -2610,7 +2834,7 @@ export function WorkhubDocEditor({
             )}
           </section>
 
-          {!isMobileLayout && (
+          {!isMobileLayout && !selectedDocumentLocked && (
             <div
               className={`workhub-rail-resize-handle${detailRailCollapsed ? ' is-collapsed' : ''}`}
               onPointerDown={handleRailResizePointerDown}
@@ -2634,9 +2858,9 @@ export function WorkhubDocEditor({
 
           <aside
             ref={detailRailRef}
-            className={`workhub-doc-detail-rail${isMobileLayout ? ' is-mobile-drawer' : ''}${isMobileLayout && mobileDocDetailsOpen ? ' is-open' : ''}${!isMobileLayout && detailRailCollapsed ? ' is-hidden' : ''}`}
+            className={`workhub-doc-detail-rail${isMobileLayout ? ' is-mobile-drawer' : ''}${isMobileLayout && mobileDocDetailsOpen ? ' is-open' : ''}${!isMobileLayout && (detailRailCollapsed || selectedDocumentLocked) ? ' is-hidden' : ''}`}
             style={!isMobileLayout ? { flexBasis: detailRailWidth, width: detailRailWidth } : undefined}
-            aria-hidden={isMobileLayout ? !mobileDocDetailsOpen : detailRailCollapsed}
+            aria-hidden={isMobileLayout ? !mobileDocDetailsOpen : (detailRailCollapsed || selectedDocumentLocked)}
           >
             {isMobileLayout && (
               <div className="workhub-mobile-detail-drawer-head">
@@ -2718,6 +2942,24 @@ export function WorkhubDocEditor({
                   </div>
                 </details>
 
+                {selectedDocument.referenceSourceDocumentId && (
+                  <div className="workhub-detail-card workhub-source-document-card">
+                    <h3>Source document</h3>
+                    <div className="workhub-source-document-meta">
+                      <span>Document ID: {selectedDocument.referenceSourceDocumentId}</span>
+                      <span>Workspace ID: {selectedDocument.referenceSourceWorkspaceId || 'Unknown'}</span>
+                      {selectedDocument.referenceSourceProjectId && <span>Folder ID: {selectedDocument.referenceSourceProjectId}</span>}
+                    </div>
+                    <button
+                      type="button"
+                      className="workhub-ghost-btn"
+                      onClick={handleOpenReferenceSourceDocument}
+                    >
+                      Open source document
+                    </button>
+                  </div>
+                )}
+
                 {Array.isArray(selectedDocument.editedBy) && selectedDocument.editedBy.length > 0 && (
                   <div className="workhub-detail-card">
                     <h3>Edit history</h3>
@@ -2798,12 +3040,14 @@ export function WorkhubDocEditor({
                           ) : (
                             <button
                               type="button"
-                              className="workhub-doc-tab-row-title"
+                              className={`workhub-doc-tab-row-title${sourceReferencedTabIds.includes(tab.id) ? ' is-public' : ''}`}
                               onClick={() => handleSwitchTab(tab.id)}
                               onDoubleClick={() => { if (!selectedDocumentReadOnly) handleStartRename(tab) }}
                               title={tab.id === activeTabId ? 'Currently viewing' : 'Switch to this tab'}
                             >
                               {tab.title}
+                              {sourceReferencedTabIds.includes(tab.id) ? ' 🌐' : ''}
+                              {selectedDocument.referenceSourceDocumentId ? ' 🔗' : ''}
                             </button>
                           )}
 
@@ -3506,6 +3750,136 @@ export function WorkhubDocEditor({
             {!selectedDocumentCanEdit && (
               <p className="workhub-share-doc-desc">You have view-only access and cannot change sharing.</p>
             )}
+          </div>
+        </div>
+      )}
+
+      {copyToFolderDialogOpen && selectedDocument && (
+        <div className="workhub-share-doc-overlay" onClick={() => setCopyToFolderDialogOpen(false)}>
+          <div className="workhub-share-doc-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="workhub-share-doc-head">
+              <span>Reference in folder — <em>{selectedDocument.title}</em></span>
+              <button type="button" className="workhub-share-doc-close" onClick={() => setCopyToFolderDialogOpen(false)}>✕</button>
+            </div>
+            <p className="workhub-share-doc-desc">
+              This creates a live read-only reference. Source updates are synced automatically and unsharing removes the reference.
+            </p>
+            <div className="workhub-share-doc-form-grid">
+              <label className="workhub-share-doc-form-row">
+                <span>Workspace</span>
+                <select
+                  className="workhub-share-doc-select"
+                  value={copyToFolderWorkspaceId}
+                  onChange={(e) => { setCopyToFolderWorkspaceId(e.target.value); setCopyToFolderProjectId('') }}
+                >
+                  <option value="">Select workspace…</option>
+                  {allWorkspaceIds.map((ws) => (
+                    <option key={ws.id} value={ws.id}>{ws.name}</option>
+                  ))}
+                </select>
+              </label>
+              {copyToFolderWorkspaceId && (
+                <label className="workhub-share-doc-form-row">
+                  <span>Folder</span>
+                  <select
+                    className="workhub-share-doc-select"
+                    value={copyToFolderProjectId}
+                    onChange={(e) => setCopyToFolderProjectId(e.target.value)}
+                  >
+                    <option value="">Select folder…</option>
+                    {allWorkspaceProjects
+                      .filter((p) => p.workspaceId === copyToFolderWorkspaceId)
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))
+                    }
+                  </select>
+                </label>
+              )}
+              {documentTabsDraft.length > 0 && (
+                <div className="workhub-share-doc-form-row is-full-width">
+                  <span>Tabs to reference</span>
+                  <div className="workhub-copy-tab-mode-group">
+                    {(['all', 'active', 'select'] as const).map((mode) => (
+                      <label key={mode} className="workhub-copy-tab-mode-option">
+                        <input
+                          type="radio"
+                          name="copyTabMode"
+                          value={mode}
+                          checked={copyTabMode === mode}
+                          onChange={() => { setCopyTabMode(mode); setCopyTabSelection([]) }}
+                        />
+                        {mode === 'all' ? 'All tabs' : mode === 'active' ? 'Active tab only' : 'Choose tabs'}
+                      </label>
+                    ))}
+                  </div>
+                  {copyTabMode === 'select' && (
+                    <div className="workhub-copy-tab-checklist">
+                      {documentTabsDraft.map((tab) => (
+                        <label key={tab.id} className="workhub-copy-tab-check-item">
+                          <input
+                            type="checkbox"
+                            checked={copyTabSelection.includes(tab.id)}
+                            onChange={(e) => {
+                              setCopyTabSelection((prev) =>
+                                e.target.checked ? [...prev, tab.id] : prev.filter((id) => id !== tab.id),
+                              )
+                            }}
+                          />
+                          {tab.icon ? `${tab.icon} ` : ''}{tab.title}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="workhub-share-doc-form-row is-full-width">
+                <span>Existing references</span>
+                {sourceReferenceDocuments.length === 0 ? (
+                  <p className="workhub-share-doc-desc">No active references yet.</p>
+                ) : (
+                  <div className="workhub-share-doc-members">
+                    {sourceReferenceDocuments.map((refDoc) => {
+                      const projectName = workspaceProjectById[refDoc.projectId || '']?.name || refDoc.projectId || 'Folder'
+                      const workspaceName = allWorkspaceIds.find((ws) => ws.id === refDoc.workspaceId)?.name || refDoc.workspaceId
+                      return (
+                        <div key={refDoc.id} className="workhub-share-doc-member-row">
+                          <div className="workhub-share-doc-member-copy">
+                            <strong>{refDoc.title}</strong>
+                            <small>{workspaceName} · {projectName}</small>
+                          </div>
+                          <button
+                            type="button"
+                            className="workhub-ghost-btn"
+                            disabled={!selectedDocumentCanEdit || busyKey === `document-reference-remove:${refDoc.id}`}
+                            onClick={() => {
+                              if (!window.confirm('Remove this reference from its target folder?')) return
+                              void handleRemoveDocumentReference(refDoc.id)
+                            }}
+                          >
+                            {busyKey === `document-reference-remove:${refDoc.id}` ? 'Removing…' : 'Unshare'}
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="workhub-share-doc-actions">
+              <button type="button" className="workhub-ghost-btn" onClick={() => setCopyToFolderDialogOpen(false)}>Cancel</button>
+              <button
+                type="button"
+                className="workhub-primary-btn"
+                disabled={
+                  !copyToFolderWorkspaceId || !copyToFolderProjectId || copyToFolderSaving ||
+                  (copyTabMode === 'select' && copyTabSelection.length === 0)
+                }
+                onClick={() => { void handleCopyDocumentToFolder() }}
+              >
+                {copyToFolderSaving ? 'Referencing…' : 'Create reference'}
+              </button>
+            </div>
           </div>
         </div>
       )}

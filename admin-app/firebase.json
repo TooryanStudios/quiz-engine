@@ -4,6 +4,11 @@
       "source": "functions",
       "codebase": "default",
       "ignore": ["node_modules", ".git", "firebase-debug.log", "firebase-debug.*.log"]
+    },
+    {
+      "source": "functions-chatbot",
+      "codebase": "chatbot",
+      "ignore": ["node_modules", ".git", "firebase-debug.log", "firebase-debug.*.log"]
     }
   ],
   "hosting": {
@@ -39,6 +44,18 @@
       }
     ],
     "rewrites": [
+      {
+        "source": "/api/**",
+        "function": "chatbot"
+      },
+      {
+        "source": "/mock-integrations/**",
+        "function": "chatbot"
+      },
+      {
+        "source": "/chatbot/**",
+        "destination": "/chatbot/index.html"
+      },
       {
         "source": "**",
         "destination": "/index.html"

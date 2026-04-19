@@ -1,4 +1,4 @@
-import { addDoc, collection, deleteDoc, deleteField, doc, getDoc, getDocs, limit, onSnapshot, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
+import { addDoc, collection, deleteDoc, deleteField, doc, getDoc, getDocs, limit, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { db, functions } from './firebase'
 
@@ -195,6 +195,11 @@ export interface WorkhubDocument {
   id: string
   workspaceId: string
   projectId?: string | null
+  hasOutgoingReferences?: boolean
+  referenceSourceDocumentId?: string | null
+  referenceSourceWorkspaceId?: string | null
+  referenceSourceProjectId?: string | null
+  referenceTabIds?: string[]
   type?: 'document' | 'note'
   icon?: string
   title: string
@@ -216,6 +221,20 @@ export interface WorkhubDocument {
   notifyMode?: 'all' | 'selected' | 'none'
   notifyUids?: string[]
   createdBy: string
+  createdAt?: unknown
+  updatedAt?: unknown
+}
+
+export interface WorkhubDocumentDraft {
+  id: string
+  workspaceId: string
+  documentId: string
+  userUid: string
+  title: string
+  body: string
+  tabs?: WorkhubDocumentTab[]
+  activeTabId?: string
+  masterPage?: WorkhubDocumentMasterPage
   createdAt?: unknown
   updatedAt?: unknown
 }
@@ -327,6 +346,7 @@ const commentsCol = collection(db, 'workhub_task_comments')
 const activityCol = collection(db, 'workhub_activity')
 const notificationsCol = collection(db, 'workhub_notifications')
 const clientsCol = collection(db, 'workhub_clients')
+const documentDraftsCol = collection(db, 'workhub_document_drafts')
 
 function getTimeValue(value: unknown): number {
   if (!value) return 0
@@ -797,7 +817,7 @@ export async function getWorkhubDocumentById(documentId: string): Promise<Workhu
 
 export async function updateWorkhubDocument(
   documentId: string,
-  patch: Partial<Pick<WorkhubDocument, 'projectId' | 'icon' | 'title' | 'body' | 'tabs' | 'masterPage' | 'checklist' | 'attachments' | 'links' | 'editedBy' | 'isLocked' | 'lockedBy' | 'lockedAt' | 'shareToken' | 'shareEnabled' | 'visibility' | 'memberUids' | 'editMemberUids' | 'notifyMode' | 'notifyUids'>>,
+  patch: Partial<Pick<WorkhubDocument, 'projectId' | 'hasOutgoingReferences' | 'referenceSourceDocumentId' | 'referenceSourceWorkspaceId' | 'referenceSourceProjectId' | 'referenceTabIds' | 'icon' | 'title' | 'body' | 'tabs' | 'masterPage' | 'checklist' | 'attachments' | 'links' | 'editedBy' | 'isLocked' | 'lockedBy' | 'lockedAt' | 'shareToken' | 'shareEnabled' | 'visibility' | 'memberUids' | 'editMemberUids' | 'notifyMode' | 'notifyUids'>>,
 ) {
   const payload: Record<string, unknown> = {
     ...patch,
@@ -806,10 +826,74 @@ export async function updateWorkhubDocument(
   if (Object.prototype.hasOwnProperty.call(patch, 'projectId')) {
     payload.projectId = patch.projectId || null
   }
+  if (Object.prototype.hasOwnProperty.call(patch, 'hasOutgoingReferences')) {
+    payload.hasOutgoingReferences = Boolean(patch.hasOutgoingReferences)
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'referenceSourceDocumentId')) {
+    payload.referenceSourceDocumentId = patch.referenceSourceDocumentId || null
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'referenceSourceWorkspaceId')) {
+    payload.referenceSourceWorkspaceId = patch.referenceSourceWorkspaceId || null
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'referenceSourceProjectId')) {
+    payload.referenceSourceProjectId = patch.referenceSourceProjectId || null
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'referenceTabIds')) {
+    payload.referenceTabIds = Array.isArray(patch.referenceTabIds) ? patch.referenceTabIds : []
+  }
   if (Object.prototype.hasOwnProperty.call(patch, 'icon')) {
     payload.icon = (patch.icon || '').trim() || null
   }
   await updateDoc(doc(db, 'workhub_documents', documentId), payload)
+}
+
+export async function getWorkhubDocumentReferencesBySource(sourceDocumentId: string): Promise<WorkhubDocument[]> {
+  if (!sourceDocumentId) return []
+  const q = query(documentsCol, where('referenceSourceDocumentId', '==', sourceDocumentId))
+  const snap = await getDocs(q)
+  return sortDocuments(snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubDocument)))
+}
+
+function getWorkhubDocumentDraftId(documentId: string, userUid: string) {
+  return `${documentId}__${userUid}`
+}
+
+export async function saveWorkhubDocumentDraft(input: {
+  workspaceId: string
+  documentId: string
+  userUid: string
+  title: string
+  body: string
+  tabs: WorkhubDocumentTab[]
+  activeTabId: string
+  masterPage: WorkhubDocumentMasterPage
+}) {
+  const draftId = getWorkhubDocumentDraftId(input.documentId, input.userUid)
+  await setDoc(doc(documentDraftsCol, draftId), {
+    workspaceId: input.workspaceId,
+    documentId: input.documentId,
+    userUid: input.userUid,
+    title: input.title,
+    body: input.body,
+    tabs: input.tabs,
+    activeTabId: input.activeTabId,
+    masterPage: input.masterPage,
+    updatedAt: serverTimestamp(),
+  }, { merge: true })
+}
+
+export async function getWorkhubDocumentDraft(documentId: string, userUid: string): Promise<WorkhubDocumentDraft | null> {
+  if (!documentId || !userUid) return null
+  const draftId = getWorkhubDocumentDraftId(documentId, userUid)
+  const snap = await getDoc(doc(documentDraftsCol, draftId))
+  if (!snap.exists()) return null
+  return { id: snap.id, ...snap.data() } as WorkhubDocumentDraft
+}
+
+export async function deleteWorkhubDocumentDraft(documentId: string, userUid: string) {
+  if (!documentId || !userUid) return
+  const draftId = getWorkhubDocumentDraftId(documentId, userUid)
+  await deleteDoc(doc(documentDraftsCol, draftId))
 }
 
 export async function saveWorkhubDocumentNotifyPrefs(

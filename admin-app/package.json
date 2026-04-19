@@ -11,7 +11,11 @@
     "test:workhub-templates": "vitest run tests/workhub-template-contracts.test.ts",
     "stamp-build": "node ./scripts/stamp-build.mjs",
     "build:deploy": "npm run stamp-build && npm run build",
-    "deploy:hosting": "npm run build:deploy && firebase deploy --project qyan-om --only hosting",
+    "build:chatbot": "node ./scripts/build-chatbot.mjs",
+    "sync:chatbot-server": "node ./scripts/sync-chatbot-server.mjs",
+    "deploy:hosting": "npm run build:deploy && npm run build:chatbot && firebase deploy --project qyan-om --only hosting",
+    "deploy:chatbot-fn": "npm run sync:chatbot-server && npm --prefix functions-chatbot install && firebase deploy --project qyan-om --only functions:chatbot",
+    "deploy:all": "npm run build:deploy && npm run build:chatbot && npm run sync:chatbot-server && npm --prefix functions-chatbot install && firebase deploy --project qyan-om",
     "deploy:hostgator": "npm run build && node deploy-to-hostgator.js",
     "lint": "eslint .",
     "preview": "vite preview"

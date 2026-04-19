@@ -1674,6 +1674,17 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         overflow: hidden;
         text-overflow: ellipsis;
       }
+      .workhub-tree-doc-item.is-public-source {
+        border-color: #ffd2a2;
+        background: #fff7ec;
+      }
+      .workhub-tree-doc-item.is-public-source .workhub-tree-doc-item-title {
+        color: #9a4a00;
+        font-weight: 700;
+      }
+      .workhub-tree-doc-item.is-public-source .workhub-tree-doc-item-meta {
+        color: #b0692b;
+      }
       .workhub-tree-doc-sublist {
         display: flex;
         flex-direction: column;
@@ -1720,6 +1731,14 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+      }
+      .workhub-tree-doc-subitem.is-public-source {
+        border-color: #ffd2a2;
+        background: #fff7ec;
+      }
+      .workhub-tree-doc-subitem.is-public-source .workhub-tree-doc-subitem-title {
+        color: #9a4a00;
+        font-weight: 700;
       }
       .workhub-tree-doc-lock-badge {
         flex: 0 0 auto;
@@ -4973,6 +4992,14 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         background: #f3f8ff;
         border-color: #c9dbff;
       }
+      .workhub-proposal-doc-item.is-public-source {
+        border-color: #ffd2a2;
+        background: #fff7ec;
+      }
+      .workhub-proposal-doc-item.is-public-source:hover {
+        background: #ffefd9;
+        border-color: #ffc27e;
+      }
       .workhub-proposal-doc-icon {
         font-size: 0.9rem;
         line-height: 1;
@@ -4995,6 +5022,12 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       .workhub-proposal-doc-copy small {
         font-size: 0.63rem;
         color: #6a7fa0;
+      }
+      .workhub-proposal-doc-item.is-public-source .workhub-proposal-doc-copy strong {
+        color: #9a4a00;
+      }
+      .workhub-proposal-doc-item.is-public-source .workhub-proposal-doc-copy small {
+        color: #b0692b;
       }
       .workhub-proposal-thumb-grid {
         display: grid;
@@ -10286,6 +10319,25 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         border-radius: 10px;
         background: #ffffff;
       }
+      .workhub-source-document-card {
+        border-color: #d3e2ff !important;
+        background: #f7fbff !important;
+      }
+      .workhub-source-document-meta {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-bottom: 10px;
+      }
+      .workhub-source-document-meta span {
+        font-size: 0.68rem;
+        color: #3c5782;
+        border: 1px solid #dce8fb;
+        border-radius: 8px;
+        background: #ffffff;
+        padding: 7px 8px;
+        word-break: break-all;
+      }
       .workhub-doc-edit-history {
         display: flex;
         flex-direction: column;
@@ -10413,6 +10465,16 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       }
       @media (max-width: ${phoneMaxWidth}px) {
         .workhub-notes-layout { flex-direction: column; }
+        .workhub-documents-title-row {
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+        .workhub-documents-tab-select-wrap {
+          margin-left: 0;
+          min-width: 0;
+          max-width: 100%;
+          width: 100%;
+        }
         .workhub-doc-detail-rail {
           flex: none;
           width: 100%;
@@ -10493,6 +10555,51 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       .workhub-documents-title-input:disabled {
         color: #617392;
         cursor: not-allowed;
+      }
+      .workhub-public-source-chip {
+        display: inline-flex;
+        align-items: center;
+        margin-left: 8px;
+        padding: 2px 8px;
+        border: 1px solid #ffc78b;
+        border-radius: 999px;
+        background: #fff3e5;
+        color: #9a4a00;
+        font-size: 0.67rem;
+        font-weight: 700;
+        line-height: 1.3;
+        white-space: nowrap;
+      }
+      .workhub-documents-tab-select-wrap {
+        margin-left: auto;
+        min-width: 180px;
+        max-width: 280px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .workhub-documents-tab-select-wrap > span {
+        font-size: 0.68rem;
+        font-weight: 700;
+        color: #60779e;
+        white-space: nowrap;
+      }
+      .workhub-documents-tab-select {
+        width: 100%;
+        min-width: 0;
+        min-height: 30px;
+        border: 1px solid #cbd8eb;
+        border-radius: 8px;
+        background: #fff;
+        color: #223a5f;
+        font: inherit;
+        font-size: 0.72rem;
+        padding: 4px 8px;
+      }
+      .workhub-documents-tab-select:focus {
+        outline: none;
+        border-color: #8fb1eb;
+        box-shadow: 0 0 0 2px rgba(79, 116, 189, 0.18);
       }
       .workhub-documents-panel .workhub-panel-tools .workhub-ghost-btn,
       .workhub-documents-panel .workhub-panel-tools .workhub-danger-btn,
@@ -10587,6 +10694,52 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       }
       .workhub-note-autosave-status.is-error {
         color: #c0392b;
+      }
+      .workhub-reference-publish-warning {
+        margin-top: 8px;
+        margin-bottom: 10px;
+        border: 1px solid #ffc78b;
+        border-radius: 10px;
+        background: #fff4e6;
+        padding: 8px 10px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .workhub-reference-publish-warning strong {
+        font-size: 0.72rem;
+        color: #8a3f00;
+        letter-spacing: 0.01em;
+      }
+      .workhub-reference-publish-warning span {
+        font-size: 0.7rem;
+        color: #9c5a20;
+        flex: 1 1 220px;
+        min-width: 180px;
+      }
+      .workhub-draft-restore-banner {
+        margin-top: 8px;
+        margin-bottom: 10px;
+        border: 1px solid #9bc2ff;
+        border-radius: 10px;
+        background: #eef5ff;
+        padding: 8px 10px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .workhub-draft-restore-banner strong {
+        font-size: 0.72rem;
+        color: #1f4f9e;
+      }
+      .workhub-draft-restore-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
       }
       @keyframes workhub-note-autosave-fade {
         0% {
@@ -10792,6 +10945,10 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         cursor: pointer;
         text-align: left;
         font-weight: 400;
+      }
+      .workhub-doc-tab-row-title.is-public {
+        color: #9a4a00;
+        font-weight: 600;
       }
       .workhub-doc-tab-row.is-active .workhub-doc-tab-row-title {
         font-weight: 600;
@@ -11458,6 +11615,10 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       .workhub-document-body-editor.is-locked .tox {
         border-color: #d3dff1;
         background: #f7f9fc;
+      }
+      .workhub-document-body-editor.is-locked .tox .tox-editor-header,
+      .workhub-quick-note-editor.is-locked .tox .tox-editor-header {
+        display: none !important;
       }
       .workhub-document-body-editor.is-locked .tox .tox-edit-area__iframe {
         background: #f7f9fc;
@@ -12509,6 +12670,50 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         flex-direction: column;
         gap: 6px;
         min-width: 0;
+      }
+      .workhub-share-doc-form-row.is-full-width {
+        grid-column: 1 / -1;
+      }
+      .workhub-copy-tab-mode-group {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-top: 4px;
+        margin-bottom: 4px;
+      }
+      .workhub-copy-tab-mode-option {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.85rem;
+        color: #183154;
+        cursor: pointer;
+      }
+      .workhub-copy-tab-mode-option input {
+        margin: 0;
+      }
+      .workhub-copy-tab-checklist {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 12px;
+        background: #f7faff;
+        border: 1px solid #c8d8f0;
+        border-radius: 8px;
+        max-height: 200px;
+        overflow-y: auto;
+        margin-top: 4px;
+      }
+      .workhub-copy-tab-check-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.85rem;
+        color: #183154;
+        cursor: pointer;
+      }
+      .workhub-copy-tab-check-item input {
+        margin: 0;
       }
       .workhub-share-doc-form-row > span {
         font-size: 0.7rem;

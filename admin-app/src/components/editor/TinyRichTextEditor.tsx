@@ -34,6 +34,7 @@ export function TinyRichTextEditor({
   return (
     <div className={className}>
       <Editor
+        key={disabled ? 'readonly' : 'editable'}
         apiKey={apiKey}
         licenseKey="gpl"
         tinymceScriptSrc={scriptSrc}

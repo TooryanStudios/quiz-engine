@@ -30,7 +30,9 @@ interface ProjectTreeNodesProps {
   depth?: number
 }
 
-function getDocumentIcon(document: Pick<WorkhubDocument, 'type' | 'icon'>) {
+function getDocumentIcon(document: Pick<WorkhubDocument, 'type' | 'icon' | 'referenceSourceDocumentId' | 'hasOutgoingReferences'>) {
+  if (document.referenceSourceDocumentId) return '🔗'
+  if (document.hasOutgoingReferences) return '🌐'
   return (document.icon || '').trim() || (document.type === 'note' ? '🗒️' : '📝')
 }
 
@@ -312,24 +314,34 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
               <div className={`workhub-tree-expand-wrap${isExpanded ? ' is-open' : ''}`}>
                 <div className="workhub-tree-expand-inner">
                   <div className="workhub-tree-doc-sublist" style={{ marginLeft: `${36 + (depth * 14)}px` }}>
-                {nodeDocuments.map((document) => (
-                  <button
-                    key={document.id}
-                    type="button"
-                    className={`workhub-tree-doc-subitem${selectedDocumentId === document.id ? ' is-active' : ''}`}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      onSelectDocument(document.id)
-                    }}
-                    title={document.title}
-                  >
-                    <span className="workhub-tree-doc-subitem-title">
-                      {getDocumentIcon(document)} {document.title}
-                      {!!document.attachments?.length && <span className="workhub-tree-doc-attachment-indicator" title={`${document.attachments.length} attachment${document.attachments.length === 1 ? '' : 's'}`}>📎</span>}
-                    </span>
-                    {document.isLocked && <span className="workhub-tree-doc-lock-badge" title="Locked">🔒</span>}
-                  </button>
-                ))}
+                {nodeDocuments.map((document) => {
+                  const baseTitle = (document.title || '').trim() || (document.type === 'note' ? 'Untitled note' : 'Untitled document')
+                  const documentTreeTitle = document.referenceSourceDocumentId
+                    ? `${baseTitle} (Reference)`
+                    : document.hasOutgoingReferences
+                      ? `${baseTitle} (Public source)`
+                    : (document.isLocked ? `${baseTitle} (Locked)` : baseTitle)
+                  return (
+                    <button
+                      key={document.id}
+                      type="button"
+                      className={`workhub-tree-doc-subitem${selectedDocumentId === document.id ? ' is-active' : ''}${document.hasOutgoingReferences && !document.referenceSourceDocumentId ? ' is-public-source' : ''}`}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onSelectDocument(document.id)
+                      }}
+                      title={documentTreeTitle}
+                    >
+                      <span className="workhub-tree-doc-subitem-title">
+                        {getDocumentIcon(document)} {documentTreeTitle}
+                        {!!document.attachments?.length && <span className="workhub-tree-doc-attachment-indicator" title={`${document.attachments.length} attachment${document.attachments.length === 1 ? '' : 's'}`}>📎</span>}
+                      </span>
+                      {document.hasOutgoingReferences && !document.referenceSourceDocumentId && <span className="workhub-tree-doc-lock-badge" title="Public source document">🌐</span>}
+                      {document.referenceSourceDocumentId && <span className="workhub-tree-doc-lock-badge" title="Referenced document">🔗</span>}
+                      {document.isLocked && <span className="workhub-tree-doc-lock-badge" title="Locked document">🔒</span>}
+                    </button>
+                  )
+                })}
                 {nodeMoodBoards.map((board) => (
                   <button
                     key={board.id}

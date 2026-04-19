@@ -162,7 +162,9 @@ const WORKHUB_PHONE_MAX_WIDTH = 767
 const WORKHUB_DESKTOP_MIN_WIDTH = WORKHUB_PHONE_MAX_WIDTH + 1
 const DEFAULT_STATUS_TASK_RENDER_LIMIT = 80
 
-function getWorkhubDocumentIcon(document: { type?: string; icon?: string | null } | null | undefined) {
+function getWorkhubDocumentIcon(document: { type?: string; icon?: string | null; referenceSourceDocumentId?: string | null; hasOutgoingReferences?: boolean } | null | undefined) {
+  if (document?.referenceSourceDocumentId) return '🔗'
+  if (document?.hasOutgoingReferences) return '🌐'
   return (document?.icon || '').trim() || (document?.type === 'note' ? '🗒️' : '📝')
 }
 function getCurrentDateInputValue(): string {
@@ -2887,7 +2889,14 @@ export default function WorkHubPage() {
   }, [selectedProject, selectedProjectBranchIds, workspaceDocuments, workspaceMoodBoards])
   const selectedProjectDashboardDocuments = useMemo(() => {
     if (!selectedProject) {
-      return [] as Array<{ id: string; title: string; type: 'document' | 'note'; projectName: string }>
+      return [] as Array<{
+        id: string
+        title: string
+        type: 'document' | 'note'
+        projectName: string
+        referenceSourceDocumentId?: string | null
+        hasOutgoingReferences?: boolean
+      }>
     }
     return workspaceDocuments
       .filter((doc) => !!doc.projectId && selectedProjectBranchIds.has(doc.projectId))
@@ -2898,6 +2907,8 @@ export default function WorkHubPage() {
         title: (doc.title || '').trim() || (doc.type === 'note' ? 'Untitled note' : 'Untitled document'),
         type: doc.type === 'note' ? 'note' : 'document',
         projectName: projectNameById[doc.projectId || ''] || '',
+        referenceSourceDocumentId: doc.referenceSourceDocumentId || null,
+        hasOutgoingReferences: Boolean(doc.hasOutgoingReferences),
       }))
   }, [projectNameById, selectedProject, selectedProjectBranchIds, workspaceDocuments])
   const workspaceDocumentById = useMemo(
@@ -3395,6 +3406,9 @@ export default function WorkHubPage() {
     selectedWorkspaceId,
     workspaceProjectById,
     workhubShareCandidates,
+    allWorkspaceIds: visibleWorkspaces.map((ws) => ({ id: ws.id, name: ws.name })),
+    allWorkspaceProjects: projects.map((p) => ({ id: p.id, name: p.name, workspaceId: p.workspaceId })),
+    isPrivilegedMember,
     showToast,
     setBusyKey,
     setSelectedDocumentId,
@@ -6913,18 +6927,24 @@ export default function WorkHubPage() {
                           <div className="workhub-tree-docs-list">
                             {workspaceLevelDocuments.map((item) => {
                               const isActiveDocument = activeSection === 'notes' && selectedDocumentId === item.id
+                              const baseTitle = (item.title || '').trim() || (item.type === 'note' ? 'Untitled note' : 'Untitled document')
+                              const documentTreeTitle = item.referenceSourceDocumentId
+                                ? `${baseTitle} (Reference)`
+                                : item.hasOutgoingReferences
+                                  ? `${baseTitle} (Public source)`
+                                : (item.isLocked ? `${baseTitle} (Locked)` : baseTitle)
                               return (
                                 <button
                                   key={item.id}
                                   type="button"
-                                  className={`workhub-tree-doc-item${isActiveDocument ? ' is-active' : ''}`}
+                                  className={`workhub-tree-doc-item${isActiveDocument ? ' is-active' : ''}${item.hasOutgoingReferences && !item.referenceSourceDocumentId ? ' is-public-source' : ''}`}
                                   onClick={() => {
                                     handleMobileDocumentSelect(item.id)
                                   }}
-                                  title={item.title}
+                                  title={documentTreeTitle}
                                 >
-                                    <span className="workhub-tree-doc-item-title">{getWorkhubDocumentIcon(item)} {item.title}</span>
-                                    <span className="workhub-tree-doc-item-meta">{item.type === 'note' ? 'Workspace note' : 'Workspace document'}</span>
+                                      <span className="workhub-tree-doc-item-title">{getWorkhubDocumentIcon(item)} {documentTreeTitle}</span>
+                                      <span className="workhub-tree-doc-item-meta">{item.type === 'note' ? 'Workspace note' : 'Workspace document'}{item.referenceSourceDocumentId ? ' • Reference' : ''}{item.hasOutgoingReferences && !item.referenceSourceDocumentId ? ' • Public source' : ''}{item.isLocked ? ' • Locked' : ''}</span>
                                 </button>
                               )
                             })}
@@ -7160,16 +7180,22 @@ export default function WorkHubPage() {
                         <div className="workhub-tree-docs-list">
                           {workspaceLevelDocuments.map((item) => {
                             const isActiveDocument = activeSection === 'notes' && selectedDocumentId === item.id
+                            const baseTitle = (item.title || '').trim() || (item.type === 'note' ? 'Untitled note' : 'Untitled document')
+                            const documentTreeTitle = item.referenceSourceDocumentId
+                              ? `${baseTitle} (Reference)`
+                              : item.hasOutgoingReferences
+                                ? `${baseTitle} (Public source)`
+                              : (item.isLocked ? `${baseTitle} (Locked)` : baseTitle)
                             return (
                               <button
                                 key={item.id}
                                 type="button"
-                                className={`workhub-tree-doc-item${isActiveDocument ? ' is-active' : ''}`}
+                                className={`workhub-tree-doc-item${isActiveDocument ? ' is-active' : ''}${item.hasOutgoingReferences && !item.referenceSourceDocumentId ? ' is-public-source' : ''}`}
                                 onClick={() => handleSelectDocumentFromTree(item.id)}
-                                title={item.title}
+                                title={documentTreeTitle}
                               >
-                                <span className="workhub-tree-doc-item-title">{getWorkhubDocumentIcon(item)} {item.title}</span>
-                                <span className="workhub-tree-doc-item-meta">{item.type === 'note' ? 'Workspace note' : 'Workspace document'}</span>
+                                <span className="workhub-tree-doc-item-title">{getWorkhubDocumentIcon(item)} {documentTreeTitle}</span>
+                                <span className="workhub-tree-doc-item-meta">{item.type === 'note' ? 'Workspace note' : 'Workspace document'}{item.referenceSourceDocumentId ? ' • Reference' : ''}{item.hasOutgoingReferences && !item.referenceSourceDocumentId ? ' • Public source' : ''}{item.isLocked ? ' • Locked' : ''}</span>
                               </button>
                             )
                           })}
@@ -7378,7 +7404,7 @@ export default function WorkHubPage() {
                               <button
                                 key={doc.id}
                                 type="button"
-                                className="workhub-proposal-doc-item"
+                                className={`workhub-proposal-doc-item${doc.hasOutgoingReferences && !doc.referenceSourceDocumentId ? ' is-public-source' : ''}`}
                                 onClick={() => {
                                   setSelectedDocumentId(doc.id)
                                   setActiveSection('notes')
@@ -7387,8 +7413,8 @@ export default function WorkHubPage() {
                               >
                                 <span className="workhub-proposal-doc-icon" aria-hidden="true">{getWorkhubDocumentIcon(doc)}</span>
                                 <span className="workhub-proposal-doc-copy">
-                                  <strong dir="auto">{doc.title}</strong>
-                                  <small>{doc.projectName || (doc.type === 'note' ? 'Note' : 'Document')}</small>
+                                  <strong dir="auto">{doc.title}{doc.hasOutgoingReferences && !doc.referenceSourceDocumentId ? ' (Public source)' : ''}</strong>
+                                  <small>{doc.projectName || (doc.type === 'note' ? 'Note' : 'Document')}{doc.referenceSourceDocumentId ? ' • Reference' : ''}{doc.hasOutgoingReferences && !doc.referenceSourceDocumentId ? ' • Public source' : ''}</small>
                                 </span>
                               </button>
                             ))}
@@ -7992,6 +8018,9 @@ export default function WorkHubPage() {
             onDiscussionEditSave={handleSaveCommentEdit}
             discussionEditBusyKey={busyKey}
             currentUid={auth.currentUser?.uid || ''}
+            allWorkspaceIds={visibleWorkspaces.map((ws) => ({ id: ws.id, name: ws.name }))}
+            allWorkspaceProjects={projects.map((p) => ({ id: p.id, name: p.name, workspaceId: p.workspaceId }))}
+            isPrivilegedMember={isPrivilegedMember}
           />
         )}
 
