@@ -12678,27 +12678,31 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         display: flex;
         flex-direction: row;
         align-items: center;
-        gap: 20px;
-        margin-top: 4px;
-        margin-bottom: 4px;
+        gap: 8px;
+        margin-top: 0;
+        margin-bottom: 0;
       }
       .workhub-copy-tab-mode-option {
         display: flex;
         align-items: center;
         justify-content: flex-start;
-        gap: 8px;
+        gap: 4px;
         font-size: 0.85rem;
         color: #183154;
         cursor: pointer;
         white-space: nowrap;
       }
-      .workhub-copy-tab-mode-option input {
+      .workhub-copy-tab-mode-option input[type="radio"] {
         margin: 0;
+        padding: 0;
         flex-shrink: 0;
+        vertical-align: middle;
+        accent-color: #3a5bd9;
       }
       .workhub-copy-tab-checklist {
         display: flex;
         flex-direction: column;
+        align-items: stretch;
         gap: 0;
         padding: 0;
         background: #f7faff;
@@ -12709,32 +12713,41 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         overflow-y: auto;
         margin-top: 4px;
       }
-      .workhub-copy-tab-check-item {
-        display: flex;
-        flex-direction: row;
+      .workhub-share-doc-dialog .workhub-copy-tab-check-item {
+        display: grid;
+        grid-template-columns: 18px minmax(0, 1fr);
         align-items: center;
-        gap: 10px;
+        column-gap: 10px;
         font-size: 0.85rem;
         color: #183154;
         cursor: pointer;
         padding: 9px 12px;
         border-bottom: 1px solid #dbe6f7;
         min-width: 0;
+        width: 100%;
       }
-      .workhub-copy-tab-check-item > span {
-        flex: 1;
+      .workhub-share-doc-dialog .workhub-copy-tab-check-text {
+        display: block;
+        visibility: visible;
+        opacity: 1;
         min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-        text-align: right;
-        direction: rtl;
+        text-align: start;
+        direction: inherit;
+        unicode-bidi: plaintext;
+        color: inherit;
       }
-      .workhub-copy-tab-check-item:last-child {
+      [dir='rtl'] .workhub-copy-tab-check-text {
+        text-align: right;
+      }
+      .workhub-share-doc-dialog .workhub-copy-tab-check-item:last-child {
         border-bottom: none;
       }
-      .workhub-copy-tab-check-item input {
+      .workhub-share-doc-dialog .workhub-copy-tab-check-item input {
         margin: 0;
+        justify-self: start;
         flex-shrink: 0;
       }
       .workhub-share-doc-form-row > span {

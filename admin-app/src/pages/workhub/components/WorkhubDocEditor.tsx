@@ -1600,6 +1600,7 @@ export function WorkhubDocEditor({
   const [showPublishWarningBox, setShowPublishWarningBox] = useState(false)
   const [publishWarningShownForVisit, setPublishWarningShownForVisit] = useState(false)
   const shouldTriggerPublishWarningBox = publicReferenceAutoSaveBlocked && selectedDocumentChanged && !publishWarningShownForVisit
+  const canReopenPublishWarning = publicReferenceAutoSaveBlocked && selectedDocumentChanged && !showPublishWarningBox
   const headerSpeechRecognitionSupported = useMemo(() => Boolean(getSpeechRecognitionCtor()), [])
   const pendingRestoreTimerRef = useRef<number | null>(null)
   const restoringRef = useRef(false)
@@ -2382,6 +2383,15 @@ export function WorkhubDocEditor({
               <span className={`workhub-note-autosave-status${publicReferenceAutoSaveBlocked && selectedDocumentChanged ? ' is-error' : ''}`} aria-live="polite">
                 {autoSaveStatusText}
               </span>
+              {canReopenPublishWarning && (
+                <button
+                  type="button"
+                  className="workhub-ghost-mini"
+                  onClick={() => setShowPublishWarningBox(true)}
+                >
+                  Show warning
+                </button>
+              )}
             </div>
             <button
               type="button"
@@ -2717,9 +2727,20 @@ export function WorkhubDocEditor({
                       {busyKey === `document:${selectedDocument?.id || ''}` ? '⏳' : '💾'}
                     </button>
                     {selectedDocument && (
-                      <span className={`workhub-note-autosave-status${publicReferenceAutoSaveBlocked && selectedDocumentChanged ? ' is-error' : ''}`} aria-live="polite">
-                        {autoSaveStatusText}
-                      </span>
+                      <>
+                        <span className={`workhub-note-autosave-status${publicReferenceAutoSaveBlocked && selectedDocumentChanged ? ' is-error' : ''}`} aria-live="polite">
+                          {autoSaveStatusText}
+                        </span>
+                        {canReopenPublishWarning && (
+                          <button
+                            type="button"
+                            className="workhub-ghost-mini"
+                            onClick={() => setShowPublishWarningBox(true)}
+                          >
+                            Show warning
+                          </button>
+                        )}
+                      </>
                     )}
                     {isMobileLayout && selectedDocument && (
                       <button
@@ -3815,7 +3836,15 @@ export function WorkhubDocEditor({
                   </div>
                   {copyTabMode === 'select' && (
                     <div className="workhub-copy-tab-checklist">
-                      {documentTabsDraft.map((tab) => (
+                      {documentTabsDraft.map((tab, index) => {
+                        const rawTabTitle = typeof tab.title === 'string' ? tab.title : ''
+                        const visibleTabTitle = rawTabTitle
+                          .replace(/<[^>]*>/g, ' ')
+                          .replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, '')
+                          .replace(/\s+/g, ' ')
+                          .trim()
+                        const resolvedTabTitle = visibleTabTitle || `Tab ${index + 1}`
+                        return (
                         <label key={tab.id} className="workhub-copy-tab-check-item">
                           <input
                             type="checkbox"
@@ -3826,9 +3855,13 @@ export function WorkhubDocEditor({
                               )
                             }}
                           />
-                          <span>{tab.icon ? `${tab.icon} ` : ''}{tab.title}</span>
+                          <span className="workhub-copy-tab-check-text">
+                            {tab.icon ? `${tab.icon} ` : ''}
+                            {resolvedTabTitle}
+                          </span>
                         </label>
-                      ))}
+                        )
+                      })}
                     </div>
                   )}
                 </div>
