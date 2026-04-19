@@ -12676,9 +12676,9 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       }
       .workhub-copy-tab-mode-group {
         display: flex;
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 12px;
+        flex-direction: row;
+        align-items: center;
+        gap: 20px;
         margin-top: 4px;
         margin-bottom: 4px;
       }
@@ -12703,6 +12703,7 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         border: 1px solid #c8d8f0;
         border-radius: 8px;
         max-height: 200px;
+        overflow-x: hidden;
         overflow-y: auto;
         margin-top: 4px;
       }
@@ -12710,12 +12711,17 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         display: flex;
         align-items: center;
         justify-content: flex-start;
-        gap: 8px;
+        gap: 10px;
         font-size: 0.85rem;
         color: #183154;
         cursor: pointer;
         padding-bottom: 10px;
         border-bottom: 1px solid #dbe6f7;
+        white-space: nowrap;
+      }
+      .workhub-copy-tab-check-item > span {
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
       .workhub-copy-tab-check-item:last-child {
         padding-bottom: 0;

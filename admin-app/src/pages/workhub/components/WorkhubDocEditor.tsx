@@ -3800,7 +3800,7 @@ export function WorkhubDocEditor({
                 <div className="workhub-share-doc-form-row is-full-width">
                   <span>Tabs to reference</span>
                   <div className="workhub-copy-tab-mode-group">
-                    {(['all', 'active', 'select'] as const).map((mode) => (
+                    {(['all', 'select'] as const).map((mode) => (
                       <label key={mode} className="workhub-copy-tab-mode-option">
                         <input
                           type="radio"
@@ -3809,7 +3809,7 @@ export function WorkhubDocEditor({
                           checked={copyTabMode === mode}
                           onChange={() => { setCopyTabMode(mode); setCopyTabSelection([]) }}
                         />
-                        {mode === 'all' ? 'All tabs' : mode === 'active' ? 'Active tab only' : 'Choose tabs'}
+                        {mode === 'all' ? 'All tabs' : 'Choose tabs'}
                       </label>
                     ))}
                   </div>
@@ -3826,7 +3826,7 @@ export function WorkhubDocEditor({
                               )
                             }}
                           />
-                          {tab.icon ? `${tab.icon} ` : ''}{tab.title}
+                          <span>{tab.icon ? `${tab.icon} ` : ''}{tab.title}</span>
                         </label>
                       ))}
                     </div>
