@@ -36,7 +36,6 @@ export function useTinyRichTextEditorConfig({
     statusbar: false,
     elementpath: false,
     resize: false,
-    disabled,
     min_height: minHeight,
     // Use horizontal scroll on narrow screens instead of wrapping controls.
     toolbar_mode: 'scrolling',
