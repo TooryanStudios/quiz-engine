@@ -12690,45 +12690,52 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         font-size: 0.85rem;
         color: #183154;
         cursor: pointer;
+        white-space: nowrap;
       }
       .workhub-copy-tab-mode-option input {
         margin: 0;
+        flex-shrink: 0;
       }
       .workhub-copy-tab-checklist {
         display: flex;
         flex-direction: column;
-        gap: 10px;
-        padding: 12px;
+        gap: 0;
+        padding: 0;
         background: #f7faff;
         border: 1px solid #c8d8f0;
         border-radius: 8px;
-        max-height: 200px;
+        max-height: 220px;
         overflow-x: hidden;
         overflow-y: auto;
         margin-top: 4px;
       }
       .workhub-copy-tab-check-item {
         display: flex;
+        flex-direction: row;
         align-items: center;
-        justify-content: flex-start;
         gap: 10px;
         font-size: 0.85rem;
         color: #183154;
         cursor: pointer;
-        padding-bottom: 10px;
+        padding: 9px 12px;
         border-bottom: 1px solid #dbe6f7;
-        white-space: nowrap;
+        min-width: 0;
       }
       .workhub-copy-tab-check-item > span {
+        flex: 1;
+        min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
+        white-space: nowrap;
+        text-align: right;
+        direction: rtl;
       }
       .workhub-copy-tab-check-item:last-child {
-        padding-bottom: 0;
         border-bottom: none;
       }
       .workhub-copy-tab-check-item input {
         margin: 0;
+        flex-shrink: 0;
       }
       .workhub-share-doc-form-row > span {
         font-size: 0.7rem;
