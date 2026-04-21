@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { auth } from '../lib/firebase'
 import type { ScanMode, ScanResult } from './openai'
 import { subscribeMobileScannerResults } from './realtimeBridge'
+import { AnswerContent } from './answerRenderer'
 import './ScannerDesktop.css'
 
 interface DesktopHistoryItem {
@@ -249,15 +250,16 @@ function ResultsRole({
       {answersOnly ? (
         <section className="scd-answer-hero scd-answer-hero-reader">
           <p className="scd-answer-hero-label">Latest Output</p>
-          <p className="scd-answer-hero-text scd-answer-hero-text-reader">
-            {latestReaderText || 'Waiting for scanner result...'}
-          </p>
+          <AnswerContent
+            answer={latestReaderText || 'Waiting for scanner result...'}
+            className="scd-answer-hero-text scd-answer-hero-text-reader"
+          />
         </section>
       ) : (
         lastResult?.mode === 'reasoning' ? (
           <section className="scd-answer-hero">
             <p className="scd-answer-hero-label">Answer</p>
-            <p className="scd-answer-hero-text">{lastResult.answer || 'No answer detected'}</p>
+            <AnswerContent answer={lastResult.answer || 'No answer detected'} className="scd-answer-hero-text" />
           </section>
         ) : null
       )}

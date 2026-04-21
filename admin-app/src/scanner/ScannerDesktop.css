@@ -459,3 +459,44 @@
   font-size: 12px;
   line-height: 1.5;
 }
+
+/* ── Shared answer list (also used in ScannerPage via Scanner.css) ── */
+.sc-answer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+}
+.sc-answer-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(169,197,230,0.18);
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+.sc-answer-item-badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 800;
+  color: #79a8db;
+  min-width: 16px;
+  text-align: center;
+}
+.sc-answer-item-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: #eef3f9;
+  line-height: 1.4;
+  word-break: break-word;
+}
+.sc-answer-text {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #f5f9ff;
+  line-height: 1.4;
+  word-break: break-word;
+}

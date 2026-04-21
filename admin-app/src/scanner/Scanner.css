@@ -585,6 +585,35 @@
   line-height: 1.4;
   word-break: break-word;
 }
+.sc-answer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sc-answer-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  background: var(--sc-bg);
+  border: 1px solid var(--sc-border);
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+.sc-answer-item-badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--sc-accent);
+  min-width: 16px;
+  text-align: center;
+}
+.sc-answer-item-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sc-text);
+  line-height: 1.4;
+  word-break: break-word;
+}
 .sc-explanation {
   font-size: 13px;
   color: var(--sc-text-muted);

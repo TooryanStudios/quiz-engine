@@ -16,6 +16,7 @@ import {
   type ScannerHistoryItem,
 } from './historyStore'
 import './Scanner.css'
+import { AnswerContent } from './answerRenderer'
 
 const ENV_API_KEY = (import.meta.env.VITE_OPENAI_API_KEY as string | undefined) ?? ''
 const LS_KEY = 'scanner_openai_key'
@@ -249,7 +250,7 @@ function ResultPanel({
               {result.answer ? (
                 <div className="sc-answer-card">
                   <p className="sc-answer-label">Answer</p>
-                  <p className="sc-answer-text">{result.answer}</p>
+                  <AnswerContent answer={result.answer} />
                   <button className="sc-btn-copy" onClick={() => copy(result.answer)}>
                     {copied ? 'Copied' : 'Copy Answer'}
                   </button>
