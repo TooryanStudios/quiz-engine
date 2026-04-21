@@ -2,6 +2,61 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { WorkhubMember, WorkhubTaskComment } from '../../../lib/workhubRepo'
 
 const PAGE_SIZE = 6
+const URL_PATTERN = /((?:https?:\/\/|www\.)[^\s<]+)/gi
+
+function normalizeDetectedUrl(value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+}
+
+function stripTrailingPunctuation(value: string): { link: string; trailing: string } {
+  const match = value.match(/[),.;!?]+$/)
+  if (!match) return { link: value, trailing: '' }
+  const trailing = match[0]
+  return {
+    link: value.slice(0, Math.max(0, value.length - trailing.length)),
+    trailing,
+  }
+}
+
+function renderLinkedText(value: string) {
+  if (!value) return null
+  const segments: Array<string | JSX.Element> = []
+  let cursor = 0
+  const matches = Array.from(value.matchAll(URL_PATTERN))
+
+  if (matches.length === 0) return value
+
+  matches.forEach((match, index) => {
+    const raw = match[0] || ''
+    const start = match.index ?? 0
+    const end = start + raw.length
+    if (start > cursor) {
+      segments.push(value.slice(cursor, start))
+    }
+
+    const { link, trailing } = stripTrailingPunctuation(raw)
+    const href = normalizeDetectedUrl(link)
+    if (href) {
+      segments.push(
+        <a key={`msg-link-${index}-${start}`} href={href} target="_blank" rel="noreferrer noopener">
+          {link}
+        </a>,
+      )
+    } else {
+      segments.push(raw)
+    }
+    if (trailing) segments.push(trailing)
+    cursor = end
+  })
+
+  if (cursor < value.length) {
+    segments.push(value.slice(cursor))
+  }
+
+  return segments
+}
 
 export interface WorkhubDiscussionCardProps {
   title?: string
@@ -16,7 +71,10 @@ export interface WorkhubDiscussionCardProps {
   onEditChange: (value: string) => void
   onEditCancel: () => void
   onEditSave: (comment: WorkhubTaskComment) => Promise<void>
+  onDelete?: (comment: WorkhubTaskComment) => Promise<void>
   editBusyKey: string
+  deleteBusyKey?: string
+  deleteConfirmText?: string
   onComposerSend: (text: string) => Promise<void>
   composerBusy: boolean
   composerPlaceholder?: string
@@ -42,7 +100,10 @@ export function WorkhubDiscussionCard({
   onEditChange,
   onEditCancel,
   onEditSave,
+  onDelete,
   editBusyKey,
+  deleteBusyKey = '',
+  deleteConfirmText = 'Delete this message? This cannot be undone.',
   onComposerSend,
   composerBusy,
   composerPlaceholder = 'Write an update for your team...',
@@ -63,13 +124,32 @@ export function WorkhubDiscussionCard({
   useEffect(() => { setVisibleCount(PAGE_SIZE) }, [firstCommentId])
   useEffect(() => {
     if (!notifyDropdownOpen) return
-    function handleOutsideClick(e: MouseEvent) {
+    function handleOutsidePointerDown(e: PointerEvent) {
       if (notifyRowRef.current && !notifyRowRef.current.contains(e.target as Node)) {
         setNotifyDropdownOpen(false)
       }
     }
-    document.addEventListener('mousedown', handleOutsideClick)
-    return () => document.removeEventListener('mousedown', handleOutsideClick)
+
+    function handleOutsideFocusIn(e: FocusEvent) {
+      if (notifyRowRef.current && !notifyRowRef.current.contains(e.target as Node)) {
+        setNotifyDropdownOpen(false)
+      }
+    }
+
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setNotifyDropdownOpen(false)
+      }
+    }
+
+    document.addEventListener('pointerdown', handleOutsidePointerDown, true)
+    document.addEventListener('focusin', handleOutsideFocusIn, true)
+    document.addEventListener('keydown', handleEscape)
+    return () => {
+      document.removeEventListener('pointerdown', handleOutsidePointerDown, true)
+      document.removeEventListener('focusin', handleOutsideFocusIn, true)
+      document.removeEventListener('keydown', handleEscape)
+    }
   }, [notifyDropdownOpen])
   function getInitials(value: string): string {
     const parts = value.trim().split(/\s+/).filter(Boolean)
@@ -90,6 +170,12 @@ export function WorkhubDiscussionCard({
   const totalCount = sortedComments.length
   const hiddenCount = Math.max(0, totalCount - visibleCount)
   const visibleComments = sortedComments.slice(hiddenCount)
+  const handleSendComposerMessage = () => {
+    const text = localComposerText.trim()
+    if (!text) return
+    setLocalComposerText('')
+    void onComposerSend(text).catch(() => setLocalComposerText(text))
+  }
 
   return (
     <div className="workhub-detail-card workhub-discussion-card">
@@ -130,15 +216,33 @@ export function WorkhubDiscussionCard({
                   <div className="workhub-comment-head-actions">
                     <span>{formatTime(item.editedAt || item.updatedAt || item.createdAt)}</span>
                     {isOwnMessage && !isEditing && (
-                      <button
-                        type="button"
-                        className="workhub-comment-edit-btn"
-                        onClick={() => onEditStart(item)}
-                        title="Edit message"
-                        aria-label="Edit message"
-                      >
-                        ✏
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          className="workhub-comment-edit-btn"
+                          onClick={() => onEditStart(item)}
+                          title="Edit message"
+                          aria-label="Edit message"
+                        >
+                          ✏
+                        </button>
+                        {onDelete && (
+                          <button
+                            type="button"
+                            className="workhub-comment-edit-btn is-delete"
+                            onClick={() => {
+                              const shouldDelete = typeof window === 'undefined' ? true : window.confirm(deleteConfirmText)
+                              if (!shouldDelete) return
+                              void onDelete(item)
+                            }}
+                            disabled={deleteBusyKey === `comment-delete:${item.id}`}
+                            title="Delete message"
+                            aria-label="Delete message"
+                          >
+                            {deleteBusyKey === `comment-delete:${item.id}` ? '…' : '✕'}
+                          </button>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
@@ -171,7 +275,7 @@ export function WorkhubDiscussionCard({
                     </div>
                   </div>
                 ) : (
-                  <p>{item.body}</p>
+                  <p>{renderLinkedText(item.body || '')}</p>
                 )}
               </div>
             </div>
@@ -184,81 +288,89 @@ export function WorkhubDiscussionCard({
           value={localComposerText}
           onChange={(event) => setLocalComposerText(event.target.value)}
           placeholder={composerPlaceholder}
+          aria-label="Discussion message"
+          disabled={composerBusy}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault()
-              const text = localComposerText.trim()
-              if (!text) return
-              setLocalComposerText('')
-              void onComposerSend(text).catch(() => setLocalComposerText(text))
+              handleSendComposerMessage()
             }
           }}
         />
-        {notifyCandidates !== undefined && (
-          <div className="workhub-composer-notify-row" ref={notifyRowRef}>
-            <span className="workhub-composer-notify-label">Notify</span>
-            <div
-              className="workhub-composer-notify-trigger"
-              role="button"
-              tabIndex={0}
-              onClick={() => setNotifyDropdownOpen((v) => !v)}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setNotifyDropdownOpen((v) => !v) }}
-            >
-              {notifyMode === 'all'
-                ? 'All involved'
-                : notifyMode === 'none'
-                  ? 'No one'
-                  : `${notifyUids.length} selected`}
-              <span className="workhub-composer-notify-chevron" aria-hidden>▾</span>
-            </div>
-            {notifyDropdownOpen && (
-              <div className="workhub-composer-notify-menu">
-                <button
-                  type="button"
-                  className={`workhub-composer-notify-option${notifyMode === 'all' ? ' is-active' : ''}`}
-                  onClick={() => { onNotifyModeChange?.('all'); setNotifyDropdownOpen(false) }}
-                >
-                  All involved
-                </button>
-                <button
-                  type="button"
-                  className={`workhub-composer-notify-option${notifyMode === 'none' ? ' is-active' : ''}`}
-                  onClick={() => { onNotifyModeChange?.('none'); setNotifyDropdownOpen(false) }}
-                >
-                  No one
-                </button>
-                <div className="workhub-composer-notify-divider" />
-                {notifyCandidates.map((candidate) => {
-                  const checked = notifyMode === 'selected' && notifyUids.includes(candidate.uid)
-                  return (
-                    <label key={candidate.uid} className="workhub-composer-notify-check">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={(e) => {
-                          const next = e.target.checked
-                            ? [...notifyUids, candidate.uid]
-                            : notifyUids.filter((u) => u !== candidate.uid)
-                          onNotifyUidsChange?.(next)
-                          if (notifyMode !== 'selected') onNotifyModeChange?.('selected')
-                        }}
-                      />
-                      {candidate.label}
-                    </label>
-                  )
-                })}
+        <div className="workhub-comment-composer-footer">
+          {notifyCandidates !== undefined && (
+            <div className="workhub-composer-notify-row" ref={notifyRowRef}>
+              <span className="workhub-composer-notify-label">Notify</span>
+              <div
+                className="workhub-composer-notify-trigger"
+                role="button"
+                tabIndex={0}
+                onClick={() => setNotifyDropdownOpen((v) => !v)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setNotifyDropdownOpen((v) => !v)
+                  }
+                }}
+              >
+                {notifyMode === 'all'
+                  ? 'All involved'
+                  : notifyMode === 'none'
+                    ? 'No one'
+                    : `${notifyUids.length} selected`}
+                <span className="workhub-composer-notify-chevron" aria-hidden>▾</span>
               </div>
-            )}
-          </div>
-        )}
-        <button type="button" onClick={() => {
-          const text = localComposerText.trim()
-          if (!text) return
-          setLocalComposerText('')
-          void onComposerSend(text).catch(() => setLocalComposerText(text))
-        }} disabled={composerBusy || !localComposerText.trim()}>
-          {composerBusy ? 'Sending...' : 'Send'}
-        </button>
+              {notifyDropdownOpen && (
+                <div className="workhub-composer-notify-menu">
+                  <button
+                    type="button"
+                    className={`workhub-composer-notify-option${notifyMode === 'all' ? ' is-active' : ''}`}
+                    onClick={() => { onNotifyModeChange?.('all'); setNotifyDropdownOpen(false) }}
+                  >
+                    All involved
+                  </button>
+                  <button
+                    type="button"
+                    className={`workhub-composer-notify-option${notifyMode === 'none' ? ' is-active' : ''}`}
+                    onClick={() => { onNotifyModeChange?.('none'); setNotifyDropdownOpen(false) }}
+                  >
+                    No one
+                  </button>
+                  <div className="workhub-composer-notify-divider" />
+                  {notifyCandidates.map((candidate) => {
+                    const checked = notifyMode === 'selected' && notifyUids.includes(candidate.uid)
+                    return (
+                      <label key={candidate.uid} className="workhub-composer-notify-check">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            const next = e.target.checked
+                              ? [...notifyUids, candidate.uid]
+                              : notifyUids.filter((u) => u !== candidate.uid)
+                            onNotifyUidsChange?.(next)
+                            if (notifyMode !== 'selected') onNotifyModeChange?.('selected')
+                          }}
+                        />
+                        {candidate.label}
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+          <button
+            type="button"
+            className="workhub-comment-send-btn"
+            onClick={handleSendComposerMessage}
+            disabled={composerBusy || !localComposerText.trim()}
+            title={composerBusy ? 'Sending...' : 'Send message'}
+            aria-label={composerBusy ? 'Sending message' : 'Send message'}
+          >
+            <span aria-hidden="true">➤</span>
+          </button>
+        </div>
       </div>
     </div>
   )

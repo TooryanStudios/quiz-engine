@@ -5,32 +5,36 @@ const INVISIBLE_TASK_TITLE_CHARS = /[\u0000-\u001F\u007F-\u009F\u00AD\u034F\u061
 export function formatTime(value: unknown): string {
   if (!value) return '—'
   if (typeof value === 'object' && value !== null && 'toDate' in value && typeof (value as { toDate?: unknown }).toDate === 'function') {
-    return ((value as { toDate: () => Date }).toDate()).toLocaleString()
+    return ((value as { toDate: () => Date }).toDate()).toLocaleString('en-GB')
   }
   if (typeof value === 'object' && value !== null && 'seconds' in value) {
     const seconds = Number((value as { seconds?: unknown }).seconds || 0)
-    return new Date(seconds * 1000).toLocaleString()
+    return new Date(seconds * 1000).toLocaleString('en-GB')
   }
   if (typeof value === 'string') {
     const parsed = Date.parse(value)
-    if (Number.isFinite(parsed)) return new Date(parsed).toLocaleString()
+    if (Number.isFinite(parsed)) return new Date(parsed).toLocaleString('en-GB')
   }
   return '—'
 }
 
-export function formatDueDateShort(value: string): string {
+export function formatDueDateShort(value: string, timeValue?: string): string {
   if (!value) return 'No due date'
   const parsed = Date.parse(value)
   if (!Number.isFinite(parsed)) return value
-  return new Date(parsed).toLocaleDateString(undefined, { day: 'numeric', month: 'numeric', year: '2-digit' })
+  const dateStr = new Date(parsed).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  if (timeValue) {
+    return `${dateStr} ${timeValue}`
+  }
+  return dateStr
 }
 
-export function formatTaskDueDisplay(value: string, mode: 'remaining' | 'date'): string {
+export function formatTaskDueDisplay(value: string, timeValue: string | undefined, mode: 'remaining' | 'date'): string {
   if (!value) return 'No due date'
-  if (mode === 'date') return formatDueDateShort(value)
+  if (mode === 'date') return formatDueDateShort(value, timeValue)
 
-  const dueMs = Date.parse(`${value}T23:59`)
-  if (!Number.isFinite(dueMs)) return formatDueDateShort(value)
+  const dueMs = timeValue ? Date.parse(`${value}T${timeValue}`) : Date.parse(`${value}T23:59`)
+  if (!Number.isFinite(dueMs)) return formatDueDateShort(value, timeValue)
 
   const nowMs = Date.now()
   const deltaMs = dueMs - nowMs

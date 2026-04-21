@@ -253,7 +253,7 @@ export function CreateDialog(props: {
                 <div className="workhub-field-grid two compact">
                   <label className="workhub-icon-field">
                     <span>🚀 Start date</span>
-                    <input name="taskStartDate" type="date" value={props.taskStartDate} onChange={(event) => props.onTaskStartDateChange(event.target.value)} />
+                    <input name="taskStartDate" type="date" lang="en-GB" value={props.taskStartDate} onChange={(event) => props.onTaskStartDateChange(event.target.value)} />
                   </label>
                   <label className="workhub-icon-field">
                     <span>🚩 Priority</span>
@@ -271,7 +271,7 @@ export function CreateDialog(props: {
                   </label>
                   <label className="workhub-icon-field">
                     <span>📅 Due date</span>
-                    <input name="taskDueDate" type="date" value={props.taskDueDate} onChange={(event) => props.onTaskDueDateChange(event.target.value)} />
+                    <input name="taskDueDate" type="date" lang="en-GB" value={props.taskDueDate} onChange={(event) => props.onTaskDueDateChange(event.target.value)} />
                   </label>
                 </div>
               </div>

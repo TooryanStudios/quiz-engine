@@ -330,7 +330,7 @@ export function ProfilePage() {
             {profile.lastSeen?.toDate && (
               <>
                 <span>{t.lastSeenLabel}</span>
-                <span>{(profile.lastSeen.toDate() as Date).toLocaleString()}</span>
+                <span>{(profile.lastSeen.toDate() as Date).toLocaleString('en-GB')}</span>
               </>
             )}
           </div>

@@ -1,3 +1,4 @@
+import { useEffect, useRef, type ChangeEvent } from 'react'
 import type { WorkhubProjectIntent, WorkhubProjectType } from '../../../lib/workhubRepo'
 
 interface WorkhubProjectTypeOption {
@@ -29,6 +30,43 @@ export interface WorkhubEntityIntentDetailFormProps {
   onNarrativeBlur: () => void
   detailDrafts: Record<string, string>
   onDetailDraftChange: (key: string, value: string) => void
+}
+
+function AutoGrowTextarea(props: {
+  value: string
+  className?: string
+  rows?: number
+  placeholder?: string
+  disabled?: boolean
+  onChange: (event: ChangeEvent<HTMLTextAreaElement>) => void
+  onBlur?: () => void
+}) {
+  const { className, rows = 4, value } = props
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+
+  useEffect(() => {
+    const element = textareaRef.current
+    if (!element) return
+    const maxAutoHeight = 280
+    const minAutoHeight = Math.max(rows * 22, 88)
+    element.style.height = 'auto'
+    const nextHeight = Math.min(maxAutoHeight, Math.max(element.scrollHeight, minAutoHeight))
+    element.style.height = `${nextHeight}px`
+    element.style.overflowY = element.scrollHeight > maxAutoHeight ? 'auto' : 'hidden'
+  }, [rows, value])
+
+  return (
+    <textarea
+      ref={textareaRef}
+      value={props.value}
+      onChange={props.onChange}
+      onBlur={props.onBlur}
+      rows={rows}
+      placeholder={props.placeholder}
+      disabled={props.disabled}
+      className={`${className || ''} workhub-auto-grow-textarea`.trim()}
+    />
+  )
 }
 
 function renderTypeField(props: WorkhubEntityIntentDetailFormProps, label: string) {
@@ -77,7 +115,7 @@ function renderNarrativeField(
   return (
     <label className="workhub-span-2">
       <span>{label}</span>
-      <textarea
+      <AutoGrowTextarea
         value={props.narrative}
         onChange={(event) => props.onNarrativeChange(event.target.value)}
         onBlur={props.onNarrativeBlur}
@@ -85,6 +123,7 @@ function renderNarrativeField(
         placeholder={placeholder}
         disabled={!props.canEdit}
       />
+      {renderDetectedLinks(props.narrative)}
     </label>
   )
 }
@@ -122,6 +161,36 @@ function renderMonetaryValueFields(
 
 function detailValue(props: WorkhubEntityIntentDetailFormProps, key: string): string {
   return props.detailDrafts[key] || ''
+}
+
+function extractUrls(value: string): string[] {
+  const source = (value || '').trim()
+  if (!source) return []
+  const matches = source.match(/(?:https?:\/\/|www\.)[^\s<]+/gi) || []
+  const deduped: string[] = []
+  for (const raw of matches) {
+    const normalized = raw.replace(/[),.;!?]+$/g, '')
+    if (!normalized) continue
+    if (!deduped.includes(normalized)) deduped.push(normalized)
+  }
+  return deduped
+}
+
+function renderDetectedLinks(value: string) {
+  const links = extractUrls(value)
+  if (links.length === 0) return null
+  return (
+    <div className="workhub-detected-links" aria-label="Detected links">
+      {links.map((url) => {
+        const href = /^https?:\/\//i.test(url) ? url : `https://${url}`
+        return (
+          <a key={url} href={href} target="_blank" rel="noreferrer noopener" className="workhub-detected-link">
+            {url}
+          </a>
+        )
+      })}
+    </div>
+  )
 }
 
 function ProjectIntentDetailForm(props: WorkhubEntityIntentDetailFormProps) {
@@ -210,13 +279,14 @@ function LeadIntentDetailForm(props: WorkhubEntityIntentDetailFormProps) {
       </label>
       <label className="workhub-span-2">
         <span>Qualification notes</span>
-        <textarea
+        <AutoGrowTextarea
           value={detailValue(props, 'qualification notes')}
           onChange={(event) => props.onDetailDraftChange('qualification notes', event.target.value)}
           rows={3}
           placeholder="Need, budget, authority, timeline"
           disabled={!props.canEdit}
         />
+        {renderDetectedLinks(detailValue(props, 'qualification notes'))}
       </label>
       {renderNarrativeField(props, 'Lead details', 'Lead context and follow-up notes')}
     </div>

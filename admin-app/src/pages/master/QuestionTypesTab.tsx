@@ -22,7 +22,7 @@ interface Props {
 
 function formatUpdatedAt(value?: { toDate(): Date }) {
   if (!value) return 'Never'
-  return value.toDate().toLocaleString()
+  return value.toDate().toLocaleString('en-GB')
 }
 
 export function QuestionTypesTab({ enabledQuestionTypeIds, titlesByType, accessByType, updatedAt, onSave }: Props) {

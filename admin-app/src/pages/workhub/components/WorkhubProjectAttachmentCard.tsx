@@ -21,6 +21,7 @@ export interface WorkhubProjectAttachmentCardProps {
   getAttachmentTitle: (url: string) => string
   isImageAttachmentUrl: (url: string) => boolean
   onOpenAttachmentLightbox: (url: string) => void
+  onUpdateAttachment: (previousUrl: string, nextUrl: string, nextTitle: string) => void
   onRemoveAttachment: (url: string) => void
 }
 
@@ -44,11 +45,35 @@ export function WorkhubProjectAttachmentCard({
   getAttachmentTitle,
   isImageAttachmentUrl,
   onOpenAttachmentLightbox,
+  onUpdateAttachment,
   onRemoveAttachment,
 }: WorkhubProjectAttachmentCardProps) {
   const [isDragOver, setIsDragOver] = useState(false)
   const dropInputRef = useRef<HTMLInputElement>(null)
   const [previewUrls, setPreviewUrls] = useState<{ name: string; preview: string | null }[]>([])
+  const [editingAttachmentUrl, setEditingAttachmentUrl] = useState('')
+  const [editingAttachmentTitleDraft, setEditingAttachmentTitleDraft] = useState('')
+  const [editingAttachmentLinkDraft, setEditingAttachmentLinkDraft] = useState('')
+
+  const openAttachmentEditor = useCallback((url: string) => {
+    setEditingAttachmentUrl(url)
+    setEditingAttachmentTitleDraft(getAttachmentTitle(url))
+    setEditingAttachmentLinkDraft(url)
+  }, [getAttachmentTitle])
+
+  const closeAttachmentEditor = useCallback(() => {
+    setEditingAttachmentUrl('')
+    setEditingAttachmentTitleDraft('')
+    setEditingAttachmentLinkDraft('')
+  }, [])
+
+  const saveAttachmentEditor = useCallback(() => {
+    if (!editingAttachmentUrl) return
+    const nextUrl = editingAttachmentLinkDraft.trim()
+    if (!nextUrl) return
+    onUpdateAttachment(editingAttachmentUrl, nextUrl, editingAttachmentTitleDraft.trim())
+    closeAttachmentEditor()
+  }, [closeAttachmentEditor, editingAttachmentLinkDraft, editingAttachmentTitleDraft, editingAttachmentUrl, onUpdateAttachment])
 
   const applyDroppedFiles = useCallback((files: File[]) => {
     if (files.length === 0) return
@@ -215,9 +240,35 @@ export function WorkhubProjectAttachmentCard({
         <div className={`workhub-checklist-url-list view-${attachmentViewMode}`}>
           {attachments.map((url) => {
             const attachmentTitle = getAttachmentTitle(url)
+            const isEditing = canEdit && editingAttachmentUrl === url
             return (
-              <div key={url} className="workhub-checklist-url-item workhub-task-image-item">
-                {isImageAttachmentUrl(url) ? (
+              <div key={url} className={`workhub-checklist-url-item workhub-task-image-item${isEditing ? ' is-editing' : ''}`}>
+                {isEditing ? (
+                  <div className="workhub-attachment-inline-editor">
+                    <input
+                      type="text"
+                      value={editingAttachmentTitleDraft}
+                      onChange={(event) => setEditingAttachmentTitleDraft(event.target.value)}
+                      placeholder="Attachment title"
+                    />
+                    <input
+                      type="url"
+                      value={editingAttachmentLinkDraft}
+                      onChange={(event) => setEditingAttachmentLinkDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault()
+                          saveAttachmentEditor()
+                        }
+                        if (event.key === 'Escape') {
+                          event.preventDefault()
+                          closeAttachmentEditor()
+                        }
+                      }}
+                      placeholder="Attachment link"
+                    />
+                  </div>
+                ) : isImageAttachmentUrl(url) ? (
                   <button type="button" className="workhub-attachment-preview-btn" onClick={() => onOpenAttachmentLightbox(url)}>
                     <img src={url} alt="Project attachment preview" className="workhub-task-image-thumb" loading="lazy" />
                     <span className="workhub-attachment-copy">
@@ -234,7 +285,21 @@ export function WorkhubProjectAttachmentCard({
                     </span>
                   </a>
                 )}
-                {canEdit && <button type="button" onClick={() => onRemoveAttachment(url)}>✕</button>}
+                {canEdit && (
+                  <div className={`workhub-attachment-item-actions${isEditing ? ' is-visible' : ''}`}>
+                    {isEditing ? (
+                      <>
+                        <button type="button" className="workhub-ghost-mini" onClick={saveAttachmentEditor}>Save</button>
+                        <button type="button" className="workhub-ghost-mini" onClick={closeAttachmentEditor}>Cancel</button>
+                      </>
+                    ) : (
+                      <>
+                        <button type="button" className="workhub-ghost-mini" onClick={() => openAttachmentEditor(url)} title="Edit link and title">✎</button>
+                        <button type="button" className="workhub-ghost-mini" onClick={() => onRemoveAttachment(url)} title="Delete attachment">✕</button>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             )
           })}

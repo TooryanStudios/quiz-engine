@@ -38,8 +38,8 @@ export const ProjectActionMenu = memo(function ProjectActionMenu(props: {
   if (props.projectId === '__workspace__') {
     const nonProjectTemplateActions = props.templateCreateActions.filter((action) => action.intent !== 'project')
     return (
-      <div className="workhub-modal-backdrop transparent" onClick={props.onClose}>
-        <div className="workhub-action-dialog" onClick={(event) => event.stopPropagation()}>
+      <div className="workhub-modal-backdrop transparent" onMouseDown={(e) => { if (e.target === e.currentTarget) props.onClose() }}>
+        <div className="workhub-action-dialog" onMouseDown={(event) => event.stopPropagation()}>
           <div className="workhub-action-dialog-head">
             <span>Create new{props.contextName ? <span className="workhub-action-dialog-context">{props.contextName}</span> : null}</span>
             <button type="button" className="workhub-action-dialog-close" onClick={props.onClose} aria-label="Close">✕</button>
@@ -142,8 +142,8 @@ export const ProjectActionMenu = memo(function ProjectActionMenu(props: {
   }
 
   return (
-    <div className="workhub-modal-backdrop transparent" onClick={props.onClose}>
-      <div className="workhub-action-dialog" onClick={(event) => event.stopPropagation()}>
+    <div className="workhub-modal-backdrop transparent" onMouseDown={(e) => { if (e.target === e.currentTarget) props.onClose() }}>
+      <div className="workhub-action-dialog" onMouseDown={(event) => event.stopPropagation()}>
         <div className="workhub-action-dialog-head">
           <span>Create new{props.contextName ? <span className="workhub-action-dialog-context">{props.contextName}</span> : null}</span>
           <button type="button" className="workhub-action-dialog-close" onClick={props.onClose} aria-label="Close">✕</button>

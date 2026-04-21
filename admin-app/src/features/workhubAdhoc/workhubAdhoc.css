@@ -1,0 +1,136 @@
+.adhoc-shell {
+  max-width: 1040px;
+  margin: 0 auto;
+  display: grid;
+  gap: 12px;
+}
+
+.adhoc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.adhoc-header h1 {
+  margin: 0;
+  font-size: 1.05rem;
+  color: var(--text-bright);
+}
+
+.adhoc-header p {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.adhoc-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.adhoc-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-surface);
+  padding: 12px;
+}
+
+.adhoc-card h2 {
+  margin: 0 0 10px;
+  font-size: 0.86rem;
+  color: var(--text-bright);
+}
+
+.adhoc-form {
+  display: grid;
+  gap: 10px;
+}
+
+.adhoc-form textarea {
+  min-height: 84px;
+  resize: vertical;
+}
+
+.adhoc-list {
+  display: grid;
+  gap: 8px;
+}
+
+.adhoc-item {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-page);
+  padding: 9px 10px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.adhoc-item-main {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.adhoc-item-main strong {
+  font-size: 0.8rem;
+  color: var(--text-bright);
+  line-height: 1.4;
+}
+
+.adhoc-item-meta {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 0.69rem;
+  color: var(--text-muted);
+}
+
+.adhoc-item-status {
+  border: 1px solid var(--border-mid);
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 0.66rem;
+}
+
+.adhoc-item-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.adhoc-item-actions button {
+  border: 1px solid var(--border-mid);
+  background: transparent;
+  color: var(--text-dim);
+  border-radius: 7px;
+  font-size: 0.69rem;
+  font-weight: 600;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+.adhoc-item-actions button:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.adhoc-empty {
+  border: 1px dashed var(--border-mid);
+  border-radius: 10px;
+  padding: 12px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 880px) {
+  .adhoc-grid {
+    grid-template-columns: 1fr;
+  }
+}

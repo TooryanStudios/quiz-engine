@@ -72,7 +72,7 @@ export interface WorkhubProject {
   workspaceId: string
   parentProjectId?: string | null
   intent?: WorkhubProjectIntent
-  mainPanelView?: 'tasks' | 'dashboard'
+  mainPanelView?: 'tasks' | 'dashboard' | 'dashboard_with_details'
   taskItemDisplayMode?: 'inherit' | 'list' | 'cards' | 'grid' | 'timeline'
   valueAmount?: number
   valueCurrency?: string
@@ -102,6 +102,22 @@ export interface WorkhubProject {
   updatedAt?: unknown
   notesUpdatedAt?: unknown
   notesUpdatedBy?: string
+}
+
+export type WorkhubFolderNotifyDelivery = 'in_app' | 'both'
+
+export interface WorkhubProjectNotificationPreference {
+  id: string
+  workspaceId: string
+  projectId: string
+  userUid: string
+  enabled: boolean
+  taskCreated: boolean
+  taskCompleted: boolean
+  folderCompleted: boolean
+  delivery: WorkhubFolderNotifyDelivery
+  createdAt?: unknown
+  updatedAt?: unknown
 }
 
 export interface WorkhubDocumentChecklistItem {
@@ -239,10 +255,28 @@ export interface WorkhubDocumentDraft {
   updatedAt?: unknown
 }
 
+export type WorkhubMilestoneStatus = 'not_started' | 'in_progress' | 'completed' | 'at_risk'
+
+export interface WorkhubMilestone {
+  id: string
+  workspaceId: string
+  projectId: string
+  name: string
+  description?: string
+  dueDate?: string
+  status: WorkhubMilestoneStatus
+  color?: string
+  sortOrder: number
+  createdBy: string
+  createdAt?: unknown
+  updatedAt?: unknown
+}
+
 export interface WorkhubTask {
   id: string
   workspaceId: string
   projectId: string
+  milestoneId?: string | null
   sortOrder?: number
   title: string
   description: string
@@ -259,6 +293,7 @@ export interface WorkhubTask {
   assigneeUid: string
   startDate?: string
   dueDate: string
+  dueTime?: string
   checklist?: WorkhubTaskChecklistItem[]
   valueAmount?: number
   valueCurrency?: string
@@ -316,6 +351,7 @@ export interface WorkhubNotification {
   entityId: string
   action: string
   message: string
+  delivery?: WorkhubFolderNotifyDelivery
   read: boolean
   createdAt?: unknown
 }
@@ -345,8 +381,10 @@ const tasksCol = collection(db, 'workhub_tasks')
 const commentsCol = collection(db, 'workhub_task_comments')
 const activityCol = collection(db, 'workhub_activity')
 const notificationsCol = collection(db, 'workhub_notifications')
+const projectNotificationPrefsCol = collection(db, 'workhub_project_notification_prefs')
 const clientsCol = collection(db, 'workhub_clients')
 const documentDraftsCol = collection(db, 'workhub_document_drafts')
+const milestonesCol = collection(db, 'workhub_milestones')
 
 function getTimeValue(value: unknown): number {
   if (!value) return 0
@@ -662,7 +700,7 @@ export async function createWorkhubProject(input: {
   workspaceId: string
   parentProjectId?: string | null
   intent?: WorkhubProjectIntent
-  mainPanelView?: 'tasks' | 'dashboard'
+  mainPanelView?: 'tasks' | 'dashboard' | 'dashboard_with_details'
   valueAmount?: number
   valueCurrency?: string
   tenderNumber?: string
@@ -952,6 +990,7 @@ export async function createWorkhubTask(input: {
   assigneeUid: string
   startDate?: string
   dueDate: string
+  dueTime?: string
   valueAmount?: number
   valueCurrency?: string
   checklist?: WorkhubTaskChecklistItem[]
@@ -972,6 +1011,7 @@ export async function createWorkhubTask(input: {
     assigneeUid: input.assigneeUid,
     startDate: input.startDate || '',
     dueDate: input.dueDate,
+    dueTime: input.dueTime || '',
     valueAmount: typeof input.valueAmount === 'number' && Number.isFinite(input.valueAmount) ? input.valueAmount : undefined,
     valueCurrency: (input.valueCurrency || '').trim().toUpperCase() || undefined,
     checklist: input.checklist || [],
@@ -996,7 +1036,7 @@ export async function saveWorkhubTaskNotifyPrefs(
   })
 }
 
-export async function updateWorkhubTask(taskId: string, patch: Partial<Pick<WorkhubTask, 'title' | 'description' | 'attachments' | 'attachmentTitles' | 'imageUrls' | 'links' | 'linkTitles' | 'linkCreatedBy' | 'status' | 'priority' | 'assigneeUid' | 'startDate' | 'dueDate' | 'valueAmount' | 'valueCurrency' | 'checklist' | 'completedAt' | 'sortOrder'>>) {
+export async function updateWorkhubTask(taskId: string, patch: Partial<Pick<WorkhubTask, 'milestoneId' | 'title' | 'description' | 'attachments' | 'attachmentTitles' | 'imageUrls' | 'links' | 'linkTitles' | 'linkCreatedBy' | 'status' | 'priority' | 'assigneeUid' | 'startDate' | 'dueDate' | 'dueTime' | 'valueAmount' | 'valueCurrency' | 'checklist' | 'completedAt' | 'sortOrder'>>) {
   const normalizedPatch: Record<string, unknown> = {
     ...patch,
   }
@@ -1155,6 +1195,7 @@ export async function createWorkhubNotifications(input: {
   action: string
   message: string
   commentPreview?: string
+  delivery?: WorkhubFolderNotifyDelivery
 }) {
   const targets = Array.from(new Set(input.recipientUids.filter((uid) => !!uid && uid !== input.actorUid)))
   if (targets.length === 0) return
@@ -1167,10 +1208,69 @@ export async function createWorkhubNotifications(input: {
     ...(input.projectId ? { projectId: input.projectId } : {}),
     action: input.action,
     message: input.message,
+    ...(input.delivery ? { delivery: input.delivery } : {}),
     ...(input.commentPreview ? { commentPreview: input.commentPreview } : {}),
     read: false,
     createdAt: serverTimestamp(),
   })))
+}
+
+function getWorkhubProjectNotificationPrefId(projectId: string, userUid: string) {
+  return `${projectId}__${userUid}`
+}
+
+export function subscribeWorkhubProjectNotificationPreference(
+  projectId: string,
+  userUid: string,
+  onData: (item: WorkhubProjectNotificationPreference | null) => void,
+) {
+  if (!projectId || !userUid) {
+    onData(null)
+    return () => undefined
+  }
+  const prefId = getWorkhubProjectNotificationPrefId(projectId, userUid)
+  return onSnapshot(doc(projectNotificationPrefsCol, prefId), (snap) => {
+    if (!snap.exists()) {
+      onData(null)
+      return
+    }
+    onData({ id: snap.id, ...snap.data() } as WorkhubProjectNotificationPreference)
+  })
+}
+
+export async function saveWorkhubProjectNotificationPreference(input: {
+  workspaceId: string
+  projectId: string
+  userUid: string
+  enabled: boolean
+  taskCreated: boolean
+  taskCompleted: boolean
+  folderCompleted: boolean
+  delivery: WorkhubFolderNotifyDelivery
+}) {
+  const prefId = getWorkhubProjectNotificationPrefId(input.projectId, input.userUid)
+  const payload = {
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    userUid: input.userUid,
+    enabled: !!input.enabled,
+    taskCreated: !!input.taskCreated,
+    taskCompleted: !!input.taskCompleted,
+    folderCompleted: !!input.folderCompleted,
+    delivery: input.delivery === 'both' ? 'both' : 'in_app',
+    updatedAt: serverTimestamp(),
+  }
+  await setDoc(doc(projectNotificationPrefsCol, prefId), {
+    ...payload,
+    createdAt: serverTimestamp(),
+  }, { merge: true })
+}
+
+export async function listWorkhubProjectNotificationPreferences(projectId: string): Promise<WorkhubProjectNotificationPreference[]> {
+  if (!projectId) return []
+  const q = query(projectNotificationPrefsCol, where('projectId', '==', projectId))
+  const snap = await getDocs(q)
+  return snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubProjectNotificationPreference))
 }
 
 export async function markWorkhubNotificationRead(notificationId: string) {
@@ -1200,6 +1300,7 @@ export type WorkhubMoodBoardEntityType = 'workspace' | 'project' | 'task' | 'doc
 
 export interface WorkhubMoodBoardImage {
   id?: string
+  tabId?: string
   url: string
   caption: string
   addedBy: string
@@ -1211,13 +1312,28 @@ export interface WorkhubMoodBoardImage {
   z?: number
 }
 
+export interface WorkhubMoodBoardTab {
+  id: string
+  title: string
+}
+
+export interface WorkhubMoodBoardUserPreference {
+  imageLayout?: 'compact' | 'large'
+  showGridBackground?: boolean
+  detailsCollapsed?: boolean
+  updatedAt?: unknown
+}
+
 export interface WorkhubMoodBoard {
   id: string
   workspaceId: string
   entityType: WorkhubMoodBoardEntityType
   entityId: string
   title: string
+  tabs?: WorkhubMoodBoardTab[]
+  activeTabId?: string
   images: WorkhubMoodBoardImage[]
+  userPreferences?: Record<string, WorkhubMoodBoardUserPreference>
   checklist?: WorkhubTaskChecklistItem[]
   createdBy: string
   createdAt?: unknown
@@ -1262,11 +1378,14 @@ export async function createWorkhubMoodBoard(input: {
   title: string
   createdBy: string
 }): Promise<string> {
+  const defaultTabs: WorkhubMoodBoardTab[] = [{ id: 'tab-main', title: 'Board' }]
   const ref = await addDoc(collection(db, 'workhub_mood_boards'), {
     workspaceId: input.workspaceId,
     entityType: input.entityType,
     entityId: input.entityId,
     title: input.title,
+    tabs: defaultTabs,
+    activeTabId: defaultTabs[0].id,
     images: [],
     checklist: [],
     createdBy: input.createdBy,
@@ -1325,7 +1444,110 @@ export async function updateWorkhubMoodBoardTitle(boardId: string, title: string
   })
 }
 
+export async function updateWorkhubMoodBoardTabs(
+  boardId: string,
+  tabs: WorkhubMoodBoardTab[],
+  activeTabId: string,
+): Promise<void> {
+  if (!boardId) return
+  const normalizedTabs = (tabs || [])
+    .map((item) => ({
+      id: (item.id || '').trim(),
+      title: (item.title || '').trim(),
+    }))
+    .filter((item) => item.id && item.title)
+  if (!normalizedTabs.length) return
+  const fallbackActiveTabId = normalizedTabs[0].id
+  const nextActiveTabId = normalizedTabs.some((item) => item.id === activeTabId)
+    ? activeTabId
+    : fallbackActiveTabId
+  await updateDoc(doc(db, 'workhub_mood_boards', boardId), {
+    tabs: normalizedTabs,
+    activeTabId: nextActiveTabId,
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function updateWorkhubMoodBoardUserPreference(
+  boardId: string,
+  userUid: string,
+  preference: WorkhubMoodBoardUserPreference,
+): Promise<void> {
+  if (!boardId || !userUid) return
+  await setDoc(doc(db, 'workhub_mood_boards', boardId), {
+    userPreferences: {
+      [userUid]: {
+        imageLayout: preference.imageLayout === 'compact' ? 'compact' : 'large',
+        showGridBackground: !!preference.showGridBackground,
+        detailsCollapsed: typeof preference.detailsCollapsed === 'boolean' ? preference.detailsCollapsed : true,
+        updatedAt: serverTimestamp(),
+      },
+    },
+    updatedAt: serverTimestamp(),
+  }, { merge: true })
+}
+
 export async function deleteWorkhubMoodBoard(boardId: string): Promise<void> {
   await deleteDoc(doc(db, 'workhub_mood_boards', boardId))
+}
+
+// ── Milestones ─────────────────────────────────────────────────────────────────
+
+export function subscribeWorkhubMilestones(
+  projectId: string,
+  onData: (items: WorkhubMilestone[]) => void,
+): () => void {
+  if (!projectId) {
+    onData([])
+    return () => {}
+  }
+  const q = query(milestonesCol, where('projectId', '==', projectId))
+  return onSnapshot(q, (snap) => {
+    const items = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() } as WorkhubMilestone))
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+    onData(items)
+  })
+}
+
+export async function createWorkhubMilestone(input: {
+  workspaceId: string
+  projectId: string
+  name: string
+  description?: string
+  dueDate?: string
+  status: WorkhubMilestoneStatus
+  color?: string
+  sortOrder: number
+  createdBy: string
+}): Promise<string> {
+  const docRef = await addDoc(milestonesCol, {
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    name: input.name.trim(),
+    description: (input.description || '').trim(),
+    dueDate: input.dueDate || '',
+    status: input.status,
+    color: input.color || '',
+    sortOrder: input.sortOrder,
+    createdBy: input.createdBy,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  })
+  return docRef.id
+}
+
+export async function updateWorkhubMilestone(
+  milestoneId: string,
+  patch: Partial<Pick<WorkhubMilestone, 'name' | 'description' | 'dueDate' | 'status' | 'color' | 'sortOrder'>>,
+): Promise<void> {
+  await updateDoc(doc(db, 'workhub_milestones', milestoneId), {
+    ...patch,
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function deleteWorkhubMilestone(milestoneId: string): Promise<void> {
+  await deleteDoc(doc(db, 'workhub_milestones', milestoneId))
 }
 

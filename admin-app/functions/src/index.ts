@@ -226,6 +226,7 @@ type WorkhubNotificationRecord = {
   action?: string
   message?: string
   commentPreview?: string
+  delivery?: 'in_app' | 'both' | string
 }
 
 // ---------------------------------------------------------------------------
@@ -361,6 +362,9 @@ function shouldEmailWorkhubNotification(notification: WorkhubNotificationRecord)
   const entityType = (notification.entityType || '').trim().toLowerCase()
   const action = (notification.action || '').trim().toLowerCase()
   const rawMessage = (notification.message || '').trim().toLowerCase()
+  const delivery = (notification.delivery || 'both').trim().toLowerCase()
+
+  if (delivery === 'in_app') return false
   if (!entityType || !action) return false
   if (entityType === 'member' && (action === 'approved' || action === 'suspended')) {
     return false
@@ -375,6 +379,10 @@ function shouldEmailWorkhubNotification(notification: WorkhubNotificationRecord)
   }
 
   if (action === 'approved' && entityType === 'workspace') {
+    return true
+  }
+
+  if (entityType === 'project' && (action === 'folder_task_created' || action === 'folder_task_completed' || action === 'folder_completed')) {
     return true
   }
 

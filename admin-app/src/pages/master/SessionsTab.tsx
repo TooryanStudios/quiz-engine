@@ -44,7 +44,7 @@ export function SessionsTab({ sessions, hasMore, loadingMore, onLoadMore }: Prop
             )}
             {sessions.map(s => (
               <tr key={s.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                <td style={tdStyle}>{s.startedAt?.toDate().toLocaleString() || 'Just now'}</td>
+                <td style={tdStyle}>{s.startedAt?.toDate().toLocaleString('en-GB') || 'Just now'}</td>
                 <td style={{ ...tdStyle, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.quizId}</td>
                 <td style={tdStyle}><code style={{ fontSize: '0.78rem' }}>{s.pin}</code></td>
                 <td style={tdStyle}>{s.playerCount}</td>

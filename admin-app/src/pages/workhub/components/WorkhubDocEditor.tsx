@@ -457,6 +457,7 @@ function buildPreviewPageHtml(params: {
   pageWidthMm: number
   pageHeightMm: number
   margins: Pick<NormalizedMasterPage, 'marginTopMm' | 'marginRightMm' | 'marginBottomMm' | 'marginLeftMm'>
+  hideLabel?: boolean
 }) {
   const headerHtml = renderPrintBlockHtml(params.variant.header, params.documentTitle)
   const footerHtml = renderPrintBlockHtml(params.variant.footer, params.documentTitle)
@@ -466,7 +467,7 @@ function buildPreviewPageHtml(params: {
   const footerOffsetMm = showFooter ? 20 : 0
   return `
     <section class="doc-preview-page-shell" style="--preview-page-width:${params.pageWidthMm}mm;--preview-page-height:${params.pageHeightMm}mm;">
-      <div class="doc-preview-page-label">${escapeHtml(params.label)}</div>
+      ${params.hideLabel ? '' : `<div class="doc-preview-page-label">${escapeHtml(params.label)}</div>`}
       <div class="doc-preview-page">
         ${showHeader ? `<div class="doc-preview-page-header"><div class="doc-preview-page-header-inner">${headerHtml}</div></div>` : ''}
         ${showFooter ? `<div class="doc-preview-page-footer"><div class="doc-preview-page-footer-inner"><div>${footerHtml}</div>${params.variant.showPageNumbers ? `<div class="doc-preview-page-number">Page ${params.pageNumber}</div>` : ''}</div></div>` : ''}
@@ -484,8 +485,9 @@ function buildPrintableDocumentHtml(params: {
   bodyContent: string
   masterPage: NormalizedMasterPage
   previewMode?: boolean
+  hideVariantLabels?: boolean
 }) {
-  const { documentTitle, bodyContent, masterPage, previewMode = false } = params
+  const { documentTitle, bodyContent, masterPage, previewMode = false, hideVariantLabels = false } = params
   const { width, height } = getPageDimensions(masterPage)
   const firstHeaderHtml = renderPrintBlockHtml(masterPage.firstPage.header, documentTitle)
   const firstFooterHtml = renderPrintBlockHtml(masterPage.firstPage.footer, documentTitle)
@@ -516,6 +518,7 @@ function buildPrintableDocumentHtml(params: {
           pageWidthMm: width,
           pageHeightMm: height,
           margins: masterPage,
+          hideLabel: hideVariantLabels,
         })}
         ${buildPreviewPageHtml({
           label: 'Later pages preview',
@@ -526,6 +529,7 @@ function buildPrintableDocumentHtml(params: {
           pageWidthMm: width,
           pageHeightMm: height,
           margins: masterPage,
+          hideLabel: hideVariantLabels,
         })}
       </main>
     `
@@ -553,7 +557,12 @@ function buildPrintableDocumentHtml(params: {
       color: #1f355f;
       direction: rtl;
       text-align: right;
-      background: ${previewMode ? '#edf3fb' : '#fff'};
+      background: ${previewMode ? `
+        #edf3fb
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Cpath d='M 40 0 L 0 0 0 40' fill='none' stroke='%23b0c4de' stroke-width='1'/%3E%3C/svg%3E")
+        fixed
+        repeat
+      ` : '#fff'};
     }
     .doc-print-structured-block {
       display: flex;
@@ -692,7 +701,7 @@ function buildPrintableDocumentHtml(params: {
       display: ${previewMode ? 'flex' : 'none'};
       flex-direction: column;
       gap: 22px;
-      padding: 20px;
+      padding: 28px 20px 20px;
     }
     .doc-preview-page-shell {
       width: min(calc(100vw - 40px), 900px);
@@ -711,8 +720,8 @@ function buildPrintableDocumentHtml(params: {
       min-height: var(--preview-page-height);
       background: #fff;
       border: 1px solid #d5e2f5;
-      border-radius: 18px;
-      box-shadow: 0 18px 40px rgba(30, 58, 110, 0.14);
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(30, 58, 110, 0.12);
       overflow: hidden;
     }
     .doc-preview-page-header,
@@ -727,7 +736,7 @@ function buildPrintableDocumentHtml(params: {
     .doc-preview-page-header {
       top: 0;
       min-height: 18mm;
-      padding: 0 ${masterPage.marginRightMm}mm 3mm ${masterPage.marginLeftMm}mm;
+      padding: 4mm ${masterPage.marginRightMm}mm 3mm ${masterPage.marginLeftMm}mm;
       border-bottom: 1px solid #dbe5f3;
     }
     .doc-preview-page-footer {
@@ -774,6 +783,12 @@ function buildPrintableDocumentHtml(params: {
     }
     .doc-preview-placeholder-line.is-wide { width: 96%; }
     .doc-preview-placeholder-line.is-short { width: 58%; }
+    /* Thin scrollbars inside preview iframe */
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #b8c8e0; border-radius: 999px; }
+    ::-webkit-scrollbar-thumb:hover { background: #8aaac8; }
+    * { scrollbar-width: thin; scrollbar-color: #b8c8e0 transparent; }
     @media print {
       body { background: #fff; }
     }
@@ -1362,10 +1377,12 @@ interface WorkhubDocEditorProps extends UseWorkhubDocEditorHandlersOutput {
   onDiscussionEditCancel: () => void
   onDiscussionEditSave: (comment: WorkhubTaskComment) => Promise<void>
   discussionEditBusyKey: string
+  onDiscussionDelete?: (comment: WorkhubTaskComment) => Promise<void>
+  discussionDeleteBusyKey?: string
   currentUid: string
   isPrivilegedMember: boolean
   allWorkspaceIds: Array<{ id: string; name: string }>
-  allWorkspaceProjects: Array<{ id: string; name: string; workspaceId: string }>
+  allWorkspaceProjects: Array<{ id: string; name: string; workspaceId: string; parentProjectId?: string | null }>
   canUnlockDocument: boolean
   copyToFolderDialogOpen: boolean
   copyToFolderSaving: boolean
@@ -1480,6 +1497,8 @@ export function WorkhubDocEditor({
   onDiscussionEditCancel,
   onDiscussionEditSave,
   discussionEditBusyKey,
+  onDiscussionDelete,
+  discussionDeleteBusyKey,
   currentUid,
   allWorkspaceIds,
   allWorkspaceProjects,
@@ -1510,6 +1529,8 @@ export function WorkhubDocEditor({
   const logoAssetInputRef = useRef<HTMLInputElement>(null)
   const workspaceAssetInputRef = useRef<HTMLInputElement>(null)
   const pendingLogoUploadTargetRef = useRef<{ variantKey: MasterPageVariantKey; sectionKey: MasterPageSectionKey } | null>(null)
+  // Cache image URLs as data URIs so the print preview iframe doesn't re-fetch on every update
+  const imageDataUriCacheRef = useRef<Map<string, string>>(new Map())
   const headerVoiceRecognitionRef = useRef<BrowserSpeechRecognition | null>(null)
   const headerVoiceKeepListeningRef = useRef(false)
   const headerVoiceBookmarkRef = useRef<unknown | null>(null)
@@ -1594,7 +1615,7 @@ export function WorkhubDocEditor({
     ? 'Autosave paused for public content. Publish manually.'
     : (noteAutoSaveStatus === 'saving' ? 'Saving…' : noteAutoSaveStatus === 'saved' ? '✔ Saved' : '')
   const recoverableDraftTimeLabel = recoverableDraftUpdatedAt
-    ? new Date(recoverableDraftUpdatedAt).toLocaleString()
+    ? new Date(recoverableDraftUpdatedAt).toLocaleString('en-GB')
     : ''
   const aiPanelPersistenceKey = selectedDocument ? `workhub:${selectedDocument.id}:${activeTab?.id || 'body'}` : undefined
   const [showPublishWarningBox, setShowPublishWarningBox] = useState(false)
@@ -1832,14 +1853,59 @@ export function WorkhubDocEditor({
       bodyContent: sanitizePrintHtmlFragment(selectedDocumentBodyDraft),
       masterPage: normalizedMasterPage,
       previewMode: true,
+      hideVariantLabels: Boolean(selectedDocument.referenceSourceDocumentId),
     })
   }, [normalizedMasterPage, previewTitle, selectedDocument, selectedDocumentBodyDraft])
 
   // Debounce the preview iframe update so typing in text fields doesn't
   // cause a full HTML rebuild + iframe reload on every keystroke.
+  // Also substitute any image URLs with cached data URIs to avoid flickering.
   const [debouncedPreviewHtml, setDebouncedPreviewHtml] = useState<string>('')
   useEffect(() => {
-    const id = setTimeout(() => setDebouncedPreviewHtml(previewDocumentHtml), 400)
+    const id = setTimeout(() => {
+      const cache = imageDataUriCacheRef.current
+      // Find all src="..." URLs in the HTML and replace with data URIs if cached
+      const urlPattern = /src="(https?:\/\/[^"]+)"/g
+      const urls = new Set<string>()
+      let m: RegExpExecArray | null
+      while ((m = urlPattern.exec(previewDocumentHtml)) !== null) {
+        urls.add(m[1])
+      }
+      // Fetch uncached URLs
+      const uncached = Array.from(urls).filter((u) => !cache.has(u))
+      if (uncached.length === 0) {
+        // All URLs are cached — substitute and set
+        const html = previewDocumentHtml.replace(/src="(https?:\/\/[^"]+)"/g, (_full, url) => {
+          const dataUri = cache.get(url)
+          return dataUri ? `src="${dataUri}"` : `src="${url}"`
+        })
+        setDebouncedPreviewHtml(html)
+      } else {
+        // Fetch uncached, then substitute
+        Promise.allSettled(
+          uncached.map(async (url) => {
+            try {
+              const res = await fetch(url)
+              const blob = await res.blob()
+              await new Promise<void>((resolve, reject) => {
+                const reader = new FileReader()
+                reader.onload = () => { cache.set(url, reader.result as string); resolve() }
+                reader.onerror = reject
+                reader.readAsDataURL(blob)
+              })
+            } catch {
+              // Keep original URL on failure
+            }
+          }),
+        ).then(() => {
+          const html = previewDocumentHtml.replace(/src="(https?:\/\/[^"]+)"/g, (_full, url) => {
+            const dataUri = cache.get(url)
+            return dataUri ? `src="${dataUri}"` : `src="${url}"`
+          })
+          setDebouncedPreviewHtml(html)
+        })
+      }
+    }, 400)
     return () => clearTimeout(id)
   }, [previewDocumentHtml])
   const activeMasterVariant = normalizedMasterPage[activeMasterVariantKey]
@@ -2571,22 +2637,6 @@ export function WorkhubDocEditor({
                     {showPublicSourceWarning && (
                       <span className="workhub-public-source-chip" title="This is a public source document with active references.">🌐 Public source</span>
                     )}
-                    {documentTabsDraft.length > 1 && (
-                      <label className="workhub-documents-tab-select-wrap">
-                        <span>Display tab</span>
-                        <select
-                          className="workhub-documents-tab-select"
-                          value={activeTabId || documentTabsDraft[0]?.id || ''}
-                          onChange={(event) => handleSwitchTab(event.target.value)}
-                        >
-                          {documentTabsDraft.map((tab) => (
-                            <option key={tab.id} value={tab.id}>
-                              {(tab.icon ? `${tab.icon} ` : '') + tab.title + (sourceReferencedTabIds.includes(tab.id) ? ' 🌐' : '')}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    )}
                   </div>
                 ) : (
                   <h2>Documents</h2>
@@ -2645,7 +2695,13 @@ export function WorkhubDocEditor({
                     title="Reference in folder"
                     aria-label="Reference document in folder"
                   >
-                    {'📂'}
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <circle cx="18" cy="5" r="3" stroke="currentColor" strokeWidth="1.8"/>
+                      <circle cx="6" cy="12" r="3" stroke="currentColor" strokeWidth="1.8"/>
+                      <circle cx="18" cy="19" r="3" stroke="currentColor" strokeWidth="1.8"/>
+                      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                      <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                    </svg>
                   </button>
                 ) : null}
                 {/* Lock — anyone who can edit can lock */}
@@ -2806,15 +2862,17 @@ export function WorkhubDocEditor({
             {selectedDocument ? (
               printPreviewMode ? (
                 <div className="workhub-print-preview-wrap">
-                  <div className="workhub-print-preview-bar">
-                    <div>
-                      <strong>Print preview</strong>
-                      <span>First and later page variants are shown separately before export.</span>
+                  {!selectedDocument.referenceSourceDocumentId && (
+                    <div className="workhub-print-preview-bar">
+                      <div>
+                        <strong>Print preview</strong>
+                        <span>First and later page variants are shown separately before export.</span>
+                      </div>
+                      <span className="workhub-print-preview-meta">
+                        {normalizedMasterPage.pageSize} · {normalizedMasterPage.orientation}
+                      </span>
                     </div>
-                    <span className="workhub-print-preview-meta">
-                      {normalizedMasterPage.pageSize} · {normalizedMasterPage.orientation}
-                    </span>
-                  </div>
+                  )}
                   <iframe
                     title="Document print preview"
                     className="workhub-print-preview-frame"
@@ -2855,7 +2913,7 @@ export function WorkhubDocEditor({
             )}
           </section>
 
-          {!isMobileLayout && !selectedDocumentLocked && (
+          {!isMobileLayout && (!selectedDocumentLocked || selectedDocument?.referenceSourceDocumentId) && (
             <div
               className={`workhub-rail-resize-handle${detailRailCollapsed ? ' is-collapsed' : ''}`}
               onPointerDown={handleRailResizePointerDown}
@@ -2879,9 +2937,9 @@ export function WorkhubDocEditor({
 
           <aside
             ref={detailRailRef}
-            className={`workhub-doc-detail-rail${isMobileLayout ? ' is-mobile-drawer' : ''}${isMobileLayout && mobileDocDetailsOpen ? ' is-open' : ''}${!isMobileLayout && (detailRailCollapsed || selectedDocumentLocked) ? ' is-hidden' : ''}`}
+            className={`workhub-doc-detail-rail${isMobileLayout ? ' is-mobile-drawer' : ''}${isMobileLayout && mobileDocDetailsOpen ? ' is-open' : ''}${!isMobileLayout && (detailRailCollapsed || (selectedDocumentLocked && !selectedDocument?.referenceSourceDocumentId)) ? ' is-hidden' : ''}`}
             style={!isMobileLayout ? { flexBasis: detailRailWidth, width: detailRailWidth } : undefined}
-            aria-hidden={isMobileLayout ? !mobileDocDetailsOpen : (detailRailCollapsed || selectedDocumentLocked)}
+            aria-hidden={isMobileLayout ? !mobileDocDetailsOpen : (detailRailCollapsed || (selectedDocumentLocked && !selectedDocument?.referenceSourceDocumentId))}
           >
             {isMobileLayout && (
               <div className="workhub-mobile-detail-drawer-head">
@@ -2898,28 +2956,34 @@ export function WorkhubDocEditor({
               </div>
             )}
             <div className="workhub-detail-rail-head">
-              <div className="workhub-detail-rail-tabs" role="tablist" aria-label="Detail rail sections">
-                <button
-                  type="button"
-                  className={`workhub-detail-rail-tab${detailRailTab === 'details' ? ' is-active' : ''}`}
-                  role="tab"
-                  aria-selected={detailRailTab === 'details'}
-                  onClick={() => setDetailRailTab('details')}
-                >
-                  Details
-                </button>
-                <button
-                  type="button"
-                  className={`workhub-detail-rail-tab${detailRailTab === 'ai' ? ' is-active' : ''}`}
-                  role="tab"
-                  aria-selected={detailRailTab === 'ai'}
-                  onClick={() => setDetailRailTab('ai')}
-                >
-                  AI assistant
-                </button>
-              </div>
+              {selectedDocument?.referenceSourceDocumentId ? (
+                <div className="workhub-detail-rail-tabs" role="tablist" aria-label="Detail rail sections">
+                  <span className="workhub-detail-rail-tab is-active" style={{ cursor: 'default', padding: '0 14px' }}>Reference</span>
+                </div>
+              ) : (
+                <div className="workhub-detail-rail-tabs" role="tablist" aria-label="Detail rail sections">
+                  <button
+                    type="button"
+                    className={`workhub-detail-rail-tab${detailRailTab === 'details' ? ' is-active' : ''}`}
+                    role="tab"
+                    aria-selected={detailRailTab === 'details'}
+                    onClick={() => setDetailRailTab('details')}
+                  >
+                    Details
+                  </button>
+                  <button
+                    type="button"
+                    className={`workhub-detail-rail-tab${detailRailTab === 'ai' ? ' is-active' : ''}`}
+                    role="tab"
+                    aria-selected={detailRailTab === 'ai'}
+                    onClick={() => setDetailRailTab('ai')}
+                  >
+                    AI assistant
+                  </button>
+                </div>
+              )}
               <div className="workhub-detail-rail-head-actions">
-                {selectedDocument && selectedDocumentCanEdit && (
+                {selectedDocument && selectedDocumentCanEdit && !selectedDocument.referenceSourceDocumentId && (
                   <button
                     type="button"
                     className="workhub-ghost-mini"
@@ -2946,6 +3010,67 @@ export function WorkhubDocEditor({
 
             <div className={`workhub-detail-rail-body${detailRailTab === 'ai' ? ' is-ai' : ' is-details'}`}>
               {selectedDocument ? (
+                selectedDocument.referenceSourceDocumentId ? (
+                  // Simplified panel for reference documents: tabs list + discussion
+                  <>
+                    <div className="workhub-detail-card workhub-doc-tabs-card">
+                      <div className="workhub-doc-tabs-card-head">
+                        <h3>Referenced tabs</h3>
+                      </div>
+                      {documentTabsDraft.length === 0 ? (
+                        <p className="workhub-doc-tabs-empty">No tabs in this reference.</p>
+                      ) : (
+                        <div className="workhub-doc-tabs-list">
+                          {documentTabsDraft.map((tab) => (
+                            <div
+                              key={tab.id}
+                              className={`workhub-doc-tab-row${tab.id === activeTabId ? ' is-active' : ''}`}
+                            >
+                              <button
+                                type="button"
+                                className="workhub-doc-tab-row-icon-btn"
+                                title="Tab icon"
+                                disabled
+                              >
+                                {tab.icon ?? '📄'}
+                              </button>
+                              <button
+                                type="button"
+                                className="workhub-doc-tab-row-title"
+                                onClick={() => handleSwitchTab(tab.id)}
+                              >
+                                {tab.title}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <WorkhubDiscussionCard
+                      comments={discussionComments}
+                      currentUid={currentUid}
+                      memberByUid={memberByUid}
+                      showAuthorAvatar
+                      formatTime={formatTime}
+                      editingId={discussionEditingId}
+                      editingText={discussionEditingText}
+                      onEditStart={onDiscussionEditStart}
+                      onEditChange={onDiscussionEditChange}
+                      onEditCancel={onDiscussionEditCancel}
+                      onEditSave={onDiscussionEditSave}
+                      onDelete={onDiscussionDelete}
+                      editBusyKey={discussionEditBusyKey}
+                      deleteBusyKey={discussionDeleteBusyKey}
+                      onComposerSend={onDiscussionSend}
+                      composerBusy={discussionBusy}
+                      notifyMode={discussionNotifyMode}
+                      notifyUids={discussionNotifyUids}
+                      notifyCandidates={discussionNotifyCandidates}
+                      onNotifyModeChange={onDiscussionNotifyModeChange}
+                      onNotifyUidsChange={onDiscussionNotifyUidsChange}
+                    />
+                  </>
+                ) :
                 detailRailTab === 'details' ? (
                   <>
                 <details className="workhub-detail-collapsible-info">
@@ -2988,7 +3113,7 @@ export function WorkhubDocEditor({
                       {[...selectedDocument.editedBy].reverse().map((entry) => (
                         <div key={entry.uid + entry.at} className="workhub-doc-edit-entry">
                           <span className="workhub-doc-edit-name">{memberByUid[entry.uid]?.displayName || memberByUid[entry.uid]?.email || entry.uid}</span>
-                          <span className="workhub-doc-edit-time">{entry.at ? new Date(entry.at).toLocaleString() : ''}</span>
+                          <span className="workhub-doc-edit-time">{entry.at ? new Date(entry.at).toLocaleString('en-GB') : ''}</span>
                         </div>
                       ))}
                     </div>
@@ -3598,7 +3723,9 @@ export function WorkhubDocEditor({
                   onEditChange={onDiscussionEditChange}
                   onEditCancel={onDiscussionEditCancel}
                   onEditSave={onDiscussionEditSave}
+                  onDelete={onDiscussionDelete}
                   editBusyKey={discussionEditBusyKey}
+                  deleteBusyKey={discussionDeleteBusyKey}
                   onComposerSend={onDiscussionSend}
                   composerBusy={discussionBusy}
                   notifyMode={discussionNotifyMode}
@@ -3808,12 +3935,40 @@ export function WorkhubDocEditor({
                     onChange={(e) => setCopyToFolderProjectId(e.target.value)}
                   >
                     <option value="">Select folder…</option>
-                    {allWorkspaceProjects
-                      .filter((p) => p.workspaceId === copyToFolderWorkspaceId)
-                      .map((p) => (
-                        <option key={p.id} value={p.id}>{p.name}</option>
-                      ))
-                    }
+                    {(() => {
+                      const wsProjects = allWorkspaceProjects.filter((p) => p.workspaceId === copyToFolderWorkspaceId)
+                      const byParent = new Map<string, typeof wsProjects>()
+                      wsProjects.forEach((p) => {
+                        const key = p.parentProjectId || ''
+                        const bucket = byParent.get(key) || []
+                        bucket.push(p)
+                        byParent.set(key, bucket)
+                      })
+
+                      const buildGroup = (parentId: string, depth: number): React.ReactNode[] => {
+                        const children = byParent.get(parentId) || []
+                        if (children.length === 0) return []
+                        
+                        // Sort children by name
+                        const sorted = [...children].sort((a, b) => a.name.localeCompare(b.name))
+                        
+                        return sorted.flatMap((p) => {
+                          const hasChildren = (byParent.get(p.id) || []).length > 0
+                          const isGroup = hasChildren
+                          const indent = '\u00a0'.repeat(depth * 5)
+                          const prefix = depth > 0 ? '└ ' : ''
+                          
+                          const node = (
+                            <option key={p.id} value={p.id} disabled={isGroup} style={isGroup ? { fontWeight: 'bold' } : {}}>
+                              {indent + prefix + p.name}
+                            </option>
+                          )
+                          return [node, ...buildGroup(p.id, depth + 1)]
+                        })
+                      }
+                      
+                      return buildGroup('', 0)
+                    })()}
                   </select>
                 </label>
               )}
@@ -3822,16 +3977,14 @@ export function WorkhubDocEditor({
                   <span>Tabs to reference</span>
                   <div className="workhub-copy-tab-mode-group">
                     {(['all', 'select'] as const).map((mode) => (
-                      <label key={mode} className="workhub-copy-tab-mode-option">
-                        <input
-                          type="radio"
-                          name="copyTabMode"
-                          value={mode}
-                          checked={copyTabMode === mode}
-                          onChange={() => { setCopyTabMode(mode); setCopyTabSelection([]) }}
-                        />
+                      <button
+                        key={mode}
+                        type="button"
+                        className={`workhub-copy-tab-mode-btn${copyTabMode === mode ? ' is-active' : ''}`}
+                        onClick={() => { setCopyTabMode(mode); setCopyTabSelection([]) }}
+                      >
                         {mode === 'all' ? 'All tabs' : 'Choose tabs'}
-                      </label>
+                      </button>
                     ))}
                   </div>
                   {copyTabMode === 'select' && (

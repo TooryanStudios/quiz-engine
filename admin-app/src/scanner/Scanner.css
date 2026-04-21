@@ -29,6 +29,77 @@
   direction: ltr;
 }
 
+.sc-role-root {
+  justify-content: center;
+  align-items: stretch;
+  padding: 20px;
+  max-width: 680px;
+}
+
+.sc-role-panel {
+  border: 1px solid var(--sc-border);
+  border-radius: 18px;
+  background: linear-gradient(165deg, #111821 0%, #0f141b 65%, #0b1015 100%);
+  padding: 22px;
+  box-shadow: 0 16px 46px rgba(0, 0, 0, 0.35);
+}
+
+.sc-role-kicker {
+  margin: 0;
+  color: var(--sc-accent);
+  letter-spacing: 0.08em;
+  font-size: 11px;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.sc-role-panel h1 {
+  margin: 10px 0 0;
+  font-size: 28px;
+  line-height: 1.15;
+}
+
+.sc-role-subtitle {
+  margin: 12px 0 0;
+  color: var(--sc-text-muted);
+  line-height: 1.5;
+  font-size: 14px;
+}
+
+.sc-role-options {
+  margin-top: 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.sc-role-option {
+  border: 1px solid #2f4054;
+  border-radius: 12px;
+  background: #131b24;
+  color: var(--sc-text);
+  text-align: left;
+  padding: 14px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sc-role-option:hover {
+  border-color: #5d85ad;
+  background: #182230;
+}
+
+.sc-role-option-title {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.sc-role-option-note {
+  font-size: 13px;
+  color: var(--sc-text-muted);
+}
+
 .sc-top-actions {
   position: absolute;
   top: 10px;
@@ -58,6 +129,16 @@
   color: #dce8f8;
 }
 
+.sc-btn-role {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  border: 1px solid var(--sc-border);
+  border-radius: 999px;
+  padding: 8px 11px;
+  background: rgba(8, 14, 22, 0.76);
+}
+
 .sc-btn-settings.sc-pulse { color: var(--sc-accent); animation: sc-pulse 2s infinite; }
 
 @keyframes sc-pulse {
@@ -82,6 +163,10 @@
 }
 
 .sc-main { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+
+.sc-hidden-canvas {
+  display: none;
+}
 
 .sc-screen {
   height: 100%;

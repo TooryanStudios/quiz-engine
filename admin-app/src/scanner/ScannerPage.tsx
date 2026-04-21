@@ -8,6 +8,7 @@ import React, { useState, useCallback, useEffect } from 'react'
 import { useCamera } from './useCamera'
 import { scanImage, type ScanResult, type ScanMode } from './openai'
 import { publishMobileScannerResult } from './realtimeBridge'
+import { ScannerDesktopPage } from './ScannerDesktopPage'
 import {
   addHistoryItem,
   clearHistoryItems,
@@ -20,6 +21,7 @@ const ENV_API_KEY = (import.meta.env.VITE_OPENAI_API_KEY as string | undefined) 
 const LS_KEY = 'scanner_openai_key'
 const LS_MODE = 'scanner_mode'
 const LS_SHOW_CAPTURED_IMAGE = 'scanner_show_captured_image'
+const LS_ROLE = 'scanner_role'
 
 interface ScanTiming {
   captureMs: number
@@ -29,6 +31,7 @@ interface ScanTiming {
 }
 
 type DeviceOrientation = 'portrait' | 'landscape'
+type ScannerRole = 'reader' | 'scanner'
 
 function detectDeviceOrientation(): DeviceOrientation {
   if (typeof window === 'undefined') return 'portrait'
@@ -136,7 +139,6 @@ function SettingsPanel({
           <button
             className={`sc-toggle-btn${showCapturedImage ? ' active' : ''}`}
             onClick={() => onToggleShowCapturedImage(!showCapturedImage)}
-            aria-pressed={showCapturedImage}
           >
             {showCapturedImage ? 'On' : 'Off'}
           </button>
@@ -315,7 +317,7 @@ function ResultPanel({
                     <img src={item.imageDataUrl} alt="History capture" className="sc-history-thumb" />
                     <div className="sc-history-body">
                       <p className="sc-history-row">
-                        <span>{new Date(item.createdAt).toLocaleString()}</span>
+                        <span>{new Date(item.createdAt).toLocaleString('en-GB')}</span>
                         <span>{item.mode === 'simplified' ? 'Simplified' : 'Reasoning'}</span>
                       </p>
                       <p className="sc-history-title">
@@ -359,7 +361,7 @@ function CameraView({
 
   return (
     <div className={`sc-camera-view${orientation === 'landscape' ? ' sc-camera-view-landscape' : ''}`}>
-      <canvas ref={canvasRef as React.RefObject<HTMLCanvasElement>} style={{ display: 'none' }} />
+      <canvas ref={canvasRef as React.RefObject<HTMLCanvasElement>} className="sc-hidden-canvas" />
 
       <div className="sc-video-wrapper">
         {error ? (
@@ -410,7 +412,41 @@ function CameraView({
 
 // --- Main ScannerPage ---
 
-export function ScannerPage() {
+function RoleSelectView({
+  onSelectRole,
+}: {
+  onSelectRole: (role: ScannerRole) => void
+}) {
+  return (
+    <div className="scanner-root sc-role-root">
+      <div className="sc-role-panel">
+        <p className="sc-role-kicker">Scanner Setup</p>
+        <h1>Choose Your Role</h1>
+        <p className="sc-role-subtitle">
+          Reader shows live answers only. Scanner opens camera capture on any device.
+        </p>
+
+        <div className="sc-role-options">
+          <button className="sc-role-option" onClick={() => onSelectRole('reader')}>
+            <span className="sc-role-option-title">Reader</span>
+            <span className="sc-role-option-note">View answers and results only</span>
+          </button>
+
+          <button className="sc-role-option" onClick={() => onSelectRole('scanner')}>
+            <span className="sc-role-option-title">Scanner</span>
+            <span className="sc-role-option-note">Activate camera and scan questions</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ScannerCapturePage({
+  onChangeRole,
+}: {
+  onChangeRole: () => void
+}) {
   const camera = useCamera()
 
   const [screen, setScreen] = useState<'camera' | 'result'>('camera')
@@ -627,6 +663,14 @@ export function ScannerPage() {
     <div className={`scanner-root ${orientation === 'landscape' ? 'sc-orientation-landscape' : 'sc-orientation-portrait'}`}>
       <div className="sc-top-actions">
         <button
+          className="sc-btn-top sc-btn-role"
+          onClick={onChangeRole}
+          disabled={isScanning}
+          aria-label="Change role"
+        >
+          Role
+        </button>
+        <button
           className="sc-btn-top sc-btn-top-flip"
           onClick={camera.flipCamera}
           disabled={isScanning}
@@ -695,4 +739,36 @@ export function ScannerPage() {
       )}
     </div>
   )
+}
+
+function resolveInitialRole(): ScannerRole | null {
+  const urlParam = new URLSearchParams(window.location.search).get('role')
+  if (urlParam === 'reader' || urlParam === 'scanner') return urlParam
+  const stored = localStorage.getItem(LS_ROLE)
+  if (stored === 'reader' || stored === 'scanner') return stored
+  return null
+}
+
+export function ScannerPage() {
+  const [role, setRole] = useState<ScannerRole | null>(resolveInitialRole)
+
+  function selectRole(r: ScannerRole) {
+    localStorage.setItem(LS_ROLE, r)
+    setRole(r)
+  }
+
+  function clearRole() {
+    localStorage.removeItem(LS_ROLE)
+    setRole(null)
+  }
+
+  if (!role) {
+    return <RoleSelectView onSelectRole={selectRole} />
+  }
+
+  if (role === 'reader') {
+    return <ScannerDesktopPage answersOnly onChangeRole={clearRole} />
+  }
+
+  return <ScannerCapturePage onChangeRole={clearRole} />
 }

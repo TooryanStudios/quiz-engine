@@ -4,6 +4,8 @@ import './index.css'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App.tsx'
 
+document.documentElement.lang = 'en-GB'
+
 const CHUNK_RELOAD_KEY = 'quiz-admin:chunk-reload-once'
 const DEV_SW_RESET_RELOAD_KEY = 'quiz-admin:dev-sw-reset-reload-once'
 

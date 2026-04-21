@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import {
+  deleteWorkhubComment,
   subscribeWorkhubCommentsByEntity,
   updateWorkhubComment,
   type WorkhubTaskComment,
@@ -10,8 +11,8 @@ import { PRIORITY_LABELS, getPriorityIcon, getTaskStatusIcon } from '../constant
 import { normalizeMemberUids } from '../projectUtils'
 import { formatDueDateShort, getInitials, normalizeTaskTitle } from '../taskUtils'
 import { useDetailRailMode } from '../hooks/useDetailRailMode'
-import { WorkhubEntityIntentDetailForm } from './EntityIntentDetailForms'
-import { WorkhubProjectAttachmentCard } from './WorkhubProjectAttachmentCard'
+import { useWorkhubMilestones } from '../hooks/useWorkhubMilestones'
+import { WorkhubProjectDetailRail } from './WorkhubProjectDetailRail'
 import { TaskRow, emptyTaskRowMeta } from './TaskRow'
 import { QuickAddTaskRow } from './QuickAddTaskRow'
 import { WorkhubDiscussionCard } from './WorkhubDiscussionCard'
@@ -192,6 +193,7 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
     selectedProject,
     selectedProjectColorDraft,
     canEditSelectedProject,
+    canEditSelectedProjectAttachments,
     selectedProjectEffectiveIntent,
     selectedProjectNameDraft,
     setSelectedProjectNameDraft,
@@ -244,7 +246,26 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
     handleDeleteSingleTask,
     onMobileTaskDetailOpenChange,
     visibleTasks,
+    selectedWorkspaceId,
+    showToast,
+    milestones: _milestonesProp,
+    milestoneProgress: _milestoneProgressProp,
+    onLinkTaskToMilestone: _onLinkTaskToMilestoneProp,
+    onMilestoneStatusChange: _onMilestoneStatusChangeProp,
   } = props
+
+  // ── Milestone view subscription (isolated here so only this component re-renders on data changes) ──
+  const viewMilestones = useWorkhubMilestones({
+    projectId: selectedProjectId !== 'all' ? selectedProjectId : null,
+    workspaceId: selectedWorkspaceId || '',
+    tasks: taskFilterBaseTasks,
+    currentUserUid: currentUid,
+    showToast,
+  })
+  const milestones = viewMilestones.milestones
+  const milestoneProgress = viewMilestones.milestoneProgress
+  const onLinkTaskToMilestone = viewMilestones.handleLinkTaskToMilestone
+  const onMilestoneStatusChange = viewMilestones.handleStatusChange
 
   const selectedTaskId = useSyncExternalStore(subscribeTaskSelection, getTaskSelectionSnapshot)
   const setSelectedTaskId = useCallback((nextValue: string | ((prevState: string) => string)) => {
@@ -349,6 +370,14 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
     })),
     [memberByUid, taskDiscussionNotifyCandidateUids],
   )
+  const timelineQuickAddStatusId = useMemo(() => {
+    if (selectedTaskStatusTab !== 'all') return selectedTaskStatusTab
+    return selectedProjectEffectiveTaskStatuses[0]?.id || ''
+  }, [selectedProjectEffectiveTaskStatuses, selectedTaskStatusTab])
+  const timelineQuickAddProjectId = useMemo(
+    () => (selectedProjectId !== 'all' ? selectedProjectId : quickAddDefaultProjectId),
+    [quickAddDefaultProjectId, selectedProjectId],
+  )
   const taskDiscussionNotifyCandidateUidSet = useMemo(
     () => new Set(taskDiscussionNotifyCandidateUids),
     [taskDiscussionNotifyCandidateUids],
@@ -402,6 +431,18 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
       setTaskDiscussionBusyKey('')
     }
   }, [currentUid, handleCancelTaskCommentEdit, taskEditingCommentText])
+  const handleDeleteTaskComment = useCallback(async (comment: WorkhubTaskComment) => {
+    if (!currentUid || comment.authorUid !== currentUid) return
+    setTaskDiscussionBusyKey(`comment-delete:${comment.id}`)
+    try {
+      await deleteWorkhubComment(comment.id)
+      if (taskEditingCommentId === comment.id) {
+        handleCancelTaskCommentEdit()
+      }
+    } finally {
+      setTaskDiscussionBusyKey('')
+    }
+  }, [currentUid, handleCancelTaskCommentEdit, taskEditingCommentId])
   const handleSendTaskComment = useCallback(async (nextCommentBody: string) => {
     if (!selectedTask) return
     const normalizedCommentBody = nextCommentBody.trim()
@@ -428,7 +469,9 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
       onEditChange={setTaskEditingCommentText}
       onEditCancel={handleCancelTaskCommentEdit}
       onEditSave={handleSaveTaskCommentEdit}
+      onDelete={handleDeleteTaskComment}
       editBusyKey={taskDiscussionBusyKey}
+      deleteBusyKey={taskDiscussionBusyKey}
       onComposerSend={handleSendTaskComment}
       composerBusy={taskDiscussionBusyKey === 'comment'}
       notifyMode={taskDiscussionNotifyMode}
@@ -582,9 +625,61 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
                 </div>
               )
             })()}
+            {selectedProjectId !== 'all' && Array.isArray(milestones) && milestones.length > 0 && (() => {
+              const activeMilestones = milestones.filter((ms: any) => ms.status !== 'completed')
+              if (activeMilestones.length === 0) return null
+              const today = new Date()
+              today.setHours(0, 0, 0, 0)
+              const STATUS_LABELS: Record<string, string> = {
+                not_started: 'Not started',
+                in_progress: 'In progress',
+                at_risk: 'At risk',
+                completed: 'Completed',
+              }
+              return (
+                <div className="workhub-milestone-strip">
+                  {activeMilestones.map((ms: any) => {
+                    const prog = (milestoneProgress as Record<string, any>)?.[ms.id] ?? { total: 0, completed: 0, pct: 0 }
+                    const dotColor = ms.color || '#6366f1'
+                    const isOverdue = ms.dueDate && new Date(ms.dueDate) < today
+                    const dueDateLabel = ms.dueDate
+                      ? new Date(ms.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+                      : null
+                    return (
+                      <div key={ms.id} className="workhub-milestone-strip-item">
+                        <span className="workhub-milestone-strip-dot" style={{ background: dotColor }} />
+                        <span className="workhub-milestone-strip-name">{ms.name}</span>
+                        <span className="workhub-milestone-strip-status">{STATUS_LABELS[ms.status] ?? ms.status}</span>
+                        <div className="workhub-milestone-strip-progress-wrap">
+                          <div className="workhub-milestone-strip-progress-track">
+                            <div className="workhub-milestone-strip-progress-fill" style={{ width: `${prog.pct}%`, background: dotColor }} />
+                          </div>
+                          <span className="workhub-milestone-strip-pct">{prog.pct}%</span>
+                        </div>
+                        {dueDateLabel && (
+                          <span className={`workhub-milestone-strip-due${isOverdue ? ' is-overdue' : ''}`}>
+                            {isOverdue ? '⚠ ' : ''}{dueDateLabel}
+                          </span>
+                        )}
+                        {onMilestoneStatusChange && ms.status === 'not_started' && (
+                          <button type="button" className="workhub-milestone-strip-btn is-activate" onClick={() => (onMilestoneStatusChange as any)(ms.id, 'in_progress')} title="Activate">▶</button>
+                        )}
+                        {onMilestoneStatusChange && (ms.status === 'in_progress' || ms.status === 'at_risk') && (
+                          <button type="button" className="workhub-milestone-strip-btn is-complete" onClick={() => (onMilestoneStatusChange as any)(ms.id, 'completed')} title="Mark complete">✓</button>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })()}
             <div className="workhub-status-tabs">
               {(() => {
-                const visibleStatusTabs = selectedProjectEffectiveTaskStatuses
+                const visibleStatusTabs = selectedProjectEffectiveTaskStatuses.filter((status: any, index: number) => (
+                  index === 0
+                  || (taskFilterBaseTaskCountByStatus[status.id] || 0) > 0
+                  || selectedTaskStatusTab === status.id
+                ))
                 const showAllTab = visibleStatusTabs.length > 1
                 const allTaskCount = taskFilterBaseTasks.length
 
@@ -783,6 +878,10 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
                   selectedTaskId={selectedTaskId}
                   setSelectedTaskId={setSelectedTaskId}
                   handleTaskUpdate={handleTaskUpdate}
+                  quickAddStatusId={timelineQuickAddStatusId}
+                  quickAddProjectId={timelineQuickAddProjectId}
+                  currentUid={currentUid}
+                  handleQuickAddTask={handleQuickAddTask}
                 />
               ) : (() => {
                 return renderedTaskStatuses
@@ -1110,144 +1209,71 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
               getInitials={getInitials}
               handleTaskLinkEditStart={handleTaskLinkEditStart}
               handleTaskLinkRemove={handleTaskLinkRemove}
+              milestones={milestones}
+              onLinkTaskToMilestone={onLinkTaskToMilestone}
             />
           ) : selectedProject ? (
-            <div className="workhub-detail-card">
-              <div className="workhub-task-row-title detail-title">
-                <span className="workhub-project-dot" style={{ background: selectedProjectColorDraft }} />
-                <h3 className="workhub-project-properties-title">
-                  {canEditSelectedProject ? `${selectedProjectIntentMeta.subjectLabel} properties` : `${selectedProjectIntentMeta.subjectLabel} details`}
-                </h3>
-              </div>
-
-              <WorkhubEntityIntentDetailForm
-                intent={selectedProjectEffectiveIntent}
-                canEdit={canEditSelectedProject}
-                name={selectedProjectNameDraft}
-                onNameChange={setSelectedProjectNameDraft}
-                onNameEnter={() => { void handleSaveSelectedProjectDetails() }}
-                projectType={selectedProjectTypeDraft}
-                typeOptions={selectedProjectTypeOptions}
-                onProjectTypeChange={setSelectedProjectTypeDraft}
-                startDate={selectedProjectStartDateDraft}
-                onStartDateChange={setSelectedProjectStartDateDraft}
-                deadline={selectedProjectDeadlineDraft}
-                onDeadlineChange={setSelectedProjectDeadlineDraft}
-                submissionTime={selectedProjectSubmissionTimeDraft}
-                onSubmissionTimeChange={setSelectedProjectSubmissionTimeDraft}
-                valueAmount={selectedProjectValueAmountDraft}
-                onValueAmountChange={setSelectedProjectValueAmountDraft}
-                valueCurrency={selectedProjectValueCurrencyDraft}
-                onValueCurrencyChange={setSelectedProjectValueCurrencyDraft}
-                narrative={selectedProjectNarrativeDraft}
-                onNarrativeChange={setSelectedProjectNarrativeDraft}
-                onNarrativeBlur={() => { void handleSelectedProjectDescriptionBlur() }}
-                detailDrafts={selectedProjectIntentDetailDrafts}
-                onDetailDraftChange={(key, value) => {
-                  setSelectedProjectIntentDetailDrafts((current: any) => ({
-                    ...current,
-                    [key]: value,
-                  }))
-                }}
-              />
-
-              {projectDiscussionNode}
-
-              <div className="workhub-detail-grid workhub-project-detail-grid">
-                <div className="workhub-span-2">
-                  <WorkhubProjectAttachmentCard
-                    collapsed={projectAttachmentsCollapsed}
-                    onToggleCollapsed={() => setProjectAttachmentsCollapsed((current: boolean) => !current)}
-                    attachmentViewMode={attachmentViewMode}
-                    onAttachmentViewModeChange={setAttachmentViewMode}
-                    canEdit={canEditSelectedProject}
-                    attachmentTitleDraft={selectedProjectAttachmentTitleDraft}
-                    onAttachmentTitleDraftChange={setSelectedProjectAttachmentTitleDraft}
-                    attachmentUrlDraft={selectedProjectAttachmentDraft}
-                    onAttachmentUrlDraftChange={setSelectedProjectAttachmentDraft}
-                    attachmentFilePathDraft={selectedProjectAttachmentFilePathDraft}
-                    attachmentFileDrafts={selectedProjectAttachmentFileDrafts}
-                    onAttachmentFileDraftsChange={setSelectedProjectAttachmentFileDrafts}
-                    onAttachmentFilePathDraftChange={setSelectedProjectAttachmentFilePathDraft}
-                    uploadingAttachment={uploadingSelectedProjectAttachment}
-                    onAddAttachment={() => { void handleSelectedProjectAttachmentAdd() }}
-                    onUploadAttachments={() => { void handleSelectedProjectAttachmentFileUpload() }}
-                    attachments={selectedProjectAttachments}
-                    getAttachmentTitle={(url) => selectedProject.attachmentTitles?.[url]?.trim() || deriveAttachmentTitle(url)}
-                    isImageAttachmentUrl={isImageAttachmentUrl}
-                    onOpenAttachmentLightbox={openAttachmentLightbox}
-                    onRemoveAttachment={(url) => { void handleSelectedProjectAttachmentRemove(url) }}
-                  />
-                </div>
-              </div>
-
-              <div className="workhub-detail-grid workhub-project-detail-grid">
-                <label>
-                  <span>Status color</span>
-                  <div className="workhub-project-color-select">
-                    <button
-                      type="button"
-                      className={`workhub-project-color-select-btn${selectedProjectColorMenuOpen ? ' is-open' : ''}`}
-                      onClick={() => setSelectedProjectColorMenuOpen((current: boolean) => !current)}
-                      disabled={!canEditSelectedProject}
-                    >
-                      <span className="workhub-project-color-swatch" style={{ background: selectedProjectColorDraft }} />
-                      <span className="workhub-project-color-select-copy">
-                        <strong>{selectedProjectColorMeaning.label}</strong>
-                        <small>{selectedProjectColorMeaning.hint}</small>
-                      </span>
-                      <span className="workhub-project-color-caret" aria-hidden="true">{selectedProjectColorMenuOpen ? '▴' : '▾'}</span>
-                    </button>
-                    {selectedProjectColorMenuOpen && (
-                      <div className="workhub-project-color-select-menu">
-                        {selectedWorkspaceProjectColorMeanings.map((option: any) => (
-                          <button
-                            key={option.color}
-                            type="button"
-                            className={`workhub-project-color-option${selectedProjectColorDraft === option.color ? ' is-active' : ''}`}
-                            onClick={() => { void handleSelectedProjectColorSelect(option.color) }}
-                          >
-                            <span className="workhub-project-color-swatch" style={{ background: option.color }} />
-                            <span className="workhub-project-color-option-copy">
-                              <strong>{option.label}</strong>
-                              <small>{option.hint}</small>
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </label>
-              </div>
-
-              <details className="workhub-detail-collapsible-info">
-                <summary>{`${selectedProjectIntentMeta.subjectLabel} information`}</summary>
-                <div className="workhub-detail-meta">
-                  <span>{`Workspace: ${selectedWorkspaceDisplayName}`}</span>
-                  <span>{`Parent ${selectedProjectIntentMeta.subjectLabel.toLowerCase()}: ${selectedProject.parentProjectId ? (projectNameById[selectedProject.parentProjectId] || 'Unknown item') : 'Root level'}`}</span>
-                  <span>Created: {formatTime(selectedProject.createdAt)}</span>
-                  <span>Updated: {formatTime(selectedProject.updatedAt)}</span>
-                </div>
-              </details>
-
-              {canEditSelectedProject ? (
-                <div className="workhub-project-detail-actions">
-                  <button type="button" className="workhub-ghost-btn" onClick={() => setProjectAccessDialogId(selectedProject.id)}>
-                    {`Open ${selectedProjectIntentMeta.subjectLabel.toLowerCase()} settings`}
-                  </button>
-                  <button
-                    type="button"
-                    className="workhub-primary-btn"
-                    disabled={!selectedProjectDetailsChanged || busyKey === `project-detail:${selectedProject.id}`}
-                    onClick={() => { void handleSaveSelectedProjectDetails() }}
-                  >
-                    {busyKey === `project-detail:${selectedProject.id}` ? 'Saving…' : `Save ${selectedProjectIntentMeta.subjectLabel.toLowerCase()}`}
-                  </button>
-                </div>
-              ) : (
-                <div className="workhub-project-detail-readonly-note">Read-only: contact a workspace admin to edit this item.</div>
-              )}
-            </div>
+            <WorkhubProjectDetailRail
+              selectedProject={selectedProject}
+              selectedProjectIntentMeta={selectedProjectIntentMeta}
+              selectedProjectColorDraft={selectedProjectColorDraft}
+              canEditSelectedProject={canEditSelectedProject}
+              canEditProjectAttachments={canEditSelectedProjectAttachments}
+              selectedProjectEffectiveIntent={selectedProjectEffectiveIntent}
+              selectedProjectNameDraft={selectedProjectNameDraft}
+              setSelectedProjectNameDraft={setSelectedProjectNameDraft}
+              handleSaveSelectedProjectDetails={handleSaveSelectedProjectDetails}
+              selectedProjectTypeDraft={selectedProjectTypeDraft}
+              selectedProjectTypeOptions={selectedProjectTypeOptions}
+              setSelectedProjectTypeDraft={setSelectedProjectTypeDraft}
+              selectedProjectStartDateDraft={selectedProjectStartDateDraft}
+              setSelectedProjectStartDateDraft={setSelectedProjectStartDateDraft}
+              selectedProjectDeadlineDraft={selectedProjectDeadlineDraft}
+              setSelectedProjectDeadlineDraft={setSelectedProjectDeadlineDraft}
+              selectedProjectSubmissionTimeDraft={selectedProjectSubmissionTimeDraft}
+              setSelectedProjectSubmissionTimeDraft={setSelectedProjectSubmissionTimeDraft}
+              selectedProjectValueAmountDraft={selectedProjectValueAmountDraft}
+              setSelectedProjectValueAmountDraft={setSelectedProjectValueAmountDraft}
+              selectedProjectValueCurrencyDraft={selectedProjectValueCurrencyDraft}
+              setSelectedProjectValueCurrencyDraft={setSelectedProjectValueCurrencyDraft}
+              selectedProjectNarrativeDraft={selectedProjectNarrativeDraft}
+              setSelectedProjectNarrativeDraft={setSelectedProjectNarrativeDraft}
+              handleSelectedProjectDescriptionBlur={handleSelectedProjectDescriptionBlur}
+              selectedProjectIntentDetailDrafts={selectedProjectIntentDetailDrafts}
+              setSelectedProjectIntentDetailDrafts={setSelectedProjectIntentDetailDrafts}
+              projectDiscussionNode={projectDiscussionNode}
+              projectAttachmentsCollapsed={projectAttachmentsCollapsed}
+              setProjectAttachmentsCollapsed={setProjectAttachmentsCollapsed}
+              attachmentViewMode={attachmentViewMode}
+              setAttachmentViewMode={setAttachmentViewMode}
+              selectedProjectAttachmentTitleDraft={selectedProjectAttachmentTitleDraft}
+              setSelectedProjectAttachmentTitleDraft={setSelectedProjectAttachmentTitleDraft}
+              selectedProjectAttachmentDraft={selectedProjectAttachmentDraft}
+              setSelectedProjectAttachmentDraft={setSelectedProjectAttachmentDraft}
+              selectedProjectAttachmentFilePathDraft={selectedProjectAttachmentFilePathDraft}
+              setSelectedProjectAttachmentFilePathDraft={setSelectedProjectAttachmentFilePathDraft}
+              selectedProjectAttachmentFileDrafts={selectedProjectAttachmentFileDrafts}
+              setSelectedProjectAttachmentFileDrafts={setSelectedProjectAttachmentFileDrafts}
+              uploadingSelectedProjectAttachment={uploadingSelectedProjectAttachment}
+              handleSelectedProjectAttachmentAdd={handleSelectedProjectAttachmentAdd}
+              handleSelectedProjectAttachmentFileUpload={handleSelectedProjectAttachmentFileUpload}
+              selectedProjectAttachments={selectedProjectAttachments}
+              deriveAttachmentTitle={deriveAttachmentTitle}
+              isImageAttachmentUrl={isImageAttachmentUrl}
+              openAttachmentLightbox={openAttachmentLightbox}
+              handleSelectedProjectAttachmentRemove={handleSelectedProjectAttachmentRemove}
+              selectedProjectColorMenuOpen={selectedProjectColorMenuOpen}
+              setSelectedProjectColorMenuOpen={setSelectedProjectColorMenuOpen}
+              selectedProjectColorMeaning={selectedProjectColorMeaning}
+              selectedWorkspaceProjectColorMeanings={selectedWorkspaceProjectColorMeanings}
+              handleSelectedProjectColorSelect={handleSelectedProjectColorSelect}
+              selectedWorkspaceDisplayName={selectedWorkspaceDisplayName}
+              projectNameById={projectNameById}
+              formatTime={formatTime}
+              setProjectAccessDialogId={setProjectAccessDialogId}
+              selectedProjectDetailsChanged={selectedProjectDetailsChanged}
+              busyKey={busyKey}
+            />
           ) : (
             <div className="workhub-detail-card">
               <div className="workhub-empty-state">Select a task or workspace item to view details.</div>
@@ -1366,6 +1392,7 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
                   <span>Start date</span>
                   <input
                     type="date"
+                    lang="en-GB"
                     value={selectedTask.startDate || ''}
                     onChange={(event) => void handleTaskUpdate(selectedTask, { startDate: event.target.value })}
                   />
@@ -1374,13 +1401,22 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
                   <span>Due date</span>
                   <input
                     type="date"
+                    lang="en-GB"
                     value={selectedTask.dueDate || ''}
                     onChange={(event) => void handleTaskUpdate(selectedTask, { dueDate: event.target.value })}
                   />
                 </label>
+                <label className="workhub-detail-menu-date-field" aria-label="Task due time">
+                  <span>Due time</span>
+                  <input
+                    type="time"
+                    value={selectedTask.dueTime || ''}
+                    onChange={(event) => void handleTaskUpdate(selectedTask, { dueTime: event.target.value })}
+                  />
+                </label>
                 <div className="workhub-detail-menu-date-actions">
                   <button type="button" onClick={() => { void handleTaskUpdate(selectedTask, { startDate: '' }) }}>Clear start</button>
-                  <button type="button" onClick={() => { void handleTaskUpdate(selectedTask, { dueDate: '' }) }}>Clear due</button>
+                  <button type="button" onClick={() => { void handleTaskUpdate(selectedTask, { dueDate: '', dueTime: '' }) }}>Clear due</button>
                   <button type="button" onClick={() => { setDetailMenuOpen(''); setDetailMenuCoords(null) }}>Done</button>
                 </div>
               </>

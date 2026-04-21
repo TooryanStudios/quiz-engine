@@ -47,7 +47,13 @@ function ResultView({
   )
 }
 
-function ResultsRole() {
+function ResultsRole({
+  answersOnly = false,
+  onChangeRole,
+}: {
+  answersOnly?: boolean
+  onChangeRole?: () => void
+}) {
   const navigate = useNavigate()
   const location = useLocation()
   const [lastMode, setLastMode] = useState<ScanMode | null>(null)
@@ -165,6 +171,12 @@ function ResultsRole() {
         ? 'no-auth'
         : 'idle'
 
+  const latestReaderText = lastResult
+    ? (lastResult.mode === 'reasoning'
+        ? (lastResult.answer || 'No answer detected')
+        : (lastResult.rawText || 'No text detected'))
+    : null
+
   const openHistoryItem = (item: DesktopHistoryItem) => {
     setActiveHistoryId(item.id)
     setLastMode(item.mode)
@@ -184,9 +196,14 @@ function ResultsRole() {
 
   return (
     <div className="scd-results-root">
-      <header>
-        <h2>Desktop Scanner</h2>
-        <p>Live results from mobile scanner via Firebase.</p>
+      <header className="scd-header">
+        <div>
+          <h2>{answersOnly ? 'Reader' : 'Desktop Scanner'}</h2>
+          <p>{answersOnly ? 'Live answers from scanner.' : 'Live results from mobile scanner via Firebase.'}</p>
+        </div>
+        {onChangeRole ? (
+          <button className="scd-role-btn" onClick={onChangeRole}>Change Role</button>
+        ) : null}
       </header>
 
       <section className="scd-auth-box">
@@ -204,7 +221,7 @@ function ResultsRole() {
         <p>{mobileSyncText}</p>
       </section>
 
-      {history.length > 0 ? (
+      {!answersOnly && history.length > 0 ? (
         <section className="scd-history-strip">
           {history.map(item => {
             const isReasoning = item.mode === 'reasoning'
@@ -229,32 +246,49 @@ function ResultsRole() {
         </section>
       ) : null}
 
-      {lastResult?.mode === 'reasoning' ? (
-        <section className="scd-answer-hero">
-          <p className="scd-answer-hero-label">Answer</p>
-          <p className="scd-answer-hero-text">{lastResult.answer || 'No answer detected'}</p>
+      {answersOnly ? (
+        <section className="scd-answer-hero scd-answer-hero-reader">
+          <p className="scd-answer-hero-label">Latest Output</p>
+          <p className="scd-answer-hero-text scd-answer-hero-text-reader">
+            {latestReaderText || 'Waiting for scanner result...'}
+          </p>
+        </section>
+      ) : (
+        lastResult?.mode === 'reasoning' ? (
+          <section className="scd-answer-hero">
+            <p className="scd-answer-hero-label">Answer</p>
+            <p className="scd-answer-hero-text">{lastResult.answer || 'No answer detected'}</p>
+          </section>
+        ) : null
+      )}
+
+      {!answersOnly ? (
+        <section className="scd-metrics">
+          <div>
+            <span>Total Time</span>
+            <strong>{lastTotalMs === null ? '-' : formatMs(lastTotalMs)}</strong>
+          </div>
+          <div>
+            <span>Scan Time</span>
+            <strong>{lastScanMs === null ? '-' : formatMs(lastScanMs)}</strong>
+          </div>
         </section>
       ) : null}
 
-      <section className="scd-metrics">
-        <div>
-          <span>Total Time</span>
-          <strong>{lastTotalMs === null ? '-' : formatMs(lastTotalMs)}</strong>
-        </div>
-        <div>
-          <span>Scan Time</span>
-          <strong>{lastScanMs === null ? '-' : formatMs(lastScanMs)}</strong>
-        </div>
-      </section>
-
-      {lastMode ? <p className="scd-live">Last mode: {lastMode === 'reasoning' ? 'Reasoning' : 'Simplified'}</p> : null}
+      {!answersOnly && lastMode ? <p className="scd-live">Last mode: {lastMode === 'reasoning' ? 'Reasoning' : 'Simplified'}</p> : null}
       {error ? <p className="scd-error">{error}</p> : null}
-      {lastResult ? <ResultView result={lastResult} /> : null}
-      {!lastResult && !error ? <p className="scd-empty">No mobile result received yet.</p> : null}
+      {!answersOnly && lastResult ? <ResultView result={lastResult} /> : null}
+      {!answersOnly && !lastResult && !error ? <p className="scd-empty">No mobile result received yet.</p> : null}
     </div>
   )
 }
 
-export function ScannerDesktopPage() {
-  return <ResultsRole />
+export function ScannerDesktopPage({
+  answersOnly,
+  onChangeRole,
+}: {
+  answersOnly?: boolean
+  onChangeRole?: () => void
+}) {
+  return <ResultsRole answersOnly={answersOnly} onChangeRole={onChangeRole} />
 }

@@ -42,7 +42,7 @@ const EMPTY_TOKENS: ThemePaletteTokens = {
   accent: '#e94560', text: '#eaeaea', textDim: '#8892a4', success: '#2dd4bf',
 }
 
-function formatUpdatedAt(v?: { toDate(): Date }) { return v ? v.toDate().toLocaleString() : 'Never' }
+function formatUpdatedAt(v?: { toDate(): Date }) { return v ? v.toDate().toLocaleString('en-GB') : 'Never' }
 function slugify(v: string) { return v.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/, '') }
 
 // ── Sub-components ─────────────────────────────────────────────────────────────

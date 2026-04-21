@@ -1,5 +1,5 @@
 import { useState, useEffect, memo, useMemo, createContext, useContext, type ReactNode, type Dispatch, type SetStateAction } from 'react'
-import type { WorkhubTask, WorkhubTaskStatusConfig, WorkhubMember, WorkhubTaskChecklistItem } from '../../../lib/workhubRepo'
+import type { WorkhubTask, WorkhubTaskStatusConfig, WorkhubMember, WorkhubTaskChecklistItem, WorkhubMilestone } from '../../../lib/workhubRepo'
 import type { WorkhubImageReview } from '../imageReview'
 import { WorkhubTaskAttachmentCard } from './WorkhubTaskAttachmentCard'
 import { WorkhubTaskChecklistCard } from './WorkhubTaskChecklistCard'
@@ -7,7 +7,7 @@ import { WorkhubTaskChecklistCard } from './WorkhubTaskChecklistCard'
 // ─── Shared context (Priority 4) ───────────────────────────────────────────
 interface TaskDetailSharedContextValue {
   memberByUid: Record<string, WorkhubMember>
-  formatDueDateShort: (date: string) => string
+  formatDueDateShort: (date: string, time?: string) => string
   formatTime: (timestamp: unknown) => string
   projectNameById: Record<string, string>
   attachmentReviews: Record<string, WorkhubImageReview>
@@ -47,7 +47,7 @@ export interface WorkhubTaskDetailPanelProps {
   selectedProjectEffectiveTaskStatuses: WorkhubTaskStatusConfig[]
   PRIORITY_LABELS: Record<string, string>
   memberByUid: Record<string, WorkhubMember>
-  formatDueDateShort: (date: string) => string
+  formatDueDateShort: (date: string, time?: string) => string
   selectedTaskFinanceInfo: TaskFinanceInfo | null
   handleSelectedTaskValueSave: (task: WorkhubTask, amountDraft: string, currencyDraft: string) => void
   handleSelectedTaskTitleSave: (task: WorkhubTask, draft: string) => void
@@ -125,6 +125,8 @@ export interface WorkhubTaskDetailPanelProps {
   getInitials: (name: string) => string
   handleTaskLinkEditStart: (task: WorkhubTask, link: string) => void
   handleTaskLinkRemove: (task: WorkhubTask, link: string) => void
+  milestones?: WorkhubMilestone[]
+  onLinkTaskToMilestone?: (taskId: string, milestoneId: string | null) => void
 }
 
 /** Returns a badge count for an attachment URL based on its review data. */
@@ -399,6 +401,8 @@ export const WorkhubTaskDetailPanel = memo(function WorkhubTaskDetailPanel({
   getInitials,
   handleTaskLinkEditStart,
   handleTaskLinkRemove,
+  milestones,
+  onLinkTaskToMilestone,
 }: WorkhubTaskDetailPanelProps) {
   // Priority 1 – local draft state
   const [titleDraft, setTitleDraft] = useState(selectedTask.title || '')
@@ -505,7 +509,7 @@ export const WorkhubTaskDetailPanel = memo(function WorkhubTaskDetailPanel({
           />
           <DetailChipButton
             label="Due date"
-            value={formatDueDateShort(selectedTask.dueDate || '')}
+            value={formatDueDateShort(selectedTask.dueDate || '', selectedTask.dueTime || '')}
             menuKey="dueDate"
             detailMenuOpen={detailMenuOpen}
             setDetailMenuOpen={setDetailMenuOpen}
@@ -607,6 +611,24 @@ export const WorkhubTaskDetailPanel = memo(function WorkhubTaskDetailPanel({
           <summary>Task information</summary>
           <div className="workhub-detail-meta">
             <span>{`${selectedTaskParentEntityLabel}: ${projectNameById[selectedTask.projectId] || `Unknown ${selectedTaskParentEntityLabel.toLowerCase()}`}`}</span>
+            {milestones && milestones.length > 0 && onLinkTaskToMilestone && (
+              <label className="workhub-milestone-task-row">
+                <span>Milestone:</span>
+                <select
+                  className="workhub-input workhub-select workhub-milestone-select"
+                  value={selectedTask.milestoneId || ''}
+                  onChange={(e) => {
+                    const value = e.target.value
+                    void onLinkTaskToMilestone(selectedTask.id, value || null)
+                  }}
+                >
+                  <option value="">— None —</option>
+                  {milestones.map((ms) => (
+                    <option key={ms.id} value={ms.id}>{ms.name}</option>
+                  ))}
+                </select>
+              </label>
+            )}
             <span>Assignee: {memberByUid[selectedTask.assigneeUid]?.displayName || memberByUid[selectedTask.assigneeUid]?.email || 'Unassigned'}</span>
             <span>Created: {formatTime(selectedTask.createdAt)}</span>
             <span>Start date: {formatDueDateShort(selectedTask.startDate || '')}</span>

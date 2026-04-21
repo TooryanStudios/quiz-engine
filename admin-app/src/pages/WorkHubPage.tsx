@@ -1,6 +1,6 @@
 import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Link, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 import { auth, storage } from '../lib/firebase'
 import { markSignOut } from '../lib/signOutState'
@@ -14,6 +14,7 @@ import {
   createWorkhubTask,
   createWorkhubWorkspace,
   deleteWorkhubClient,
+  deleteWorkhubComment,
   deleteWorkhubDocument,
   deleteWorkhubProject,
   deleteWorkhubTask,
@@ -27,9 +28,12 @@ import {
   subscribeWorkhubClientsMulti,
   subscribeWorkhubDocuments,
   getWorkhubDocumentById,
+  listWorkhubProjectNotificationPreferences,
   markWorkhubNotificationRead,
   saveWorkhubDocumentNotifyPrefs,
+  saveWorkhubProjectNotificationPreference,
   subscribeWorkhubNotifications,
+  subscribeWorkhubProjectNotificationPreference,
   subscribeWorkhubProjectsMulti,
   subscribeWorkhubTasks,
   subscribeWorkhubWorkspaces,
@@ -43,9 +47,11 @@ import {
   type WorkhubActivity,
   type WorkhubClient,
   type WorkhubDocument,
+  type WorkhubFolderNotifyDelivery,
   type WorkhubMember,
   type WorkhubNotification,
   type WorkhubProject,
+  type WorkhubProjectNotificationPreference,
   type WorkhubProjectIntent,
   type WorkhubProjectPriority,
   type WorkhubProjectType,
@@ -153,14 +159,47 @@ import { useWorkhubWorkspaceTemplates } from './workhub/hooks/useWorkhubWorkspac
 import { useWorkhubDocEditorHandlers } from './workhub/hooks/useWorkhubDocEditorHandlers'
 import { WorkhubDocEditor } from './workhub/components/WorkhubDocEditor'
 import { WorkhubDiscussionCard } from './workhub/components/WorkhubDiscussionCard'
+import { WorkhubProjectDetailRail } from './workhub/components/WorkhubProjectDetailRail'
 import { WorkhubTasksSection } from './workhub/components/WorkhubTasksSection'
-import { getTaskSelectionSnapshot, setTaskSelectionId } from './workhub/taskSelectionStore'
+import { MilestoneCreateEditDialog } from './workhub/components/MilestoneCreateEditDialog'
+import { useWorkhubMilestones } from './workhub/hooks/useWorkhubMilestones'
+import { getTaskSelectionSnapshot, setTaskSelectionId, subscribeTaskSelection } from './workhub/taskSelectionStore'
 import type { WorkhubUserAccessDraft, WorkhubUserAccessMode, WorkhubUserWorkspaceDraft } from './workhub/accessTypes'
 
 const MASTER_EMAIL = import.meta.env.VITE_MASTER_EMAIL as string | undefined
 const WORKHUB_PHONE_MAX_WIDTH = 767
 const WORKHUB_DESKTOP_MIN_WIDTH = WORKHUB_PHONE_MAX_WIDTH + 1
 const DEFAULT_STATUS_TASK_RENDER_LIMIT = 80
+
+type WorkhubFolderNotificationEvent = 'task_created' | 'task_completed' | 'folder_completed'
+
+type WorkhubFolderNotificationSettings = {
+  enabled: boolean
+  taskCreated: boolean
+  taskCompleted: boolean
+  folderCompleted: boolean
+  delivery: WorkhubFolderNotifyDelivery
+}
+
+const DEFAULT_WORKHUB_FOLDER_NOTIFICATION_SETTINGS: WorkhubFolderNotificationSettings = {
+  enabled: false,
+  taskCreated: false,
+  taskCompleted: true,
+  folderCompleted: true,
+  delivery: 'in_app',
+}
+
+function normalizeFolderNotificationSettings(
+  value: Partial<WorkhubProjectNotificationPreference> | null | undefined,
+): WorkhubFolderNotificationSettings {
+  return {
+    enabled: !!value?.enabled,
+    taskCreated: !!value?.taskCreated,
+    taskCompleted: !!value?.taskCompleted,
+    folderCompleted: !!value?.folderCompleted,
+    delivery: value?.delivery === 'both' ? 'both' : 'in_app',
+  }
+}
 
 function getWorkhubDocumentIcon(document: { type?: string; icon?: string | null; referenceSourceDocumentId?: string | null; hasOutgoingReferences?: boolean } | null | undefined) {
   if (document?.referenceSourceDocumentId) return '🔗'
@@ -228,7 +267,7 @@ function getIntentSettingsDeadlineLabel(intent: WorkhubProjectIntent, projectTyp
 }
 
 function resolveProjectMainPanelView(mainPanelView: WorkhubProject['mainPanelView']): 'tasks' | 'dashboard' {
-  return mainPanelView === 'dashboard' ? 'dashboard' : 'tasks'
+  return (mainPanelView === 'dashboard' || mainPanelView === 'dashboard_with_details') ? 'dashboard' : 'tasks'
 }
 
 const MONEY_RELATED_INTENTS = new Set<WorkhubProjectIntent>([
@@ -716,6 +755,7 @@ export default function WorkHubPage() {
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState('')
   const [selectedProjectId, setSelectedProjectId] = useState('all')
   const [selectedAssigneeUid, setSelectedAssigneeUid] = useState('all')
+  const selectedTaskIdSnapshot = useSyncExternalStore(subscribeTaskSelection, getTaskSelectionSnapshot)
   const setSelectedTaskId = useCallback((nextValue: string | ((prevState: string) => string)) => {
     const previousValue = getTaskSelectionSnapshot()
     const resolvedValue = typeof nextValue === 'function'
@@ -814,7 +854,6 @@ export default function WorkHubPage() {
   const [accessMemberUids, setAccessMemberUids] = useState<string[]>([])
   const [expandedProjectIds, setExpandedProjectIds] = useState<string[]>([])
   const [projectsGroupExpanded, setProjectsGroupExpanded] = useState(true)
-  const [documentsGroupExpanded, setDocumentsGroupExpanded] = useState(true)
   const [settingsProjectName, setSettingsProjectName] = useState('')
   const [settingsProjectDescription, setSettingsProjectDescription] = useState('')
   const [settingsProjectColor, setSettingsProjectColor] = useState(PROJECT_COLORS[0])
@@ -830,9 +869,11 @@ export default function WorkHubPage() {
   const [settingsProjectProposalId, setSettingsProjectProposalId] = useState('')
   const [settingsTechnicalProposalUrl, setSettingsTechnicalProposalUrl] = useState('')
   const [settingsFinancialProposalUrl, setSettingsFinancialProposalUrl] = useState('')
-  const [settingsProjectMainPanelView, setSettingsProjectMainPanelView] = useState<'tasks' | 'dashboard'>('tasks')
+  const [settingsProjectMainPanelView, setSettingsProjectMainPanelView] = useState<'tasks' | 'dashboard' | 'dashboard_with_details'>('tasks')
   const [settingsProjectTaskItemDisplayMode, setSettingsProjectTaskItemDisplayMode] = useState<'inherit' | 'list' | 'cards' | 'grid' | 'timeline'>('inherit')
   const [settingsProjectClientId, setSettingsProjectClientId] = useState('')
+  const [settingsProjectFolderNotifications, setSettingsProjectFolderNotifications] = useState<WorkhubFolderNotificationSettings>(DEFAULT_WORKHUB_FOLDER_NOTIFICATION_SETTINGS)
+  const [settingsProjectFolderNotificationsBusy, setSettingsProjectFolderNotificationsBusy] = useState(false)
   const [settingsStorageMethod, setSettingsStorageMethod] = useState<'firebase' | 'drive'>('firebase')
   const [selectedClientId, setSelectedClientId] = useState('')
   const [clientDeleteTargetId, setClientDeleteTargetId] = useState('')
@@ -957,6 +998,7 @@ export default function WorkHubPage() {
     handleStartCommentEdit: (comment: WorkhubTaskComment) => void
     handleCancelCommentEdit: () => void
     handleSaveCommentEdit: (comment: WorkhubTaskComment) => Promise<void>
+    handleDeleteComment: (comment: WorkhubTaskComment) => Promise<void>
   }>({
     dragTaskId: '', dragStatusId: '', dropTargetKey: '',
     editingTaskTitleText: '', editingChecklistItemText: '',
@@ -964,7 +1006,8 @@ export default function WorkHubPage() {
     handleTaskUpdate: async () => {}, handleBulkStatusChange: async () => {}, handleTaskReorder: async () => {},
     handleQuickAddTask: async () => {}, clearTaskSelection: () => {}, handleBulkDeleteSelected: async () => {},
     handleDeleteSingleTask: async () => {}, handleQuickTaskViewModeChange: async () => {}, handleAddTaskComment: async () => {},
-    handleAddComment: async () => {}, handleStartCommentEdit: () => {}, handleCancelCommentEdit: () => {}, handleSaveCommentEdit: async () => {},
+    handleAddComment: async () => {}, handleStartCommentEdit: () => {}, handleCancelCommentEdit: () => {},
+    handleSaveCommentEdit: async () => {}, handleDeleteComment: async () => {},
   })
 
   useEffect(() => {
@@ -1202,8 +1245,10 @@ export default function WorkHubPage() {
     let entityId = ''
     if (activeSection === 'notes' && selectedDocumentId) {
       entityType = 'document'
-      entityId = selectedDocumentId
-    } else if (activeSection === 'tasks' && selectedProjectId && selectedProjectId !== 'all') {
+      // For reference documents, subscribe to comments on the source document
+      const doc = documents.find((d) => d.id === selectedDocumentId)
+      entityId = doc?.referenceSourceDocumentId || selectedDocumentId
+    } else if ((activeSection === 'tasks' || activeSection === 'dashboard') && selectedProjectId && selectedProjectId !== 'all') {
       entityType = 'project'
       entityId = selectedProjectId
     }
@@ -1217,7 +1262,7 @@ export default function WorkHubPage() {
 
     const unsubComments = subscribeWorkhubCommentsByEntity(entityType, entityId, setComments)
     return () => unsubComments()
-  }, [activeSection, member, selectedDocumentId, selectedProjectId])
+  }, [activeSection, documents, member, selectedDocumentId, selectedProjectId])
 
   useEffect(() => {
     const localUid = auth.currentUser?.uid || ''
@@ -1612,6 +1657,7 @@ export default function WorkHubPage() {
   })
   const {
     workspaceTaskStatuses,
+    effectiveStatusesByProjectId,
     selectedProjectEffectiveTaskStatuses,
     defaultTaskStatusId,
     workspaceTaskCountByProjectId,
@@ -1664,11 +1710,12 @@ export default function WorkHubPage() {
   ), [selectedProjectEffectiveTaskStatuses])
   const renderedTaskStatuses = useMemo(() => {
     if (selectedTaskStatusTab === 'all') {
-      if (selectedProjectEffectiveTaskStatuses.length > 0) return selectedProjectEffectiveTaskStatuses
-      return selectedProjectEffectiveTaskStatuses[0] ? [selectedProjectEffectiveTaskStatuses[0]] : []
+      return selectedProjectEffectiveTaskStatuses.filter((status, index) => (
+        index === 0 || (filteredTaskCountByStatus[status.id] || 0) > 0
+      ))
     }
     return selectedProjectEffectiveTaskStatuses.filter((status) => status.id === selectedTaskStatusTab)
-  }, [selectedTaskStatusTab, selectedProjectEffectiveTaskStatuses])
+  }, [filteredTaskCountByStatus, selectedTaskStatusTab, selectedProjectEffectiveTaskStatuses])
   const expandedRenderableStatusIdSet = useMemo(() => {
     if (selectedTaskStatusTab !== 'all') {
       return new Set(renderedTaskStatuses.map((status) => status.id))
@@ -1920,6 +1967,8 @@ export default function WorkHubPage() {
   const stableHandleCancelCommentEdit = useCallback(() => _cbRef.current.handleCancelCommentEdit(), [])
   const stableHandleSaveCommentEdit = useCallback(
     (comment: WorkhubTaskComment) => _cbRef.current.handleSaveCommentEdit(comment), [])
+  const stableHandleDeleteComment = useCallback(
+    (comment: WorkhubTaskComment) => _cbRef.current.handleDeleteComment(comment), [])
 
   const selectedWorkspaceSettings = useMemo(() => workspaces.find((item) => item.id === workspaceSettingsId) || null, [workspaceSettingsId, workspaces])
   const selectedWorkspaceSettingsTemplateResolution = useMemo(
@@ -2801,11 +2850,6 @@ export default function WorkHubPage() {
     },
     [documents, pendingNotificationDocument, selectedWorkspaceId],
   )
-  const workspaceLevelDocuments = useMemo(() => {
-    return [...workspaceDocuments]
-      .filter((item) => !item.projectId)
-      .sort((left, right) => getUnknownTimeValue(right.updatedAt || right.createdAt) - getUnknownTimeValue(left.updatedAt || left.createdAt))
-  }, [workspaceDocuments])
   const workspaceDocumentsByProjectId = useMemo(() => {
     const grouped: Record<string, WorkhubDocument[]> = {}
     workspaceDocuments.forEach((item) => {
@@ -2827,10 +2871,6 @@ export default function WorkHubPage() {
       grouped[item.entityId].push(item)
     })
     return grouped
-  }, [visibleProjectIds, workspaceMoodBoards])
-  const workspaceLevelMoodBoards = useMemo(() => {
-    return [...workspaceMoodBoards]
-      .filter((item) => !item.entityId || !visibleProjectIds.has(item.entityId))
   }, [visibleProjectIds, workspaceMoodBoards])
   const selectedProjectDashboardMedia = useMemo(() => {
     if (!selectedProject) return [] as Array<{ id: string; url: string; label: string; source: string }>
@@ -3047,16 +3087,21 @@ export default function WorkHubPage() {
       }
     }
     if (activeSection === 'notes' && selectedDocument) {
+      // For reference documents, tie discussion to the source document
+      const discussionDocId = selectedDocument.referenceSourceDocumentId || selectedDocument.id
+      const discussionWorkspaceId = (selectedDocument.referenceSourceDocumentId
+        ? selectedDocument.referenceSourceWorkspaceId
+        : undefined) || selectedDocument.workspaceId
       return {
         entityType: 'document' as const,
-        entityId: selectedDocument.id,
-        workspaceId: selectedDocument.workspaceId,
+        entityId: discussionDocId,
+        workspaceId: discussionWorkspaceId,
         label: selectedDocument.title?.trim() || 'Untitled document',
         visibility: selectedDocument.visibility,
         memberUids: selectedDocument.memberUids,
       }
     }
-    if (activeSection === 'tasks' && selectedProject && selectedProjectId !== 'all') {
+    if ((activeSection === 'tasks' || activeSection === 'dashboard') && selectedProject && selectedProjectId !== 'all') {
       return {
         entityType: 'project' as const,
         entityId: selectedProject.id,
@@ -3224,9 +3269,19 @@ export default function WorkHubPage() {
     return getTemplateCreationIntentMeta(parentIntent, selectedWorkspaceTemplateId).subjectLabel
   }, [selectedWorkspaceTemplateId, selectedWorkspaceTemplateIntentSet, workspaceByIdForFiltering, workspaceProjectById])
   const canEditSelectedProject = useMemo(
-    () => !!selectedProject && (isPrivilegedMember || selectedProject.createdBy === currentUid),
-    [currentUid, isPrivilegedMember, selectedProject],
+    () => !!selectedProject && (isPrivilegedMember || currentUserAccessLevel === 'full' || selectedProject.createdBy === currentUid),
+    [currentUid, currentUserAccessLevel, isPrivilegedMember, selectedProject],
   )
+  const canEditSelectedProjectAttachments = useMemo(() => {
+    if (!selectedProject || !currentUid) return false
+    if (isPrivilegedMember || currentUserAccessLevel === 'full' || selectedProject.createdBy === currentUid) return true
+
+    if (selectedProject.visibility === 'restricted') {
+      return normalizeMemberUids(selectedProject.memberUids || []).includes(currentUid)
+    }
+
+    return workspaceAssignableMemberUidSet.has(currentUid)
+  }, [currentUid, currentUserAccessLevel, isPrivilegedMember, selectedProject, workspaceAssignableMemberUidSet])
   const {
     handleSaveSelectedProjectDetails,
     handleSelectedProjectDescriptionBlur,
@@ -3417,6 +3472,15 @@ export default function WorkHubPage() {
     deleteDocument: deleteWorkhubDocument,
     normalizeMemberUids,
   })
+  const settingsMilestones = useWorkhubMilestones({
+    projectId: projectAccessDialogId || null,
+    workspaceId: selectedWorkspaceId,
+    tasks,
+    currentUserUid: currentUid,
+    showToast,
+  })
+  // Alias — settings milestones only (for ProjectSettingsDialog). View milestones live in WorkhubTasksSection.
+  const milestones = settingsMilestones
   const selectedProjectDetailsChanged = useMemo(() => {
     if (!selectedProject) return false
     const selectedProjectType = selectedProject.projectType || 'other'
@@ -3529,7 +3593,7 @@ export default function WorkHubPage() {
   )
 
   const handleSelectedProjectAttachmentAdd = useCallback(async () => {
-    if (!selectedProject || !canEditSelectedProject) return
+    if (!selectedProject || !canEditSelectedProjectAttachments) return
     const nextUrl = selectedProjectAttachmentDraft.trim()
     if (!nextUrl) return
     const nextTitle = selectedProjectAttachmentTitleDraft.trim()
@@ -3552,10 +3616,51 @@ export default function WorkHubPage() {
     } finally {
       setBusyKey('')
     }
-  }, [canEditSelectedProject, selectedProject, selectedProjectAttachmentDraft, selectedProjectAttachmentTitleDraft, selectedProjectAttachments, setBusyKey, showToast])
+  }, [canEditSelectedProjectAttachments, selectedProject, selectedProjectAttachmentDraft, selectedProjectAttachmentTitleDraft, selectedProjectAttachments, setBusyKey, showToast])
+
+  const handleSelectedProjectAttachmentUpdate = useCallback(async (previousUrl: string, nextUrlDraft: string, nextTitleDraft: string) => {
+    if (!selectedProject || !canEditSelectedProjectAttachments) return
+
+    const previousKey = previousUrl.trim()
+    const nextUrl = nextUrlDraft.trim()
+    if (!nextUrl) {
+      showToast({ type: 'error', message: 'Attachment link cannot be empty.' })
+      return
+    }
+    if (!selectedProjectAttachments.includes(previousKey)) return
+
+    const replacedAttachments = selectedProjectAttachments.map((item) => item === previousKey ? nextUrl : item)
+    const dedupedAttachments = Array.from(new Set(replacedAttachments))
+    if (dedupedAttachments.length !== replacedAttachments.length) {
+      showToast({ type: 'error', message: 'This link already exists in attachments.' })
+      return
+    }
+
+    const currentTitles = { ...(selectedProject.attachmentTitles || {}) }
+    const fallbackTitle = currentTitles[previousKey] || deriveAttachmentTitle(previousKey)
+    const nextTitle = nextTitleDraft.trim() || fallbackTitle || deriveAttachmentTitle(nextUrl)
+
+    if (previousKey !== nextUrl) {
+      delete currentTitles[previousKey]
+    }
+    currentTitles[nextUrl] = nextTitle
+
+    setBusyKey(`project-detail:${selectedProject.id}`)
+    try {
+      await updateWorkhubProject(selectedProject.id, {
+        attachments: dedupedAttachments,
+        attachmentTitles: currentTitles,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not update attachment.'
+      showToast({ type: 'error', message })
+    } finally {
+      setBusyKey('')
+    }
+  }, [canEditSelectedProjectAttachments, deriveAttachmentTitle, selectedProject, selectedProjectAttachments, setBusyKey, showToast])
 
   const handleSelectedProjectAttachmentRemove = useCallback(async (url: string) => {
-    if (!selectedProject || !canEditSelectedProject) return
+    if (!selectedProject || !canEditSelectedProjectAttachments) return
     if (!window.confirm('Remove this attachment?')) return
     const nextAttachments = selectedProjectAttachments.filter((item) => item !== url)
     const nextAttachmentTitles = { ...(selectedProject.attachmentTitles || {}) }
@@ -3572,7 +3677,7 @@ export default function WorkHubPage() {
     } finally {
       setBusyKey('')
     }
-  }, [canEditSelectedProject, selectedProject, selectedProjectAttachments, setBusyKey, showToast])
+  }, [canEditSelectedProjectAttachments, selectedProject, selectedProjectAttachments, setBusyKey, showToast])
 
   const fileToBase64 = useCallback(async (file: File) => {
     return new Promise<string>((resolve, reject) => {
@@ -3615,7 +3720,7 @@ export default function WorkHubPage() {
   }, [fileToBase64])
 
   const handleSelectedProjectAttachmentFileUpload = useCallback(async () => {
-    if (!selectedProject || !canEditSelectedProject || selectedProjectAttachmentFileDrafts.length === 0) return
+    if (!selectedProject || !canEditSelectedProjectAttachments || selectedProjectAttachmentFileDrafts.length === 0) return
     setUploadingSelectedProjectAttachment(true)
     setBusyKey(`project-detail:${selectedProject.id}`)
     try {
@@ -3642,7 +3747,7 @@ export default function WorkHubPage() {
       setUploadingSelectedProjectAttachment(false)
       setBusyKey('')
     }
-  }, [canEditSelectedProject, selectedProject, selectedProjectAttachmentFileDrafts, selectedProjectAttachments, setBusyKey, showToast, uploadProjectAttachment])
+  }, [canEditSelectedProjectAttachments, selectedProject, selectedProjectAttachmentFileDrafts, selectedProjectAttachments, setBusyKey, showToast, uploadProjectAttachment])
 
   useEffect(() => {
     if (selectedWorkspaceProjectColorOptions.length === 0) return
@@ -3817,7 +3922,9 @@ export default function WorkHubPage() {
       ? selectedDocumentId
       : (activeSection === 'moodboard'
         ? selectedMoodBoardId
-        : '')
+        : (activeSection === 'tasks'
+          ? selectedTaskIdSnapshot
+          : ''))
     const prevEntityId = prevSelectedEntityIdRef.current
     prevSelectedEntityIdRef.current = expectedEntityParam
     const entityChangedThisRender = prevEntityId !== expectedEntityParam
@@ -3831,7 +3938,7 @@ export default function WorkHubPage() {
         (!!selectedWorkspaceParam && selectedWorkspaceId !== selectedWorkspaceParam)
         || (!!selectedProjectParam && expectedProjectParam !== selectedProjectParam)
         || (!!selectedSectionParam && activeSection !== selectedSectionParam)
-        || (activeSection !== 'tasks' && !!selectedEntityParam && expectedEntityParam !== selectedEntityParam)
+        || (!!selectedEntityParam && expectedEntityParam !== selectedEntityParam)
       )
     ) {
       return
@@ -3850,10 +3957,15 @@ export default function WorkHubPage() {
       return
     }
 
+    // Guard against stale entity state overwriting the URL in either direction:
+    // – URL has entity X but state still says entity Y (race after URL-led navigation)
+    // – URL has NO entity but state still holds a stale entity from the previous
+    //   workspace (this is the common workspace-switch case where navigate() fires
+    //   with the remembered route before URL→state sync has had a chance to clear
+    //   the old entity out of state). Without this guard the stale entity is silently
+    //   appended to the new workspace URL, corrupting the persisted route memory.
     if (
-      !!selectedEntityParam
-      && expectedEntityParam !== selectedEntityParam
-      && activeSection !== 'tasks'
+      expectedEntityParam !== selectedEntityParam
       && !entityChangedThisRender
     ) {
       return
@@ -3869,7 +3981,9 @@ export default function WorkHubPage() {
       ? selectedDocumentId
       : (targetSection === 'moodboard'
         ? selectedMoodBoardId
-        : '')
+        : (targetSection === 'tasks'
+          ? selectedTaskIdSnapshot
+          : ''))
     let newPath = buildWorkhubPathname(selectedWorkspaceId, targetProject, targetSection, targetEntityId)
 
     if (!parsedWorkhubPath.wsId) {
@@ -3901,6 +4015,7 @@ export default function WorkHubPage() {
     selectedProjectId,
     selectedProjectParam,
     selectedSectionParam,
+    selectedTaskIdSnapshot,
     selectedWorkspaceId,
     selectedWorkspaceParam,
     resolveRememberedWorkspaceRoute,
@@ -4321,7 +4436,7 @@ export default function WorkHubPage() {
     setSettingsFinancialProposalUrl(selectedAccessProject.financialProposalUrl || '')
     setSettingsProjectValueAmountDraft(String(resolveProjectMonetaryAmount(selectedAccessProject)))
     setSettingsProjectValueCurrencyDraft(normalizeMoneyCurrency(selectedAccessProject.valueCurrency))
-    setSettingsProjectMainPanelView(resolveProjectMainPanelView(selectedAccessProject.mainPanelView))
+    setSettingsProjectMainPanelView(selectedAccessProject.mainPanelView || 'tasks')
     setSettingsProjectTaskItemDisplayMode(selectedAccessProject.taskItemDisplayMode || 'inherit')
     setSettingsProjectTaskStatuses(
       Array.isArray(selectedAccessProject.taskStatuses) && selectedAccessProject.taskStatuses.length > 0
@@ -4334,6 +4449,20 @@ export default function WorkHubPage() {
     setAccessMemberUids(selectedAccessProject.memberUids || [])
     setSettingsProjectCreateDeliveryFolder(false)
   }, [selectedAccessProject])
+
+  useEffect(() => {
+    if (!selectedAccessProject?.id || !selectedWorkspaceId || !currentUid) {
+      setSettingsProjectFolderNotifications(DEFAULT_WORKHUB_FOLDER_NOTIFICATION_SETTINGS)
+      return
+    }
+    return subscribeWorkhubProjectNotificationPreference(selectedAccessProject.id, currentUid, (item) => {
+      if (!item) {
+        setSettingsProjectFolderNotifications(DEFAULT_WORKHUB_FOLDER_NOTIFICATION_SETTINGS)
+        return
+      }
+      setSettingsProjectFolderNotifications(normalizeFolderNotificationSettings(item))
+    })
+  }, [currentUid, selectedAccessProject?.id, selectedWorkspaceId])
 
   useEffect(() => {
     if (!settingsProjectStatusLabelNormalized.includes('running')) {
@@ -4656,6 +4785,10 @@ export default function WorkHubPage() {
     setWorkspaceSettingsId(workspaceId)
   }
 
+  function normalizeClientNameKey(value: string) {
+    return value.trim().toLocaleLowerCase().replace(/\s+/g, ' ')
+  }
+
   async function handleCreateClientInline(name: string, preset?: Partial<WorkhubClient>, workspaceIdOverride?: string) {
     const targetWorkspaceId = workspaceIdOverride || selectedWorkspaceId
     if (!auth.currentUser || !targetWorkspaceId) return null
@@ -4663,6 +4796,12 @@ export default function WorkHubPage() {
     if (!trimmedName) {
       showToast({ type: 'error', message: 'Client name is required.' })
       return null
+    }
+    const normalizedName = normalizeClientNameKey(trimmedName)
+    const existingClient = clients.find((item) => item.workspaceId === targetWorkspaceId && normalizeClientNameKey(item.name) === normalizedName)
+    if (existingClient) {
+      showToast({ type: 'error', message: 'A client with this name already exists.' })
+      return existingClient.id
     }
     setBusyKey('client:create')
     try {
@@ -4696,6 +4835,19 @@ export default function WorkHubPage() {
     if (!trimmedName) {
       showToast({ type: 'error', message: 'Client name is required.' })
       return
+    }
+    const selectedClient = clients.find((item) => item.id === selectedClientId) || null
+    if (selectedClient) {
+      const normalizedName = normalizeClientNameKey(trimmedName)
+      const duplicateClient = clients.find(
+        (item) => item.id !== selectedClientId
+          && item.workspaceId === selectedClient.workspaceId
+          && normalizeClientNameKey(item.name) === normalizedName,
+      )
+      if (duplicateClient) {
+        showToast({ type: 'error', message: 'A client with this name already exists.' })
+        return
+      }
     }
     if (clientEmailDraft.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clientEmailDraft.trim())) {
       showToast({ type: 'error', message: 'Enter a valid client email.' })
@@ -4902,6 +5054,137 @@ export default function WorkHubPage() {
     }
   }
 
+  const handleSaveProjectFolderNotificationSettings = useCallback(async (patch: Partial<WorkhubFolderNotificationSettings>) => {
+    if (!currentUid || !selectedWorkspaceId || !selectedAccessProject) return
+    const previousSettings = settingsProjectFolderNotifications
+    const nextSettings = normalizeFolderNotificationSettings({
+      ...settingsProjectFolderNotifications,
+      ...patch,
+    })
+    setSettingsProjectFolderNotifications(nextSettings)
+    setSettingsProjectFolderNotificationsBusy(true)
+    try {
+      await saveWorkhubProjectNotificationPreference({
+        workspaceId: selectedWorkspaceId,
+        projectId: selectedAccessProject.id,
+        userUid: currentUid,
+        enabled: nextSettings.enabled,
+        taskCreated: nextSettings.taskCreated,
+        taskCompleted: nextSettings.taskCompleted,
+        folderCompleted: nextSettings.folderCompleted,
+        delivery: nextSettings.delivery,
+      })
+      showToast({ type: 'success', message: 'Folder notification preferences updated.' })
+    } catch (error) {
+      setSettingsProjectFolderNotifications(previousSettings)
+      const message = error instanceof Error ? error.message : 'Could not save folder notification preferences.'
+      showToast({ type: 'error', message })
+    } finally {
+      setSettingsProjectFolderNotificationsBusy(false)
+    }
+  }, [currentUid, selectedWorkspaceId, selectedAccessProject, settingsProjectFolderNotifications, showToast])
+
+  const isTaskStatusCompletedForProject = useCallback((projectId: string, statusId: string) => {
+    const statusPool = effectiveStatusesByProjectId.get(projectId) || workspaceTaskStatuses
+    const statusMeta = statusPool.find((item) => item.id === statusId)
+    const token = `${statusId} ${statusMeta?.label || ''}`.toLowerCase()
+    return token.includes('done') || token.includes('complete') || token.includes('closed')
+  }, [effectiveStatusesByProjectId, workspaceTaskStatuses])
+
+  const resolveFolderCompletionProgress = useCallback((projectId: string, taskList: WorkhubTask[]) => {
+    const branchProjectIds = collectProjectBranchIds(projectId, visibleProjectsByParent)
+    let done = 0
+    let total = 0
+    taskList.forEach((item) => {
+      if (!branchProjectIds.has(item.projectId)) return
+      total += 1
+      if (isTaskStatusCompletedForProject(item.projectId, item.status)) done += 1
+    })
+    return { done, total }
+  }, [isTaskStatusCompletedForProject, visibleProjectsByParent])
+
+  const resolveFolderNotificationRecipients = useCallback(async (project: WorkhubProject, eventType: WorkhubFolderNotificationEvent) => {
+    const prefs = await listWorkhubProjectNotificationPreferences(project.id)
+    if (prefs.length === 0) {
+      return { inAppOnly: [] as string[], withEmail: [] as string[] }
+    }
+
+    const allowedUidSet = new Set(approvedMembers.map((member) => member.uid))
+    if (project.visibility === 'restricted') {
+      const projectUidSet = new Set(normalizeMemberUids([...(project.memberUids || []), project.createdBy]))
+      Array.from(allowedUidSet).forEach((uid) => {
+        if (!projectUidSet.has(uid)) allowedUidSet.delete(uid)
+      })
+    }
+
+    const inAppOnly: string[] = []
+    const withEmail: string[] = []
+    prefs.forEach((pref) => {
+      if (!allowedUidSet.has(pref.userUid)) return
+      const settings = normalizeFolderNotificationSettings(pref)
+      if (!settings.enabled) return
+      const includeForEvent = eventType === 'task_created'
+        ? settings.taskCreated
+        : eventType === 'task_completed'
+          ? settings.taskCompleted
+          : settings.folderCompleted
+      if (!includeForEvent) return
+      if (settings.delivery === 'both') {
+        withEmail.push(pref.userUid)
+      } else {
+        inAppOnly.push(pref.userUid)
+      }
+    })
+
+    return {
+      inAppOnly: Array.from(new Set(inAppOnly)),
+      withEmail: Array.from(new Set(withEmail)),
+    }
+  }, [approvedMembers])
+
+  const sendFolderEventNotifications = useCallback(async (params: {
+    project: WorkhubProject
+    eventType: WorkhubFolderNotificationEvent
+    entityId: string
+    action: string
+    message: string
+  }) => {
+    if (!auth.currentUser) return
+    try {
+      const recipients = await resolveFolderNotificationRecipients(params.project, params.eventType)
+      await Promise.all([
+        recipients.inAppOnly.length > 0
+          ? createWorkhubNotifications({
+              workspaceId: params.project.workspaceId,
+              actorUid: auth.currentUser.uid,
+              recipientUids: recipients.inAppOnly,
+              entityType: 'project',
+              entityId: params.entityId,
+              projectId: params.project.id,
+              action: params.action,
+              message: params.message,
+              delivery: 'in_app',
+            })
+          : Promise.resolve(),
+        recipients.withEmail.length > 0
+          ? createWorkhubNotifications({
+              workspaceId: params.project.workspaceId,
+              actorUid: auth.currentUser.uid,
+              recipientUids: recipients.withEmail,
+              entityType: 'project',
+              entityId: params.entityId,
+              projectId: params.project.id,
+              action: params.action,
+              message: params.message,
+              delivery: 'both',
+            })
+          : Promise.resolve(),
+      ])
+    } catch (error) {
+      console.error('Failed to send folder event notifications:', error)
+    }
+  }, [resolveFolderNotificationRecipients])
+
   async function handleCreateTask() {
     if (!auth.currentUser || !selectedWorkspaceId) return
     const titles = splitTaskTitles(taskTitle)
@@ -4968,6 +5251,15 @@ export default function WorkHubPage() {
           visibility: targetProject?.visibility || 'workspace',
           memberUids: targetProject?.memberUids || [],
         })
+        if (targetProject) {
+          await sendFolderEventNotifications({
+            project: targetProject,
+            eventType: 'task_created',
+            entityId: targetProject.id,
+            action: 'folder_task_created',
+            message: `created task "${normalizeTaskTitle(title) || 'Untitled task'}" in folder "${targetProject.name}"`,
+          })
+        }
       }
       setTaskTitle('')
       setTaskDescription('')
@@ -5056,6 +5348,13 @@ export default function WorkHubPage() {
           visibility: targetProject.visibility || 'workspace',
           memberUids: targetProject.memberUids || [],
         })
+        await sendFolderEventNotifications({
+          project: targetProject,
+          eventType: 'task_created',
+          entityId: targetProject.id,
+          action: 'folder_task_created',
+          message: `created task "${normalizeTaskTitle(title) || 'Untitled task'}" in folder "${targetProject.name}"`,
+        })
       }
       if (createdTaskIds.length > 0) {
         setSelectedTaskId(createdTaskIds[createdTaskIds.length - 1])
@@ -5099,6 +5398,42 @@ export default function WorkHubPage() {
     }))
     try {
       await updateWorkhubTask(task.id, nextUpdates)
+      const statusChanged = typeof updates.status === 'string' && updates.status !== task.status
+      const targetProject = visibleProjectById[task.projectId] || null
+      if (statusChanged && targetProject) {
+        const previousCompleted = isTaskStatusCompletedForProject(task.projectId, task.status)
+        const nextCompleted = isTaskStatusCompletedForProject(task.projectId, updates.status as string)
+        if (!previousCompleted && nextCompleted) {
+          const nextTaskTitle = typeof updates.title === 'string' && updates.title.trim()
+            ? updates.title.trim()
+            : task.title
+          const nextTaskList = tasks.map((item) => (item.id === task.id ? { ...item, ...nextUpdates } : item))
+          const previousFolderProgress = resolveFolderCompletionProgress(targetProject.id, tasks)
+          const nextFolderProgress = resolveFolderCompletionProgress(targetProject.id, nextTaskList)
+
+          await sendFolderEventNotifications({
+            project: targetProject,
+            eventType: 'task_completed',
+            entityId: targetProject.id,
+            action: 'folder_task_completed',
+            message: `completed task "${normalizeTaskTitle(nextTaskTitle) || 'Untitled task'}" in folder "${targetProject.name}"`,
+          })
+
+          const folderJustCompleted = previousFolderProgress.total > 0
+            && nextFolderProgress.total > 0
+            && previousFolderProgress.done < previousFolderProgress.total
+            && nextFolderProgress.done >= nextFolderProgress.total
+          if (folderJustCompleted) {
+            await sendFolderEventNotifications({
+              project: targetProject,
+              eventType: 'folder_completed',
+              entityId: targetProject.id,
+              action: 'folder_completed',
+              message: `folder "${targetProject.name}" reached 100% task completion`,
+            })
+          }
+        }
+      }
       const changedLabels: string[] = []
       if (typeof updates.status === 'string' && updates.status !== task.status) changedLabels.push('status')
       if (typeof updates.priority === 'string' && updates.priority !== task.priority) changedLabels.push('priority')
@@ -5336,6 +5671,24 @@ export default function WorkHubPage() {
     }
   }
 
+  async function handleDeleteComment(comment: WorkhubTaskComment) {
+    const currentUid = auth.currentUser?.uid || ''
+    if (!currentUid || comment.authorUid !== currentUid) return
+    setBusyKey(`comment-delete:${comment.id}`)
+    try {
+      await deleteWorkhubComment(comment.id)
+      if (editingCommentId === comment.id) {
+        handleCancelCommentEdit()
+      }
+      showToast({ type: 'success', message: 'Comment deleted.' })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not delete comment.'
+      showToast({ type: 'error', message })
+    } finally {
+      setBusyKey('')
+    }
+  }
+
   // Memoised project-level discussion node — passed as a ReactNode prop to WorkhubTasksSection.
   // Handlers are stable (via _cbRef wrappers) so this memo only re-runs when discussion data changes.
   const projectDiscussionNode = useMemo(() => (
@@ -5351,7 +5704,9 @@ export default function WorkHubPage() {
       onEditChange={setEditingCommentText}
       onEditCancel={stableHandleCancelCommentEdit}
       onEditSave={stableHandleSaveCommentEdit}
+      onDelete={stableHandleDeleteComment}
       editBusyKey={busyKey}
+      deleteBusyKey={busyKey}
       onComposerSend={stableHandleAddComment}
       composerBusy={busyKey === 'comment'}
       notifyMode={discussionNotifyMode}
@@ -6124,6 +6479,7 @@ export default function WorkHubPage() {
   _cbRef.current.handleStartCommentEdit = handleStartCommentEdit
   _cbRef.current.handleCancelCommentEdit = handleCancelCommentEdit
   _cbRef.current.handleSaveCommentEdit = handleSaveCommentEdit
+  _cbRef.current.handleDeleteComment = handleDeleteComment
 
   const activeImageReview = lightboxImageUrl ? (attachmentReviews[lightboxImageUrl] || createEmptyImageReview()) : null
   const activeCheckboxMarkers = activeImageReview
@@ -6530,6 +6886,7 @@ export default function WorkHubPage() {
     selectedProject,
     selectedProjectColorDraft,
     canEditSelectedProject,
+    canEditSelectedProjectAttachments,
     selectedProjectEffectiveIntent,
     selectedProjectNameDraft,
     setSelectedProjectNameDraft,
@@ -6567,6 +6924,7 @@ export default function WorkHubPage() {
     handleSelectedProjectAttachmentFileUpload,
     selectedProjectAttachments,
     deriveAttachmentTitle,
+    handleSelectedProjectAttachmentUpdate,
     handleSelectedProjectAttachmentRemove,
     selectedProjectColorMenuOpen,
     setSelectedProjectColorMenuOpen,
@@ -6581,7 +6939,13 @@ export default function WorkHubPage() {
     handleBulkDeleteSelected: stableHandleBulkDeleteSelected,
     handleDeleteSingleTask: stableHandleDeleteSingleTask,
     visibleTasks,
+    // Milestone data is managed inside WorkhubTasksSection to avoid top-level re-renders
+    selectedWorkspaceId,
+    showToast,
   }
+  const showDashboardDetailRail = !isMobileWorkhubLayout
+    && activeSection === 'dashboard'
+    && selectedProject?.mainPanelView === 'dashboard_with_details'
 
   return (
     <div className={`workhub-shell${isMobileWorkhubLayout ? ' is-mobile' : ''}${isMobileWorkhubLayout && mobileTaskDetailOpen ? ' task-detail-open' : ''}${isMobileWorkhubLayout && mobileWorkspacePanelOpen ? ' workspace-drawer-open' : ''}`} dir="ltr">
@@ -6891,7 +7255,7 @@ export default function WorkHubPage() {
                         selectedMoodBoardId={activeSection === 'moodboard' ? selectedMoodBoardId : ''}
                         documentsByProjectId={workspaceDocumentsByProjectId}
                         moodBoardsByProjectId={workspaceMoodBoardsByProjectId}
-                        isPrivilegedMember={isPrivilegedMember}
+                        isPrivilegedMember={canSeeAllProjects}
                         onSelectProject={(projectId) => {
                           handleMobileProjectSelect(projectId)
                         }}
@@ -6910,67 +7274,6 @@ export default function WorkHubPage() {
                       <div className="workhub-empty-state">No project tree items yet.</div>
                     )}
 
-                    <div className="workhub-tree-group">
-                      <button
-                        type="button"
-                        className="workhub-tree-group-toggle"
-                        onClick={() => setDocumentsGroupExpanded((current) => !current)}
-                      >
-                        <span className="workhub-tree-group-label">
-                          <span className="workhub-tree-group-caret">{documentsGroupExpanded ? '▾' : '▸'}</span>
-                          <strong>Workspace docs</strong>
-                        </span>
-                        <small>{workspaceLevelDocuments.length + (selectedWorkspace?.moodBoardEnabled !== false ? workspaceLevelMoodBoards.length : 0)} item{workspaceLevelDocuments.length + (selectedWorkspace?.moodBoardEnabled !== false ? workspaceLevelMoodBoards.length : 0) === 1 ? '' : 's'}</small>
-                      </button>
-                      {documentsGroupExpanded && (
-                        workspaceLevelDocuments.length > 0 || (selectedWorkspace?.moodBoardEnabled !== false && workspaceLevelMoodBoards.length > 0) ? (
-                          <div className="workhub-tree-docs-list">
-                            {workspaceLevelDocuments.map((item) => {
-                              const isActiveDocument = activeSection === 'notes' && selectedDocumentId === item.id
-                              const baseTitle = (item.title || '').trim() || (item.type === 'note' ? 'Untitled note' : 'Untitled document')
-                              const documentTreeTitle = item.referenceSourceDocumentId
-                                ? `${baseTitle} (Reference)`
-                                : item.hasOutgoingReferences
-                                  ? `${baseTitle} (Public source)`
-                                : (item.isLocked ? `${baseTitle} (Locked)` : baseTitle)
-                              return (
-                                <button
-                                  key={item.id}
-                                  type="button"
-                                  className={`workhub-tree-doc-item${isActiveDocument ? ' is-active' : ''}${item.hasOutgoingReferences && !item.referenceSourceDocumentId ? ' is-public-source' : ''}`}
-                                  onClick={() => {
-                                    handleMobileDocumentSelect(item.id)
-                                  }}
-                                  title={documentTreeTitle}
-                                >
-                                      <span className="workhub-tree-doc-item-title">{getWorkhubDocumentIcon(item)} {documentTreeTitle}</span>
-                                      <span className="workhub-tree-doc-item-meta">{item.type === 'note' ? 'Workspace note' : 'Workspace document'}{item.referenceSourceDocumentId ? ' • Reference' : ''}{item.hasOutgoingReferences && !item.referenceSourceDocumentId ? ' • Public source' : ''}{item.isLocked ? ' • Locked' : ''}</span>
-                                </button>
-                              )
-                            })}
-                            {selectedWorkspace?.moodBoardEnabled !== false && workspaceLevelMoodBoards.map((item) => {
-                              const isActiveMoodBoard = activeSection === 'moodboard' && selectedMoodBoardId === item.id
-                              return (
-                                <button
-                                  key={item.id}
-                                  type="button"
-                                  className={`workhub-tree-doc-item${isActiveMoodBoard ? ' is-active' : ''}`}
-                                  onClick={() => {
-                                    handleMobileMoodBoardSelect(item.id)
-                                  }}
-                                  title={item.title}
-                                >
-                                  <span className="workhub-tree-doc-item-title">🎨 {item.title}</span>
-                                  <span className="workhub-tree-doc-item-meta">Workspace mood board</span>
-                                </button>
-                              )
-                            })}
-                          </div>
-                        ) : (
-                          <div className="workhub-empty-state">No workspace-level documents yet.</div>
-                        )
-                      )}
-                    </div>
                   </div>
                 </div>
               </div>
@@ -7079,7 +7382,7 @@ export default function WorkHubPage() {
                                 selectedMoodBoardId={activeSection === 'moodboard' ? selectedMoodBoardId : ''}
                                 documentsByProjectId={workspaceDocumentsByProjectId}
                                 moodBoardsByProjectId={workspaceMoodBoardsByProjectId}
-                                isPrivilegedMember={isPrivilegedMember}
+                                isPrivilegedMember={canSeeAllProjects}
                                 onSelectProject={handleSelectProject}
                                 onSelectDocument={handleSelectDocumentFromTree}
                                 onSelectMoodBoard={handleSelectMoodBoardFromTree}
@@ -7112,7 +7415,7 @@ export default function WorkHubPage() {
                             selectedMoodBoardId={activeSection === 'moodboard' ? selectedMoodBoardId : ''}
                             documentsByProjectId={workspaceDocumentsByProjectId}
                             moodBoardsByProjectId={workspaceMoodBoardsByProjectId}
-                            isPrivilegedMember={isPrivilegedMember}
+                            isPrivilegedMember={canSeeAllProjects}
                             onSelectProject={handleSelectProject}
                             onSelectDocument={handleSelectDocumentFromTree}
                             onSelectMoodBoard={handleSelectMoodBoardFromTree}
@@ -7140,7 +7443,7 @@ export default function WorkHubPage() {
                       selectedMoodBoardId={activeSection === 'moodboard' ? selectedMoodBoardId : ''}
                       documentsByProjectId={workspaceDocumentsByProjectId}
                       moodBoardsByProjectId={workspaceMoodBoardsByProjectId}
-                      isPrivilegedMember={isPrivilegedMember}
+                      isPrivilegedMember={canSeeAllProjects}
                       onSelectProject={handleSelectProject}
                       onSelectDocument={handleSelectDocumentFromTree}
                       onSelectMoodBoard={handleSelectMoodBoardFromTree}
@@ -7163,63 +7466,7 @@ export default function WorkHubPage() {
                     </div>
                   )}
 
-                  <div className="workhub-tree-group">
-                    <button
-                      type="button"
-                      className="workhub-tree-group-toggle"
-                      onClick={() => setDocumentsGroupExpanded((current) => !current)}
-                    >
-                      <span className="workhub-tree-group-label">
-                        <span className="workhub-tree-group-caret">{documentsGroupExpanded ? '▾' : '▸'}</span>
-                        <strong>Workspace docs</strong>
-                      </span>
-                      <small>{workspaceLevelDocuments.length + (selectedWorkspace?.moodBoardEnabled !== false ? workspaceLevelMoodBoards.length : 0)} item{workspaceLevelDocuments.length + (selectedWorkspace?.moodBoardEnabled !== false ? workspaceLevelMoodBoards.length : 0) === 1 ? '' : 's'}</small>
-                    </button>
-                    {documentsGroupExpanded && (
-                      workspaceLevelDocuments.length > 0 || (selectedWorkspace?.moodBoardEnabled !== false && workspaceLevelMoodBoards.length > 0) ? (
-                        <div className="workhub-tree-docs-list">
-                          {workspaceLevelDocuments.map((item) => {
-                            const isActiveDocument = activeSection === 'notes' && selectedDocumentId === item.id
-                            const baseTitle = (item.title || '').trim() || (item.type === 'note' ? 'Untitled note' : 'Untitled document')
-                            const documentTreeTitle = item.referenceSourceDocumentId
-                              ? `${baseTitle} (Reference)`
-                              : item.hasOutgoingReferences
-                                ? `${baseTitle} (Public source)`
-                              : (item.isLocked ? `${baseTitle} (Locked)` : baseTitle)
-                            return (
-                              <button
-                                key={item.id}
-                                type="button"
-                                className={`workhub-tree-doc-item${isActiveDocument ? ' is-active' : ''}${item.hasOutgoingReferences && !item.referenceSourceDocumentId ? ' is-public-source' : ''}`}
-                                onClick={() => handleSelectDocumentFromTree(item.id)}
-                                title={documentTreeTitle}
-                              >
-                                <span className="workhub-tree-doc-item-title">{getWorkhubDocumentIcon(item)} {documentTreeTitle}</span>
-                                <span className="workhub-tree-doc-item-meta">{item.type === 'note' ? 'Workspace note' : 'Workspace document'}{item.referenceSourceDocumentId ? ' • Reference' : ''}{item.hasOutgoingReferences && !item.referenceSourceDocumentId ? ' • Public source' : ''}{item.isLocked ? ' • Locked' : ''}</span>
-                              </button>
-                            )
-                          })}
-                          {selectedWorkspace?.moodBoardEnabled !== false && workspaceLevelMoodBoards.map((item) => {
-                            const isActiveMoodBoard = activeSection === 'moodboard' && selectedMoodBoardId === item.id
-                            return (
-                              <button
-                                key={item.id}
-                                type="button"
-                                className={`workhub-tree-doc-item${isActiveMoodBoard ? ' is-active' : ''}`}
-                                onClick={() => handleSelectMoodBoardFromTree(item.id)}
-                                title={item.title}
-                              >
-                                <span className="workhub-tree-doc-item-title">🎨 {item.title}</span>
-                                <span className="workhub-tree-doc-item-meta">Workspace mood board</span>
-                              </button>
-                            )
-                          })}
-                        </div>
-                      ) : (
-                        <div className="workhub-empty-state">No workspace-level documents yet.</div>
-                      )
-                    )}
-                  </div>
+
                 </div>
               </>
             )}
@@ -7237,7 +7484,8 @@ export default function WorkHubPage() {
           <section className="workhub-main-stage">
 
             {activeSection === 'dashboard' && (
-              <main className="workhub-section-stack is-dashboard">
+              <main className={`workhub-section-stack is-dashboard${showDashboardDetailRail ? ' workhub-dashboard-with-details' : ''}`}>
+                <div className="workhub-dashboard-stack">
                 <section className="workhub-panel">
                   <div className="workhub-panel-head compact">
                     <div>
@@ -7638,6 +7886,12 @@ export default function WorkHubPage() {
                     </div>
                   </section>
                 )}
+                </div>
+                {showDashboardDetailRail && (
+                  <aside className="workhub-task-detail-rail is-expanded">
+                    <WorkhubProjectDetailRail {...workhubTasksSectionProps} />
+                  </aside>
+                )}
               </main>
             )}
 
@@ -8017,6 +8271,8 @@ export default function WorkHubPage() {
             onDiscussionEditCancel={handleCancelCommentEdit}
             onDiscussionEditSave={handleSaveCommentEdit}
             discussionEditBusyKey={busyKey}
+            onDiscussionDelete={handleDeleteComment}
+            discussionDeleteBusyKey={busyKey}
             currentUid={auth.currentUser?.uid || ''}
             allWorkspaceIds={visibleWorkspaces.map((ws) => ({ id: ws.id, name: ws.name }))}
             allWorkspaceProjects={projects.map((p) => ({ id: p.id, name: p.name, workspaceId: p.workspaceId }))}
@@ -8034,7 +8290,7 @@ export default function WorkHubPage() {
             }
             workspaceProjectById={workspaceProjectById}
             currentUid={currentUid}
-            canEdit={isPrivilegedMember}
+            canEdit={canSeeAllProjects}
             memberByUid={memberByUid}
             formatTime={formatTime}
             busyKey={busyKey}
@@ -8084,6 +8340,8 @@ export default function WorkHubPage() {
             onDiscussionEditCancel={handleCancelCommentEdit}
             onDiscussionEditSave={handleSaveCommentEdit}
             discussionEditBusyKey={busyKey}
+            onDiscussionDelete={handleDeleteComment}
+            discussionDeleteBusyKey={busyKey}
           />
         )}
 
@@ -8502,7 +8760,7 @@ export default function WorkHubPage() {
           workspaceTemplateId={selectedWorkspaceTemplateId}
           selectedProjectId={selectedProjectId}
           position={actionMenuPosition}
-          canManageProject={isPrivilegedMember}
+          canManageProject={canSeeAllProjects}
           canCreateTopCategory={!!selectedWorkspaceId}
           templateCreateActions={workspaceTemplateCreateActions}
           onClose={closeActionMenu}
@@ -8587,6 +8845,8 @@ export default function WorkHubPage() {
           settingsTaskItemDisplayMode={settingsProjectTaskItemDisplayMode}
           settingsTaskStatuses={settingsProjectTaskStatuses}
           workspaceTaskStatuses={workspaceTaskStatuses}
+          settingsFolderNotifications={settingsProjectFolderNotifications}
+          settingsFolderNotificationsBusy={settingsProjectFolderNotificationsBusy}
           settingsClientId={settingsProjectClientId}
           settingsStorageMethod={settingsStorageMethod}
           accessVisibility={accessVisibility}
@@ -8612,6 +8872,7 @@ export default function WorkHubPage() {
           onMainPanelViewChange={setSettingsProjectMainPanelView}
           onTaskItemDisplayModeChange={setSettingsProjectTaskItemDisplayMode}
           onTaskStatusesChange={setSettingsProjectTaskStatuses}
+          onFolderNotificationsChange={handleSaveProjectFolderNotificationSettings}
           onApplyViewSettingsToSubItems={() => { void handleApplyViewSettingsToSubItems() }}
           applyViewSettingsBusy={busyKey === `access-propagate:${selectedAccessProject?.id || ''}`}
           onClientChange={setSettingsProjectClientId}
@@ -8625,6 +8886,21 @@ export default function WorkHubPage() {
           onDelete={handleDeleteProject}
           onSave={handleSaveProjectAccess}
           onEnsureDriveFolder={handleEnsureDriveFolder}
+          milestones={milestones.milestones}
+          milestoneProgress={milestones.milestoneProgress}
+          canEditMilestones={isPrivilegedMember}
+          onAddMilestone={milestones.handleOpenCreateMilestone}
+          onEditMilestone={milestones.handleOpenEditMilestone}
+          onDeleteMilestone={milestones.handleDeleteMilestone}
+          onStatusChangeMilestone={milestones.handleStatusChange}
+        />
+
+        <MilestoneCreateEditDialog
+          open={milestones.milestoneDialogOpen}
+          milestone={milestones.editingMilestone}
+          project={selectedAccessProject}
+          onSave={(formData) => { void milestones.handleSaveMilestone(formData) }}
+          onClose={milestones.handleCloseMilestoneDialog}
         />
 
         {lightboxImageUrl && activeImageReview && (

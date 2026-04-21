@@ -339,7 +339,7 @@ const QuickAddTaskRow = memo(function QuickAddTaskRow(props: {
           </div>
           <div className="workhub-task-col due">
             {showDetails ? (
-              <input className="workhub-quick-add-date" type="date" value={dueDate} onChange={(event) => {
+              <input className="workhub-quick-add-date" type="date" lang="en-GB" value={dueDate} onChange={(event) => {
                 setDueDate(event.target.value)
                 dueDateDraftRef.current = event.target.value
               }} />

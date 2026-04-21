@@ -15,11 +15,17 @@ import { Dialog } from './components/Dialog'
 import { VFXContainer } from './components/VFXContainer'
 import { LoginPage } from './pages/LoginPage'
 import logoImg from './assets/QYan_logo_300x164.jpg'
+import { communicationFeatureFlags } from './features/communication/config'
+import { InAppNotificationCenter } from './features/communication/components/InAppNotificationCenter'
+import { ChatDock } from './features/communication/components/ChatDock'
+import { useChatDockState } from './features/communication/hooks/useChatDockState'
 const BillingPage     = lazy(() => import('./pages/BillingPage').then(m => ({ default: m.BillingPage })))
 const DashboardPage   = lazy(() => import('./pages/DashboardPage').then(m => ({ default: m.DashboardPage })))
 const PacksPage       = lazy(() => import('./pages/PacksPage').then(m => ({ default: m.PacksPage })))
 const MyQuizzesPage   = lazy(() => import('./pages/MyQuizzesPage').then(m => ({ default: m.MyQuizzesPage })))
 const WorkHubPage     = lazy(() => import('./pages/WorkHubPage'))
+const MessagesPage    = lazy(() => import('./features/communication/pages/MessagesPage').then(m => ({ default: m.MessagesPage })))
+const AdHocTasksPage  = lazy(() => import('./features/workhubAdhoc/pages/AdHocTasksPage').then(m => ({ default: m.AdHocTasksPage })))
 const ProfilePage     = lazy(() => import('./pages/ProfilePage').then(m => ({ default: m.ProfilePage })))
 const QuizEditorPage  = lazy(() => import('./pages/QuizEditorPage').then(m => ({ default: m.QuizEditorPage })))
 const QuizPreviewPage = lazy(() => import('./pages/QuizPreviewPage').then(m => ({ default: m.QuizPreviewPage })))
@@ -48,16 +54,19 @@ type NavItem = {
 }
 
 function getNav(isAr: boolean) {
-  return [
+  const nav: NavItem[] = [
     { to: '/dashboard',        icon: '🏠', label: isAr ? 'الرئيسية' : 'Dashboard', end: true },
     { to: '/editor',           icon: '✏️',  label: isAr ? 'محرر الأسئلة' : 'Challenge Editor' },
     { to: '/mini-game-editor', icon: '🎮', label: isAr ? 'محرر الألعاب' : 'Game Editor' },
     { to: '/my-quizzes',       icon: '📚', label: isAr ? 'اختباراتي' : 'My Challenges' },
     { to: '/packs',            icon: '📦', label: isAr ? 'المكتبة' : 'Library' },
     { to: '/workhub',         icon: '🗂️', label: isAr ? 'وورك هَب' : 'WorkHub' },
+    ...(communicationFeatureFlags.messagesPage ? [{ to: '/messages', icon: '💬', label: isAr ? 'الرسائل' : 'Messages' }] : []),
+    ...(communicationFeatureFlags.adHocTasksPage ? [{ to: '/ops-tasks', icon: '🧾', label: isAr ? 'مهام التشغيل' : 'Ops Tasks' }] : []),
     { to: '/billing',          icon: '💳', label: isAr ? 'الاشتراك' : 'Billing' },
     { to: '/profile',          icon: '👤', label: isAr ? 'الملف الشخصي' : 'Profile' },
-  ] satisfies NavItem[]
+  ]
+  return nav
 }
 
 function resolveNavTarget(to: string) {
@@ -138,6 +147,13 @@ function App() {
     if (stored === null) return false
     return stored !== 'false'
   })
+  const {
+    open: chatDockOpen,
+    toggle: toggleChatDock,
+    close: closeChatDock,
+  } = useChatDockState({
+    enabled: communicationFeatureFlags.chatDock,
+  })
   const handleSignOut = useCallback(() => {
     // Check if user is in editor with unsaved changes
     const isInEditor = location.pathname === '/editor' || location.pathname === '/mini-game-editor'
@@ -173,6 +189,9 @@ function App() {
     const returnTo = `${location.pathname}${location.search}`
     navigate('/login', { state: { returnTo } })
   }, [location.pathname, location.search, navigate])
+  const handleOpenMessagesPage = useCallback(() => {
+    navigate('/messages')
+  }, [navigate])
 
   const isLoginPage   = location.pathname === '/login'
   const isMasterPage  = MASTER_PATH ? location.pathname.startsWith(MASTER_PATH) : false
@@ -208,6 +227,8 @@ function App() {
     else if (path.startsWith('/my-quizzes')) nextTitle = 'My Challenges'
     else if (path.startsWith('/packs')) nextTitle = 'Library'
     else if (path.startsWith('/billing')) nextTitle = 'Billing'
+    else if (path.startsWith('/messages')) nextTitle = 'Messages'
+    else if (path.startsWith('/ops-tasks')) nextTitle = 'Ops Tasks'
     else if (path.startsWith('/profile')) nextTitle = 'Profile'
     else if (path.startsWith('/voice-lab')) nextTitle = 'Voice Lab'
     else if (path.startsWith('/ai-lab')) nextTitle = 'AI Lab'
@@ -225,6 +246,11 @@ function App() {
   useEffect(() => {
     localStorage.setItem('qyan:slidePanelEnabled', slidePanelEnabled ? 'true' : 'false')
   }, [slidePanelEnabled])
+
+  useEffect(() => {
+    if (user) return
+    closeChatDock()
+  }, [closeChatDock, user])
 
   useEffect(() => {
     const redirectStartedAt = Number(localStorage.getItem(redirectPendingKey) || '0')
@@ -526,6 +552,12 @@ function App() {
       <Route path="/packs" element={<RequireAuth user={user ?? null}><PacksPage /></RequireAuth>} />
       <Route path="/my-quizzes" element={<RequireAuth user={user ?? null}><MyQuizzesPage /></RequireAuth>} />
       <Route path="/workhub/*" element={<RequireAuth user={user ?? null}><WorkHubPage /></RequireAuth>} />
+      {communicationFeatureFlags.messagesPage ? (
+        <Route path="/messages" element={<RequireAuth user={user ?? null}><MessagesPage /></RequireAuth>} />
+      ) : null}
+      {communicationFeatureFlags.adHocTasksPage ? (
+        <Route path="/ops-tasks" element={<RequireAuth user={user ?? null}><AdHocTasksPage /></RequireAuth>} />
+      ) : null}
       <Route path="/voice-lab" element={<RequireAdmin user={user ?? null}><VoiceLabPage /></RequireAdmin>} />
       <Route path="/ai-lab" element={<RequireAdmin user={user ?? null}><AILabPage /></RequireAdmin>} />
       <Route path="/cover-gen-lab" element={<RequireAdmin user={user ?? null}><CoverGenLabPage /></RequireAdmin>} />
@@ -554,6 +586,10 @@ function App() {
           ? 'library'
           : location.pathname.startsWith('/my-quizzes')
             ? 'my-quizzes'
+            : location.pathname.startsWith('/messages')
+              ? 'messages'
+              : location.pathname.startsWith('/ops-tasks')
+                ? 'ops-tasks'
             : location.pathname.startsWith('/billing')
               ? 'billing'
               : location.pathname.startsWith('/profile')
@@ -573,6 +609,10 @@ function App() {
           ? (isAr ? 'المكتبة' : 'Library')
           : mobileRouteKey === 'my-quizzes'
             ? (isAr ? 'تحدياتي' : 'My Challenges')
+            : mobileRouteKey === 'messages'
+              ? (isAr ? 'الرسائل' : 'Messages')
+              : mobileRouteKey === 'ops-tasks'
+                ? (isAr ? 'مهام التشغيل' : 'Ops Tasks')
             : mobileRouteKey === 'billing'
               ? (isAr ? 'الفوترة' : 'Billing')
               : mobileRouteKey === 'profile'
@@ -588,6 +628,10 @@ function App() {
         ? (isAr ? 'صياغة وتحرير ثم نشر' : 'Draft, refine, publish')
       : mobileRouteKey === 'workhub'
           ? (isAr ? 'المشاريع والمهام والمراجعات' : 'Projects, tasks, approvals')
+        : mobileRouteKey === 'messages'
+          ? (isAr ? 'محادثات الفريق الموحدة' : 'Unified team communication')
+          : mobileRouteKey === 'ops-tasks'
+            ? (isAr ? 'مهام تشغيل بدون مشروع' : 'Non-project operational tasks')
         : mobileRouteKey === 'dashboard'
             ? (isAr ? 'تابع النشاط وانتقل لخطوتك التالية' : 'Review activity and continue your next task')
           : ''
@@ -598,6 +642,8 @@ function App() {
       workhub: ['/workhub', '/dashboard', '/editor', '/my-quizzes', '/packs'],
     library: ['/packs', '/my-quizzes', '/dashboard', '/editor', '/profile'],
     'my-quizzes': ['/my-quizzes', '/editor', '/dashboard', '/packs', '/profile'],
+    messages: ['/messages', '/dashboard', '/workhub', '/editor', '/profile'],
+    'ops-tasks': ['/ops-tasks', '/workhub', '/dashboard', '/messages', '/profile'],
     billing: ['/billing', '/dashboard', '/packs', '/profile', '/workhub'],
     profile: ['/profile', '/dashboard', '/my-quizzes', '/packs', '/workhub'],
     'game-modes': ['/dashboard', '/editor', '/workhub', '/my-quizzes', '/profile'],
@@ -616,7 +662,7 @@ function App() {
     {
       key: 'primary',
       title: isAr ? 'التنقل الأساسي' : 'Primary',
-      links: pickNavItems(['/dashboard', '/my-quizzes', '/packs', '/profile', '/billing']),
+      links: pickNavItems(['/dashboard', '/my-quizzes', '/packs', '/messages', '/ops-tasks', '/profile', '/billing']),
     },
     {
       key: 'creation',
@@ -675,6 +721,20 @@ function App() {
               <div className="mobile-shell-actions" ref={profileRef}>
                 {user ? (
                   <>
+                    {communicationFeatureFlags.notificationsInShell && (
+                      <InAppNotificationCenter userUid={user.uid} isAr={isAr} />
+                    )}
+                    {communicationFeatureFlags.chatDock && (
+                      <button
+                        type="button"
+                        className={`shell-comm-btn${chatDockOpen ? ' is-active' : ''}`}
+                        onClick={toggleChatDock}
+                        aria-label={isAr ? 'لوحة الرسائل' : 'Messages panel'}
+                        title={isAr ? 'الرسائل' : 'Messages'}
+                      >
+                        <span aria-hidden="true">💬</span>
+                      </button>
+                    )}
                     <button
                       className="mobile-avatar-btn"
                       onClick={() => { setProfileOpen((o) => !o); setBurgerOpen(false) }}
@@ -942,6 +1002,22 @@ function App() {
 
               {user && (
                 <div className="sidebar-user">
+                  <div className="sidebar-comm-row">
+                    {communicationFeatureFlags.notificationsInShell && (
+                      <InAppNotificationCenter userUid={user.uid} isAr={isAr} />
+                    )}
+                    {communicationFeatureFlags.chatDock && (
+                      <button
+                        type="button"
+                        className={`shell-comm-btn${chatDockOpen ? ' is-active' : ''}`}
+                        onClick={toggleChatDock}
+                        aria-label={isAr ? 'لوحة الرسائل' : 'Messages panel'}
+                        title={isAr ? 'الرسائل' : 'Messages'}
+                      >
+                        <span aria-hidden="true">💬</span>
+                      </button>
+                    )}
+                  </div>
                   <NavLink to="/profile" className={({ isActive }) => `sidebar-user-chip${isActive ? ' active' : ''}`}>
                     {user.photoURL ? (
                       <img src={user.photoURL} referrerPolicy="no-referrer" alt="" className="sidebar-user-avatar" />
@@ -972,6 +1048,15 @@ function App() {
               </ErrorBoundary>
             </main>
           </div>
+        )}
+        {user && communicationFeatureFlags.chatDock && (
+          <ChatDock
+            open={chatDockOpen}
+            isAr={isAr}
+            onClose={closeChatDock}
+            onOpenMessagesPage={handleOpenMessagesPage}
+            showOpenPageButton={communicationFeatureFlags.messagesPage}
+          />
         )}
         <Dialog />
         <VFXContainer />

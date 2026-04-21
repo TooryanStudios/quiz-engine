@@ -27,7 +27,7 @@ interface Props {
 
 function formatUpdatedAt(value?: { toDate(): Date }) {
   if (!value) return 'Never'
-  return value.toDate().toLocaleString()
+  return value.toDate().toLocaleString('en-GB')
 }
 
 export function MiniGamesTab({ enabledMiniGameIds, englishNamesById, arabicNamesById, accessById, quizzes, updatedAt, onSave }: Props) {

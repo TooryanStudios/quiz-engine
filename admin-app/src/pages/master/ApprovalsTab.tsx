@@ -308,7 +308,7 @@ export function ApprovalsTab({ quizzes, hasMore, loadingMore, onLoadMore }: Prop
               const isPending = q.approvalStatus === 'pending'
               const isRejected = q.approvalStatus === 'rejected'
               const createdDate = (q.createdAt as { seconds: number } | null)?.seconds
-                ? new Date((q.createdAt as { seconds: number }).seconds * 1000).toLocaleDateString()
+                ? new Date((q.createdAt as { seconds: number }).seconds * 1000).toLocaleDateString('en-GB')
                 : '—'
 
               return (

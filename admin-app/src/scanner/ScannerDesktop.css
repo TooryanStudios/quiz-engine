@@ -121,6 +121,29 @@
   font-family: 'Segoe UI', Tahoma, sans-serif;
 }
 
+.scd-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.scd-role-btn {
+  border: 1px solid #355474;
+  background: #18283a;
+  color: #eaf2fb;
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.scd-role-btn:hover {
+  background: #22384f;
+}
+
 .scd-results-root header h2 {
   margin: 0;
   font-size: 20px;
@@ -358,6 +381,14 @@
   font-weight: 800;
   line-height: 1.05;
   color: #f5f9ff;
+}
+
+.scd-answer-hero-reader {
+  min-height: 42vh;
+}
+
+.scd-answer-hero-text-reader {
+  font-size: clamp(24px, 5.5vw, 56px);
 }
 
 .scd-live {

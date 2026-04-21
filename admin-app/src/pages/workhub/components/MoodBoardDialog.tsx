@@ -8,9 +8,11 @@ import {
   updateWorkhubMoodBoardChecklist,
   updateWorkhubMoodBoardImages,
   updateWorkhubMoodBoardTitle,
+  updateWorkhubMoodBoardUserPreference,
   type WorkhubMember,
   type WorkhubMoodBoard,
   type WorkhubMoodBoardImage,
+  type WorkhubMoodBoardUserPreference,
   type WorkhubProject,
   type WorkhubTaskChecklistItem,
   type WorkhubTaskComment,
@@ -69,9 +71,16 @@ type CanvasInteraction = MoveInteraction | ResizeInteraction | MarqueeInteractio
 
 const LARGE_DEFAULT_SIZE = { width: 340, height: 240 }
 const LARGE_MIN_SIZE = { width: 220, height: 160 }
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value))
+const DEFAULT_MOODBOARD_TAB_ID = 'tab-main'
+const CANVAS_MIN_WIDTH = 1400
+const CANVAS_MIN_HEIGHT = 1200
+const CANVAS_BOARD_PADDING = 96
+const MOODBOARD_RAIL_WIDTH_STORAGE_KEY = 'workhub:moodboardRailWidth'
+const MOODBOARD_RAIL_COLLAPSED_STORAGE_KEY = 'workhub:moodboardRailCollapsed'
+const DEFAULT_MOODBOARD_USER_PREFERENCE = {
+  imageLayout: 'large' as MoodBoardImageLayoutMode,
+  showGridBackground: true,
+  detailsCollapsed: true,
 }
 
 function stableHash(text: string): string {
@@ -96,6 +105,11 @@ function createMoodBoardImageId(file: File): string {
 function createMoodBoardRemoteImageId(url: string): string {
   const seed = `${url}|${Date.now()}|${Math.random().toString(36).slice(2, 9)}`
   return `img-${stableHash(seed)}`
+}
+
+function resolveMoodBoardTabId(tabId?: string): string {
+  const normalized = (tabId || '').trim()
+  return normalized || DEFAULT_MOODBOARD_TAB_ID
 }
 
 function normalizeImageUrlInput(value: string): string | null {
@@ -150,16 +164,71 @@ function minCanvasSize(_layout: MoodBoardImageLayoutMode) {
   return LARGE_MIN_SIZE
 }
 
-function normalizeBoardImages(images: WorkhubMoodBoardImage[], layout: MoodBoardImageLayoutMode): CanvasImage[] {
+async function loadImageDimensions(src: string): Promise<{ width: number; height: number }> {
+  return await new Promise<{ width: number; height: number }>((resolve, reject) => {
+    const image = new Image()
+    image.decoding = 'async'
+    image.onload = () => resolve({
+      width: image.naturalWidth || LARGE_DEFAULT_SIZE.width,
+      height: image.naturalHeight || LARGE_DEFAULT_SIZE.height,
+    })
+    image.onerror = () => reject(new Error('Failed to load image dimensions'))
+    image.src = src
+  })
+}
+
+function scaleCanvasSizeToBounds(
+  sourceWidth: number,
+  sourceHeight: number,
+  layout: MoodBoardImageLayoutMode,
+): { width: number; height: number } {
+  const bounds = defaultCanvasSize(layout)
+  if (!(sourceWidth > 0) || !(sourceHeight > 0)) return bounds
+
+  const scale = Math.min(bounds.width / sourceWidth, bounds.height / sourceHeight)
+  const nextScale = Number.isFinite(scale) && scale > 0 ? scale : 1
+  return {
+    width: Math.max(1, Math.round(sourceWidth * nextScale)),
+    height: Math.max(1, Math.round(sourceHeight * nextScale)),
+  }
+}
+
+function getPointerInBoardSpace(
+  event: { clientX: number; clientY: number },
+  boardEl: HTMLElement,
+  scrollEl: HTMLElement,
+  zoom = 1,
+): { x: number; y: number } {
+  const rect = boardEl.getBoundingClientRect()
+  return {
+    x: (event.clientX - rect.left + scrollEl.scrollLeft) / zoom,
+    y: (event.clientY - rect.top + scrollEl.scrollTop) / zoom,
+  }
+}
+
+function normalizeMoodBoardUserPreference(pref: WorkhubMoodBoardUserPreference | null | undefined) {
+  if (!pref || typeof pref !== 'object') return null
+  return {
+    imageLayout: pref.imageLayout === 'compact' ? 'compact' as const : 'large' as const,
+    showGridBackground: typeof pref.showGridBackground === 'boolean'
+      ? pref.showGridBackground
+      : DEFAULT_MOODBOARD_USER_PREFERENCE.showGridBackground,
+    detailsCollapsed: typeof pref.detailsCollapsed === 'boolean'
+      ? pref.detailsCollapsed
+      : DEFAULT_MOODBOARD_USER_PREFERENCE.detailsCollapsed,
+  }
+}
+
+function normalizeBoardImages(images: Array<{ image: WorkhubMoodBoardImage; sourceIndex: number }>, layout: MoodBoardImageLayoutMode): CanvasImage[] {
   const defaults = defaultCanvasSize(layout)
   const gap = 28
   const perRow = 3
-  return images.map((img, index) => {
+  const normalized = images.map(({ image: img, sourceIndex }, index) => {
     const row = Math.floor(index / perRow)
     const col = index % perRow
     return {
       ...img,
-      id: fallbackMoodBoardImageId(img, index),
+      id: fallbackMoodBoardImageId(img, sourceIndex),
       x: typeof img.x === 'number' ? img.x : 18 + col * (defaults.width + gap),
       y: typeof img.y === 'number' ? img.y : 18 + row * (defaults.height + gap),
       width: typeof img.width === 'number' ? img.width : defaults.width,
@@ -167,11 +236,25 @@ function normalizeBoardImages(images: WorkhubMoodBoardImage[], layout: MoodBoard
       z: typeof img.z === 'number' ? img.z : index + 1,
     }
   })
+
+  const minLeft = normalized.reduce((min, image) => Math.min(min, image.x), Number.POSITIVE_INFINITY)
+  const minTop = normalized.reduce((min, image) => Math.min(min, image.y), Number.POSITIVE_INFINITY)
+  const shiftX = Number.isFinite(minLeft) && minLeft < 0 ? -minLeft : 0
+  const shiftY = Number.isFinite(minTop) && minTop < 0 ? -minTop : 0
+
+  if (!shiftX && !shiftY) return normalized
+
+  return normalized.map((image) => ({
+    ...image,
+    x: image.x + shiftX,
+    y: image.y + shiftY,
+  }))
 }
 
 function serializeImages(images: WorkhubMoodBoardImage[]): string {
   return JSON.stringify(images.map((img) => ({
     id: img.id ?? null,
+    tabId: resolveMoodBoardTabId(img.tabId),
     url: img.url,
     caption: img.caption,
     addedBy: img.addedBy,
@@ -227,6 +310,8 @@ export interface MoodBoardPanelProps {
   onDiscussionEditCancel: () => void
   onDiscussionEditSave: (comment: WorkhubTaskComment) => Promise<void>
   discussionEditBusyKey: string
+  onDiscussionDelete?: (comment: WorkhubTaskComment) => Promise<void>
+  discussionDeleteBusyKey?: string
 }
 
 export function MoodBoardPanel({
@@ -257,29 +342,34 @@ export function MoodBoardPanel({
   onDiscussionEditCancel,
   onDiscussionEditSave,
   discussionEditBusyKey,
+  onDiscussionDelete,
+  discussionDeleteBusyKey,
 }: MoodBoardPanelProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const moodBoardBodyRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
+  const detailRailRef = useRef<HTMLDivElement>(null)
   const dropDragDepthRef = useRef(0)
   const interactionRef = useRef<CanvasInteraction | null>(null)
+  const canvasImagesRef = useRef<CanvasImage[]>([])
   const selectedIdsRef = useRef<string[]>([])
   const marqueeBaseSelectionRef = useRef<string[]>([])
+  const marqueeRectRef = useRef<BoxSelectionRect | null>(null)
+  const dragFrameRef = useRef<number | null>(null)
+  const pendingDragPointRef = useRef<{ x: number; y: number } | null>(null)
+  const activePointerCaptureRef = useRef<{ element: Element; pointerId: number } | null>(null)
+  const canvasItemElsRef = useRef<Map<string, HTMLDivElement>>(new Map())
+  const detailRailResizeDragRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const persistTimerRef = useRef<number | null>(null)
+  const preferencePersistTimerRef = useRef<number | null>(null)
   const titlePersistTimerRef = useRef<number | null>(null)
   const titleSavedIndicatorTimerRef = useRef<number | null>(null)
   const titleDraftRef = useRef('')
   const titleSavedValueRef = useRef((board?.title ?? '').trim())
-  const [imageLayout, setImageLayout] = useState<MoodBoardImageLayoutMode>(() => {
-    if (typeof window === 'undefined') return 'compact'
-    const saved = window.localStorage.getItem('workhub:moodboard:imageLayout')
-    if (saved === 'large' || saved === 'xlarge') return 'large'
-    return 'compact'
-  })
-  const [showGridBackground, setShowGridBackground] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false
-    return window.localStorage.getItem('workhub:moodboard:gridBackground') === '1'
-  })
+  const [hasPendingMutations, setHasPendingMutations] = useState(false)
+  const [imageLayout, setImageLayout] = useState<MoodBoardImageLayoutMode>(DEFAULT_MOODBOARD_USER_PREFERENCE.imageLayout)
+  const [showGridBackground, setShowGridBackground] = useState<boolean>(DEFAULT_MOODBOARD_USER_PREFERENCE.showGridBackground)
+  const [detailsCollapsed, setDetailsCollapsed] = useState<boolean>(DEFAULT_MOODBOARD_USER_PREFERENCE.detailsCollapsed)
   const [canvasImages, setCanvasImages] = useState<CanvasImage[]>([])
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null)
@@ -315,21 +405,90 @@ export function MoodBoardPanel({
   const [deleting, setDeleting] = useState(false)
   const [selectedImageUrlDraft, setSelectedImageUrlDraft] = useState('')
   const [selectedImageUrlSaving, setSelectedImageUrlSaving] = useState(false)
-  const moodBoardScrollStorageKey = board?.id ? `workhub:moodboard:scroll:${board.id}:${imageLayout}` : ''
+  const [detailRailWidth, setDetailRailWidth] = useState<number>(() => {
+    if (typeof window === 'undefined') return 248
+    const saved = window.localStorage.getItem(MOODBOARD_RAIL_WIDTH_STORAGE_KEY)
+    const parsed = saved ? Number.parseInt(saved, 10) : Number.NaN
+    return Number.isFinite(parsed) && parsed >= 160 && parsed <= 500 ? parsed : 248
+  })
+  const [detailRailCollapsed, setDetailRailCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    return window.localStorage.getItem(MOODBOARD_RAIL_COLLAPSED_STORAGE_KEY) === '1'
+  })
+  const canAddImages = !!currentUid
+
+  const boardUserPreference = useMemo(() => {
+    return normalizeMoodBoardUserPreference(board?.userPreferences?.[currentUid])
+  }, [board?.id, board?.userPreferences, currentUid])
+
+  const moodBoardScrollStorageKey = board?.id ? `workhub:moodboard:scroll:v3:${board.id}:${imageLayout}` : ''
+
+  const activeTabImageEntries = useMemo(() => {
+    return (board?.images ?? []).map((image, index) => ({ image, sourceIndex: index }))
+  }, [board?.images])
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    window.localStorage.setItem('workhub:moodboard:imageLayout', imageLayout)
-  }, [imageLayout])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    window.localStorage.setItem('workhub:moodboard:gridBackground', showGridBackground ? '1' : '0')
-  }, [showGridBackground])
+    canvasImagesRef.current = canvasImages
+  }, [canvasImages])
 
   useEffect(() => {
     selectedIdsRef.current = selectedIds
   }, [selectedIds])
+
+  useEffect(() => {
+    marqueeRectRef.current = marqueeRect
+  }, [marqueeRect])
+
+  useEffect(() => {
+    const nextPreference = boardUserPreference ?? DEFAULT_MOODBOARD_USER_PREFERENCE
+    setImageLayout(nextPreference.imageLayout)
+    setShowGridBackground(nextPreference.showGridBackground)
+    setDetailsCollapsed(nextPreference.detailsCollapsed)
+  }, [
+    board?.id,
+    boardUserPreference?.imageLayout,
+    boardUserPreference?.showGridBackground,
+    boardUserPreference?.detailsCollapsed,
+  ])
+
+  useEffect(() => {
+    if (!board || !currentUid) return
+    if (preferencePersistTimerRef.current) {
+      window.clearTimeout(preferencePersistTimerRef.current)
+      preferencePersistTimerRef.current = null
+    }
+
+    const needsSave = !boardUserPreference
+      || boardUserPreference.imageLayout !== imageLayout
+      || boardUserPreference.showGridBackground !== showGridBackground
+      || boardUserPreference.detailsCollapsed !== detailsCollapsed
+
+    if (!needsSave) return
+
+    preferencePersistTimerRef.current = window.setTimeout(() => {
+      void updateWorkhubMoodBoardUserPreference(board.id, currentUid, {
+        imageLayout,
+        showGridBackground,
+        detailsCollapsed,
+      }).catch((err) => {
+        setError(String(err))
+      })
+    }, 220)
+
+    return () => {
+      if (preferencePersistTimerRef.current) {
+        window.clearTimeout(preferencePersistTimerRef.current)
+        preferencePersistTimerRef.current = null
+      }
+    }
+  }, [
+    board,
+    boardUserPreference,
+    currentUid,
+    imageLayout,
+    showGridBackground,
+    detailsCollapsed,
+  ])
 
   useEffect(() => {
     titleDraftRef.current = titleDraft
@@ -352,18 +511,22 @@ export function MoodBoardPanel({
   }, [board?.id])
 
   useEffect(() => {
-    const normalized = normalizeBoardImages(board?.images ?? [], imageLayout)
+    if (dragging || hasPendingMutations) return
+    const normalized = normalizeBoardImages(activeTabImageEntries, imageLayout)
     setCanvasImages(normalized)
-  }, [board?.id, board?.images, imageLayout])
+  }, [activeTabImageEntries, board?.id, imageLayout, dragging, hasPendingMutations])
 
   useEffect(() => {
     if (!canvasImages.length) {
-      setSelectedIds([])
-      setSelectedImageId(null)
+      setSelectedIds((prev) => prev.length === 0 ? prev : [])
+      setSelectedImageId((prev) => prev === null ? prev : null)
       return
     }
     const available = new Set(canvasImages.map((image) => image.id))
-    setSelectedIds((prev) => prev.filter((id) => available.has(id)))
+    setSelectedIds((prev) => {
+      const next = prev.filter((id) => available.has(id))
+      return next.length === prev.length ? prev : next
+    })
     setSelectedImageId((prev) => {
       if (prev && available.has(prev)) return prev
       return null
@@ -377,8 +540,11 @@ export function MoodBoardPanel({
       persistTimerRef.current = null
     }
 
+    if (dragging) return
+
     const nextImages: WorkhubMoodBoardImage[] = canvasImages.map((image) => ({
       id: image.id,
+      tabId: DEFAULT_MOODBOARD_TAB_ID,
       url: image.url,
       caption: image.caption,
       addedBy: image.addedBy,
@@ -390,7 +556,10 @@ export function MoodBoardPanel({
       z: Math.round(image.z),
     }))
 
-    if (serializeImages(nextImages) === serializeImages(board.images ?? [])) return
+    if (serializeImages(nextImages) === serializeImages(board.images ?? [])) {
+      setHasPendingMutations(false)
+      return
+    }
 
     persistTimerRef.current = window.setTimeout(() => {
       void updateWorkhubMoodBoardImages(board.id, nextImages).catch((err) => {
@@ -404,7 +573,7 @@ export function MoodBoardPanel({
         persistTimerRef.current = null
       }
     }
-  }, [board, canEdit, canvasImages])
+  }, [board, canEdit, canvasImages, dragging])
 
   useEffect(() => {
     const bodyEl = moodBoardBodyRef.current
@@ -440,8 +609,8 @@ export function MoodBoardPanel({
           return
         }
         const parsed = JSON.parse(saved) as { left?: unknown; top?: unknown }
-        const targetLeft = typeof parsed.left === 'number' ? parsed.left : 0
-        const targetTop = typeof parsed.top === 'number' ? parsed.top : 0
+        const targetLeft = typeof parsed.left === 'number' ? Math.max(0, parsed.left) : 0
+        const targetTop = typeof parsed.top === 'number' ? Math.max(0, parsed.top) : 0
         bodyEl!.scrollLeft = targetLeft
         bodyEl!.scrollTop = targetTop
       } catch {
@@ -561,18 +730,175 @@ export function MoodBoardPanel({
   }, [selectedImageId, canEdit, canvasImages])
 
   const canvasHeight = useMemo(() => {
-    const minHeight = 680
+    const minHeight = CANVAS_MIN_HEIGHT
     const bottom = canvasImages.reduce((max, image) => Math.max(max, image.y + image.height), 0)
-    return Math.max(minHeight, bottom + 40)
-  }, [canvasImages, imageLayout])
+    return Math.max(minHeight, bottom + CANVAS_BOARD_PADDING)
+  }, [canvasImages])
+
+  const canvasWidth = useMemo(() => {
+    const minWidth = CANVAS_MIN_WIDTH
+    const right = canvasImages.reduce((max, image) => Math.max(max, image.x + image.width), 0)
+    return Math.max(minWidth, right + CANVAS_BOARD_PADDING)
+  }, [canvasImages])
 
   function pointToCanvas(clientX: number, clientY: number): { x: number; y: number } | null {
-    if (!canvasRef.current) return null
-    const rect = canvasRef.current.getBoundingClientRect()
-    return {
-      x: clientX - rect.left + canvasRef.current.scrollLeft,
-      y: clientY - rect.top + canvasRef.current.scrollTop,
+    const canvasEl = canvasRef.current
+    const bodyEl = moodBoardBodyRef.current
+    if (!canvasEl || !bodyEl) return null
+    return getPointerInBoardSpace({ clientX, clientY }, canvasEl, bodyEl)
+  }
+
+  function setPointerCapture(event: React.PointerEvent<Element>) {
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+      activePointerCaptureRef.current = {
+        element: event.currentTarget,
+        pointerId: event.pointerId,
+      }
+    } catch {
+      activePointerCaptureRef.current = null
     }
+  }
+
+  function releasePointerCapture() {
+    const activeCapture = activePointerCaptureRef.current
+    if (!activeCapture) return
+    try {
+      if ('hasPointerCapture' in activeCapture.element
+        && typeof activeCapture.element.hasPointerCapture === 'function'
+        && activeCapture.element.hasPointerCapture(activeCapture.pointerId)
+        && 'releasePointerCapture' in activeCapture.element
+        && typeof activeCapture.element.releasePointerCapture === 'function') {
+        activeCapture.element.releasePointerCapture(activeCapture.pointerId)
+      }
+    } catch {
+      // Ignore release failures.
+    }
+    activePointerCaptureRef.current = null
+  }
+
+  function computeMoveDelta(interaction: MoveInteraction, point: { x: number; y: number }) {
+    const dx0 = point.x - interaction.startX
+    const dy0 = point.y - interaction.startY
+    const tentativeMinLeft = interaction.itemIds.reduce((min, id) => {
+      const origin = interaction.origins[id]
+      return origin ? Math.min(min, origin.x + dx0) : min
+    }, Number.POSITIVE_INFINITY)
+    const tentativeMinTop = interaction.itemIds.reduce((min, id) => {
+      const origin = interaction.origins[id]
+      return origin ? Math.min(min, origin.y + dy0) : min
+    }, Number.POSITIVE_INFINITY)
+    return {
+      dx: tentativeMinLeft < 0 ? dx0 - tentativeMinLeft : dx0,
+      dy: tentativeMinTop < 0 ? dy0 - tentativeMinTop : dy0,
+    }
+  }
+
+  function computeResizeScale(interaction: ResizeInteraction, point: { x: number; y: number }) {
+    const dx = point.x - interaction.startX
+    const dy = point.y - interaction.startY
+    const minSize = minCanvasSize(imageLayout)
+    const widthScale = (interaction.origin.width + dx) / interaction.origin.width
+    const heightScale = (interaction.origin.height + dy) / interaction.origin.height
+    const minScale = Math.max(
+      minSize.width / interaction.origin.width,
+      minSize.height / interaction.origin.height,
+    )
+    return Math.max(minScale, widthScale, heightScale)
+  }
+
+  // DOM-only: called every RAF during drag — no React state updates.
+  function applyMoveInteraction(interaction: MoveInteraction, point: { x: number; y: number }) {
+    const { dx, dy } = computeMoveDelta(interaction, point)
+    for (const id of interaction.itemIds) {
+      const el = canvasItemElsRef.current.get(id)
+      if (el) el.style.transform = `translate(${dx}px, ${dy}px)`
+    }
+  }
+
+  // DOM-only: called every RAF during drag — no React state updates.
+  function applyResizeInteraction(interaction: ResizeInteraction, point: { x: number; y: number }) {
+    const nextScale = computeResizeScale(interaction, point)
+    const el = canvasItemElsRef.current.get(interaction.itemId)
+    if (el) {
+      el.style.transformOrigin = '0% 0%'
+      el.style.transform = `scale(${nextScale})`
+    }
+  }
+
+  // Commits final move position to DOM + React state. Called once at drag end.
+  function commitMoveInteraction(interaction: MoveInteraction, point: { x: number; y: number }) {
+    const { dx, dy } = computeMoveDelta(interaction, point)
+    const itemIdSet = new Set(interaction.itemIds)
+    for (const id of interaction.itemIds) {
+      const el = canvasItemElsRef.current.get(id)
+      const origin = interaction.origins[id]
+      if (!el || !origin) continue
+      el.style.transform = ''
+      el.style.left = `${origin.x + dx}px`
+      el.style.top = `${origin.y + dy}px`
+    }
+    setCanvasImages((prev) => prev.map((image) => {
+      if (!itemIdSet.has(image.id)) return image
+      const origin = interaction.origins[image.id]
+      if (!origin) return image
+      return { ...image, x: origin.x + dx, y: origin.y + dy }
+    }))
+  }
+
+  // Commits final resize dimensions to DOM + React state. Called once at drag end.
+  function commitResizeInteraction(interaction: ResizeInteraction, point: { x: number; y: number }) {
+    const nextScale = computeResizeScale(interaction, point)
+    const finalW = Math.round(interaction.origin.width * nextScale)
+    const finalH = Math.round(interaction.origin.height * nextScale)
+    const el = canvasItemElsRef.current.get(interaction.itemId)
+    if (el) {
+      el.style.transform = ''
+      el.style.transformOrigin = ''
+      el.style.width = `${finalW}px`
+      el.style.height = `${finalH}px`
+    }
+    setCanvasImages((prev) => prev.map((image) => {
+      if (image.id !== interaction.itemId) return image
+      return { ...image, width: finalW, height: finalH }
+    }))
+  }
+
+  function flushPendingDragFrame() {
+    if (dragFrameRef.current !== null) {
+      window.cancelAnimationFrame(dragFrameRef.current)
+      dragFrameRef.current = null
+    }
+    const point = pendingDragPointRef.current
+    const interaction = interactionRef.current
+    pendingDragPointRef.current = null
+    if (!point || !interaction) return
+    if (interaction.kind === 'move') {
+      commitMoveInteraction(interaction, point)
+      return
+    }
+    if (interaction.kind === 'resize') {
+      commitResizeInteraction(interaction, point)
+    }
+  }
+
+  function scheduleDragFrame(point: { x: number; y: number }) {
+    pendingDragPointRef.current = point
+    if (dragFrameRef.current !== null) return
+    dragFrameRef.current = window.requestAnimationFrame(() => {
+      dragFrameRef.current = null
+      const nextPoint = pendingDragPointRef.current
+      const interaction = interactionRef.current
+      pendingDragPointRef.current = null
+      if (!nextPoint || !interaction) return
+      if (interaction.kind === 'move') {
+        applyMoveInteraction(interaction, nextPoint)
+        return
+      }
+      if (interaction.kind === 'resize') {
+        applyResizeInteraction(interaction, nextPoint)
+      }
+    })
   }
 
   function bringImagesToFront(targetIds: string[]) {
@@ -591,7 +917,7 @@ export function MoodBoardPanel({
 
   function updateSelectionFromMarquee(nextRect: BoxSelectionRect, additive: boolean) {
     const selectRect = rectFromPoints(nextRect.startX, nextRect.startY, nextRect.currentX, nextRect.currentY)
-    const hitIds = canvasImages
+    const hitIds = canvasImagesRef.current
       .filter((image) => rectsIntersect(selectRect, {
         left: image.x,
         top: image.y,
@@ -628,50 +954,18 @@ export function MoodBoardPanel({
       if (!point) return
 
       if (interaction.kind === 'move') {
-        const dx = point.x - interaction.startX
-        const dy = point.y - interaction.startY
-        setCanvasImages((prev) => {
-          const canvasWidth = canvasRef.current?.clientWidth ?? 0
-          const itemIdSet = new Set(interaction.itemIds)
-          return prev.map((image) => {
-            if (!itemIdSet.has(image.id)) return image
-            const origin = interaction.origins[image.id]
-            if (!origin) return image
-            const maxX = Math.max(0, canvasWidth - image.width)
-            const maxY = Math.max(0, canvasHeight - image.height)
-            return {
-              ...image,
-              x: clamp(origin.x + dx, 0, maxX),
-              y: clamp(origin.y + dy, 0, maxY),
-            }
-          })
-        })
+        scheduleDragFrame(point)
         return
       }
 
       if (interaction.kind === 'resize') {
-        const dx = point.x - interaction.startX
-        const dy = point.y - interaction.startY
-        const minSize = minCanvasSize(imageLayout)
-        setCanvasImages((prev) => {
-          const canvasWidth = canvasRef.current?.clientWidth ?? 0
-          return prev.map((image) => {
-            if (image.id !== interaction.itemId) return image
-            const maxWidth = Math.max(minSize.width, canvasWidth - interaction.origin.x)
-            const maxHeight = Math.max(minSize.height, canvasHeight - interaction.origin.y)
-            return {
-              ...image,
-              width: clamp(interaction.origin.width + dx, minSize.width, maxWidth),
-              height: clamp(interaction.origin.height + dy, minSize.height, maxHeight),
-            }
-          })
-        })
+        scheduleDragFrame(point)
         return
       }
 
-      if (interaction.kind === 'marquee' && marqueeRect) {
+      if (interaction.kind === 'marquee' && marqueeRectRef.current) {
         const nextRect: BoxSelectionRect = {
-          ...marqueeRect,
+          ...marqueeRectRef.current,
           currentX: point.x,
           currentY: point.y,
         }
@@ -681,7 +975,9 @@ export function MoodBoardPanel({
     }
 
     function handlePointerUp() {
+      flushPendingDragFrame()
       interactionRef.current = null
+      releasePointerCapture()
       setDragging(false)
       setIsMiddleMousePanning(false)
       setMarqueeRect(null)
@@ -689,11 +985,14 @@ export function MoodBoardPanel({
 
     window.addEventListener('pointermove', handlePointerMove)
     window.addEventListener('pointerup', handlePointerUp)
+    window.addEventListener('pointercancel', handlePointerUp)
     return () => {
+      flushPendingDragFrame()
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
+      window.removeEventListener('pointercancel', handlePointerUp)
     }
-  }, [dragging, marqueeRect, canvasHeight, imageLayout, canvasImages])
+  }, [dragging, imageLayout])
 
   function handleMiddleMousePanStart(event: React.PointerEvent<HTMLElement>) {
     if (event.button !== 1) return false
@@ -706,6 +1005,7 @@ export function MoodBoardPanel({
       startScrollLeft: bodyEl.scrollLeft,
       startScrollTop: bodyEl.scrollTop,
     }
+    setPointerCapture(event)
     setDragging(true)
     setIsMiddleMousePanning(true)
     event.preventDefault()
@@ -810,6 +1110,44 @@ export function MoodBoardPanel({
     }
   }
 
+  function extractClipboardImageFiles(clipboardData: DataTransfer | null | undefined): File[] {
+    if (!clipboardData) return []
+    return Array.from(clipboardData.items || [])
+      .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => !!file)
+  }
+
+  function handleRailResizePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (detailRailCollapsed) return
+    event.preventDefault()
+    detailRailResizeDragRef.current = { startX: event.clientX, startWidth: detailRailWidth }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  function handleRailResizePointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    if (!detailRailResizeDragRef.current || !detailRailRef.current) return
+    const dx = detailRailResizeDragRef.current.startX - event.clientX
+    const nextWidth = Math.min(500, Math.max(160, detailRailResizeDragRef.current.startWidth + dx))
+    detailRailRef.current.style.flexBasis = `${nextWidth}px`
+    detailRailRef.current.style.width = `${nextWidth}px`
+  }
+
+  function handleRailResizePointerUp(event: React.PointerEvent<HTMLDivElement>) {
+    if (!detailRailResizeDragRef.current) return
+    const dx = detailRailResizeDragRef.current.startX - event.clientX
+    const nextWidth = Math.min(500, Math.max(160, detailRailResizeDragRef.current.startWidth + dx))
+    setDetailRailWidth(nextWidth)
+    window.localStorage.setItem(MOODBOARD_RAIL_WIDTH_STORAGE_KEY, String(nextWidth))
+    detailRailResizeDragRef.current = null
+  }
+
+  function handleToggleRailCollapse() {
+    const nextValue = !detailRailCollapsed
+    setDetailRailCollapsed(nextValue)
+    window.localStorage.setItem(MOODBOARD_RAIL_COLLAPSED_STORAGE_KEY, nextValue ? '1' : '0')
+  }
+
   function hasFilesPayload(event: React.DragEvent<HTMLElement>): boolean {
     const types = Array.from(event.dataTransfer?.types ?? [])
     return types.includes('Files')
@@ -843,6 +1181,7 @@ export function MoodBoardPanel({
   }
 
   async function uploadMoodBoardFiles(files: File[]) {
+    if (!canAddImages) return
     const imageFiles = files.filter(isImageFile)
     if (!imageFiles.length) {
       setError('Only image files can be added to the mood board.')
@@ -860,14 +1199,26 @@ export function MoodBoardPanel({
       }
       const existingImages = board?.images ?? []
       let latestImages = existingImages
+      let nextIndex = existingImages.length
+      let nextZ = existingImages.reduce((max, image) => Math.max(max, typeof image.z === 'number' ? image.z : 0), 0)
       for (const file of imageFiles) {
         const url = await onUploadImage(boardId, file)
-        const defaults = defaultCanvasSize(imageLayout)
-        const index = latestImages.length
+        let defaults = defaultCanvasSize(imageLayout)
+        const previewUrl = URL.createObjectURL(file)
+        try {
+          const dimensions = await loadImageDimensions(previewUrl)
+          defaults = scaleCanvasSizeToBounds(dimensions.width, dimensions.height, imageLayout)
+        } catch {
+          defaults = defaultCanvasSize(imageLayout)
+        } finally {
+          URL.revokeObjectURL(previewUrl)
+        }
+        const index = nextIndex
         const row = Math.floor(index / 3)
         const col = index % 3
         const newImage: WorkhubMoodBoardImage = {
           id: createMoodBoardImageId(file),
+          tabId: DEFAULT_MOODBOARD_TAB_ID,
           url,
           caption: file.name,
           addedBy: currentUid,
@@ -876,10 +1227,11 @@ export function MoodBoardPanel({
           y: 18 + row * (defaults.height + 28),
           width: defaults.width,
           height: defaults.height,
-          z: index + 1,
+          z: ++nextZ,
         }
         await addWorkhubMoodBoardImage(boardId, latestImages, newImage)
         latestImages = [...latestImages, newImage]
+        nextIndex += 1
       }
     } catch (err) {
       setError(String(err))
@@ -890,6 +1242,7 @@ export function MoodBoardPanel({
   }
 
   async function addMoodBoardImageFromUrl(rawUrl: string) {
+    if (!canAddImages) return
     const normalizedUrl = normalizeImageUrlInput(rawUrl)
     if (!normalizedUrl) {
       setError('Enter a valid image URL starting with http:// or https://')
@@ -907,13 +1260,21 @@ export function MoodBoardPanel({
       }
 
       const existingImages = board?.images ?? []
-      const defaults = defaultCanvasSize(imageLayout)
+      let defaults = defaultCanvasSize(imageLayout)
+      try {
+        const dimensions = await loadImageDimensions(normalizedUrl)
+        defaults = scaleCanvasSizeToBounds(dimensions.width, dimensions.height, imageLayout)
+      } catch {
+        defaults = defaultCanvasSize(imageLayout)
+      }
       const index = existingImages.length
       const row = Math.floor(index / 3)
       const col = index % 3
+      const maxZ = existingImages.reduce((max, image) => Math.max(max, typeof image.z === 'number' ? image.z : 0), 0)
       const newImageId = createMoodBoardRemoteImageId(normalizedUrl)
       const newImage: WorkhubMoodBoardImage = {
         id: newImageId,
+        tabId: DEFAULT_MOODBOARD_TAB_ID,
         url: normalizedUrl,
         caption: deriveImageCaptionFromUrl(normalizedUrl),
         addedBy: currentUid,
@@ -922,7 +1283,7 @@ export function MoodBoardPanel({
         y: 18 + row * (defaults.height + 28),
         width: defaults.width,
         height: defaults.height,
-        z: index + 1,
+        z: maxZ + 1,
       }
       await addWorkhubMoodBoardImage(boardId, existingImages, newImage)
       setSelectedIds([newImageId])
@@ -943,9 +1304,17 @@ export function MoodBoardPanel({
   }
 
   function handleMoodBoardPaste(event: React.ClipboardEvent<HTMLDivElement>) {
-    if (!canEdit) return
+    if (!canAddImages) return
     const target = event.target as HTMLElement | null
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+
+    const pastedImageFiles = extractClipboardImageFiles(event.clipboardData)
+    if (pastedImageFiles.length > 0) {
+      event.preventDefault()
+      void uploadMoodBoardFiles(pastedImageFiles)
+      return
+    }
+
     const text = event.clipboardData.getData('text/plain').trim()
     const normalizedUrl = normalizeImageUrlInput(text)
     if (!normalizedUrl) return
@@ -953,22 +1322,49 @@ export function MoodBoardPanel({
     void addMoodBoardImageFromUrl(normalizedUrl)
   }
 
+  useEffect(() => {
+    if (!canAddImages || typeof window === 'undefined') return
+    function handleWindowPaste(event: ClipboardEvent) {
+      if (event.defaultPrevented) return
+      const target = event.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+
+      const pastedImageFiles = extractClipboardImageFiles(event.clipboardData)
+      if (pastedImageFiles.length > 0) {
+        event.preventDefault()
+        void uploadMoodBoardFiles(pastedImageFiles)
+        return
+      }
+
+      const text = event.clipboardData?.getData('text/plain').trim() || ''
+      const normalizedUrl = normalizeImageUrlInput(text)
+      if (!normalizedUrl) return
+      event.preventDefault()
+      void addMoodBoardImageFromUrl(normalizedUrl)
+    }
+
+    window.addEventListener('paste', handleWindowPaste)
+    return () => {
+      window.removeEventListener('paste', handleWindowPaste)
+    }
+  }, [canAddImages, board?.id, imageLayout])
+
   function handleGridDragEnter(event: React.DragEvent<HTMLDivElement>) {
-    if (!canEdit || !hasSupportedDropPayload(event)) return
+    if (!canAddImages || !hasSupportedDropPayload(event)) return
     event.preventDefault()
     dropDragDepthRef.current += 1
     setIsDropTargetActive(true)
   }
 
   function handleGridDragOver(event: React.DragEvent<HTMLDivElement>) {
-    if (!canEdit || !hasSupportedDropPayload(event)) return
+    if (!canAddImages || !hasSupportedDropPayload(event)) return
     event.preventDefault()
     event.dataTransfer.dropEffect = 'copy'
     if (!isDropTargetActive) setIsDropTargetActive(true)
   }
 
   function handleGridDragLeave(event: React.DragEvent<HTMLDivElement>) {
-    if (!canEdit || !hasSupportedDropPayload(event)) return
+    if (!canAddImages || !hasSupportedDropPayload(event)) return
     event.preventDefault()
     dropDragDepthRef.current = Math.max(0, dropDragDepthRef.current - 1)
     if (dropDragDepthRef.current === 0) {
@@ -977,7 +1373,7 @@ export function MoodBoardPanel({
   }
 
   function handleGridDrop(event: React.DragEvent<HTMLDivElement>) {
-    if (!canEdit || !hasSupportedDropPayload(event)) return
+    if (!canAddImages || !hasSupportedDropPayload(event)) return
     event.preventDefault()
     event.stopPropagation()
     dropDragDepthRef.current = 0
@@ -998,10 +1394,7 @@ export function MoodBoardPanel({
       const nextImages = board.images.filter((img, i) => fallbackMoodBoardImageId(img, i) !== imageId)
       await updateWorkhubMoodBoardImages(board.id, nextImages)
       if (selectedImageId === imageId) {
-        const nextSelected = nextImages.length > 0
-          ? fallbackMoodBoardImageId(nextImages[Math.max(0, index - 1)] || nextImages[0], Math.max(0, index - 1))
-          : null
-        setSelectedImageId(nextSelected)
+        setSelectedImageId(null)
       }
       return
     }
@@ -1079,6 +1472,7 @@ export function MoodBoardPanel({
 
     const point = pointToCanvas(event.clientX, event.clientY)
     if (!point) return
+    setPointerCapture(event)
     marqueeBaseSelectionRef.current = event.shiftKey ? selectedIdsRef.current : []
     if (!event.shiftKey) setSelectedIds([])
     const nextRect: BoxSelectionRect = {
@@ -1124,23 +1518,22 @@ export function MoodBoardPanel({
 
     bringImagesToFront(nextSelection)
 
-    setCanvasImages((prev) => {
-      const moved = new Set(nextSelection)
-      const origins: Record<string, { x: number; y: number }> = {}
-      prev.forEach((image) => {
-        if (moved.has(image.id)) {
-          origins[image.id] = { x: image.x, y: image.y }
-        }
-      })
-      interactionRef.current = {
-        kind: 'move',
-        startX: point.x,
-        startY: point.y,
-        itemIds: nextSelection,
-        origins,
+    const moved = new Set(nextSelection)
+    const origins: Record<string, { x: number; y: number }> = {}
+    canvasImagesRef.current.forEach((image) => {
+      if (moved.has(image.id)) {
+        origins[image.id] = { x: image.x, y: image.y }
       }
-      return prev
     })
+    interactionRef.current = {
+      kind: 'move',
+      startX: point.x,
+      startY: point.y,
+      itemIds: nextSelection,
+      origins,
+    }
+    setPointerCapture(event)
+    setHasPendingMutations(true)
     setDragging(true)
     event.preventDefault()
   }
@@ -1151,7 +1544,7 @@ export function MoodBoardPanel({
     if (event.button !== 0) return
     const point = pointToCanvas(event.clientX, event.clientY)
     if (!point) return
-    const image = canvasImages.find((item) => item.id === imageId)
+    const image = canvasImagesRef.current.find((item) => item.id === imageId)
     if (!image) return
     setSelectedIds([imageId])
     setSelectedImageId(imageId)
@@ -1168,11 +1561,14 @@ export function MoodBoardPanel({
         height: image.height,
       },
     }
+    setPointerCapture(event)
+    setHasPendingMutations(true)
     setDragging(true)
     event.preventDefault()
   }
 
   const canRemove = (img: WorkhubMoodBoardImage) => canEdit || img.addedBy === currentUid
+  const activeTabImageCount = activeTabImageEntries.length
   const checklistItems = board?.checklist || []
   const checklistEditor = useWorkhubChecklistEditor({
     items: checklistItems,
@@ -1254,7 +1650,7 @@ export function MoodBoardPanel({
             </div>
           </div>
 
-          {canEdit && (
+          {canAddImages && (
             <input
               ref={fileInputRef}
               type="file"
@@ -1278,7 +1674,7 @@ export function MoodBoardPanel({
             </div>
           )}
 
-          {urlDialogOpen && canEdit && (
+          {urlDialogOpen && canAddImages && (
             <div className="workhub-moodboard-url-dialog-backdrop" onClick={() => setUrlDialogOpen(false)}>
               <div className="workhub-moodboard-url-dialog" onClick={(event) => event.stopPropagation()}>
                 <div className="workhub-moodboard-url-dialog-head">
@@ -1347,7 +1743,7 @@ export function MoodBoardPanel({
                 aria-label="Canvas layout"
                 title="Canvas layout"
               >Canvas</button>
-              {canEdit && (
+              {canAddImages && (
                 <div className="workhub-moodboard-inline-actions" role="group" aria-label="Mood board image actions">
                   <button
                     type="button"
@@ -1391,18 +1787,18 @@ export function MoodBoardPanel({
               if (event.button === 1) event.preventDefault()
             }}
           >
-            {(!board || board.images.length === 0) && !uploading && (
+            {(!board || activeTabImageCount === 0) && !uploading && (
               <div className="workhub-moodboard-empty">
                 <div style={{ fontSize: '2.5rem', marginBottom: 10 }}>🖼️</div>
-                <div>No images yet.</div>
-                {canEdit && <div style={{ marginTop: 4, fontSize: '0.78rem', color: '#aac0dc' }}>Use the header buttons to upload an image or add one by URL.</div>}
+                <div>No images yet in this tab.</div>
+                {canAddImages && <div style={{ marginTop: 4, fontSize: '0.78rem', color: '#aac0dc' }}>Use the header buttons to upload an image or add one by URL.</div>}
               </div>
             )}
 
-            {board && board.images.length > 0 && !isCanvasMode && (
+            {board && activeTabImageCount > 0 && !isCanvasMode && (
               <div className="workhub-moodboard-images" onPointerDown={handleCompactGridPointerDown}>
-                {board.images.map((img, i) => {
-                  const imgId = fallbackMoodBoardImageId(img, i)
+                {activeTabImageEntries.map(({ image: img, sourceIndex }) => {
+                  const imgId = fallbackMoodBoardImageId(img, sourceIndex)
                   const bgKey = img.url
                   const imgShowBg = imageBgMap[bgKey] !== false
                   const imgHideBg = /\.png(\?|$)/i.test(img.url) && !imgShowBg
@@ -1425,7 +1821,7 @@ export function MoodBoardPanel({
                         aria-label="Remove image"
                         onClick={(event) => {
                           event.stopPropagation()
-                          void handleRemoveImage(i)
+                          void handleRemoveImage(sourceIndex, imgId)
                         }}
                       >🗑</button>
                     )}
@@ -1434,7 +1830,7 @@ export function MoodBoardPanel({
                 })}              </div>
             )}
 
-            {board && board.images.length > 0 && isCanvasMode && (
+            {board && activeTabImageCount > 0 && isCanvasMode && (
               <>
                 <div className="workhub-moodboard-canvas-help">
                   {canEdit
@@ -1444,7 +1840,10 @@ export function MoodBoardPanel({
                 <div
                   ref={canvasRef}
                   className={`workhub-moodboard-canvas${dragging ? ' is-dragging' : ''}`}
-                  style={{ height: `${canvasHeight}px` }}
+                  style={{
+                    height: `${canvasHeight}px`,
+                    width: `${canvasWidth}px`,
+                  }}
                   onPointerDown={handleCanvasPointerDown}
                 >
                   {sortedCanvasImages.map((img, i) => {
@@ -1455,6 +1854,10 @@ export function MoodBoardPanel({
                     return (
                       <div
                         key={img.id}
+                        ref={(el) => {
+                          if (el) canvasItemElsRef.current.set(img.id, el)
+                          else canvasItemElsRef.current.delete(img.id)
+                        }}
                         className={`workhub-moodboard-canvas-item${selected ? ' is-selected' : ''}${selectedCanvasImage?.id === img.id ? ' is-detail-selected' : ''}${hideBg ? ' is-transparent-bg' : ''}`}
                         style={{
                           left: `${img.x}px`,
@@ -1516,176 +1919,225 @@ export function MoodBoardPanel({
           </div>
         </section>
 
+        <div
+          className={`workhub-rail-resize-handle${detailRailCollapsed ? ' is-collapsed' : ''}`}
+          onPointerDown={handleRailResizePointerDown}
+          onPointerMove={handleRailResizePointerMove}
+          onPointerUp={handleRailResizePointerUp}
+          title={detailRailCollapsed ? 'Expand details panel' : 'Drag to resize details panel'}
+        >
+          {detailRailCollapsed && (
+            <button
+              type="button"
+              className="workhub-rail-toggle-btn"
+              onClick={handleToggleRailCollapse}
+              title="Expand details"
+              aria-label="Expand details"
+            >
+              ›
+            </button>
+          )}
+        </div>
+
         {/* Details rail — mirrors document detail rail */}
-        <aside className="workhub-doc-detail-rail">
+        <aside
+          ref={detailRailRef}
+          className={`workhub-doc-detail-rail${detailRailCollapsed ? ' is-hidden' : ''}`}
+          style={{ flexBasis: detailRailWidth, width: detailRailWidth }}
+        >
           <div className="workhub-detail-rail-head">
             <h3>Details</h3>
-            {board && <span>Mood board</span>}
+            <div className="workhub-detail-rail-head-actions">
+              {board && <span>Mood board</span>}
+              <button
+                type="button"
+                className="workhub-ghost-mini"
+                onClick={handleToggleRailCollapse}
+                title="Collapse details"
+                aria-label="Collapse details"
+              >
+                ‹
+              </button>
+            </div>
           </div>
-          {board ? (
-            <>
-              <div className="workhub-detail-card">
-                <div className="workhub-detail-meta">
-                  <span>Entity: {entityLabel}</span>
-                  <span>Images: {board.images.length}</span>
-                  <span>Checklist items: {checklistItems.length}</span>
-                  <span>Created by: {memberByUid[board.createdBy]?.displayName || memberByUid[board.createdBy]?.email || board.createdBy}</span>
-                  <span>Created: {formatTime(board.createdAt)}</span>
-                  <span>Updated: {formatTime(board.updatedAt)}</span>
-                </div>
-              </div>
+          <div className="workhub-detail-rail-body is-details">
+            {board ? (
+              <>
 
-              <div className="workhub-detail-card">
-                <strong style={{ fontSize: '0.74rem', color: '#1e3e74', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Selected image
-                </strong>
-                {selectedCanvasImage ? (
-                  <div className="workhub-moodboard-selected-image-detail">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                      <button
-                        type="button"
-                        className="workhub-ghost-btn"
-                        onClick={() => onOpenAttachmentLightbox(selectedCanvasImage.url)}
-                        title="Open annotation"
-                      >
-                        Annotate image
-                      </button>
-                      {canEdit && (
+                <div className="workhub-detail-card">
+                  <details
+                    className="workhub-detail-collapsible-info"
+                    open={!detailsCollapsed}
+                    onToggle={(event) => {
+                      setDetailsCollapsed(!event.currentTarget.open)
+                    }}
+                  >
+                    <summary>Board details</summary>
+                    <div className="workhub-detail-meta">
+                      <span>Entity: {entityLabel}</span>
+                      <span>Images: {board.images.length} total</span>
+                      <span>Checklist items: {checklistItems.length}</span>
+                      <span>Created by: {memberByUid[board.createdBy]?.displayName || memberByUid[board.createdBy]?.email || board.createdBy}</span>
+                      <span>Created: {formatTime(board.createdAt)}</span>
+                      <span>Updated: {formatTime(board.updatedAt)}</span>
+                    </div>
+                  </details>
+                </div>
+
+                <div className="workhub-detail-card">
+                  <strong style={{ fontSize: '0.74rem', color: '#1e3e74', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Selected image
+                  </strong>
+                  {selectedCanvasImage ? (
+                    <div className="workhub-moodboard-selected-image-detail">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                         <button
                           type="button"
                           className="workhub-ghost-btn"
-                          onClick={() => {
-                            cropWorkflow.openCrop(selectedCanvasImage.id, selectedCanvasImage.url)
-                          }}
-                          title="Crop image"
+                          onClick={() => onOpenAttachmentLightbox(selectedCanvasImage.url)}
+                          title="Open annotation"
                         >
-                          ✂ Crop
+                          Annotate image
                         </button>
-                      )}
-                      {getAttachmentReviewCount(selectedCanvasImage.url) > 0 && (
-                        <span className="workhub-attachment-review-indicator" title="Notes / annotations">
-                          📝 {getAttachmentReviewCount(selectedCanvasImage.url)}
-                        </span>
-                      )}
-                    </div>
-                    {/\.png(\?|$)/i.test(selectedCanvasImage.url) && (() => {
-                      const bgKey = selectedCanvasImage.url
-                      const showBg = imageBgMap[bgKey] !== false
-                      const bgHidden = !showBg
-                      return (
-                        <button
-                          type="button"
-                          className="workhub-moodboard-bg-toggle-btn"
-                          onClick={() => {
-                            const nextMap = { ...imageBgMap, [bgKey]: !showBg }
-                            setImageBgMap(nextMap)
-                            saveBgMap(nextMap)
-                          }}
-                          title={bgHidden ? 'Show solid background' : 'Show transparent background'}
-                        >
-                          {bgHidden ? '▩ Show background' : '⬜ Hide background'}
-                        </button>
-                      )
-                    })()}
-                    <div className={`workhub-moodboard-image-preview-wrap${imageBgMap[selectedCanvasImage.url] !== false ? '' : ' is-transparent-bg'}`}>
-                      <img src={selectedCanvasImage.url} alt={selectedCanvasImage.caption} />
-                    </div>
-                    {canEdit ? (
-                      <div className="workhub-moodboard-caption-editor">
-                        <input
-                          type="text"
-                          className="workhub-input"
-                          value={selectedImageCaptionDraft}
-                          onChange={(event) => setSelectedImageCaptionDraft(event.target.value)}
-                          onBlur={() => { void handleSaveSelectedImageCaption() }}
-                          onKeyDown={(event) => {
-                            if (event.key !== 'Enter') return
-                            event.preventDefault()
-                            void handleSaveSelectedImageCaption()
-                          }}
-                          placeholder="Image name"
-                        />
-                        <input
-                          type="url"
-                          className="workhub-input"
-                          value={selectedImageUrlDraft}
-                          onChange={(event) => setSelectedImageUrlDraft(event.target.value)}
-                          onBlur={() => { void handleSaveSelectedImageUrl() }}
-                          onKeyDown={(event) => {
-                            if (event.key !== 'Enter') return
-                            event.preventDefault()
-                            void handleSaveSelectedImageUrl()
-                          }}
-                          placeholder="Image URL"
-                        />
-                        {selectedImageUrlSaving && <span className="workhub-moodboard-inline-status">Saving URL…</span>}
+                        {canEdit && (
+                          <button
+                            type="button"
+                            className="workhub-ghost-btn"
+                            onClick={() => {
+                              cropWorkflow.openCrop(selectedCanvasImage.id, selectedCanvasImage.url)
+                            }}
+                            title="Crop image"
+                          >
+                            ✂ Crop
+                          </button>
+                        )}
+                        {getAttachmentReviewCount(selectedCanvasImage.url) > 0 && (
+                          <span className="workhub-attachment-review-indicator" title="Notes / annotations">
+                            📝 {getAttachmentReviewCount(selectedCanvasImage.url)}
+                          </span>
+                        )}
                       </div>
-                    ) : (
+                      {/\.png(\?|$)/i.test(selectedCanvasImage.url) && (() => {
+                        const bgKey = selectedCanvasImage.url
+                        const showBg = imageBgMap[bgKey] !== false
+                        const bgHidden = !showBg
+                        return (
+                          <button
+                            type="button"
+                            className="workhub-moodboard-bg-toggle-btn"
+                            onClick={() => {
+                              const nextMap = { ...imageBgMap, [bgKey]: !showBg }
+                              setImageBgMap(nextMap)
+                              saveBgMap(nextMap)
+                            }}
+                            title={bgHidden ? 'Show solid background' : 'Show transparent background'}
+                          >
+                            {bgHidden ? '▩ Show background' : '⬜ Hide background'}
+                          </button>
+                        )
+                      })()}
+                      <div className={`workhub-moodboard-image-preview-wrap${imageBgMap[selectedCanvasImage.url] !== false ? '' : ' is-transparent-bg'}`}>
+                        <img src={selectedCanvasImage.url} alt={selectedCanvasImage.caption} />
+                      </div>
+                      {canEdit ? (
+                        <div className="workhub-moodboard-caption-editor">
+                          <input
+                            type="text"
+                            className="workhub-input"
+                            value={selectedImageCaptionDraft}
+                            onChange={(event) => setSelectedImageCaptionDraft(event.target.value)}
+                            onBlur={() => { void handleSaveSelectedImageCaption() }}
+                            onKeyDown={(event) => {
+                              if (event.key !== 'Enter') return
+                              event.preventDefault()
+                              void handleSaveSelectedImageCaption()
+                            }}
+                            placeholder="Image name"
+                          />
+                          <input
+                            type="url"
+                            className="workhub-input"
+                            value={selectedImageUrlDraft}
+                            onChange={(event) => setSelectedImageUrlDraft(event.target.value)}
+                            onBlur={() => { void handleSaveSelectedImageUrl() }}
+                            onKeyDown={(event) => {
+                              if (event.key !== 'Enter') return
+                              event.preventDefault()
+                              void handleSaveSelectedImageUrl()
+                            }}
+                            placeholder="Image URL"
+                          />
+                          {selectedImageUrlSaving && <span className="workhub-moodboard-inline-status">Saving URL…</span>}
+                        </div>
+                      ) : (
+                        <div className="workhub-detail-meta">
+                          <span>Name: {selectedCanvasImage.caption || 'Untitled image'}</span>
+                          <span className="workhub-moodboard-url-token">URL: {selectedCanvasImage.url}</span>
+                        </div>
+                      )}
                       <div className="workhub-detail-meta">
-                        <span>Name: {selectedCanvasImage.caption || 'Untitled image'}</span>
-                        <span className="workhub-moodboard-url-token">URL: {selectedCanvasImage.url}</span>
+                        <span>Added by: {memberByUid[selectedCanvasImage.addedBy]?.displayName || memberByUid[selectedCanvasImage.addedBy]?.email || selectedCanvasImage.addedBy}</span>
+                        <span>Added: {formatTime(selectedCanvasImage.addedAt)}</span>
+                        {isCanvasMode && (
+                          <span>Frame: {Math.round(selectedCanvasImage.width)} x {Math.round(selectedCanvasImage.height)} at ({Math.round(selectedCanvasImage.x)}, {Math.round(selectedCanvasImage.y)})</span>
+                        )}
                       </div>
-                    )}
-                    <div className="workhub-detail-meta">
-                      <span>Added by: {memberByUid[selectedCanvasImage.addedBy]?.displayName || memberByUid[selectedCanvasImage.addedBy]?.email || selectedCanvasImage.addedBy}</span>
-                      <span>Added: {formatTime(selectedCanvasImage.addedAt)}</span>
-                      {isCanvasMode && (
-                        <span>Frame: {Math.round(selectedCanvasImage.width)} x {Math.round(selectedCanvasImage.height)} at ({Math.round(selectedCanvasImage.x)}, {Math.round(selectedCanvasImage.y)})</span>
-                      )}
                     </div>
-                  </div>
-                ) : (
-                  <div className="workhub-empty-state" style={{ fontSize: '0.78rem' }}>
-                    Click an image to view details.
-                  </div>
-                )}
-              </div>
+                  ) : (
+                    <div className="workhub-empty-state" style={{ fontSize: '0.78rem' }}>
+                      Click an image to view details.
+                    </div>
+                  )}
+                </div>
 
-              <WorkhubChecklistCard
-                title="Checklist"
-                items={checklistItems}
-                readOnly={!canEdit}
-                draftValue={checklistEditor.draft}
-                onDraftChange={checklistEditor.setDraft}
-                onAdd={() => { void checklistEditor.addItem() }}
-                editingItemId={checklistEditor.editingItemId}
-                editingItemText={checklistEditor.editingItemText}
-                onEditingItemTextChange={checklistEditor.setEditingItemText}
-                onEditStart={checklistEditor.startEdit}
-                onEditSave={(item) => { void checklistEditor.saveEdit(item) }}
-                onEditCancel={checklistEditor.cancelEdit}
-                onToggle={(item, checked) => { void checklistEditor.toggleItem(item, checked) }}
-                onRemove={(item) => { void checklistEditor.removeItem(item) }}
-                emptyStateText="No checklist items yet for this mood board."
-              />
+                <WorkhubChecklistCard
+                  title="Checklist"
+                  items={checklistItems}
+                  readOnly={!canEdit}
+                  draftValue={checklistEditor.draft}
+                  onDraftChange={checklistEditor.setDraft}
+                  onAdd={() => { void checklistEditor.addItem() }}
+                  editingItemId={checklistEditor.editingItemId}
+                  editingItemText={checklistEditor.editingItemText}
+                  onEditingItemTextChange={checklistEditor.setEditingItemText}
+                  onEditStart={checklistEditor.startEdit}
+                  onEditSave={(item) => { void checklistEditor.saveEdit(item) }}
+                  onEditCancel={checklistEditor.cancelEdit}
+                  onToggle={(item, checked) => { void checklistEditor.toggleItem(item, checked) }}
+                  onRemove={(item) => { void checklistEditor.removeItem(item) }}
+                  emptyStateText="No checklist items yet for this mood board."
+                />
 
-              <WorkhubDiscussionCard
-                comments={discussionComments}
-                currentUid={currentUid}
-                memberByUid={memberByUid}
-                showAuthorAvatar
-                formatTime={formatTime}
-                editingId={discussionEditingId}
-                editingText={discussionEditingText}
-                onEditStart={onDiscussionEditStart}
-                onEditChange={onDiscussionEditChange}
-                onEditCancel={onDiscussionEditCancel}
-                onEditSave={onDiscussionEditSave}
-                editBusyKey={discussionEditBusyKey}
-                onComposerSend={onDiscussionSend}
-                composerBusy={discussionBusy}
-                notifyMode={discussionNotifyMode}
-                notifyUids={discussionNotifyUids}
-                notifyCandidates={discussionNotifyCandidates}
-                onNotifyModeChange={onDiscussionNotifyModeChange}
-                onNotifyUidsChange={onDiscussionNotifyUidsChange}
-                composerPlaceholder="Add a comment..."
-                emptyStateText="No comments yet."
-              />
-            </>
-          ) : (
-            <div className="workhub-empty-state" style={{ fontSize: '0.78rem' }}>No board selected.</div>
-          )}
+                <WorkhubDiscussionCard
+                  comments={discussionComments}
+                  currentUid={currentUid}
+                  memberByUid={memberByUid}
+                  showAuthorAvatar
+                  formatTime={formatTime}
+                  editingId={discussionEditingId}
+                  editingText={discussionEditingText}
+                  onEditStart={onDiscussionEditStart}
+                  onEditChange={onDiscussionEditChange}
+                  onEditCancel={onDiscussionEditCancel}
+                  onEditSave={onDiscussionEditSave}
+                  onDelete={onDiscussionDelete}
+                  editBusyKey={discussionEditBusyKey}
+                  deleteBusyKey={discussionDeleteBusyKey}
+                  onComposerSend={onDiscussionSend}
+                  composerBusy={discussionBusy}
+                  notifyMode={discussionNotifyMode}
+                  notifyUids={discussionNotifyUids}
+                  notifyCandidates={discussionNotifyCandidates}
+                  onNotifyModeChange={onDiscussionNotifyModeChange}
+                  onNotifyUidsChange={onDiscussionNotifyUidsChange}
+                  composerPlaceholder="Add a comment..."
+                  emptyStateText="No comments yet."
+                />
+              </>
+            ) : (
+              <div className="workhub-empty-state" style={{ fontSize: '0.78rem' }}>No board selected.</div>
+            )}
+          </div>
         </aside>
       </div>
 

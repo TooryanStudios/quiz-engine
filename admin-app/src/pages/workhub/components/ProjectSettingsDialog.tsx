@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
-import type { WorkhubClient, WorkhubMember, WorkhubProject, WorkhubProjectIntent, WorkhubProjectPriority, WorkhubProjectType, WorkhubTaskStatusConfig, WorkhubVisibility } from '../../../lib/workhubRepo'
+import { useEffect, useRef, useState, type ChangeEvent } from 'react'
+import type { WorkhubClient, WorkhubFolderNotifyDelivery, WorkhubMember, WorkhubMilestone, WorkhubProject, WorkhubProjectIntent, WorkhubProjectPriority, WorkhubProjectType, WorkhubTaskStatusConfig, WorkhubVisibility } from '../../../lib/workhubRepo'
 import { PROJECT_PRIORITY_OPTIONS, type WorkhubProjectColorMeaning } from '../constants'
 import { BUILD_NUMBER, BUILD_TIME_UTC } from '../../../buildInfo'
+import { MilestonesPanel } from './MilestonesPanel'
+import type { MilestoneProgress } from '../hooks/useWorkhubMilestones'
 
 export function ProjectSettingsDialog(props: {
   project: WorkhubProject | null
@@ -42,10 +44,18 @@ export function ProjectSettingsDialog(props: {
   monetaryValueLabel: string
   settingsValueAmount: string
   settingsValueCurrency: string
-  settingsMainPanelView: 'tasks' | 'dashboard'
+  settingsMainPanelView: 'tasks' | 'dashboard' | 'dashboard_with_details'
   settingsTaskItemDisplayMode: 'inherit' | 'list' | 'cards' | 'grid' | 'timeline'
   settingsTaskStatuses: WorkhubTaskStatusConfig[] | null
   workspaceTaskStatuses: WorkhubTaskStatusConfig[]
+  settingsFolderNotifications: {
+    enabled: boolean
+    taskCreated: boolean
+    taskCompleted: boolean
+    folderCompleted: boolean
+    delivery: WorkhubFolderNotifyDelivery
+  }
+  settingsFolderNotificationsBusy: boolean
   settingsClientId: string
   settingsStorageMethod: 'firebase' | 'drive'
   accessVisibility: WorkhubVisibility
@@ -68,9 +78,16 @@ export function ProjectSettingsDialog(props: {
   onFinancialProposalUrlChange: (value: string) => void
   onValueAmountChange: (value: string) => void
   onValueCurrencyChange: (value: string) => void
-  onMainPanelViewChange: (value: 'tasks' | 'dashboard') => void
+  onMainPanelViewChange: (value: 'tasks' | 'dashboard' | 'dashboard_with_details') => void
   onTaskItemDisplayModeChange: (value: 'inherit' | 'list' | 'cards' | 'grid' | 'timeline') => void
   onTaskStatusesChange: (statuses: WorkhubTaskStatusConfig[] | null) => void
+  onFolderNotificationsChange: (patch: Partial<{
+    enabled: boolean
+    taskCreated: boolean
+    taskCompleted: boolean
+    folderCompleted: boolean
+    delivery: WorkhubFolderNotifyDelivery
+  }>) => void
   onApplyViewSettingsToSubItems?: () => void
   applyViewSettingsBusy?: boolean
   onClientChange: (value: string) => void
@@ -81,6 +98,13 @@ export function ProjectSettingsDialog(props: {
   onDelete: () => void
   onSave: () => void
   onEnsureDriveFolder?: () => void
+  milestones?: WorkhubMilestone[]
+  milestoneProgress?: Record<string, MilestoneProgress>
+  canEditMilestones?: boolean
+  onAddMilestone?: () => void
+  onEditMilestone?: (milestone: WorkhubMilestone) => void
+  onDeleteMilestone?: (milestoneId: string) => void
+  onStatusChangeMilestone?: (milestoneId: string, newStatus: import('../../../lib/workhubRepo').WorkhubMilestoneStatus) => void
 }) {
   if (!props.project) return null
   const entityIcon = props.entityIcon || '📁'
@@ -97,6 +121,7 @@ export function ProjectSettingsDialog(props: {
   const [advancedOpen, setAdvancedOpen] = useState(props.intent === 'proposal')
   const [editingTechnicalProposalUrl, setEditingTechnicalProposalUrl] = useState(props.settingsTechnicalProposalUrl.trim().length === 0)
   const [editingFinancialProposalUrl, setEditingFinancialProposalUrl] = useState(props.settingsFinancialProposalUrl.trim().length === 0)
+  const [quickClientName, setQuickClientName] = useState('')
 
   useEffect(() => {
     setAdvancedOpen(props.intent === 'proposal')
@@ -109,6 +134,59 @@ export function ProjectSettingsDialog(props: {
   useEffect(() => {
     setEditingFinancialProposalUrl(props.settingsFinancialProposalUrl.trim().length === 0)
   }, [props.project.id, props.settingsFinancialProposalUrl])
+
+  useEffect(() => {
+    setQuickClientName('')
+  }, [props.project.id])
+
+  function extractUrls(value: string): string[] {
+    const source = (value || '').trim()
+    if (!source) return []
+    const matches = source.match(/(?:https?:\/\/|www\.)[^\s<]+/gi) || []
+    const deduped: string[] = []
+    for (const raw of matches) {
+      const normalized = raw.replace(/[),.;!?]+$/g, '')
+      if (!normalized) continue
+      if (!deduped.includes(normalized)) deduped.push(normalized)
+    }
+    return deduped
+  }
+
+  function AutoGrowTextarea(input: {
+    value: string
+    rows?: number
+    name?: string
+    placeholder?: string
+    disabled?: boolean
+    onChange: (event: ChangeEvent<HTMLTextAreaElement>) => void
+  }) {
+    const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+    const rows = input.rows || 4
+
+    useEffect(() => {
+      const element = textareaRef.current
+      if (!element) return
+      const maxAutoHeight = 280
+      const minAutoHeight = Math.max(rows * 22, 90)
+      element.style.height = 'auto'
+      const nextHeight = Math.min(maxAutoHeight, Math.max(element.scrollHeight, minAutoHeight))
+      element.style.height = `${nextHeight}px`
+      element.style.overflowY = element.scrollHeight > maxAutoHeight ? 'auto' : 'hidden'
+    }, [input.value, rows])
+
+    return (
+      <textarea
+        ref={textareaRef}
+        className="workhub-auto-grow-textarea"
+        name={input.name}
+        value={input.value}
+        onChange={input.onChange}
+        rows={rows}
+        placeholder={input.placeholder}
+        disabled={input.disabled}
+      />
+    )
+  }
 
   function renderProposalUrlField(input: {
     label: string
@@ -213,13 +291,39 @@ export function ProjectSettingsDialog(props: {
                 </select>
               </label>
               {!isFolderContainer && (
-                <label className="workhub-col-span-3">
-                  <span>Client</span>
-                  <select name="projectSettingsClient" value={props.settingsClientId} onChange={(event) => props.onClientChange(event.target.value)}>
-                    <option value="">No client assigned</option>
-                    {props.clientOptions.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
-                  </select>
-                </label>
+                <div className="workhub-col-span-3 workhub-project-settings-client-field">
+                  <label>
+                    <span>Client</span>
+                    <select name="projectSettingsClient" value={props.settingsClientId} onChange={(event) => props.onClientChange(event.target.value)}>
+                      <option value="">No client assigned</option>
+                      {props.clientOptions.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
+                    </select>
+                  </label>
+                  <div className="workhub-inline-row workhub-client-quick-add">
+                    <input
+                      type="text"
+                      value={quickClientName}
+                      onChange={(event) => setQuickClientName(event.target.value)}
+                      placeholder="Add new client by name"
+                    />
+                    <button
+                      type="button"
+                      className="workhub-ghost-mini"
+                      disabled={!quickClientName.trim() || props.busyKey === 'client:create'}
+                      onClick={() => {
+                        const name = quickClientName.trim()
+                        if (!name) return
+                        void props.onCreateClientInline(name).then((clientId) => {
+                          if (!clientId) return
+                          props.onClientChange(clientId)
+                          setQuickClientName('')
+                        })
+                      }}
+                    >
+                      {props.busyKey === 'client:create' ? 'Adding…' : 'Add client'}
+                    </button>
+                  </div>
+                </div>
               )}
               {!isFolderContainer && (
                 <label className="workhub-col-span-3">
@@ -329,7 +433,25 @@ export function ProjectSettingsDialog(props: {
             <div className="workhub-project-settings-bottom-grid">
               <label className="workhub-project-settings-description-field">
                 <span>Description</span>
-                <textarea name="projectSettingsDescription" value={props.settingsDescription} onChange={(event) => props.onDescriptionChange(event.target.value)} rows={4} placeholder={`${entityLabel} details`} />
+                <AutoGrowTextarea
+                  name="projectSettingsDescription"
+                  value={props.settingsDescription}
+                  onChange={(event) => props.onDescriptionChange(event.target.value)}
+                  rows={4}
+                  placeholder={`${entityLabel} details`}
+                />
+                {extractUrls(props.settingsDescription).length > 0 && (
+                  <div className="workhub-detected-links" aria-label="Detected links in description">
+                    {extractUrls(props.settingsDescription).map((url) => {
+                      const href = /^https?:\/\//i.test(url) ? url : `https://${url}`
+                      return (
+                        <a key={url} href={href} target="_blank" rel="noreferrer noopener" className="workhub-detected-link">
+                          {url}
+                        </a>
+                      )
+                    })}
+                  </div>
+                )}
               </label>
 
               <div className="workhub-project-settings-color-field">
@@ -442,6 +564,13 @@ export function ProjectSettingsDialog(props: {
                     >
                       Tasks view
                     </button>
+                    <button
+                      type="button"
+                      className={`workhub-switcher-btn${props.settingsMainPanelView === 'dashboard_with_details' ? ' is-active' : ''}`}
+                      onClick={() => props.onMainPanelViewChange('dashboard_with_details')}
+                    >
+                      Dashboard + details
+                    </button>
                   </div>
                 </div>
                 {isFolderContainer && (
@@ -471,6 +600,62 @@ export function ProjectSettingsDialog(props: {
                       <option value="timeline">Timeline</option>
                     </select>
                   </label>
+                )}
+                {isFolderContainer && (
+                  <div className="workhub-project-folder-notify-card">
+                    <div className="workhub-project-folder-notify-head">
+                      <span>My folder notifications</span>
+                      {props.settingsFolderNotificationsBusy && <small>Saving…</small>}
+                    </div>
+                    <label className="workhub-project-folder-notify-toggle">
+                      <input
+                        type="checkbox"
+                        checked={props.settingsFolderNotifications.enabled}
+                        onChange={(event) => props.onFolderNotificationsChange({ enabled: event.target.checked })}
+                      />
+                      <span>Activate notifications for this folder</span>
+                    </label>
+                    <div className="workhub-project-folder-notify-grid">
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={props.settingsFolderNotifications.taskCreated}
+                          disabled={!props.settingsFolderNotifications.enabled}
+                          onChange={(event) => props.onFolderNotificationsChange({ taskCreated: event.target.checked })}
+                        />
+                        <span>When new tasks are created</span>
+                      </label>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={props.settingsFolderNotifications.taskCompleted}
+                          disabled={!props.settingsFolderNotifications.enabled}
+                          onChange={(event) => props.onFolderNotificationsChange({ taskCompleted: event.target.checked })}
+                        />
+                        <span>When a task is completed</span>
+                      </label>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={props.settingsFolderNotifications.folderCompleted}
+                          disabled={!props.settingsFolderNotifications.enabled}
+                          onChange={(event) => props.onFolderNotificationsChange({ folderCompleted: event.target.checked })}
+                        />
+                        <span>When the folder reaches 100% completion</span>
+                      </label>
+                    </div>
+                    <label className="workhub-project-folder-notify-delivery">
+                      <span>Delivery</span>
+                      <select
+                        value={props.settingsFolderNotifications.delivery}
+                        disabled={!props.settingsFolderNotifications.enabled}
+                        onChange={(event) => props.onFolderNotificationsChange({ delivery: event.target.value as WorkhubFolderNotifyDelivery })}
+                      >
+                        <option value="in_app">In-app notification only</option>
+                        <option value="both">In-app + email</option>
+                      </select>
+                    </label>
+                  </div>
                 )}
                 <div className="workhub-project-statuses-section" style={{ marginTop: 14 }}>
                   <div className="workhub-project-statuses-header">
@@ -559,6 +744,21 @@ export function ProjectSettingsDialog(props: {
             </details>
           </section>
         </div>
+
+        {props.milestones !== undefined && (
+          <div style={{ padding: '0 24px 16px' }}>
+            <MilestonesPanel
+              milestones={props.milestones}
+              milestoneProgress={props.milestoneProgress ?? {}}
+              canEdit={props.canEditMilestones ?? false}
+              projectName={props.project?.name}
+              onAdd={props.onAddMilestone ?? (() => {})}
+              onEdit={props.onEditMilestone ?? (() => {})}
+              onDelete={props.onDeleteMilestone ?? (() => {})}
+              onStatusChange={props.onStatusChangeMilestone ?? (() => {})}
+            />
+          </div>
+        )}
 
         <div className="workhub-project-settings-sticky-actions">
           {props.canDelete && (

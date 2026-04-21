@@ -16,9 +16,9 @@ function formatDate(value: unknown): string {
   try {
     // Firestore Timestamp
     if (typeof value === 'object' && value !== null && 'toDate' in value) {
-      return (value as { toDate(): Date }).toDate().toLocaleString()
+      return (value as { toDate(): Date }).toDate().toLocaleString('en-GB')
     }
-    return new Date(value as string).toLocaleString()
+    return new Date(value as string).toLocaleString('en-GB')
   } catch {
     return ''
   }

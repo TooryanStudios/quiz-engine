@@ -262,6 +262,18 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /workhub_project_notification_prefs/{prefId} {
+      allow read: if canAccessWorkhub();
+      allow create: if canAccessWorkhub()
+        && request.resource.data.userUid == request.auth.uid;
+      allow update: if canAccessWorkhub()
+        && resource.data.userUid == request.auth.uid
+        && request.resource.data.userUid == resource.data.userUid
+        && request.resource.data.projectId == resource.data.projectId
+        && request.resource.data.workspaceId == resource.data.workspaceId;
+      allow delete: if false;
+    }
+
     match /workhub_clients/{clientId} {
       allow read: if canAccessWorkhub();
       allow create, update, delete: if canAccessWorkhub();
@@ -280,6 +292,11 @@ service cloud.firestore {
     match /workhub_mood_boards/{boardId} {
       allow read: if canAccessWorkhub();
       allow create, update, delete: if canAccessWorkhub();
+    }
+
+    match /workhub_milestones/{milestoneId} {
+      allow read: if isPrivilegedWorkhubMember() || (canAccessWorkhub() && canReadWorkhubProject(resource.data.projectId));
+      allow create, update, delete: if isPrivilegedWorkhubMember();
     }
   }
 }
