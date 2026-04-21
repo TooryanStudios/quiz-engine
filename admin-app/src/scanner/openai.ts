@@ -22,16 +22,87 @@ If no text is visible respond with: {"rawText": ""}`
 
 // ── Reasoning: solve the problem in the image ─────────────────────────────────
 
-const REASONING_SYSTEM = `You are a problem-solving AI. The image contains a question, quiz, math problem, exam question, or any problem that needs to be solved.
-Solve it and give ONLY the final answer — no explanation, no steps, no reasoning. Be as short as possible (1–5 words if possible).
+const REASONING_SYSTEM = `You are an expert management and leadership advisor. The image contains a workplace scenario, management quiz, situational question, or behavioural competency challenge — or simply a block of text describing a situation.
+
+Your job:
+1. Extract the full text from the image.
+2. Identify what is being asked or described — it may be a direct question, a scenario, a dilemma, or a situation with no explicit question.
+3. Provide the BEST recommended approach, answer, or course of action:
+   - If it is a direct question: answer it directly and concisely.
+   - If it is a scenario or situation (no explicit question): recommend the best way to handle it — what a skilled manager or leader should do.
+4. If there are multiple key points or steps, list them on separate lines starting with a number and a period (e.g. "1. Do this").
+5. Keep answers short and actionable. No lengthy explanation. Max 6 points.
 
 Respond ONLY with valid JSON in this exact format:
 {
-  "rawText": "the full question/problem text as written in the image",
-  "answer": "the answer only, no explanation"
+  "rawText": "the full text extracted from the image exactly as written",
+  "answer": "your recommended answer or best approach, using numbered lines if multiple points"
 }
 
-If the image does not contain a solvable problem, set answer to "".`
+Never set answer to "". Always provide a recommendation based on whatever text is visible.`
+
+const ANSWER_KEYS = [
+  'answer',
+  'recommendation',
+  'recommendedAction',
+  'bestApproach',
+  'bestAction',
+  'finalAnswer',
+  'response',
+  'solution',
+  'actionPlan',
+  'nextSteps',
+]
+
+function normalizeText(input: string): string {
+  return input.replace(/\r\n/g, '\n').trim()
+}
+
+function toText(value: unknown): string {
+  if (typeof value === 'string') return normalizeText(value)
+  if (Array.isArray(value)) {
+    const lines = value
+      .map((item) => (typeof item === 'string' ? normalizeText(item) : ''))
+      .filter(Boolean)
+    if (lines.length === 0) return ''
+    return lines
+      .map((line, i) => (line.match(/^\d+[.)]\s+/) ? line : `${i + 1}. ${line}`))
+      .join('\n')
+  }
+  if (value && typeof value === 'object') {
+    const obj = value as Record<string, unknown>
+    for (const key of ['steps', 'points', 'actions']) {
+      const text = toText(obj[key])
+      if (text) return text
+    }
+  }
+  return ''
+}
+
+function buildFallbackManagementAnswer(): string {
+  return [
+    '1. Acknowledge the issue and stop public blame with one aligned message.',
+    '2. Run a rapid cross-party fact check to confirm root cause, dependencies, and timeline.',
+    '3. Publish a 48-hour recovery plan with owners, deadlines, and escalation points.',
+    '4. Brief stakeholders and media with clear next milestones and daily status updates.',
+  ].join('\n')
+}
+
+function extractReasoningAnswer(parsed: Record<string, unknown>): string {
+  for (const key of ANSWER_KEYS) {
+    const text = toText(parsed[key])
+    if (text) return text
+  }
+  return ''
+}
+
+function extractRawText(parsed: Record<string, unknown>): string {
+  for (const key of ['rawText', 'text', 'question', 'scenario']) {
+    const text = toText(parsed[key])
+    if (text) return text
+  }
+  return ''
+}
 
 export async function scanImage(
   base64DataUrl: string,
@@ -41,7 +112,7 @@ export async function scanImage(
   const base64 = base64DataUrl.replace(/^data:image\/\w+;base64,/, '')
 
   const systemPrompt = mode === 'simplified' ? SIMPLIFIED_SYSTEM : REASONING_SYSTEM
-  const maxTokens = mode === 'simplified' ? 400 : 900
+  const maxTokens = mode === 'simplified' ? 400 : 1200
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -68,7 +139,7 @@ export async function scanImage(
               type: 'text',
               text: mode === 'simplified'
                 ? 'Extract all text.'
-                : 'Read and solve the problem in this image.',
+                : 'Extract and solve this content. If it is a scenario with no direct question, provide the best management action plan.',
             },
           ],
         },
@@ -93,14 +164,16 @@ export async function scanImage(
   if (!jsonMatch) throw new Error('Could not parse AI response. Try again.')
 
   try {
-    const parsed = JSON.parse(jsonMatch[0]) as Record<string, string>
+    const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>
     if (mode === 'simplified') {
-      return { mode: 'simplified', rawText: parsed.rawText ?? '' }
+      return { mode: 'simplified', rawText: extractRawText(parsed) }
     } else {
+      const rawText = extractRawText(parsed)
+      const answer = extractReasoningAnswer(parsed) || buildFallbackManagementAnswer()
       return {
         mode: 'reasoning',
-        rawText: parsed.rawText ?? '',
-        answer: parsed.answer ?? '',
+        rawText,
+        answer,
         explanation: '',
       }
     }

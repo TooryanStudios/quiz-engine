@@ -579,10 +579,10 @@
   font-weight: 700;
 }
 .sc-answer-text {
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--sc-text);
-  line-height: 1.4;
+  line-height: 1.45;
   word-break: break-word;
 }
 .sc-answer-list {
@@ -597,21 +597,21 @@
   background: var(--sc-bg);
   border: 1px solid var(--sc-border);
   border-radius: 6px;
-  padding: 8px 12px;
+  padding: 10px 14px;
 }
 .sc-answer-item-badge {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 800;
   color: var(--sc-accent);
-  min-width: 16px;
+  min-width: 20px;
   text-align: center;
 }
 .sc-answer-item-text {
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--sc-text);
-  line-height: 1.4;
+  line-height: 1.45;
   word-break: break-word;
 }
 .sc-explanation {

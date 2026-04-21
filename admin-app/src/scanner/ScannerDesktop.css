@@ -391,6 +391,26 @@
   font-size: clamp(24px, 5.5vw, 56px);
 }
 
+.scd-answer-hero .sc-answer-item {
+  padding: 12px 14px;
+  border-radius: 10px;
+}
+
+.scd-answer-hero .sc-answer-item-badge {
+  font-size: clamp(14px, 2.5vw, 20px);
+  min-width: 24px;
+}
+
+.scd-answer-hero .sc-answer-item-text {
+  font-size: clamp(22px, 4.8vw, 42px);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.scd-answer-hero-reader .sc-answer-item-text {
+  font-size: clamp(20px, 4.2vw, 34px);
+}
+
 .scd-live {
   margin-top: 12px;
   color: #88a9ce;
@@ -479,24 +499,24 @@
 }
 .sc-answer-item-badge {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 800;
   color: #79a8db;
-  min-width: 16px;
+  min-width: 20px;
   text-align: center;
 }
 .sc-answer-item-text {
-  font-size: 14px;
+  font-size: 18px;
   font-weight: 600;
   color: #eef3f9;
-  line-height: 1.4;
+  line-height: 1.45;
   word-break: break-word;
 }
 .sc-answer-text {
   margin: 0;
-  font-size: 13px;
+  font-size: 18px;
   font-weight: 700;
   color: #f5f9ff;
-  line-height: 1.4;
+  line-height: 1.45;
   word-break: break-word;
 }

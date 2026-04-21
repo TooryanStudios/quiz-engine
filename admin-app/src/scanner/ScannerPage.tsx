@@ -17,6 +17,7 @@ import {
 } from './historyStore'
 import './Scanner.css'
 import { AnswerContent } from './answerRenderer'
+import { resolveReasoningAnswer } from './reasoningAnswer'
 
 const ENV_API_KEY = (import.meta.env.VITE_OPENAI_API_KEY as string | undefined) ?? ''
 const LS_KEY = 'scanner_openai_key'
@@ -208,6 +209,10 @@ function ResultPanel({
   onClearHistory: () => void
 }) {
   const [copied, setCopied] = useState(false)
+  const displayAnswer =
+    result && result.mode === 'reasoning'
+      ? resolveReasoningAnswer(result.answer, result.rawText)
+      : ''
 
   const copy = async (text: string) => {
     await navigator.clipboard.writeText(text)
@@ -247,11 +252,11 @@ function ResultPanel({
         <>
           {result.mode === 'reasoning' && (
             <>
-              {result.answer ? (
+              {displayAnswer ? (
                 <div className="sc-answer-card">
                   <p className="sc-answer-label">Answer</p>
-                  <AnswerContent answer={result.answer} />
-                  <button className="sc-btn-copy" onClick={() => copy(result.answer)}>
+                  <AnswerContent answer={displayAnswer} />
+                  <button className="sc-btn-copy" onClick={() => copy(displayAnswer)}>
                     {copied ? 'Copied' : 'Copy Answer'}
                   </button>
                 </div>
@@ -323,7 +328,7 @@ function ResultPanel({
                       </p>
                       <p className="sc-history-title">
                         {item.mode === 'reasoning'
-                          ? (item.answer || item.rawText || 'No answer')
+                          ? resolveReasoningAnswer(item.answer, item.rawText)
                           : (item.rawText || 'No text detected')}
                       </p>
                       <p className="sc-history-meta">

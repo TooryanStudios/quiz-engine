@@ -5,6 +5,7 @@ import { auth } from '../lib/firebase'
 import type { ScanMode, ScanResult } from './openai'
 import { subscribeMobileScannerResults } from './realtimeBridge'
 import { AnswerContent } from './answerRenderer'
+import { resolveReasoningAnswer } from './reasoningAnswer'
 import './ScannerDesktop.css'
 
 interface DesktopHistoryItem {
@@ -28,11 +29,13 @@ function ResultView({
 }: {
   result: ScanResult
 }) {
+  const answer = result.mode === 'reasoning' ? resolveReasoningAnswer(result.answer, result.rawText) : ''
+
   if (result.mode === 'reasoning') {
     return (
       <div className="scd-result-block">
         <h3>Answer</h3>
-        <p className="scd-answer">{result.answer || 'No answer detected'}</p>
+        <AnswerContent answer={answer} className="scd-answer" />
         {result.explanation ? <p className="scd-explanation">{result.explanation}</p> : null}
         <h4>Detected Text</h4>
         <pre>{result.rawText || '(none)'}</pre>
@@ -174,7 +177,7 @@ function ResultsRole({
 
   const latestReaderText = lastResult
     ? (lastResult.mode === 'reasoning'
-        ? (lastResult.answer || 'No answer detected')
+        ? resolveReasoningAnswer(lastResult.answer, lastResult.rawText)
         : (lastResult.rawText || 'No text detected'))
     : null
 
@@ -228,7 +231,9 @@ function ResultsRole({
             const isReasoning = item.mode === 'reasoning'
             const cardTitle = item.ok
               ? (isReasoning
-                  ? (item.result?.mode === 'reasoning' ? item.result.answer || 'No answer' : 'No answer')
+                ? (item.result?.mode === 'reasoning'
+                  ? resolveReasoningAnswer(item.result.answer, item.result.rawText)
+                  : 'No answer')
                   : (item.result?.rawText || 'No text'))
               : (item.error || 'Scan failed')
 
@@ -259,7 +264,7 @@ function ResultsRole({
         lastResult?.mode === 'reasoning' ? (
           <section className="scd-answer-hero">
             <p className="scd-answer-hero-label">Answer</p>
-            <AnswerContent answer={lastResult.answer || 'No answer detected'} className="scd-answer-hero-text" />
+            <AnswerContent answer={resolveReasoningAnswer(lastResult.answer, lastResult.rawText)} className="scd-answer-hero-text" />
           </section>
         ) : null
       )}
