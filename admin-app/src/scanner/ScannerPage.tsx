@@ -460,7 +460,7 @@ function ScannerCapturePage({
   const [orientation, setOrientation] = useState<DeviceOrientation>(() => detectDeviceOrientation())
   const [showSettings, setShowSettings] = useState(false)
   const [lsKey, setLsKey] = useState<string>(() => localStorage.getItem(LS_KEY) ?? '')
-  const [mode, setMode] = useState<ScanMode>(() => (localStorage.getItem(LS_MODE) as ScanMode) ?? 'simplified')
+  const [mode, setMode] = useState<ScanMode>(() => (localStorage.getItem(LS_MODE) as ScanMode) ?? 'reasoning')
   const [showCapturedImage, setShowCapturedImage] = useState<boolean>(() => localStorage.getItem(LS_SHOW_CAPTURED_IMAGE) === '1')
   const isLandscape = orientation === 'landscape'
 

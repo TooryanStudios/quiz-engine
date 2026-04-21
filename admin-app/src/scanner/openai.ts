@@ -23,14 +23,12 @@ If no text is visible respond with: {"rawText": ""}`
 // ── Reasoning: solve the problem in the image ─────────────────────────────────
 
 const REASONING_SYSTEM = `You are a problem-solving AI. The image contains a question, quiz, math problem, exam question, or any problem that needs to be solved.
-1. Read the full question/problem from the image.
-2. Solve it step by step.
-3. Give the final answer clearly.
+Solve it and give ONLY the final answer — no explanation, no steps, no reasoning. Be as short as possible (1–5 words if possible).
 
 Respond ONLY with valid JSON in this exact format:
 {
   "rawText": "the full question/problem text as written in the image",
-  "answer": "the final answer only, concise and direct"
+  "answer": "the answer only, no explanation"
 }
 
 If the image does not contain a solvable problem, set answer to "".`
