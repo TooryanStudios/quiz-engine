@@ -24,6 +24,35 @@ function formatMs(ms: number) {
   return `${(ms / 1000).toFixed(2)} s`
 }
 
+function buildReaderScenarioLabel(result: ScanResult | null): string {
+  const baseText = result?.rawText?.trim()
+  if (!baseText) return 'Live Answer'
+
+  const firstMeaningfulLine = baseText
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .find(Boolean)
+
+  if (!firstMeaningfulLine) return 'Live Answer'
+
+  const cleaned = firstMeaningfulLine
+    .replace(/[(){}:;,.!?]/g, ' ')
+    .replace(/\b(scenario|situation|question|complex|leadership)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  const words = cleaned
+    .split(' ')
+    .map((word) => word.trim())
+    .filter(Boolean)
+    .slice(0, 3)
+
+  if (words.length === 0) return 'Live Answer'
+  if (words.length === 1) return `${words[0]} Scenario`
+  return words.join(' ')
+}
+
 function ResultView({
   result,
 }: {
@@ -181,6 +210,8 @@ function ResultsRole({
         : (lastResult.rawText || 'No text detected'))
     : null
 
+  const readerScenarioLabel = buildReaderScenarioLabel(lastResult)
+
   const openHistoryItem = (item: DesktopHistoryItem) => {
     setActiveHistoryId(item.id)
     setLastMode(item.mode)
@@ -254,7 +285,7 @@ function ResultsRole({
 
       {answersOnly ? (
         <section className="scd-answer-hero scd-answer-hero-reader">
-          <p className="scd-answer-hero-label">Latest Output</p>
+          <p className="scd-answer-hero-label scd-answer-hero-label-reader">{readerScenarioLabel}</p>
           <AnswerContent
             answer={latestReaderText || 'Waiting for scanner result...'}
             className="scd-answer-hero-text scd-answer-hero-text-reader"

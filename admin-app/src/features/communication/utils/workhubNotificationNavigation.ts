@@ -4,6 +4,11 @@ type WorkhubNotificationWithProject = WorkhubNotification & {
   projectId?: string
 }
 
+type WorkhubNotificationWithAction = WorkhubNotification & {
+  action?: string
+  targetPath?: string
+}
+
 function encodeSegment(value: string): string {
   return encodeURIComponent(value.trim())
 }
@@ -16,11 +21,21 @@ function resolveProjectParam(projectId: string | undefined): string {
 
 export function resolveWorkhubNotificationPath(notification: WorkhubNotification): string {
   const workspaceId = (notification.workspaceId || '').trim()
+  const withProject = notification as WorkhubNotificationWithProject
+  const withAction = notification as WorkhubNotificationWithAction
+  const explicitTargetPath = (withAction.targetPath || '').trim()
+  if (explicitTargetPath) return explicitTargetPath
+
+  const normalizedIncomingAction = (withAction.action || '').trim().toLowerCase()
+  if (normalizedIncomingAction === 'chat_message' || normalizedIncomingAction === 'chat_message_edited' || normalizedIncomingAction === 'chat_message_high') {
+    return '/messages'
+  }
+
   if (!workspaceId) return '/workhub'
 
-  const withProject = notification as WorkhubNotificationWithProject
   const projectParam = resolveProjectParam(withProject.projectId)
   const encodedWorkspaceId = encodeSegment(workspaceId)
+  const normalizedAction = normalizedIncomingAction
 
   if (notification.entityType === 'task' && notification.entityId) {
     const params = new URLSearchParams({ p: projectParam })
@@ -34,6 +49,16 @@ export function resolveWorkhubNotificationPath(notification: WorkhubNotification
 
   if (notification.entityType === 'project' && notification.entityId) {
     return `/workhub/w/${encodedWorkspaceId}/p/${encodeSegment(notification.entityId)}`
+  }
+
+  // Task comments are currently stored as entityType=comment with entityId=taskId.
+  if (notification.entityType === 'comment' && notification.entityId) {
+    const params = new URLSearchParams({ p: projectParam })
+    return `/workhub/w/${encodedWorkspaceId}/t/${encodeSegment(notification.entityId)}?${params.toString()}`
+  }
+
+  if (notification.entityType === 'member' || normalizedAction === 'approved' || normalizedAction === 'suspended') {
+    return `/workhub/w/${encodedWorkspaceId}/s/users`
   }
 
   return `/workhub/w/${encodedWorkspaceId}`
@@ -75,4 +100,13 @@ export function formatNotificationTime(value: unknown): string {
     day: '2-digit',
     month: 'short',
   })
+}
+
+export function formatFullMessageTime(value: unknown): string {
+  const timestamp = getTimeValue(value)
+  if (!timestamp) return ''
+  const d = new Date(timestamp)
+  const date = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  return `${date} · ${time}`
 }

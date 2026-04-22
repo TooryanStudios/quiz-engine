@@ -17,6 +17,9 @@ interface ProjectTreeNodesProps {
   projectIntentIconById: Record<string, string>
   selectedDocumentId: string
   selectedMoodBoardId: string
+  linkedHighlightedProjectId?: string
+  linkedHighlightedDocumentId?: string
+  linkedHighlightedMoodBoardId?: string
   documentsByProjectId: Record<string, WorkhubDocument[]>
   moodBoardsByProjectId: Record<string, WorkhubMoodBoard[]>
   isPrivilegedMember: boolean
@@ -34,6 +37,12 @@ function getDocumentIcon(document: Pick<WorkhubDocument, 'type' | 'icon' | 'refe
   if (document.referenceSourceDocumentId) return '🔗'
   if (document.hasOutgoingReferences) return '🌐'
   return (document.icon || '').trim() || (document.type === 'note' ? '🗒️' : '📝')
+}
+
+function getMoodBoardVariantBadge(panelVariant?: WorkhubMoodBoard['panelVariant']): string {
+  if (panelVariant === 'v2') return 'V2'
+  if (panelVariant === 'flow') return 'FLOW'
+  return ''
 }
 
 function parseProjectSubmissionTimestamp(projectDeadline?: string, submissionTime?: string): number | null {
@@ -109,6 +118,9 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
   projectIntentIconById = {},
   selectedDocumentId = '',
   selectedMoodBoardId = '',
+  linkedHighlightedProjectId = '',
+  linkedHighlightedDocumentId = '',
+  linkedHighlightedMoodBoardId = '',
   documentsByProjectId = {},
   moodBoardsByProjectId = {},
   isPrivilegedMember,
@@ -165,7 +177,7 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
         return (
           <div key={node.id} className={`workhub-tree-node-wrap${depth === 0 ? ' is-root' : ' is-nested'}`}>
             <div
-              className={`workhub-tree-node${selectedProjectId === node.id && !selectedDocumentId && !selectedMoodBoardId ? ' is-active' : ''}${depth === 0 && !hasExpandableChildren ? ' is-root-leaf-node' : ''}`}
+              className={`workhub-tree-node${selectedProjectId === node.id && !selectedDocumentId && !selectedMoodBoardId ? ' is-active' : ''}${linkedHighlightedProjectId === node.id ? ' is-linked-highlight' : ''}${depth === 0 && !hasExpandableChildren ? ' is-root-leaf-node' : ''}`}
               style={{ paddingLeft: `${10 + (depth * 14)}px` }}
               role="button"
               tabIndex={0}
@@ -295,6 +307,9 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
                   showProjectColorDots={showProjectColorDots}
                   selectedDocumentId={selectedDocumentId}
                   selectedMoodBoardId={selectedMoodBoardId}
+                  linkedHighlightedProjectId={linkedHighlightedProjectId}
+                  linkedHighlightedDocumentId={linkedHighlightedDocumentId}
+                  linkedHighlightedMoodBoardId={linkedHighlightedMoodBoardId}
                   documentsByProjectId={documentsByProjectId}
                   moodBoardsByProjectId={moodBoardsByProjectId}
                   isPrivilegedMember={isPrivilegedMember}
@@ -325,7 +340,7 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
                     <button
                       key={document.id}
                       type="button"
-                      className={`workhub-tree-doc-subitem${selectedDocumentId === document.id ? ' is-active' : ''}${document.hasOutgoingReferences && !document.referenceSourceDocumentId ? ' is-public-source' : ''}`}
+                      className={`workhub-tree-doc-subitem${selectedDocumentId === document.id ? ' is-active' : ''}${linkedHighlightedDocumentId === document.id ? ' is-linked-highlight' : ''}${document.hasOutgoingReferences && !document.referenceSourceDocumentId ? ' is-public-source' : ''}`}
                       onClick={(event) => {
                         event.stopPropagation()
                         onSelectDocument(document.id)
@@ -346,14 +361,25 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
                   <button
                     key={board.id}
                     type="button"
-                    className={`workhub-tree-doc-subitem${selectedMoodBoardId === board.id ? ' is-active' : ''}`}
+                    className={`workhub-tree-doc-subitem${selectedMoodBoardId === board.id ? ' is-active' : ''}${linkedHighlightedMoodBoardId === board.id ? ' is-linked-highlight' : ''}`}
                     onClick={(event) => {
                       event.stopPropagation()
                       onSelectMoodBoard(board.id)
                     }}
                     title={board.title}
                   >
-                    <span className="workhub-tree-doc-subitem-title">🎨 {board.title}</span>
+                    <span className="workhub-tree-doc-subitem-title">
+                      🎨 {board.title}
+                      {getMoodBoardVariantBadge(board.panelVariant) && (
+                        <span
+                          className={`workhub-tree-moodboard-variant-badge is-${getMoodBoardVariantBadge(board.panelVariant).toLowerCase()}`}
+                          title={board.panelVariant === 'flow' ? 'Flow Project Plan board' : 'Mood Board #2'}
+                          aria-label={board.panelVariant === 'flow' ? 'Flow Project Plan board' : 'Mood Board #2 board'}
+                        >
+                          {getMoodBoardVariantBadge(board.panelVariant)}
+                        </span>
+                      )}
+                    </span>
                   </button>
                 ))}
               </div>

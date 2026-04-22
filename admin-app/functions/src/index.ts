@@ -225,8 +225,23 @@ type WorkhubNotificationRecord = {
   projectId?: string
   action?: string
   message?: string
+  threadId?: string
   commentPreview?: string
   delivery?: 'in_app' | 'both' | string
+  read?: boolean
+  createdAt?: admin.firestore.Timestamp | { seconds?: number; nanoseconds?: number } | null
+  escalationEmailSentAt?: admin.firestore.Timestamp | null
+}
+
+function timestampToMillis(value: unknown): number {
+  if (!value) return 0
+  if (value instanceof admin.firestore.Timestamp) return value.toMillis()
+  if (typeof value === 'object' && value !== null && 'seconds' in value) {
+    const seconds = Number((value as { seconds?: unknown }).seconds || 0)
+    const nanos = Number((value as { nanoseconds?: unknown }).nanoseconds || 0)
+    return (seconds * 1000) + Math.floor(nanos / 1_000_000)
+  }
+  return 0
 }
 
 // ---------------------------------------------------------------------------
@@ -358,6 +373,12 @@ function getWorkhubActorLabel(actor: { displayName: string | null; email: string
   return actor.displayName || actor.email || 'A teammate'
 }
 
+function normalizeWorkhubBrandText(value: string | null | undefined) {
+  const trimmed = (value || '').trim()
+  if (!trimmed) return 'Tooryan WorkHub'
+  return trimmed.replace(/q\s*yan/ig, 'Tooryan')
+}
+
 function shouldEmailWorkhubNotification(notification: WorkhubNotificationRecord) {
   const entityType = (notification.entityType || '').trim().toLowerCase()
   const action = (notification.action || '').trim().toLowerCase()
@@ -386,6 +407,10 @@ function shouldEmailWorkhubNotification(notification: WorkhubNotificationRecord)
     return true
   }
 
+  if (action === 'chat_message_high') {
+    return true
+  }
+
   return false
 }
 
@@ -399,6 +424,8 @@ async function notifyMemberAboutWorkhubNotification(notification: WorkhubNotific
   const entityId = typeof notification.entityId === 'string' ? notification.entityId.trim() : ''
   const projectId = typeof notification.projectId === 'string' ? notification.projectId.trim() : ''
   const action = typeof notification.action === 'string' ? notification.action.trim() : ''
+  const normalizedAction = action.toLowerCase()
+  const isUrgentChat = normalizedAction === 'chat_message_high'
   const rawMessage = typeof notification.message === 'string' ? notification.message.trim() : ''
   const commentPreview = typeof notification.commentPreview === 'string' ? notification.commentPreview.trim() : ''
   if (!recipientUid || !rawMessage) return false
@@ -428,11 +455,11 @@ async function notifyMemberAboutWorkhubNotification(notification: WorkhubNotific
   ])
 
   if (!recipient.email) return false
-  if (!normalizeWorkhubEmailPreference(recipient.emailActivityEnabled)) return false
+  if (!isUrgentChat && !normalizeWorkhubEmailPreference(recipient.emailActivityEnabled)) return false
 
   const recipientName = recipient.displayName || 'there'
   const actorName = getWorkhubActorLabel(actor)
-  const workspaceName = workspace?.name?.trim() || 'Tooryan WorkHub'
+  const workspaceName = normalizeWorkhubBrandText(workspace?.name)
   const entityTitle = entityType === 'project'
     ? project?.name?.trim() || ''
     : entityType === 'task' || entityType === 'comment'
@@ -447,20 +474,25 @@ async function notifyMemberAboutWorkhubNotification(notification: WorkhubNotific
       : 'Item'
 
   // Build subject: action-oriented, scannable
-  const headlineVerb = action === 'comment'
+  const headlineVerb = normalizedAction === 'comment'
     ? 'commented on'
-    : action === 'task_resolved'
+    : normalizedAction === 'task_resolved'
       ? 'resolved'
-      : action === 'task_update'
+      : normalizedAction === 'task_update'
         ? 'assigned you to'
-        : action === 'share'
+        : normalizedAction === 'share'
           ? 'shared'
           : rawMessage
-  const headline = action === 'share'
+  const headline = isUrgentChat
+    ? `Urgent chat from ${actorName}`
+    : normalizedAction === 'share'
     ? `${actorName} shared "${truncateEmailText(entityTitle || 'a document', 60)}" with you`
     : `${actorName} ${headlineVerb}${entityTitle ? ` "${truncateEmailText(entityTitle, 60)}"` : ''}`
-  const subject = `[Tooryan WorkHub] ${truncateEmailText(headline, 100)}`
+  const subject = isUrgentChat
+    ? `URGENT: Tooryan WorkHub - ${truncateEmailText(headline, 90)}`
+    : `Tooryan WorkHub - ${truncateEmailText(headline, 100)}`
 
+  const appBaseUrl = 'https://qyan-om.web.app'
   const workhubBaseUrl = 'https://qyan-om.web.app/workhub'
   const preferencesUrl = `${workhubBaseUrl}#settings`
 
@@ -469,10 +501,12 @@ async function notifyMemberAboutWorkhubNotification(notification: WorkhubNotific
     (entityType === 'task' || entityType === 'comment') && workspaceId && entityId && projectId
       ? `${workhubBaseUrl}/w/${encodeURIComponent(workspaceId)}/t/${encodeURIComponent(entityId)}?p=${encodeURIComponent(projectId)}`
       : null
-  const workhubUrl = taskDeepLink ?? workhubBaseUrl
+  const workhubUrl = isUrgentChat
+    ? `${appBaseUrl}/messages`
+    : (taskDeepLink ?? workhubBaseUrl)
 
-  const isComment = action === 'comment'
-  const isShare = action === 'share'
+  const isComment = normalizedAction === 'comment'
+  const isShare = normalizedAction === 'share'
 
   const contextRows: Array<{ label: string; value: string }> = isComment
     ? [{ label: 'Workspace', value: workspaceName }]
@@ -488,10 +522,14 @@ async function notifyMemberAboutWorkhubNotification(notification: WorkhubNotific
 
   const bodyText = (isComment || isShare)
     ? undefined
-    : withTrailingPeriod(`${actorName} ${rawMessage}`)
+    : isUrgentChat
+      ? withTrailingPeriod(`${actorName} sent you an urgent message that requires immediate attention`)
+      : withTrailingPeriod(`${actorName} ${rawMessage}`)
 
   // Determine CTA label based on entity
-  const ctaLabel = entityType === 'comment' || entityType === 'task'
+  const ctaLabel = isUrgentChat
+    ? 'Open urgent chat'
+    : entityType === 'comment' || entityType === 'task'
     ? 'View task'
     : entityType === 'document'
       ? 'Open document'
@@ -501,7 +539,9 @@ async function notifyMemberAboutWorkhubNotification(notification: WorkhubNotific
   const plainLines = [
     `Hi ${recipientName},`,
     '',
-    withTrailingPeriod(`${actorName} ${rawMessage}`),
+    isUrgentChat
+      ? withTrailingPeriod(`${actorName} sent you an urgent message that requires immediate attention`)
+      : withTrailingPeriod(`${actorName} ${rawMessage}`),
     ...(commentPreview ? ['', `"${commentPreview}"`] : []),
     '',
     `Workspace: ${workspaceName}`,
@@ -566,7 +606,7 @@ async function notifyAdminAboutWorkhubAccessRequest(params: {
 
   await sendNotificationEmail({
     to: adminEmail,
-    subject: `[Tooryan WorkHub] Access request — ${requesterName}`,
+    subject: `Tooryan WorkHub - Access request - ${requesterName}`,
     text: plainLines.join('\n'),
     html: buildEmailHtml({
       recipientName: 'Admin',
@@ -585,6 +625,7 @@ async function notifyMemberAboutWorkhubStatusChange(params: {
   toEmail: string
   displayName: string
   status: WorkhubMemberStatus
+  reason?: string
   emailAccessEnabled?: boolean
 }) {
   if (!normalizeWorkhubEmailPreference(params.emailAccessEnabled)) return
@@ -599,8 +640,10 @@ async function notifyMemberAboutWorkhubStatusChange(params: {
     : 'Your Tooryan WorkHub access has been suspended'
   const bodyText = isApproved
     ? 'You now have access to Tooryan WorkHub. Sign in and start collaborating with your team.'
-    : 'Your Tooryan WorkHub account has been suspended. Contact your administrator if you believe this is an error.'
-  const subject = isApproved ? '[Tooryan WorkHub] Access approved — you\'re in' : '[Tooryan WorkHub] Access suspended'
+    : `Your Tooryan WorkHub account has been suspended.${params.reason ? ` Reason: ${params.reason}` : ''} Contact your administrator if you believe this is an error.`
+  const subject = isApproved
+    ? 'Tooryan WorkHub - Access approved - you are in'
+    : 'Tooryan WorkHub - Access suspended'
   const workhubUrl = 'https://qyan-om.web.app/workhub'
   const preferencesUrl = `${workhubUrl}#settings`
 
@@ -922,6 +965,9 @@ type WorkhubMemberRecord = {
   requestedAt: admin.firestore.FieldValue | admin.firestore.Timestamp | null
   approvedAt?: admin.firestore.FieldValue | admin.firestore.Timestamp | null
   approvedBy?: string | null
+  suspendedAt?: admin.firestore.FieldValue | admin.firestore.Timestamp | null
+  suspendedBy?: string | null
+  suspendedReason?: string | null
   lastSeenAt?: admin.firestore.FieldValue | admin.firestore.Timestamp | null
 }
 
@@ -966,6 +1012,9 @@ function mapWorkhubMember(uid: string, data: Partial<WorkhubMemberRecord> | unde
     requestedAt: data?.requestedAt ?? null,
     approvedAt: data?.approvedAt ?? null,
     approvedBy: typeof data?.approvedBy === 'string' ? data.approvedBy : null,
+    suspendedAt: data?.suspendedAt ?? null,
+    suspendedBy: typeof data?.suspendedBy === 'string' ? data.suspendedBy : null,
+    suspendedReason: typeof data?.suspendedReason === 'string' ? data.suspendedReason : null,
     lastSeenAt: data?.lastSeenAt ?? null,
   }
 }
@@ -1016,6 +1065,9 @@ export const requestWorkhubAccess = onCall({ region: 'us-central1', cors: true }
       approvedBy: nextStatus === 'approved'
         ? (existing?.approvedBy ?? (isMasterEmail ? uid : 'workspace_invite'))
         : null,
+      suspendedAt: null,
+      suspendedBy: null,
+      suspendedReason: null,
       lastSeenAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true })
 
@@ -1050,6 +1102,7 @@ type SetWorkhubMemberStatusRequest = {
   uid: string
   status: WorkhubMemberStatus
   role?: WorkhubMemberRole
+  reason?: string
 }
 
 export const setWorkhubMemberStatus = onCall<SetWorkhubMemberStatusRequest, Promise<{ member: ReturnType<typeof mapWorkhubMember> }>>(
@@ -1060,8 +1113,12 @@ export const setWorkhubMemberStatus = onCall<SetWorkhubMemberStatusRequest, Prom
     const uid = typeof request.data?.uid === 'string' ? request.data.uid.trim() : ''
     const status = normalizeWorkhubStatus(request.data?.status)
     const role = normalizeWorkhubRole(request.data?.role)
+    const reason = typeof request.data?.reason === 'string' ? request.data.reason.trim() : ''
     if (!uid) {
       throw new HttpsError('invalid-argument', 'uid is required.')
+    }
+    if (status === 'suspended' && !reason) {
+      throw new HttpsError('invalid-argument', 'Suspension reason is required.')
     }
 
     const ref = workhubMemberRef(uid)
@@ -1071,11 +1128,19 @@ export const setWorkhubMemberStatus = onCall<SetWorkhubMemberStatusRequest, Prom
     }
 
     const existing = snap.data() as Partial<WorkhubMemberRecord>
+    const targetEmail = (existing.email || '').trim().toLowerCase()
+    const masterEmail = masterEmailParam.value().trim().toLowerCase()
+    if (masterEmail && targetEmail === masterEmail) {
+      throw new HttpsError('failed-precondition', 'Master admin status cannot be changed.')
+    }
     const payload: Partial<WorkhubMemberRecord> = {
       status,
       role,
       approvedAt: status === 'approved' ? admin.firestore.FieldValue.serverTimestamp() : null,
       approvedBy: status === 'approved' ? request.auth?.uid ?? null : null,
+      suspendedAt: status === 'suspended' ? admin.firestore.FieldValue.serverTimestamp() : null,
+      suspendedBy: status === 'suspended' ? request.auth?.uid ?? null : null,
+      suspendedReason: status === 'suspended' ? reason : null,
       lastSeenAt: admin.firestore.FieldValue.serverTimestamp(),
     }
     await ref.set(payload, { merge: true })
@@ -1086,6 +1151,7 @@ export const setWorkhubMemberStatus = onCall<SetWorkhubMemberStatusRequest, Prom
         toEmail: existing.email || '',
         displayName: existing.displayName || '',
         status,
+        reason: status === 'suspended' ? reason : undefined,
         emailAccessEnabled: normalizeWorkhubEmailPreference(existing.emailAccessEnabled),
       })
     }
@@ -1094,6 +1160,49 @@ export const setWorkhubMemberStatus = onCall<SetWorkhubMemberStatusRequest, Prom
       member: mapWorkhubMember(uid, {
         ...existing,
         ...payload,
+      }),
+    }
+  },
+)
+
+type UpdateWorkhubMemberProfileRequest = {
+  uid: string
+  displayName: string
+}
+
+export const updateWorkhubMemberProfile = onCall<UpdateWorkhubMemberProfileRequest, Promise<{ member: ReturnType<typeof mapWorkhubMember> }>>(
+  { region: 'us-central1', cors: true },
+  async (request) => {
+    assertMasterAdmin(request)
+
+    const uid = typeof request.data?.uid === 'string' ? request.data.uid.trim() : ''
+    const displayName = typeof request.data?.displayName === 'string' ? request.data.displayName.trim() : ''
+    if (!uid) {
+      throw new HttpsError('invalid-argument', 'uid is required.')
+    }
+    if (!displayName) {
+      throw new HttpsError('invalid-argument', 'displayName is required.')
+    }
+    if (displayName.length > 120) {
+      throw new HttpsError('invalid-argument', 'displayName must be 120 characters or less.')
+    }
+
+    const ref = workhubMemberRef(uid)
+    const snap = await ref.get()
+    if (!snap.exists) {
+      throw new HttpsError('not-found', 'WorkHub member not found.')
+    }
+
+    const existing = snap.data() as Partial<WorkhubMemberRecord>
+    await ref.set({
+      displayName,
+      lastSeenAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true })
+
+    return {
+      member: mapWorkhubMember(uid, {
+        ...existing,
+        displayName,
       }),
     }
   },
@@ -1214,6 +1323,88 @@ export const onWorkhubNotificationCreated = functionsV1
     const notification = snap.data() as WorkhubNotificationRecord | undefined
     if (!notification) return
     await notifyMemberAboutWorkhubNotification(notification)
+  })
+
+export const processUnreadChatEmailEscalations = functionsV1
+  .region('us-central1')
+  .pubsub
+  .schedule('every 2 minutes')
+  .onRun(async () => {
+    const nowMs = Date.now()
+    const cutoffMs = nowMs - (5 * 60 * 1000)
+    const snap = await admin.firestore()
+      .collection('workhub_notifications')
+      .where('action', '==', 'chat_message')
+      .where('read', '==', false)
+      .limit(250)
+      .get()
+
+    for (const docSnap of snap.docs) {
+      const notification = docSnap.data() as WorkhubNotificationRecord
+      if (notification.escalationEmailSentAt) continue
+
+      const createdMs = timestampToMillis(notification.createdAt)
+      if (createdMs <= 0 || createdMs > cutoffMs) continue
+
+      const recipientUid = (notification.recipientUid || '').trim()
+      const actorUid = (notification.actorUid || '').trim()
+      const threadId = (notification.threadId || '').trim()
+      if (!recipientUid || !actorUid || !threadId) continue
+
+      // Skip escalation if recipient replied in this thread after receiving the message.
+      const activitySnap = await admin.firestore()
+        .collection('workhub_activity')
+        .where('action', '==', 'chat_message')
+        .where('threadId', '==', threadId)
+        .limit(40)
+        .get()
+
+      const recipientReplied = activitySnap.docs.some((item) => {
+        const data = item.data() as { actorUid?: string; createdAt?: unknown }
+        const actor = (data.actorUid || '').trim()
+        const atMs = timestampToMillis(data.createdAt)
+        return actor === recipientUid && atMs > createdMs
+      })
+      if (recipientReplied) continue
+
+      const recipient = await getWorkhubMemberContact(recipientUid)
+      if (!recipient.email || !normalizeWorkhubEmailPreference(recipient.emailActivityEnabled)) continue
+
+      const actor = await getWorkhubMemberContact(actorUid)
+      const actorName = getWorkhubActorLabel(actor)
+      const bodyMessage = (notification.commentPreview || notification.message || '').trim()
+      const preview = truncateEmailText(bodyMessage || 'You have a new message.', 260)
+      const subject = `Tooryan WorkHub - Unread chat message from ${actorName}`
+      const chatUrl = 'https://qyan-om.web.app/workhub'
+
+      const sent = await sendNotificationEmail({
+        to: recipient.email,
+        subject,
+        text: [
+          `Hi ${recipient.displayName || 'there'},`,
+          '',
+          `${actorName} sent you a chat message and you still have not responded after 5 minutes.`,
+          '',
+          `Message: ${preview}`,
+          '',
+          `Open chat: ${chatUrl}`,
+        ].join('\n'),
+        html: [
+          `<p>Hi ${escapeHtml(recipient.displayName || 'there')},</p>`,
+          `<p><strong>${escapeHtml(actorName)}</strong> sent you a chat message and you still have not responded after 5 minutes.</p>`,
+          `<blockquote style="margin:16px 0;padding:12px 16px;border-left:3px solid #1e3a5f;background:#eef3fc;border-radius:0 6px 6px 0;font-size:14px;color:#374151;line-height:1.55;">${escapeHtml(preview)}</blockquote>`,
+          `<p><a href="${chatUrl}" style="display:inline-block;background:#1f3f7a;color:#fff;text-decoration:none;padding:10px 14px;border-radius:8px;">Open chat</a></p>`,
+        ].join(''),
+      })
+
+      if (sent) {
+        await docSnap.ref.set({
+          escalationEmailSentAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true })
+      }
+    }
+
+    return null
   })
 
 type UploadWorkhubAttachmentToDriveRequest = {

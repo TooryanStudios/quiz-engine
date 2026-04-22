@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { reportError } from '../lib/errorReporting'
 
 interface Props {
   children: ReactNode;
@@ -20,7 +21,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Uncaught error:', error, errorInfo);
+    reportError('app', 'ErrorBoundary', error, { componentStack: errorInfo.componentStack })
     
     // Automatic recovery for chunk loading errors (common in lazy loading)
     if (this.isChunkError(error)) {

@@ -92,6 +92,12 @@ service firebase.storage {
       allow write: if canWriteWorkhubAttachment();
     }
 
+    // WorkHub chat image attachments
+    match /workhub_chat_images/{allPaths=**} {
+      allow read: if true;
+      allow write: if canWriteWorkhubAttachment();
+    }
+
     // Legacy WorkHub attachment path kept for backwards compatibility
     match /workhub/{allPaths=**} {
       allow read: if true;

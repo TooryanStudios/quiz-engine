@@ -2,11 +2,13 @@ import { onAuthStateChanged, signOut } from 'firebase/auth'
 import type { User } from 'firebase/auth'
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { markSignOut } from './lib/signOutState'
-import type { ReactElement } from 'react'
+import type { ComponentType, ReactElement, ReactNode } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import './App.css'
 import { auth } from './lib/firebase'
+import { reportError } from './lib/errorReporting'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { FeatureErrorBoundary } from './components/FeatureErrorBoundary'
 import { incrementPlatformStat, loadUserPrefs, recordUserActivity, subscribeUserDoc, grantAdminClaim } from './lib/adminRepo'
 import { UserPrefsContext } from './lib/UserPrefsContext'
 import { DialogProvider } from './lib/DialogContext'
@@ -14,30 +16,81 @@ import { ToastProvider } from './lib/ToastContext'
 import { Dialog } from './components/Dialog'
 import { VFXContainer } from './components/VFXContainer'
 import { LoginPage } from './pages/LoginPage'
+import WorkHubPage from './pages/WorkHubPage'
 import logoImg from './assets/QYan_logo_300x164.jpg'
 import { communicationFeatureFlags } from './features/communication/config'
 import { InAppNotificationCenter } from './features/communication/components/InAppNotificationCenter'
 import { ChatDock } from './features/communication/components/ChatDock'
 import { useChatDockState } from './features/communication/hooks/useChatDockState'
-const BillingPage     = lazy(() => import('./pages/BillingPage').then(m => ({ default: m.BillingPage })))
-const DashboardPage   = lazy(() => import('./pages/DashboardPage').then(m => ({ default: m.DashboardPage })))
-const PacksPage       = lazy(() => import('./pages/PacksPage').then(m => ({ default: m.PacksPage })))
-const MyQuizzesPage   = lazy(() => import('./pages/MyQuizzesPage').then(m => ({ default: m.MyQuizzesPage })))
-const WorkHubPage     = lazy(() => import('./pages/WorkHubPage'))
-const MessagesPage    = lazy(() => import('./features/communication/pages/MessagesPage').then(m => ({ default: m.MessagesPage })))
-const AdHocTasksPage  = lazy(() => import('./features/workhubAdhoc/pages/AdHocTasksPage').then(m => ({ default: m.AdHocTasksPage })))
-const ProfilePage     = lazy(() => import('./pages/ProfilePage').then(m => ({ default: m.ProfilePage })))
-const QuizEditorPage  = lazy(() => import('./pages/QuizEditorPage').then(m => ({ default: m.QuizEditorPage })))
-const QuizPreviewPage = lazy(() => import('./pages/QuizPreviewPage').then(m => ({ default: m.QuizPreviewPage })))
-const GameModesPage   = lazy(() => import('./pages/GameModesPage').then(m => ({ default: m.GameModesPage })))
-const MasterAdminPage = lazy(() => import('./pages/MasterAdminPage').then(m => ({ default: m.MasterAdminPage })))
-const VoiceLabPage    = lazy(() => import('./pages/VoiceLabPage').then(m => ({ default: m.VoiceLabPage })))
-const AILabPage       = lazy(() => import('./pages/AILabPage'))
-const CoverGenLabPage = lazy(() => import('./pages/CoverGenLabPage'))
-const PlayTestPage    = lazy(() => import('./pages/PlayTestPage'))
-const GameEmbedPage   = lazy(() => import('./pages/GameEmbedPage'))
-const ScannerPage     = lazy(() => import('./scanner/ScannerPage').then(m => ({ default: m.ScannerPage })))
-const ScannerDesktopPage = lazy(() => import('./scanner/ScannerDesktopPage').then(m => ({ default: m.ScannerDesktopPage })))
+import { buildThreadId, THREAD_EVERYONE } from './features/communication/hooks/useGlobalTeamChat'
+import { CHAT_DOCK_OPEN_EVENT, type ChatDockOpenDetail } from './features/communication/utils/chatDockEvents'
+
+function RouteLoadFailure({ routeLabel }: { routeLabel: string }) {
+  return (
+    <div style={{ padding: '1rem', color: 'var(--text-mid)' }}>
+      Could not load {routeLabel}. Please refresh the page.
+    </div>
+  )
+}
+
+function WorkHubPageProxy() {
+  return <WorkHubPage />
+}
+
+function withRouteBoundary(routeName: string, node: ReactNode) {
+  return (
+    <FeatureErrorBoundary name={routeName} variant="route">
+      {node}
+    </FeatureErrorBoundary>
+  )
+}
+
+// Dev pressure-test helper:
+// add ?qyanEnableCrash=1&qyanCrash=<boundaryName> (or comma-separated names, or "all")
+// Example: ?qyanEnableCrash=1&qyanCrash=workhub,ChatDock
+
+function createLazyRoute(
+  routeLabel: string,
+  loader: () => Promise<Record<string, unknown>>,
+  exportName?: string,
+) {
+  return lazy(async () => {
+    try {
+      const mod = await loader()
+      const defaultExport = mod?.default
+      const explicitNamedExport = exportName ? mod?.[exportName] : undefined
+      const implicitNamedExport = mod?.[routeLabel]
+      const resolved = explicitNamedExport || defaultExport || implicitNamedExport
+      if (!resolved) {
+        const availableKeys = Object.keys(mod || {}).join(', ')
+        throw new Error(`Missing export for route: ${routeLabel}. Available exports: ${availableKeys || '(none)'}`)
+      }
+      return { default: resolved as ComponentType }
+    } catch (error) {
+      console.error(`Route lazy load failed: ${routeLabel}`, error)
+      return { default: () => <RouteLoadFailure routeLabel={routeLabel} /> }
+    }
+  })
+}
+
+const BillingPage     = createLazyRoute('BillingPage', () => import('./pages/BillingPage'), 'BillingPage')
+const DashboardPage   = createLazyRoute('DashboardPage', () => import('./pages/DashboardPage'), 'DashboardPage')
+const PacksPage       = createLazyRoute('PacksPage', () => import('./pages/PacksPage'), 'PacksPage')
+const MyQuizzesPage   = createLazyRoute('MyQuizzesPage', () => import('./pages/MyQuizzesPage'), 'MyQuizzesPage')
+const MessagesPage    = createLazyRoute('MessagesPage', () => import('./features/communication/pages/MessagesPage'), 'MessagesPage')
+const AdHocTasksPage  = createLazyRoute('AdHocTasksPage', () => import('./features/workhubAdhoc/pages/AdHocTasksPage'), 'AdHocTasksPage')
+const ProfilePage     = createLazyRoute('ProfilePage', () => import('./pages/ProfilePage'), 'ProfilePage')
+const QuizEditorPage  = createLazyRoute('QuizEditorPage', () => import('./pages/QuizEditorPage'), 'QuizEditorPage')
+const QuizPreviewPage = createLazyRoute('QuizPreviewPage', () => import('./pages/QuizPreviewPage'), 'QuizPreviewPage')
+const GameModesPage   = createLazyRoute('GameModesPage', () => import('./pages/GameModesPage'), 'GameModesPage')
+const MasterAdminPage = createLazyRoute('MasterAdminPage', () => import('./pages/MasterAdminPage'), 'MasterAdminPage')
+const VoiceLabPage    = createLazyRoute('VoiceLabPage', () => import('./pages/VoiceLabPage'), 'VoiceLabPage')
+const AILabPage       = createLazyRoute('AILabPage', () => import('./pages/AILabPage'))
+const CoverGenLabPage = createLazyRoute('CoverGenLabPage', () => import('./pages/CoverGenLabPage'))
+const PlayTestPage    = createLazyRoute('PlayTestPage', () => import('./pages/PlayTestPage'))
+const GameEmbedPage   = createLazyRoute('GameEmbedPage', () => import('./pages/GameEmbedPage'))
+const ScannerPage     = createLazyRoute('ScannerPage', () => import('./scanner/ScannerPage'), 'ScannerPage')
+const ScannerDesktopPage = createLazyRoute('ScannerDesktopPage', () => import('./scanner/ScannerDesktopPage'), 'ScannerDesktopPage')
 
 const MASTER_EMAIL = import.meta.env.VITE_MASTER_EMAIL as string | undefined
 const MASTER_PATH  = import.meta.env.VITE_MASTER_PATH  as string | undefined
@@ -151,9 +204,28 @@ function App() {
     open: chatDockOpen,
     toggle: toggleChatDock,
     close: closeChatDock,
+    openDock: openChatDock,
   } = useChatDockState({
     enabled: communicationFeatureFlags.chatDock,
   })
+  const [chatThreadIntent, setChatThreadIntent] = useState<{ threadId: string; key: number } | null>(null)
+
+  useEffect(() => {
+    if (!communicationFeatureFlags.chatDock) return
+
+    const handleDockOpenRequest = (event: Event) => {
+      const customEvent = event as CustomEvent<ChatDockOpenDetail>
+      const detail = customEvent.detail || {}
+      const currentUid = auth.currentUser?.uid || ''
+      const resolvedThreadId = (detail.threadId || '').trim()
+        || (currentUid && detail.actorUid ? buildThreadId([currentUid, detail.actorUid]) : THREAD_EVERYONE)
+      setChatThreadIntent({ threadId: resolvedThreadId, key: Date.now() })
+      openChatDock()
+    }
+
+    window.addEventListener(CHAT_DOCK_OPEN_EVENT, handleDockOpenRequest as EventListener)
+    return () => window.removeEventListener(CHAT_DOCK_OPEN_EVENT, handleDockOpenRequest as EventListener)
+  }, [openChatDock])
   const handleSignOut = useCallback(() => {
     // Check if user is in editor with unsaved changes
     const isInEditor = location.pathname === '/editor' || location.pathname === '/mini-game-editor'
@@ -340,7 +412,8 @@ function App() {
   useEffect(() => {
     if (!user) return
     const unsub = subscribeUserDoc(user.uid, (profile) => {
-      if (profile?.status === 'blocked' || profile?.status === 'deleted') {
+      const runtimeStatus = ((profile as { status?: string } | null)?.status || '').toLowerCase()
+      if (runtimeStatus === 'blocked' || runtimeStatus === 'deleted' || runtimeStatus === 'suspended') {
         void signOut(auth)
       }
     })
@@ -365,6 +438,26 @@ function App() {
     const onChange = (event: MediaQueryListEvent) => apply(event.matches)
     query.addEventListener('change', onChange)
     return () => query.removeEventListener('change', onChange)
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const onUnhandledRejection = (event: PromiseRejectionEvent) => {
+      reportError('async', 'unhandledrejection', event.reason)
+    }
+
+    const onWindowError = (event: ErrorEvent) => {
+      reportError('async', 'window.onerror', event.error || event.message)
+    }
+
+    window.addEventListener('unhandledrejection', onUnhandledRejection)
+    window.addEventListener('error', onWindowError)
+
+    return () => {
+      window.removeEventListener('unhandledrejection', onUnhandledRejection)
+      window.removeEventListener('error', onWindowError)
+    }
   }, [])
 
   // Close profile dropdown on outside click
@@ -443,10 +536,44 @@ function App() {
                   note={isAr ? 'جارٍ تحميل WorkHub…' : 'Loading WorkHub…'}
                 />
               }>
-                <WorkHubPage />
+                <WorkHubPageProxy />
               </Suspense>
             </ErrorBoundary>
             <Dialog />
+            {user && communicationFeatureFlags.chatDock && (
+              <>
+                <button
+                  type="button"
+                  className={`workhub-floating-chat-btn shell-comm-btn${chatDockOpen ? ' is-active' : ''}`}
+                  onClick={toggleChatDock}
+                  aria-label={isAr ? 'لوحة الرسائل' : 'Messages panel'}
+                  title={isAr ? 'الرسائل' : 'Messages'}
+                >
+                  <span aria-hidden="true">💬</span>
+                </button>
+                <FeatureErrorBoundary
+                  name="ChatDock"
+                  resetKey={`${chatDockOpen ? 'open' : 'closed'}:${chatThreadIntent?.key || ''}`}
+                >
+                  <ChatDock
+                    open={chatDockOpen}
+                    isAr={isAr}
+                    onClose={closeChatDock}
+                    onOpenMessagesPage={handleOpenMessagesPage}
+                    layout="floating"
+                    currentUser={{
+                      uid: user.uid,
+                      displayName: user.displayName || undefined,
+                      email: user.email || undefined,
+                      photoURL: user.photoURL || undefined,
+                    }}
+                    requestedThreadId={chatThreadIntent?.threadId}
+                    requestKey={chatThreadIntent?.key}
+                    showOpenPageButton={communicationFeatureFlags.messagesPage}
+                  />
+                </FeatureErrorBoundary>
+              </>
+            )}
           </div>
         </DialogProvider>
       </ToastProvider>
@@ -535,34 +662,34 @@ function App() {
 
   const appRoutes = (
     <Routes>
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/dashboard" element={<DashboardPage />} />
-      <Route path="/editor" element={<QuizEditorPage />} />
-      <Route path="/editor/:id" element={<QuizEditorPage />} />
-      <Route path="/mini-game-editor" element={<QuizEditorPage />} />
-      <Route path="/mini-game-editor/:id" element={<QuizEditorPage />} />
-      <Route path="/game-modes" element={<RequireAdmin user={user ?? null}><GameModesPage /></RequireAdmin>} />
-      <Route path="/play-test" element={allowUnauthedLocalPlayTest ? <PlayTestPage /> : <RequireAdmin user={user ?? null}><PlayTestPage /></RequireAdmin>} />
-      <Route path="/play-test/:gameId" element={allowUnauthedLocalPlayTest ? <PlayTestPage /> : <RequireAdmin user={user ?? null}><PlayTestPage /></RequireAdmin>} />
-      <Route path="/play" element={<GameEmbedPage />} />
-      <Route path="/play/:gameId" element={<GameEmbedPage />} />
-      <Route path="/preview" element={<QuizPreviewPage />} />
-      <Route path="/preview/:id" element={<QuizPreviewPage />} />
-      <Route path="/packs" element={<RequireAuth user={user ?? null}><PacksPage /></RequireAuth>} />
-      <Route path="/my-quizzes" element={<RequireAuth user={user ?? null}><MyQuizzesPage /></RequireAuth>} />
-      <Route path="/workhub/*" element={<RequireAuth user={user ?? null}><WorkHubPage /></RequireAuth>} />
+      <Route path="/" element={withRouteBoundary('home', <Navigate to="/dashboard" replace />)} />
+      <Route path="/login" element={withRouteBoundary('login', <LoginPage />)} />
+      <Route path="/dashboard" element={withRouteBoundary('dashboard', <DashboardPage />)} />
+      <Route path="/editor" element={withRouteBoundary('editor', <QuizEditorPage />)} />
+      <Route path="/editor/:id" element={withRouteBoundary('editor-id', <QuizEditorPage />)} />
+      <Route path="/mini-game-editor" element={withRouteBoundary('mini-game-editor', <QuizEditorPage />)} />
+      <Route path="/mini-game-editor/:id" element={withRouteBoundary('mini-game-editor-id', <QuizEditorPage />)} />
+      <Route path="/game-modes" element={withRouteBoundary('game-modes', <RequireAdmin user={user ?? null}><GameModesPage /></RequireAdmin>)} />
+      <Route path="/play-test" element={withRouteBoundary('play-test', allowUnauthedLocalPlayTest ? <PlayTestPage /> : <RequireAdmin user={user ?? null}><PlayTestPage /></RequireAdmin>)} />
+      <Route path="/play-test/:gameId" element={withRouteBoundary('play-test-game', allowUnauthedLocalPlayTest ? <PlayTestPage /> : <RequireAdmin user={user ?? null}><PlayTestPage /></RequireAdmin>)} />
+      <Route path="/play" element={withRouteBoundary('play', <GameEmbedPage />)} />
+      <Route path="/play/:gameId" element={withRouteBoundary('play-game', <GameEmbedPage />)} />
+      <Route path="/preview" element={withRouteBoundary('preview', <QuizPreviewPage />)} />
+      <Route path="/preview/:id" element={withRouteBoundary('preview-id', <QuizPreviewPage />)} />
+      <Route path="/packs" element={withRouteBoundary('packs', <RequireAuth user={user ?? null}><PacksPage /></RequireAuth>)} />
+      <Route path="/my-quizzes" element={withRouteBoundary('my-quizzes', <RequireAuth user={user ?? null}><MyQuizzesPage /></RequireAuth>)} />
+      <Route path="/workhub/*" element={withRouteBoundary('workhub', <RequireAuth user={user ?? null}><WorkHubPageProxy /></RequireAuth>)} />
       {communicationFeatureFlags.messagesPage ? (
-        <Route path="/messages" element={<RequireAuth user={user ?? null}><MessagesPage /></RequireAuth>} />
+        <Route path="/messages" element={withRouteBoundary('messages', <RequireAuth user={user ?? null}><MessagesPage /></RequireAuth>)} />
       ) : null}
       {communicationFeatureFlags.adHocTasksPage ? (
-        <Route path="/ops-tasks" element={<RequireAuth user={user ?? null}><AdHocTasksPage /></RequireAuth>} />
+        <Route path="/ops-tasks" element={withRouteBoundary('ops-tasks', <RequireAuth user={user ?? null}><AdHocTasksPage /></RequireAuth>)} />
       ) : null}
-      <Route path="/voice-lab" element={<RequireAdmin user={user ?? null}><VoiceLabPage /></RequireAdmin>} />
-      <Route path="/ai-lab" element={<RequireAdmin user={user ?? null}><AILabPage /></RequireAdmin>} />
-      <Route path="/cover-gen-lab" element={<RequireAdmin user={user ?? null}><CoverGenLabPage /></RequireAdmin>} />
-      <Route path="/billing" element={<RequireAuth user={user ?? null}><BillingPage /></RequireAuth>} />
-      <Route path="/profile" element={<RequireAuth user={user ?? null}><ProfilePage /></RequireAuth>} />
+      <Route path="/voice-lab" element={withRouteBoundary('voice-lab', <RequireAdmin user={user ?? null}><VoiceLabPage /></RequireAdmin>)} />
+      <Route path="/ai-lab" element={withRouteBoundary('ai-lab', <RequireAdmin user={user ?? null}><AILabPage /></RequireAdmin>)} />
+      <Route path="/cover-gen-lab" element={withRouteBoundary('cover-gen-lab', <RequireAdmin user={user ?? null}><CoverGenLabPage /></RequireAdmin>)} />
+      <Route path="/billing" element={withRouteBoundary('billing', <RequireAuth user={user ?? null}><BillingPage /></RequireAuth>)} />
+      <Route path="/profile" element={withRouteBoundary('profile', <RequireAuth user={user ?? null}><ProfilePage /></RequireAuth>)} />
     </Routes>
   )
 
@@ -722,7 +849,9 @@ function App() {
                 {user ? (
                   <>
                     {communicationFeatureFlags.notificationsInShell && (
-                      <InAppNotificationCenter userUid={user.uid} isAr={isAr} />
+                      <FeatureErrorBoundary name="InAppNotificationCenter">
+                        <InAppNotificationCenter userUid={user.uid} isAr={isAr} />
+                      </FeatureErrorBoundary>
                     )}
                     {communicationFeatureFlags.chatDock && (
                       <button
@@ -1004,7 +1133,9 @@ function App() {
                 <div className="sidebar-user">
                   <div className="sidebar-comm-row">
                     {communicationFeatureFlags.notificationsInShell && (
-                      <InAppNotificationCenter userUid={user.uid} isAr={isAr} />
+                      <FeatureErrorBoundary name="InAppNotificationCenterMobile">
+                        <InAppNotificationCenter userUid={user.uid} isAr={isAr} />
+                      </FeatureErrorBoundary>
                     )}
                     {communicationFeatureFlags.chatDock && (
                       <button
@@ -1050,13 +1181,26 @@ function App() {
           </div>
         )}
         {user && communicationFeatureFlags.chatDock && (
-          <ChatDock
-            open={chatDockOpen}
-            isAr={isAr}
-            onClose={closeChatDock}
-            onOpenMessagesPage={handleOpenMessagesPage}
-            showOpenPageButton={communicationFeatureFlags.messagesPage}
-          />
+          <FeatureErrorBoundary
+            name="ChatDock"
+            resetKey={`${chatDockOpen ? 'open' : 'closed'}:${chatThreadIntent?.key || ''}`}
+          >
+            <ChatDock
+              open={chatDockOpen}
+              isAr={isAr}
+              onClose={closeChatDock}
+              onOpenMessagesPage={handleOpenMessagesPage}
+              currentUser={{
+                uid: user.uid,
+                displayName: user.displayName || undefined,
+                email: user.email || undefined,
+                photoURL: user.photoURL || undefined,
+              }}
+              requestedThreadId={chatThreadIntent?.threadId}
+              requestKey={chatThreadIntent?.key}
+              showOpenPageButton={communicationFeatureFlags.messagesPage}
+            />
+          </FeatureErrorBoundary>
         )}
         <Dialog />
         <VFXContainer />

@@ -9,6 +9,50 @@
   background: var(--bg-page);
 }
 
+.feature-error-boundary {
+  margin: 0.4rem 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-surface);
+  color: var(--text-mid);
+  display: grid;
+  gap: 0.35rem;
+}
+
+.feature-error-boundary.is-route {
+  margin: 0.9rem;
+  padding: 0.95rem 1rem;
+}
+
+.feature-error-boundary h3 {
+  margin: 0;
+  font-size: 0.86rem;
+  color: var(--text-bright);
+}
+
+.feature-error-boundary p {
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.feature-error-boundary button {
+  justify-self: start;
+  border: 1px solid var(--border-mid);
+  border-radius: 8px;
+  background: var(--bg-page);
+  color: var(--text);
+  font-size: 0.73rem;
+  font-weight: 700;
+  padding: 0.34rem 0.6rem;
+  cursor: pointer;
+}
+
+.feature-error-boundary button:hover {
+  border-color: #8fa8d8;
+}
+
 .login-title span,
 .sidebar-brand span {
   color: #2563eb; /* Blue in light theme */

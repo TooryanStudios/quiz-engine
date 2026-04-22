@@ -37,22 +37,24 @@ window.addEventListener('load', () => {
     || window.location.hostname === '[::1]'
 
   // Service workers in dev can cache stale modules and cause UI/runtime drift.
+  // Aggressively unregister all SWs and clear ALL caches on localhost.
   if ((isDev || isLocalhost) && 'serviceWorker' in navigator) {
     void navigator.serviceWorker.getRegistrations().then((registrations) => {
       void Promise.all(registrations.map((registration) => registration.unregister())).then(async () => {
         if ('caches' in window) {
+          // Delete ALL caches, not just qyan-prefixed, to handle renamed cache versions.
           const cacheNames = await caches.keys()
-          await Promise.all(
-            cacheNames
-              .filter((name) => name.startsWith('qyan'))
-              .map((name) => caches.delete(name))
-          )
+          await Promise.all(cacheNames.map((name) => caches.delete(name)))
         }
 
-        // If this page is currently controlled by a SW, reload once to fully detach.
+        // If a SW was controlling this page, reload to detach it.
+        // Guard with sessionStorage so we don't loop (SW gone after first reload).
         if (navigator.serviceWorker.controller && sessionStorage.getItem(DEV_SW_RESET_RELOAD_KEY) !== '1') {
           sessionStorage.setItem(DEV_SW_RESET_RELOAD_KEY, '1')
           window.location.reload()
+        } else {
+          // SW is gone — clear the guard so future tab opens re-check cleanly.
+          sessionStorage.removeItem(DEV_SW_RESET_RELOAD_KEY)
         }
       })
     })

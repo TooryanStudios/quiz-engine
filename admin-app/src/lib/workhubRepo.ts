@@ -1,4 +1,4 @@
-import { addDoc, collection, deleteDoc, deleteField, doc, getDoc, getDocs, limit, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
+import { addDoc, arrayUnion, collection, deleteDoc, deleteField, doc, getDoc, getDocs, limit, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { db, functions } from './firebase'
 
@@ -340,7 +340,23 @@ export interface WorkhubActivity {
   visibility?: WorkhubVisibility
   memberUids?: string[]
   createdAt?: unknown
+  // Chat-specific fields
+  threadId?: string
+  replyToActivityId?: string
+  imageUrl?: string
+  targetPath?: string
+  messagePriority?: WorkhubChatMessagePriority
+  messageDeliveryState?: WorkhubChatMessageDeliveryState
+  messageReactions?: Record<string, string>
+  receivedByUids?: string[]
+  readByUids?: string[]
+  editedAt?: unknown
+  deletedAt?: unknown
+  deletedBy?: string
 }
+
+export type WorkhubChatMessagePriority = 'normal' | 'high'
+export type WorkhubChatMessageDeliveryState = 'ok' | 'failed'
 
 export interface WorkhubNotification {
   id: string
@@ -351,6 +367,13 @@ export interface WorkhubNotification {
   entityId: string
   action: string
   message: string
+  projectId?: string
+  targetPath?: string
+  threadId?: string
+  activityId?: string
+  imageUrl?: string
+  commentPreview?: string
+  messagePriority?: WorkhubChatMessagePriority
   delivery?: WorkhubFolderNotifyDelivery
   read: boolean
   createdAt?: unknown
@@ -522,8 +545,14 @@ export async function requestWorkhubAccess(): Promise<WorkhubMember> {
   return result.data.member
 }
 
-export async function setWorkhubMemberStatus(input: { uid: string; status: WorkhubMemberStatus; role?: WorkhubMemberRole }): Promise<WorkhubMember> {
+export async function setWorkhubMemberStatus(input: { uid: string; status: WorkhubMemberStatus; role?: WorkhubMemberRole; reason?: string }): Promise<WorkhubMember> {
   const fn = httpsCallable<typeof input, { member: WorkhubMember }>(functions, 'setWorkhubMemberStatus')
+  const result = await fn(input)
+  return result.data.member
+}
+
+export async function updateWorkhubMemberProfile(input: { uid: string; displayName: string }): Promise<WorkhubMember> {
+  const fn = httpsCallable<typeof input, { member: WorkhubMember }>(functions, 'updateWorkhubMemberProfile')
   const result = await fn(input)
   return result.data.member
 }
@@ -1161,6 +1190,12 @@ export async function createWorkhubActivity(input: {
   message: string
   visibility?: WorkhubVisibility
   memberUids?: string[]
+  threadId?: string
+  replyToActivityId?: string
+  imageUrl?: string
+  targetPath?: string
+  messagePriority?: WorkhubChatMessagePriority
+  messageDeliveryState?: WorkhubChatMessageDeliveryState
 }) {
   await addDoc(activityCol, {
     workspaceId: input.workspaceId,
@@ -1171,6 +1206,14 @@ export async function createWorkhubActivity(input: {
     message: input.message,
     visibility: input.visibility || 'workspace',
     memberUids: input.memberUids || [],
+    ...(input.threadId ? { threadId: input.threadId } : {}),
+    ...(input.replyToActivityId ? { replyToActivityId: input.replyToActivityId } : {}),
+    ...(input.imageUrl ? { imageUrl: input.imageUrl } : {}),
+    ...(input.targetPath ? { targetPath: input.targetPath } : {}),
+    ...(input.messagePriority ? { messagePriority: input.messagePriority } : {}),
+    ...(input.messageDeliveryState ? { messageDeliveryState: input.messageDeliveryState } : {}),
+    receivedByUids: [],
+    readByUids: [],
     createdAt: serverTimestamp(),
   })
 }
@@ -1196,6 +1239,11 @@ export async function createWorkhubNotifications(input: {
   message: string
   commentPreview?: string
   delivery?: WorkhubFolderNotifyDelivery
+  targetPath?: string
+  threadId?: string
+  activityId?: string
+  imageUrl?: string
+  messagePriority?: WorkhubChatMessagePriority
 }) {
   const targets = Array.from(new Set(input.recipientUids.filter((uid) => !!uid && uid !== input.actorUid)))
   if (targets.length === 0) return
@@ -1210,6 +1258,11 @@ export async function createWorkhubNotifications(input: {
     message: input.message,
     ...(input.delivery ? { delivery: input.delivery } : {}),
     ...(input.commentPreview ? { commentPreview: input.commentPreview } : {}),
+    ...(input.targetPath ? { targetPath: input.targetPath } : {}),
+    ...(input.threadId ? { threadId: input.threadId } : {}),
+    ...(input.activityId ? { activityId: input.activityId } : {}),
+    ...(input.imageUrl ? { imageUrl: input.imageUrl } : {}),
+    ...(input.messagePriority ? { messagePriority: input.messagePriority } : {}),
     read: false,
     createdAt: serverTimestamp(),
   })))
@@ -1329,7 +1382,28 @@ export interface WorkhubMoodBoard {
   workspaceId: string
   entityType: WorkhubMoodBoardEntityType
   entityId: string
+  panelVariant?: 'classic' | 'v2' | 'flow'
   title: string
+  flowViewport?: {
+    x: number
+    y: number
+    zoom: number
+  }
+  flowNodes?: Array<{
+    id: string
+    type?: string
+    position: { x: number; y: number }
+    data?: Record<string, unknown>
+    style?: Record<string, unknown>
+  }>
+  flowEdges?: Array<{
+    id: string
+    source: string
+    target: string
+    type?: string
+    animated?: boolean
+    label?: string
+  }>
   tabs?: WorkhubMoodBoardTab[]
   activeTabId?: string
   images: WorkhubMoodBoardImage[]
@@ -1376,6 +1450,7 @@ export async function createWorkhubMoodBoard(input: {
   entityType: WorkhubMoodBoardEntityType
   entityId: string
   title: string
+  panelVariant?: 'classic' | 'v2' | 'flow'
   createdBy: string
 }): Promise<string> {
   const defaultTabs: WorkhubMoodBoardTab[] = [{ id: 'tab-main', title: 'Board' }]
@@ -1384,6 +1459,9 @@ export async function createWorkhubMoodBoard(input: {
     entityType: input.entityType,
     entityId: input.entityId,
     title: input.title,
+    panelVariant: input.panelVariant || 'classic',
+    flowNodes: [],
+    flowEdges: [],
     tabs: defaultTabs,
     activeTabId: defaultTabs[0].id,
     images: [],
@@ -1416,6 +1494,114 @@ export async function addWorkhubMoodBoardImage(
   })
 }
 
+// ── Activity / Chat functions ───────────────────────────────────────────────
+
+export async function createWorkhubActivityWithId(input: {
+  workspaceId: string
+  actorUid: string
+  entityType: WorkhubActivity['entityType']
+  entityId: string
+  action: string
+  message: string
+  visibility?: WorkhubVisibility
+  memberUids?: string[]
+  threadId?: string
+  replyToActivityId?: string
+  imageUrl?: string
+  targetPath?: string
+  messagePriority?: WorkhubChatMessagePriority
+  messageDeliveryState?: WorkhubChatMessageDeliveryState
+}): Promise<string> {
+  const ref = doc(activityCol)
+  await setDoc(ref, {
+    workspaceId: input.workspaceId,
+    actorUid: input.actorUid,
+    entityType: input.entityType,
+    entityId: input.entityId,
+    action: input.action,
+    message: input.message,
+    visibility: input.visibility || 'workspace',
+    memberUids: input.memberUids || [],
+    ...(input.threadId ? { threadId: input.threadId } : {}),
+    ...(input.replyToActivityId ? { replyToActivityId: input.replyToActivityId } : {}),
+    ...(input.imageUrl ? { imageUrl: input.imageUrl } : {}),
+    ...(input.targetPath ? { targetPath: input.targetPath } : {}),
+    ...(input.messagePriority ? { messagePriority: input.messagePriority } : {}),
+    ...(input.messageDeliveryState ? { messageDeliveryState: input.messageDeliveryState } : {}),
+    receivedByUids: [],
+    readByUids: [],
+    createdAt: serverTimestamp(),
+  })
+  return ref.id
+}
+
+export async function confirmWorkhubActivityReceipt(input: { activityId: string; recipientUid: string }) {
+  const activityId = input.activityId.trim()
+  const recipientUid = input.recipientUid.trim()
+  if (!activityId || !recipientUid) return
+  await updateDoc(doc(activityCol, activityId), {
+    receivedByUids: arrayUnion(recipientUid),
+    receivedConfirmedAt: serverTimestamp(),
+  })
+}
+
+export async function markWorkhubActivityRead(input: { activityId: string; recipientUid: string }) {
+  const activityId = input.activityId.trim()
+  const recipientUid = input.recipientUid.trim()
+  if (!activityId || !recipientUid) return
+  await updateDoc(doc(activityCol, activityId), {
+    readByUids: arrayUnion(recipientUid),
+    readAt: serverTimestamp(),
+  })
+}
+
+export async function updateWorkhubActivityDeliveryState(input: { activityId: string; state: WorkhubChatMessageDeliveryState }) {
+  const activityId = input.activityId.trim()
+  if (!activityId) return
+  await updateDoc(doc(activityCol, activityId), {
+    messageDeliveryState: input.state,
+  })
+}
+
+export async function setWorkhubActivityReaction(input: { activityId: string; uid: string; reaction: string }) {
+  const activityId = input.activityId.trim()
+  const uid = input.uid.trim()
+  const reaction = input.reaction.trim()
+  if (!activityId || !uid || !reaction) return
+  await updateDoc(doc(activityCol, activityId), {
+    [`messageReactions.${uid}`]: reaction,
+  })
+}
+
+export async function clearWorkhubActivityReaction(input: { activityId: string; uid: string }) {
+  const activityId = input.activityId.trim()
+  const uid = input.uid.trim()
+  if (!activityId || !uid) return
+  await updateDoc(doc(activityCol, activityId), {
+    [`messageReactions.${uid}`]: deleteField(),
+  })
+}
+
+export async function updateWorkhubActivityMessage(input: { activityId: string; message: string }) {
+  const activityId = input.activityId.trim()
+  if (!activityId) return
+  await updateDoc(doc(activityCol, activityId), {
+    message: input.message,
+    editedAt: serverTimestamp(),
+  })
+}
+
+export async function softDeleteWorkhubActivity(input: { activityId: string; actorUid: string }) {
+  const activityId = input.activityId.trim()
+  if (!activityId) return
+  await updateDoc(doc(activityCol, activityId), {
+    message: '',
+    imageUrl: deleteField(),
+    deletedBy: input.actorUid,
+    deletedAt: serverTimestamp(),
+  })
+}
+
 export async function removeWorkhubMoodBoardImage(
   boardId: string,
   images: WorkhubMoodBoardImage[],
@@ -1440,6 +1626,20 @@ export async function updateWorkhubMoodBoardImages(
 export async function updateWorkhubMoodBoardTitle(boardId: string, title: string): Promise<void> {
   await updateDoc(doc(db, 'workhub_mood_boards', boardId), {
     title,
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function updateWorkhubMoodBoardFlow(
+  boardId: string,
+  flowNodes: WorkhubMoodBoard['flowNodes'],
+  flowEdges: WorkhubMoodBoard['flowEdges'],
+  flowViewport?: WorkhubMoodBoard['flowViewport'],
+): Promise<void> {
+  await updateDoc(doc(db, 'workhub_mood_boards', boardId), {
+    flowNodes: flowNodes || [],
+    flowEdges: flowEdges || [],
+    flowViewport: flowViewport || { x: 0, y: 0, zoom: 1 },
     updatedAt: serverTimestamp(),
   })
 }

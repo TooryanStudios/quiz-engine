@@ -6,6 +6,12 @@ interface ToastOptions {
   message: string
   type?: ToastType
   durationMs?: number
+  actionLabel?: string
+  onAction?: () => void
+  /** Chat-style compact display */
+  senderName?: string
+  senderAvatar?: string
+  messagePreview?: string
 }
 
 interface ToastState extends ToastOptions {
@@ -20,107 +26,100 @@ interface ToastContextType {
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined)
 
+const MAX_TOASTS = 5
+
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [toast, setToast] = useState<ToastState | null>(null)
-  const timeoutRef = useRef<number | null>(null)
-  const fadeTimeoutRef = useRef<number | null>(null)
+  const [toasts, setToasts] = useState<ToastState[]>([])
+  const timersRef = useRef<Map<number, { main: number; fade: number }>>(new Map())
+
+  const clearTimers = (id: number) => {
+    const t = timersRef.current.get(id)
+    if (t) {
+      window.clearTimeout(t.main)
+      window.clearTimeout(t.fade)
+      timersRef.current.delete(id)
+    }
+  }
+
+  const removeToast = (id: number) => {
+    clearTimers(id)
+    setToasts((prev) => prev.map((t) => t.id === id ? { ...t, isVisible: false } : t))
+    const fade = window.setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id))
+    }, 400)
+    timersRef.current.set(id, { main: 0, fade })
+  }
 
   const showToast = (options: ToastOptions) => {
     const id = Date.now()
-    
-    // Clear existing timeouts
-    if (timeoutRef.current) window.clearTimeout(timeoutRef.current)
-    if (fadeTimeoutRef.current) window.clearTimeout(fadeTimeoutRef.current)
+    const duration = options.durationMs ?? 6000
 
-    const duration = options.durationMs !== undefined ? options.durationMs : 4000
-
-    setToast({
-      id,
-      message: options.message,
-      type: options.type || 'info',
-      durationMs: duration,
-      isVisible: true
+    setToasts((prev) => {
+      const next = [...prev, {
+        id,
+        message: options.message,
+        type: options.type || 'info',
+        durationMs: duration,
+        isVisible: true,
+        actionLabel: options.actionLabel,
+        onAction: options.onAction,
+        senderName: options.senderName,
+        senderAvatar: options.senderAvatar,
+        messagePreview: options.messagePreview,
+      }]
+      // Evict oldest if over cap
+      if (next.length > MAX_TOASTS) {
+        const evict = next[0]
+        clearTimers(evict.id)
+        return next.slice(1)
+      }
+      return next
     })
 
-    // Start fade out before removing
-    timeoutRef.current = window.setTimeout(() => {
-      setToast(prev => prev?.id === id ? { ...prev, isVisible: false } : prev)
-      
-      fadeTimeoutRef.current = window.setTimeout(() => {
-        setToast(current => current?.id === id ? null : current)
-      }, 400) // Match CSS transition duration
-    }, duration)
+    const main = window.setTimeout(() => removeToast(id), duration)
+    timersRef.current.set(id, { main, fade: 0 })
   }
 
   const hideToast = () => {
-    if (timeoutRef.current) window.clearTimeout(timeoutRef.current)
-    if (fadeTimeoutRef.current) window.clearTimeout(fadeTimeoutRef.current)
-    
-    setToast(prev => prev ? { ...prev, isVisible: false } : null)
-    
-    fadeTimeoutRef.current = window.setTimeout(() => {
-      setToast(null)
-    }, 400)
+    // Hide the oldest visible toast
+    setToasts((prev) => {
+      if (prev.length === 0) return prev
+      const oldest = prev[0]
+      removeToast(oldest.id)
+      return prev
+    })
   }
 
   return (
     <ToastContext.Provider value={{ showToast, hideToast }}>
       {children}
-      <ToastView toast={toast} />
+      <ToastView toasts={toasts} onDismiss={removeToast} />
     </ToastContext.Provider>
   )
 }
 
 export function useToast() {
   const context = useContext(ToastContext)
-  if (!context) {
-    throw new Error('useToast must be used within ToastProvider')
-  }
+  if (!context) throw new Error('useToast must be used within ToastProvider')
   return context
 }
 
-function ToastView({ toast }: { toast: ToastState | null }) {
-  if (!toast) return null
-
-  const getStyles = () => {
-    switch (toast.type) {
-      case 'success':
-        return {
-          bg: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
-          border: '#34d399',
-          icon: '?',
-          shadow: 'rgba(16, 185, 129, 0.4)'
-        }
-      case 'error':
-        return {
-          bg: 'linear-gradient(135deg, #dc2626 0%, #ef4444 100%)',
-          border: '#f87171',
-          icon: '?',
-          shadow: 'rgba(239, 68, 68, 0.4)'
-        }
-      case 'warning':
-        return {
-          bg: 'linear-gradient(135deg, #d97706 0%, #f59e0b 100%)',
-          border: '#fbbf24',
-          icon: '?',
-          shadow: 'rgba(245, 158, 11, 0.4)'
-        }
-      default:
-        return {
-          bg: 'linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)',
-          border: '#60a5fa',
-          icon: '?',
-          shadow: 'rgba(59, 130, 246, 0.4)'
-        }
-    }
+function getTypeTheme(type: ToastType) {
+  switch (type) {
+    case 'success': return { accent: '#059669', border: '#34d399', icon: '✓' }
+    case 'error':   return { accent: '#dc2626', border: '#f87171', icon: '✕' }
+    case 'warning': return { accent: '#d97706', border: '#fbbf24', icon: '!' }
+    default:        return { accent: '#1e40af', border: '#93c5fd', icon: '💬' }
   }
+}
 
-  const { bg, border, icon, shadow } = getStyles()
+function ToastView({ toasts, onDismiss }: { toasts: ToastState[]; onDismiss: (id: number) => void }) {
+  if (toasts.length === 0) return null
 
   return (
     <>
       <style>{`
-        .toast-container {
+        .toast-stack {
           position: fixed;
           bottom: 24px;
           right: 24px;
@@ -129,93 +128,269 @@ function ToastView({ toast }: { toast: ToastState | null }) {
           flex-direction: column;
           gap: 8px;
           pointer-events: none;
+          align-items: flex-end;
         }
 
         .toast-card {
-          background: ${bg};
-          color: white;
-          padding: 12px 20px;
-          border-radius: 12px;
-          box-shadow: 0 10px 25px -5px ${shadow};
-          display: flex;
-          align-items: center;
-          gap: 12px;
+          background: #fff;
+          color: #111827;
+          border-radius: 10px;
+          box-shadow: 0 4px 24px rgba(0,0,0,0.13), 0 1px 4px rgba(0,0,0,0.07);
           min-width: 280px;
-          max-width: 450px;
-          border: 1px solid ${border};
+          max-width: 360px;
+          width: 360px;
           pointer-events: auto;
-          transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-          backdrop-filter: blur(10px);
+          overflow: hidden;
+          border: 1px solid #e5e7eb;
+          opacity: 1;
+          transform: translateX(0);
+          transition: opacity 0.35s ease, transform 0.35s ease;
+          position: relative;
         }
 
-        .toast-card.entering {
-          animation: toastSlideIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+        .toast-card.is-actionable {
+          cursor: pointer;
         }
 
         .toast-card.exiting {
-          animation: toastSlideOut 0.4s ease-in forwards;
+          opacity: 0;
+          transform: translateX(28px);
         }
 
-        .toast-icon {
-          width: 24px;
-          height: 24px;
-          background: rgba(255, 255, 255, 0.2);
+        @keyframes toastIn {
+          from { opacity: 0; transform: translateX(32px); }
+          to   { opacity: 1; transform: translateX(0); }
+        }
+
+        .toast-card.entering {
+          animation: toastIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+
+        .toast-accent-bar {
+          height: 3px;
+          width: 100%;
+        }
+
+        .toast-body {
+          padding: 10px 12px 10px 12px;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        /* Chat-style row 1: avatar + name + dismiss */
+        .toast-from-row {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+        }
+
+        .toast-avatar {
+          width: 22px;
+          height: 22px;
+          border-radius: 50%;
+          background: #d1d5db;
+          flex-shrink: 0;
+          overflow: hidden;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 11px;
+          font-weight: 700;
+          color: #374151;
+        }
+
+        .toast-avatar img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+
+        .toast-sender-name {
+          font-size: 12px;
+          font-weight: 700;
+          color: #111827;
+          flex: 1;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .toast-dismiss {
+          background: none;
+          border: none;
+          color: #9ca3af;
+          font-size: 13px;
+          cursor: pointer;
+          padding: 0 2px;
+          line-height: 1;
+          flex-shrink: 0;
+        }
+        .toast-dismiss:hover { color: #374151; }
+
+        /* Row 2: message preview */
+        .toast-preview {
+          font-size: 12px;
+          color: #4b5563;
+          line-height: 1.45;
+          padding-left: 29px; /* align under name, past avatar */
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+        }
+
+        /* Fallback non-chat toast */
+        .toast-generic-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .toast-icon-circle {
+          width: 22px;
+          height: 22px;
           border-radius: 50%;
           display: flex;
           align-items: center;
           justify-content: center;
-          font-weight: bold;
-          font-size: 14px;
+          font-size: 11px;
+          font-weight: 700;
           flex-shrink: 0;
+          color: #fff;
         }
 
         .toast-message {
-          font-family: inherit;
-          font-size: 14px;
+          font-size: 13px;
           font-weight: 500;
+          color: #111827;
+          flex: 1;
           line-height: 1.4;
         }
 
+        /* Action row */
+        .toast-action-row {
+          padding: 0 12px 9px 12px;
+          display: flex;
+          justify-content: flex-end;
+          gap: 6px;
+        }
+
+        .toast-action {
+          font-size: 11px;
+          font-weight: 700;
+          border-radius: 999px;
+          padding: 4px 10px;
+          cursor: pointer;
+          border: 1px solid currentColor;
+          background: transparent;
+          line-height: 1.4;
+        }
+
+        /* Progress bar */
         .toast-progress {
           position: absolute;
           bottom: 0;
           left: 0;
-          height: 3px;
-          background: rgba(255, 255, 255, 0.4);
-          border-radius: 0 0 0 12px;
+          height: 2px;
+          background: #d1d5db;
           animation: toastProgress linear forwards;
-        }
-
-        @keyframes toastSlideIn {
-          from { transform: translateX(120%) scale(0.9); opacity: 0; }
-          to { transform: translateX(0) scale(1); opacity: 1; }
-        }
-
-        @keyframes toastSlideOut {
-          from { transform: translateX(0) opacity: 1; }
-          to { transform: translateX(120%) opacity: 0; }
         }
 
         @keyframes toastProgress {
           from { width: 100%; }
-          to { width: 0%; }
+          to   { width: 0%; }
         }
       `}</style>
-      <div className="toast-container">
-        <div 
-          className={`toast-card ${toast.isVisible ? 'entering' : 'exiting'}`}
-          role="status"
-          aria-live="polite"
-        >
-          <div className="toast-icon">{icon}</div>
-          <div className="toast-message">{toast.message}</div>
-          {toast.isVisible && (
-            <div 
-              className="toast-progress" 
-              style={{ animationDuration: `${toast.durationMs}ms` }} 
-            />
-          )}
-        </div>
+      <div className="toast-stack">
+        {toasts.map((toast) => {
+          const theme = getTypeTheme(toast.type || 'info')
+          const isChat = !!toast.senderName
+          return (
+            <div
+              key={toast.id}
+              className={`toast-card ${toast.isVisible ? 'entering' : 'exiting'}${toast.onAction ? ' is-actionable' : ''}`}
+              role="status"
+              aria-live="polite"
+              tabIndex={toast.onAction ? 0 : -1}
+              onClick={() => {
+                if (!toast.onAction) return
+                onDismiss(toast.id)
+                toast.onAction()
+              }}
+              onKeyDown={(event) => {
+                if (!toast.onAction) return
+                if (event.key !== 'Enter' && event.key !== ' ') return
+                event.preventDefault()
+                onDismiss(toast.id)
+                toast.onAction()
+              }}
+            >
+              <div className="toast-accent-bar" style={{ background: theme.accent }} />
+              <div className="toast-body">
+                {isChat ? (
+                  <>
+                    <div className="toast-from-row">
+                      <div className="toast-avatar">
+                        {toast.senderAvatar
+                          ? <img src={toast.senderAvatar} alt="" />
+                          : (toast.senderName || '?').charAt(0).toUpperCase()
+                        }
+                      </div>
+                      <span className="toast-sender-name">{toast.senderName}</span>
+                      <button
+                        type="button"
+                        className="toast-dismiss"
+                        aria-label="Dismiss"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onDismiss(toast.id)
+                        }}
+                      >✕</button>
+                    </div>
+                    <p className="toast-preview">{toast.messagePreview || toast.message}</p>
+                  </>
+                ) : (
+                  <div className="toast-generic-row">
+                    <div className="toast-icon-circle" style={{ background: theme.accent }}>{theme.icon}</div>
+                    <span className="toast-message">{toast.message}</span>
+                    <button
+                      type="button"
+                      className="toast-dismiss"
+                      aria-label="Dismiss"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onDismiss(toast.id)
+                      }}
+                    >✕</button>
+                  </div>
+                )}
+              </div>
+              {(toast.actionLabel && toast.onAction) && (
+                <div className="toast-action-row">
+                  <button
+                    type="button"
+                    className="toast-action"
+                    style={{ color: theme.accent, borderColor: theme.accent }}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onDismiss(toast.id)
+                      toast.onAction?.()
+                    }}
+                  >
+                    {toast.actionLabel}
+                  </button>
+                </div>
+              )}
+              {toast.isVisible && (
+                <div
+                  className="toast-progress"
+                  style={{ animationDuration: `${toast.durationMs}ms`, background: theme.accent, opacity: 0.25 }}
+                />
+              )}
+            </div>
+          )
+        })}
       </div>
     </>
   )

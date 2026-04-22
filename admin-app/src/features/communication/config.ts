@@ -19,6 +19,9 @@ function resolveFlag(options: {
   localStorageKey: string
   fallback: boolean
 }): boolean {
+  // In development, always return true regardless of localStorage.
+  // Prevents stale localStorage values from hiding features during dev sessions.
+  if (import.meta.env.DEV) return true
   const fromEnv = parseBooleanFlag(options.envValue, options.fallback)
   return readLocalOverride(options.localStorageKey, fromEnv)
 }

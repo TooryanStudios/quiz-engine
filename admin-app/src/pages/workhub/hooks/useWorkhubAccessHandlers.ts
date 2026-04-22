@@ -271,7 +271,12 @@ export function useWorkhubAccessHandlers({
   const handleRejectRequestGlobal = useCallback(async (targetUid: string) => {
     setBusyKey(`member-request:${targetUid}`)
     try {
-      await setWorkhubMemberStatus({ uid: targetUid, status: 'suspended', role: 'member' })
+      await setWorkhubMemberStatus({
+        uid: targetUid,
+        status: 'suspended',
+        role: 'member',
+        reason: 'Access request declined by administrator.',
+      })
       showToast({ type: 'success', message: 'Access request declined.' })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not decline request.'
@@ -322,7 +327,12 @@ export function useWorkhubAccessHandlers({
     if (!currentUserUid || !selectedWorkspaceSettings) return
     setBusyKey(`workspace-request:${selectedWorkspaceSettings.id}:${targetUid}`)
     try {
-      await setWorkhubMemberStatus({ uid: targetUid, status: 'suspended', role: 'member' })
+      await setWorkhubMemberStatus({
+        uid: targetUid,
+        status: 'suspended',
+        role: 'member',
+        reason: 'Workspace access request declined by administrator.',
+      })
       showToast({ type: 'success', message: 'Access request declined.' })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not decline request.'

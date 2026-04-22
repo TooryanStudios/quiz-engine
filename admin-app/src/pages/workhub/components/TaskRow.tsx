@@ -122,6 +122,7 @@ interface TaskRowProps {
   index: number
   isChecked: boolean
   isSelected: boolean
+  isLinkedHighlight?: boolean
   isDropTarget: boolean
   isDragSource: boolean
   statusMenuOpen: boolean
@@ -146,7 +147,7 @@ interface TaskRowProps {
 }
 
 const TaskRow = memo(function TaskRow({
-  task, dueDisplayMode, displayMode = 'list', index, isChecked, isSelected, isDropTarget, isDragSource,
+  task, dueDisplayMode, displayMode = 'list', index, isChecked, isSelected, isLinkedHighlight = false, isDropTarget, isDragSource,
   statusMenuOpen, priorityMenuOpen, moreMenuOpen, assigneeMenuOpen,
   editingTitle, editingTitleText, checklistExpanded, checklistDraft,
   editingChecklistItemId, editingChecklistScope, editingChecklistText,
@@ -222,7 +223,7 @@ const TaskRow = memo(function TaskRow({
 
   return (
     <article
-      className={`workhub-task-row${isSelected ? ' is-selected' : ''}${isChecked ? ' is-checked' : ''}${index % 2 === 1 ? ' is-alt' : ''}${hasOpenInlineMenu ? ' has-open-menu' : ''}${isDropTarget ? ' is-drop-target' : ''}${isDragSource ? ' is-dragging' : ''}`}
+      className={`workhub-task-row${isSelected ? ' is-selected' : ''}${isLinkedHighlight ? ' is-linked-highlight' : ''}${isChecked ? ' is-checked' : ''}${index % 2 === 1 ? ' is-alt' : ''}${hasOpenInlineMenu ? ' has-open-menu' : ''}${isDropTarget ? ' is-drop-target' : ''}${isDragSource ? ' is-dragging' : ''}`}
       onDragOver={(event) => callbacks.onDragOver(event, task.id, task.status)}
       onDrop={(event) => callbacks.onDrop(event, task.id, task.status)}
       onClick={() => callbacks.onRowClick(task.id)}

@@ -26,6 +26,8 @@ export const ProjectActionMenu = memo(function ProjectActionMenu(props: {
   onCreateTemplateEntity: (intent: WorkhubTemplateCreationIntent, projectId?: string) => void
   onOpenSettings: (projectId: string) => void
   onOpenMoodBoard: (entityType: 'workspace' | 'project', entityId: string) => void
+  onOpenMoodBoardV2: (entityType: 'workspace' | 'project', entityId: string) => void
+  onOpenFlowProjectLab: (entityType: 'workspace' | 'project', entityId: string) => void
   moodBoardEnabled?: boolean
   contextName?: string
 }) {
@@ -135,6 +137,22 @@ export const ProjectActionMenu = memo(function ProjectActionMenu(props: {
                 <span className="workhub-action-card-label">New mood board</span>
               </button>
             )}
+            <button
+              type="button"
+              className="workhub-action-card"
+              onClick={() => { props.onClose(); props.onOpenMoodBoardV2('workspace', selectedWorkspaceProjectId || '__workspace__') }}
+            >
+              <span className="workhub-action-card-icon">🧠</span>
+              <span className="workhub-action-card-label">Mood Board #2</span>
+            </button>
+            <button
+              type="button"
+              className="workhub-action-card"
+              onClick={() => { props.onClose(); props.onOpenFlowProjectLab('workspace', selectedWorkspaceProjectId || '__workspace__') }}
+            >
+              <span className="workhub-action-card-icon">🧭</span>
+              <span className="workhub-action-card-label">Flow Project Lab</span>
+            </button>
           </div>
         </div>
       </div>
@@ -210,6 +228,22 @@ export const ProjectActionMenu = memo(function ProjectActionMenu(props: {
               <span className="workhub-action-card-label">New mood board</span>
             </button>
           )}
+          <button
+            type="button"
+            className="workhub-action-card"
+            onClick={() => { props.onClose(); props.onOpenMoodBoardV2('project', props.projectId || '') }}
+          >
+            <span className="workhub-action-card-icon">🧠</span>
+            <span className="workhub-action-card-label">Mood Board #2</span>
+          </button>
+          <button
+            type="button"
+            className="workhub-action-card"
+            onClick={() => { props.onClose(); props.onOpenFlowProjectLab('project', props.projectId || '') }}
+          >
+            <span className="workhub-action-card-icon">🧭</span>
+            <span className="workhub-action-card-label">Flow Project Lab</span>
+          </button>
           {props.canManageProject && (
             <button type="button" className="workhub-action-card is-settings-action" onClick={() => { props.onClose(); props.onOpenSettings(props.projectId || '') }}>
               <span className="workhub-action-card-icon">⚙</span>

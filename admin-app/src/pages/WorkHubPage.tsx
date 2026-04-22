@@ -39,6 +39,7 @@ import {
   subscribeWorkhubWorkspaces,
   ensureWorkhubDriveProjectFolder,
   uploadWorkhubAttachmentToDrive,
+  updateWorkhubMemberProfile,
   updateWorkhubProject,
   updateWorkhubComment,
   updateWorkhubTask,
@@ -64,13 +65,18 @@ import {
   type WorkhubVisibility,
   type WorkhubWorkspace,
   createWorkhubMoodBoard,
+  deleteWorkhubMoodBoard,
   subscribeWorkhubMoodBoardsForWorkspace,
   type WorkhubMoodBoard,
+  updateWorkhubMoodBoardChecklist,
+  updateWorkhubMoodBoardFlow,
+  updateWorkhubMoodBoardTitle,
   updateWorkhubDocument,
 } from '../lib/workhubRepo'
 
 import { ProjectActionMenu } from './workhub/components/ProjectActionMenu'
 import { MoodBoardPanel } from './workhub/components/MoodBoardDialog'
+import { FlowBoardCanvas } from '../components/flowboard/FlowBoardCanvas'
 import { TeamDialog } from './workhub/components/TeamDialog'
 import { WorkspaceSettingsDialog } from './workhub/components/WorkspaceSettingsDialog'
 import { WorkhubStyles } from './workhub/components/WorkhubStyles'
@@ -159,6 +165,7 @@ import { useWorkhubWorkspaceTemplates } from './workhub/hooks/useWorkhubWorkspac
 import { useWorkhubDocEditorHandlers } from './workhub/hooks/useWorkhubDocEditorHandlers'
 import { WorkhubDocEditor } from './workhub/components/WorkhubDocEditor'
 import { WorkhubDiscussionCard } from './workhub/components/WorkhubDiscussionCard'
+import { WorkhubChecklistCard } from './workhub/components/WorkhubChecklistCard'
 import { WorkhubProjectDetailRail } from './workhub/components/WorkhubProjectDetailRail'
 import { WorkhubTasksSection } from './workhub/components/WorkhubTasksSection'
 import { MilestoneCreateEditDialog } from './workhub/components/MilestoneCreateEditDialog'
@@ -542,6 +549,21 @@ function parseWorkhubPathname(pathname: string, search = ''): WorkhubParsedRoute
   const contextProjectId = (searchParams.get('p') || '').trim()
   const normalizedContextProjectId = contextProjectId && contextProjectId !== 'all' ? contextProjectId : 'all'
 
+  // Legacy alias compatibility:
+  // /workhub/u/:workspaceId and /workhub/users/:workspaceId -> users panel
+  // /workhub/u and /workhub/users keep section intent until workspace resolves.
+  if (parts[0] === 'u' || parts[0] === 'users') {
+    const wsId = decodeURIComponent(parts[1] || '')
+    return {
+      source: 'legacy',
+      kind: 'workspace',
+      wsId,
+      projId: normalizedContextProjectId,
+      section: 'users',
+      entityId: '',
+    }
+  }
+
   if (parts.length === 0) {
     return { source: 'canonical', kind: 'root', wsId: '', projId: 'all', section: '', entityId: '' }
   }
@@ -648,6 +670,10 @@ function buildWorkhubPathname(wsId: string, projId: string, section: string, ent
   }
 
   const search = buildWorkhubRouteSearch(projId)
+  if (normalizedSection === 'users') {
+    return `/workhub/u/${encodedWorkspaceId}${search}`
+  }
+
   if (normalizedSection === 'dashboard') {
     return `/workhub/w/${encodedWorkspaceId}${search}`
   }
@@ -770,6 +796,7 @@ export default function WorkHubPage() {
   const [selectedDocumentId, setSelectedDocumentId] = useState('')
   const [pendingNotificationDocument, setPendingNotificationDocument] = useState<WorkhubDocument | null>(null)
   const [activeSection, setActiveSection] = useState<'home' | 'users' | 'tasks' | 'notes' | 'dashboard' | 'clients' | 'moodboard'>('dashboard')
+  const [moodboardPanelMode, setMoodboardPanelMode] = useState<'classic' | 'v2' | 'flow'>('classic')
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<WorkhubCanonicalSection>('dashboard')
   const [quickAddFocusTrigger, setQuickAddFocusTrigger] = useState(0)
   const [quickAddFocusStatusId, setQuickAddFocusStatusId] = useState('')
@@ -880,6 +907,7 @@ export default function WorkHubPage() {
   const [expandedUserPickerUid, setExpandedUserPickerUid] = useState<string | null>(null)
   const [userWorkspaceFilter, setUserWorkspaceFilter] = useState<'all' | string>('all')
   const [userAccessDraftByUid, setUserAccessDraftByUid] = useState<Record<string, WorkhubUserAccessDraft>>({})
+  const [memberNameDraftByUid, setMemberNameDraftByUid] = useState<Record<string, string>>({})
   const [clientNameDraft, setClientNameDraft] = useState('')
   const [clientContactPersonDraft, setClientContactPersonDraft] = useState('')
   const [clientEmailDraft, setClientEmailDraft] = useState('')
@@ -893,6 +921,9 @@ export default function WorkHubPage() {
   const [actionMenuPosition, setActionMenuPosition] = useState({ x: 0, y: 0 })
   const [workspaceMoodBoards, setWorkspaceMoodBoards] = useState<WorkhubMoodBoard[]>([])
   const [selectedMoodBoardId, setSelectedMoodBoardId] = useState('')
+  const [moodBoardChecklistDraft, setMoodBoardChecklistDraft] = useState('')
+  const [moodBoardEditingChecklistId, setMoodBoardEditingChecklistId] = useState<string | null>(null)
+  const [moodBoardEditingChecklistText, setMoodBoardEditingChecklistText] = useState('')
   const [, setQuickAddOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [treePanelWidth, setTreePanelWidth] = useState<number>(() => {
@@ -1352,6 +1383,7 @@ export default function WorkHubPage() {
     }
   }
   const isMasterAdmin = !!MASTER_EMAIL && userEmail === MASTER_EMAIL
+  const normalizedMasterEmail = (MASTER_EMAIL || '').trim().toLowerCase()
   const isPrivilegedMember = !!(isMasterAdmin || member?.role === 'admin' || member?.role === 'manager')
   const accountDisplayName = member?.displayName || userName || userEmail.split('@')[0] || 'Member'
   const accountEmail = member?.email || userEmail || auth.currentUser?.email || ''
@@ -2688,7 +2720,6 @@ export default function WorkHubPage() {
     handleWorkspaceInviteAdd,
     handleWorkspaceInviteRemove,
     handleApproveRequestGlobal,
-    handleRejectRequestGlobal,
     handleApproveRequestForWorkspace,
     handleRejectRequestForWorkspace,
     handleMemberAccessLevelChange,
@@ -3074,6 +3105,19 @@ export default function WorkHubPage() {
     () => workspaceMoodBoards.find((b) => b.id === selectedMoodBoardId) ?? null,
     [workspaceMoodBoards, selectedMoodBoardId],
   )
+  const activeMoodBoardChecklist = useMemo(
+    () => activeMoodBoard?.checklist || [],
+    [activeMoodBoard],
+  )
+
+  useEffect(() => {
+    if (activeSection !== 'moodboard' || !activeMoodBoard) return
+    setMoodboardPanelMode(activeMoodBoard.panelVariant === 'flow'
+      ? 'flow'
+      : activeMoodBoard.panelVariant === 'v2'
+        ? 'v2'
+        : 'classic')
+  }, [activeMoodBoard, activeSection])
 
   const selectedDiscussionTarget = useMemo(() => {
     if (activeSection === 'moodboard' && activeMoodBoard) {
@@ -3987,9 +4031,13 @@ export default function WorkHubPage() {
     let newPath = buildWorkhubPathname(selectedWorkspaceId, targetProject, targetSection, targetEntityId)
 
     if (!parsedWorkhubPath.wsId) {
-      const rememberedRoute = resolveRememberedWorkspaceRoute(selectedWorkspaceId)
-      if (rememberedRoute) {
-        newPath = rememberedRoute
+      if (parsedWorkhubPath.section === 'users') {
+        newPath = buildWorkhubPathname(selectedWorkspaceId, targetProject, 'users')
+      } else {
+        const rememberedRoute = resolveRememberedWorkspaceRoute(selectedWorkspaceId)
+        if (rememberedRoute) {
+          newPath = rememberedRoute
+        }
       }
     }
 
@@ -5719,10 +5767,64 @@ export default function WorkHubPage() {
   ), [comments, currentUid, memberByUid, editingCommentId, editingCommentText, busyKey,
       discussionNotifyMode, discussionNotifyUids, discussionNotifyCandidates])
 
-  async function handleMemberModeration(targetUid: string, status: 'approved' | 'suspended', role?: 'member' | 'manager' | 'admin') {
+  async function handleSaveMemberDisplayName(targetUid: string) {
+    const targetMember = memberByUid[targetUid]
+    if (!targetMember) return
+
+    const targetEmail = (targetMember.email || '').trim().toLowerCase()
+    if (normalizedMasterEmail && targetEmail === normalizedMasterEmail) {
+      showToast({ type: 'error', message: 'Master account name cannot be changed.' })
+      return
+    }
+
+    const draftValue = (memberNameDraftByUid[targetUid] ?? (targetMember.displayName || '')).trim()
+    if (!draftValue) {
+      showToast({ type: 'error', message: 'Display name cannot be empty.' })
+      return
+    }
+    if (draftValue === (targetMember.displayName || '').trim()) return
+
+    setBusyKey(`member-name:${targetUid}`)
+    try {
+      const updated = await updateWorkhubMemberProfile({ uid: targetUid, displayName: draftValue })
+      setMemberNameDraftByUid((current) => ({
+        ...current,
+        [targetUid]: updated.displayName || draftValue,
+      }))
+      showToast({ type: 'success', message: 'Member name updated.' })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not update member name.'
+      showToast({ type: 'error', message })
+    } finally {
+      setBusyKey('')
+    }
+  }
+
+  async function handleMemberModeration(targetUid: string, status: 'approved' | 'suspended', role?: 'member' | 'manager' | 'admin', reason = '') {
+    const targetMember = memberByUid[targetUid]
+    const targetEmail = (targetMember?.email || '').trim().toLowerCase()
+    if (normalizedMasterEmail && targetEmail === normalizedMasterEmail) {
+      showToast({ type: 'error', message: 'Master admin status cannot be changed.' })
+      return
+    }
+
+    let suspensionReason = reason.trim()
+    if (status === 'suspended' && !suspensionReason) {
+      suspensionReason = (window.prompt('Suspension reason (required):', 'Access suspended by administrator.') || '').trim()
+      if (!suspensionReason) {
+        showToast({ type: 'info', message: 'Suspension cancelled: reason is required.' })
+        return
+      }
+    }
+
     setBusyKey(`member:${targetUid}:${status}`)
     try {
-      const updated = await setWorkhubMemberStatus({ uid: targetUid, status, role })
+      const updated = await setWorkhubMemberStatus({
+        uid: targetUid,
+        status,
+        role,
+        ...(status === 'suspended' ? { reason: suspensionReason } : {}),
+      })
       if (auth.currentUser && updated.status === 'approved' && selectedWorkspaceId) {
         await createWorkhubActivity({
           workspaceId: selectedWorkspaceId,
@@ -6445,6 +6547,7 @@ export default function WorkHubPage() {
     setSelectedMoodBoardId(boardId)
     setSelectedDocumentId('')
     setSelectedTaskId('')
+    setMoodboardPanelMode(board?.panelVariant === 'flow' ? 'flow' : board?.panelVariant === 'v2' ? 'v2' : 'classic')
     setActiveSection('moodboard')
     setProjectsGroupExpanded(true)
     setSidebarCollapsed(false)
@@ -7109,6 +7212,26 @@ export default function WorkHubPage() {
                       Create workspace
                     </button>
                   )}
+                  <button
+                    type="button"
+                    className="workhub-account-menu-action"
+                    onClick={() => {
+                      setAccountMenuOpen(false)
+                      navigate('/mood-board-v2')
+                    }}
+                  >
+                    Open Mood Board #2
+                  </button>
+                  <button
+                    type="button"
+                    className="workhub-account-menu-action"
+                    onClick={() => {
+                      setAccountMenuOpen(false)
+                      navigate('/flow-project-plan')
+                    }}
+                  >
+                    Open Flow Project Plan
+                  </button>
                   {selectedWorkspaceId && (
                     <button
                       type="button"
@@ -7455,14 +7578,30 @@ export default function WorkHubPage() {
                   ) : (
                     <div className="workhub-empty-state workhub-empty-projects-cta">
                       <span>{emptyProjectsMessage}</span>
-                      <button
-                        type="button"
-                        className="workhub-primary-mini"
-                        onClick={() => sidebarPrimaryCreateAction?.onClick()}
-                        disabled={!selectedWorkspaceId || !sidebarPrimaryCreateAction}
-                      >
-                        {sidebarPrimaryCreateAction?.label || 'Create first item'}
-                      </button>
+                      <div className="workhub-row">
+                        <button
+                          type="button"
+                          className="workhub-primary-mini"
+                          onClick={() => sidebarPrimaryCreateAction?.onClick()}
+                          disabled={!selectedWorkspaceId || !sidebarPrimaryCreateAction}
+                        >
+                          {sidebarPrimaryCreateAction?.label || 'Create first item'}
+                        </button>
+                        <button
+                          type="button"
+                          className="workhub-ghost-btn"
+                          onClick={() => navigate('/mood-board-v2')}
+                        >
+                          Mood Board #2
+                        </button>
+                        <button
+                          type="button"
+                          className="workhub-ghost-btn"
+                          onClick={() => navigate('/flow-project-plan')}
+                        >
+                          Flow Project Plan
+                        </button>
+                      </div>
                     </div>
                   )}
 
@@ -7939,13 +8078,17 @@ export default function WorkHubPage() {
                       {userManagementMembers.map((item) => {
                         const isPending = item.status === 'pending'
                         const isSuspended = item.status === 'suspended'
+                        const isMasterTarget = !!normalizedMasterEmail && (item.email || '').trim().toLowerCase() === normalizedMasterEmail
                         const summary = memberWorkspaceSummaryByUid[item.uid] || { count: 0, names: [] }
                         const effectiveAccess = userAccessEffectiveByUid[item.uid] || { mode: 'workspace_based' as WorkhubUserAccessMode, workspaceById: {} }
                         const accessMode = effectiveAccess.mode
                         const isPickerOpen = expandedUserPickerUid === item.uid
                         const isBusyRequest = busyKey === `member-request:${item.uid}`
                         const isSavingAccess = busyKey === `user-access-save:${item.uid}`
+                        const isSavingName = busyKey === `member-name:${item.uid}`
                         const hasDraftChanges = userAccessDraftDirtyByUid[item.uid] || false
+                        const memberNameDraft = memberNameDraftByUid[item.uid] ?? (item.displayName || '')
+                        const hasNameDraftChange = memberNameDraft.trim().length > 0 && memberNameDraft.trim() !== (item.displayName || '').trim()
                         const initials = (item.displayName || item.email || '?')
                           .split(' ').map((word: string) => word[0]).slice(0, 2).join('').toUpperCase()
                         return (
@@ -7955,6 +8098,27 @@ export default function WorkHubPage() {
                               <div className="workhub-member-identity">
                                 <span className="workhub-member-name">{item.displayName || item.email || item.uid}</span>
                                 <span className="workhub-member-email">{item.email || '—'}</span>
+                                <div className="workhub-inline-row" style={{ marginTop: 6, gap: 6 }}>
+                                  <input
+                                    type="text"
+                                    value={memberNameDraft}
+                                    disabled={isSavingName || isMasterTarget}
+                                    onChange={(event) => {
+                                      const nextValue = event.target.value
+                                      setMemberNameDraftByUid((current) => ({ ...current, [item.uid]: nextValue }))
+                                    }}
+                                    placeholder="Set display name"
+                                    style={{ minWidth: 170 }}
+                                  />
+                                  <button
+                                    type="button"
+                                    className="workhub-primary-mini"
+                                    disabled={isSavingName || isMasterTarget || !hasNameDraftChange}
+                                    onClick={() => { void handleSaveMemberDisplayName(item.uid) }}
+                                  >
+                                    {isSavingName ? 'Saving…' : 'Save name'}
+                                  </button>
+                                </div>
                               </div>
                               <div className="workhub-member-workspaces">
                                 <span className="workhub-ws-count-label">
@@ -7968,7 +8132,7 @@ export default function WorkHubPage() {
                                     <button
                                       type="button"
                                       className="workhub-approve-btn"
-                                      disabled={isBusyRequest}
+                                      disabled={isBusyRequest || isMasterTarget}
                                       onClick={() => { void handleApproveRequestGlobal(item.uid) }}
                                       title="Approve user"
                                     >
@@ -7977,22 +8141,33 @@ export default function WorkHubPage() {
                                     <button
                                       type="button"
                                       className="workhub-decline-btn"
-                                      disabled={isBusyRequest}
-                                      onClick={() => { void handleRejectRequestGlobal(item.uid) }}
+                                      disabled={isBusyRequest || isMasterTarget}
+                                      onClick={() => { void handleMemberModeration(item.uid, 'suspended', item.role) }}
                                       title="Decline request"
                                     >
                                       Reject
                                     </button>
                                   </>
                                 ) : isSuspended ? (
-                                  <span className="workhub-status-pill suspended">Suspended</span>
+                                  <>
+                                    <span className="workhub-status-pill suspended">Suspended</span>
+                                    <button
+                                      type="button"
+                                      className="workhub-approve-btn"
+                                      disabled={isBusyRequest || isMasterTarget}
+                                      onClick={() => { void handleMemberModeration(item.uid, 'approved', item.role) }}
+                                      title="Re-approve user"
+                                    >
+                                      Reactivate
+                                    </button>
+                                  </>
                                 ) : (
                                   <>
                                     <div className="workhub-user-mode-toggle" title="Access mode">
                                       <button
                                         type="button"
                                         className={`workhub-user-mode-btn${accessMode === 'full' ? ' is-active' : ''}`}
-                                        disabled={isSavingAccess}
+                                        disabled={isSavingAccess || isMasterTarget}
                                         onClick={() => {
                                           setExpandedUserPickerUid(null)
                                           handleSetUserAccessModeDraft(item.uid, 'full')
@@ -8003,7 +8178,7 @@ export default function WorkHubPage() {
                                       <button
                                         type="button"
                                         className={`workhub-user-mode-btn${accessMode === 'workspace_based' ? ' is-active' : ''}`}
-                                        disabled={isSavingAccess}
+                                        disabled={isSavingAccess || isMasterTarget}
                                         onClick={() => {
                                           handleSetUserAccessModeDraft(item.uid, 'workspace_based')
                                           setExpandedUserPickerUid(item.uid)
@@ -8016,7 +8191,7 @@ export default function WorkHubPage() {
                                       <button
                                         type="button"
                                         className={`workhub-ws-count-btn${isPickerOpen ? ' is-open' : ''}`}
-                                        disabled={isSavingAccess}
+                                        disabled={isSavingAccess || isMasterTarget}
                                         onClick={() => setExpandedUserPickerUid(isPickerOpen ? null : item.uid)}
                                       >
                                         Manage access
@@ -8028,7 +8203,7 @@ export default function WorkHubPage() {
                                     <button
                                       type="button"
                                       className="workhub-ghost-mini"
-                                      disabled={!hasDraftChanges || isSavingAccess}
+                                      disabled={!hasDraftChanges || isSavingAccess || isMasterTarget}
                                       onClick={() => handleDiscardUserAccessDraft(item.uid)}
                                     >
                                       Discard
@@ -8036,13 +8211,23 @@ export default function WorkHubPage() {
                                     <button
                                       type="button"
                                       className="workhub-primary-mini"
-                                      disabled={!hasDraftChanges || isSavingAccess}
+                                      disabled={!hasDraftChanges || isSavingAccess || isMasterTarget}
                                       onClick={() => { void handleSaveUserAccessDraft(item.uid) }}
                                     >
                                       {isSavingAccess ? 'Saving…' : 'Save'}
                                     </button>
+                                    <button
+                                      type="button"
+                                      className="workhub-decline-btn"
+                                      disabled={isBusyRequest || isMasterTarget}
+                                      onClick={() => { void handleMemberModeration(item.uid, 'suspended', item.role) }}
+                                      title="Suspend user"
+                                    >
+                                      Suspend
+                                    </button>
                                   </>
                                 )}
+                                {isMasterTarget && <span className="workhub-user-mode-pill">Master (locked)</span>}
                               </div>
                             </div>
                             {isPickerOpen && accessMode === 'workspace_based' && (
@@ -8281,68 +8466,371 @@ export default function WorkHubPage() {
         )}
 
         {activeSection === 'moodboard' && (
-          <MoodBoardPanel
-            board={activeMoodBoard}
-            entityLabel={
-              activeMoodBoard?.entityType === 'project'
-                ? (workspaceProjectById[activeMoodBoard.entityId]?.name || 'Project')
-                : (selectedWorkspace?.name || 'Workspace')
-            }
-            workspaceProjectById={workspaceProjectById}
-            currentUid={currentUid}
-            canEdit={canSeeAllProjects}
-            memberByUid={memberByUid}
-            formatTime={formatTime}
-            busyKey={busyKey}
-            onCreateBoard={async (title) => {
-              if (!selectedWorkspaceId) return null
-              const id = await createWorkhubMoodBoard({
-                workspaceId: selectedWorkspaceId,
-                entityType: activeMoodBoard?.entityType ?? 'workspace',
-                entityId: activeMoodBoard?.entityId ?? selectedWorkspaceId,
-                title,
-                createdBy: currentUid,
-              })
-              setSelectedMoodBoardId(id)
-              return id
-            }}
-            onUploadImage={async (boardId, file) => {
-              const ext = file.name.split('.').pop() ?? 'jpg'
-              const storagePath = `workhub-moodboards/${selectedWorkspaceId}/${boardId}/${crypto.randomUUID()}.${ext}`
-              const storageRef = ref(storage, storagePath)
-              await uploadBytes(storageRef, file, { contentType: file.type || 'application/octet-stream' })
-              return await getDownloadURL(storageRef)
-            }}
-            onBoardDeleted={() => {
-              setSelectedMoodBoardId('')
-              setActiveSection('dashboard')
-            }}
-            onOpenAttachmentLightbox={openAttachmentLightbox}
-            getAttachmentReviewCount={(url) => {
-              const review = attachmentReviews[url]
-              return (review?.notes.trim() ? 1 : 0)
-                + (review?.comments.length || 0)
-                + (review?.markers.length || 0)
-                + (review?.modificationChecks.length || 0)
-            }}
-            discussionComments={comments}
-            onDiscussionSend={handleAddComment}
-            discussionBusy={busyKey === 'comment'}
-            discussionNotifyMode={discussionNotifyMode}
-            discussionNotifyUids={discussionNotifyUids}
-            discussionNotifyCandidates={discussionNotifyCandidates}
-            onDiscussionNotifyModeChange={setDiscussionNotifyMode}
-            onDiscussionNotifyUidsChange={setDiscussionNotifyUids}
-            discussionEditingId={editingCommentId}
-            discussionEditingText={editingCommentText}
-            onDiscussionEditStart={handleStartCommentEdit}
-            onDiscussionEditChange={setEditingCommentText}
-            onDiscussionEditCancel={handleCancelCommentEdit}
-            onDiscussionEditSave={handleSaveCommentEdit}
-            discussionEditBusyKey={busyKey}
-            onDiscussionDelete={handleDeleteComment}
-            discussionDeleteBusyKey={busyKey}
-          />
+          moodboardPanelMode === 'classic' ? (
+            <MoodBoardPanel
+              board={activeMoodBoard}
+              entityLabel={
+                activeMoodBoard?.entityType === 'project'
+                  ? (workspaceProjectById[activeMoodBoard.entityId]?.name || 'Project')
+                  : (selectedWorkspace?.name || 'Workspace')
+              }
+              workspaceProjectById={workspaceProjectById}
+              currentUid={currentUid}
+              canEdit={canSeeAllProjects}
+              memberByUid={memberByUid}
+              formatTime={formatTime}
+              busyKey={busyKey}
+              onCreateBoard={async (title) => {
+                if (!selectedWorkspaceId) return null
+                const id = await createWorkhubMoodBoard({
+                  workspaceId: selectedWorkspaceId,
+                  entityType: activeMoodBoard?.entityType ?? 'workspace',
+                  entityId: activeMoodBoard?.entityId ?? selectedWorkspaceId,
+                  title,
+                  createdBy: currentUid,
+                })
+                setSelectedMoodBoardId(id)
+                return id
+              }}
+              onUploadImage={async (boardId, file) => {
+                const ext = file.name.split('.').pop() ?? 'jpg'
+                const storagePath = `workhub-moodboards/${selectedWorkspaceId}/${boardId}/${crypto.randomUUID()}.${ext}`
+                const storageRef = ref(storage, storagePath)
+                await uploadBytes(storageRef, file, { contentType: file.type || 'application/octet-stream' })
+                return await getDownloadURL(storageRef)
+              }}
+              onBoardDeleted={() => {
+                setSelectedMoodBoardId('')
+                setActiveSection('dashboard')
+              }}
+              onOpenAttachmentLightbox={openAttachmentLightbox}
+              getAttachmentReviewCount={(url) => {
+                const review = attachmentReviews[url]
+                return (review?.notes.trim() ? 1 : 0)
+                  + (review?.comments.length || 0)
+                  + (review?.markers.length || 0)
+                  + (review?.modificationChecks.length || 0)
+              }}
+              discussionComments={comments}
+              onDiscussionSend={handleAddComment}
+              discussionBusy={busyKey === 'comment'}
+              discussionNotifyMode={discussionNotifyMode}
+              discussionNotifyUids={discussionNotifyUids}
+              discussionNotifyCandidates={discussionNotifyCandidates}
+              onDiscussionNotifyModeChange={setDiscussionNotifyMode}
+              onDiscussionNotifyUidsChange={setDiscussionNotifyUids}
+              discussionEditingId={editingCommentId}
+              discussionEditingText={editingCommentText}
+              onDiscussionEditStart={handleStartCommentEdit}
+              onDiscussionEditChange={setEditingCommentText}
+              onDiscussionEditCancel={handleCancelCommentEdit}
+              onDiscussionEditSave={handleSaveCommentEdit}
+              discussionEditBusyKey={busyKey}
+              onDiscussionDelete={handleDeleteComment}
+              discussionDeleteBusyKey={busyKey}
+            />
+          ) : (
+            <main className="workhub-section-stack">
+              <section className="workhub-panel">
+                <div className="workhub-switcher">
+                  <button
+                    type="button"
+                    className="workhub-switcher-btn"
+                    onClick={() => setMoodboardPanelMode('classic')}
+                  >
+                    Classic Mood Board
+                  </button>
+                  <button
+                    type="button"
+                    className={`workhub-switcher-btn${moodboardPanelMode === 'v2' ? ' is-active' : ''}`}
+                    onClick={() => setMoodboardPanelMode('v2')}
+                  >
+                    Mood Board #2
+                  </button>
+                  <button
+                    type="button"
+                    className={`workhub-switcher-btn${moodboardPanelMode === 'flow' ? ' is-active' : ''}`}
+                    onClick={() => setMoodboardPanelMode('flow')}
+                  >
+                    Flow Project Plan
+                  </button>
+                </div>
+                <FlowBoardCanvas
+                  variant={moodboardPanelMode === 'flow' ? 'project' : 'mood'}
+                  stateKey={activeMoodBoard?.id || `${selectedWorkspaceId}:${moodboardPanelMode}`}
+                  boardTitle={activeMoodBoard?.title || ''}
+                  onBoardTitleChange={(nextTitle) => {
+                    if (!activeMoodBoard?.id) return
+                    void updateWorkhubMoodBoardTitle(activeMoodBoard.id, nextTitle)
+                  }}
+                  onBoardShare={() => {
+                    const url = typeof window === 'undefined' ? '' : window.location.href
+                    if (!url) return
+                    if (navigator.clipboard?.writeText) {
+                      void navigator.clipboard.writeText(url)
+                      showToast({ type: 'success', message: 'Board link copied.' })
+                      return
+                    }
+                    showToast({ type: 'info', message: 'Copy this URL from the address bar.' })
+                  }}
+                  onBoardDelete={() => {
+                    if (!activeMoodBoard?.id) return
+                    const shouldDelete = typeof window === 'undefined' ? true : window.confirm('Delete this mood board? This cannot be undone.')
+                    if (!shouldDelete) return
+                    void (async () => {
+                      await deleteWorkhubMoodBoard(activeMoodBoard.id)
+                      setSelectedMoodBoardId('')
+                      setActiveSection('dashboard')
+                    })()
+                  }}
+                  uploadImages={async (files) => {
+                    if (!selectedWorkspaceId || !activeMoodBoard?.id) return []
+                    const urls: string[] = []
+                    for (const file of files) {
+                      const ext = file.name.split('.').pop() ?? 'jpg'
+                      const storagePath = `workhub-moodboards/${selectedWorkspaceId}/${activeMoodBoard.id}/${crypto.randomUUID()}.${ext}`
+                      const storageRef = ref(storage, storagePath)
+                      await uploadBytes(storageRef, file, { contentType: file.type || 'application/octet-stream' })
+                      urls.push(await getDownloadURL(storageRef))
+                    }
+                    return urls
+                  }}
+                  initialState={{
+                    nodes: (activeMoodBoard?.flowNodes as never[] | undefined) || [],
+                    edges: (activeMoodBoard?.flowEdges as never[] | undefined) || [],
+                    viewport: activeMoodBoard?.flowViewport || undefined,
+                  }}
+                  renderDetailsPanel={({ selectedNode, selectedData, canvasAppearance, updateSelectedNodeData, updateSelectedNodeStyle, updateSelectedNodeSize, updateCanvasAppearance, applyCanvasPreset, removeSelectedNode }) => (
+                    <>
+                      <div className="workhub-task-attachments-head">
+                        <span>Details</span>
+                        <span>{moodboardPanelMode === 'flow' ? 'Flow board' : 'Mood board'}</span>
+                      </div>
+                      <div className="workhub-detail-card">
+                        <h3>Board details</h3>
+                        <div className="flowboard-details-form">
+                          <label>
+                            Board title
+                            <input
+                              value={activeMoodBoard?.title || ''}
+                              onChange={(event) => {
+                                if (!activeMoodBoard?.id) return
+                                const nextTitle = event.target.value
+                                void updateWorkhubMoodBoardTitle(activeMoodBoard.id, nextTitle)
+                              }}
+                            />
+                          </label>
+                          <button type="button" className="flowboard-btn flowboard-danger" onClick={removeSelectedNode} disabled={!selectedNode}>
+                            Delete selected node
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="workhub-detail-card">
+                        <h3>Selected node</h3>
+                        {selectedNode ? (
+                          <div className="flowboard-details-form">
+                            <label>
+                              Text
+                              <input
+                                value={selectedData.label || ''}
+                                onChange={(event) => updateSelectedNodeData({ label: event.target.value })}
+                              />
+                            </label>
+                            <label>
+                              Node color
+                              <input
+                                type="color"
+                                value={selectedData.noteColor || '#ffffff'}
+                                onChange={(event) => {
+                                  const nextColor = event.target.value
+                                  updateSelectedNodeData({ noteColor: nextColor })
+                                  updateSelectedNodeStyle({ backgroundColor: nextColor })
+                                }}
+                              />
+                            </label>
+                          </div>
+                        ) : (
+                          <div className="workhub-empty-state">Select a node to edit text and color.</div>
+                        )}
+                      </div>
+
+                      <div className="workhub-detail-card">
+                        <h3>Canvas style</h3>
+                        {!selectedNode ? (
+                          <div className="flowboard-details-form flowboard-canvas-appearance-form">
+                            <label>
+                              Canvas background
+                              <input
+                                type="color"
+                                value={canvasAppearance.backgroundColor}
+                                onChange={(event) => updateCanvasAppearance({ backgroundColor: event.target.value })}
+                              />
+                            </label>
+                            <label>
+                              Pattern color
+                              <input
+                                type="color"
+                                value={canvasAppearance.patternColor}
+                                onChange={(event) => updateCanvasAppearance({ patternColor: event.target.value })}
+                              />
+                            </label>
+                            <label>
+                              Pattern
+                              <select
+                                value={canvasAppearance.pattern}
+                                onChange={(event) => updateCanvasAppearance({ pattern: event.target.value as 'dots' | 'lines' })}
+                              >
+                                <option value="dots">Dots</option>
+                                <option value="lines">Grid lines</option>
+                              </select>
+                            </label>
+                            <div className="flowboard-preset-row">
+                              <button type="button" className="flowboard-btn" onClick={() => applyCanvasPreset('bright')}>Bright</button>
+                              <button type="button" className="flowboard-btn" onClick={() => applyCanvasPreset('dark')}>Dark</button>
+                              <button type="button" className="flowboard-btn" onClick={() => applyCanvasPreset('reset')}>Reset</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="workhub-empty-state">Click empty canvas area to edit background and pattern.</div>
+                        )}
+                      </div>
+
+                      <div className="workhub-detail-card">
+                        <h3>Selected image</h3>
+                        {selectedNode && (selectedNode.type === 'imageNode' || selectedData.kind === 'image') ? (
+                          <div className="flowboard-details-form">
+                            <label>
+                              Label
+                              <input
+                                value={selectedData.label || ''}
+                                onChange={(event) => updateSelectedNodeData({ label: event.target.value })}
+                              />
+                            </label>
+                            <label>
+                              Image URL
+                              <input
+                                value={selectedData.imageUrl || ''}
+                                onChange={(event) => updateSelectedNodeData({ imageUrl: event.target.value })}
+                              />
+                            </label>
+                            <label>
+                              Caption
+                              <input
+                                value={selectedData.caption || ''}
+                                onChange={(event) => updateSelectedNodeData({ caption: event.target.value })}
+                              />
+                            </label>
+                            <label>
+                              Tags
+                              <input
+                                value={selectedData.tags || ''}
+                                onChange={(event) => updateSelectedNodeData({ tags: event.target.value })}
+                              />
+                            </label>
+                            <label>
+                              Width
+                              <input
+                                type="number"
+                                min={120}
+                                value={Number((selectedNode.style as Record<string, unknown> | undefined)?.width) || 220}
+                                onChange={(event) => updateSelectedNodeSize('width', Number(event.target.value))}
+                              />
+                            </label>
+                            <label>
+                              Height
+                              <input
+                                type="number"
+                                min={90}
+                                value={Number((selectedNode.style as Record<string, unknown> | undefined)?.height) || 150}
+                                onChange={(event) => updateSelectedNodeSize('height', Number(event.target.value))}
+                              />
+                            </label>
+                          </div>
+                        ) : (
+                          <div className="workhub-empty-state">Click an image node to view details.</div>
+                        )}
+                      </div>
+
+                      <WorkhubChecklistCard
+                        title="Checklist"
+                        items={activeMoodBoardChecklist}
+                        draftValue={moodBoardChecklistDraft}
+                        onDraftChange={setMoodBoardChecklistDraft}
+                        onAdd={() => {
+                          if (!activeMoodBoard?.id) return
+                          const text = moodBoardChecklistDraft.trim()
+                          if (!text) return
+                          const next = [...activeMoodBoardChecklist, { id: crypto.randomUUID(), text, completed: false }]
+                          setMoodBoardChecklistDraft('')
+                          void updateWorkhubMoodBoardChecklist(activeMoodBoard.id, next)
+                        }}
+                        editingItemId={moodBoardEditingChecklistId}
+                        editingItemText={moodBoardEditingChecklistText}
+                        onEditingItemTextChange={setMoodBoardEditingChecklistText}
+                        onEditStart={(item) => {
+                          setMoodBoardEditingChecklistId(item.id)
+                          setMoodBoardEditingChecklistText(item.text)
+                        }}
+                        onEditSave={(item) => {
+                          if (!activeMoodBoard?.id) return
+                          const text = moodBoardEditingChecklistText.trim()
+                          const next = activeMoodBoardChecklist.map((entry) => entry.id === item.id ? { ...entry, text: text || entry.text } : entry)
+                          setMoodBoardEditingChecklistId(null)
+                          setMoodBoardEditingChecklistText('')
+                          void updateWorkhubMoodBoardChecklist(activeMoodBoard.id, next)
+                        }}
+                        onEditCancel={() => {
+                          setMoodBoardEditingChecklistId(null)
+                          setMoodBoardEditingChecklistText('')
+                        }}
+                        onToggle={(item, checked) => {
+                          if (!activeMoodBoard?.id) return
+                          const next = activeMoodBoardChecklist.map((entry) => entry.id === item.id ? { ...entry, completed: checked } : entry)
+                          void updateWorkhubMoodBoardChecklist(activeMoodBoard.id, next)
+                        }}
+                        onRemove={(item) => {
+                          if (!activeMoodBoard?.id) return
+                          const next = activeMoodBoardChecklist.filter((entry) => entry.id !== item.id)
+                          void updateWorkhubMoodBoardChecklist(activeMoodBoard.id, next)
+                        }}
+                        emptyStateText="No checklist items yet for this mood board."
+                      />
+
+                      <WorkhubDiscussionCard
+                        title="Discussion"
+                        comments={comments}
+                        currentUid={auth.currentUser?.uid || ''}
+                        memberByUid={memberByUid}
+                        formatTime={formatTime}
+                        editingId={editingCommentId}
+                        editingText={editingCommentText}
+                        onEditStart={handleStartCommentEdit}
+                        onEditChange={setEditingCommentText}
+                        onEditCancel={handleCancelCommentEdit}
+                        onEditSave={handleSaveCommentEdit}
+                        onDelete={handleDeleteComment}
+                        editBusyKey={busyKey}
+                        deleteBusyKey={busyKey}
+                        onComposerSend={handleAddComment}
+                        composerBusy={busyKey === 'comment'}
+                        emptyStateText="No comments yet."
+                      />
+                    </>
+                  )}
+                  onStateChange={(state) => {
+                    if (!activeMoodBoard?.id) return
+                    void updateWorkhubMoodBoardFlow(
+                      activeMoodBoard.id,
+                      state.nodes as WorkhubMoodBoard['flowNodes'],
+                      state.edges as WorkhubMoodBoard['flowEdges'],
+                      state.viewport,
+                    )
+                  }}
+                />
+              </section>
+            </main>
+          )
         )}
 
                 {activeSection === 'tasks' && (
@@ -8783,6 +9271,66 @@ export default function WorkHubPage() {
           onCreateTemplateEntity={(intent, projectId) => openWorkspaceTypeCreateDialog(intent, projectId || '')}
           onOpenSettings={(projectId) => setProjectAccessDialogId(projectId)}
           moodBoardEnabled={selectedWorkspace?.moodBoardEnabled !== false}
+          onOpenMoodBoardV2={async (entityType, entityId) => {
+            if (!selectedWorkspaceId) return
+            const normalizedEntityId = entityType === 'workspace'
+              ? selectedWorkspaceId
+              : entityId
+            const label = entityType === 'workspace'
+              ? (selectedWorkspace?.name || 'Workspace')
+              : (workspaceProjectById[normalizedEntityId]?.name || 'Project')
+            const existingCount = workspaceMoodBoards.filter((board) => (
+              board.entityType === entityType
+              && board.entityId === normalizedEntityId
+              && board.panelVariant === 'v2'
+            )).length
+            const nextTitle = existingCount === 0
+              ? `${label} — Mood Board 2`
+              : `${label} — Mood Board 2 ${existingCount + 1}`
+            const newId = await createWorkhubMoodBoard({
+              workspaceId: selectedWorkspaceId,
+              entityType,
+              entityId: normalizedEntityId,
+              title: nextTitle,
+              panelVariant: 'v2',
+              createdBy: currentUid,
+            })
+            setSelectedMoodBoardId(newId)
+            setSelectedDocumentId('')
+            setSelectedTaskId('')
+            setMoodboardPanelMode('v2')
+            setActiveSection('moodboard')
+          }}
+          onOpenFlowProjectLab={async (entityType, entityId) => {
+            if (!selectedWorkspaceId) return
+            const normalizedEntityId = entityType === 'workspace'
+              ? selectedWorkspaceId
+              : entityId
+            const label = entityType === 'workspace'
+              ? (selectedWorkspace?.name || 'Workspace')
+              : (workspaceProjectById[normalizedEntityId]?.name || 'Project')
+            const existingCount = workspaceMoodBoards.filter((board) => (
+              board.entityType === entityType
+              && board.entityId === normalizedEntityId
+              && board.panelVariant === 'flow'
+            )).length
+            const nextTitle = existingCount === 0
+              ? `${label} — Flow Project Plan`
+              : `${label} — Flow Project Plan ${existingCount + 1}`
+            const newId = await createWorkhubMoodBoard({
+              workspaceId: selectedWorkspaceId,
+              entityType,
+              entityId: normalizedEntityId,
+              title: nextTitle,
+              panelVariant: 'flow',
+              createdBy: currentUid,
+            })
+            setSelectedMoodBoardId(newId)
+            setSelectedDocumentId('')
+            setSelectedTaskId('')
+            setMoodboardPanelMode('flow')
+            setActiveSection('moodboard')
+          }}
           onOpenMoodBoard={async (entityType, entityId) => {
             if (!selectedWorkspaceId) return
             const normalizedEntityId = entityType === 'workspace'
@@ -8802,11 +9350,13 @@ export default function WorkHubPage() {
               entityType,
               entityId: normalizedEntityId,
               title: nextTitle,
+              panelVariant: 'classic',
               createdBy: currentUid,
             })
             setSelectedMoodBoardId(newId)
             setSelectedDocumentId('')
             setSelectedTaskId('')
+            setMoodboardPanelMode('classic')
             setActiveSection('moodboard')
           }}
         />

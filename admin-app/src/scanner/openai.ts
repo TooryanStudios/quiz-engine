@@ -31,12 +31,15 @@ Your job:
    - If it is a direct question: answer it directly and concisely.
    - If it is a scenario or situation (no explicit question): recommend the best way to handle it — what a skilled manager or leader should do.
 4. If there are multiple key points or steps, list them on separate lines starting with a number and a period (e.g. "1. Do this").
-5. Keep answers short and actionable. No lengthy explanation. Max 6 points.
+5. Keep answers very short and clear:
+  - Use 1 to 4 points only.
+  - Each point must be action-focused and <= 12 words.
+  - No long explanation, no background detail.
 
 Respond ONLY with valid JSON in this exact format:
 {
   "rawText": "the full text extracted from the image exactly as written",
-  "answer": "your recommended answer or best approach, using numbered lines if multiple points"
+  "answer": "very short, clear recommendation; numbered lines if multiple points"
 }
 
 Never set answer to "". Always provide a recommendation based on whatever text is visible.`
@@ -112,7 +115,7 @@ export async function scanImage(
   const base64 = base64DataUrl.replace(/^data:image\/\w+;base64,/, '')
 
   const systemPrompt = mode === 'simplified' ? SIMPLIFIED_SYSTEM : REASONING_SYSTEM
-  const maxTokens = mode === 'simplified' ? 400 : 1200
+  const maxTokens = mode === 'simplified' ? 400 : 800
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',

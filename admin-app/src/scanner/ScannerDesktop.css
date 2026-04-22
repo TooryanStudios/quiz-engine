@@ -375,6 +375,12 @@
   color: #a8c0dc;
 }
 
+.scd-answer-hero-label-reader {
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+}
+
 .scd-answer-hero-text {
   margin: 10px 0 0;
   font-size: clamp(32px, 8vw, 72px);
@@ -486,11 +492,12 @@
   flex-direction: column;
   gap: 6px;
   width: 100%;
-  text-align: left;
+  text-align: center;
 }
 .sc-answer-item {
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  justify-content: center;
   gap: 10px;
   background: rgba(255,255,255,0.04);
   border: 1px solid rgba(169,197,230,0.18);
@@ -510,6 +517,7 @@
   font-weight: 600;
   color: #eef3f9;
   line-height: 1.45;
+  text-align: center;
   word-break: break-word;
 }
 .sc-answer-text {
