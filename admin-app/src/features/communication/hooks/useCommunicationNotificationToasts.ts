@@ -32,6 +32,35 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+function getConfirmedUrgentKey(userUid: string) {
+  return `workhub:confirmed-urgent:${userUid}`
+}
+
+function isUrgentConfirmed(userUid: string, notificationId: string): boolean {
+  try {
+    const raw = localStorage.getItem(getConfirmedUrgentKey(userUid))
+    if (!raw) return false
+    const ids: string[] = JSON.parse(raw)
+    return ids.includes(notificationId)
+  } catch {
+    return false
+  }
+}
+
+function markUrgentConfirmed(userUid: string, notificationId: string): void {
+  try {
+    const key = getConfirmedUrgentKey(userUid)
+    const raw = localStorage.getItem(key)
+    const ids: string[] = raw ? JSON.parse(raw) : []
+    if (!ids.includes(notificationId)) {
+      ids.push(notificationId)
+      // Keep at most 500 entries to prevent unbounded growth
+      if (ids.length > 500) ids.splice(0, ids.length - 500)
+      localStorage.setItem(key, JSON.stringify(ids))
+    }
+  } catch { /* ignore */ }
+}
+
 function normalizeChatPreview(message: string, senderName: string): string {
   const normalizedMessage = (message || '').trim()
   const normalizedSender = (senderName || '').trim()
@@ -176,6 +205,7 @@ export function useCommunicationNotificationToasts({
           confirmText: 'Confirm Received',
           cancelText: 'Open Chat',
           onConfirm: async () => {
+            markUrgentConfirmed(userUid, notification.id)
             await markWorkhubNotificationRead(notification.id).catch(() => undefined)
             const activityId = (notification as WorkhubNotification & { activityId?: string }).activityId || ''
             if (activityId && userUid) {
@@ -221,14 +251,16 @@ export function useCommunicationNotificationToasts({
         }
 
         if (isHighPriorityChatMessage) {
-          urgentQueueRef.current.push({
-            notification: item,
-            senderName,
-            senderAvatar,
-            chatPreview,
-            imageUrl,
-          })
-          processUrgentQueue()
+          if (!isUrgentConfirmed(userUid, item.id) && !item.read) {
+            urgentQueueRef.current.push({
+              notification: item,
+              senderName,
+              senderAvatar,
+              chatPreview,
+              imageUrl,
+            })
+            processUrgentQueue()
+          }
           return
         }
 

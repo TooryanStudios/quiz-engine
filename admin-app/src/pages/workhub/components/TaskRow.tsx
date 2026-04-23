@@ -85,6 +85,7 @@ interface TaskRowCallbacks {
   onDragOver: (event: React.DragEvent, taskId: string, taskStatus: string) => void
   onDrop: (event: React.DragEvent, taskId: string, taskStatus: string) => void
   onRowClick: (taskId: string) => void
+  onRowContextMenu: (taskId: string, clientX: number, clientY: number) => void
   onDoubleClickRow: (taskId: string) => void
   onDragStart: (event: React.DragEvent<HTMLButtonElement>, taskId: string, taskStatus: string) => void
   onDragEnd: () => void
@@ -227,6 +228,11 @@ const TaskRow = memo(function TaskRow({
       onDragOver={(event) => callbacks.onDragOver(event, task.id, task.status)}
       onDrop={(event) => callbacks.onDrop(event, task.id, task.status)}
       onClick={() => callbacks.onRowClick(task.id)}
+      onContextMenu={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        callbacks.onRowContextMenu(task.id, event.clientX, event.clientY)
+      }}
     >
       <div
         className="workhub-task-row-main"

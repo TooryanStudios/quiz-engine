@@ -100,9 +100,7 @@ export function WorkhubTaskChecklistCard({
         </div>
       </div>
       <div className="workhub-checklist-items">
-        {checklist.length === 0 ? (
-          <div className="workhub-empty-state">No checklist items yet.</div>
-        ) : (
+        {checklist.length > 0 && (
           checklist.map((item, index) => {
             const detailKey = getChecklistDetailKey(task.id, item.id)
             const detailsExpanded = expandedChecklistDetailKeys.includes(detailKey)
@@ -320,7 +318,7 @@ export function WorkhubTaskChecklistCard({
           }}
           disabled={checklistAddDisabled}
         >
-          Add item
+          +
         </button>
       </div>
     </div>

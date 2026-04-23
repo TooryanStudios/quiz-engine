@@ -3,6 +3,14 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { useNavigate } from 'react-router-dom'
 import { storage } from '../../../lib/firebase'
 import {
+  createWorkhubTask,
+  subscribeWorkhubProjects,
+  subscribeWorkhubWorkspaces,
+  type WorkhubProject,
+  type WorkhubTaskStatus,
+  type WorkhubWorkspace,
+} from '../../../lib/workhubRepo'
+import {
   useGlobalTeamChat,
   buildThreadId,
   parseThreadParticipantUids,
@@ -19,6 +27,26 @@ import '../communication.css'
 const CHAT_REACTIONS = ['👍', '❤️', '😂', '🎉', '😮', '😢'] as const
 const CHAT_PINNED_THREADS_KEY = 'workhub_chat_pinned_threads_v1'
 const CHAT_MUTED_THREADS_KEY = 'workhub_chat_muted_threads_v1'
+const WORKHUB_TASK_TOKEN_PREFIX = 'workhub-task:'
+
+function formatDateInput(value: Date): string {
+  return value.toISOString().slice(0, 10)
+}
+
+function getDefaultTaskDueDate(): string {
+  const next = new Date()
+  next.setDate(next.getDate() + 1)
+  return formatDateInput(next)
+}
+
+function resolveTaskPathFromToken(token: string): string {
+  const normalized = token.trim()
+  if (!normalized.toLowerCase().startsWith(WORKHUB_TASK_TOKEN_PREFIX)) return ''
+  const payload = normalized.slice(WORKHUB_TASK_TOKEN_PREFIX.length)
+  const [workspaceId, taskId] = payload.split(':')
+  if (!workspaceId || !taskId) return ''
+  return `/workhub/w/${encodeURIComponent(workspaceId)}/t/${encodeURIComponent(taskId)}`
+}
 
 function readThreadFlagMap(storageKey: string): Record<string, true> {
   try {
@@ -155,6 +183,18 @@ export function ChatDock({
   const [receiptDetailsMessageId, setReceiptDetailsMessageId] = useState('')
   const [replyingToMessageId, setReplyingToMessageId] = useState('')
   const [highlightedMessageId, setHighlightedMessageId] = useState('')
+  const [convertMessage, setConvertMessage] = useState<TeamChatMessage | null>(null)
+  const [convertWorkspaces, setConvertWorkspaces] = useState<WorkhubWorkspace[]>([])
+  const [convertProjects, setConvertProjects] = useState<WorkhubProject[]>([])
+  const [convertWorkspaceId, setConvertWorkspaceId] = useState('')
+  const [convertProjectId, setConvertProjectId] = useState('')
+  const [convertTaskTitleDraft, setConvertTaskTitleDraft] = useState('')
+  const [convertTaskDescriptionDraft, setConvertTaskDescriptionDraft] = useState('')
+  const [convertTaskStatus, setConvertTaskStatus] = useState<WorkhubTaskStatus>('backlog')
+  const [convertTaskAssigneeUid, setConvertTaskAssigneeUid] = useState('')
+  const [convertTaskDueDate, setConvertTaskDueDate] = useState(getDefaultTaskDueDate)
+  const [convertTaskBusy, setConvertTaskBusy] = useState(false)
+  const [convertTaskError, setConvertTaskError] = useState('')
   const [pinnedThreadIds, setPinnedThreadIds] = useState<Record<string, true>>(() => readThreadFlagMap(CHAT_PINNED_THREADS_KEY))
   const [mutedThreadIds, setMutedThreadIds] = useState<Record<string, true>>(() => readThreadFlagMap(CHAT_MUTED_THREADS_KEY))
   const [searchText, setSearchText] = useState('')
@@ -165,6 +205,22 @@ export function ChatDock({
   const [filterPanelOpen, setFilterPanelOpen] = useState(false)
   const isFloating = layout === 'floating'
   const hasTaskContext = !!defaultTargetPath && !!defaultTargetTaskId
+  const convertWorkspace = useMemo(
+    () => convertWorkspaces.find((item) => item.id === convertWorkspaceId) || null,
+    [convertWorkspaceId, convertWorkspaces],
+  )
+  const convertStatusOptions = useMemo(() => {
+    const configured = Array.isArray(convertWorkspace?.taskStatuses)
+      ? convertWorkspace.taskStatuses
+        .filter((item): item is { id: WorkhubTaskStatus; label: string } => !!item && typeof item.id === 'string')
+      : []
+    if (configured.length > 0) return configured
+    return [
+      { id: 'backlog' as WorkhubTaskStatus, label: 'Backlog' },
+      { id: 'in_progress' as WorkhubTaskStatus, label: 'In Progress' },
+      { id: 'done' as WorkhubTaskStatus, label: 'Done' },
+    ]
+  }, [convertWorkspace])
 
   const [selectedRecipientUids, setSelectedRecipientUids] = useState<string[]>([])
   const [recipientInitialized, setRecipientInitialized] = useState(false)
@@ -238,6 +294,205 @@ export function ChatDock({
     const timer = window.setTimeout(() => { inputRef.current?.focus() }, 40)
     return () => window.clearTimeout(timer)
   }, [open])
+
+  useEffect(() => {
+    if (!open || !currentUser || !convertMessage) return
+    const unsub = subscribeWorkhubWorkspaces((items) => {
+      setConvertWorkspaces(items)
+    })
+    return () => unsub()
+  }, [convertMessage, currentUser, open])
+
+  useEffect(() => {
+    if (!convertMessage) return
+    if (convertWorkspaceId) return
+    if (convertWorkspaces.length === 0) return
+    setConvertWorkspaceId(convertWorkspaces[0].id)
+  }, [convertMessage, convertWorkspaceId, convertWorkspaces])
+
+  useEffect(() => {
+    if (!convertMessage || !currentUser || !convertWorkspaceId) {
+      setConvertProjects([])
+      return
+    }
+    const unsub = subscribeWorkhubProjects(convertWorkspaceId, currentUser.uid, false, (items) => {
+      setConvertProjects(items)
+    })
+    return () => unsub()
+  }, [convertMessage, convertWorkspaceId, currentUser])
+
+  useEffect(() => {
+    if (!convertMessage) return
+    if (convertProjectId && convertProjects.some((item) => item.id === convertProjectId)) return
+    if (convertProjects.length === 0) {
+      setConvertProjectId('')
+      return
+    }
+    setConvertProjectId(convertProjects[0].id)
+  }, [convertMessage, convertProjectId, convertProjects])
+
+  useEffect(() => {
+    if (!convertMessage) return
+    if (!convertTaskAssigneeUid && currentUser?.uid) {
+      setConvertTaskAssigneeUid(currentUser.uid)
+    }
+  }, [convertMessage, convertTaskAssigneeUid, currentUser?.uid])
+
+  useEffect(() => {
+    if (!convertStatusOptions.some((item) => item.id === convertTaskStatus)) {
+      setConvertTaskStatus(convertStatusOptions[0]?.id || 'backlog')
+    }
+  }, [convertStatusOptions, convertTaskStatus])
+
+  const renderMessageText = (value: string) => {
+    const text = value || ''
+    if (!text) return ''
+    const pattern = /(https?:\/\/[^\s]+|workhub-task:[^\s]+)/gi
+    const chunks = text.split(pattern)
+    if (chunks.length === 1) return text
+
+    return chunks.map((chunk, index) => {
+      if (!chunk) return null
+      const taskPath = resolveTaskPathFromToken(chunk)
+      if (taskPath) {
+        return (
+          <button
+            key={`task_token_${index}`}
+            type="button"
+            className="shell-chat-inline-link"
+            onClick={() => {
+              onClose()
+              navigate(withChatLinkedMarker(taskPath))
+            }}
+          >
+            {chunk}
+          </button>
+        )
+      }
+
+      if (/^https?:\/\//i.test(chunk)) {
+        try {
+          const parsed = new URL(chunk)
+          if (parsed.origin === window.location.origin && parsed.pathname.startsWith('/workhub/')) {
+            const nextPath = `${parsed.pathname}${parsed.search}${parsed.hash}`
+            return (
+              <button
+                key={`workhub_link_${index}`}
+                type="button"
+                className="shell-chat-inline-link"
+                onClick={() => {
+                  onClose()
+                  navigate(withChatLinkedMarker(nextPath))
+                }}
+              >
+                {chunk}
+              </button>
+            )
+          }
+        } catch {
+          // Fall through to plain text rendering.
+        }
+
+        return (
+          <a
+            key={`url_${index}`}
+            href={chunk}
+            target="_blank"
+            rel="noreferrer"
+            className="shell-chat-inline-link is-anchor"
+          >
+            {chunk}
+          </a>
+        )
+      }
+
+      return <span key={`text_${index}`}>{chunk}</span>
+    })
+  }
+
+  const closeConvertMessageDialog = () => {
+    if (convertTaskBusy) return
+    setConvertMessage(null)
+    setConvertTaskError('')
+    setConvertTaskBusy(false)
+  }
+
+  const openConvertMessageDialog = (item: TeamChatMessage) => {
+    const sourceText = (item.text || '').trim()
+    const fallbackTitle = `Follow-up: ${(item.senderName || 'Chat message').trim()}`
+    setConvertMessage(item)
+    setConvertWorkspaceId('')
+    setConvertProjectId('')
+    setConvertTaskStatus('backlog')
+    setConvertTaskAssigneeUid(currentUser?.uid || '')
+    setConvertTaskDueDate(getDefaultTaskDueDate())
+    setConvertTaskTitleDraft((sourceText || fallbackTitle).slice(0, 140))
+    setConvertTaskDescriptionDraft(sourceText)
+    setConvertTaskError('')
+  }
+
+  const handleConvertMessageToTask = async () => {
+    if (!convertMessage || !currentUser?.uid) return
+    const title = convertTaskTitleDraft.trim()
+    if (!title) {
+      setConvertTaskError('Task title is required.')
+      return
+    }
+    if (!convertWorkspaceId) {
+      setConvertTaskError('Choose a workspace.')
+      return
+    }
+    if (!convertProjectId) {
+      setConvertTaskError('Choose a project/folder.')
+      return
+    }
+    const selectedProject = convertProjects.find((item) => item.id === convertProjectId) || null
+    if (!selectedProject) {
+      setConvertTaskError('Project/folder is not available.')
+      return
+    }
+
+    const assigneeUid = (convertTaskAssigneeUid || currentUser.uid).trim() || currentUser.uid
+    const nextMemberUids = Array.from(new Set([
+      ...(selectedProject.memberUids || []),
+      currentUser.uid,
+      assigneeUid,
+    ].filter(Boolean)))
+    const visibility = selectedProject.visibility === 'restricted' ? 'restricted' : 'workspace'
+    const sourceSummary = `Source chat from ${(convertMessage.senderName || 'Unknown')} at ${formatFullMessageTime(convertMessage.createdAt)}`
+    const descriptionBase = convertTaskDescriptionDraft.trim()
+    const nextDescription = descriptionBase
+      ? `${descriptionBase}\n\n${sourceSummary}`
+      : sourceSummary
+
+    setConvertTaskBusy(true)
+    setConvertTaskError('')
+    try {
+      const taskId = await createWorkhubTask({
+        workspaceId: convertWorkspaceId,
+        projectId: convertProjectId,
+        title,
+        description: nextDescription,
+        visibility,
+        memberUids: nextMemberUids,
+        status: convertTaskStatus,
+        priority: 'normal',
+        assigneeUid,
+        assigneeUids: [assigneeUid],
+        dueDate: convertTaskDueDate || getDefaultTaskDueDate(),
+        createdBy: currentUser.uid,
+      })
+
+      const taskToken = `workhub-task:${convertWorkspaceId}:${taskId}`
+      setAttachmentInfo(`Task created. Share token: ${taskToken}`)
+      setConvertMessage(null)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not convert message to task.'
+      setConvertTaskError(message)
+    } finally {
+      setConvertTaskBusy(false)
+    }
+  }
 
   useEffect(() => {
     pendingImagesRef.current = pendingImages
@@ -998,7 +1253,7 @@ export function ChatDock({
                                   </span>
                                 </div>
                               )}
-                              {!!item.text && <p className="shell-chat-msg-text">{item.text}</p>}
+                              {!!item.text && <p className="shell-chat-msg-text">{renderMessageText(item.text)}</p>}
                               {!!item.imageUrl && (
                                 <img
                                   src={item.imageUrl}
@@ -1150,6 +1405,15 @@ export function ChatDock({
                         }}
                       >
                         Reply
+                      </button>
+                    )}
+                    {!isDeleted && !isEditing && (
+                      <button
+                        type="button"
+                        className="shell-chat-msg-link"
+                        onClick={() => openConvertMessageDialog(item)}
+                      >
+                        Convert to task
                       </button>
                     )}
 
@@ -1370,6 +1634,91 @@ export function ChatDock({
               className="shell-chat-image-preview-full"
               onClick={(event) => event.stopPropagation()}
             />
+          </div>
+        )}
+
+        {convertMessage && (
+          <div className="shell-chat-convert-backdrop" role="dialog" aria-label="Convert message to task" onClick={closeConvertMessageDialog}>
+            <div className="shell-chat-convert-modal" onClick={(event) => event.stopPropagation()}>
+              <div className="shell-chat-convert-head">
+                <strong>Convert message to task</strong>
+                <button type="button" onClick={closeConvertMessageDialog} aria-label="Close">✕</button>
+              </div>
+              <p className="shell-chat-convert-caption">Choose where to add this task.</p>
+              <label>
+                Workspace
+                <select value={convertWorkspaceId} onChange={(event) => setConvertWorkspaceId(event.target.value)}>
+                  {convertWorkspaces.length === 0 ? (
+                    <option value="">No workspace available</option>
+                  ) : (
+                    convertWorkspaces.map((workspace) => (
+                      <option key={workspace.id} value={workspace.id}>{workspace.name}</option>
+                    ))
+                  )}
+                </select>
+              </label>
+              <label>
+                Project / Folder
+                <select value={convertProjectId} onChange={(event) => setConvertProjectId(event.target.value)}>
+                  {convertProjects.length === 0 ? (
+                    <option value="">No project/folder available</option>
+                  ) : (
+                    convertProjects.map((project) => (
+                      <option key={project.id} value={project.id}>{project.name}</option>
+                    ))
+                  )}
+                </select>
+              </label>
+              <label>
+                Task title
+                <input
+                  type="text"
+                  value={convertTaskTitleDraft}
+                  onChange={(event) => setConvertTaskTitleDraft(event.target.value)}
+                />
+              </label>
+              <label>
+                Description
+                <textarea
+                  rows={4}
+                  value={convertTaskDescriptionDraft}
+                  onChange={(event) => setConvertTaskDescriptionDraft(event.target.value)}
+                />
+              </label>
+              <div className="shell-chat-convert-grid">
+                <label>
+                  Status
+                  <select value={convertTaskStatus} onChange={(event) => setConvertTaskStatus(event.target.value as WorkhubTaskStatus)}>
+                    {convertStatusOptions.map((status) => (
+                      <option key={status.id} value={status.id}>{status.label || status.id}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Assignee
+                  <select value={convertTaskAssigneeUid} onChange={(event) => setConvertTaskAssigneeUid(event.target.value)}>
+                    {approvedMembers.map((member) => (
+                      <option key={member.uid} value={member.uid}>{member.displayName || member.email || member.uid}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <label>
+                Due date
+                <input
+                  type="date"
+                  value={convertTaskDueDate}
+                  onChange={(event) => setConvertTaskDueDate(event.target.value)}
+                />
+              </label>
+              {convertTaskError && <p className="shell-chat-send-error">{convertTaskError}</p>}
+              <div className="shell-chat-convert-actions">
+                <button type="button" onClick={closeConvertMessageDialog} disabled={convertTaskBusy}>Cancel</button>
+                <button type="button" onClick={() => void handleConvertMessageToTask()} disabled={convertTaskBusy}>
+                  {convertTaskBusy ? 'Creating...' : 'Create task'}
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </aside>

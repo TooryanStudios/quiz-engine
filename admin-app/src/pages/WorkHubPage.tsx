@@ -176,6 +176,7 @@ import type { WorkhubUserAccessDraft, WorkhubUserAccessMode, WorkhubUserWorkspac
 const MASTER_EMAIL = import.meta.env.VITE_MASTER_EMAIL as string | undefined
 const WORKHUB_PHONE_MAX_WIDTH = 767
 const WORKHUB_DESKTOP_MIN_WIDTH = WORKHUB_PHONE_MAX_WIDTH + 1
+const WORKHUB_DISCUSSION_PAGE_SIZE = 6
 const DEFAULT_STATUS_TASK_RENDER_LIMIT = 80
 
 type WorkhubFolderNotificationEvent = 'task_created' | 'task_completed' | 'folder_completed'
@@ -218,6 +219,44 @@ function getCurrentDateInputValue(): string {
   const timezoneOffsetMs = now.getTimezoneOffset() * 60_000
   return new Date(now.getTime() - timezoneOffsetMs).toISOString().slice(0, 10)
 }
+
+function normalizeColorInputValue(value: unknown, fallback = '#ffffff'): string {
+  if (typeof value !== 'string' || !value.trim()) return fallback
+  const trimmed = value.trim()
+  const hexMatch = trimmed.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)
+  if (hexMatch) {
+    if (hexMatch[1].length === 6) return trimmed
+    const [r, g, b] = hexMatch[1].split('')
+    return `#${r}${r}${g}${g}${b}${b}`
+  }
+
+  const rgbMatch = trimmed.match(/^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*([0-9]*\.?[0-9]+))?\s*\)$/i)
+  if (!rgbMatch) return fallback
+  const [red, green, blue] = rgbMatch.slice(1, 4).map((channel) => {
+    const parsed = Number(channel)
+    return Math.max(0, Math.min(255, Number.isFinite(parsed) ? parsed : 0))
+  })
+  return `#${[red, green, blue].map((channel) => channel.toString(16).padStart(2, '0')).join('')}`
+}
+
+function getColorAlpha(value: unknown, fallback: number): number {
+  if (typeof value !== 'string') return fallback
+  const rgbaMatch = value.trim().match(/^rgba\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*([0-9]*\.?[0-9]+)\s*\)$/i)
+  if (!rgbaMatch) return fallback
+  const parsed = Number(rgbaMatch[1])
+  return Number.isFinite(parsed) ? Math.max(0, Math.min(1, parsed)) : fallback
+}
+
+function hexToRgba(value: string, alpha: number): string {
+  const normalized = normalizeColorInputValue(value, '#ffffff')
+  const hex = normalized.slice(1)
+  const red = Number.parseInt(hex.slice(0, 2), 16)
+  const green = Number.parseInt(hex.slice(2, 4), 16)
+  const blue = Number.parseInt(hex.slice(4, 6), 16)
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`
+}
+
+type WorkhubViewMode = 'tabs' | 'workspace_tree'
 
 function shiftDateInputValue(baseDate: string, daysDelta: number): string {
   const trimmed = baseDate.trim()
@@ -778,6 +817,8 @@ export default function WorkHubPage() {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const [dashboardSummaryCollapsed, setDashboardSummaryCollapsed] = useState(false)
   const [comments, setComments] = useState<WorkhubTaskComment[]>([])
+  const [commentsFetchLimit, setCommentsFetchLimit] = useState(WORKHUB_DISCUSSION_PAGE_SIZE)
+  const [commentsHasMoreOlder, setCommentsHasMoreOlder] = useState(false)
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState('')
   const [selectedProjectId, setSelectedProjectId] = useState('all')
   const [selectedAssigneeUid, setSelectedAssigneeUid] = useState('all')
@@ -796,6 +837,8 @@ export default function WorkHubPage() {
   const [selectedDocumentId, setSelectedDocumentId] = useState('')
   const [pendingNotificationDocument, setPendingNotificationDocument] = useState<WorkhubDocument | null>(null)
   const [activeSection, setActiveSection] = useState<'home' | 'users' | 'tasks' | 'notes' | 'dashboard' | 'clients' | 'moodboard'>('dashboard')
+  const [workhubViewMode, setWorkhubViewMode] = useState<WorkhubViewMode>('tabs')
+  const [workhubViewModeHydrated, setWorkhubViewModeHydrated] = useState(false)
   const [moodboardPanelMode, setMoodboardPanelMode] = useState<'classic' | 'v2' | 'flow'>('classic')
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<WorkhubCanonicalSection>('dashboard')
   const [quickAddFocusTrigger, setQuickAddFocusTrigger] = useState(0)
@@ -997,6 +1040,7 @@ export default function WorkHubPage() {
   const [openTaskStatusMenuId, setOpenTaskStatusMenuId] = useState('')
   const [openTaskPriorityMenuId, setOpenTaskPriorityMenuId] = useState('')
   const [openTaskAssigneeMenuId, setOpenTaskAssigneeMenuId] = useState('')
+  const [taskContextMenuState, setTaskContextMenuState] = useState<{ taskId: string; x: number; y: number } | null>(null)
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([])
   const [bulkStatusMenuOpen, setBulkStatusMenuOpen] = useState(false)
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false)
@@ -1045,13 +1089,14 @@ export default function WorkHubPage() {
     const handleDocumentPointerDown = (event: MouseEvent) => {
       const target = event.target
       if (!(target instanceof Element)) return
-      if (target.closest('.workhub-task-status-btn, .workhub-task-status-menu, .workhub-priority-indicator, .workhub-task-priority-menu, .workhub-task-more-btn, .workhub-task-more-menu, .workhub-detail-icon-btn, .workhub-detail-icon-menu, .workhub-task-filter-btn, .workhub-task-filter-menu, .workhub-bulk-status-btn, .workhub-bulk-status-menu, .workhub-task-assignee-btn, .workhub-task-assignee-menu, .workhub-notify-btn, .workhub-notify-menu, .workhub-account-btn, .workhub-account-menu, .workhub-project-color-select-btn, .workhub-project-color-select-menu, .workhub-mobile-workspace-panel, .workhub-mobile-workspace-toggle, .workhub-mobile-footer, .workhub-mobile-footer-btn')) {
+      if (target.closest('.workhub-task-status-btn, .workhub-task-status-menu, .workhub-priority-indicator, .workhub-task-priority-menu, .workhub-task-more-btn, .workhub-task-more-menu, .workhub-detail-icon-btn, .workhub-detail-icon-menu, .workhub-detail-assignee-picker, .workhub-detail-assignee-trigger, .workhub-detail-assignee-menu, .workhub-task-filter-btn, .workhub-task-filter-menu, .workhub-bulk-status-btn, .workhub-bulk-status-menu, .workhub-task-assignee-btn, .workhub-task-assignee-menu, .workhub-task-context-menu, .workhub-notify-btn, .workhub-notify-menu, .workhub-account-btn, .workhub-account-menu, .workhub-project-color-select-btn, .workhub-project-color-select-menu, .workhub-mobile-workspace-panel, .workhub-mobile-workspace-toggle, .workhub-mobile-footer, .workhub-mobile-footer-btn')) {
         return
       }
       setOpenTaskStatusMenuId('')
       setOpenTaskPriorityMenuId('')
       setOpenTaskMoreMenuId('')
       setOpenTaskAssigneeMenuId('')
+      setTaskContextMenuState(null)
       setTaskFilterMenuOpen(false)
       setBulkStatusMenuOpen(false)
       setDetailMenuOpen('')
@@ -1267,6 +1312,8 @@ export default function WorkHubPage() {
   useEffect(() => {
     if (!member || member.status !== 'approved') {
       setComments([])
+      setCommentsHasMoreOlder(false)
+      setCommentsFetchLimit(WORKHUB_DISCUSSION_PAGE_SIZE)
       setEditingCommentId('')
       setEditingCommentText('')
       return
@@ -1286,14 +1333,41 @@ export default function WorkHubPage() {
 
     if (!entityType || !entityId) {
       setComments([])
+      setCommentsHasMoreOlder(false)
+      setCommentsFetchLimit(WORKHUB_DISCUSSION_PAGE_SIZE)
       setEditingCommentId('')
       setEditingCommentText('')
       return
     }
 
-    const unsubComments = subscribeWorkhubCommentsByEntity(entityType, entityId, setComments)
+    const unsubComments = subscribeWorkhubCommentsByEntity(
+      entityType,
+      entityId,
+      setComments,
+      {
+        maxCount: commentsFetchLimit,
+        onHasMore: setCommentsHasMoreOlder,
+      },
+    )
     return () => unsubComments()
-  }, [activeSection, documents, member, selectedDocumentId, selectedProjectId])
+  }, [activeSection, commentsFetchLimit, documents, member, selectedDocumentId, selectedProjectId])
+
+  const activeDiscussionEntityKey = useMemo(() => {
+    if (activeSection === 'notes' && selectedDocumentId) {
+      const selectedDoc = documents.find((item) => item.id === selectedDocumentId)
+      const sourceId = selectedDoc?.referenceSourceDocumentId || selectedDocumentId
+      return sourceId ? `document:${sourceId}` : ''
+    }
+    if ((activeSection === 'tasks' || activeSection === 'dashboard') && selectedProjectId && selectedProjectId !== 'all') {
+      return `project:${selectedProjectId}`
+    }
+    return ''
+  }, [activeSection, documents, selectedDocumentId, selectedProjectId])
+
+  useEffect(() => {
+    setCommentsFetchLimit(WORKHUB_DISCUSSION_PAGE_SIZE)
+    setCommentsHasMoreOlder(false)
+  }, [activeDiscussionEntityKey])
 
   useEffect(() => {
     const localUid = auth.currentUser?.uid || ''
@@ -1344,6 +1418,10 @@ export default function WorkHubPage() {
   }, [member, projects, workspaces])
 
   const currentUid = auth.currentUser?.uid || ''
+  const workhubViewModeStorageKey = useMemo(
+    () => currentUid ? `workhub:view-mode:${currentUid}` : '',
+    [currentUid],
+  )
   const workspaceSelectionStorageKey = useMemo(
     () => currentUid ? `workhub:selectedWorkspace:${currentUid}` : '',
     [currentUid],
@@ -1424,6 +1502,7 @@ export default function WorkHubPage() {
     () => workspaces.filter((item) => canAccessWorkspace(item, currentUid, userEmail, isPrivilegedMember)),
     [currentUid, isPrivilegedMember, userEmail, workspaces],
   )
+  const [expandedWorkspaceTreeIds, setExpandedWorkspaceTreeIds] = useState<string[]>([])
   const approvedMembers = useMemo(() => members.filter((item) => item.status === 'approved'), [members])
   const pendingMembers = useMemo(() => members.filter((item) => item.status === 'pending'), [members])
   const selectedWorkspace = useMemo(() => visibleWorkspaces.find((item) => item.id === selectedWorkspaceId) || null, [selectedWorkspaceId, visibleWorkspaces])
@@ -1516,6 +1595,92 @@ export default function WorkHubPage() {
     () => Object.fromEntries(visibleWorkspaces.map((item) => [item.id, item])) as Record<string, WorkhubWorkspace>,
     [visibleWorkspaces],
   )
+  const workspaceTreeProjectsByWorkspaceId = useMemo(() => {
+    const grouped: Record<string, WorkhubProject[]> = {}
+    visibleWorkspaces.forEach((workspace) => {
+      const workspaceTemplateId = resolveWorkhubWorkspaceTemplateForWorkspace(workspace).templateId
+      const allowedIntentSet = new Set(resolveWorkspaceTemplateIntents(workspaceTemplateId))
+      const workspaceAccessLevel = workspace.memberAccessLevels?.[currentUid] || 'custom'
+      const canSeeWorkspaceProjectsForTree = isPrivilegedMember || workspaceAccessLevel === 'full'
+      grouped[workspace.id] = projects.filter((project) => {
+        if (project.workspaceId !== workspace.id) return false
+        if (!canViewProject(project, currentUid, canSeeWorkspaceProjectsForTree)) return false
+        const effectiveIntent = resolveEffectiveProjectIntent(project, workspaceByIdForFiltering, allowedIntentSet)
+        return allowedIntentSet.has(effectiveIntent)
+      })
+    })
+    return grouped
+  }, [currentUid, isPrivilegedMember, projects, visibleWorkspaces, workspaceByIdForFiltering])
+  const workspaceTreeNodesByWorkspaceId = useMemo(() => {
+    const grouped: Record<string, ReturnType<typeof buildProjectTree>> = {}
+    visibleWorkspaces.forEach((workspace) => {
+      grouped[workspace.id] = buildProjectTree(workspaceTreeProjectsByWorkspaceId[workspace.id] || [])
+    })
+    return grouped
+  }, [visibleWorkspaces, workspaceTreeProjectsByWorkspaceId])
+  const workspaceTreeProjectById = useMemo(
+    () => Object.fromEntries(
+      Object.values(workspaceTreeProjectsByWorkspaceId)
+        .flat()
+        .map((project) => [project.id, project]),
+    ) as Record<string, WorkhubProject>,
+    [workspaceTreeProjectsByWorkspaceId],
+  )
+  const workspaceTreeVisibleProjectIdSet = useMemo(() => new Set(
+    Object.values(workspaceTreeProjectsByWorkspaceId)
+      .flat()
+      .map((project) => project.id),
+  ), [workspaceTreeProjectsByWorkspaceId])
+  const workspaceTreeTaskCountByProjectId = useMemo(() => {
+    const counts: Record<string, number> = {}
+    tasks.forEach((task) => {
+      if (!workspaceTreeVisibleProjectIdSet.has(task.projectId)) return
+      if (selectedAssigneeUid !== 'all' && task.assigneeUid !== selectedAssigneeUid) return
+      counts[task.projectId] = (counts[task.projectId] || 0) + 1
+    })
+    return counts
+  }, [selectedAssigneeUid, tasks, workspaceTreeVisibleProjectIdSet])
+  const workspaceTreeProgressByProjectId = useMemo(() => {
+    const directDoneCounts: Record<string, number> = {}
+    tasks.forEach((task) => {
+      if (!workspaceTreeVisibleProjectIdSet.has(task.projectId)) return
+      if (selectedAssigneeUid !== 'all' && task.assigneeUid !== selectedAssigneeUid) return
+      if (!/done|complete/i.test(task.status)) return
+      directDoneCounts[task.projectId] = (directDoneCounts[task.projectId] || 0) + 1
+    })
+
+    const progress: Record<string, { done: number; total: number }> = {}
+    const resolveProgress = (projectId: string): { done: number; total: number } => {
+      if (!projectId) return { done: 0, total: 0 }
+      if (progress[projectId]) return progress[projectId]
+      const project = projects.find((item) => item.id === projectId)
+      const directDone = directDoneCounts[projectId] || 0
+      const directTotal = workspaceTreeTaskCountByProjectId[projectId] || 0
+      if (!project) {
+        const result = { done: directDone, total: directTotal }
+        progress[projectId] = result
+        return result
+      }
+      const children = (workspaceTreeProjectsByWorkspaceId[project.workspaceId] || []).filter((item) => item.parentProjectId === projectId)
+      const result = children.reduce((acc, child) => {
+        const childProgress = resolveProgress(child.id)
+        return {
+          done: acc.done + childProgress.done,
+          total: acc.total + childProgress.total,
+        }
+      }, { done: directDone, total: directTotal })
+      progress[projectId] = result
+      return result
+    }
+
+    Object.values(workspaceTreeProjectsByWorkspaceId)
+      .flat()
+      .forEach((project) => {
+        resolveProgress(project.id)
+      })
+
+    return progress
+  }, [projects, selectedAssigneeUid, tasks, workspaceTreeProjectsByWorkspaceId, workspaceTreeTaskCountByProjectId, workspaceTreeVisibleProjectIdSet])
   const {
     globalFinderOpen,
     setGlobalFinderOpen,
@@ -1811,6 +1976,44 @@ export default function WorkHubPage() {
   const expandedTaskChecklistIdsSet = useMemo(() => new Set(expandedTaskChecklistIds), [expandedTaskChecklistIds])
   const selectedTasks = useMemo(() => tasks.filter((item) => selectedTaskIdSet.has(item.id)), [selectedTaskIdSet, tasks])
   const selectedTaskCount = selectedTasks.length
+  const selectedTaskForContextMenu = useMemo(
+    () => (taskContextMenuState ? tasks.find((item) => item.id === taskContextMenuState.taskId) || null : null),
+    [taskContextMenuState, tasks],
+  )
+
+  const closeTaskContextMenu = useCallback(() => {
+    setTaskContextMenuState(null)
+  }, [])
+
+  const copyTaskDeepLink = useCallback(async () => {
+    if (!selectedTaskForContextMenu) return
+    const path = buildWorkhubPathname(
+      selectedTaskForContextMenu.workspaceId,
+      selectedTaskForContextMenu.projectId || 'all',
+      'tasks',
+      selectedTaskForContextMenu.id,
+    )
+    const absoluteUrl = `${window.location.origin}${path}`
+    try {
+      await navigator.clipboard.writeText(absoluteUrl)
+      showToast({ type: 'success', message: 'Task URL copied.' })
+      setTaskContextMenuState(null)
+    } catch {
+      showToast({ type: 'error', message: 'Could not copy task URL.' })
+    }
+  }, [selectedTaskForContextMenu, showToast])
+
+  const copyTaskUniqueToken = useCallback(async () => {
+    if (!selectedTaskForContextMenu) return
+    const token = `workhub-task:${selectedTaskForContextMenu.workspaceId}:${selectedTaskForContextMenu.id}`
+    try {
+      await navigator.clipboard.writeText(token)
+      showToast({ type: 'success', message: 'Task token copied.' })
+      setTaskContextMenuState(null)
+    } catch {
+      showToast({ type: 'error', message: 'Could not copy task token.' })
+    }
+  }, [selectedTaskForContextMenu, showToast])
   // Stable callbacks bag — created once on mount, reads current state via _cbRef.
   // This lets TaskRow be memoised: it only re-renders when its own props change.
   const taskRowCallbacks = useMemo<TaskRowCallbacks>(() => ({
@@ -1828,10 +2031,18 @@ export default function WorkHubPage() {
     },
     onRowClick: (taskId) => {
       setSelectedTaskId(taskId)
+      setTaskContextMenuState(null)
       setOpenTaskMoreMenuId('')
       setOpenTaskStatusMenuId('')
       setOpenTaskPriorityMenuId('')
       setOpenTaskAssigneeMenuId('')
+    },
+    onRowContextMenu: (taskId, clientX, clientY) => {
+      setOpenTaskMoreMenuId('')
+      setOpenTaskStatusMenuId('')
+      setOpenTaskPriorityMenuId('')
+      setOpenTaskAssigneeMenuId('')
+      setTaskContextMenuState({ taskId, x: clientX, y: clientY })
     },
     onDoubleClickRow: (taskId) => {
       setExpandedTaskChecklistIds((cur) => cur.includes(taskId) ? cur.filter((id) => id !== taskId) : [...cur, taskId])
@@ -3370,6 +3581,7 @@ export default function WorkHubPage() {
     setSelectedProjectId,
     setSelectedNoteProjectId,
     setSelectedDocumentId,
+    setSelectedMoodBoardId,
     setActiveSection,
     setSelectedTaskId,
     setExpandedProjectIds,
@@ -3463,11 +3675,65 @@ export default function WorkHubPage() {
       return
     }
 
+    // Pre-apply ALL state from the remembered route before navigating.
+    // This prevents the state→URL sync from computing a wrong path on the first
+    // render after the workspace switch due to stale project/entity state from
+    // the previous workspace. Without full pre-application:
+    //  – A stale selectedProjectId causes state→URL to append the old project to
+    //    the new workspace URL (e.g. /workhub/w/B/p/projA) instead of leaving it
+    //    as /workhub/w/B/s/tasks, then the project-clear effect fires, causing
+    //    another navigate back, and so on — producing visible workspace flickering.
+    //  – A stale entity (task/document/moodboard) triggers the entity guard in
+    //    state→URL, which blocks all subsequent navigations until the entity is
+    //    cleared by some other interaction.
+    const { pathname: remPathname, search: remSearch } = splitPersistedWorkhubRoute(rememberedRoute)
+    const remParsed = parseWorkhubPathname(remPathname, remSearch)
+    const remSection: WorkhubCanonicalSection = isWorkhubWorkspaceSection(remParsed.section) ? remParsed.section : 'dashboard'
+    const remProjectId = remParsed.projId && remParsed.projId !== 'all' ? remParsed.projId : 'all'
+    setSelectedProjectId(remProjectId)
+    setSelectedNoteProjectId(remSection === 'notes' && remProjectId !== 'all' ? remProjectId : '')
+    setSelectedDocumentId(remParsed.kind === 'document' ? remParsed.entityId : '')
+    setSelectedMoodBoardId(remParsed.kind === 'moodboard' ? remParsed.entityId : '')
+    setSelectedTaskId(remParsed.kind === 'task' ? remParsed.entityId : '')
+    setActiveWorkspaceTab(remSection)
+    setActiveSection(remSection)
+
     setSelectedWorkspaceId(workspaceId)
     if (`${location.pathname}${location.search}` !== rememberedRoute) {
       navigate(rememberedRoute)
     }
   }, [location.pathname, location.search, navigate, navigateToWorkspaceOverview, resolveRememberedWorkspaceRoute])
+  const toggleWorkspaceTreeExpansion = useCallback((workspaceId: string) => {
+    setExpandedWorkspaceTreeIds((current) => current.includes(workspaceId)
+      ? current.filter((item) => item !== workspaceId)
+      : [...current, workspaceId])
+  }, [])
+  const handleWorkspaceTreeGroupSelect = useCallback((workspaceId: string) => {
+    if (!workspaceId) return
+    toggleWorkspaceTreeExpansion(workspaceId)
+    if (workspaceId !== selectedWorkspaceId) {
+      navigateToRememberedWorkspaceRoute(workspaceId)
+    }
+  }, [navigateToRememberedWorkspaceRoute, selectedWorkspaceId, toggleWorkspaceTreeExpansion])
+  const handleSelectProjectFromWorkspaceTree = useCallback((workspaceId: string, projectId: string) => {
+    if (!workspaceId || !projectId) return
+    const lineage = collectProjectLineage(projectId, workspaceTreeProjectById)
+    if (lineage.length > 0) {
+      setExpandedProjectIds((current) => Array.from(new Set([...current, ...lineage])))
+    }
+    setSelectedWorkspaceId(workspaceId)
+    setSelectedProjectId(projectId)
+    setSelectedNoteProjectId('')
+    setSelectedDocumentId('')
+    setSelectedMoodBoardId('')
+    setSelectedTaskId('')
+    const nextSection = resolveProjectMainPanelSection(projectId)
+    setActiveSection(nextSection)
+    setActiveWorkspaceTab(nextSection)
+    setProjectsGroupExpanded(true)
+    setSidebarCollapsed(false)
+    navigate(buildWorkhubPathname(workspaceId, projectId, nextSection))
+  }, [navigate, resolveProjectMainPanelSection, setSelectedTaskId, workspaceTreeProjectById])
   const {
     documentDialogOpen,
     documentTitleDraft,
@@ -5279,6 +5545,7 @@ export default function WorkHubPage() {
           status: taskStatus,
           priority: taskPriority,
           assigneeUid,
+          assigneeUids: [assigneeUid],
           startDate: taskStartDate,
           dueDate: taskDueDate,
           notifyMode: initialTaskNotifyMode,
@@ -5299,6 +5566,22 @@ export default function WorkHubPage() {
           visibility: targetProject?.visibility || 'workspace',
           memberUids: targetProject?.memberUids || [],
         })
+        const createRecipients = normalizeMemberUids(
+          initialTaskNotifyMode === 'selected'
+            ? initialTaskNotifyUids
+            : [...(targetProject?.memberUids || []), assigneeUid],
+        ).filter((uid) => uid !== auth.currentUser?.uid)
+        if (createRecipients.length > 0) {
+          await createWorkhubNotifications({
+            workspaceId: selectedWorkspaceId,
+            actorUid: auth.currentUser.uid,
+            recipientUids: createRecipients,
+            entityType: 'task',
+            entityId: taskId,
+            action: 'task_created',
+            message: `created task "${normalizeTaskTitle(title) || 'Untitled task'}"`,
+          })
+        }
         if (targetProject) {
           await sendFolderEventNotifications({
             project: targetProject,
@@ -5374,6 +5657,7 @@ export default function WorkHubPage() {
           status: input.statusId as WorkhubTaskStatus,
           priority: input.priority,
           assigneeUid,
+          assigneeUids: [assigneeUid],
           startDate: getCurrentDateInputValue(),
           dueDate: input.dueDate || shiftDateInputValue(getCurrentDateInputValue(), 1),
           valueAmount: selectedWorkspaceScopeType === 'finance' ? input.valueAmount : undefined,
@@ -5396,6 +5680,22 @@ export default function WorkHubPage() {
           visibility: targetProject.visibility || 'workspace',
           memberUids: targetProject.memberUids || [],
         })
+        const createRecipients = normalizeMemberUids(
+          initialTaskNotifyMode === 'selected'
+            ? initialTaskNotifyUids
+            : [...(targetProject.memberUids || []), assigneeUid],
+        ).filter((uid) => uid !== auth.currentUser?.uid)
+        if (createRecipients.length > 0) {
+          await createWorkhubNotifications({
+            workspaceId: selectedWorkspaceId,
+            actorUid: auth.currentUser.uid,
+            recipientUids: createRecipients,
+            entityType: 'task',
+            entityId: taskId,
+            action: 'task_created',
+            message: `created task "${normalizeTaskTitle(title) || 'Untitled task'}"`,
+          })
+        }
         await sendFolderEventNotifications({
           project: targetProject,
           eventType: 'task_created',
@@ -5423,10 +5723,18 @@ export default function WorkHubPage() {
 
   async function handleTaskUpdate(task: WorkhubTask, updates: Partial<WorkhubTask>, options?: { silent?: boolean }) {
     if (!auth.currentUser) return
+    const allowedAssignees = assignableMembersByProjectId[task.projectId] || workspaceAssignableMembers
+    const allowedAssigneeUidSet = new Set(allowedAssignees.map((item) => item.uid))
     if (typeof updates.assigneeUid === 'string' && updates.assigneeUid !== task.assigneeUid && updates.assigneeUid && !isPrivilegedMember) {
-      const allowedAssignees = assignableMembersByProjectId[task.projectId] || workspaceAssignableMembers
-      if (!allowedAssignees.some((item) => item.uid === updates.assigneeUid)) {
+      if (!allowedAssigneeUidSet.has(updates.assigneeUid)) {
         showToast({ type: 'error', message: 'Assignee must be a member of this project.' })
+        return
+      }
+    }
+    if (Array.isArray(updates.assigneeUids) && !isPrivilegedMember) {
+      const hasInvalidAssignee = updates.assigneeUids.some((uid) => !allowedAssigneeUidSet.has(uid))
+      if (hasInvalidAssignee) {
+        showToast({ type: 'error', message: 'All assignees must be members of this project.' })
         return
       }
     }
@@ -5444,6 +5752,26 @@ export default function WorkHubPage() {
         updatedAt: new Date().toISOString(),
       }
     }))
+
+    const resolveTaskEventNotificationRecipients = (baseTask: WorkhubTask, patch: Partial<WorkhubTask>) => {
+      const effectiveTask = { ...baseTask, ...patch }
+      const assigneePool = normalizeMemberUids([
+        ...(effectiveTask.assigneeUids || []),
+        effectiveTask.assigneeUid,
+      ])
+      const candidatePool = normalizeMemberUids([
+        ...(effectiveTask.memberUids || []),
+        effectiveTask.createdBy,
+        ...assigneePool,
+      ])
+      const mode = effectiveTask.notifyMode || 'all'
+      if (mode === 'none') return [] as string[]
+      if (mode === 'selected') {
+        const selectedPool = normalizeMemberUids(Array.isArray(effectiveTask.notifyUids) ? effectiveTask.notifyUids : [])
+        return selectedPool.filter((uid) => candidatePool.includes(uid) && uid !== auth.currentUser?.uid)
+      }
+      return candidatePool.filter((uid) => uid !== auth.currentUser?.uid)
+    }
     try {
       await updateWorkhubTask(task.id, nextUpdates)
       const statusChanged = typeof updates.status === 'string' && updates.status !== task.status
@@ -5483,25 +5811,117 @@ export default function WorkHubPage() {
         }
       }
       const changedLabels: string[] = []
+      const normalizeStringList = (value: unknown): string[] => (
+        Array.isArray(value)
+          ? value
+            .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+            .filter(Boolean)
+            .sort()
+          : []
+      )
+      const areStringListsEqual = (left: string[], right: string[]) => (
+        left.length === right.length && left.every((entry, index) => entry === right[index])
+      )
+
       if (typeof updates.status === 'string' && updates.status !== task.status) changedLabels.push('status')
       if (typeof updates.priority === 'string' && updates.priority !== task.priority) changedLabels.push('priority')
       if (typeof updates.assigneeUid === 'string' && updates.assigneeUid !== task.assigneeUid) changedLabels.push('assignee')
+      if (Array.isArray(updates.assigneeUids)) changedLabels.push('assignees')
       if (typeof updates.startDate === 'string' && updates.startDate !== task.startDate) changedLabels.push('start date')
       if (typeof updates.dueDate === 'string' && updates.dueDate !== task.dueDate) changedLabels.push('due date')
+      if (typeof updates.dueTime === 'string' && updates.dueTime !== (task.dueTime || '')) changedLabels.push('due time')
       if (typeof updates.title === 'string' && updates.title.trim() !== task.title.trim()) changedLabels.push('title')
-      if (changedLabels.length > 0 && selectedWorkspaceId) {
-        const assigneeChanging = typeof updates.assigneeUid === 'string' && updates.assigneeUid !== task.assigneeUid
+      if (typeof updates.description === 'string' && updates.description.trim() !== (task.description || '').trim()) changedLabels.push('description')
+      if (Object.prototype.hasOwnProperty.call(updates, 'attachments')) {
+        const previousAttachments = normalizeStringList(task.attachments)
+        const nextAttachments = normalizeStringList(updates.attachments)
+        if (!areStringListsEqual(previousAttachments, nextAttachments)) changedLabels.push('attachments')
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, 'links')) {
+        const previousLinks = normalizeStringList(task.links)
+        const nextLinks = normalizeStringList(updates.links)
+        if (!areStringListsEqual(previousLinks, nextLinks)) changedLabels.push('links')
+      }
 
-        // Only notify the newly assigned user — no one else needs to know about assignee changes
-        if (assigneeChanging && updates.assigneeUid) {
+      const previousAttachments = normalizeStringList(task.attachments)
+      const nextAttachments = Object.prototype.hasOwnProperty.call(updates, 'attachments')
+        ? normalizeStringList(updates.attachments)
+        : previousAttachments
+      const addedAttachmentsCount = nextAttachments.filter((item) => !previousAttachments.includes(item)).length
+      const removedAttachmentsCount = previousAttachments.filter((item) => !nextAttachments.includes(item)).length
+
+      const previousLinks = normalizeStringList(task.links)
+      const nextLinks = Object.prototype.hasOwnProperty.call(updates, 'links')
+        ? normalizeStringList(updates.links)
+        : previousLinks
+      const addedLinksCount = nextLinks.filter((item) => !previousLinks.includes(item)).length
+      const removedLinksCount = previousLinks.filter((item) => !nextLinks.includes(item)).length
+
+      const previousChecklist = buildChecklist(task)
+      const nextChecklist = Array.isArray(updates.checklist) ? updates.checklist : previousChecklist
+      const previousChecklistById = new Map(previousChecklist.map((item) => [item.id, item]))
+      const createdChecklistCount = nextChecklist.filter((item) => !previousChecklistById.has(item.id)).length
+      const completedChecklistCount = nextChecklist.filter((item) => {
+        const previous = previousChecklistById.get(item.id)
+        return !!previous && !previous.completed && !!item.completed
+      }).length
+
+      const eventFragments: string[] = []
+      if (changedLabels.includes('status')) eventFragments.push('status changed')
+      if (changedLabels.includes('priority')) eventFragments.push('priority changed')
+      if (changedLabels.includes('assignee') || changedLabels.includes('assignees')) eventFragments.push('assignees updated')
+      if (changedLabels.includes('due date') || changedLabels.includes('due time')) eventFragments.push('due schedule updated')
+      if (changedLabels.includes('title')) eventFragments.push('title updated')
+      if (changedLabels.includes('description')) eventFragments.push('description updated')
+      if (addedAttachmentsCount > 0) {
+        eventFragments.push(`attachment${addedAttachmentsCount === 1 ? '' : 's'} added`)
+      }
+      if (removedAttachmentsCount > 0) {
+        eventFragments.push(`attachment${removedAttachmentsCount === 1 ? '' : 's'} removed`)
+      }
+      if (changedLabels.includes('attachments') && addedAttachmentsCount === 0 && removedAttachmentsCount === 0) {
+        eventFragments.push('attachments updated')
+      }
+      if (addedLinksCount > 0) {
+        eventFragments.push(`link${addedLinksCount === 1 ? '' : 's'} added`)
+      }
+      if (removedLinksCount > 0) {
+        eventFragments.push(`link${removedLinksCount === 1 ? '' : 's'} removed`)
+      }
+      if (changedLabels.includes('links') && addedLinksCount === 0 && removedLinksCount === 0) {
+        eventFragments.push('links updated')
+      }
+      if (createdChecklistCount > 0) {
+        eventFragments.push(`checklist item${createdChecklistCount === 1 ? '' : 's'} added`)
+      }
+      if (completedChecklistCount > 0) {
+        eventFragments.push(`checklist item${completedChecklistCount === 1 ? '' : 's'} completed`)
+      }
+
+      if (changedLabels.length > 0 && selectedWorkspaceId) {
+        const recipients = resolveTaskEventNotificationRecipients(task, nextUpdates)
+        if (recipients.length > 0 && eventFragments.length > 0) {
           await createWorkhubNotifications({
             workspaceId: selectedWorkspaceId,
             actorUid: auth.currentUser.uid,
-            recipientUids: [updates.assigneeUid],
+            recipientUids: recipients,
             entityType: 'task',
             entityId: task.id,
             action: 'task_update',
-            message: `assigned you to task \"${task.title}\"`,
+            message: `updated task "${normalizeTaskTitle(task.title || '') || 'Untitled task'}": ${eventFragments.join(', ')}`,
+          })
+        }
+      } else if (selectedWorkspaceId && eventFragments.length > 0) {
+        const recipients = resolveTaskEventNotificationRecipients(task, nextUpdates)
+        if (recipients.length > 0) {
+          await createWorkhubNotifications({
+            workspaceId: selectedWorkspaceId,
+            actorUid: auth.currentUser.uid,
+            recipientUids: recipients,
+            entityType: 'task',
+            entityId: task.id,
+            action: 'task_update',
+            message: `updated task "${normalizeTaskTitle(task.title || '') || 'Untitled task'}": ${eventFragments.join(', ')}`,
           })
         }
       }
@@ -5762,6 +6182,9 @@ export default function WorkHubPage() {
       notifyCandidates={discussionNotifyCandidates}
       onNotifyModeChange={setDiscussionNotifyMode}
       onNotifyUidsChange={setDiscussionNotifyUids}
+      hasMoreOlderMessages={commentsHasMoreOlder}
+      onLoadMoreOlderMessages={() => setCommentsFetchLimit((current) => current + WORKHUB_DISCUSSION_PAGE_SIZE)}
+      threadKey={activeDiscussionEntityKey}
     />
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ), [comments, currentUid, memberByUid, editingCommentId, editingCommentText, busyKey,
@@ -6487,6 +6910,24 @@ export default function WorkHubPage() {
     closeActionMenu()
   }
 
+  const handleSelectProjectFromTree = useCallback((projectId: string) => {
+    handleSelectProject(projectId)
+    if (!selectedWorkspaceId) return
+    const nextSection = resolveProjectMainPanelSection ? resolveProjectMainPanelSection(projectId) : 'tasks'
+    navigate(buildWorkhubPathname(selectedWorkspaceId, projectId, nextSection))
+  }, [handleSelectProject, navigate, resolveProjectMainPanelSection, selectedWorkspaceId])
+
+  const handleSelectDocumentTreeItem = useCallback((documentId: string) => {
+    const document = workspaceDocumentById[documentId]
+    if (!document) return
+    const nextProjectId = document.projectId && visibleProjectIds.has(document.projectId)
+      ? document.projectId
+      : 'all'
+    handleSelectDocumentFromTree(documentId)
+    if (!selectedWorkspaceId) return
+    navigate(buildWorkhubPathname(selectedWorkspaceId, nextProjectId, 'notes', documentId))
+  }, [handleSelectDocumentFromTree, navigate, selectedWorkspaceId, visibleProjectIds, workspaceDocumentById])
+
   const handleMobileWorkspaceChange = useCallback((workspaceId: string) => {
     setGearMenuOpen(false)
     if (workspaceId !== selectedWorkspaceId) {
@@ -6554,6 +6995,17 @@ export default function WorkHubPage() {
     closeActionMenu()
   }, [closeActionMenu, visibleProjectIds, workspaceMoodBoards, workspaceProjectById])
 
+  const handleSelectMoodBoardTreeItem = useCallback((boardId: string) => {
+    const board = workspaceMoodBoards.find((item) => item.id === boardId)
+    if (!board) return
+    const nextProjectId = board.entityType === 'project' && visibleProjectIds.has(board.entityId)
+      ? board.entityId
+      : 'all'
+    handleSelectMoodBoardFromTree(boardId)
+    if (!selectedWorkspaceId) return
+    navigate(buildWorkhubPathname(selectedWorkspaceId, nextProjectId, 'moodboard', boardId))
+  }, [handleSelectMoodBoardFromTree, navigate, selectedWorkspaceId, visibleProjectIds, workspaceMoodBoards])
+
   const handleMobileMoodBoardSelect = useCallback((boardId: string) => {
     setGearMenuOpen(false)
     handleSelectMoodBoardFromTree(boardId)
@@ -6619,6 +7071,21 @@ export default function WorkHubPage() {
     media.addEventListener('change', onChange)
     return () => media.removeEventListener('change', onChange)
   }, [])
+
+  useEffect(() => {
+    setWorkhubViewModeHydrated(false)
+    if (!workhubViewModeStorageKey) return
+    const saved = localStorage.getItem(workhubViewModeStorageKey)
+    if (saved === 'tabs' || saved === 'workspace_tree') {
+      setWorkhubViewMode(saved)
+    }
+    setWorkhubViewModeHydrated(true)
+  }, [workhubViewModeStorageKey])
+
+  useEffect(() => {
+    if (!workhubViewModeStorageKey || !workhubViewModeHydrated) return
+    localStorage.setItem(workhubViewModeStorageKey, workhubViewMode)
+  }, [workhubViewMode, workhubViewModeHydrated, workhubViewModeStorageKey])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -6822,6 +7289,7 @@ export default function WorkHubPage() {
     : 'No items yet. Create a top-level category first.'
   const workhubTasksSectionProps = {
     isMobileWorkhubLayout,
+    workhubViewMode,
     onMobileTaskDetailOpenChange: setMobileTaskDetailOpen,
     taskItemDisplayMode,
     taskContextTrail,
@@ -6868,6 +7336,8 @@ export default function WorkHubPage() {
     financeWorkspaceCurrency,
     taskDueDisplayMode,
     selectedTaskIdSet,
+    taskContextMenuState,
+    setTaskContextMenuState,
     dropTargetKey,
     dragTaskId,
     dragStatusId,
@@ -6900,9 +7370,13 @@ export default function WorkHubPage() {
     setQuickAddFocusStatusId,
     setDropTargetKey,
     handleTaskReorder: stableHandleTaskReorder,
+    closeTaskContextMenu,
+    copyTaskDeepLink,
+    copyTaskUniqueToken,
     handleQuickAddTask: stableHandleQuickAddTask,
     setStatusTaskRenderLimitById,
     selectedProjectIntentMeta,
+    workspaceProjectById,
     workspaceDocumentsByProjectId,
     workspaceMoodBoardsByProjectId,
     selectedWorkspaceMoodBoardEnabled: selectedWorkspace?.moodBoardEnabled !== false,
@@ -7047,6 +7521,7 @@ export default function WorkHubPage() {
     showToast,
   }
   const showDashboardDetailRail = !isMobileWorkhubLayout
+    && workhubViewMode === 'tabs'
     && activeSection === 'dashboard'
     && selectedProject?.mainPanelView === 'dashboard_with_details'
 
@@ -7077,31 +7552,57 @@ export default function WorkHubPage() {
                 </button>
               </div>
             ) : (
-              <div className="workhub-workspace-tabs-wrap">
-                <div className="workhub-workspace-tabs" role="tablist" aria-label="Workspaces">
-                  {visibleWorkspaces.map((item) => {
-                    const workspaceDisplayName = workspaceDisplayNameById[item.id] || item.name
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        className={`workhub-tab workhub-workspace-tab${selectedWorkspaceId === item.id ? ' is-active' : ''}`}
-                        onClick={() => {
-                          if (item.id !== selectedWorkspaceId) {
-                            navigateToRememberedWorkspaceRoute(item.id)
-                          }
-                        }}
-                        title={workspaceDisplayName}
-                      >
-                        {workspaceDisplayName}
-                      </button>
-                    )
-                  })}
+              workhubViewMode === 'tabs' ? (
+                <div className="workhub-workspace-tabs-wrap">
+                  <div className="workhub-workspace-tabs" role="tablist" aria-label="Workspaces">
+                    {visibleWorkspaces.map((item) => {
+                      const workspaceDisplayName = workspaceDisplayNameById[item.id] || item.name
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          className={`workhub-tab workhub-workspace-tab${selectedWorkspaceId === item.id ? ' is-active' : ''}`}
+                          onClick={() => {
+                            if (item.id !== selectedWorkspaceId) {
+                              navigateToRememberedWorkspaceRoute(item.id)
+                            }
+                          }}
+                          title={workspaceDisplayName}
+                        >
+                          {workspaceDisplayName}
+                        </button>
+                      )
+                    })}
+                  </div>
                 </div>
-              </div>
+              ) : null
             )}
           </div>
           <nav className="workhub-header-actions">
+            {!isMobileWorkhubLayout && (
+              <div className="workhub-view-mode-switch" role="group" aria-label="WorkHub view mode">
+                <button
+                  type="button"
+                  className={`workhub-view-mode-btn${workhubViewMode === 'tabs' ? ' is-active' : ''}`}
+                  onClick={() => setWorkhubViewMode('tabs')}
+                  data-active={workhubViewMode === 'tabs' ? 'true' : 'false'}
+                  title="Tabs view"
+                >
+                  <span className="workhub-view-mode-btn-icon" aria-hidden="true">▥</span>
+                  <span className="workhub-view-mode-btn-label">Tabs</span>
+                </button>
+                <button
+                  type="button"
+                  className={`workhub-view-mode-btn${workhubViewMode === 'workspace_tree' ? ' is-active' : ''}`}
+                  onClick={() => setWorkhubViewMode('workspace_tree')}
+                  data-active={workhubViewMode === 'workspace_tree' ? 'true' : 'false'}
+                  title="Workspaces view"
+                >
+                  <span className="workhub-view-mode-btn-icon" aria-hidden="true">≣</span>
+                  <span className="workhub-view-mode-btn-label">Workspaces</span>
+                </button>
+              </div>
+            )}
             <button
               type="button"
               className="workhub-tab workhub-find-command-btn workhub-top-nav-icon-btn"
@@ -7429,50 +7930,125 @@ export default function WorkHubPage() {
             )}
             {!sidebarCollapsed && (
               <>
-                <div className="workhub-tree-actions workhub-sidebar-template-actions">
-                  <div className="workhub-tree-overview-row">
-                    <button
-                      className={`workhub-tree-overview${selectedProjectId === 'all' && activeSection === 'dashboard' ? ' is-active' : ''}`}
-                      onClick={() => navigateToWorkspaceSection('dashboard')}
-                    >
-                      Workspace overview
-                    </button>
-                    {isPrivilegedMember && (
-                      <div className="workhub-tree-overview-actions">
-                        <button
-                          type="button"
-                          className="workhub-plus-btn"
-                          title="Create items"
-                          aria-label="Create items"
-                          onClick={(event) => handleProjectActionMenu('__workspace__', event)}
-                          disabled={!selectedWorkspaceId}
-                        >
-                          +
-                        </button>
-                        <div style={{ position: 'relative' }}>
+                {workhubViewMode === 'tabs' ? (
+                  <div className="workhub-tree-actions workhub-sidebar-template-actions">
+                    <div className="workhub-tree-overview-row">
+                      <button
+                        className={`workhub-tree-overview${selectedProjectId === 'all' && activeSection === 'dashboard' ? ' is-active' : ''}`}
+                        onClick={() => navigateToWorkspaceSection('dashboard')}
+                      >
+                        Workspace overview
+                      </button>
+                      {isPrivilegedMember && (
+                        <div className="workhub-tree-overview-actions">
                           <button
                             type="button"
-                            className="workhub-gear-btn"
-                            title="Workspace options"
-                            aria-label="Workspace options"
-                            onClick={() => setGearMenuOpen((v) => !v)}
+                            className="workhub-plus-btn"
+                            title="Create items"
+                            aria-label="Create items"
+                            onClick={(event) => handleProjectActionMenu('__workspace__', event)}
                             disabled={!selectedWorkspaceId}
                           >
-                            ⚙
+                            +
                           </button>
-                          {gearMenuOpen && selectedWorkspaceId && (
-                            <div className="workhub-gear-menu">
-                              <button type="button" className="workhub-gear-menu-item" onClick={() => { setGearMenuOpen(false); openWorkspaceSettings(selectedWorkspaceId) }}>Workspace settings</button>
-                              <button type="button" className="workhub-gear-menu-item" onClick={() => { setGearMenuOpen(false); setStatusDialogOpen(true) }}>Status settings</button>
-                            </div>
-                          )}
+                          <div style={{ position: 'relative' }}>
+                            <button
+                              type="button"
+                              className="workhub-gear-btn"
+                              title="Workspace options"
+                              aria-label="Workspace options"
+                              onClick={() => setGearMenuOpen((v) => !v)}
+                              disabled={!selectedWorkspaceId}
+                            >
+                              ⚙
+                            </button>
+                            {gearMenuOpen && selectedWorkspaceId && (
+                              <div className="workhub-gear-menu">
+                                <button type="button" className="workhub-gear-menu-item" onClick={() => { setGearMenuOpen(false); openWorkspaceSettings(selectedWorkspaceId) }}>Workspace settings</button>
+                                <button type="button" className="workhub-gear-menu-item" onClick={() => { setGearMenuOpen(false); setStatusDialogOpen(true) }}>Status settings</button>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
-                </div>
+                ) : null}
                 <div className="workhub-tree-scroll">
-                  {groupedProjectsWorkspace ? (
+                  {workhubViewMode === 'workspace_tree' ? (
+                    <div className="workhub-tree-workspace-list">
+                      {visibleWorkspaces.map((workspace) => {
+                        const workspaceId = workspace.id
+                        const workspaceNodes = workspaceTreeNodesByWorkspaceId[workspaceId] || []
+                        const isExpanded = expandedWorkspaceTreeIds.includes(workspaceId)
+                        const workspaceTemplateId = resolveWorkhubWorkspaceTemplateForWorkspace(workspace).templateId
+                        const workspaceDisplayName = workspaceDisplayNameById[workspaceId] || workspace.name
+                        return (
+                          <div key={workspaceId} className={`workhub-tree-workspace-group${selectedWorkspaceId === workspaceId ? ' is-active' : ''}`}>
+                            <div className="workhub-tree-workspace-head">
+                              <button
+                                type="button"
+                                className="workhub-tree-workspace-btn"
+                                onClick={() => handleWorkspaceTreeGroupSelect(workspaceId)}
+                              >
+                                <span className="workhub-tree-workspace-label">
+                                  <span className={`workhub-tree-workspace-caret${isExpanded ? ' is-expanded' : ''}`}>▸</span>
+                                  <span>{workspaceDisplayName}</span>
+                                </span>
+                                <span className="workhub-tree-workspace-summary">{workspaceNodes.length} root item{workspaceNodes.length === 1 ? '' : 's'}</span>
+                              </button>
+                              <button
+                                type="button"
+                                className={`workhub-tree-workspace-overview-btn${selectedWorkspaceId === workspaceId && selectedProjectId === 'all' && activeSection === 'dashboard' ? ' is-active' : ''}`}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  navigateToWorkspaceSection('dashboard', workspaceId)
+                                }}
+                                title="Workspace overview"
+                                aria-label={`Open ${workspaceDisplayName} overview`}
+                              >
+                                <span aria-hidden="true">⌂</span>
+                              </button>
+                            </div>
+                            <div className={`workhub-tree-workspace-expand-wrap${isExpanded ? ' is-open' : ''}`}>
+                              <div className="workhub-tree-workspace-expand-inner">
+                                <div className="workhub-tree-workspace-body">
+                                {workspaceNodes.length > 0 ? (
+                                  <ProjectTreeNodes
+                                    nodes={workspaceNodes}
+                                    treeMetaDisplayMode={treeMetaDisplayMode}
+                                    showProjectColorDots={showProjectColorDots}
+                                    selectedProjectId={selectedProjectId}
+                                    expandedProjectIds={expandedProjectIds}
+                                    directTaskCountByProjectId={workspaceTreeTaskCountByProjectId}
+                                    unreadCommentCountByProjectId={{}}
+                                    taskProgressByProjectId={workspaceTreeProgressByProjectId}
+                                    projectIntentById={projectIntentById}
+                                    projectIntentIconById={projectIntentIconById}
+                                    selectedDocumentId=""
+                                    selectedMoodBoardId=""
+                                    documentsByProjectId={{}}
+                                    moodBoardsByProjectId={{}}
+                                    isPrivilegedMember={canSeeAllProjects}
+                                    onSelectProject={(projectId) => handleSelectProjectFromWorkspaceTree(workspaceId, projectId)}
+                                    onSelectDocument={() => {}}
+                                    onSelectMoodBoard={() => {}}
+                                    onToggleExpansion={toggleProjectExpansion}
+                                    onOpenActionMenu={handleProjectActionMenu}
+                                    onOpenSettings={openProjectSettingsDialog}
+                                    projectColorMeanings={resolveProjectColorMeanings(workspaceTemplateId, workspace.projectColorMeanings)}
+                                  />
+                                ) : (
+                                  <div className="workhub-empty-state">No project items in this workspace yet.</div>
+                                )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : groupedProjectsWorkspace ? (
                     <>
                       {selectedWorkspaceScopeType !== 'finance' && (
                       <div className="workhub-tree-group">
@@ -7506,9 +8082,9 @@ export default function WorkHubPage() {
                                 documentsByProjectId={workspaceDocumentsByProjectId}
                                 moodBoardsByProjectId={workspaceMoodBoardsByProjectId}
                                 isPrivilegedMember={canSeeAllProjects}
-                                onSelectProject={handleSelectProject}
-                                onSelectDocument={handleSelectDocumentFromTree}
-                                onSelectMoodBoard={handleSelectMoodBoardFromTree}
+                                onSelectProject={handleSelectProjectFromTree}
+                                onSelectDocument={handleSelectDocumentTreeItem}
+                                onSelectMoodBoard={handleSelectMoodBoardTreeItem}
                                 onToggleExpansion={toggleProjectExpansion}
                                 onOpenActionMenu={handleProjectActionMenu}
                                 onOpenSettings={openProjectSettingsDialog}
@@ -7539,9 +8115,9 @@ export default function WorkHubPage() {
                             documentsByProjectId={workspaceDocumentsByProjectId}
                             moodBoardsByProjectId={workspaceMoodBoardsByProjectId}
                             isPrivilegedMember={canSeeAllProjects}
-                            onSelectProject={handleSelectProject}
-                            onSelectDocument={handleSelectDocumentFromTree}
-                            onSelectMoodBoard={handleSelectMoodBoardFromTree}
+                            onSelectProject={handleSelectProjectFromTree}
+                            onSelectDocument={handleSelectDocumentTreeItem}
+                            onSelectMoodBoard={handleSelectMoodBoardTreeItem}
                             onToggleExpansion={toggleProjectExpansion}
                             onOpenActionMenu={handleProjectActionMenu}
                             onOpenSettings={openProjectSettingsDialog}
@@ -7567,9 +8143,9 @@ export default function WorkHubPage() {
                       documentsByProjectId={workspaceDocumentsByProjectId}
                       moodBoardsByProjectId={workspaceMoodBoardsByProjectId}
                       isPrivilegedMember={canSeeAllProjects}
-                      onSelectProject={handleSelectProject}
-                      onSelectDocument={handleSelectDocumentFromTree}
-                      onSelectMoodBoard={handleSelectMoodBoardFromTree}
+                      onSelectProject={handleSelectProjectFromTree}
+                      onSelectDocument={handleSelectDocumentTreeItem}
+                      onSelectMoodBoard={handleSelectMoodBoardTreeItem}
                       onToggleExpansion={toggleProjectExpansion}
                       onOpenActionMenu={handleProjectActionMenu}
                       onOpenSettings={openProjectSettingsDialog}
@@ -8531,30 +9107,7 @@ export default function WorkHubPage() {
             />
           ) : (
             <main className="workhub-section-stack">
-              <section className="workhub-panel">
-                <div className="workhub-switcher">
-                  <button
-                    type="button"
-                    className="workhub-switcher-btn"
-                    onClick={() => setMoodboardPanelMode('classic')}
-                  >
-                    Classic Mood Board
-                  </button>
-                  <button
-                    type="button"
-                    className={`workhub-switcher-btn${moodboardPanelMode === 'v2' ? ' is-active' : ''}`}
-                    onClick={() => setMoodboardPanelMode('v2')}
-                  >
-                    Mood Board #2
-                  </button>
-                  <button
-                    type="button"
-                    className={`workhub-switcher-btn${moodboardPanelMode === 'flow' ? ' is-active' : ''}`}
-                    onClick={() => setMoodboardPanelMode('flow')}
-                  >
-                    Flow Project Plan
-                  </button>
-                </div>
+              <section className="workhub-panel workhub-flowboard-panel">
                 <FlowBoardCanvas
                   variant={moodboardPanelMode === 'flow' ? 'project' : 'mood'}
                   stateKey={activeMoodBoard?.id || `${selectedWorkspaceId}:${moodboardPanelMode}`}
@@ -8599,8 +9152,10 @@ export default function WorkHubPage() {
                     nodes: (activeMoodBoard?.flowNodes as never[] | undefined) || [],
                     edges: (activeMoodBoard?.flowEdges as never[] | undefined) || [],
                     viewport: activeMoodBoard?.flowViewport || undefined,
+                    canvasAppearance: activeMoodBoard?.flowSettings?.canvasAppearance,
+                    showNavigationPreview: activeMoodBoard?.flowSettings?.showNavigationPreview,
                   }}
-                  renderDetailsPanel={({ selectedNode, selectedData, canvasAppearance, updateSelectedNodeData, updateSelectedNodeStyle, updateSelectedNodeSize, updateCanvasAppearance, applyCanvasPreset, removeSelectedNode }) => (
+                  renderDetailsPanel={({ selectedNode, selectedData, canvasAppearance, showNavigationPreview, selectedGroupLabel, updateSelectedNodeData, updateSelectedNodeStyle, updateSelectedNodeSize, updateCanvasAppearance, setShowNavigationPreview, applyCanvasPreset, sendSelectedNodeToBack, bringSelectedNodeForward, toggleSelectedGroupLock, toggleSelectedGroupCollapse, removeSelectedNode }) => (
                     <>
                       <div className="workhub-task-attachments-head">
                         <span>Details</span>
@@ -8620,6 +9175,9 @@ export default function WorkHubPage() {
                               }}
                             />
                           </label>
+                          {moodboardPanelMode !== 'flow' ? (
+                            <div className="workhub-empty-state">Use Add group in the top toolbar to place a background container behind a set of images.</div>
+                          ) : null}
                           <button type="button" className="flowboard-btn flowboard-danger" onClick={removeSelectedNode} disabled={!selectedNode}>
                             Delete selected node
                           </button>
@@ -8641,14 +9199,38 @@ export default function WorkHubPage() {
                               Node color
                               <input
                                 type="color"
-                                value={selectedData.noteColor || '#ffffff'}
+                                value={normalizeColorInputValue(
+                                  selectedData.noteColor,
+                                  selectedNode.type === 'groupNode' || selectedData.kind === 'group' ? '#c7d6ff' : '#ffffff',
+                                )}
                                 onChange={(event) => {
                                   const nextColor = event.target.value
-                                  updateSelectedNodeData({ noteColor: nextColor })
-                                  updateSelectedNodeStyle({ backgroundColor: nextColor })
+                                  const isGroupNode = selectedNode.type === 'groupNode' || selectedData.kind === 'group'
+                                  const nextNodeColor = isGroupNode
+                                    ? hexToRgba(nextColor, getColorAlpha(selectedData.noteColor, 0.16))
+                                    : nextColor
+                                  updateSelectedNodeData({ noteColor: nextNodeColor })
+                                  updateSelectedNodeStyle({ backgroundColor: nextNodeColor })
                                 }}
                               />
                             </label>
+                            {(selectedNode.type === 'imageNode' || selectedData.kind === 'image') && selectedGroupLabel ? (
+                              <div className="workhub-empty-state">Attached to group: {selectedGroupLabel}</div>
+                            ) : null}
+                            {(selectedNode.type === 'groupNode' || selectedData.kind === 'group') ? (
+                              <div className="flowboard-preset-row">
+                                <button type="button" className="flowboard-btn" onClick={toggleSelectedGroupLock}>
+                                  {selectedData.locked === false ? 'Lock group' : 'Unlock group'}
+                                </button>
+                                <button type="button" className="flowboard-btn" onClick={toggleSelectedGroupCollapse}>
+                                  {selectedData.collapsed ? 'Expand group' : 'Collapse group'}
+                                </button>
+                              </div>
+                            ) : null}
+                            <div className="flowboard-preset-row">
+                              <button type="button" className="flowboard-btn" onClick={sendSelectedNodeToBack}>Send to back</button>
+                              <button type="button" className="flowboard-btn" onClick={bringSelectedNodeForward}>Bring forward</button>
+                            </div>
                           </div>
                         ) : (
                           <div className="workhub-empty-state">Select a node to edit text and color.</div>
@@ -8659,6 +9241,14 @@ export default function WorkHubPage() {
                         <h3>Canvas style</h3>
                         {!selectedNode ? (
                           <div className="flowboard-details-form flowboard-canvas-appearance-form">
+                            <label className="flowboard-toggle-field">
+                              <span>Show navigation preview</span>
+                              <input
+                                type="checkbox"
+                                checked={showNavigationPreview}
+                                onChange={(event) => setShowNavigationPreview(event.target.checked)}
+                              />
+                            </label>
                             <label>
                               Canvas background
                               <input
@@ -8825,6 +9415,10 @@ export default function WorkHubPage() {
                       state.nodes as WorkhubMoodBoard['flowNodes'],
                       state.edges as WorkhubMoodBoard['flowEdges'],
                       state.viewport,
+                      {
+                        canvasAppearance: state.settings.canvasAppearance,
+                        showNavigationPreview: state.settings.showNavigationPreview,
+                      },
                     )
                   }}
                 />

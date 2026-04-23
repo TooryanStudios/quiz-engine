@@ -5,7 +5,7 @@ import { getInitials } from '../taskUtils'
 
 const MS_PER_DAY = 86_400_000
 const MIN_TIMELINE_DAYS = 14
-const TIMELINE_DAY_WIDTH_STEPS = [18, 22, 26, 30, 34, 40]
+const TIMELINE_DAY_WIDTH_STEPS = [18, 22, 26, 30, 34, 40, 48, 56, 64, 72, 80]
 const DEFAULT_TIMELINE_DAY_WIDTH = 26
 const DEFAULT_TIMELINE_NAME_WIDTH = 200
 const MIN_TIMELINE_NAME_WIDTH = 180
@@ -73,8 +73,8 @@ interface UseWorkhubTaskTimelineParams {
   filteredTasks: WorkhubTask[]
   memberByUid: Record<string, WorkhubMember>
   selectedProjectEffectiveTaskStatuses: WorkhubTaskStatusConfig[]
-  selectedTaskId: string
-  setSelectedTaskId: (taskId: string) => void
+  activeTaskId: string
+  setActiveTaskId: (taskId: string) => void
   handleTaskUpdate: (task: WorkhubTask, updates: Partial<WorkhubTask>, options?: { silent?: boolean }) => Promise<void>
 }
 
@@ -212,8 +212,8 @@ export function useWorkhubTaskTimeline({
   filteredTasks,
   memberByUid,
   selectedProjectEffectiveTaskStatuses,
-  selectedTaskId,
-  setSelectedTaskId,
+  activeTaskId,
+  setActiveTaskId,
   handleTaskUpdate,
 }: UseWorkhubTaskTimelineParams) {
   const [timelineDragPreviewByTaskId, setTimelineDragPreviewByTaskId] = useState<Record<string, { startIndex: number; endIndex: number }>>({})
@@ -308,7 +308,7 @@ export function useWorkhubTaskTimeline({
         isMonthStart,
         isToday,
         monthLabel: isMonthStart ? new Date(`${day}T12:00:00`).toLocaleString(undefined, { month: 'short' }) : '',
-        headClass: `workhub-task-timeline-day-head${isWeekend ? ' is-weekend' : ''}${isMonthStart ? ' is-month-start' : ''}`,
+        headClass: `workhub-task-timeline-day-head${isWeekend ? ' is-weekend' : ''}${isMonthStart ? ' is-month-start' : ''}${isToday ? ' is-today' : ''}`,
         colClass: `workhub-task-timeline-grid-col${isWeekend ? ' is-weekend' : ''}${isMonthStart ? ' is-month-start' : ''}${isToday ? ' is-today' : ''}`,
       }
     })
@@ -454,27 +454,27 @@ export function useWorkhubTaskTimeline({
   useEffect(() => {
     const namesPane = namesPaneRef.current
     const gridPane = gridPaneRef.current
-    if (!selectedTaskId || !namesPane || !gridPane) return
+    if (!activeTaskId || !namesPane || !gridPane) return
 
     const frame = window.requestAnimationFrame(() => {
-      const nameNode = namesPane.querySelector(`[data-task-id="${selectedTaskId}"]`) as HTMLElement | null
+      const nameNode = namesPane.querySelector(`[data-task-id="${activeTaskId}"]`) as HTMLElement | null
       if (nameNode) {
         nameNode.scrollIntoView({ block: 'nearest' })
       }
 
-      const gridRow = gridPane.querySelector(`[data-timeline-row-id="${selectedTaskId}"]`) as HTMLElement | null
+      const gridRow = gridPane.querySelector(`[data-timeline-row-id="${activeTaskId}"]`) as HTMLElement | null
       if (gridRow) {
         gridRow.scrollIntoView({ block: 'nearest' })
       }
 
-      const selectedBar = gridPane.querySelector(`[data-timeline-bar-id="${selectedTaskId}"]`) as HTMLElement | null
+      const selectedBar = gridPane.querySelector(`[data-timeline-bar-id="${activeTaskId}"]`) as HTMLElement | null
       if (selectedBar) {
         selectedBar.scrollIntoView({ block: 'nearest', inline: 'nearest' })
       }
     })
 
     return () => window.cancelAnimationFrame(frame)
-  }, [selectedTaskId, taskTimelineData.rows])
+  }, [activeTaskId, taskTimelineData.rows])
 
   const beginNamePaneResize = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
     const startX = event.clientX
@@ -546,7 +546,7 @@ export function useWorkhubTaskTimeline({
       originalDueDate: row.dueDate,
     }
 
-    setSelectedTaskId(row.id)
+    setActiveTaskId(row.id)
     setTimelineDragPreviewByTaskId((current) => ({
       ...current,
       [row.id]: { startIndex: range.startIndex, endIndex: range.endIndex },
@@ -630,7 +630,7 @@ export function useWorkhubTaskTimeline({
 
     event.preventDefault()
     event.stopPropagation()
-  }, [clearActiveDragListeners, dayWidth, handleTaskUpdate, setSelectedTaskId, taskTimelineData.dayCount, taskTimelineData.daysMeta])
+  }, [clearActiveDragListeners, dayWidth, handleTaskUpdate, setActiveTaskId, taskTimelineData.dayCount, taskTimelineData.daysMeta])
 
   return {
     canZoomIn,

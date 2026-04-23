@@ -191,6 +191,62 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       .workhub-workspace-tab.is-active {
         box-shadow: none;
       }
+      .workhub-topbar-context-chip {
+        display: inline-flex;
+        align-items: center;
+        max-width: min(280px, 100%);
+        min-height: 34px;
+        padding: 0 12px;
+        border-radius: 999px;
+        border: 1px solid #d8e6fb;
+        background: rgba(255, 255, 255, 0.84);
+        color: #294778;
+        font-size: 0.76rem;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .workhub-view-mode-switch {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px;
+        border: 1px solid #d8e6fb;
+        border-radius: 11px;
+        background: rgba(255, 255, 255, 0.86);
+      }
+      .workhub-view-mode-btn {
+        min-width: 88px;
+        min-height: 32px;
+        padding: 0 10px;
+        border: none;
+        border-radius: 8px;
+        background: transparent;
+        color: #5d7195;
+        font: inherit;
+        font-size: 0.74rem;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        cursor: pointer;
+      }
+      .workhub-view-mode-btn-icon {
+        font-size: 0.92rem;
+        line-height: 1;
+        opacity: 0.9;
+      }
+      .workhub-view-mode-btn-label {
+        line-height: 1;
+      }
+      .workhub-view-mode-btn.is-active {
+        background: linear-gradient(180deg, #edf4ff 0%, #dfeaff 100%);
+        color: #1d4ca6;
+        box-shadow: inset 0 0 0 1px #c8dafd;
+      }
       .workhub-primary-tabs-strip {
         display: flex;
         align-items: center;
@@ -724,6 +780,31 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       @media (max-width: ${phoneMaxWidth}px) {
         .workhub-shell.is-mobile .workhub-mobile-workspace-toggle span:last-child {
           display: none;
+        }
+        .workhub-task-detail-dialog-backdrop {
+          padding: 10px;
+          align-items: stretch;
+        }
+        .workhub-modal.workhub-task-detail-dialog {
+          width: 100%;
+          max-height: 100%;
+          border-radius: 16px;
+        }
+        .workhub-task-detail-dialog-body {
+          overflow: auto;
+          padding: 10px;
+        }
+        .workhub-task-dialog-layout {
+          grid-template-columns: 1fr;
+          height: auto;
+        }
+        .workhub-task-dialog-discussion-pane,
+        .workhub-task-dialog-details-pane {
+          overflow: visible;
+        }
+        .workhub-task-dialog-details-pane .workhub-detail-icon-row,
+        .workhub-detail-meta-grid {
+          grid-template-columns: 1fr;
         }
       }
       .workhub-shell.is-mobile .workhub-header-actions {
@@ -1655,6 +1736,159 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         display: flex;
         flex-direction: column;
         gap: 5px;
+      }
+      .workhub-tree-workspace-list {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+      .workhub-tree-workspace-group {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        padding: 4px 6px;
+        border: 1px solid #e1e9f7;
+        border-radius: 9px;
+        background: rgba(255, 255, 255, 0.78);
+        transition: border-color 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+      }
+      .workhub-tree-workspace-group:hover {
+        background: #f3f7fc;
+        border-color: #c8d8ef;
+        box-shadow: inset 3px 0 0 #b8c8de;
+      }
+      .workhub-tree-workspace-group:hover .workhub-tree-workspace-caret {
+        color: #55657b;
+      }
+      .workhub-tree-workspace-group:hover .workhub-tree-workspace-btn {
+        color: #55657b;
+      }
+      .workhub-tree-workspace-group.is-active {
+        border-color: #bfd4ff;
+        box-shadow: inset 0 0 0 1px rgba(134, 170, 255, 0.22);
+      }
+      .workhub-tree-workspace-head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+      }
+      .workhub-tree-workspace-btn {
+        flex: 1;
+        min-width: 0;
+        width: 100%;
+        border: none;
+        background: transparent;
+        color: #6d7a8f;
+        padding: 6px 0;
+        min-height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 4px;
+        text-align: left;
+        font: inherit;
+        font-size: 0.78rem;
+        line-height: 1.1;
+        cursor: pointer;
+        border-radius: 8px;
+        transition: background-color 0.12s ease, box-shadow 0.12s ease, color 0.12s ease;
+      }
+      .workhub-tree-workspace-btn:hover {
+        color: #55657b;
+      }
+      .workhub-tree-workspace-group.is-active .workhub-tree-workspace-btn {
+        color: #24426f;
+      }
+      .workhub-tree-workspace-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        min-width: 0;
+        overflow: hidden;
+        font-weight: 500;
+        font-size: 0.78rem;
+        color: inherit;
+      }
+      .workhub-tree-workspace-label > span:last-child {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .workhub-tree-workspace-caret {
+        color: #73839b;
+        flex: 0 0 auto;
+        font-size: 0.92rem;
+        line-height: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transform: rotate(0deg);
+        transition: transform 0.18s ease, color 0.12s ease;
+      }
+      .workhub-tree-workspace-caret.is-expanded {
+        transform: rotate(90deg);
+      }
+      .workhub-tree-workspace-btn:hover .workhub-tree-workspace-caret {
+        color: #55657b;
+      }
+      .workhub-tree-workspace-group.is-active .workhub-tree-workspace-caret {
+        color: #476897;
+      }
+      .workhub-tree-workspace-summary {
+        font-size: 0.58rem;
+        font-weight: 600;
+        color: #7184a6;
+        flex: 0 0 auto;
+      }
+      .workhub-tree-workspace-expand-wrap {
+        display: grid;
+        grid-template-rows: 0fr;
+      }
+      .workhub-tree-workspace-expand-wrap.is-open {
+        grid-template-rows: 1fr;
+      }
+      .workhub-tree-workspace-expand-inner {
+        overflow: hidden;
+        min-height: 0;
+      }
+      .workhub-tree-workspace-body {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        padding-top: 2px;
+      }
+      .workhub-tree-workspace-overview-btn {
+        flex: 0 0 auto;
+        width: 28px;
+        height: 28px;
+        border: 1px solid #dbe3ef;
+        border-radius: 8px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: #f3f6fa;
+        color: #6d7d96;
+        cursor: pointer;
+        box-shadow: none;
+        transition: border-color 0.08s ease, box-shadow 0.08s ease, background 0.08s ease, color 0.08s ease;
+      }
+      .workhub-tree-workspace-overview-btn:hover {
+        border-color: #ccd6e3;
+        background: #edf2f7;
+        color: #55657d;
+        box-shadow: 0 2px 6px rgba(35, 65, 120, 0.08);
+        transition: none;
+      }
+      .workhub-tree-workspace-overview-btn.is-active {
+        border-color: #c4cfdd;
+        background: #e7edf4;
+        color: #44546c;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7);
+      }
+      .workhub-tree-workspace-overview-btn span {
+        font-size: 0.9rem;
+        line-height: 1;
       }
       .workhub-tree-docs-list {
         display: flex;
@@ -4837,6 +5071,28 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       .workhub-task-timeline-day-head.is-weekend {
         color: #a69bc7;
       }
+      .workhub-task-timeline-day-head.is-today {
+        color: #1f4f95;
+        background: linear-gradient(180deg, rgba(92, 146, 235, 0.16) 0%, rgba(92, 146, 235, 0.06) 100%);
+        box-shadow: inset 0 -2px 0 rgba(44, 98, 181, 0.34);
+      }
+      .workhub-task-timeline-day-head.is-today > span:last-child {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 22px;
+        height: 18px;
+        padding: 0 6px;
+        border-radius: 999px;
+        background: linear-gradient(180deg, #4f8cff 0%, #316ecf 100%);
+        color: #ffffff;
+        font-weight: 700;
+        box-shadow: 0 3px 8px rgba(44, 98, 181, 0.22);
+      }
+      .workhub-task-timeline-day-head.is-today .workhub-task-timeline-month {
+        color: #28589d;
+        opacity: 1;
+      }
       .workhub-task-timeline-day-head.is-month-start,
       .workhub-task-timeline-day-cell.is-month-start {
         box-shadow: inset 1px 0 0 #8eaedc, inset 2px 0 0 rgba(255, 255, 255, 0.9);
@@ -4880,18 +5136,18 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         background: rgba(79, 116, 189, 0.09);
         box-shadow: inset 3px 0 0 #4f74bd;
       }
-      .workhub-task-timeline-name.is-active strong {
+      .workhub-task-timeline-name.is-active .workhub-task-timeline-name-title {
         color: #173c75;
       }
       .workhub-task-timeline-name.is-warning {
         background: linear-gradient(90deg, rgba(255, 232, 232, 0.94) 0%, #f8fbff 72%);
       }
-      .workhub-task-timeline-name strong {
+      .workhub-task-timeline-name-title {
         flex: 1 1 auto;
         min-width: 0;
         font-size: 0.72rem;
         color: #20375c;
-        font-weight: 600;
+        font-weight: 400;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -5014,8 +5270,8 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         box-shadow: inset 1px 0 0 rgba(120, 156, 213, 0.8), inset 2px 0 0 rgba(255, 255, 255, 0.9);
       }
       .workhub-task-timeline-grid-col.is-today {
-        box-shadow: inset 0 0 0 1px rgba(35, 91, 173, 0.26);
-        background: rgba(79, 140, 255, 0.05);
+        box-shadow: inset 1px 0 0 rgba(35, 91, 173, 0.36), inset -1px 0 0 rgba(35, 91, 173, 0.2), inset 0 0 0 1px rgba(35, 91, 173, 0.2);
+        background: linear-gradient(180deg, rgba(79, 140, 255, 0.1) 0%, rgba(79, 140, 255, 0.05) 100%);
       }
       .workhub-task-timeline-grid-row {
         position: relative;
@@ -5205,6 +5461,301 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         opacity: 0;
         pointer-events: none;
         overflow: hidden;
+      }
+      .workhub-task-detail-dialog-backdrop {
+        z-index: 180;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+      }
+      .workhub-modal.workhub-task-detail-dialog {
+        width: min(1240px, calc(100vw - 40px));
+        max-width: 1240px;
+        height: min(760px, calc(100vh - 80px));
+        max-height: calc(100vh - 80px);
+        border-radius: 10px;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .workhub-task-detail-dialog-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 8px 12px;
+        border-bottom: 1px solid #e4ebf8;
+        background: linear-gradient(180deg, #fcfdff 0%, #f5f8fe 100%);
+        flex: 0 0 auto;
+      }
+      .workhub-task-detail-dialog-head-main {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+        flex: 1;
+      }
+      .workhub-task-detail-dialog-head strong {
+        font-size: 0.82rem;
+        color: #19315b;
+        flex-shrink: 0;
+      }
+      .workhub-task-detail-dialog-breadcrumbs {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        min-width: 0;
+        overflow-x: auto;
+      }
+      .workhub-task-detail-dialog-breadcrumb-node-wrap {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        flex-shrink: 0;
+      }
+      .workhub-task-detail-dialog-breadcrumb-node {
+        border: 1px solid #d8e5f8;
+        background: #f9fbfe;
+        color: #596a84;
+        border-radius: 7px;
+        min-height: 24px;
+        padding: 0 8px;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font: inherit;
+        font-size: 0.69rem;
+        font-weight: 400;
+        cursor: pointer;
+        max-width: 260px;
+      }
+      .workhub-task-detail-dialog-breadcrumb-node:hover {
+        border-color: #bcd2f5;
+        background: #f2f6fd;
+      }
+      .workhub-task-detail-dialog-breadcrumb-node.is-current {
+        border-color: #c5d5ef;
+        background: #f3f6fb;
+        color: #4d5f79;
+      }
+      .workhub-task-detail-dialog-breadcrumb-icon {
+        flex-shrink: 0;
+        color: #7788a1;
+        font-size: 0.67rem;
+      }
+      .workhub-task-detail-dialog-breadcrumb-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .workhub-task-detail-dialog-breadcrumb-sep {
+        color: #8aa0c2;
+        font-size: 0.8rem;
+      }
+      .workhub-task-detail-dialog-head-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .workhub-task-detail-dialog-head-icon-btn {
+        width: 26px;
+        min-width: 26px;
+        height: 26px;
+        min-height: 26px;
+        padding: 0;
+        border-radius: 8px;
+        font-size: 0.78rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        line-height: 1;
+      }
+      .workhub-task-detail-dialog-head-icon-btn .workhub-detail-danger-icon {
+        font-size: 0.9rem;
+      }
+      .workhub-task-detail-dialog-head-actions .workhub-detail-delete-task-btn {
+        width: 26px;
+        min-width: 26px;
+        height: 26px;
+        min-height: 26px;
+      }
+      .workhub-task-detail-dialog-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: hidden;
+        padding: 12px 10px 12px 12px;
+        background: #f7faff;
+        display: flex;
+        flex-direction: column;
+      }
+      .workhub-task-detail-dialog-body > .workhub-detail-card:first-child {
+        margin-top: 0;
+      }
+      .workhub-task-dialog-layout {
+        display: grid;
+        grid-template-columns: minmax(0, var(--workhub-task-dialog-details-width, 56%)) 14px minmax(0, calc(100% - var(--workhub-task-dialog-details-width, 56%) - 14px));
+        gap: 0;
+        flex: 1 1 auto;
+        min-height: 0;
+        align-items: stretch;
+      }
+      .workhub-task-dialog-layout.is-resizing {
+        cursor: col-resize;
+      }
+      .workhub-task-dialog-splitter {
+        position: relative;
+        width: 14px;
+        align-self: stretch;
+        cursor: col-resize;
+        touch-action: none;
+        outline: none;
+      }
+      .workhub-task-dialog-splitter::before {
+        content: '';
+        position: absolute;
+        top: 10px;
+        bottom: 10px;
+        left: 50%;
+        width: 1px;
+        transform: translateX(-50%);
+        background: #d6e1f2;
+        border-radius: 999px;
+      }
+      .workhub-task-dialog-splitter::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 6px;
+        height: 42px;
+        transform: translate(-50%, -50%);
+        border-radius: 999px;
+        background: linear-gradient(180deg, #dbe6f6 0%, #c7d5ea 100%);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.72);
+      }
+      .workhub-task-dialog-layout.is-resizing .workhub-task-dialog-splitter::before,
+      .workhub-task-dialog-splitter:hover::before,
+      .workhub-task-dialog-splitter:focus-visible::before {
+        background: #a9bddc;
+      }
+      .workhub-task-dialog-layout.is-resizing .workhub-task-dialog-splitter::after,
+      .workhub-task-dialog-splitter:hover::after,
+      .workhub-task-dialog-splitter:focus-visible::after {
+        background: linear-gradient(180deg, #cddcf1 0%, #afc3e2 100%);
+      }
+      .workhub-task-dialog-splitter:focus-visible {
+        box-shadow: inset 0 0 0 2px rgba(126, 164, 238, 0.26);
+      }
+      .workhub-task-dialog-discussion-pane,
+      .workhub-task-dialog-details-pane {
+        min-height: 0;
+        overscroll-behavior: contain;
+        min-width: 0;
+      }
+      .workhub-task-dialog-discussion-pane {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        padding-left: 12px;
+      }
+      .workhub-task-dialog-details-pane {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: 0 8px 12px 0;
+        scrollbar-gutter: stable;
+      }
+      .workhub-task-dialog-details-pane::-webkit-scrollbar,
+      .workhub-task-dialog-discussion-pane .workhub-comment-list-chat::-webkit-scrollbar {
+        width: 10px;
+      }
+      .workhub-task-dialog-details-pane::-webkit-scrollbar-thumb,
+      .workhub-task-dialog-discussion-pane .workhub-comment-list-chat::-webkit-scrollbar-thumb {
+        background: #c5d4ea;
+        border-radius: 999px;
+        border: 2px solid #f7faff;
+      }
+      .workhub-task-dialog-details-pane::-webkit-scrollbar-track,
+      .workhub-task-dialog-discussion-pane .workhub-comment-list-chat::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .workhub-task-dialog-details-pane .workhub-detail-icon-row {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 6px;
+        margin-bottom: 10px;
+      }
+      .workhub-task-dialog-details-pane .workhub-task-detail-name-field {
+        margin-bottom: 8px;
+      }
+      .workhub-task-dialog-details-pane .workhub-task-details-input {
+        min-height: 96px;
+      }
+      .workhub-task-dialog-details-pane > .workhub-detail-card,
+      .workhub-task-dialog-details-pane > .workhub-task-resource-card,
+      .workhub-task-dialog-details-pane > .workhub-task-checklist-card,
+      .workhub-task-dialog-details-pane > .workhub-discussion-card {
+        margin-top: 0;
+        border-radius: 8px;
+        box-shadow: none;
+      }
+      .workhub-task-dialog-discussion-pane > .workhub-discussion-card {
+        margin-top: 0;
+        flex: 1 1 auto;
+        min-height: 0;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        padding: 0;
+        border: none;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+      }
+      .workhub-task-dialog-discussion-pane .workhub-comment-list-chat {
+        flex: 1 1 auto;
+        min-height: 0;
+        max-height: none !important;
+        overflow-y: auto !important;
+        padding-right: 6px;
+        padding-bottom: 12px;
+      }
+      .workhub-task-dialog-discussion-pane .workhub-comment-composer {
+        margin-top: 0;
+      }
+      @media (max-width: ${phoneMaxWidth}px) {
+        .workhub-task-detail-dialog-backdrop {
+          padding: 10px;
+          align-items: stretch;
+        }
+        .workhub-modal.workhub-task-detail-dialog {
+          width: 100%;
+          max-height: 100%;
+          border-radius: 12px;
+        }
+        .workhub-task-detail-dialog-body {
+          overflow: auto;
+          padding: 10px;
+        }
+        .workhub-task-dialog-layout {
+          grid-template-columns: 1fr;
+          height: auto;
+        }
+        .workhub-task-dialog-splitter {
+          display: none;
+        }
+        .workhub-task-dialog-discussion-pane,
+        .workhub-task-dialog-details-pane {
+          overflow: visible;
+          padding: 0;
+        }
+        .workhub-task-dialog-details-pane .workhub-detail-icon-row,
+        .workhub-detail-meta-grid {
+          grid-template-columns: 1fr;
+        }
       }
       .workhub-detail-rail-toolbar {
         display: flex;
@@ -6792,18 +7343,34 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         gap: 6px;
       }
       .workhub-task-finance-track {
+        width: 100%;
         height: 6px;
+        appearance: none;
+        -webkit-appearance: none;
         background: #dde9fc;
         border-radius: 3px;
         overflow: hidden;
+        border: none;
       }
-      .workhub-task-finance-fill {
+      .workhub-task-finance-track::-webkit-progress-bar {
+        background: #dde9fc;
+        border-radius: 3px;
+      }
+      .workhub-task-finance-track::-webkit-progress-value {
         height: 100%;
         background: #3b82f6;
         border-radius: 3px;
-        transition: width 0.25s ease;
       }
-      .workhub-task-finance-fill.is-over { background: #ef4444; }
+      .workhub-task-finance-track::-moz-progress-bar {
+        background: #3b82f6;
+        border-radius: 3px;
+      }
+      .workhub-task-finance-track.is-over::-webkit-progress-value {
+        background: #ef4444;
+      }
+      .workhub-task-finance-track.is-over::-moz-progress-bar {
+        background: #ef4444;
+      }
       .workhub-task-finance-pills {
         display: flex;
         gap: 6px;
@@ -7681,34 +8248,57 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       }
       .workhub-detail-icon-btn {
         width: 100%;
-        min-height: 46px;
+        min-height: 38px;
         border-radius: 10px;
         border: 1px solid #d5e3fb;
         background: #f7faff;
         color: #24467a;
-        display: flex;
-        align-items: flex-start;
-        justify-content: center;
-        flex-direction: column;
-        gap: 2px;
-        padding: 7px 9px;
+        display: grid;
+        grid-template-columns: 24px minmax(0, 1fr);
+        align-items: start;
+        gap: 8px;
+        padding: 6px 28px 6px 8px;
         cursor: pointer;
         text-align: left;
         position: relative;
+        overflow: hidden;
+      }
+      .workhub-detail-icon-field {
+        cursor: default;
+        overflow: visible;
       }
       .workhub-detail-icon-btn:hover {
         border-color: #b9cef5;
         background: #eff5ff;
       }
+      .workhub-detail-chip-icon {
+        width: 24px;
+        height: 24px;
+        border-radius: 8px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: #f1f4f9;
+        color: #62738e;
+        font-size: 0.85rem;
+        line-height: 1;
+        box-shadow: inset 0 0 0 1px rgba(130, 147, 175, 0.2);
+      }
+      .workhub-detail-chip-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        min-width: 0;
+      }
       .workhub-detail-chip-label {
-        font-size: 0.62rem;
+        font-size: 0.58rem;
         letter-spacing: 0.03em;
         text-transform: uppercase;
         color: #5b73a0;
         line-height: 1.1;
       }
       .workhub-detail-chip-value {
-        font-size: 0.74rem;
+        font-size: 0.71rem;
         color: #1e3a67;
         font-weight: 600;
         line-height: 1.2;
@@ -7716,6 +8306,104 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         overflow: hidden;
         text-overflow: ellipsis;
         max-width: 100%;
+      }
+      .workhub-detail-field-select,
+      .workhub-detail-field-input {
+        width: 100%;
+        min-width: 0;
+        border: none;
+        background: transparent;
+        color: #17355f;
+        font: inherit;
+        font-size: 1.05rem;
+        font-weight: 500;
+        padding: 0;
+        outline: none;
+        text-align: center;
+      }
+      .workhub-detail-field-select {
+        appearance: auto;
+      }
+      .workhub-detail-field-date-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 4px;
+        min-width: 0;
+      }
+      .workhub-detail-assignee-picker {
+        position: relative;
+        width: 100%;
+        z-index: 4;
+      }
+      .workhub-detail-assignee-trigger {
+        width: 100%;
+        border: none;
+        background: transparent;
+        padding: 0;
+        margin: 0;
+        font: inherit;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+        color: #17355f;
+        font-size: 0.72rem;
+        font-weight: 500;
+        cursor: pointer;
+        text-align: left;
+      }
+      .workhub-detail-assignee-pills {
+        display: inline-flex;
+        align-items: center;
+        gap: 0;
+        min-width: 0;
+        overflow: hidden;
+      }
+      .workhub-detail-assignee-icon-only {
+        font-size: 1rem;
+        line-height: 1;
+        color: #5f7396;
+      }
+      .workhub-detail-assignee-pill {
+        display: inline-flex;
+        align-items: center;
+        max-width: 124px;
+        border: 1px solid #d2dff4;
+        background: #f4f8ff;
+        color: #274a7d;
+        border-radius: 999px;
+        padding: 1px 8px;
+        font-size: 0.65rem;
+        line-height: 1.2;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .workhub-detail-assignee-pill.is-more {
+        border-color: #d9e3f3;
+        background: #f8fbff;
+        color: #56739e;
+        font-weight: 600;
+      }
+      .workhub-detail-assignee-chevron {
+        color: #6f87ad;
+        font-size: 0.72rem;
+        flex-shrink: 0;
+      }
+      .workhub-detail-assignee-menu {
+        position: absolute;
+        top: calc(100% + 8px);
+        left: 0;
+        min-width: max(180px, 100%);
+        max-width: 260px;
+        border: 1px solid #cfdcf3;
+        border-radius: 10px;
+        background: #ffffff;
+        box-shadow: 0 16px 28px rgba(30, 58, 103, 0.16);
+        display: grid;
+        gap: 2px;
+        padding: 6px;
+        z-index: 80;
       }
       .workhub-detail-chip-edit {
         position: absolute;
@@ -7728,8 +8416,10 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         pointer-events: none;
       }
       .workhub-detail-icon-btn-danger {
+        grid-template-columns: none;
         align-items: center;
         justify-content: center;
+        padding: 0;
         background: #fff4f7;
         border-color: #f3c7d4;
       }
@@ -7821,9 +8511,57 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       }
       .workhub-task-details-input {
         width: 100%;
-        min-height: 112px;
+        min-height: 88px;
         resize: vertical;
         font-size: 0.82rem;
+      }
+      .workhub-task-heading-block {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        margin-bottom: 6px;
+      }
+      .workhub-task-heading-display {
+        width: 100%;
+        border: none;
+        background: transparent;
+        color: #1e3458;
+        text-align: left;
+        padding: 0;
+        margin: 0;
+        cursor: text;
+      }
+      .workhub-task-title-display {
+        font-size: 2.4rem;
+        font-weight: 700;
+        line-height: 1.22;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .workhub-task-description-display {
+        font-size: 1.05rem;
+        font-weight: 400;
+        line-height: 1.4;
+        color: #425679;
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .workhub-task-heading-edit-icon {
+        font-size: 0.85rem;
+        color: #7b8da9;
+        flex-shrink: 0;
+      }
+      .workhub-task-title-divider {
+        width: 100%;
+        height: 1px;
+        background: #e0e8f6;
+        margin: 4px 0 8px;
+      }
+      .workhub-task-description-block .workhub-task-details-input {
+        min-height: 88px;
       }
       .workhub-task-detail-name-field {
         display: flex;
@@ -7836,10 +8574,86 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         color: #60708f;
         font-weight: 700;
       }
+      .workhub-detail-meta-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        padding: 10px;
+      }
+      .workhub-detail-meta-item,
+      .workhub-detail-meta-select {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+        min-width: 0;
+        border: none;
+        border-radius: 0;
+        background: transparent;
+        padding: 4px 2px;
+      }
+      .workhub-detail-meta-icon {
+        width: 24px;
+        height: 24px;
+        border-radius: 8px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: #edf4ff;
+        color: #2d4f86;
+        font-size: 0.82rem;
+        flex: 0 0 auto;
+      }
+      .workhub-detail-meta-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+      }
+      .workhub-detail-meta-label,
+      .workhub-detail-meta-select > span {
+        font-size: 0.6rem;
+        font-weight: 500;
+        letter-spacing: 0.01em;
+        text-transform: none;
+        color: #61779f;
+      }
+      .workhub-detail-meta-value {
+        font-size: 0.68rem;
+        font-weight: 400;
+        color: #2b436d;
+        line-height: 1.25;
+        overflow-wrap: anywhere;
+      }
+      .workhub-detail-meta-select {
+        flex-direction: column;
+        gap: 6px;
+      }
+      .workhub-detail-meta-select > select {
+        width: 100%;
+      }
       .workhub-task-resource-card,
       .workhub-task-checklist-card,
       .workhub-discussion-card {
-        margin-top: 14px;
+        margin-top: 8px;
+      }
+      .workhub-task-resource-combined-card {
+        margin-top: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 10px;
+      }
+      .workhub-task-resource-card-embedded {
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+        background: transparent;
+        padding: 0;
+        margin: 0;
+      }
+      .workhub-task-resource-card-embedded + .workhub-task-resource-card-embedded {
+        border-top: 1px solid #e2e9f6;
+        padding-top: 8px;
       }
       .workhub-task-detail-rail .workhub-detail-meta {
         display: grid;
@@ -7861,17 +8675,17 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       .workhub-detail-collapsible-info {
         margin-top: 14px;
         border: 1px solid #dfe9fb;
-        border-radius: 10px;
-        background: #f8fbff;
+        border-radius: 8px;
+        background: #fbfdff;
       }
       .workhub-detail-collapsible-info > summary {
         list-style: none;
         cursor: pointer;
-        padding: 9px 10px;
-        font-size: 0.72rem;
-        font-weight: 700;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
+        padding: 8px 10px;
+        font-size: 0.66rem;
+        font-weight: 500;
+        letter-spacing: 0.01em;
+        text-transform: none;
         color: #5c7399;
         display: flex;
         align-items: center;
@@ -7967,7 +8781,7 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         border-color: #b8ccf1;
       }
       .workhub-task-checklist-card .workhub-checklist-progress {
-        margin: 0 0 10px;
+        margin: 0 0 8px;
       }
       .workhub-task-checklist-card .workhub-checklist-progress-bar {
         width: 100%;
@@ -7983,7 +8797,7 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         border-radius: inherit;
       }
       .workhub-task-checklist-card .workhub-checklist-item {
-        padding: 8px 10px;
+        padding: 7px 9px;
       }
       .workhub-task-checklist-card .workhub-checklist-actions {
         opacity: 1;
@@ -8033,39 +8847,105 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       .workhub-task-checklist-card .workhub-checklist-add.is-finance-add button {
         min-height: 30px;
       }
+      .workhub-discussion-card .workhub-task-attachments-head {
+        font-size: 0.84rem;
+        font-weight: 500;
+        color: #1f3a67;
+        padding: 1px 2px 6px;
+        border-bottom: 1px solid #dfe9fb;
+        margin-bottom: 6px;
+      }
+      .workhub-discussion-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .workhub-discussion-head-main {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 6px;
+        min-width: 0;
+      }
+      .workhub-discussion-head-main > span:first-child {
+        font-size: 0.82rem;
+        font-weight: 500;
+        line-height: 1.1;
+      }
+      .workhub-discussion-head-main > span:last-child {
+        font-size: 0.68rem;
+        font-weight: 500;
+        color: #6780a8;
+      }
+      .workhub-discussion-head-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .workhub-discussion-head-action {
+        width: 24px;
+        height: 24px;
+        border: 1px solid #d7e4f9;
+        border-radius: 7px;
+        background: #f5f9ff;
+        color: #5c7399;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.72rem;
+        line-height: 1;
+      }
       .workhub-discussion-card .workhub-comment-list-chat {
         display: flex;
         flex-direction: column;
         gap: 8px;
-        max-height: 280px;
+        max-height: none;
         overflow-y: auto;
-        padding: 4px 2px;
+        padding: 2px 4px 10px;
+      }
+      .workhub-show-more-btn {
+        align-self: flex-start;
+        border: 1px solid #d4e3fb;
+        background: #f8fbff;
+        color: #476897;
+        border-radius: 8px;
+        padding: 4px 10px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .workhub-show-more-btn:hover {
+        background: #edf4ff;
+        border-color: #b9cef5;
       }
       .workhub-discussion-card .workhub-comment-item {
         display: flex;
         justify-content: flex-start;
       }
       .workhub-discussion-card .workhub-comment-item.is-own {
-        justify-content: flex-end;
+        justify-content: flex-start;
       }
       .workhub-discussion-card .workhub-comment-bubble {
-        width: min(100%, 92%);
+        width: min(100%, 96%);
         min-width: 0;
-        border: 1px solid #dfe9fb;
+        border: 1px solid #d8e5f8;
         background: #ffffff;
-        border-radius: 11px;
+        border-radius: 10px;
         padding: 8px 10px;
+        box-shadow: none;
       }
       .workhub-discussion-card .workhub-comment-item.is-own .workhub-comment-bubble {
-        background: #eef4ff;
-        border-color: #c9daf7;
+        background: #fbfdff;
+        border-color: #cfdef6;
       }
       .workhub-discussion-card .workhub-comment-bubble-head {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 8px;
-        margin-bottom: 4px;
+        margin-bottom: 0;
+        padding-bottom: 6px;
+        border-bottom: 1px solid #e7effb;
       }
       .workhub-comment-author {
         display: inline-flex;
@@ -8075,8 +8955,8 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       }
       .workhub-comment-author-avatar,
       .workhub-comment-author-avatar-fallback {
-        width: 18px;
-        height: 18px;
+        width: 16px;
+        height: 16px;
         border-radius: 999px;
         flex-shrink: 0;
       }
@@ -8101,13 +8981,14 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         flex-shrink: 0;
       }
       .workhub-comment-head-actions > span {
-        color: #6d81a6;
-        font-weight: 500;
+        color: #afbdd4;
+        font-size: 0.64rem;
+        font-weight: 400;
       }
       .workhub-comment-edit-btn {
-        border: 1px solid #d4e2fb;
-        background: #f7faff;
-        color: #355487;
+        border: 1px solid #e3eaf7;
+        background: #f9fbfe;
+        color: #bdc8da;
         border-radius: 6px;
         width: 20px;
         height: 20px;
@@ -8121,38 +9002,156 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       .workhub-comment-edit-btn:hover {
         background: #edf4ff;
         border-color: #b9ccf1;
+        color: #365a8f;
       }
       .workhub-comment-edit-btn.is-delete {
-        color: #9a2e35;
-        border-color: #f0c8cc;
-        background: #fff6f7;
+        color: #c7b4b8;
+        border-color: #ecdde0;
+        background: #fff9fa;
       }
       .workhub-comment-edit-btn.is-delete:hover {
         color: #7d1f26;
         border-color: #e6aab2;
         background: #ffecee;
       }
+      .workhub-comment-edit-btn.is-delete-confirm {
+        color: #3c7a56;
+        border-color: #bfdfcb;
+        background: #f2fbf5;
+      }
       .workhub-comment-edit-btn:focus-visible {
         outline: 2px solid #8eb1f5;
         outline-offset: 1px;
       }
       .workhub-discussion-card .workhub-comment-bubble-head strong {
-        font-size: 0.72rem;
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #1e3a67;
       }
       .workhub-discussion-card .workhub-comment-bubble-head span {
-        font-size: 0.64rem;
-        color: #7286ab;
+        font-size: 0.68rem;
+        color: #6f86ab;
         white-space: nowrap;
       }
-      .workhub-discussion-card .workhub-comment-bubble p {
-        margin: 0;
+      .workhub-comment-reply-quote {
+        margin: 8px 0 4px;
+        padding: 5px 8px;
+        background: #f0f4fa;
+        border-left: 3px solid #b0c4e0;
+        border-radius: 4px;
         font-size: 0.74rem;
+        color: #6b83a8;
+        font-weight: 400;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
+      .workhub-discussion-card .workhub-comment-bubble p {
+        margin: 8px 0 6px;
+        font-size: 0.8rem;
         line-height: 1.35;
-        color: #2c4165;
+        color: #2d446c;
+        font-weight: 300;
         white-space: pre-wrap;
         overflow-wrap: anywhere;
         word-break: break-word;
         max-width: 100%;
+      }
+      .workhub-comment-actions-bar {
+        margin-top: 0;
+        padding-top: 6px;
+        padding-bottom: 2px;
+        border-top: 1px solid #edf3fd;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+      }
+      .workhub-comment-actions-left {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .workhub-comment-actions-right {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .workhub-comment-action-chip {
+        border: 1px solid #e3edf9;
+        background: #fcfdff;
+        color: #9aabc4;
+        border-radius: 999px;
+        width: 24px;
+        height: 20px;
+        padding: 0;
+        font-size: 0.62rem;
+        font-weight: 500;
+        line-height: 1;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      @keyframes wh-heart-pop {
+        0%   { transform: scale(1); }
+        30%  { transform: scale(1.55); }
+        60%  { transform: scale(0.9); }
+        80%  { transform: scale(1.2); }
+        100% { transform: scale(1); }
+      }
+      @keyframes wh-highlight-fade {
+        0%   { box-shadow: 0 0 0 3px #f5c842, 0 2px 8px rgba(245,200,66,0.4); }
+        60%  { box-shadow: 0 0 0 3px #f5c842, 0 2px 8px rgba(245,200,66,0.25); }
+        100% { box-shadow: none; }
+      }
+      .workhub-comment-item.is-highlighted .workhub-comment-bubble {
+        animation: wh-highlight-fade 2.4s ease-out forwards;
+      }
+      .workhub-comment-action-chip.is-active-like {
+        color: #e0547a;
+        border-color: #f4c6d4;
+        background: #fff7fa;
+      }
+      .workhub-comment-action-chip.is-liking {
+        animation: wh-heart-pop 0.55s cubic-bezier(0.36, 0.07, 0.19, 0.97) forwards;
+      }
+      .workhub-comment-action-chip.is-active-reaction {
+        color: #486fa8;
+        border-color: #cfe0f7;
+        background: #f3f8ff;
+      }
+      .workhub-comment-action-chip.is-active-reply {
+        color: #3f658f;
+        border-color: #d2e1f7;
+        background: #f5f9ff;
+      }
+      .workhub-comment-action-chip:hover {
+        background: #f7fbff;
+        border-color: #d1e1f7;
+        color: #7f95b7;
+      }
+      .workhub-comment-action-count {
+        min-width: 12px;
+        margin-left: -2px;
+        margin-right: 2px;
+        font-size: 0.62rem;
+        line-height: 1;
+        color: #7f93b3;
+        font-weight: 500;
+        text-align: center;
+      }
+      .workhub-comment-reply-target {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 0.68rem;
+        color: #6e84a8;
+        background: #f5f9ff;
+        border: 1px solid #d8e5f8;
+        border-radius: 8px;
+        padding: 5px 8px;
       }
       .workhub-discussion-card .workhub-comment-bubble a {
         overflow-wrap: anywhere;
@@ -8196,13 +9195,19 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         margin-top: 10px;
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: 6px;
+        background: #f8fbff;
+        border: 1px solid #dfe9fb;
+        border-radius: 12px;
+        padding: 8px;
       }
       .workhub-comment-composer textarea {
-        min-height: 84px;
-        border-radius: 9px;
+        min-height: 46px;
+        border-radius: 8px;
         border: 1px solid #d4e3fb;
         background: #ffffff;
+        font-size: 0.8rem;
+        color: #2d446c;
       }
       .workhub-comment-composer textarea:focus {
         border-color: #7ea4ee;
@@ -8214,17 +9219,81 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         align-items: center;
         justify-content: space-between;
         gap: 8px;
-        min-height: 40px;
+        min-height: 30px;
+      }
+      .workhub-comment-composer-tools {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .workhub-comment-composer-tool {
+        width: 20px;
+        height: 20px;
+        border-radius: 6px;
+        border: 1px solid #d6e3f8;
+        background: #f3f8ff;
+        color: #5c7399;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.66rem;
+        line-height: 1;
+      }
+      .workhub-discussion-card.is-docked-composer {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        overflow: hidden;
+      }
+      .workhub-discussion-card.is-docked-composer .workhub-comment-list-chat {
+        max-height: none;
+        min-height: 0;
+        overflow-y: auto;
+      }
+      .workhub-discussion-card.is-docked-composer .workhub-empty-state {
+        min-height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .workhub-discussion-card.is-docked-composer .workhub-comment-composer {
+        margin-top: 0;
+        border-top: 1px solid #dfe9fb;
+        border-radius: 0;
+        border-left: none;
+        border-right: none;
+        border-bottom: none;
+        background: #f8fbff;
+        padding: 10px 2px 0;
+      }
+      .workhub-discussion-card.is-docked-composer .workhub-comment-composer textarea {
+        min-height: 46px;
+        max-height: 110px;
+      }
+      .workhub-discussion-card.is-docked-composer .workhub-comment-composer-footer {
+        justify-content: flex-end;
+        min-height: 0;
+      }
+      .workhub-discussion-card.is-docked-composer .workhub-composer-notify-row {
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 2px;
+      }
+      .workhub-discussion-card.is-docked-composer .workhub-composer-notify-summary {
+        width: auto;
+        flex: 1 1 180px;
       }
       .workhub-comment-send-btn {
         margin-left: auto;
-        width: 36px;
-        height: 36px;
-        border-radius: 999px;
-        border: 1px solid #c5d9f6;
-        background: linear-gradient(180deg, #f6faff 0%, #e7f0ff 100%);
-        color: #1f4578;
-        font-size: 0.95rem;
+        width: 30px;
+        height: 26px;
+        border-radius: 8px;
+        border: 1px solid #c4d7f7;
+        background: linear-gradient(180deg, #f6faff 0%, #e9f1ff 100%);
+        color: #335487;
+        font-size: 0.78rem;
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -8233,8 +9302,8 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       }
       .workhub-comment-send-btn:hover:not(:disabled) {
         transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(31, 69, 120, 0.18);
-        background: linear-gradient(180deg, #ffffff 0%, #e8f1ff 100%);
+        box-shadow: 0 4px 10px rgba(48, 79, 129, 0.16);
+        background: linear-gradient(180deg, #ffffff 0%, #e9f1ff 100%);
       }
       .workhub-comment-send-btn:disabled {
         opacity: 0.5;
@@ -8249,7 +9318,7 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         align-items: center;
         gap: 6px;
         position: relative;
-        flex-wrap: nowrap;
+        flex-wrap: wrap;
         min-width: 0;
       }
       .workhub-composer-notify-label {
@@ -8263,6 +9332,7 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         display: inline-flex;
         align-items: center;
         gap: 4px;
+        min-width: 0;
         font-size: 0.78rem;
         font-weight: 500;
         color: #2a4a7a;
@@ -8274,6 +9344,9 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         user-select: none;
         transition: background 0.12s;
       }
+      .workhub-composer-notify-trigger-text {
+        white-space: nowrap;
+      }
       .workhub-composer-notify-trigger:hover {
         background: #dde8f9;
       }
@@ -8281,17 +9354,50 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         font-size: 0.65rem;
         opacity: 0.7;
       }
+      .workhub-composer-notify-summary {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        flex: 1 1 180px;
+        flex-wrap: wrap;
+      }
+      .workhub-composer-notify-pill {
+        display: inline-flex;
+        align-items: center;
+        max-width: 180px;
+        min-height: 22px;
+        padding: 0 8px;
+        border-radius: 999px;
+        background: #eef4ff;
+        border: 1px solid #d5e3fb;
+        color: #2e4f82;
+        font-size: 0.67rem;
+        font-weight: 700;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .workhub-composer-notify-pill.is-none {
+        background: #f7f8fb;
+        border-color: #dfe5f1;
+        color: #6d7a91;
+      }
+      .workhub-composer-notify-pill.is-more {
+        background: #ffffff;
+      }
       .workhub-composer-notify-menu {
         position: absolute;
-        top: calc(100% + 4px);
+        bottom: calc(100% + 6px);
         left: 0;
         z-index: 200;
         background: #ffffff;
         border: 1px solid #d0dff5;
         border-radius: 8px;
         box-shadow: 0 4px 16px rgba(30,58,95,0.12);
-        min-width: 180px;
-        max-height: 240px;
+        min-width: 220px;
+        max-width: 320px;
+        max-height: min(260px, 42vh);
         overflow-y: auto;
         padding: 4px 0;
       }
@@ -8845,7 +9951,10 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       }
       .workhub-task-detail-rail input,
       .workhub-task-detail-rail select,
-      .workhub-task-detail-rail textarea {
+      .workhub-task-detail-rail textarea,
+      .workhub-task-detail-dialog-body input,
+      .workhub-task-detail-dialog-body select,
+      .workhub-task-detail-dialog-body textarea {
         font-size: 0.74rem;
         color: #22324a;
         font-weight: 500;
@@ -9418,6 +10527,33 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         background: #f9fbff;
         width: 100%;
         overflow: visible;
+      }
+      .workhub-task-context-menu {
+        min-width: 196px;
+        display: grid;
+        gap: 4px;
+        padding: 7px;
+        border-radius: 10px;
+        border: 1px solid #cddbf2;
+        background: #ffffff;
+        box-shadow: 0 14px 28px rgba(22, 43, 77, 0.18);
+      }
+      .workhub-task-context-menu button {
+        border: 1px solid #d9e5f8;
+        background: #f8fbff;
+        color: #2f4f82;
+        border-radius: 8px;
+        min-height: 30px;
+        text-align: left;
+        font: inherit;
+        font-size: 0.74rem;
+        font-weight: 600;
+        padding: 0 10px;
+        cursor: pointer;
+      }
+      .workhub-task-context-menu button:hover {
+        background: #edf4ff;
+        border-color: #bdd2f4;
       }
       .workhub-task-group-head {
         padding: 7px 8px;
@@ -15680,7 +16816,7 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
           padding: 2px 0;
         }
         .workhub-discussion-card .workhub-comment-bubble {
-          width: 100%;
+          margin: 12px 0 4px;
           padding: 7px 8px;
           border-radius: 9px;
         }

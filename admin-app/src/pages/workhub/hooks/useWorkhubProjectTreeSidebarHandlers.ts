@@ -14,6 +14,7 @@ interface UseWorkhubProjectTreeSidebarHandlersParams {
   setSelectedProjectId: Dispatch<SetStateAction<string>>
   setSelectedNoteProjectId: Dispatch<SetStateAction<string>>
   setSelectedDocumentId: Dispatch<SetStateAction<string>>
+  setSelectedMoodBoardId: Dispatch<SetStateAction<string>>
   setActiveSection: (section: WorkhubActiveSection) => void
   setSelectedTaskId: Dispatch<SetStateAction<string>>
   setExpandedProjectIds: Dispatch<SetStateAction<string[]>>
@@ -29,6 +30,7 @@ export function useWorkhubProjectTreeSidebarHandlers({
   setSelectedProjectId,
   setSelectedNoteProjectId,
   setSelectedDocumentId,
+  setSelectedMoodBoardId,
   setActiveSection,
   setSelectedTaskId,
   setExpandedProjectIds,
@@ -72,17 +74,19 @@ export function useWorkhubProjectTreeSidebarHandlers({
     setSelectedProjectId(projectId)
     setSelectedNoteProjectId(projectId)
     setSelectedDocumentId('')
+    setSelectedMoodBoardId('')
     setActiveSection(resolveProjectMainPanelSection ? resolveProjectMainPanelSection(projectId) : 'tasks')
     setSelectedTaskId('')
-  }, [resolveProjectMainPanelSection, setActiveSection, setSelectedDocumentId, setSelectedNoteProjectId, setSelectedProjectId, setSelectedTaskId])
+  }, [resolveProjectMainPanelSection, setActiveSection, setSelectedDocumentId, setSelectedMoodBoardId, setSelectedNoteProjectId, setSelectedProjectId, setSelectedTaskId])
 
   const openWorkspaceOverview = useCallback(() => {
     setSelectedProjectId('all')
     setSelectedNoteProjectId('')
     setSelectedDocumentId('')
+    setSelectedMoodBoardId('')
     setActiveSection('dashboard')
     setSelectedTaskId('')
-  }, [setActiveSection, setSelectedDocumentId, setSelectedNoteProjectId, setSelectedProjectId, setSelectedTaskId])
+  }, [setActiveSection, setSelectedDocumentId, setSelectedMoodBoardId, setSelectedNoteProjectId, setSelectedProjectId, setSelectedTaskId])
 
   const toggleProjectExpansion = useCallback((projectId: string) => {
     setExpandedProjectIds((current) => current.includes(projectId)

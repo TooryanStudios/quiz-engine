@@ -3,6 +3,7 @@ import type { WorkhubTask } from '../../../lib/workhubRepo'
 
 export interface WorkhubTaskAttachmentCardProps {
   task: WorkhubTask
+  embedded?: boolean
   collapsed: boolean
   onToggleCollapsed: () => void
   attachmentViewMode: 'list' | 'thumbnail' | 'card'
@@ -28,6 +29,7 @@ export interface WorkhubTaskAttachmentCardProps {
 
 export function WorkhubTaskAttachmentCard({
   task,
+  embedded = false,
   collapsed,
   onToggleCollapsed,
   attachmentViewMode,
@@ -89,7 +91,7 @@ export function WorkhubTaskAttachmentCard({
   const isUploading = uploadingTaskAttachmentId === task.id
 
   return (
-    <div className="workhub-detail-card workhub-task-resource-card">
+    <div className={embedded ? 'workhub-task-resource-card workhub-task-resource-card-embedded' : 'workhub-detail-card workhub-task-resource-card'}>
       <div className="workhub-task-attachments-head">
         <button
           type="button"
@@ -182,34 +184,7 @@ export function WorkhubTaskAttachmentCard({
           )}
         </div>
 
-        {/* ── URL-based add ── */}
-        <div className="workhub-attachment-url-section">
-          <div className="workhub-checklist-url-row compact-row is-stacked">
-            <input
-              type="text"
-              value={attachmentTitleDraft}
-              onChange={(event) => onAttachmentTitleDraftChange(event.target.value)}
-              placeholder="Link title (optional)"
-            />
-          </div>
-          <div className="workhub-checklist-url-row compact-row is-stacked">
-            <input
-              type="url"
-              value={attachmentUrlDraft}
-              onChange={(event) => onAttachmentUrlDraftChange(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  event.preventDefault()
-                  onAddAttachment()
-                }
-              }}
-              placeholder="Paste a link URL and press Enter"
-            />
-          </div>
-          <div className="workhub-checklist-url-row compact-row is-stacked">
-            <button type="button" onClick={onAddAttachment}>Add link</button>
-          </div>
-        </div>
+        {/* drop zone only – no URL-add section */}
       </div>}
       {!collapsed && attachments.length > 0 && (
         <div className={`workhub-checklist-url-list view-${attachmentViewMode}`}>
@@ -245,9 +220,6 @@ export function WorkhubTaskAttachmentCard({
             )
           })}
         </div>
-      )}
-      {!collapsed && attachments.length === 0 && (
-        <div className="workhub-empty-state">No files yet.</div>
       )}
     </div>
   )

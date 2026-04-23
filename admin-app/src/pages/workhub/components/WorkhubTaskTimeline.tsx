@@ -52,10 +52,22 @@ export function WorkhubTaskTimeline({
   currentUid,
   handleQuickAddTask,
 }: WorkhubTaskTimelineProps) {
+  const [activeTimelineTaskId, setActiveTimelineTaskId] = useState(selectedTaskId)
   const [quickAddOpen, setQuickAddOpen] = useState(false)
   const [quickAddTitle, setQuickAddTitle] = useState('')
   const [quickAddBusy, setQuickAddBusy] = useState(false)
   const quickAddInputRef = useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    if (!selectedTaskId) return
+    setActiveTimelineTaskId(selectedTaskId)
+  }, [selectedTaskId])
+
+  useEffect(() => {
+    if (!activeTimelineTaskId) return
+    if (filteredTasks.some((task) => task.id === activeTimelineTaskId)) return
+    setActiveTimelineTaskId('')
+  }, [activeTimelineTaskId, filteredTasks])
 
   const {
     canZoomIn,
@@ -82,8 +94,8 @@ export function WorkhubTaskTimeline({
     filteredTasks,
     memberByUid,
     selectedProjectEffectiveTaskStatuses,
-    selectedTaskId,
-    setSelectedTaskId,
+    activeTaskId: activeTimelineTaskId,
+    setActiveTaskId: setActiveTimelineTaskId,
     handleTaskUpdate,
   })
 
@@ -202,14 +214,15 @@ export function WorkhubTaskTimeline({
               <button
                 key={row.id}
                 type="button"
-                className={`workhub-task-timeline-name${selectedTaskId === row.id ? ' is-active' : ''}${row.timelineWarning ? ' is-warning' : ''}`}
+                className={`workhub-task-timeline-name${activeTimelineTaskId === row.id ? ' is-active' : ''}${row.timelineWarning ? ' is-warning' : ''}`}
                 data-task-id={row.id}
-                onClick={() => setSelectedTaskId(row.id)}
+                onClick={() => setActiveTimelineTaskId(row.id)}
+                onDoubleClick={() => setSelectedTaskId(row.id)}
                 title={row.timelineWarning ? `${row.title} · ${row.timelineWarning}` : `${row.title} · ${row.assigneeName}`}
               >
                 <span className="workhub-task-timeline-name-main">
                   <span className="workhub-task-timeline-name-copy">
-                    <strong>{row.title || 'Untitled task'}</strong>
+                    <span className="workhub-task-timeline-name-title">{row.title || 'Untitled task'}</span>
                     {row.timelineWarning && <span className="workhub-task-timeline-name-warning">Add start + deadline</span>}
                   </span>
                   {timelineImageCountByTaskId[row.id] > 0 && (
@@ -279,8 +292,8 @@ export function WorkhubTaskTimeline({
                         : 'No timeline dates'
 
                   return (
-                    <div key={row.id} data-timeline-row-id={row.id} className={`workhub-task-timeline-grid-row${selectedTaskId === row.id ? ' is-active' : ''}`}>
-                      <div className={`workhub-task-timeline-bar-track${selectedTaskId === row.id ? ' is-active' : ''}${row.timelineWarning ? ' is-warning' : ''}`}>
+                    <div key={row.id} data-timeline-row-id={row.id} className={`workhub-task-timeline-grid-row${activeTimelineTaskId === row.id ? ' is-active' : ''}`}>
+                      <div className={`workhub-task-timeline-bar-track${activeTimelineTaskId === row.id ? ' is-active' : ''}${row.timelineWarning ? ' is-warning' : ''}`}>
                         {hasTimelineRange && (
                           <div
                             className={`workhub-task-timeline-bar-wrap${previewRange ? ' is-dragging' : ''}`}
@@ -296,14 +309,16 @@ export function WorkhubTaskTimeline({
                               className="workhub-task-timeline-bar-handle is-start"
                               onPointerDown={(event) => beginTimelineDrag(event, row, { startIndex: renderStartIndex, endIndex: renderEndIndex }, 'resize-start')}
                               onClick={(event) => event.stopPropagation()}
+                              onDoubleClick={(event) => event.stopPropagation()}
                               title="Drag to move the start date"
                               aria-label={`Resize start of ${row.title || 'task'} timeline`}
                             />
                             <button
                               type="button"
                               data-timeline-bar-id={row.id}
-                              className={`workhub-task-timeline-bar${previewRange ? ' is-dragging' : ''}${selectedTaskId === row.id ? ' is-active' : ''}`}
-                              onClick={() => setSelectedTaskId(row.id)}
+                              className={`workhub-task-timeline-bar${previewRange ? ' is-dragging' : ''}${activeTimelineTaskId === row.id ? ' is-active' : ''}`}
+                              onClick={() => setActiveTimelineTaskId(row.id)}
+                              onDoubleClick={() => setSelectedTaskId(row.id)}
                               onPointerDown={(event) => beginTimelineDrag(event, row, { startIndex: renderStartIndex, endIndex: renderEndIndex }, 'move')}
                               title={`${row.title} · ${timelineDateLabel} · Created ${createdLabel}`}
                               aria-label={`Open task ${row.title}`}
@@ -324,6 +339,7 @@ export function WorkhubTaskTimeline({
                               className="workhub-task-timeline-bar-handle"
                               onPointerDown={(event) => beginTimelineDrag(event, row, { startIndex: renderStartIndex, endIndex: renderEndIndex }, 'resize-end')}
                               onClick={(event) => event.stopPropagation()}
+                              onDoubleClick={(event) => event.stopPropagation()}
                               title="Drag to extend or shorten"
                               aria-label={`Resize ${row.title || 'task'} timeline`}
                             />
@@ -332,8 +348,9 @@ export function WorkhubTaskTimeline({
                         {!hasTimelineRange && row.timelineWarning && (
                           <button
                             type="button"
-                            className={`workhub-task-timeline-warning-callout${selectedTaskId === row.id ? ' is-active' : ''}`}
-                            onClick={() => setSelectedTaskId(row.id)}
+                            className={`workhub-task-timeline-warning-callout${activeTimelineTaskId === row.id ? ' is-active' : ''}`}
+                            onClick={() => setActiveTimelineTaskId(row.id)}
+                            onDoubleClick={() => setSelectedTaskId(row.id)}
                             title={row.timelineWarning}
                             aria-label={`${row.title || 'Task'} needs both a start date and deadline`}
                           >

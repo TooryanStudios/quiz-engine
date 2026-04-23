@@ -1,4 +1,4 @@
-import { addDoc, arrayUnion, collection, deleteDoc, deleteField, doc, getDoc, getDocs, limit, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
+import { addDoc, arrayRemove, arrayUnion, collection, deleteDoc, deleteField, doc, getDoc, getDocs, limit, onSnapshot as firestoreOnSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { db, functions } from './firebase'
 
@@ -291,6 +291,7 @@ export interface WorkhubTask {
   status: WorkhubTaskStatus
   priority: WorkhubTaskPriority
   assigneeUid: string
+  assigneeUids?: string[]
   startDate?: string
   dueDate: string
   dueTime?: string
@@ -324,6 +325,8 @@ export interface WorkhubTaskComment {
   entityId?: string
   authorUid: string
   body: string
+  likedByUids?: string[]
+  reactionByUid?: Record<string, string>
   createdAt?: unknown
   updatedAt?: unknown
   editedAt?: unknown
@@ -527,16 +530,53 @@ function stripUndefinedDeep<T>(value: T): T {
   return next as T
 }
 
+function safeListen(start: () => (() => void), onFailure?: () => void) {
+  try {
+    return start()
+  } catch (error) {
+    console.error('[workhubRepo] Failed to start Firestore listener', error)
+    onFailure?.()
+    return () => undefined
+  }
+}
+
+const onSnapshot: typeof firestoreOnSnapshot = ((...args: Parameters<typeof firestoreOnSnapshot>) => {
+  try {
+    return firestoreOnSnapshot(...args)
+  } catch (error) {
+    console.error('[workhubRepo] onSnapshot setup failed', error)
+    const maybeErrorHandler = args[2]
+    if (typeof maybeErrorHandler === 'function') {
+      ;(maybeErrorHandler as (error: unknown) => void)(error)
+    }
+    return () => undefined
+  }
+}) as typeof firestoreOnSnapshot
+
 export function subscribeOwnWorkhubMember(uid: string, onData: (member: WorkhubMember | null) => void) {
-  return onSnapshot(doc(db, 'workhub_members', uid), (snap) => {
-    onData(snap.exists() ? ({ uid: snap.id, ...snap.data() } as WorkhubMember) : null)
-  })
+  return safeListen(
+    () => onSnapshot(
+      doc(db, 'workhub_members', uid),
+      (snap) => {
+        onData(snap.exists() ? ({ uid: snap.id, ...snap.data() } as WorkhubMember) : null)
+      },
+      () => onData(null),
+    ),
+    () => onData(null),
+  )
 }
 
 export function subscribeAllWorkhubMembers(onData: (members: WorkhubMember[]) => void) {
-  return onSnapshot(membersCol, (snap) => {
-    onData(sortMembers(snap.docs.map((item) => ({ uid: item.id, ...item.data() } as WorkhubMember))))
-  })
+  return safeListen(
+    () => onSnapshot(
+      membersCol,
+      (snap) => {
+        onData(sortMembers(snap.docs.map((item) => ({ uid: item.id, ...item.data() } as WorkhubMember))))
+      },
+      () => onData([]),
+    ),
+    () => onData([]),
+  )
 }
 
 export async function requestWorkhubAccess(): Promise<WorkhubMember> {
@@ -582,9 +622,16 @@ export async function deleteWorkhubAttachmentFromDrive(fileId: string): Promise<
 }
 
 export function subscribeWorkhubWorkspaces(onData: (items: WorkhubWorkspace[]) => void) {
-  return onSnapshot(workspacesCol, (snap) => {
-    onData(sortByNewest(snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubWorkspace))))
-  })
+  return safeListen(
+    () => onSnapshot(
+      workspacesCol,
+      (snap) => {
+        onData(sortByNewest(snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubWorkspace))))
+      },
+      () => onData([]),
+    ),
+    () => onData([]),
+  )
 }
 
 export async function createWorkhubWorkspace(input: { name: string; description: string; type: 'technical' | 'hr' | 'finance'; templateId?: string; createdBy: string }): Promise<string> {
@@ -617,10 +664,17 @@ export async function deleteWorkhubWorkspace(workspaceId: string) {
 
 export function subscribeWorkhubClients(workspaceId: string, onData: (items: WorkhubClient[]) => void) {
   const q = query(clientsCol, where('workspaceId', '==', workspaceId))
-  return onSnapshot(q, (snap) => {
-    const clients = snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubClient))
-    onData(sortClients(clients))
-  })
+  return safeListen(
+    () => onSnapshot(
+      q,
+      (snap) => {
+        const clients = snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubClient))
+        onData(sortClients(clients))
+      },
+      () => onData([]),
+    ),
+    () => onData([]),
+  )
 }
 
 export function subscribeWorkhubClientsMulti(workspaceIds: string[], onData: (items: WorkhubClient[]) => void) {
@@ -641,10 +695,23 @@ export function subscribeWorkhubClientsMulti(workspaceIds: string[], onData: (it
 
   const unsubscribers = idChunks.map((chunk, bucketIndex) => {
     const q = query(clientsCol, where('workspaceId', 'in', chunk))
-    return onSnapshot(q, (snap) => {
-      bucketedItems[bucketIndex] = snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubClient))
-      emit()
-    })
+    return safeListen(
+      () => onSnapshot(
+        q,
+        (snap) => {
+          bucketedItems[bucketIndex] = snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubClient))
+          emit()
+        },
+        () => {
+          bucketedItems[bucketIndex] = []
+          emit()
+        },
+      ),
+      () => {
+        bucketedItems[bucketIndex] = []
+        emit()
+      },
+    )
   })
 
   return () => {
@@ -701,9 +768,16 @@ export async function deleteWorkhubClient(clientId: string) {
 export function subscribeWorkhubProjects(workspaceId: string, currentUid: string, canSeeAll: boolean, onData: (items: WorkhubProject[]) => void) {
   if (canSeeAll) {
     const q = query(projectsCol, where('workspaceId', '==', workspaceId))
-    return onSnapshot(q, (snap) => {
-      onData(sortByNewest(snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubProject))))
-    })
+    return safeListen(
+      () => onSnapshot(
+        q,
+        (snap) => {
+          onData(sortByNewest(snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubProject))))
+        },
+        () => onData([]),
+      ),
+      () => onData([]),
+    )
   }
 
   const workspaceQuery = query(projectsCol, where('workspaceId', '==', workspaceId), where('visibility', '==', 'workspace'))
@@ -711,14 +785,40 @@ export function subscribeWorkhubProjects(workspaceId: string, currentUid: string
   let workspaceItems: WorkhubProject[] = []
   let restrictedItems: WorkhubProject[] = []
   const emit = () => onData(mergeById([workspaceItems, restrictedItems]))
-  const unsubWorkspace = onSnapshot(workspaceQuery, (snap) => {
-    workspaceItems = snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubProject))
-    emit()
-  })
-  const unsubRestricted = onSnapshot(restrictedQuery, (snap) => {
-    restrictedItems = snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubProject))
-    emit()
-  })
+  const unsubWorkspace = safeListen(
+    () => onSnapshot(
+      workspaceQuery,
+      (snap) => {
+        workspaceItems = snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubProject))
+        emit()
+      },
+      () => {
+        workspaceItems = []
+        emit()
+      },
+    ),
+    () => {
+      workspaceItems = []
+      emit()
+    },
+  )
+  const unsubRestricted = safeListen(
+    () => onSnapshot(
+      restrictedQuery,
+      (snap) => {
+        restrictedItems = snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubProject))
+        emit()
+      },
+      () => {
+        restrictedItems = []
+        emit()
+      },
+    ),
+    () => {
+      restrictedItems = []
+      emit()
+    },
+  )
   return () => {
     unsubWorkspace()
     unsubRestricted()
@@ -804,9 +904,16 @@ export function subscribeWorkhubDocuments(
 ) {
   if (canSeeAll) {
     const q = query(documentsCol, where('workspaceId', '==', workspaceId))
-    return onSnapshot(q, (snap) => {
-      onData(sortDocuments(snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubDocument))))
-    })
+    return safeListen(
+      () => onSnapshot(
+        q,
+        (snap) => {
+          onData(sortDocuments(snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubDocument))))
+        },
+        () => onData([]),
+      ),
+      () => onData([]),
+    )
   }
 
   const workspaceQuery = query(documentsCol, where('workspaceId', '==', workspaceId), where('visibility', '==', 'workspace'))
@@ -814,17 +921,43 @@ export function subscribeWorkhubDocuments(
   let workspaceItems: WorkhubDocument[] = []
   let restrictedItems: WorkhubDocument[] = []
   const emit = () => onData(mergeDocumentsById([workspaceItems, restrictedItems]))
-  const unsubWorkspace = onSnapshot(workspaceQuery, (snap) => {
-    workspaceItems = snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubDocument)
-    )
-    emit()
-  })
-  const unsubRestricted = onSnapshot(restrictedQuery, (snap) => {
-    restrictedItems = snap.docs
-      .map((item) => ({ id: item.id, ...item.data() } as WorkhubDocument))
-      .filter((item) => item.workspaceId === workspaceId && item.visibility === 'restricted')
-    emit()
-  })
+  const unsubWorkspace = safeListen(
+    () => onSnapshot(
+      workspaceQuery,
+      (snap) => {
+        workspaceItems = snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubDocument)
+        )
+        emit()
+      },
+      () => {
+        workspaceItems = []
+        emit()
+      },
+    ),
+    () => {
+      workspaceItems = []
+      emit()
+    },
+  )
+  const unsubRestricted = safeListen(
+    () => onSnapshot(
+      restrictedQuery,
+      (snap) => {
+        restrictedItems = snap.docs
+          .map((item) => ({ id: item.id, ...item.data() } as WorkhubDocument))
+          .filter((item) => item.workspaceId === workspaceId && item.visibility === 'restricted')
+        emit()
+      },
+      () => {
+        restrictedItems = []
+        emit()
+      },
+    ),
+    () => {
+      restrictedItems = []
+      emit()
+    },
+  )
   return () => {
     unsubWorkspace()
     unsubRestricted()
@@ -982,9 +1115,16 @@ export async function deleteWorkhubDocument(documentId: string) {
 export function subscribeWorkhubTasks(workspaceId: string, currentUid: string, canSeeAll: boolean, onData: (items: WorkhubTask[]) => void) {
   if (canSeeAll) {
     const q = query(tasksCol, where('workspaceId', '==', workspaceId))
-    return onSnapshot(q, (snap) => {
-      onData(sortTasks(snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubTask))))
-    })
+    return safeListen(
+      () => onSnapshot(
+        q,
+        (snap) => {
+          onData(sortTasks(snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubTask))))
+        },
+        () => onData([]),
+      ),
+      () => onData([]),
+    )
   }
 
   const workspaceQuery = query(tasksCol, where('workspaceId', '==', workspaceId), where('visibility', '==', 'workspace'))
@@ -992,14 +1132,40 @@ export function subscribeWorkhubTasks(workspaceId: string, currentUid: string, c
   let workspaceItems: WorkhubTask[] = []
   let restrictedItems: WorkhubTask[] = []
   const emit = () => onData(mergeTasksById([workspaceItems, restrictedItems]))
-  const unsubWorkspace = onSnapshot(workspaceQuery, (snap) => {
-    workspaceItems = snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubTask))
-    emit()
-  })
-  const unsubRestricted = onSnapshot(restrictedQuery, (snap) => {
-    restrictedItems = snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubTask))
-    emit()
-  })
+  const unsubWorkspace = safeListen(
+    () => onSnapshot(
+      workspaceQuery,
+      (snap) => {
+        workspaceItems = snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubTask))
+        emit()
+      },
+      () => {
+        workspaceItems = []
+        emit()
+      },
+    ),
+    () => {
+      workspaceItems = []
+      emit()
+    },
+  )
+  const unsubRestricted = safeListen(
+    () => onSnapshot(
+      restrictedQuery,
+      (snap) => {
+        restrictedItems = snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubTask))
+        emit()
+      },
+      () => {
+        restrictedItems = []
+        emit()
+      },
+    ),
+    () => {
+      restrictedItems = []
+      emit()
+    },
+  )
   return () => {
     unsubWorkspace()
     unsubRestricted()
@@ -1017,6 +1183,7 @@ export async function createWorkhubTask(input: {
   status: WorkhubTaskStatus
   priority: WorkhubTaskPriority
   assigneeUid: string
+  assigneeUids?: string[]
   startDate?: string
   dueDate: string
   dueTime?: string
@@ -1038,6 +1205,7 @@ export async function createWorkhubTask(input: {
     status: input.status || 'backlog',
     priority: input.priority,
     assigneeUid: input.assigneeUid,
+    assigneeUids: input.assigneeUids && input.assigneeUids.length > 0 ? input.assigneeUids : [input.assigneeUid],
     startDate: input.startDate || '',
     dueDate: input.dueDate,
     dueTime: input.dueTime || '',
@@ -1065,7 +1233,7 @@ export async function saveWorkhubTaskNotifyPrefs(
   })
 }
 
-export async function updateWorkhubTask(taskId: string, patch: Partial<Pick<WorkhubTask, 'milestoneId' | 'title' | 'description' | 'attachments' | 'attachmentTitles' | 'imageUrls' | 'links' | 'linkTitles' | 'linkCreatedBy' | 'status' | 'priority' | 'assigneeUid' | 'startDate' | 'dueDate' | 'dueTime' | 'valueAmount' | 'valueCurrency' | 'checklist' | 'completedAt' | 'sortOrder'>>) {
+export async function updateWorkhubTask(taskId: string, patch: Partial<Pick<WorkhubTask, 'milestoneId' | 'title' | 'description' | 'attachments' | 'attachmentTitles' | 'imageUrls' | 'links' | 'linkTitles' | 'linkCreatedBy' | 'status' | 'priority' | 'assigneeUid' | 'assigneeUids' | 'startDate' | 'dueDate' | 'dueTime' | 'valueAmount' | 'valueCurrency' | 'checklist' | 'completedAt' | 'sortOrder'>>) {
   const normalizedPatch: Record<string, unknown> = {
     ...patch,
   }
@@ -1076,6 +1244,9 @@ export async function updateWorkhubTask(taskId: string, patch: Partial<Pick<Work
   }
   if (Object.prototype.hasOwnProperty.call(patch, 'valueCurrency') && patch.valueCurrency === undefined) {
     normalizedPatch.valueCurrency = deleteField()
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'assigneeUids') && patch.assigneeUids === undefined) {
+    normalizedPatch.assigneeUids = deleteField()
   }
 
   const payload = stripUndefinedDeep({
@@ -1090,25 +1261,157 @@ export async function deleteWorkhubTask(taskId: string) {
   await deleteDoc(doc(db, 'workhub_tasks', taskId))
 }
 
-export function subscribeWorkhubComments(taskId: string, onData: (items: WorkhubTaskComment[]) => void) {
-  const q = query(commentsCol, where('taskId', '==', taskId))
-  return onSnapshot(q, (snap) => {
-    onData(sortByNewest(snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubTaskComment))))
-  })
+export function subscribeWorkhubComments(
+  taskId: string,
+  onData: (items: WorkhubTaskComment[]) => void,
+  options?: { maxCount?: number; onHasMore?: (hasMore: boolean) => void },
+) {
+  const maxCount = typeof options?.maxCount === 'number' && options.maxCount > 0 ? options.maxCount : 0
+  const fetchLimit = maxCount > 0 ? maxCount + 1 : 0
+  const mapSnapshot = (snap: { docs: Array<{ id: string; data: () => unknown }> }) => {
+    const mapped = snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubTaskComment))
+    if (fetchLimit > 0) {
+      const newestFirst = sortByNewest(mapped)
+      const hasMore = newestFirst.length > maxCount
+      options?.onHasMore?.(hasMore)
+      onData(newestFirst.slice(0, maxCount))
+      return
+    }
+    options?.onHasMore?.(false)
+    onData(sortByNewest(mapped))
+  }
+  const fallbackQuery = query(commentsCol, where('taskId', '==', taskId))
+  if (fetchLimit <= 0) {
+    return safeListen(
+      () => onSnapshot(
+        fallbackQuery,
+        mapSnapshot,
+        () => {
+          options?.onHasMore?.(false)
+          onData([])
+        },
+      ),
+      () => {
+        options?.onHasMore?.(false)
+        onData([])
+      },
+    )
+  }
+
+  const primaryQuery = query(commentsCol, where('taskId', '==', taskId), orderBy('createdAt', 'desc'), limit(fetchLimit))
+  let fallbackUnsub: (() => void) | null = null
+  const primaryUnsub = safeListen(
+    () => onSnapshot(
+      primaryQuery,
+      mapSnapshot,
+      () => {
+        fallbackUnsub = safeListen(
+          () => onSnapshot(
+            fallbackQuery,
+            mapSnapshot,
+            () => {
+              options?.onHasMore?.(false)
+              onData([])
+            },
+          ),
+          () => {
+            options?.onHasMore?.(false)
+            onData([])
+          },
+        )
+      },
+    ),
+    () => {
+      options?.onHasMore?.(false)
+      onData([])
+    },
+  )
+  return () => {
+    primaryUnsub()
+    fallbackUnsub?.()
+  }
 }
 
 export function subscribeWorkhubCommentsByEntity(
   entityType: 'task' | 'project' | 'document',
   entityId: string,
   onData: (items: WorkhubTaskComment[]) => void,
+  options?: { maxCount?: number; onHasMore?: (hasMore: boolean) => void },
 ) {
-  const scopedQuery = entityType === 'task'
+  const maxCount = typeof options?.maxCount === 'number' && options.maxCount > 0 ? options.maxCount : 0
+  const fetchLimit = maxCount > 0 ? maxCount + 1 : 0
+  const mapSnapshot = (snap: { docs: Array<{ id: string; data: () => unknown }> }) => {
+    const mapped = snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubTaskComment))
+    const normalized = entityType === 'task'
+      ? mapped
+      : mapped.filter((item) => item.entityType === entityType && item.entityId === entityId)
+    if (fetchLimit > 0) {
+      const newestFirst = sortByNewest(normalized)
+      const hasMore = newestFirst.length > maxCount
+      options?.onHasMore?.(hasMore)
+      onData(newestFirst.slice(0, maxCount))
+      return
+    }
+    options?.onHasMore?.(false)
+    onData(sortByNewest(normalized))
+  }
+
+  const fallbackQuery = entityType === 'task'
     ? query(commentsCol, where('taskId', '==', entityId))
     : query(commentsCol, where('entityType', '==', entityType), where('entityId', '==', entityId))
 
-  return onSnapshot(scopedQuery, (snap) => {
-    onData(sortByNewest(snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubTaskComment))))
-  })
+  if (fetchLimit <= 0) {
+    return safeListen(
+      () => onSnapshot(
+        fallbackQuery,
+        mapSnapshot,
+        () => {
+          options?.onHasMore?.(false)
+          onData([])
+        },
+      ),
+      () => {
+        options?.onHasMore?.(false)
+        onData([])
+      },
+    )
+  }
+
+  const primaryQuery = entityType === 'task'
+    ? query(commentsCol, where('taskId', '==', entityId), orderBy('createdAt', 'desc'), limit(fetchLimit))
+    : query(commentsCol, where('entityType', '==', entityType), where('entityId', '==', entityId), orderBy('createdAt', 'desc'), limit(fetchLimit))
+
+  let fallbackUnsub: (() => void) | null = null
+  const primaryUnsub = safeListen(
+    () => onSnapshot(
+      primaryQuery,
+      mapSnapshot,
+      () => {
+        fallbackUnsub = safeListen(
+          () => onSnapshot(
+            fallbackQuery,
+            mapSnapshot,
+            () => {
+              options?.onHasMore?.(false)
+              onData([])
+            },
+          ),
+          () => {
+            options?.onHasMore?.(false)
+            onData([])
+          },
+        )
+      },
+    ),
+    () => {
+      options?.onHasMore?.(false)
+      onData([])
+    },
+  )
+  return () => {
+    primaryUnsub()
+    fallbackUnsub?.()
+  }
 }
 
 export async function addWorkhubTaskComment(input: { workspaceId: string; taskId: string; authorUid: string; body: string }): Promise<string> {
@@ -1150,6 +1453,29 @@ export async function updateWorkhubComment(commentId: string, patch: Pick<Workhu
   })
 }
 
+export async function setWorkhubCommentLike(input: {
+  commentId: string
+  userUid: string
+  liked: boolean
+}): Promise<void> {
+  await updateDoc(doc(db, 'workhub_task_comments', input.commentId), {
+    likedByUids: input.liked ? arrayUnion(input.userUid) : arrayRemove(input.userUid),
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function setWorkhubCommentReaction(input: {
+  commentId: string
+  userUid: string
+  reaction: string | null
+}): Promise<void> {
+  const reactionPath = `reactionByUid.${input.userUid}`
+  await updateDoc(doc(db, 'workhub_task_comments', input.commentId), {
+    [reactionPath]: input.reaction ? input.reaction : deleteField(),
+    updatedAt: serverTimestamp(),
+  })
+}
+
 export async function deleteWorkhubComment(commentId: string): Promise<void> {
   await deleteDoc(doc(db, 'workhub_task_comments', commentId))
 }
@@ -1157,9 +1483,16 @@ export async function deleteWorkhubComment(commentId: string): Promise<void> {
 export function subscribeWorkhubActivity(workspaceId: string, currentUid: string, canSeeAll: boolean, onData: (items: WorkhubActivity[]) => void) {
   if (canSeeAll) {
     const q = query(activityCol, where('workspaceId', '==', workspaceId))
-    return onSnapshot(q, (snap) => {
-      onData(sortByNewest(snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubActivity)).slice(0, 300)))
-    })
+    return safeListen(
+      () => onSnapshot(
+        q,
+        (snap) => {
+          onData(sortByNewest(snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubActivity)).slice(0, 300)))
+        },
+        () => onData([]),
+      ),
+      () => onData([]),
+    )
   }
 
   const workspaceQuery = query(activityCol, where('workspaceId', '==', workspaceId), where('visibility', '==', 'workspace'))
@@ -1167,14 +1500,40 @@ export function subscribeWorkhubActivity(workspaceId: string, currentUid: string
   let workspaceItems: WorkhubActivity[] = []
   let restrictedItems: WorkhubActivity[] = []
   const emit = () => onData(mergeById([workspaceItems, restrictedItems]).slice(0, 300))
-  const unsubWorkspace = onSnapshot(workspaceQuery, (snap) => {
-    workspaceItems = snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubActivity))
-    emit()
-  })
-  const unsubRestricted = onSnapshot(restrictedQuery, (snap) => {
-    restrictedItems = snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubActivity))
-    emit()
-  })
+  const unsubWorkspace = safeListen(
+    () => onSnapshot(
+      workspaceQuery,
+      (snap) => {
+        workspaceItems = snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubActivity))
+        emit()
+      },
+      () => {
+        workspaceItems = []
+        emit()
+      },
+    ),
+    () => {
+      workspaceItems = []
+      emit()
+    },
+  )
+  const unsubRestricted = safeListen(
+    () => onSnapshot(
+      restrictedQuery,
+      (snap) => {
+        restrictedItems = snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubActivity))
+        emit()
+      },
+      () => {
+        restrictedItems = []
+        emit()
+      },
+    ),
+    () => {
+      restrictedItems = []
+      emit()
+    },
+  )
   return () => {
     unsubWorkspace()
     unsubRestricted()
@@ -1223,9 +1582,16 @@ export function subscribeWorkhubNotifications(recipientUid: string, onData: (ite
     notificationsCol,
       where('recipientUid', '==', recipientUid),
   )
-  return onSnapshot(q, (snap) => {
-      onData(sortByNewest(snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubNotification))))
-  })
+  return safeListen(
+    () => onSnapshot(
+      q,
+      (snap) => {
+        onData(sortByNewest(snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubNotification))))
+      },
+      () => onData([]),
+    ),
+    () => onData([]),
+  )
 }
 
 export async function createWorkhubNotifications(input: {
@@ -1282,13 +1648,20 @@ export function subscribeWorkhubProjectNotificationPreference(
     return () => undefined
   }
   const prefId = getWorkhubProjectNotificationPrefId(projectId, userUid)
-  return onSnapshot(doc(projectNotificationPrefsCol, prefId), (snap) => {
-    if (!snap.exists()) {
-      onData(null)
-      return
-    }
-    onData({ id: snap.id, ...snap.data() } as WorkhubProjectNotificationPreference)
-  })
+  return safeListen(
+    () => onSnapshot(
+      doc(projectNotificationPrefsCol, prefId),
+      (snap) => {
+        if (!snap.exists()) {
+          onData(null)
+          return
+        }
+        onData({ id: snap.id, ...snap.data() } as WorkhubProjectNotificationPreference)
+      },
+      () => onData(null),
+    ),
+    () => onData(null),
+  )
 }
 
 export async function saveWorkhubProjectNotificationPreference(input: {
@@ -1404,6 +1777,14 @@ export interface WorkhubMoodBoard {
     animated?: boolean
     label?: string
   }>
+  flowSettings?: {
+    canvasAppearance?: {
+      backgroundColor?: string
+      patternColor?: string
+      pattern?: 'dots' | 'lines'
+    }
+    showNavigationPreview?: boolean
+  }
   tabs?: WorkhubMoodBoardTab[]
   activeTabId?: string
   images: WorkhubMoodBoardImage[]
@@ -1422,9 +1803,16 @@ export function subscribeWorkhubMoodBoardsForWorkspace(
     collection(db, 'workhub_mood_boards'),
     where('workspaceId', '==', workspaceId),
   )
-  return onSnapshot(q, (snap) => {
-    onData(sortMoodBoards(snap.docs.map((d) => ({ id: d.id, ...d.data() } as WorkhubMoodBoard))))
-  })
+  return safeListen(
+    () => onSnapshot(
+      q,
+      (snap) => {
+        onData(sortMoodBoards(snap.docs.map((d) => ({ id: d.id, ...d.data() } as WorkhubMoodBoard))))
+      },
+      () => onData([]),
+    ),
+    () => onData([]),
+  )
 }
 
 export function subscribeWorkhubMoodBoard(
@@ -1438,11 +1826,18 @@ export function subscribeWorkhubMoodBoard(
     where('entityId', '==', entityId),
     limit(1),
   )
-  return onSnapshot(q, (snap) => {
-    if (snap.empty) { onData(null); return }
-    const d = snap.docs[0]
-    onData({ id: d.id, ...d.data() } as WorkhubMoodBoard)
-  })
+  return safeListen(
+    () => onSnapshot(
+      q,
+      (snap) => {
+        if (snap.empty) { onData(null); return }
+        const d = snap.docs[0]
+        onData({ id: d.id, ...d.data() } as WorkhubMoodBoard)
+      },
+      () => onData(null),
+    ),
+    () => onData(null),
+  )
 }
 
 export async function createWorkhubMoodBoard(input: {
@@ -1635,11 +2030,13 @@ export async function updateWorkhubMoodBoardFlow(
   flowNodes: WorkhubMoodBoard['flowNodes'],
   flowEdges: WorkhubMoodBoard['flowEdges'],
   flowViewport?: WorkhubMoodBoard['flowViewport'],
+  flowSettings?: WorkhubMoodBoard['flowSettings'],
 ): Promise<void> {
   await updateDoc(doc(db, 'workhub_mood_boards', boardId), {
     flowNodes: flowNodes || [],
     flowEdges: flowEdges || [],
     flowViewport: flowViewport || { x: 0, y: 0, zoom: 1 },
+    flowSettings: flowSettings || {},
     updatedAt: serverTimestamp(),
   })
 }
@@ -1702,12 +2099,19 @@ export function subscribeWorkhubMilestones(
     return () => {}
   }
   const q = query(milestonesCol, where('projectId', '==', projectId))
-  return onSnapshot(q, (snap) => {
-    const items = snap.docs
-      .map((d) => ({ id: d.id, ...d.data() } as WorkhubMilestone))
-      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
-    onData(items)
-  })
+  return safeListen(
+    () => onSnapshot(
+      q,
+      (snap) => {
+        const items = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() } as WorkhubMilestone))
+          .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+        onData(items)
+      },
+      () => onData([]),
+    ),
+    () => onData([]),
+  )
 }
 
 export async function createWorkhubMilestone(input: {

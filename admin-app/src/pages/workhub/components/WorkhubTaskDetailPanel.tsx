@@ -1,4 +1,4 @@
-import { useState, useEffect, memo, useMemo, createContext, useContext, type ReactNode, type Dispatch, type SetStateAction } from 'react'
+import { useState, useEffect, useRef, memo, useMemo, createContext, useContext, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type Dispatch, type SetStateAction } from 'react'
 import type { WorkhubTask, WorkhubTaskStatusConfig, WorkhubMember, WorkhubTaskChecklistItem, WorkhubMilestone } from '../../../lib/workhubRepo'
 import type { WorkhubImageReview } from '../imageReview'
 import { WorkhubTaskAttachmentCard } from './WorkhubTaskAttachmentCard'
@@ -38,6 +38,7 @@ interface TaskFinanceInfo {
 // ─── Typed props interface (Priority 2) ─────────────────────────────────────
 export interface WorkhubTaskDetailPanelProps {
   isMobileWorkhubLayout: boolean
+  showStandaloneHeader?: boolean
   selectedTask: WorkhubTask
   setSelectedTaskId: (id: string) => void
   setTaskDeleteConfirmOpen: (open: boolean) => void
@@ -47,6 +48,7 @@ export interface WorkhubTaskDetailPanelProps {
   selectedProjectEffectiveTaskStatuses: WorkhubTaskStatusConfig[]
   PRIORITY_LABELS: Record<string, string>
   memberByUid: Record<string, WorkhubMember>
+  selectedTaskAssignableMembers: WorkhubMember[]
   formatDueDateShort: (date: string, time?: string) => string
   selectedTaskFinanceInfo: TaskFinanceInfo | null
   handleSelectedTaskValueSave: (task: WorkhubTask, amountDraft: string, currencyDraft: string) => void
@@ -139,37 +141,41 @@ function computeAttachmentReviewCount(reviews: Record<string, WorkhubImageReview
     + (review.modificationChecks.length)
 }
 
-interface DetailChipButtonProps {
+interface DetailFieldCardProps {
+  icon: string
   label: string
-  value: string
-  menuKey: string
-  detailMenuOpen: string
-  setDetailMenuOpen: (key: string) => void
-  setDetailMenuCoords: (coords: { top: number; left: number; right: number } | null) => void
+  children: ReactNode
 }
 
-function DetailChipButton({ label, value, menuKey, detailMenuOpen, setDetailMenuOpen, setDetailMenuCoords }: DetailChipButtonProps) {
+function DetailFieldCard({ icon, label, children }: DetailFieldCardProps) {
+  const hasLabel = label.trim().length > 0
   return (
     <div className="workhub-detail-icon-wrap">
-      <button
-        type="button"
-        className="workhub-detail-icon-btn"
-        title={`${label}: ${value}`}
-        onClick={(e) => {
-          const rect = e.currentTarget.getBoundingClientRect()
-          if (detailMenuOpen === menuKey) {
-            setDetailMenuOpen('')
-            setDetailMenuCoords(null)
-          } else {
-            setDetailMenuOpen(menuKey)
-            setDetailMenuCoords({ top: rect.bottom + 4, left: rect.left, right: window.innerWidth - rect.right })
-          }
-        }}
-      >
-        <span className="workhub-detail-chip-label">{label}</span>
-        <span className="workhub-detail-chip-value">{value}</span>
-        <span className="workhub-detail-chip-edit" aria-hidden="true">{'\u25BE'}</span>
-      </button>
+      <div className="workhub-detail-icon-btn workhub-detail-icon-field">
+        <span className="workhub-detail-chip-icon" aria-hidden="true">{icon}</span>
+        <span className="workhub-detail-chip-copy">
+          {hasLabel && <span className="workhub-detail-chip-label">{label}</span>}
+          {children}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+interface DetailMetaItemProps {
+  icon: string
+  label: string
+  value: ReactNode
+}
+
+function DetailMetaItem({ icon, label, value }: DetailMetaItemProps) {
+  return (
+    <div className="workhub-detail-meta-item">
+      <span className="workhub-detail-meta-icon" aria-hidden="true">{icon}</span>
+      <span className="workhub-detail-meta-copy">
+        <span className="workhub-detail-meta-label">{label}</span>
+        <span className="workhub-detail-meta-value">{value}</span>
+      </span>
     </div>
   )
 }
@@ -177,6 +183,7 @@ function DetailChipButton({ label, value, menuKey, detailMenuOpen, setDetailMenu
 // ─── Links section (Priority 3 – extracted memoized component) ─────────────
 interface TaskDetailLinksSectionProps {
   selectedTask: WorkhubTask
+  embedded?: boolean
   getTaskLinks: (task: WorkhubTask) => string[]
   taskLinkTitleDrafts: Record<string, string>
   setTaskLinkTitleDrafts: Dispatch<SetStateAction<Record<string, string>>>
@@ -192,6 +199,7 @@ interface TaskDetailLinksSectionProps {
 
 const TaskDetailLinksSection = memo(function TaskDetailLinksSection({
   selectedTask,
+  embedded = false,
   getTaskLinks,
   taskLinkTitleDrafts,
   setTaskLinkTitleDrafts,
@@ -207,52 +215,35 @@ const TaskDetailLinksSection = memo(function TaskDetailLinksSection({
   const { attachmentViewMode, setAttachmentViewMode, getUrlHostLabel, getInitials, memberByUid } = useTaskDetailShared()
   const taskLinks: string[] = getTaskLinks(selectedTask)
   return (
-    <div className="workhub-detail-card workhub-task-resource-card">
+    <div className={embedded ? 'workhub-task-resource-card workhub-task-resource-card-embedded' : 'workhub-detail-card workhub-task-resource-card'}>
       <div className="workhub-task-attachments-head">
         <span>{`Links (${taskLinks.length})`}</span>
-        <div className="workhub-view-mode-toggle">
-          <button type="button" className={attachmentViewMode === 'list' ? 'active' : ''} onClick={() => setAttachmentViewMode('list')} title="Minimal List">List</button>
-          <button type="button" className={attachmentViewMode === 'thumbnail' ? 'active' : ''} onClick={() => setAttachmentViewMode('thumbnail')} title="Small Thumbnails">Thumbs</button>
-          <button type="button" className={attachmentViewMode === 'card' ? 'active' : ''} onClick={() => setAttachmentViewMode('card')} title="Cards">Cards</button>
-        </div>
       </div>
       <div className="workhub-task-attachment-editor">
-        <div className="workhub-checklist-url-row compact-row is-stacked">
+        <div className="workhub-checklist-url-row compact-row">
           <input
             type="text"
             value={taskLinkTitleDrafts[selectedTask.id] || ''}
             onChange={(event) => setTaskLinkTitleDrafts((current) => ({ ...current, [selectedTask.id]: event.target.value }))}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault()
-                handleTaskLinkAdd(selectedTask)
-              }
-            }}
-            placeholder="Link title"
+            onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); handleTaskLinkAdd(selectedTask) } }}
+            placeholder="Title (optional)"
+            style={{ flex: '1 1 120px', minWidth: 0 }}
           />
-        </div>
-        <div className="workhub-checklist-url-row compact-row">
           <input
             type="url"
             value={taskLinkDrafts[selectedTask.id] || ''}
             onChange={(event) => setTaskLinkDrafts((current) => ({ ...current, [selectedTask.id]: event.target.value }))}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault()
-                handleTaskLinkAdd(selectedTask)
-              }
-            }}
-            placeholder="Task link URL"
+            onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); handleTaskLinkAdd(selectedTask) } }}
+            placeholder="Paste URL and press Enter"
+            style={{ flex: '2 1 200px', minWidth: 0 }}
           />
           <button type="button" onClick={() => handleTaskLinkAdd(selectedTask)}>
-            {taskLinkEditingDrafts[selectedTask.id] ? 'Save' : 'Add link'}
+            {taskLinkEditingDrafts[selectedTask.id] ? '✓' : '+'}
           </button>
         </div>
         {taskLinkEditingDrafts[selectedTask.id] && (
           <div className="workhub-checklist-url-row compact-row is-stacked">
-            <button type="button" className="workhub-ghost-btn" onClick={() => handleTaskLinkEditCancel(selectedTask.id)}>
-              Cancel edit
-            </button>
+            <button type="button" className="workhub-ghost-btn" onClick={() => handleTaskLinkEditCancel(selectedTask.id)}>Cancel edit</button>
           </div>
         )}
       </div>
@@ -304,9 +295,6 @@ const TaskDetailLinksSection = memo(function TaskDetailLinksSection({
           })}
         </div>
       )}
-      {taskLinks.length === 0 && (
-        <div className="workhub-empty-state">No links yet.</div>
-      )}
     </div>
   )
 })
@@ -314,6 +302,7 @@ const TaskDetailLinksSection = memo(function TaskDetailLinksSection({
 // ─── Main panel (Priority 3 – memo wrapped) ─────────────────────────────────
 export const WorkhubTaskDetailPanel = memo(function WorkhubTaskDetailPanel({
   isMobileWorkhubLayout,
+  showStandaloneHeader = true,
   selectedTask,
   setSelectedTaskId,
   setTaskDeleteConfirmOpen,
@@ -323,6 +312,7 @@ export const WorkhubTaskDetailPanel = memo(function WorkhubTaskDetailPanel({
   selectedProjectEffectiveTaskStatuses,
   PRIORITY_LABELS,
   memberByUid,
+  selectedTaskAssignableMembers,
   formatDueDateShort,
   selectedTaskFinanceInfo,
   handleSelectedTaskValueSave,
@@ -409,13 +399,98 @@ export const WorkhubTaskDetailPanel = memo(function WorkhubTaskDetailPanel({
   const [descriptionDraft, setDescriptionDraft] = useState(selectedTask.description || '')
   const [valueAmountDraft, setValueAmountDraft] = useState(selectedTask.valueAmount != null ? String(selectedTask.valueAmount) : '')
   const [valueCurrencyDraft, setValueCurrencyDraft] = useState(selectedTask.valueCurrency || '')
+  const [assigneeMenuOpen, setAssigneeMenuOpen] = useState(false)
+  const [isEditingTitle, setIsEditingTitle] = useState(false)
+  const [isEditingDescription, setIsEditingDescription] = useState(false)
+  const [dialogDetailsPaneWidth, setDialogDetailsPaneWidth] = useState(56)
+  const [isDialogResizing, setIsDialogResizing] = useState(false)
+  const assigneeMenuRef = useRef<HTMLDivElement | null>(null)
+  const dialogLayoutRef = useRef<HTMLDivElement | null>(null)
+  const dialogResizeStateRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const titleEditorRef = useRef<HTMLTextAreaElement | null>(null)
+  const descriptionEditorRef = useRef<HTMLTextAreaElement | null>(null)
 
   useEffect(() => {
     setTitleDraft(selectedTask.title || '')
     setDescriptionDraft(selectedTask.description || '')
     setValueAmountDraft(selectedTask.valueAmount != null ? String(selectedTask.valueAmount) : '')
     setValueCurrencyDraft(selectedTask.valueCurrency || '')
-  }, [selectedTask.id]) // eslint-disable-line react-hooks/exhaustive-deps
+    setAssigneeMenuOpen(false)
+    setIsEditingTitle(false)
+    setIsEditingDescription(false)
+  }, [
+    selectedTask.id,
+    selectedTask.title,
+    selectedTask.description,
+    selectedTask.valueAmount,
+    selectedTask.valueCurrency,
+  ]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!isEditingTitle) return
+    titleEditorRef.current?.focus()
+    const valueLength = titleEditorRef.current?.value.length || 0
+    titleEditorRef.current?.setSelectionRange(valueLength, valueLength)
+  }, [isEditingTitle])
+
+  useEffect(() => {
+    if (!isEditingDescription) return
+    descriptionEditorRef.current?.focus()
+    const valueLength = descriptionEditorRef.current?.value.length || 0
+    descriptionEditorRef.current?.setSelectionRange(valueLength, valueLength)
+  }, [isEditingDescription])
+
+  useEffect(() => {
+    if (!assigneeMenuOpen) return
+
+    function isInsideAssigneeMenu(target: EventTarget | null) {
+      const node = target as Node | null
+      return !!node && !!assigneeMenuRef.current?.contains(node)
+    }
+
+    function handleOutsidePointerDown(event: PointerEvent) {
+      if (!isInsideAssigneeMenu(event.target)) {
+        setAssigneeMenuOpen(false)
+      }
+    }
+
+    function handleOutsideMouseDown(event: MouseEvent) {
+      if (!isInsideAssigneeMenu(event.target)) {
+        setAssigneeMenuOpen(false)
+      }
+    }
+
+    function handleOutsideTouchStart(event: TouchEvent) {
+      if (!isInsideAssigneeMenu(event.target)) {
+        setAssigneeMenuOpen(false)
+      }
+    }
+
+    function handleOutsideFocusIn(event: FocusEvent) {
+      if (!isInsideAssigneeMenu(event.target)) {
+        setAssigneeMenuOpen(false)
+      }
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setAssigneeMenuOpen(false)
+      }
+    }
+
+    document.addEventListener('pointerdown', handleOutsidePointerDown, true)
+    document.addEventListener('mousedown', handleOutsideMouseDown, true)
+    document.addEventListener('touchstart', handleOutsideTouchStart, true)
+    document.addEventListener('focusin', handleOutsideFocusIn, true)
+    document.addEventListener('keydown', handleEscape)
+    return () => {
+      document.removeEventListener('pointerdown', handleOutsidePointerDown, true)
+      document.removeEventListener('mousedown', handleOutsideMouseDown, true)
+      document.removeEventListener('touchstart', handleOutsideTouchStart, true)
+      document.removeEventListener('focusin', handleOutsideFocusIn, true)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [assigneeMenuOpen])
 
   // Priority 4 – shared context value (memoised so TaskDetailLinksSection's memo is not defeated)
   const sharedContextValue = useMemo<TaskDetailSharedContextValue>(() => ({
@@ -431,162 +506,335 @@ export const WorkhubTaskDetailPanel = memo(function WorkhubTaskDetailPanel({
     attachmentViewMode,
     setAttachmentViewMode,
   }), [memberByUid, formatDueDateShort, formatTime, projectNameById, attachmentReviews, isImageAttachmentUrl, openAttachmentLightbox, getInitials, getUrlHostLabel, attachmentViewMode, setAttachmentViewMode])
-  return (
-    <TaskDetailSharedContext.Provider value={sharedContextValue}>
-      <>
-      {isMobileWorkhubLayout && (
-        <div className="workhub-mobile-detail-drawer-head">
-          <button
-            type="button"
-            className="workhub-mobile-detail-drawer-handle"
-            aria-label="Close task details"
-            onClick={() => setSelectedTaskId('')}
-            onTouchStart={(e) => {
-              const startY = e.touches[0].clientY
-              const el = e.currentTarget
-              const onMove = (mv: TouchEvent) => {
-                if (mv.touches[0].clientY - startY > 60) {
-                  el.removeEventListener('touchmove', onMove)
-                  el.removeEventListener('touchend', onEnd)
-                  setSelectedTaskId('')
-                }
-              }
-              const onEnd = () => {
-                el.removeEventListener('touchmove', onMove)
-                el.removeEventListener('touchend', onEnd)
-              }
-              el.addEventListener('touchmove', onMove, { passive: true })
-              el.addEventListener('touchend', onEnd, { passive: true })
-            }}
-          />
-          <div className="workhub-mobile-detail-drawer-title-row">
-            <strong>Task details</strong>
-            <button type="button" className="workhub-ghost-mini" onClick={() => setSelectedTaskId('')}>{'\u2715'}</button>
+  const isSplitDialogLayout = !showStandaloneHeader && !isMobileWorkhubLayout
+  useEffect(() => {
+    const layout = dialogLayoutRef.current
+    if (!layout || !isSplitDialogLayout) return
+    layout.style.setProperty('--workhub-task-dialog-details-width', `${dialogDetailsPaneWidth}%`)
+    return () => {
+      layout.style.removeProperty('--workhub-task-dialog-details-width')
+    }
+  }, [dialogDetailsPaneWidth, isSplitDialogLayout])
+
+  useEffect(() => {
+    const stopDialogResize = () => {
+      setIsDialogResizing(false)
+      dialogResizeStateRef.current = null
+      document.body.style.removeProperty('cursor')
+      document.body.style.removeProperty('user-select')
+      window.removeEventListener('pointermove', handleDialogResizePointerMove)
+      window.removeEventListener('pointerup', stopDialogResize)
+    }
+
+    const handleDialogResizePointerMove = (event: PointerEvent) => {
+      const resizeState = dialogResizeStateRef.current
+      const layout = dialogLayoutRef.current
+      if (!resizeState || !layout) return
+      const layoutWidth = layout.getBoundingClientRect().width
+      if (layoutWidth <= 0) return
+      const widthDelta = ((event.clientX - resizeState.startX) / layoutWidth) * 100
+      const nextWidth = Math.min(68, Math.max(42, resizeState.startWidth + widthDelta))
+      setDialogDetailsPaneWidth(nextWidth)
+    }
+
+    if (!isDialogResizing) return () => undefined
+
+    window.addEventListener('pointermove', handleDialogResizePointerMove)
+    window.addEventListener('pointerup', stopDialogResize)
+    return () => {
+      stopDialogResize()
+    }
+  }, [isDialogResizing])
+
+  const handleDialogResizePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!isSplitDialogLayout || !dialogLayoutRef.current) return
+    event.preventDefault()
+    dialogResizeStateRef.current = {
+      startX: event.clientX,
+      startWidth: dialogDetailsPaneWidth,
+    }
+    setIsDialogResizing(true)
+    document.body.style.setProperty('cursor', 'col-resize')
+    document.body.style.setProperty('user-select', 'none')
+  }
+
+  const handleDialogResizeKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!isSplitDialogLayout) return
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault()
+      setDialogDetailsPaneWidth((current) => Math.max(42, current - 4))
+    }
+    if (event.key === 'ArrowRight') {
+      event.preventDefault()
+      setDialogDetailsPaneWidth((current) => Math.min(68, current + 4))
+    }
+  }
+
+  const priorityValues = Object.keys(PRIORITY_LABELS) as Array<keyof typeof PRIORITY_LABELS>
+  const selectedTaskAssigneeUids = useMemo(() => {
+    const validUidSet = new Set(selectedTaskAssignableMembers.map((member) => member.uid))
+    const fromTask = (selectedTask.assigneeUids || []).filter((uid) => validUidSet.has(uid))
+    const primary = selectedTask.assigneeUid && validUidSet.has(selectedTask.assigneeUid) ? selectedTask.assigneeUid : ''
+    const ordered = primary
+      ? [primary, ...fromTask.filter((uid) => uid !== primary)]
+      : fromTask
+    return Array.from(new Set(ordered))
+  }, [selectedTask.assigneeUid, selectedTask.assigneeUids, selectedTaskAssignableMembers])
+
+  const assigneeSummaryLabel = useMemo(() => {
+    if (selectedTaskAssigneeUids.length === 0) return 'Unassigned'
+    const first = selectedTaskAssigneeUids[0]
+    const firstLabel = memberByUid[first]?.displayName || memberByUid[first]?.email || first
+    if (selectedTaskAssigneeUids.length === 1) return firstLabel
+    return `${firstLabel} +${selectedTaskAssigneeUids.length - 1}`
+  }, [memberByUid, selectedTaskAssigneeUids])
+  const assigneeSummaryPills = useMemo(() => {
+    if (selectedTaskAssigneeUids.length === 0) {
+      return ['Unassigned']
+    }
+    const labels = selectedTaskAssigneeUids.map((uid) => memberByUid[uid]?.displayName || memberByUid[uid]?.email || uid)
+    if (labels.length <= 2) return labels
+    return [labels[0], labels[1], `+${labels.length - 2}`]
+  }, [memberByUid, selectedTaskAssigneeUids])
+  const statusIconById = useMemo(() => {
+    const iconMap: Record<string, string> = {}
+    for (const item of selectedProjectEffectiveTaskStatuses) {
+      const iconLike = typeof (item as any)?.icon === 'string' && (item as any).icon.trim().length > 0
+        ? String((item as any).icon).trim()
+        : '◉'
+      iconMap[item.id] = iconLike
+    }
+    return iconMap
+  }, [selectedProjectEffectiveTaskStatuses])
+  const priorityIconMap: Record<string, string> = {
+    low: '▿',
+    medium: '◆',
+    high: '▲',
+    urgent: '⬆',
+  }
+
+  const updateTaskAssignees = (nextUids: string[]) => {
+    const normalized = Array.from(new Set(nextUids.filter(Boolean)))
+    void handleTaskUpdate(selectedTask, {
+      assigneeUid: normalized[0] || '',
+      assigneeUids: normalized.length > 0 ? normalized : undefined,
+    })
+  }
+
+  const toggleTaskAssignee = (uid: string) => {
+    const next = selectedTaskAssigneeUids.includes(uid)
+      ? selectedTaskAssigneeUids.filter((itemUid) => itemUid !== uid)
+      : [...selectedTaskAssigneeUids, uid]
+    updateTaskAssignees(next)
+  }
+
+  const overviewCard = (
+    <div className="workhub-detail-card">
+      {showStandaloneHeader && !isMobileWorkhubLayout && (
+        <div className="workhub-detail-card-head">
+          <strong>Task details</strong>
+          <div className="workhub-detail-card-head-actions">
+            <button
+              type="button"
+              className="workhub-detail-delete-task-btn"
+              title="Delete task"
+              aria-label="Delete task"
+              onClick={() => setTaskDeleteConfirmOpen(true)}
+            >
+              <span className="workhub-detail-danger-icon" aria-hidden="true">{'\u{1F5D1}'}</span>
+            </button>
           </div>
         </div>
       )}
-      <div className="workhub-detail-card">
-        {!isMobileWorkhubLayout && (
-          <div className="workhub-detail-card-head">
-            <strong>Task details</strong>
-            <div className="workhub-detail-card-head-actions">
-              <button
-                type="button"
-                className="workhub-detail-delete-task-btn"
-                title="Delete task"
-                aria-label="Delete task"
-                onClick={() => setTaskDeleteConfirmOpen(true)}
-              >
-                <span className="workhub-detail-danger-icon" aria-hidden="true">{'\u{1F5D1}'}</span>
-              </button>
-            </div>
-          </div>
-        )}
-        <div className="workhub-detail-icon-row">
-          <DetailChipButton
-            label="Status"
-            value={selectedProjectEffectiveTaskStatuses.find((value: any) => value.id === selectedTask.status)?.label || selectedTask.status}
-            menuKey="status"
-            detailMenuOpen={detailMenuOpen}
-            setDetailMenuOpen={setDetailMenuOpen}
-            setDetailMenuCoords={setDetailMenuCoords}
-          />
-          <DetailChipButton
-            label="Priority"
-            value={PRIORITY_LABELS[selectedTask.priority]}
-            menuKey="priority"
-            detailMenuOpen={detailMenuOpen}
-            setDetailMenuOpen={setDetailMenuOpen}
-            setDetailMenuCoords={setDetailMenuCoords}
-          />
-          <DetailChipButton
-            label="Assignee"
-            value={memberByUid[selectedTask.assigneeUid]?.displayName || memberByUid[selectedTask.assigneeUid]?.email || 'Unassigned'}
-            menuKey="assignee"
-            detailMenuOpen={detailMenuOpen}
-            setDetailMenuOpen={setDetailMenuOpen}
-            setDetailMenuCoords={setDetailMenuCoords}
-          />
-          <DetailChipButton
-            label="Due date"
-            value={formatDueDateShort(selectedTask.dueDate || '', selectedTask.dueTime || '')}
-            menuKey="dueDate"
-            detailMenuOpen={detailMenuOpen}
-            setDetailMenuOpen={setDetailMenuOpen}
-            setDetailMenuCoords={setDetailMenuCoords}
-          />
-
-          {isMobileWorkhubLayout && (
-            <div className="workhub-detail-icon-wrap">
-              <button
-                type="button"
-                className="workhub-detail-icon-btn workhub-detail-icon-btn-danger"
-                title="Delete task"
-                aria-label="Delete task"
-                onClick={() => setTaskDeleteConfirmOpen(true)}
-              >
-                <span className="workhub-detail-danger-icon" aria-hidden="true">{'\u{1F5D1}'}</span>
-              </button>
-            </div>
-          )}
-        </div>
-        {selectedTaskFinanceInfo !== null && (
-          <div className="workhub-task-finance-block">
-            <div className="workhub-task-finance-head">
-              <span className="workhub-task-finance-label">Invoice value</span>
-              <span className="workhub-task-finance-currency">{selectedTaskFinanceInfo.currency}</span>
-            </div>
-            <div className="workhub-task-finance-inputs">
-              <label className="workhub-task-finance-field">
-                <span>Total value</span>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={valueAmountDraft}
-                  onChange={(event) => setValueAmountDraft(event.target.value)}
-                  onBlur={() => handleSelectedTaskValueSave(selectedTask, valueAmountDraft, valueCurrencyDraft)}
-                  placeholder="0.00"
-                />
-              </label>
-              <label className="workhub-task-finance-field">
-                <span>Currency</span>
-                <input
-                  type="text"
-                  value={valueCurrencyDraft || selectedTaskFinanceInfo.currency}
-                  onChange={(event) => setValueCurrencyDraft(event.target.value.toUpperCase())}
-                  onBlur={() => handleSelectedTaskValueSave(selectedTask, valueAmountDraft, valueCurrencyDraft)}
-                  maxLength={6}
-                  placeholder="OMR"
-                />
-              </label>
-            </div>
-            {selectedTaskFinanceInfo.totalValue > 0 && (
-              <div className="workhub-task-finance-summary">
-                <div className="workhub-task-finance-track">
-                  <div
-                    className="workhub-task-finance-fill"
-                    style={{ width: `${Math.min(100, Math.round((selectedTaskFinanceInfo.usedValue / selectedTaskFinanceInfo.totalValue) * 100))}%` }}
-                  />
-                </div>
-                <div className="workhub-task-finance-pills">
-                  <span className="workhub-finance-pill used" title="Allocated from checklist items">
-                    Used: {selectedTaskFinanceInfo.usedValue.toFixed(2)}
-                  </span>
-                  <span className={`workhub-finance-pill remaining${selectedTaskFinanceInfo.remaining < 0 ? ' over' : ''}`}>
-                    {selectedTaskFinanceInfo.remaining < 0
-                      ? `Over: ${Math.abs(selectedTaskFinanceInfo.remaining).toFixed(2)}`
-                      : `Remaining: ${selectedTaskFinanceInfo.remaining.toFixed(2)}`}
-                  </span>
-                </div>
-                <p className="workhub-task-finance-hint">Set amounts on checklist items below to track usage</p>
+      <div className="workhub-detail-icon-row">
+        <DetailFieldCard
+          icon={statusIconById[selectedTask.status] || '◉'}
+          label=""
+        >
+          <select
+            className="workhub-detail-field-select"
+            value={selectedTask.status}
+            onChange={(event) => { void handleTaskUpdate(selectedTask, { status: event.target.value as WorkhubTaskStatus }) }}
+            title="Task status"
+            aria-label="Task status"
+          >
+            {selectedProjectEffectiveTaskStatuses.map((value: any) => (
+              <option key={value.id} value={value.id}>{value.label}</option>
+            ))}
+          </select>
+        </DetailFieldCard>
+        <DetailFieldCard
+          icon={priorityIconMap[selectedTask.priority] || '◆'}
+          label=""
+        >
+          <select
+            className="workhub-detail-field-select"
+            value={selectedTask.priority}
+            onChange={(event) => { void handleTaskUpdate(selectedTask, { priority: event.target.value as WorkhubTask['priority'] }) }}
+            title="Task priority"
+            aria-label="Task priority"
+          >
+            {priorityValues.map((value) => (
+              <option key={value} value={value}>{PRIORITY_LABELS[value]}</option>
+            ))}
+          </select>
+        </DetailFieldCard>
+        <DetailFieldCard
+          icon="👤"
+          label=""
+        >
+          <div className="workhub-detail-assignee-picker" ref={assigneeMenuRef}>
+            <button
+              type="button"
+              className="workhub-detail-assignee-trigger"
+              onClick={() => setAssigneeMenuOpen((open) => !open)}
+              title="Task assignees"
+              aria-label="Task assignees"
+              aria-expanded={assigneeMenuOpen}
+            >
+              <span className="workhub-detail-assignee-pills" title={assigneeSummaryLabel}>
+                <span className="workhub-detail-assignee-icon-only" aria-hidden="true">👤</span>
+              </span>
+              <span className="workhub-detail-assignee-chevron" aria-hidden>▾</span>
+            </button>
+            {assigneeMenuOpen && (
+              <div className="workhub-detail-assignee-menu">
+                <button
+                  type="button"
+                  className={`workhub-composer-notify-option${selectedTaskAssigneeUids.length === 0 ? ' is-active' : ''}`}
+                  onClick={() => updateTaskAssignees([])}
+                >
+                  No one
+                </button>
+                <div className="workhub-composer-notify-divider" />
+                {selectedTaskAssignableMembers.map((item) => {
+                  const checked = selectedTaskAssigneeUids.includes(item.uid)
+                  return (
+                    <label key={item.uid} className="workhub-composer-notify-check">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleTaskAssignee(item.uid)}
+                      />
+                      {item.displayName || item.email || item.uid}
+                    </label>
+                  )
+                })}
               </div>
             )}
           </div>
+        </DetailFieldCard>
+        <DetailFieldCard
+          icon="↗"
+          label="Start"
+        >
+          <div className="workhub-detail-field-date-row">
+            <input
+              type="date"
+              className="workhub-detail-field-input"
+              value={selectedTask.startDate || ''}
+              onChange={(event) => { void handleTaskUpdate(selectedTask, { startDate: event.target.value }) }}
+              title="Start date"
+              aria-label="Start date"
+            />
+          </div>
+        </DetailFieldCard>
+        <DetailFieldCard
+          icon="🗓"
+          label="Due date"
+        >
+          <div className="workhub-detail-field-date-row">
+            <input
+              type="date"
+              className="workhub-detail-field-input"
+              value={selectedTask.dueDate || ''}
+              onChange={(event) => { void handleTaskUpdate(selectedTask, { dueDate: event.target.value }) }}
+              title="Due date"
+              aria-label="Due date"
+            />
+            <input
+              type="time"
+              className="workhub-detail-field-input"
+              value={selectedTask.dueTime || ''}
+              onChange={(event) => { void handleTaskUpdate(selectedTask, { dueTime: event.target.value }) }}
+              title="Due time"
+              aria-label="Due time"
+            />
+          </div>
+        </DetailFieldCard>
+
+        {isMobileWorkhubLayout && (
+          <div className="workhub-detail-icon-wrap">
+            <button
+              type="button"
+              className="workhub-detail-icon-btn workhub-detail-icon-btn-danger"
+              title="Delete task"
+              aria-label="Delete task"
+              onClick={() => setTaskDeleteConfirmOpen(true)}
+            >
+              <span className="workhub-detail-danger-icon" aria-hidden="true">{'\u{1F5D1}'}</span>
+            </button>
+          </div>
         )}
-        <label className="workhub-task-detail-name-field">
-          <span>Task name</span>
+      </div>
+      <div className="workhub-task-title-divider" aria-hidden="true" />
+      {selectedTaskFinanceInfo !== null && (
+        <div className="workhub-task-finance-block">
+          <div className="workhub-task-finance-head">
+            <span className="workhub-task-finance-label">Invoice value</span>
+            <span className="workhub-task-finance-currency">{selectedTaskFinanceInfo.currency}</span>
+          </div>
+          <div className="workhub-task-finance-inputs">
+            <label className="workhub-task-finance-field">
+              <span>Total value</span>
+              <input
+                type="number"
+                min={0}
+                step={0.01}
+                value={valueAmountDraft}
+                onChange={(event) => setValueAmountDraft(event.target.value)}
+                onBlur={() => handleSelectedTaskValueSave(selectedTask, valueAmountDraft, valueCurrencyDraft)}
+                placeholder="0.00"
+              />
+            </label>
+            <label className="workhub-task-finance-field">
+              <span>Currency</span>
+              <input
+                type="text"
+                value={valueCurrencyDraft || selectedTaskFinanceInfo.currency}
+                onChange={(event) => setValueCurrencyDraft(event.target.value.toUpperCase())}
+                onBlur={() => handleSelectedTaskValueSave(selectedTask, valueAmountDraft, valueCurrencyDraft)}
+                maxLength={6}
+                placeholder="OMR"
+              />
+            </label>
+          </div>
+          {selectedTaskFinanceInfo.totalValue > 0 && (
+            <div className="workhub-task-finance-summary">
+              <progress
+                className={`workhub-task-finance-track${selectedTaskFinanceInfo.remaining < 0 ? ' is-over' : ''}`}
+                max={100}
+                value={Math.min(100, Math.round((selectedTaskFinanceInfo.usedValue / selectedTaskFinanceInfo.totalValue) * 100))}
+              />
+              <div className="workhub-task-finance-pills">
+                <span className="workhub-finance-pill used" title="Allocated from checklist items">
+                  Used: {selectedTaskFinanceInfo.usedValue.toFixed(2)}
+                </span>
+                <span className={`workhub-finance-pill remaining${selectedTaskFinanceInfo.remaining < 0 ? ' over' : ''}`}>
+                  {selectedTaskFinanceInfo.remaining < 0
+                    ? `Over: ${Math.abs(selectedTaskFinanceInfo.remaining).toFixed(2)}`
+                    : `Remaining: ${selectedTaskFinanceInfo.remaining.toFixed(2)}`}
+                </span>
+              </div>
+              <p className="workhub-task-finance-hint">Set amounts on checklist items below to track usage</p>
+            </div>
+          )}
+        </div>
+      )}
+      <div className="workhub-task-heading-block">
+        {isEditingTitle ? (
           <textarea
+            ref={titleEditorRef}
             className="workhub-task-title-edit-input workhub-task-name-input"
             value={titleDraft}
             onChange={(event) => setTitleDraft(event.target.value)}
@@ -594,49 +842,57 @@ export const WorkhubTaskDetailPanel = memo(function WorkhubTaskDetailPanel({
               if (!(event.key === 'Enter' && (event.ctrlKey || event.metaKey))) return
               event.preventDefault()
               handleSelectedTaskTitleSave(selectedTask, titleDraft)
-              event.currentTarget.blur()
+              setIsEditingTitle(false)
             }}
-            onBlur={() => handleSelectedTaskTitleSave(selectedTask, titleDraft)}
+            onBlur={() => {
+              handleSelectedTaskTitleSave(selectedTask, titleDraft)
+              setIsEditingTitle(false)
+            }}
             rows={2}
           />
-        </label>
-        <textarea
-          className="workhub-task-details-input"
-          value={descriptionDraft}
-          onChange={(event) => setDescriptionDraft(event.target.value)}
-          onBlur={() => handleSelectedTaskDescriptionSave(selectedTask, descriptionDraft)}
-          placeholder="Task details"
-        />
-        <details className="workhub-detail-collapsible-info">
-          <summary>Task information</summary>
-          <div className="workhub-detail-meta">
-            <span>{`${selectedTaskParentEntityLabel}: ${projectNameById[selectedTask.projectId] || `Unknown ${selectedTaskParentEntityLabel.toLowerCase()}`}`}</span>
-            {milestones && milestones.length > 0 && onLinkTaskToMilestone && (
-              <label className="workhub-milestone-task-row">
-                <span>Milestone:</span>
-                <select
-                  className="workhub-input workhub-select workhub-milestone-select"
-                  value={selectedTask.milestoneId || ''}
-                  onChange={(e) => {
-                    const value = e.target.value
-                    void onLinkTaskToMilestone(selectedTask.id, value || null)
-                  }}
-                >
-                  <option value="">— None —</option>
-                  {milestones.map((ms) => (
-                    <option key={ms.id} value={ms.id}>{ms.name}</option>
-                  ))}
-                </select>
-              </label>
-            )}
-            <span>Assignee: {memberByUid[selectedTask.assigneeUid]?.displayName || memberByUid[selectedTask.assigneeUid]?.email || 'Unassigned'}</span>
-            <span>Created: {formatTime(selectedTask.createdAt)}</span>
-            <span>Start date: {formatDueDateShort(selectedTask.startDate || '')}</span>
-            <span>Due date: {formatDueDateShort(selectedTask.dueDate || '')}</span>
-            <span>Updated: {formatTime(selectedTask.updatedAt)}</span>
-          </div>
-        </details>
+        ) : (
+          <button
+            type="button"
+            className="workhub-task-heading-display workhub-task-title-display"
+            onClick={() => setIsEditingTitle(true)}
+            title="Click to edit task name"
+          >
+            <span className="workhub-task-heading-edit-icon" aria-hidden="true">✎</span>
+            {titleDraft.trim() || 'Untitled task'}
+          </button>
+        )}
       </div>
+
+      <div className="workhub-task-heading-block workhub-task-description-block">
+        {isEditingDescription ? (
+          <textarea
+            ref={descriptionEditorRef}
+            className="workhub-task-details-input"
+            value={descriptionDraft}
+            onChange={(event) => setDescriptionDraft(event.target.value)}
+            onBlur={() => {
+              handleSelectedTaskDescriptionSave(selectedTask, descriptionDraft)
+              setIsEditingDescription(false)
+            }}
+            placeholder="Add task details"
+          />
+        ) : (
+          <button
+            type="button"
+            className="workhub-task-heading-display workhub-task-description-display"
+            onClick={() => setIsEditingDescription(true)}
+            title="Click to edit task details"
+          >
+            <span className="workhub-task-heading-edit-icon" aria-hidden="true">✎</span>
+            {descriptionDraft.trim() || 'Add task details'}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+  const detailSections = (
+    <>
+      {overviewCard}
 
       <WorkhubTaskChecklistCard
         task={selectedTask}
@@ -701,55 +957,174 @@ export const WorkhubTaskDetailPanel = memo(function WorkhubTaskDetailPanel({
         checklistAddDisabled={!taskChecklistDrafts[selectedTask.id]?.trim() || busyKey === 'task'}
       />
 
-      {taskDiscussionNode}
+      <div className="workhub-detail-card workhub-task-resource-combined-card">
+        <WorkhubTaskAttachmentCard
+          task={selectedTask}
+          collapsed={taskAttachmentsCollapsed}
+          onToggleCollapsed={() => setTaskAttachmentsCollapsed((current: boolean) => !current)}
+          attachmentViewMode={attachmentViewMode as 'list' | 'thumbnail' | 'card'}
+          onAttachmentViewModeChange={setAttachmentViewMode as (mode: 'list' | 'thumbnail' | 'card') => void}
+          attachmentTitleDraft={taskAttachmentTitleDrafts[selectedTask.id] || ''}
+          onAttachmentTitleDraftChange={(value) => setTaskAttachmentTitleDrafts((current: Record<string, string>) => ({ ...current, [selectedTask.id]: value }))}
+          attachmentUrlDraft={taskAttachmentDrafts[selectedTask.id] || ''}
+          onAttachmentUrlDraftChange={(value) => setTaskAttachmentDrafts((current: Record<string, string>) => ({ ...current, [selectedTask.id]: value }))}
+          attachmentFilePathDraft={taskAttachmentFilePathDrafts[selectedTask.id] || ''}
+          attachmentFileDrafts={taskAttachmentFileDrafts[selectedTask.id] || []}
+          onAttachmentFileDraftsChange={(files) => setTaskAttachmentFileDrafts((current: Record<string, File[]>) => ({ ...current, [selectedTask.id]: files }))}
+          onAttachmentFilePathDraftChange={(value) => setTaskAttachmentFilePathDrafts((current: Record<string, string>) => ({ ...current, [selectedTask.id]: value }))}
+          uploadingTaskAttachmentId={uploadingTaskAttachmentId}
+          onAddAttachment={() => handleTaskAttachmentAdd(selectedTask)}
+          onUploadAttachmentFiles={() => {
+            const files = taskAttachmentFileDrafts[selectedTask.id] || []
+            if (files.length === 0) return
+            void (async () => {
+              await handleTaskAttachmentFileUpload(selectedTask, files)
+              setTaskAttachmentFileDrafts((current: Record<string, File[]>) => ({ ...current, [selectedTask.id]: [] }))
+              setTaskAttachmentFilePathDrafts((current: Record<string, string>) => ({ ...current, [selectedTask.id]: '' }))
+            })()
+          }}
+          attachments={getTaskAttachments(selectedTask)}
+          getAttachmentTitle={(url) => getTaskAttachmentTitle(selectedTask, url)}
+          getAttachmentReviewCount={(url) => computeAttachmentReviewCount(attachmentReviews, url)}
+          isImageAttachmentUrl={isImageAttachmentUrl}
+          onOpenAttachmentLightbox={openAttachmentLightbox}
+          onRemoveAttachment={(url) => handleTaskAttachmentRemove(selectedTask, url)}
+          embedded
+        />
 
-      <WorkhubTaskAttachmentCard
-        task={selectedTask}
-        collapsed={taskAttachmentsCollapsed}
-        onToggleCollapsed={() => setTaskAttachmentsCollapsed((current: boolean) => !current)}
-        attachmentViewMode={attachmentViewMode as 'list' | 'thumbnail' | 'card'}
-        onAttachmentViewModeChange={setAttachmentViewMode as (mode: 'list' | 'thumbnail' | 'card') => void}
-        attachmentTitleDraft={taskAttachmentTitleDrafts[selectedTask.id] || ''}
-        onAttachmentTitleDraftChange={(value) => setTaskAttachmentTitleDrafts((current: Record<string, string>) => ({ ...current, [selectedTask.id]: value }))}
-        attachmentUrlDraft={taskAttachmentDrafts[selectedTask.id] || ''}
-        onAttachmentUrlDraftChange={(value) => setTaskAttachmentDrafts((current: Record<string, string>) => ({ ...current, [selectedTask.id]: value }))}
-        attachmentFilePathDraft={taskAttachmentFilePathDrafts[selectedTask.id] || ''}
-        attachmentFileDrafts={taskAttachmentFileDrafts[selectedTask.id] || []}
-        onAttachmentFileDraftsChange={(files) => setTaskAttachmentFileDrafts((current: Record<string, File[]>) => ({ ...current, [selectedTask.id]: files }))}
-        onAttachmentFilePathDraftChange={(value) => setTaskAttachmentFilePathDrafts((current: Record<string, string>) => ({ ...current, [selectedTask.id]: value }))}
-        uploadingTaskAttachmentId={uploadingTaskAttachmentId}
-        onAddAttachment={() => handleTaskAttachmentAdd(selectedTask)}
-        onUploadAttachmentFiles={() => {
-          const files = taskAttachmentFileDrafts[selectedTask.id] || []
-          if (files.length === 0) return
-          void (async () => {
-            await handleTaskAttachmentFileUpload(selectedTask, files)
-            setTaskAttachmentFileDrafts((current: Record<string, File[]>) => ({ ...current, [selectedTask.id]: [] }))
-            setTaskAttachmentFilePathDrafts((current: Record<string, string>) => ({ ...current, [selectedTask.id]: '' }))
-          })()
-        }}
-        attachments={getTaskAttachments(selectedTask)}
-        getAttachmentTitle={(url) => getTaskAttachmentTitle(selectedTask, url)}
-        getAttachmentReviewCount={(url) => computeAttachmentReviewCount(attachmentReviews, url)}
-        isImageAttachmentUrl={isImageAttachmentUrl}
-        onOpenAttachmentLightbox={openAttachmentLightbox}
-        onRemoveAttachment={(url) => handleTaskAttachmentRemove(selectedTask, url)}
-      />
+        <TaskDetailLinksSection
+          selectedTask={selectedTask}
+          embedded
+          getTaskLinks={getTaskLinks}
+          taskLinkTitleDrafts={taskLinkTitleDrafts}
+          setTaskLinkTitleDrafts={setTaskLinkTitleDrafts}
+          taskLinkDrafts={taskLinkDrafts}
+          setTaskLinkDrafts={setTaskLinkDrafts}
+          handleTaskLinkAdd={handleTaskLinkAdd}
+          taskLinkEditingDrafts={taskLinkEditingDrafts}
+          handleTaskLinkEditCancel={handleTaskLinkEditCancel}
+          getTaskLinkTitle={getTaskLinkTitle}
+          handleTaskLinkEditStart={handleTaskLinkEditStart}
+          handleTaskLinkRemove={handleTaskLinkRemove}
+        />
+      </div>
 
-      <TaskDetailLinksSection
-        selectedTask={selectedTask}
-        getTaskLinks={getTaskLinks}
-        taskLinkTitleDrafts={taskLinkTitleDrafts}
-        setTaskLinkTitleDrafts={setTaskLinkTitleDrafts}
-        taskLinkDrafts={taskLinkDrafts}
-        setTaskLinkDrafts={setTaskLinkDrafts}
-        handleTaskLinkAdd={handleTaskLinkAdd}
-        taskLinkEditingDrafts={taskLinkEditingDrafts}
-        handleTaskLinkEditCancel={handleTaskLinkEditCancel}
-        getTaskLinkTitle={getTaskLinkTitle}
-        handleTaskLinkEditStart={handleTaskLinkEditStart}
-        handleTaskLinkRemove={handleTaskLinkRemove}
-      />
+      <details className="workhub-detail-collapsible-info">
+        <summary>Task information</summary>
+        <div className="workhub-detail-meta-grid">
+          <DetailMetaItem
+            icon="📁"
+            label={selectedTaskParentEntityLabel}
+            value={projectNameById[selectedTask.projectId] || `Unknown ${selectedTaskParentEntityLabel.toLowerCase()}`}
+          />
+          <DetailMetaItem
+            icon="🕓"
+            label="Created"
+            value={formatTime(selectedTask.createdAt)}
+          />
+          <DetailMetaItem
+            icon="↗"
+            label="Start date"
+            value={formatDueDateShort(selectedTask.startDate || '')}
+          />
+          <DetailMetaItem
+            icon="⏱"
+            label="Updated"
+            value={formatTime(selectedTask.updatedAt)}
+          />
+          <DetailMetaItem
+            icon="🗓"
+            label="Due date"
+            value={formatDueDateShort(selectedTask.dueDate || '')}
+          />
+          <DetailMetaItem
+            icon="👤"
+            label="Assignee"
+            value={memberByUid[selectedTask.assigneeUid]?.displayName || memberByUid[selectedTask.assigneeUid]?.email || 'Unassigned'}
+          />
+          {milestones && milestones.length > 0 && onLinkTaskToMilestone && (
+            <label className="workhub-detail-meta-select">
+              <span>🏁 Milestone</span>
+              <select
+                className="workhub-input workhub-select workhub-milestone-select"
+                value={selectedTask.milestoneId || ''}
+                onChange={(e) => {
+                  const value = e.target.value
+                  void onLinkTaskToMilestone(selectedTask.id, value || null)
+                }}
+              >
+                <option value="">— None —</option>
+                {milestones.map((ms) => (
+                  <option key={ms.id} value={ms.id}>{ms.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
+      </details>
+    </>
+  )
+  return (
+    <TaskDetailSharedContext.Provider value={sharedContextValue}>
+      <>
+      {showStandaloneHeader && isMobileWorkhubLayout && (
+        <div className="workhub-mobile-detail-drawer-head">
+          <button
+            type="button"
+            className="workhub-mobile-detail-drawer-handle"
+            aria-label="Close task details"
+            onClick={() => setSelectedTaskId('')}
+            onTouchStart={(e) => {
+              const startY = e.touches[0].clientY
+              const el = e.currentTarget
+              const onMove = (mv: TouchEvent) => {
+                if (mv.touches[0].clientY - startY > 60) {
+                  el.removeEventListener('touchmove', onMove)
+                  el.removeEventListener('touchend', onEnd)
+                  setSelectedTaskId('')
+                }
+              }
+              const onEnd = () => {
+                el.removeEventListener('touchmove', onMove)
+                el.removeEventListener('touchend', onEnd)
+              }
+              el.addEventListener('touchmove', onMove, { passive: true })
+              el.addEventListener('touchend', onEnd, { passive: true })
+            }}
+          />
+          <div className="workhub-mobile-detail-drawer-title-row">
+            <strong>Task details</strong>
+            <button type="button" className="workhub-ghost-mini" onClick={() => setSelectedTaskId('')}>{'\u2715'}</button>
+          </div>
+        </div>
+      )}
+      {isSplitDialogLayout ? (
+        <div
+          ref={dialogLayoutRef}
+          className={`workhub-task-dialog-layout${isDialogResizing ? ' is-resizing' : ''}`}
+        >
+          <section className="workhub-task-dialog-details-pane">
+            {detailSections}
+          </section>
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize task detail panels"
+            tabIndex={0}
+            className="workhub-task-dialog-splitter"
+            onPointerDown={handleDialogResizePointerDown}
+            onKeyDown={handleDialogResizeKeyDown}
+          />
+          <section className="workhub-task-dialog-discussion-pane">
+            {taskDiscussionNode}
+          </section>
+        </div>
+      ) : (
+        <>
+          {detailSections}
+          {taskDiscussionNode}
+        </>
+      )}
     </>
     </TaskDetailSharedContext.Provider>
   )

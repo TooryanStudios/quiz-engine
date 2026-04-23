@@ -188,21 +188,25 @@
 
 .workhub-floating-chat-btn {
   position: fixed;
-  left: var(--workhub-chat-anchor-left, 14px);
-  right: var(--workhub-chat-anchor-right, auto);
-  bottom: var(--workhub-chat-anchor-bottom, 14px);
+  left: var(--workhub-chat-anchor-left, auto);
+  right: var(--workhub-chat-anchor-right, 14px);
+  bottom: var(--workhub-chat-anchor-bottom, 16px);
   z-index: 900;
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  font-size: 1.2rem;
+  width: 52px;
+  height: 52px;
+  border-radius: 15px;
+  border-color: #b45309;
+  background: linear-gradient(180deg, #f59e0b 0%, #d97706 100%);
+  color: #ffffff;
+  box-shadow: 0 18px 34px rgba(180, 83, 9, 0.28), 0 0 0 1px rgba(253, 230, 138, 0.72);
+  font-size: 1.35rem;
 }
 
 .shell-chat-dock.is-floating {
   top: auto;
-  left: var(--workhub-chat-anchor-left, 14px);
-  right: var(--workhub-chat-anchor-right, auto);
-  bottom: calc(var(--workhub-chat-anchor-bottom, 14px) + 44px);
+  left: var(--workhub-chat-anchor-left, auto);
+  right: var(--workhub-chat-anchor-right, 14px);
+  bottom: calc(var(--workhub-chat-anchor-bottom, 16px) + 56px);
   width: min(430px, calc(100vw - 20px));
   height: min(648px, calc(100vh - 80px));
   border: 1px solid var(--border);
@@ -210,6 +214,19 @@
   box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.18), 0 18px 48px rgba(2, 6, 23, 0.26);
   border-radius: 16px;
   z-index: 360;
+}
+
+.workhub-floating-chat-btn:hover {
+  border-color: #92400e;
+  background: linear-gradient(180deg, #fbbf24 0%, #b45309 100%);
+  color: #ffffff;
+  box-shadow: 0 20px 38px rgba(146, 64, 14, 0.34), 0 0 0 1px rgba(254, 240, 138, 0.84);
+}
+
+.workhub-floating-chat-btn.is-active {
+  border-color: #78350f;
+  background: linear-gradient(180deg, #d97706 0%, #78350f 100%);
+  color: #ffffff;
 }
 
 .shell-chat-dock-header {
@@ -589,12 +606,108 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+.shell-chat-inline-link {
+  border: none;
+  background: transparent;
+  color: #1f4d99;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.shell-chat-inline-link.is-anchor {
+  display: inline;
+}
 }
 
 .shell-chat-msg-author {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+.shell-chat-convert-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(12, 20, 38, 0.52);
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.shell-chat-convert-modal {
+  width: min(560px, calc(100vw - 24px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  border-radius: 14px;
+  border: 1px solid #d4e1f5;
+  background: #ffffff;
+  box-shadow: 0 28px 54px rgba(15, 29, 52, 0.34);
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+.shell-chat-convert-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.shell-chat-convert-head button {
+  border: 1px solid #d6e2f6;
+  background: #f7faff;
+  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+}
+.shell-chat-convert-caption {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #5c7397;
+}
+.shell-chat-convert-modal label {
+  display: grid;
+  gap: 5px;
+  font-size: 0.76rem;
+  color: #41587d;
+  font-weight: 600;
+}
+.shell-chat-convert-modal input,
+.shell-chat-convert-modal select,
+.shell-chat-convert-modal textarea {
+  width: 100%;
+  border: 1px solid #d5e1f5;
+  border-radius: 9px;
+  background: #fff;
+  font: inherit;
+  font-size: 0.8rem;
+  color: #1e355a;
+  padding: 7px 9px;
+  box-sizing: border-box;
+}
+.shell-chat-convert-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.shell-chat-convert-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.shell-chat-convert-actions button {
+  border: 1px solid #c8d9f4;
+  background: #f2f7ff;
+  color: #244677;
+  border-radius: 8px;
+  min-height: 32px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+}
   min-width: 0;
 }
 
@@ -1670,8 +1783,8 @@
 }
 
 [dir='rtl'] .shell-chat-dock.is-floating {
-  left: var(--workhub-chat-anchor-left, 14px);
-  right: var(--workhub-chat-anchor-right, auto);
+  left: var(--workhub-chat-anchor-left, auto);
+  right: var(--workhub-chat-anchor-right, 14px);
 }
 
 [dir='rtl'] .shell-chat-context-chip,

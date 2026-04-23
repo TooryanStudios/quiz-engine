@@ -22,12 +22,14 @@ import { getTaskSelectionSnapshot, setTaskSelectionId, subscribeTaskSelection } 
 
 const DEFAULT_STATUS_TASK_RENDER_LIMIT = 80
 const STATUS_TASK_RENDER_INCREMENT = 80
+const TASK_DISCUSSION_PAGE_SIZE = 6
 
 type WorkhubTasksSectionProps = Record<string, any>
 
 export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: WorkhubTasksSectionProps) {
   const {
     isMobileWorkhubLayout,
+    workhubViewMode,
     taskItemDisplayMode,
     taskContextTrail,
     projectIntentMetaById,
@@ -73,6 +75,8 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
     financeWorkspaceCurrency,
     taskDueDisplayMode,
     selectedTaskIdSet,
+    taskContextMenuState,
+    setTaskContextMenuState,
     dropTargetKey,
     dragTaskId,
     dragStatusId,
@@ -105,9 +109,13 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
     setQuickAddFocusStatusId,
     setDropTargetKey,
     handleTaskReorder,
+    closeTaskContextMenu,
+    copyTaskDeepLink,
+    copyTaskUniqueToken,
     handleQuickAddTask,
     setStatusTaskRenderLimitById,
     selectedProjectIntentMeta,
+    workspaceProjectById,
     workspaceDocumentsByProjectId,
     workspaceMoodBoardsByProjectId,
     selectedWorkspaceMoodBoardEnabled,
@@ -282,6 +290,61 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
     () => visibleTasks.find((item: { id: string }) => item.id === selectedTaskId) || null,
     [selectedTaskId, visibleTasks],
   )
+  const selectedTaskContextTrail = useMemo(() => {
+    if (!selectedTask) return taskContextTrail
+    const trail: Array<{ id: string; name: string }> = []
+    const visited = new Set<string>()
+    let currentProjectId = selectedTask.projectId || ''
+    while (currentProjectId && !visited.has(currentProjectId)) {
+      const currentProject = workspaceProjectById[currentProjectId]
+      if (!currentProject) break
+      trail.unshift({ id: currentProject.id, name: currentProject.name })
+      visited.add(currentProject.id)
+      currentProjectId = currentProject.parentProjectId || ''
+    }
+    return trail.length > 0 ? trail : taskContextTrail
+  }, [selectedTask, taskContextTrail, workspaceProjectById])
+  const selectedTaskHeaderBreadcrumbTrail = useMemo(() => {
+    const nextTrail = [...selectedTaskContextTrail]
+    if (selectedWorkspaceId && selectedWorkspaceDisplayName) {
+      nextTrail.unshift({ id: `workspace:${selectedWorkspaceId}`, name: selectedWorkspaceDisplayName })
+    }
+    return nextTrail
+  }, [selectedTaskContextTrail, selectedWorkspaceDisplayName, selectedWorkspaceId])
+  const openTaskContextMenuFromHeader = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    if (!selectedTask) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    setTaskContextMenuState({
+      taskId: selectedTask.id,
+      x: rect.left,
+      y: rect.bottom + 6,
+    })
+  }, [selectedTask, setTaskContextMenuState])
+
+  useEffect(() => {
+    if (!taskContextMenuState) return
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null
+      if (!target) return
+      const menu = document.querySelector('.workhub-task-context-menu')
+      if (menu && menu.contains(target)) return
+      closeTaskContextMenu()
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeTaskContextMenu()
+      }
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [taskContextMenuState, closeTaskContextMenu])
 
   const [taskComments, setTaskComments] = useState<WorkhubTaskComment[]>([])
   const [taskEditingCommentId, setTaskEditingCommentId] = useState('')
@@ -290,12 +353,16 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
   const [taskDiscussionNotifyMode, setTaskDiscussionNotifyMode] = useState<'all' | 'selected' | 'none'>('all')
   const [taskDiscussionNotifyUids, setTaskDiscussionNotifyUids] = useState<string[]>([])
   const [taskDiscussionNotifyOwnerKey, setTaskDiscussionNotifyOwnerKey] = useState('')
+  const [taskDiscussionFetchLimit, setTaskDiscussionFetchLimit] = useState(TASK_DISCUSSION_PAGE_SIZE)
+  const [taskDiscussionHasMoreOlder, setTaskDiscussionHasMoreOlder] = useState(false)
   const {
     mode: detailRailMode,
     setExpanded: setDetailRailExpanded,
     setHidden: setDetailRailHidden,
     toggleCompact: toggleDetailRailCompact,
   } = useDetailRailMode('workhub:task-detail-rail-mode', !isMobileWorkhubLayout)
+  const useTaskDetailDialog = workhubViewMode === 'workspace_tree'
+  const contentDetailRailMode = useTaskDetailDialog ? 'hidden' : detailRailMode
 
   const selectedTaskAssignableMembers = useMemo(
     () => (selectedTask ? (assignableMembersByProjectId[selectedTask.projectId] || workspaceAssignableMembers) : workspaceAssignableMembers),
@@ -359,6 +426,7 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
     return normalizeMemberUids([
       ...scopedUids,
       ...priorCommenterUids,
+      ...(selectedTask.assigneeUids || []),
       selectedTask.assigneeUid,
       selectedTask.createdBy,
     ]).filter((uid) => uid !== currentUid)
@@ -392,7 +460,7 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
     const storedUids = normalizeMemberUids(
       Array.isArray(selectedTask.notifyUids) && selectedTask.notifyUids.length > 0
         ? selectedTask.notifyUids
-        : [selectedTask.assigneeUid, selectedTask.createdBy, ...(selectedTask.memberUids || [])],
+        : [...(selectedTask.assigneeUids || []), selectedTask.assigneeUid, selectedTask.createdBy, ...(selectedTask.memberUids || [])],
     ).filter((uid) => uid !== currentUid)
     return {
       mode: selectedTask.notifyMode || (storedUids.length > 0 ? 'selected' : 'all'),
@@ -474,11 +542,15 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
       deleteBusyKey={taskDiscussionBusyKey}
       onComposerSend={handleSendTaskComment}
       composerBusy={taskDiscussionBusyKey === 'comment'}
+      dockedComposer={useTaskDetailDialog}
       notifyMode={taskDiscussionNotifyMode}
       notifyUids={taskDiscussionNotifyUids}
       notifyCandidates={taskDiscussionNotifyCandidates}
       onNotifyModeChange={setTaskDiscussionNotifyMode}
       onNotifyUidsChange={setTaskDiscussionNotifyUids}
+      hasMoreOlderMessages={taskDiscussionHasMoreOlder}
+      onLoadMoreOlderMessages={() => setTaskDiscussionFetchLimit((current) => current + TASK_DISCUSSION_PAGE_SIZE)}
+      threadKey={`task:${selectedTask.id}`}
     />
   ) : null
 
@@ -486,6 +558,8 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
     setTaskEditingCommentId('')
     setTaskEditingCommentText('')
     setTaskDiscussionBusyKey('')
+    setTaskDiscussionFetchLimit(TASK_DISCUSSION_PAGE_SIZE)
+    setTaskDiscussionHasMoreOlder(false)
     setTaskAttachmentsCollapsed(false)
     setDetailMenuOpen('')
     if (!selectedTask) {
@@ -496,11 +570,20 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
   useEffect(() => {
     if (!selectedTask) {
       setTaskComments([])
+      setTaskDiscussionHasMoreOlder(false)
       return
     }
-    const unsubComments = subscribeWorkhubCommentsByEntity('task', selectedTask.id, setTaskComments)
+    const unsubComments = subscribeWorkhubCommentsByEntity(
+      'task',
+      selectedTask.id,
+      setTaskComments,
+      {
+        maxCount: taskDiscussionFetchLimit,
+        onHasMore: setTaskDiscussionHasMoreOlder,
+      },
+    )
     return () => unsubComments()
-  }, [selectedTask])
+  }, [selectedTask?.id, taskDiscussionFetchLimit])
 
   useEffect(() => {
     const targetKey = selectedTask ? `task:${selectedTask.id}` : ''
@@ -555,17 +638,114 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
 
   useEffect(() => {
     if (typeof onMobileTaskDetailOpenChange !== 'function') return
-    onMobileTaskDetailOpenChange(Boolean(isMobileWorkhubLayout && selectedTask))
+    onMobileTaskDetailOpenChange(Boolean(!useTaskDetailDialog && isMobileWorkhubLayout && selectedTask))
     return () => {
       onMobileTaskDetailOpenChange(false)
     }
-  }, [isMobileWorkhubLayout, onMobileTaskDetailOpenChange, selectedTask])
+  }, [isMobileWorkhubLayout, onMobileTaskDetailOpenChange, selectedTask, useTaskDetailDialog])
+
+  const taskDetailPanelNode = selectedTask ? (
+    <WorkhubTaskDetailPanel
+      isMobileWorkhubLayout={isMobileWorkhubLayout && !useTaskDetailDialog}
+      showStandaloneHeader={!useTaskDetailDialog}
+      selectedTask={selectedTask}
+      setSelectedTaskId={setSelectedTaskId}
+      setTaskDeleteConfirmOpen={setTaskDeleteConfirmOpen}
+      detailMenuOpen={detailMenuOpen}
+      setDetailMenuOpen={setDetailMenuOpen}
+      setDetailMenuCoords={setDetailMenuCoords}
+      selectedProjectEffectiveTaskStatuses={selectedProjectEffectiveTaskStatuses}
+      PRIORITY_LABELS={PRIORITY_LABELS}
+      memberByUid={memberByUid}
+      selectedTaskAssignableMembers={selectedTaskAssignableMembers}
+      formatDueDateShort={formatDueDateShort}
+      selectedTaskFinanceInfo={selectedTaskFinanceInfo}
+      handleSelectedTaskValueSave={handleSelectedTaskValueSave}
+      handleSelectedTaskTitleSave={handleSelectedTaskTitleSave}
+      handleSelectedTaskDescriptionSave={handleSelectedTaskDescriptionSave}
+      selectedTaskParentEntityLabel={selectedTaskParentEntityLabel}
+      projectNameById={projectNameById}
+      formatTime={formatTime}
+      buildChecklist={buildChecklist}
+      getChecklistDetailKey={getChecklistDetailKey}
+      expandedChecklistDetailKeys={expandedChecklistDetailKeys}
+      toggleChecklistItemDetails={toggleChecklistItemDetails}
+      editingChecklistScope={editingChecklistScope}
+      editingChecklistTaskId={editingChecklistTaskId}
+      editingChecklistItemId={editingChecklistItemId}
+      editingChecklistItemText={editingChecklistItemText}
+      setEditingChecklistItemText={setEditingChecklistItemText}
+      handleChecklistItemToggle={handleChecklistItemToggle}
+      handleChecklistItemEditStart={handleChecklistItemEditStart}
+      handleChecklistItemEditSave={handleChecklistItemEditSave}
+      handleChecklistItemEditCancel={handleChecklistItemEditCancel}
+      handleChecklistRemove={handleChecklistRemove}
+      checklistDetailsDrafts={checklistDetailsDrafts}
+      setChecklistDetailsDrafts={setChecklistDetailsDrafts}
+      handleChecklistItemDetailsSave={handleChecklistItemDetailsSave}
+      checklistAttachmentDrafts={checklistAttachmentDrafts}
+      setChecklistAttachmentDrafts={setChecklistAttachmentDrafts}
+      handleChecklistAttachmentAdd={handleChecklistAttachmentAdd}
+      handleChecklistAttachmentFileUpload={handleChecklistAttachmentFileUpload}
+      uploadingChecklistAttachmentKey={uploadingChecklistAttachmentKey}
+      attachmentViewMode={attachmentViewMode}
+      isImageAttachmentUrl={isImageAttachmentUrl}
+      openAttachmentLightbox={openAttachmentLightbox}
+      attachmentReviews={attachmentReviews}
+      handleChecklistAttachmentRemove={handleChecklistAttachmentRemove}
+      checklistLinkDrafts={checklistLinkDrafts}
+      setChecklistLinkDrafts={setChecklistLinkDrafts}
+      handleChecklistLinkAdd={handleChecklistLinkAdd}
+      handleChecklistLinkRemove={handleChecklistLinkRemove}
+      taskChecklistDrafts={taskChecklistDrafts}
+      setTaskChecklistDrafts={setTaskChecklistDrafts}
+      selectedWorkspaceScopeType={selectedWorkspaceScopeType}
+      taskChecklistValueDrafts={taskChecklistValueDrafts}
+      setTaskChecklistValueDrafts={setTaskChecklistValueDrafts}
+      handleChecklistAdd={handleChecklistAdd}
+      busyKey={busyKey}
+      handleTaskUpdate={handleTaskUpdate}
+      taskDiscussionNode={taskDiscussionCardNode}
+      taskAttachmentsCollapsed={taskAttachmentsCollapsed}
+      setTaskAttachmentsCollapsed={setTaskAttachmentsCollapsed}
+      setAttachmentViewMode={setAttachmentViewMode}
+      taskAttachmentTitleDrafts={taskAttachmentTitleDrafts}
+      setTaskAttachmentTitleDrafts={setTaskAttachmentTitleDrafts}
+      taskAttachmentDrafts={taskAttachmentDrafts}
+      setTaskAttachmentDrafts={setTaskAttachmentDrafts}
+      taskAttachmentFilePathDrafts={taskAttachmentFilePathDrafts}
+      taskAttachmentFileDrafts={taskAttachmentFileDrafts}
+      setTaskAttachmentFileDrafts={setTaskAttachmentFileDrafts}
+      setTaskAttachmentFilePathDrafts={setTaskAttachmentFilePathDrafts}
+      uploadingTaskAttachmentId={uploadingTaskAttachmentId}
+      handleTaskAttachmentAdd={handleTaskAttachmentAdd}
+      handleTaskAttachmentFileUpload={handleTaskAttachmentFileUpload}
+      getTaskAttachments={getTaskAttachments}
+      getTaskAttachmentTitle={getTaskAttachmentTitle}
+      handleTaskAttachmentRemove={handleTaskAttachmentRemove}
+      getTaskLinks={getTaskLinks}
+      taskLinkTitleDrafts={taskLinkTitleDrafts}
+      setTaskLinkTitleDrafts={setTaskLinkTitleDrafts}
+      taskLinkDrafts={taskLinkDrafts}
+      setTaskLinkDrafts={setTaskLinkDrafts}
+      handleTaskLinkAdd={handleTaskLinkAdd}
+      taskLinkEditingDrafts={taskLinkEditingDrafts}
+      handleTaskLinkEditCancel={handleTaskLinkEditCancel}
+      getTaskLinkTitle={getTaskLinkTitle}
+      getUrlHostLabel={getUrlHostLabel}
+      getInitials={getInitials}
+      handleTaskLinkEditStart={handleTaskLinkEditStart}
+      handleTaskLinkRemove={handleTaskLinkRemove}
+      milestones={milestones}
+      onLinkTaskToMilestone={onLinkTaskToMilestone}
+    />
+  ) : null
 
   return (
     <>
-      <main className={`workhub-content-area workhub-detail-rail-${detailRailMode}`}>
+      <main className={`workhub-content-area workhub-detail-rail-${contentDetailRailMode}`}>
         <div className="workhub-task-main-column">
-          {!isMobileWorkhubLayout && detailRailMode === 'hidden' && (
+          {!useTaskDetailDialog && !isMobileWorkhubLayout && detailRailMode === 'hidden' && (
             <div className="workhub-detail-rail-restore-wrap">
               <button
                 type="button"
@@ -1095,200 +1275,201 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
           )}
         </div>
 
-        <aside
-          className={`workhub-task-detail-rail${isMobileWorkhubLayout ? ' is-mobile-drawer' : ''}${isMobileWorkhubLayout && selectedTask ? ' is-open' : ''}${!isMobileWorkhubLayout ? ` is-${detailRailMode}` : ''}`}
-          aria-hidden={isMobileWorkhubLayout && !selectedTask}
-        >
-          {!isMobileWorkhubLayout && detailRailMode !== 'hidden' && (
-            <div className="workhub-detail-rail-toolbar">
-              <button
-                type="button"
-                className={`workhub-ghost-mini${detailRailMode === 'compact' ? ' is-active' : ''}`}
-                onClick={toggleDetailRailCompact}
-                title={detailRailMode === 'compact' ? 'Expand details panel' : 'Compact details panel'}
-              >
-                {detailRailMode === 'compact' ? 'Expand' : 'Compact'}
-              </button>
-              <button
-                type="button"
-                className="workhub-ghost-mini"
-                onClick={setDetailRailHidden}
-                title="Hide details panel"
-              >
-                Hide
-              </button>
-            </div>
-          )}
-          {selectedTask ? (
-            <WorkhubTaskDetailPanel
-              isMobileWorkhubLayout={isMobileWorkhubLayout}
-              selectedTask={selectedTask}
-              setSelectedTaskId={setSelectedTaskId}
-              setTaskDeleteConfirmOpen={setTaskDeleteConfirmOpen}
-              detailMenuOpen={detailMenuOpen}
-              setDetailMenuOpen={setDetailMenuOpen}
-              setDetailMenuCoords={setDetailMenuCoords}
-              selectedProjectEffectiveTaskStatuses={selectedProjectEffectiveTaskStatuses}
-              PRIORITY_LABELS={PRIORITY_LABELS}
-              memberByUid={memberByUid}
-              formatDueDateShort={formatDueDateShort}
-              selectedTaskFinanceInfo={selectedTaskFinanceInfo}
-              handleSelectedTaskValueSave={handleSelectedTaskValueSave}
-              handleSelectedTaskTitleSave={handleSelectedTaskTitleSave}
-              handleSelectedTaskDescriptionSave={handleSelectedTaskDescriptionSave}
-              selectedTaskParentEntityLabel={selectedTaskParentEntityLabel}
-              projectNameById={projectNameById}
-              formatTime={formatTime}
-              buildChecklist={buildChecklist}
-              getChecklistDetailKey={getChecklistDetailKey}
-              expandedChecklistDetailKeys={expandedChecklistDetailKeys}
-              toggleChecklistItemDetails={toggleChecklistItemDetails}
-              editingChecklistScope={editingChecklistScope}
-              editingChecklistTaskId={editingChecklistTaskId}
-              editingChecklistItemId={editingChecklistItemId}
-              editingChecklistItemText={editingChecklistItemText}
-              setEditingChecklistItemText={setEditingChecklistItemText}
-              handleChecklistItemToggle={handleChecklistItemToggle}
-              handleChecklistItemEditStart={handleChecklistItemEditStart}
-              handleChecklistItemEditSave={handleChecklistItemEditSave}
-              handleChecklistItemEditCancel={handleChecklistItemEditCancel}
-              handleChecklistRemove={handleChecklistRemove}
-              checklistDetailsDrafts={checklistDetailsDrafts}
-              setChecklistDetailsDrafts={setChecklistDetailsDrafts}
-              handleChecklistItemDetailsSave={handleChecklistItemDetailsSave}
-              checklistAttachmentDrafts={checklistAttachmentDrafts}
-              setChecklistAttachmentDrafts={setChecklistAttachmentDrafts}
-              handleChecklistAttachmentAdd={handleChecklistAttachmentAdd}
-              handleChecklistAttachmentFileUpload={handleChecklistAttachmentFileUpload}
-              uploadingChecklistAttachmentKey={uploadingChecklistAttachmentKey}
-              attachmentViewMode={attachmentViewMode}
-              isImageAttachmentUrl={isImageAttachmentUrl}
-              openAttachmentLightbox={openAttachmentLightbox}
-              attachmentReviews={attachmentReviews}
-              handleChecklistAttachmentRemove={handleChecklistAttachmentRemove}
-              checklistLinkDrafts={checklistLinkDrafts}
-              setChecklistLinkDrafts={setChecklistLinkDrafts}
-              handleChecklistLinkAdd={handleChecklistLinkAdd}
-              handleChecklistLinkRemove={handleChecklistLinkRemove}
-              taskChecklistDrafts={taskChecklistDrafts}
-              setTaskChecklistDrafts={setTaskChecklistDrafts}
-              selectedWorkspaceScopeType={selectedWorkspaceScopeType}
-              taskChecklistValueDrafts={taskChecklistValueDrafts}
-              setTaskChecklistValueDrafts={setTaskChecklistValueDrafts}
-              handleChecklistAdd={handleChecklistAdd}
-              busyKey={busyKey}
-              handleTaskUpdate={handleTaskUpdate}
-              taskDiscussionNode={taskDiscussionCardNode}
-              taskAttachmentsCollapsed={taskAttachmentsCollapsed}
-              setTaskAttachmentsCollapsed={setTaskAttachmentsCollapsed}
-              setAttachmentViewMode={setAttachmentViewMode}
-              taskAttachmentTitleDrafts={taskAttachmentTitleDrafts}
-              setTaskAttachmentTitleDrafts={setTaskAttachmentTitleDrafts}
-              taskAttachmentDrafts={taskAttachmentDrafts}
-              setTaskAttachmentDrafts={setTaskAttachmentDrafts}
-              taskAttachmentFilePathDrafts={taskAttachmentFilePathDrafts}
-              taskAttachmentFileDrafts={taskAttachmentFileDrafts}
-              setTaskAttachmentFileDrafts={setTaskAttachmentFileDrafts}
-              setTaskAttachmentFilePathDrafts={setTaskAttachmentFilePathDrafts}
-              uploadingTaskAttachmentId={uploadingTaskAttachmentId}
-              handleTaskAttachmentAdd={handleTaskAttachmentAdd}
-              handleTaskAttachmentFileUpload={handleTaskAttachmentFileUpload}
-              getTaskAttachments={getTaskAttachments}
-              getTaskAttachmentTitle={getTaskAttachmentTitle}
-              handleTaskAttachmentRemove={handleTaskAttachmentRemove}
-              getTaskLinks={getTaskLinks}
-              taskLinkTitleDrafts={taskLinkTitleDrafts}
-              setTaskLinkTitleDrafts={setTaskLinkTitleDrafts}
-              taskLinkDrafts={taskLinkDrafts}
-              setTaskLinkDrafts={setTaskLinkDrafts}
-              handleTaskLinkAdd={handleTaskLinkAdd}
-              taskLinkEditingDrafts={taskLinkEditingDrafts}
-              handleTaskLinkEditCancel={handleTaskLinkEditCancel}
-              getTaskLinkTitle={getTaskLinkTitle}
-              getUrlHostLabel={getUrlHostLabel}
-              getInitials={getInitials}
-              handleTaskLinkEditStart={handleTaskLinkEditStart}
-              handleTaskLinkRemove={handleTaskLinkRemove}
-              milestones={milestones}
-              onLinkTaskToMilestone={onLinkTaskToMilestone}
-            />
-          ) : selectedProject ? (
-            <WorkhubProjectDetailRail
-              selectedProject={selectedProject}
-              selectedProjectIntentMeta={selectedProjectIntentMeta}
-              selectedProjectColorDraft={selectedProjectColorDraft}
-              canEditSelectedProject={canEditSelectedProject}
-              canEditProjectAttachments={canEditSelectedProjectAttachments}
-              selectedProjectEffectiveIntent={selectedProjectEffectiveIntent}
-              selectedProjectNameDraft={selectedProjectNameDraft}
-              setSelectedProjectNameDraft={setSelectedProjectNameDraft}
-              handleSaveSelectedProjectDetails={handleSaveSelectedProjectDetails}
-              selectedProjectTypeDraft={selectedProjectTypeDraft}
-              selectedProjectTypeOptions={selectedProjectTypeOptions}
-              setSelectedProjectTypeDraft={setSelectedProjectTypeDraft}
-              selectedProjectStartDateDraft={selectedProjectStartDateDraft}
-              setSelectedProjectStartDateDraft={setSelectedProjectStartDateDraft}
-              selectedProjectDeadlineDraft={selectedProjectDeadlineDraft}
-              setSelectedProjectDeadlineDraft={setSelectedProjectDeadlineDraft}
-              selectedProjectSubmissionTimeDraft={selectedProjectSubmissionTimeDraft}
-              setSelectedProjectSubmissionTimeDraft={setSelectedProjectSubmissionTimeDraft}
-              selectedProjectValueAmountDraft={selectedProjectValueAmountDraft}
-              setSelectedProjectValueAmountDraft={setSelectedProjectValueAmountDraft}
-              selectedProjectValueCurrencyDraft={selectedProjectValueCurrencyDraft}
-              setSelectedProjectValueCurrencyDraft={setSelectedProjectValueCurrencyDraft}
-              selectedProjectNarrativeDraft={selectedProjectNarrativeDraft}
-              setSelectedProjectNarrativeDraft={setSelectedProjectNarrativeDraft}
-              handleSelectedProjectDescriptionBlur={handleSelectedProjectDescriptionBlur}
-              selectedProjectIntentDetailDrafts={selectedProjectIntentDetailDrafts}
-              setSelectedProjectIntentDetailDrafts={setSelectedProjectIntentDetailDrafts}
-              projectDiscussionNode={projectDiscussionNode}
-              projectAttachmentsCollapsed={projectAttachmentsCollapsed}
-              setProjectAttachmentsCollapsed={setProjectAttachmentsCollapsed}
-              attachmentViewMode={attachmentViewMode}
-              setAttachmentViewMode={setAttachmentViewMode}
-              selectedProjectAttachmentTitleDraft={selectedProjectAttachmentTitleDraft}
-              setSelectedProjectAttachmentTitleDraft={setSelectedProjectAttachmentTitleDraft}
-              selectedProjectAttachmentDraft={selectedProjectAttachmentDraft}
-              setSelectedProjectAttachmentDraft={setSelectedProjectAttachmentDraft}
-              selectedProjectAttachmentFilePathDraft={selectedProjectAttachmentFilePathDraft}
-              setSelectedProjectAttachmentFilePathDraft={setSelectedProjectAttachmentFilePathDraft}
-              selectedProjectAttachmentFileDrafts={selectedProjectAttachmentFileDrafts}
-              setSelectedProjectAttachmentFileDrafts={setSelectedProjectAttachmentFileDrafts}
-              uploadingSelectedProjectAttachment={uploadingSelectedProjectAttachment}
-              handleSelectedProjectAttachmentAdd={handleSelectedProjectAttachmentAdd}
-              handleSelectedProjectAttachmentFileUpload={handleSelectedProjectAttachmentFileUpload}
-              selectedProjectAttachments={selectedProjectAttachments}
-              deriveAttachmentTitle={deriveAttachmentTitle}
-              isImageAttachmentUrl={isImageAttachmentUrl}
-              openAttachmentLightbox={openAttachmentLightbox}
-              handleSelectedProjectAttachmentRemove={handleSelectedProjectAttachmentRemove}
-              selectedProjectColorMenuOpen={selectedProjectColorMenuOpen}
-              setSelectedProjectColorMenuOpen={setSelectedProjectColorMenuOpen}
-              selectedProjectColorMeaning={selectedProjectColorMeaning}
-              selectedWorkspaceProjectColorMeanings={selectedWorkspaceProjectColorMeanings}
-              handleSelectedProjectColorSelect={handleSelectedProjectColorSelect}
-              selectedWorkspaceDisplayName={selectedWorkspaceDisplayName}
-              projectNameById={projectNameById}
-              formatTime={formatTime}
-              setProjectAccessDialogId={setProjectAccessDialogId}
-              selectedProjectDetailsChanged={selectedProjectDetailsChanged}
-              busyKey={busyKey}
-            />
-          ) : (
-            <div className="workhub-detail-card">
-              <div className="workhub-empty-state">Select a task or workspace item to view details.</div>
-            </div>
-          )}
-        </aside>
+        {!useTaskDetailDialog && (
+          <aside
+            className={`workhub-task-detail-rail${isMobileWorkhubLayout ? ' is-mobile-drawer' : ''}${isMobileWorkhubLayout && selectedTask ? ' is-open' : ''}${!isMobileWorkhubLayout ? ` is-${detailRailMode}` : ''}`}
+            aria-hidden={isMobileWorkhubLayout && !selectedTask}
+          >
+            {!isMobileWorkhubLayout && detailRailMode !== 'hidden' && (
+              <div className="workhub-detail-rail-toolbar">
+                <button
+                  type="button"
+                  className={`workhub-ghost-mini${detailRailMode === 'compact' ? ' is-active' : ''}`}
+                  onClick={toggleDetailRailCompact}
+                  title={detailRailMode === 'compact' ? 'Expand details panel' : 'Compact details panel'}
+                >
+                  {detailRailMode === 'compact' ? 'Expand' : 'Compact'}
+                </button>
+                <button
+                  type="button"
+                  className="workhub-ghost-mini"
+                  onClick={setDetailRailHidden}
+                  title="Hide details panel"
+                >
+                  Hide
+                </button>
+              </div>
+            )}
+            {taskDetailPanelNode ? taskDetailPanelNode : selectedProject ? (
+              <WorkhubProjectDetailRail
+                selectedProject={selectedProject}
+                selectedProjectIntentMeta={selectedProjectIntentMeta}
+                selectedProjectColorDraft={selectedProjectColorDraft}
+                canEditSelectedProject={canEditSelectedProject}
+                canEditProjectAttachments={canEditSelectedProjectAttachments}
+                selectedProjectEffectiveIntent={selectedProjectEffectiveIntent}
+                selectedProjectNameDraft={selectedProjectNameDraft}
+                setSelectedProjectNameDraft={setSelectedProjectNameDraft}
+                handleSaveSelectedProjectDetails={handleSaveSelectedProjectDetails}
+                selectedProjectTypeDraft={selectedProjectTypeDraft}
+                selectedProjectTypeOptions={selectedProjectTypeOptions}
+                setSelectedProjectTypeDraft={setSelectedProjectTypeDraft}
+                selectedProjectStartDateDraft={selectedProjectStartDateDraft}
+                setSelectedProjectStartDateDraft={setSelectedProjectStartDateDraft}
+                selectedProjectDeadlineDraft={selectedProjectDeadlineDraft}
+                setSelectedProjectDeadlineDraft={setSelectedProjectDeadlineDraft}
+                selectedProjectSubmissionTimeDraft={selectedProjectSubmissionTimeDraft}
+                setSelectedProjectSubmissionTimeDraft={setSelectedProjectSubmissionTimeDraft}
+                selectedProjectValueAmountDraft={selectedProjectValueAmountDraft}
+                setSelectedProjectValueAmountDraft={setSelectedProjectValueAmountDraft}
+                selectedProjectValueCurrencyDraft={selectedProjectValueCurrencyDraft}
+                setSelectedProjectValueCurrencyDraft={setSelectedProjectValueCurrencyDraft}
+                selectedProjectNarrativeDraft={selectedProjectNarrativeDraft}
+                setSelectedProjectNarrativeDraft={setSelectedProjectNarrativeDraft}
+                handleSelectedProjectDescriptionBlur={handleSelectedProjectDescriptionBlur}
+                selectedProjectIntentDetailDrafts={selectedProjectIntentDetailDrafts}
+                setSelectedProjectIntentDetailDrafts={setSelectedProjectIntentDetailDrafts}
+                projectDiscussionNode={projectDiscussionNode}
+                projectAttachmentsCollapsed={projectAttachmentsCollapsed}
+                setProjectAttachmentsCollapsed={setProjectAttachmentsCollapsed}
+                attachmentViewMode={attachmentViewMode}
+                setAttachmentViewMode={setAttachmentViewMode}
+                selectedProjectAttachmentTitleDraft={selectedProjectAttachmentTitleDraft}
+                setSelectedProjectAttachmentTitleDraft={setSelectedProjectAttachmentTitleDraft}
+                selectedProjectAttachmentDraft={selectedProjectAttachmentDraft}
+                setSelectedProjectAttachmentDraft={setSelectedProjectAttachmentDraft}
+                selectedProjectAttachmentFilePathDraft={selectedProjectAttachmentFilePathDraft}
+                setSelectedProjectAttachmentFilePathDraft={setSelectedProjectAttachmentFilePathDraft}
+                selectedProjectAttachmentFileDrafts={selectedProjectAttachmentFileDrafts}
+                setSelectedProjectAttachmentFileDrafts={setSelectedProjectAttachmentFileDrafts}
+                uploadingSelectedProjectAttachment={uploadingSelectedProjectAttachment}
+                handleSelectedProjectAttachmentAdd={handleSelectedProjectAttachmentAdd}
+                handleSelectedProjectAttachmentFileUpload={handleSelectedProjectAttachmentFileUpload}
+                selectedProjectAttachments={selectedProjectAttachments}
+                deriveAttachmentTitle={deriveAttachmentTitle}
+                isImageAttachmentUrl={isImageAttachmentUrl}
+                openAttachmentLightbox={openAttachmentLightbox}
+                handleSelectedProjectAttachmentRemove={handleSelectedProjectAttachmentRemove}
+                selectedProjectColorMenuOpen={selectedProjectColorMenuOpen}
+                setSelectedProjectColorMenuOpen={setSelectedProjectColorMenuOpen}
+                selectedProjectColorMeaning={selectedProjectColorMeaning}
+                selectedWorkspaceProjectColorMeanings={selectedWorkspaceProjectColorMeanings}
+                handleSelectedProjectColorSelect={handleSelectedProjectColorSelect}
+                selectedWorkspaceDisplayName={selectedWorkspaceDisplayName}
+                projectNameById={projectNameById}
+                formatTime={formatTime}
+                setProjectAccessDialogId={setProjectAccessDialogId}
+                selectedProjectDetailsChanged={selectedProjectDetailsChanged}
+                busyKey={busyKey}
+              />
+            ) : (
+              <div className="workhub-detail-card">
+                <div className="workhub-empty-state">Select a task or workspace item to view details.</div>
+              </div>
+            )}
+          </aside>
+        )}
       </main>
 
-      {isMobileWorkhubLayout && selectedTask && (
+      {!useTaskDetailDialog && isMobileWorkhubLayout && selectedTask && (
         <button
           type="button"
           className="workhub-task-detail-drawer-backdrop"
           aria-label="Close task details"
           onClick={() => setSelectedTaskId('')}
         />
+      )}
+
+      {useTaskDetailDialog && taskDetailPanelNode && (
+        <div className="workhub-modal-backdrop workhub-task-detail-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedTaskId('') }}>
+          <div className="workhub-modal workhub-task-detail-dialog" onMouseDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="Task details">
+            <div className="workhub-task-detail-dialog-head">
+              <div className="workhub-task-detail-dialog-head-main">
+                <strong>Task details</strong>
+                {selectedTaskHeaderBreadcrumbTrail.length > 0 && (
+                  <div className="workhub-task-detail-dialog-breadcrumbs" role="navigation" aria-label="Task parent path">
+                    {selectedTaskHeaderBreadcrumbTrail.map((project: any, index: number) => {
+                      const isWorkspaceNode = String(project.id || '').startsWith('workspace:')
+                      const icon = isWorkspaceNode ? '◻' : '▹'
+                      const isLast = index === selectedTaskHeaderBreadcrumbTrail.length - 1
+                      return (
+                        <div key={project.id} className="workhub-task-detail-dialog-breadcrumb-node-wrap">
+                          <button
+                            type="button"
+                            className={`workhub-task-detail-dialog-breadcrumb-node${isLast ? ' is-current' : ''}`}
+                            onClick={() => {
+                              setSelectedTaskId('')
+                              if (isWorkspaceNode) {
+                                handleSelectProject('all')
+                                return
+                              }
+                              handleSelectProject(project.id)
+                            }}
+                            title={project.name}
+                          >
+                            <span className="workhub-task-detail-dialog-breadcrumb-icon" aria-hidden="true">{icon}</span>
+                            <span className="workhub-task-detail-dialog-breadcrumb-label">{project.name}</span>
+                          </button>
+                          {!isLast && <span className="workhub-task-detail-dialog-breadcrumb-sep" aria-hidden="true">›</span>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+              <div className="workhub-task-detail-dialog-head-actions">
+                <button
+                  type="button"
+                  className="workhub-task-detail-dialog-head-icon-btn workhub-ghost-btn"
+                  title="Copy"
+                  aria-label="Copy"
+                  onClick={openTaskContextMenuFromHeader}
+                  disabled={!selectedTask}
+                >
+                  📋
+                </button>
+                <button
+                  type="button"
+                  className="workhub-task-detail-dialog-head-icon-btn workhub-detail-delete-task-btn"
+                  title="Delete task"
+                  aria-label="Delete task"
+                  onClick={() => setTaskDeleteConfirmOpen(true)}
+                >
+                  <span className="workhub-detail-danger-icon" aria-hidden="true">🗑</span>
+                </button>
+                <button
+                  type="button"
+                  className="workhub-task-detail-dialog-head-icon-btn workhub-ghost-btn"
+                  title="Close"
+                  aria-label="Close"
+                  onClick={() => setSelectedTaskId('')}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+            <div className="workhub-task-detail-dialog-body">
+              {taskDetailPanelNode}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {taskContextMenuState && (
+        <div
+          className="workhub-task-context-menu"
+          style={{
+            position: 'fixed',
+            left: Math.max(12, Math.min(taskContextMenuState.x, window.innerWidth - 220)),
+            top: Math.max(12, Math.min(taskContextMenuState.y, window.innerHeight - 140)),
+            zIndex: 2400,
+          }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button type="button" onClick={() => { void copyTaskUniqueToken() }}>Copy task token</button>
+          <button type="button" onClick={() => { void copyTaskDeepLink() }}>Copy task URL</button>
+          <button type="button" onClick={closeTaskContextMenu}>Cancel</button>
+        </div>
       )}
 
       {bulkDeleteConfirmOpen && selectedTaskCount > 0 && (
