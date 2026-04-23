@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, memo, useMemo, createContext, useContext, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type Dispatch, type SetStateAction } from 'react'
-import type { WorkhubTask, WorkhubTaskStatusConfig, WorkhubMember, WorkhubTaskChecklistItem, WorkhubMilestone } from '../../../lib/workhubRepo'
+import { useState, useEffect, useRef, memo, useMemo, createContext, useContext, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type Dispatch, type SetStateAction } from 'react'
+import type { WorkhubTask, WorkhubTaskStatus, WorkhubTaskStatusConfig, WorkhubMember, WorkhubTaskChecklistItem, WorkhubMilestone } from '../../../lib/workhubRepo'
 import type { WorkhubImageReview } from '../imageReview'
 import { WorkhubTaskAttachmentCard } from './WorkhubTaskAttachmentCard'
 import { WorkhubTaskChecklistCard } from './WorkhubTaskChecklistCard'
@@ -212,7 +212,7 @@ const TaskDetailLinksSection = memo(function TaskDetailLinksSection({
   handleTaskLinkEditStart,
   handleTaskLinkRemove,
 }: TaskDetailLinksSectionProps) {
-  const { attachmentViewMode, setAttachmentViewMode, getUrlHostLabel, getInitials, memberByUid } = useTaskDetailShared()
+  const { attachmentViewMode, getUrlHostLabel, getInitials, memberByUid } = useTaskDetailShared()
   const taskLinks: string[] = getTaskLinks(selectedTask)
   return (
     <div className={embedded ? 'workhub-task-resource-card workhub-task-resource-card-embedded' : 'workhub-detail-card workhub-task-resource-card'}>
@@ -306,9 +306,9 @@ export const WorkhubTaskDetailPanel = memo(function WorkhubTaskDetailPanel({
   selectedTask,
   setSelectedTaskId,
   setTaskDeleteConfirmOpen,
-  detailMenuOpen,
-  setDetailMenuOpen,
-  setDetailMenuCoords,
+  detailMenuOpen: _detailMenuOpen,
+  setDetailMenuOpen: _setDetailMenuOpen,
+  setDetailMenuCoords: _setDetailMenuCoords,
   selectedProjectEffectiveTaskStatuses,
   PRIORITY_LABELS,
   memberByUid,
@@ -587,14 +587,6 @@ export const WorkhubTaskDetailPanel = memo(function WorkhubTaskDetailPanel({
     const firstLabel = memberByUid[first]?.displayName || memberByUid[first]?.email || first
     if (selectedTaskAssigneeUids.length === 1) return firstLabel
     return `${firstLabel} +${selectedTaskAssigneeUids.length - 1}`
-  }, [memberByUid, selectedTaskAssigneeUids])
-  const assigneeSummaryPills = useMemo(() => {
-    if (selectedTaskAssigneeUids.length === 0) {
-      return ['Unassigned']
-    }
-    const labels = selectedTaskAssigneeUids.map((uid) => memberByUid[uid]?.displayName || memberByUid[uid]?.email || uid)
-    if (labels.length <= 2) return labels
-    return [labels[0], labels[1], `+${labels.length - 2}`]
   }, [memberByUid, selectedTaskAssigneeUids])
   const statusIconById = useMemo(() => {
     const iconMap: Record<string, string> = {}

@@ -1269,7 +1269,7 @@ export function subscribeWorkhubComments(
   const maxCount = typeof options?.maxCount === 'number' && options.maxCount > 0 ? options.maxCount : 0
   const fetchLimit = maxCount > 0 ? maxCount + 1 : 0
   const mapSnapshot = (snap: { docs: Array<{ id: string; data: () => unknown }> }) => {
-    const mapped = snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubTaskComment))
+    const mapped = snap.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<WorkhubTaskComment, 'id'>) }))
     if (fetchLimit > 0) {
       const newestFirst = sortByNewest(mapped)
       const hasMore = newestFirst.length > maxCount
@@ -1341,7 +1341,7 @@ export function subscribeWorkhubCommentsByEntity(
   const maxCount = typeof options?.maxCount === 'number' && options.maxCount > 0 ? options.maxCount : 0
   const fetchLimit = maxCount > 0 ? maxCount + 1 : 0
   const mapSnapshot = (snap: { docs: Array<{ id: string; data: () => unknown }> }) => {
-    const mapped = snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubTaskComment))
+    const mapped = snap.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<WorkhubTaskComment, 'id'>) }))
     const normalized = entityType === 'task'
       ? mapped
       : mapped.filter((item) => item.entityType === entityType && item.entityId === entityId)

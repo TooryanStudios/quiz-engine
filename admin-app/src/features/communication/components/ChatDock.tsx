@@ -212,7 +212,7 @@ export function ChatDock({
   const convertStatusOptions = useMemo(() => {
     const configured = Array.isArray(convertWorkspace?.taskStatuses)
       ? convertWorkspace.taskStatuses
-        .filter((item): item is { id: WorkhubTaskStatus; label: string } => !!item && typeof item.id === 'string')
+        .filter((item): item is { id: WorkhubTaskStatus; label: string; color: string } => !!item && typeof item.id === 'string')
       : []
     if (configured.length > 0) return configured
     return [
@@ -476,7 +476,7 @@ export function ChatDock({
         visibility,
         memberUids: nextMemberUids,
         status: convertTaskStatus,
-        priority: 'normal',
+        priority: 'medium',
         assigneeUid,
         assigneeUids: [assigneeUid],
         dueDate: convertTaskDueDate || getDefaultTaskDueDate(),

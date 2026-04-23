@@ -148,9 +148,6 @@ const IMAGE_MIN_HEIGHT = 120
 const IMAGE_MAX_HEIGHT = 320
 const DEFAULT_NOTE_SIZE = { width: 220, height: 140 }
 const DEFAULT_GROUP_SIZE = { width: 520, height: 360 }
-const GROUP_PADDING = 16
-const GROUP_HEADER_HEIGHT = 44
-const GROUP_GAP = 12
 const DEFAULT_Z_INDEX = {
   group: 0,
   note: 10,

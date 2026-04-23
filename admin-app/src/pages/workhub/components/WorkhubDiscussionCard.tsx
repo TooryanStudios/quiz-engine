@@ -182,7 +182,6 @@ export function WorkhubDiscussionCard({
   const [deleteConfirmId, setDeleteConfirmId] = useState('')
   const notifyRowRef = useRef<HTMLDivElement>(null)
   const composerTextareaRef = useRef<HTMLTextAreaElement>(null)
-  const commentListRef = useRef<HTMLDivElement>(null)
   const bottomAnchorRef = useRef<HTMLDivElement>(null)
 
   function detectTextDirection(value: string): 'rtl' | 'ltr' {
