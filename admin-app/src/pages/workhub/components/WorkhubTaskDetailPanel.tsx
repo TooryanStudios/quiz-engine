@@ -849,7 +849,6 @@ export const WorkhubTaskDetailPanel = memo(function WorkhubTaskDetailPanel({
             onClick={() => setIsEditingTitle(true)}
             title="Click to edit task name"
           >
-            <span className="workhub-task-heading-edit-icon" aria-hidden="true">✎</span>
             {titleDraft.trim() || 'Untitled task'}
           </button>
         )}
@@ -875,7 +874,6 @@ export const WorkhubTaskDetailPanel = memo(function WorkhubTaskDetailPanel({
             onClick={() => setIsEditingDescription(true)}
             title="Click to edit task details"
           >
-            <span className="workhub-task-heading-edit-icon" aria-hidden="true">✎</span>
             {descriptionDraft.trim() || 'Add task details'}
           </button>
         )}

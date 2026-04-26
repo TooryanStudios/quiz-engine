@@ -183,6 +183,7 @@ export function WorkhubDiscussionCard({
   const notifyRowRef = useRef<HTMLDivElement>(null)
   const composerTextareaRef = useRef<HTMLTextAreaElement>(null)
   const bottomAnchorRef = useRef<HTMLDivElement>(null)
+  const prevCommentsLengthRef = useRef<number | null>(null)
 
   function detectTextDirection(value: string): 'rtl' | 'ltr' {
     const hasArabic = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/.test(value)
@@ -278,9 +279,14 @@ export function WorkhubDiscussionCard({
     })
   }, [comments, currentUid, optimisticLikeByCommentId])
 
-  // Auto-scroll to bottom when new messages arrive
+  // Auto-scroll to bottom only when new messages arrive after initial load
   useEffect(() => {
-    bottomAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    const prev = prevCommentsLengthRef.current
+    prevCommentsLengthRef.current = comments.length
+    // Skip scroll on initial load (prev === null means first run)
+    if (prev !== null && comments.length > prev) {
+      bottomAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    }
   }, [comments.length])
 
   // Scroll highlighted comment into view when arriving from a notification

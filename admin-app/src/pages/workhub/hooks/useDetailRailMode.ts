@@ -4,8 +4,8 @@ export type DetailRailMode = 'expanded' | 'compact' | 'hidden'
 
 const DEFAULT_DETAIL_RAIL_MODE: DetailRailMode = 'expanded'
 
-function readPersistedDetailRailMode(storageKey: string): DetailRailMode {
-  if (typeof window === 'undefined') return DEFAULT_DETAIL_RAIL_MODE
+function readPersistedDetailRailMode(storageKey: string, fallbackMode: DetailRailMode): DetailRailMode {
+  if (typeof window === 'undefined') return fallbackMode
   try {
     const persisted = window.localStorage.getItem(storageKey)
     if (persisted === 'expanded' || persisted === 'compact' || persisted === 'hidden') {
@@ -14,17 +14,17 @@ function readPersistedDetailRailMode(storageKey: string): DetailRailMode {
   } catch {
     // Ignore localStorage failures and use default mode.
   }
-  return DEFAULT_DETAIL_RAIL_MODE
+  return fallbackMode
 }
 
-export function useDetailRailMode(storageKey: string, enabled: boolean) {
-  const [mode, setMode] = useState<DetailRailMode>(() => readPersistedDetailRailMode(storageKey))
+export function useDetailRailMode(storageKey: string, enabled: boolean, defaultMode: DetailRailMode = DEFAULT_DETAIL_RAIL_MODE) {
+  const [mode, setMode] = useState<DetailRailMode>(() => readPersistedDetailRailMode(storageKey, defaultMode))
 
   useEffect(() => {
-    if (!enabled && mode !== DEFAULT_DETAIL_RAIL_MODE) {
-      setMode(DEFAULT_DETAIL_RAIL_MODE)
+    if (!enabled && mode !== defaultMode) {
+      setMode(defaultMode)
     }
-  }, [enabled, mode])
+  }, [defaultMode, enabled, mode])
 
   useEffect(() => {
     if (!enabled || typeof window === 'undefined') return

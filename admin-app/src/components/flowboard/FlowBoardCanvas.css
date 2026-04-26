@@ -22,12 +22,21 @@
 /* ── Header ──────────────────────────────────────────────────────────────── */
 .flowboard-header {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: 8px;
   padding: 7px 12px;
   background: #f9fbff;
   border-bottom: 1px solid #e3ecfb;
   flex-shrink: 0;
+}
+
+.flowboard-header-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .flowboard-title-wrap {
@@ -60,6 +69,68 @@
   gap: 5px;
   flex-shrink: 0;
   flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.flowboard-url-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid #d8e4fa;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 8px;
+}
+
+.flowboard-url-entry-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #32518a;
+}
+
+.flowboard-url-entry-input {
+  width: 100%;
+  resize: vertical;
+  min-height: 52px;
+  max-height: 180px;
+  border-radius: 8px;
+  border: 1px solid #d1def3;
+  background: #ffffff;
+  color: #14213d;
+  font: inherit;
+  font-size: 0.76rem;
+  line-height: 1.35;
+  padding: 7px 9px;
+  box-sizing: border-box;
+}
+
+.flowboard-url-entry-input:focus {
+  outline: none;
+  border-color: #87a9ff;
+}
+
+.flowboard-url-entry-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.flowboard-url-entry-hint {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.25;
+  color: #5a6f98;
+}
+
+.flowboard-url-entry-error {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.25;
+  color: #b43a3a;
 }
 
 /* ── Buttons ──────────────────────────────────────────────────────────────── */
@@ -83,6 +154,12 @@
 .flowboard-btn:hover:not(:disabled) {
   background: #d8e9ff;
   border-color: #7baaf0;
+}
+
+.flowboard-btn.is-active {
+  background: #d8e9ff;
+  border-color: #7baaf0;
+  color: #1d458d;
 }
 
 .flowboard-btn:disabled {
@@ -307,6 +384,10 @@
   pointer-events: none;
 }
 
+.flowboard-shell.is-image-labels-hidden .flowboard-image-meta {
+  display: none;
+}
+
 .flowboard-image-meta-label,
 .flowboard-image-meta-caption {
   width: fit-content;
@@ -451,9 +532,29 @@
 
 .flowboard-detail-show-btn {
   position: absolute;
-  top: 14px;
-  right: 14px;
-  z-index: 8;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid #c7d8f6;
+  background: rgba(255, 255, 255, 0.96);
+  color: #2c4f95;
+  font: inherit;
+  font-size: 0.98rem;
+  font-weight: 700;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(37, 72, 133, 0.16);
+}
+
+.flowboard-detail-show-btn:hover {
+  background: #f0f5ff;
+  border-color: #9dbdf0;
 }
 
 /* ── Details form controls ───────────────────────────────────────────────── */
@@ -520,4 +621,14 @@
 
 .flowboard-canvas-appearance-form {
   gap: 12px;
+}
+
+@media (max-width: 860px) {
+  .flowboard-header-main {
+    align-items: stretch;
+  }
+
+  .flowboard-toolbar {
+    justify-content: flex-start;
+  }
 }

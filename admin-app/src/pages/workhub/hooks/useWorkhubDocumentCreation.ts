@@ -7,10 +7,16 @@ import {
 import {
   createWorkhubActivity,
   createWorkhubDocument,
+  type WorkhubDocumentTab,
   type WorkhubProject,
   type WorkhubVisibility,
 } from '../../../lib/workhubRepo'
 import { normalizeMemberUids } from '../projectUtils'
+
+function buildDefaultDocumentTabs(initialBody: string): WorkhubDocumentTab[] {
+  const tabId = `tab_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  return [{ id: tabId, title: 'Main', body: initialBody }]
+}
 
 interface UseWorkhubDocumentCreationParams {
   currentUserUid: string
@@ -73,6 +79,7 @@ export function useWorkhubDocumentCreation({
         projectId: targetProject?.id || null,
         title,
         body: documentBodyDraft,
+        tabs: buildDefaultDocumentTabs(documentBodyDraft),
         visibility,
         memberUids,
         notifyMode,
@@ -134,6 +141,7 @@ export function useWorkhubDocumentCreation({
         projectId: targetProject?.id || null,
         title,
         body: '',
+        tabs: buildDefaultDocumentTabs(''),
         visibility,
         memberUids,
         notifyMode,

@@ -30,6 +30,7 @@ import {
   type NodeProps,
 } from '@xyflow/react'
 import { useDetailRailMode } from '../../pages/workhub/hooks/useDetailRailMode'
+import { useImageBlobUrl } from '../../hooks/useImageBlobUrl'
 import '@xyflow/react/dist/style.css'
 import './FlowBoardCanvas.css'
 
@@ -47,6 +48,7 @@ type CanvasAppearance = {
 type FlowBoardSettings = {
   canvasAppearance: CanvasAppearance
   showNavigationPreview: boolean
+  showImageLabels: boolean
 }
 
 type FlowViewport = {
@@ -60,16 +62,12 @@ type FlowNodeData = {
   label?: string
   noteColor?: string
   imageUrl?: string
-  caption?: string
-  tags?: string
   groupId?: string
   locked?: boolean
   collapsed?: boolean
   isAttachTarget?: boolean
   connectable?: boolean
   isUploading?: boolean
-  imageWidth?: number
-  imageHeight?: number
   [key: string]: unknown
 }
 
@@ -100,12 +98,13 @@ type FlowBoardCanvasDetailsContext = {
   selectedData: FlowNodeData
   canvasAppearance: CanvasAppearance
   showNavigationPreview: boolean
+  showImageLabels: boolean
   selectedGroupLabel: string
   updateSelectedNodeData: (patch: Partial<FlowNodeData>) => void
   updateSelectedNodeStyle: (patch: Record<string, unknown>) => void
-  updateSelectedNodeSize: (dimension: 'width' | 'height', value: number) => void
   updateCanvasAppearance: (patch: Partial<CanvasAppearance>) => void
   setShowNavigationPreview: (value: boolean) => void
+  setShowImageLabels: (value: boolean) => void
   applyCanvasPreset: (preset: CanvasPreset) => void
   sendSelectedNodeToBack: () => void
   bringSelectedNodeForward: () => void
@@ -121,23 +120,32 @@ type FlowBoardCanvasProps = {
   onBoardTitleChange: (nextTitle: string) => void
   onBoardShare: () => void
   onBoardDelete: () => void
-  uploadImages: (files: File[]) => Promise<string[]>
+  uploadImages: (
+    files: File[],
+    options?: {
+      drafts?: Array<{
+        id: string
+        label: string
+        position: { x: number; y: number }
+        style?: Record<string, unknown>
+      }>
+    },
+  ) => Promise<string[]>
   initialState?: {
     nodes?: unknown[]
     edges?: unknown[]
     viewport?: Partial<FlowViewport>
     canvasAppearance?: Partial<CanvasAppearance>
     showNavigationPreview?: boolean
+    showImageLabels?: boolean
   }
+  onOpenImageAnnotation?: (imageUrl: string) => void
   renderDetailsPanel?: (context: FlowBoardCanvasDetailsContext) => ReactNode
   onStateChange?: (state: FlowState) => void
 }
 
 type ImageUploadDraft = {
   id: string
-  file: File
-  width: number
-  height: number
   style: CSSProperties
   node: RFNode
 }
@@ -184,7 +192,21 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 function sanitizeNodeData(data: FlowNodeData | undefined): FlowNodeData {
   if (!data) return {}
-  const { connectable: _connectable, isUploading: _isUploading, isAttachTarget: _isAttachTarget, ...rest } = data
+  const {
+    connectable: _connectable,
+    isUploading: _isUploading,
+    isAttachTarget: _isAttachTarget,
+    caption: _caption,
+    tags: _tags,
+    imageWidth: _imageWidth,
+    imageHeight: _imageHeight,
+    ...rest
+  } = data as FlowNodeData & {
+    caption?: unknown
+    tags?: unknown
+    imageWidth?: unknown
+    imageHeight?: unknown
+  }
   return rest
 }
 
@@ -342,25 +364,36 @@ function getImageNodeSize(width: number, height: number): { width: number; heigh
   return { width: nextWidth, height: nextHeight }
 }
 
-function getImageNodeStyle(rawStyle: Record<string, unknown>, imageWidth: number, imageHeight: number): CSSProperties {
-  const fallbackSize = getImageNodeSize(imageWidth, imageHeight)
-  const rawWidth = toNumber(rawStyle.width, 0)
-  const rawHeight = toNumber(rawStyle.height, 0)
+function getImageNodeStyle(rawStyle: Record<string, unknown>, fallbackWidth: number, fallbackHeight: number): CSSProperties {
+  const rawWidth = Math.round(toNumber(rawStyle.width, 0))
+  const rawHeight = Math.round(toNumber(rawStyle.height, 0))
 
-  if (rawWidth > 0 || rawHeight > 0) {
-    const widthScale = rawWidth > 0 ? rawWidth / Math.max(1, imageWidth) : Number.POSITIVE_INFINITY
-    const heightScale = rawHeight > 0 ? rawHeight / Math.max(1, imageHeight) : Number.POSITIVE_INFINITY
-    const scale = Math.min(widthScale, heightScale)
-
-    if (Number.isFinite(scale) && scale > 0) {
-      return {
-        width: Math.max(IMAGE_MIN_WIDTH, Math.round(imageWidth * scale)),
-        height: Math.max(IMAGE_MIN_HEIGHT, Math.round(imageHeight * scale)),
-      }
+  if (rawWidth > 0 && rawHeight > 0) {
+    return {
+      width: Math.max(IMAGE_MIN_WIDTH, rawWidth),
+      height: Math.max(IMAGE_MIN_HEIGHT, rawHeight),
     }
   }
 
-  return fallbackSize
+  const safeFallbackWidth = Math.max(1, Math.round(fallbackWidth || IMAGE_MIN_WIDTH))
+  const safeFallbackHeight = Math.max(1, Math.round(fallbackHeight || IMAGE_MIN_HEIGHT))
+  const fallbackRatio = safeFallbackWidth / safeFallbackHeight
+
+  if (rawWidth > 0) {
+    return {
+      width: Math.max(IMAGE_MIN_WIDTH, rawWidth),
+      height: Math.max(IMAGE_MIN_HEIGHT, Math.round(rawWidth / fallbackRatio)),
+    }
+  }
+
+  if (rawHeight > 0) {
+    return {
+      width: Math.max(IMAGE_MIN_WIDTH, Math.round(rawHeight * fallbackRatio)),
+      height: Math.max(IMAGE_MIN_HEIGHT, rawHeight),
+    }
+  }
+
+  return getImageNodeSize(safeFallbackWidth, safeFallbackHeight)
 }
 
 async function readImageDimensions(file: Blob): Promise<{ width: number; height: number }> {
@@ -377,6 +410,61 @@ async function readImageDimensions(file: Blob): Promise<{ width: number; height:
   } finally {
     URL.revokeObjectURL(objectUrl)
   }
+}
+
+function normalizeRemoteImageUrl(value: string): string | null {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  try {
+    const parsed = new URL(trimmed)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
+    return parsed.toString()
+  } catch {
+    return null
+  }
+}
+
+function extractUrlCandidatesFromText(value: string): string[] {
+  const matches = value.match(/https?:\/\/[^\s"'<>]+/gi)
+  const rawCandidates = matches && matches.length > 0
+    ? matches
+    : value.split(/\r?\n/).map((entry) => entry.trim()).filter(Boolean)
+
+  const seen = new Set<string>()
+  return rawCandidates
+    .map((entry) => entry.trim().replace(/[),.;!?]+$/, ''))
+    .filter(Boolean)
+    .filter((entry) => {
+      const key = entry.toLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+}
+
+function extractImageLabelFromUrl(url: string, fallbackIndex: number): string {
+  try {
+    const parsed = new URL(url)
+    const rawSegment = parsed.pathname.split('/').filter(Boolean).pop() || ''
+    const decoded = decodeURIComponent(rawSegment)
+    const withoutExtension = decoded.replace(/\.[^.]+$/, '').trim()
+    if (withoutExtension) return withoutExtension
+    if (parsed.hostname) return parsed.hostname
+  } catch {
+    // No-op; fallback below.
+  }
+  return `Image ${fallbackIndex + 1}`
+}
+
+async function readImageDimensionsFromUrl(url: string): Promise<{ width: number; height: number }> {
+  return await new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => {
+      resolve({ width: image.naturalWidth || IMAGE_MIN_WIDTH, height: image.naturalHeight || IMAGE_MIN_HEIGHT })
+    }
+    image.onerror = () => reject(new Error('Could not load image URL.'))
+    image.src = url
+  })
 }
 
 function normalizeViewport(viewport?: Partial<FlowViewport>): FlowViewport {
@@ -430,9 +518,21 @@ function normalizeRFNode(raw: unknown, index: number, variant: 'project' | 'mood
       ? 'imageNode'
       : (kind === 'group' ? 'groupNode' : 'noteNode'))
   const rawStyle = (c.style && typeof c.style === 'object') ? (c.style as Record<string, unknown>) : {}
-  const imageWidth = toNumber(rawData.imageWidth, IMAGE_MIN_WIDTH)
-  const imageHeight = toNumber(rawData.imageHeight, IMAGE_MIN_HEIGHT)
-  const normalizedImageStyle = getImageNodeStyle(rawStyle, imageWidth, imageHeight)
+  const legacyImageWidth = toNumber(rawData.imageWidth, IMAGE_MIN_WIDTH)
+  const legacyImageHeight = toNumber(rawData.imageHeight, IMAGE_MIN_HEIGHT)
+  const normalizedImageStyle = getImageNodeStyle(rawStyle, legacyImageWidth, legacyImageHeight)
+  const legacyCaption = typeof rawData.caption === 'string' ? rawData.caption.trim() : ''
+  const explicitLabel = typeof rawData.label === 'string' ? rawData.label.trim() : ''
+  const normalizedLabel = explicitLabel || legacyCaption
+  const normalizedData: FlowNodeData = {
+    ...rawData,
+    ...(normalizedLabel ? { label: normalizedLabel } : {}),
+    connectable: variant === 'project',
+  }
+  delete normalizedData.caption
+  delete normalizedData.tags
+  delete normalizedData.imageWidth
+  delete normalizedData.imageHeight
   const normalizedGroupStyle: CSSProperties = {
     width: toNumber(rawStyle.width, DEFAULT_GROUP_SIZE.width),
     height: toNumber(rawStyle.height, DEFAULT_GROUP_SIZE.height),
@@ -445,7 +545,7 @@ function normalizeRFNode(raw: unknown, index: number, variant: 'project' | 'mood
       x: typeof pos?.x === 'number' ? pos.x : fallbackPos.x,
       y: typeof pos?.y === 'number' ? pos.y : fallbackPos.y,
     },
-    data: { ...rawData, connectable: variant === 'project' },
+    data: normalizedData,
     dragHandle: kind === 'group' ? '.flowboard-group-header' : undefined,
     draggable: kind === 'group' ? !(rawData.locked ?? false) : undefined,
     style: {
@@ -487,7 +587,9 @@ function NoteNodeComponent({ data, selected, dragging }: NodeProps<RFNode>) {
 
 function ImageNodeComponent({ data, selected, dragging }: NodeProps<RFNode>) {
   const showHandles = Boolean(data.connectable)
-  const hasMeta = Boolean(data.label || data.caption)
+  const hasMeta = Boolean(data.label)
+  const rawImageUrl = typeof data.imageUrl === 'string' ? data.imageUrl : undefined
+  const cachedImageUrl = useImageBlobUrl(rawImageUrl)
   return (
     <div
       className={`flowboard-node is-image-node${selected ? ' is-selected' : ''}${dragging ? ' is-dragging' : ''}`}
@@ -513,9 +615,9 @@ function ImageNodeComponent({ data, selected, dragging }: NodeProps<RFNode>) {
         className={`flowboard-node-handle${showHandles ? ' is-visible' : ''}`}
       />
       <div className={`flowboard-image-stage${data.isUploading ? ' is-uploading' : ''}`}>
-        {data.imageUrl ? (
+        {cachedImageUrl ? (
           <img
-            src={String(data.imageUrl)}
+            src={cachedImageUrl}
             alt={String(data.label || 'Board image')}
             className="flowboard-node-image"
           />
@@ -525,7 +627,6 @@ function ImageNodeComponent({ data, selected, dragging }: NodeProps<RFNode>) {
         {hasMeta ? (
           <div className="flowboard-image-meta">
             {data.label ? <div className="flowboard-image-meta-label">{String(data.label)}</div> : null}
-            {data.caption ? <div className="flowboard-image-meta-caption">{String(data.caption)}</div> : null}
           </div>
         ) : null}
       </div>
@@ -577,6 +678,7 @@ function FlowBoardCanvasInner({
   onBoardDelete,
   uploadImages,
   initialState,
+  onOpenImageAnnotation,
   renderDetailsPanel,
   onStateChange,
 }: FlowBoardCanvasProps) {
@@ -584,6 +686,7 @@ function FlowBoardCanvasInner({
   const canvasWrapRef = useRef<HTMLDivElement | null>(null)
   const detailPanelRef = useRef<HTMLElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const imageUrlInputRef = useRef<HTMLTextAreaElement | null>(null)
   const detailResizeDragRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const groupDragRef = useRef<{
     groupId: string
@@ -607,7 +710,11 @@ function FlowBoardCanvasInner({
     setExpanded: setDetailRailExpanded,
     setHidden: setDetailRailHidden,
     toggleCompact: toggleDetailRailCompact,
-  } = useDetailRailMode(`flowboard:detail-rail-mode:${variant}`, true)
+  } = useDetailRailMode(
+    variant === 'mood' ? 'flowboard:detail-rail-mode:mood:v2' : `flowboard:detail-rail-mode:${variant}`,
+    true,
+    variant === 'mood' ? 'compact' : 'expanded',
+  )
 
   // Keep latest initialState accessible in the stateKey-reset effect without
   // re-triggering the effect when Firestore pushes real-time updates.
@@ -615,12 +722,19 @@ function FlowBoardCanvasInner({
   initialStateRef.current = initialState
 
   const defaultAppearance = useMemo(() => getDefaultAppearance(variant), [variant])
+  const defaultShowImageLabels = variant === 'project'
   const [canvasAppearance, setCanvasAppearance] = useState<CanvasAppearance>(defaultAppearance)
   const [showNavigationPreview, setShowNavigationPreview] = useState(
     typeof initialState?.showNavigationPreview === 'boolean' ? initialState.showNavigationPreview : true,
   )
+  const [showImageLabels, setShowImageLabels] = useState(
+    typeof initialState?.showImageLabels === 'boolean' ? initialState.showImageLabels : defaultShowImageLabels,
+  )
   const [isUploading, setIsUploading] = useState(false)
   const [attachPreviewGroupId, setAttachPreviewGroupId] = useState('')
+  const [isImageUrlEntryOpen, setIsImageUrlEntryOpen] = useState(false)
+  const [imageUrlDraftText, setImageUrlDraftText] = useState('')
+  const [imageUrlEntryError, setImageUrlEntryError] = useState('')
 
   const flushPendingPersist = useCallback(() => {
     if (!persistTimerRef.current || !pendingPersistStateRef.current) return
@@ -699,18 +813,26 @@ function FlowBoardCanvasInner({
     const nextShowNavigationPreview = typeof init?.showNavigationPreview === 'boolean'
       ? init.showNavigationPreview
       : true
+    const nextShowImageLabels = typeof init?.showImageLabels === 'boolean'
+      ? init.showImageLabels
+      : defaultShowImageLabels
     setNodes(nextNodes)
     setEdges(nextEdges)
     viewportRef.current = nextViewport
     lastPersistedStateRef.current = JSON.stringify(serializeFlowState(nextNodes, nextEdges, nextViewport, {
       canvasAppearance: nextAppearance,
       showNavigationPreview: nextShowNavigationPreview,
+      showImageLabels: nextShowImageLabels,
     }))
     setViewport(nextViewport)
     setCanvasAppearance(nextAppearance)
     setShowNavigationPreview(nextShowNavigationPreview)
+    setShowImageLabels(nextShowImageLabels)
+    setIsImageUrlEntryOpen(false)
+    setImageUrlDraftText('')
+    setImageUrlEntryError('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [normalizeIncomingEdges, normalizeIncomingNodes, stateKey])
+  }, [defaultShowImageLabels, normalizeIncomingEdges, normalizeIncomingNodes, stateKey, variant])
 
   useEffect(() => () => {
     flushPendingPersist()
@@ -725,6 +847,7 @@ function FlowBoardCanvasInner({
     const nextState = serializeFlowState(nodes, edges, viewportRef.current, {
       canvasAppearance,
       showNavigationPreview,
+      showImageLabels,
     })
     const serializedState = JSON.stringify(nextState)
     if (serializedState === lastPersistedStateRef.current) return
@@ -739,7 +862,7 @@ function FlowBoardCanvasInner({
     return () => {
       if (persistTimerRef.current) clearTimeout(persistTimerRef.current)
     }
-  }, [canvasAppearance, edges, nodes, showNavigationPreview])
+  }, [canvasAppearance, edges, nodes, showImageLabels, showNavigationPreview])
 
   // ── Selected node ────────────────────────────────────────────────────────
   const selectedNode = useMemo(() => nodes.find((n) => n.selected) ?? null, [nodes])
@@ -759,41 +882,6 @@ function FlowBoardCanvasInner({
       ...n,
       style: { ...(n.style ?? {}), ...(patch as CSSProperties) },
     }))
-  }, [updateSelectedNode])
-
-  const updateSelectedNodeSize = useCallback((dimension: 'width' | 'height', value: number) => {
-    updateSelectedNode((node) => {
-      const clamped = Math.max(dimension === 'width' ? 120 : 90, Math.round(value || 0))
-      const ratio = toNumber(node.data?.imageWidth, 0) > 0 && toNumber(node.data?.imageHeight, 0) > 0
-        ? (toNumber(node.data?.imageWidth, 1) / toNumber(node.data?.imageHeight, 1))
-        : null
-
-      if ((node.type === 'imageNode' || node.data?.kind === 'image') && ratio) {
-        if (dimension === 'width') {
-          return {
-            ...node,
-            style: {
-              ...(node.style ?? {}),
-              width: clamped,
-              height: Math.max(IMAGE_MIN_HEIGHT, Math.round(clamped / ratio)),
-            },
-          }
-        }
-        return {
-          ...node,
-          style: {
-            ...(node.style ?? {}),
-            height: clamped,
-            width: Math.max(IMAGE_MIN_WIDTH, Math.round(clamped * ratio)),
-          },
-        }
-      }
-
-      return {
-        ...node,
-        style: { ...(node.style ?? {}), [dimension]: clamped },
-      }
-    })
   }, [updateSelectedNode])
 
   const removeSelectedNode = useCallback(() => {
@@ -932,17 +1020,13 @@ function FlowBoardCanvasInner({
         data: {
           kind: 'image',
           label: file.name.replace(/\.[^.]+$/, '') || `Image ${index + 1}`,
-          caption: '',
-          tags: '',
           connectable: variant === 'project',
           isUploading: true,
-          imageWidth: dimensions.width,
-          imageHeight: dimensions.height,
         },
         style: { width: size.width, height: size.height } as CSSProperties,
         selected: false,
       }
-      return { id, file, width: dimensions.width, height: dimensions.height, style: node.style as CSSProperties, node }
+      return { id, style: node.style as CSSProperties, node }
     }))
 
     setNodes((prev) => {
@@ -964,7 +1048,17 @@ function FlowBoardCanvasInner({
     }
 
     try {
-      const urls = await uploadImages(files)
+      const urls = await uploadImages(files, {
+        drafts: drafts.map((draft) => ({
+          id: draft.id,
+          label: String(draft.node.data?.label || ''),
+          position: {
+            x: Number(draft.node.position?.x || 0),
+            y: Number(draft.node.position?.y || 0),
+          },
+          style: { ...(draft.style as Record<string, unknown>) },
+        })),
+      })
       setNodes((prev) => syncImageGroupMembership(prev.flatMap((node) => {
         const draftIndex = drafts.findIndex((draft) => draft.id === node.id)
         if (draftIndex === -1) return [node]
@@ -978,8 +1072,6 @@ function FlowBoardCanvasInner({
             imageUrl,
             isUploading: false,
             connectable: variant === 'project',
-            imageWidth: draft.width,
-            imageHeight: draft.height,
           },
           style: draft.style,
         }]
@@ -991,6 +1083,104 @@ function FlowBoardCanvasInner({
       setIsUploading(false)
     }
   }, [focusNodeInView, getInsertPosition, setNodes, uploadImages, variant])
+
+  const addImageUrls = useCallback(async (urls: string[]) => {
+    if (!urls.length) return
+
+    const normalizedUrls = urls
+      .map((url) => normalizeRemoteImageUrl(url))
+      .filter((url): url is string => !!url)
+
+    if (!normalizedUrls.length) return
+
+    const drafts = await Promise.all(normalizedUrls.map(async (imageUrl, index) => {
+      let dimensions: { width: number; height: number } = { width: IMAGE_MIN_WIDTH, height: IMAGE_MIN_HEIGHT }
+      try {
+        dimensions = await readImageDimensionsFromUrl(imageUrl)
+      } catch {
+        // Keep fallback dimensions when the remote image can't be preloaded.
+      }
+
+      const size = getImageNodeSize(dimensions.width, dimensions.height)
+      const node: RFNode = {
+        id: createNodeId(),
+        type: 'imageNode',
+        position: getInsertPosition(size.width, size.height, index),
+        data: {
+          kind: 'image',
+          label: extractImageLabelFromUrl(imageUrl, index),
+          imageUrl,
+          connectable: variant === 'project',
+          isUploading: false,
+        },
+        style: { width: size.width, height: size.height } as CSSProperties,
+        selected: false,
+      }
+      return node
+    }))
+
+    setNodes((prev) => {
+      const lastDraftId = drafts[drafts.length - 1]?.id
+      return syncImageGroupMembership([
+        ...prev.map((node) => ({ ...node, selected: false })),
+        ...drafts.map((draft) => ({
+          ...draft,
+          selected: draft.id === lastDraftId,
+        })),
+      ])
+    })
+
+    const focusedDraft = drafts[drafts.length - 1]
+    if (focusedDraft) {
+      requestAnimationFrame(() => {
+        focusNodeInView(focusedDraft)
+      })
+    }
+  }, [focusNodeInView, getInsertPosition, setNodes, variant])
+
+  const openImageUrlEntry = useCallback(() => {
+    setIsImageUrlEntryOpen(true)
+    setImageUrlEntryError('')
+    requestAnimationFrame(() => {
+      imageUrlInputRef.current?.focus()
+    })
+  }, [])
+
+  const closeImageUrlEntry = useCallback(() => {
+    setIsImageUrlEntryOpen(false)
+    setImageUrlDraftText('')
+    setImageUrlEntryError('')
+  }, [])
+
+  const handleImageUrlSubmit = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const candidates = extractUrlCandidatesFromText(imageUrlDraftText)
+    const normalizedUrls = candidates
+      .map((url) => normalizeRemoteImageUrl(url))
+      .filter((url): url is string => !!url)
+
+    if (!normalizedUrls.length) {
+      setImageUrlEntryError('Paste at least one valid http/https image URL.')
+      return
+    }
+
+    setImageUrlEntryError('')
+    await addImageUrls(normalizedUrls)
+    setImageUrlDraftText('')
+    setIsImageUrlEntryOpen(false)
+  }, [addImageUrls, imageUrlDraftText])
+
+  const handleImageUrlInputKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      closeImageUrlEntry()
+      return
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+      event.preventDefault()
+      event.currentTarget.form?.requestSubmit()
+    }
+  }, [closeImageUrlEntry])
 
   const handleImageFileSelect = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = event.target.files
@@ -1005,7 +1195,10 @@ function FlowBoardCanvasInner({
   useEffect(() => {
     const handlePaste = (event: ClipboardEvent) => {
       if (isEditableTarget(event.target)) return
-      const pastedFiles = Array.from(event.clipboardData?.items ?? [])
+      const clipboardData = event.clipboardData
+      if (!clipboardData) return
+
+      const pastedFiles = Array.from(clipboardData.items ?? [])
         .filter((item) => item.type.startsWith('image/'))
         .map((item, index) => {
           const file = item.getAsFile()
@@ -1015,16 +1208,28 @@ function FlowBoardCanvasInner({
         })
         .filter((file): file is File => file !== null)
 
-      if (!pastedFiles.length) return
+      if (pastedFiles.length) {
+        event.preventDefault()
+        void addImageFiles(pastedFiles)
+        return
+      }
+
+      const pastedText = clipboardData.getData('text/plain')
+      if (!pastedText) return
+      const normalizedUrls = extractUrlCandidatesFromText(pastedText)
+        .map((url) => normalizeRemoteImageUrl(url))
+        .filter((url): url is string => !!url)
+      if (!normalizedUrls.length) return
+
       event.preventDefault()
-      void addImageFiles(pastedFiles)
+      void addImageUrls(normalizedUrls)
     }
 
     window.addEventListener('paste', handlePaste)
     return () => {
       window.removeEventListener('paste', handlePaste)
     }
-  }, [addImageFiles])
+  }, [addImageFiles, addImageUrls])
 
   const selectedGroupLabel = useMemo(() => {
     const groupId = typeof selectedData.groupId === 'string' ? selectedData.groupId : ''
@@ -1110,12 +1315,13 @@ function FlowBoardCanvasInner({
     selectedData,
     canvasAppearance,
     showNavigationPreview,
+    showImageLabels,
     selectedGroupLabel,
     updateSelectedNodeData,
     updateSelectedNodeStyle,
-    updateSelectedNodeSize,
     updateCanvasAppearance,
     setShowNavigationPreview,
+    setShowImageLabels,
     applyCanvasPreset,
     sendSelectedNodeToBack,
     bringSelectedNodeForward,
@@ -1131,32 +1337,66 @@ function FlowBoardCanvasInner({
   }
 
   return (
-    <section className={`flowboard-shell${variant === 'project' ? ' is-project' : ''}`}>
+    <section className={`flowboard-shell${variant === 'project' ? ' is-project' : ''}${showImageLabels ? '' : ' is-image-labels-hidden'}`}>
       <header className="flowboard-header">
-        <div className="flowboard-title-wrap">
-          <input
-            className="flowboard-title-input"
-            value={boardTitle}
-            onChange={(e) => onBoardTitleChange(e.target.value)}
-            placeholder={variant === 'project' ? 'Flow board title' : 'Mood board title'}
-          />
+        <div className="flowboard-header-main">
+          <div className="flowboard-title-wrap">
+            <input
+              className="flowboard-title-input"
+              value={boardTitle}
+              onChange={(e) => onBoardTitleChange(e.target.value)}
+              placeholder={variant === 'project' ? 'Flow board title' : 'Mood board title'}
+            />
+          </div>
+          <div className="flowboard-toolbar">
+            <button type="button" className="flowboard-btn" onClick={addTextNode}>Add note</button>
+            {variant === 'mood' ? (
+              <button type="button" className="flowboard-btn" onClick={addGroupNode}>Add group</button>
+            ) : null}
+            <button
+              type="button"
+              className="flowboard-btn"
+              onClick={triggerImageUpload}
+              disabled={isUploading}
+            >
+              {isUploading ? 'Uploading...' : 'Add image'}
+            </button>
+            <button
+              type="button"
+              className={`flowboard-btn${isImageUrlEntryOpen ? ' is-active' : ''}`}
+              onClick={isImageUrlEntryOpen ? closeImageUrlEntry : openImageUrlEntry}
+            >
+              {isImageUrlEntryOpen ? 'Close image URL' : 'Add image URL'}
+            </button>
+            <button type="button" className="flowboard-btn" onClick={onBoardShare}>Share</button>
+            <button type="button" className="flowboard-btn flowboard-danger" onClick={onBoardDelete}>Delete</button>
+          </div>
         </div>
-        <div className="flowboard-toolbar">
-          <button type="button" className="flowboard-btn" onClick={addTextNode}>Add note</button>
-          {variant === 'mood' ? (
-            <button type="button" className="flowboard-btn" onClick={addGroupNode}>Add group</button>
-          ) : null}
-          <button
-            type="button"
-            className="flowboard-btn"
-            onClick={triggerImageUpload}
-            disabled={isUploading}
-          >
-            {isUploading ? 'Uploading...' : 'Add image'}
-          </button>
-          <button type="button" className="flowboard-btn" onClick={onBoardShare}>Share</button>
-          <button type="button" className="flowboard-btn flowboard-danger" onClick={onBoardDelete}>Delete</button>
-        </div>
+        {isImageUrlEntryOpen ? (
+          <form className="flowboard-url-entry" onSubmit={(event) => { void handleImageUrlSubmit(event) }}>
+            <label className="flowboard-url-entry-label">
+              Image URL
+              <textarea
+                ref={imageUrlInputRef}
+                className="flowboard-url-entry-input"
+                value={imageUrlDraftText}
+                onChange={(event) => {
+                  setImageUrlDraftText(event.target.value)
+                  if (imageUrlEntryError) setImageUrlEntryError('')
+                }}
+                onKeyDown={handleImageUrlInputKeyDown}
+                placeholder="https://example.com/image.jpg"
+                rows={2}
+              />
+            </label>
+            <div className="flowboard-url-entry-actions">
+              <button type="submit" className="flowboard-btn">Add URL image</button>
+              <button type="button" className="flowboard-btn" onClick={closeImageUrlEntry}>Cancel</button>
+              <span className="flowboard-url-entry-hint">Tip: press Ctrl+V to paste an image file or image URL from your clipboard.</span>
+            </div>
+            {imageUrlEntryError ? <div className="flowboard-url-entry-error">{imageUrlEntryError}</div> : null}
+          </form>
+        ) : null}
       </header>
 
       <div className="flowboard-content">
@@ -1169,6 +1409,14 @@ function FlowBoardCanvasInner({
             onNodeDragStart={handleNodeDragStart}
             onNodeDrag={handleNodeDrag}
             onNodeDragStop={handleNodeDragStop}
+            onNodeDoubleClick={(event, node) => {
+              if (!onOpenImageAnnotation || !isImageNode(node)) return
+              const imageUrl = typeof node.data?.imageUrl === 'string' ? node.data.imageUrl.trim() : ''
+              if (!imageUrl) return
+              event.preventDefault()
+              event.stopPropagation()
+              onOpenImageAnnotation(imageUrl)
+            }}
             onConnect={variant === 'project' ? handleConnect : undefined}
             nodeTypes={NODE_TYPES}
             style={rfStyle}
@@ -1187,6 +1435,7 @@ function FlowBoardCanvasInner({
               const nextState = serializeFlowState(nodes, edges, viewportRef.current, {
                 canvasAppearance,
                 showNavigationPreview,
+                showImageLabels,
               })
               const serializedState = JSON.stringify(nextState)
               if (serializedState === lastPersistedStateRef.current) return
@@ -1218,8 +1467,19 @@ function FlowBoardCanvasInner({
             ) : null}
             <Controls showInteractive position="bottom-right" />
           </ReactFlow>
+          {detailRailMode === 'hidden' ? (
+            <button
+              type="button"
+              className="flowboard-detail-show-btn"
+              onClick={setDetailRailExpanded}
+              aria-label="Show details panel"
+              title="Show details panel"
+            >
+              {'<'}
+            </button>
+          ) : null}
         </div>
-        {detailRailMode !== 'hidden' ? (
+        {detailRailMode !== 'hidden' && (
           <>
             <div
               className="flowboard-detail-resizer"
@@ -1243,8 +1503,6 @@ function FlowBoardCanvasInner({
               </div>
             </aside>
           </>
-        ) : (
-          <button type="button" className="flowboard-detail-show-btn" onClick={setDetailRailExpanded}>Show details</button>
         )}
       </div>
 

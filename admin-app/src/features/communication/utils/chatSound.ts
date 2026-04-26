@@ -70,6 +70,23 @@ function installAudioUnlockListeners() {
   window.addEventListener('touchstart', tryUnlock, { passive: true })
 }
 
+export function primeChatAudio() {
+  if (typeof window === 'undefined') return
+  installAudioUnlockListeners()
+  const ctx = getSharedAudioContext()
+  if (!ctx || ctx.state !== 'running') return
+
+  const gain = ctx.createGain()
+  gain.gain.value = 0.0001
+  gain.connect(ctx.destination)
+  const osc = ctx.createOscillator()
+  osc.frequency.value = 1
+  osc.connect(gain)
+  const startAt = ctx.currentTime + 0.001
+  osc.start(startAt)
+  osc.stop(startAt + 0.01)
+}
+
 function playTone(frequency: number, durationMs: number, gainValue: number) {
   if (typeof window === 'undefined') return
   installAudioUnlockListeners()

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en-GB">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/images/icon-192.png" />
+    <link rel="apple-touch-icon" href="/images/icon-192.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#7c3aed" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@100;200;300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <title>WorkHub</title>
+    <meta name="title" content="WorkHub" />
+    <meta name="description" content="Workspace planning, task tracking, notes, and team collaboration." />
+
+    <!-- Open Graph / Facebook / WhatsApp -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://qyan.app/workhub" />
+    <meta property="og:title" content="WorkHub" />
+    <meta property="og:description" content="Workspace planning, task tracking, notes, and team collaboration." />
+    <meta property="og:image" content="https://qyan.app/images/TooryanLogo.png?v=workhub-20260408" />
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content="https://qyan.app/workhub" />
+    <meta property="twitter:title" content="WorkHub" />
+    <meta property="twitter:description" content="Workspace planning, task tracking, notes, and team collaboration." />
+    <meta property="twitter:image" content="https://qyan.app/images/TooryanLogo.png?v=workhub-20260408" />
+    <!-- Apply saved theme immediately to avoid flash -->
+    <script>
+      (function(){
+        try {
+          document.documentElement.setAttribute('data-theme', 'light');
+          localStorage.setItem('quizAdminTheme', 'light');
+        } catch(e) {}
+      })();
+    </script>
+    <!-- Prevent browser zoom (Ctrl+scroll, Ctrl+±, pinch) and page dragging -->
+    <script>
+      document.addEventListener('wheel', function(e){ if(e.ctrlKey){ e.preventDefault(); } }, { passive: false });
+      document.addEventListener('keydown', function(e){ if(e.ctrlKey && (e.key==='+' || e.key==='-' || e.key==='=' || e.key==='0')){ e.preventDefault(); } });
+    </script>
+    <script type="module" crossorigin src="/assets/index-DfgZ0u5T.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/react-vendor-CnHX55eu.js">
+    <link rel="modulepreload" crossorigin href="/assets/firebase-app-DQmPummf.js">
+    <link rel="modulepreload" crossorigin href="/assets/firebase-firestore-DkJlrTfp.js">
+    <link rel="modulepreload" crossorigin href="/assets/workhub-repo-BWhh7_g_.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-DU1-geD1.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

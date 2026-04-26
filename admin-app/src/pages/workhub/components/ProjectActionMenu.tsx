@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import type { WorkhubTemplateCreationIntent } from '../templateCreationMeta'
 import type { WorkhubWorkspaceTemplateId } from '../workspaceTemplates'
 
@@ -26,12 +26,13 @@ export const ProjectActionMenu = memo(function ProjectActionMenu(props: {
   onCreateTemplateEntity: (intent: WorkhubTemplateCreationIntent, projectId?: string) => void
   onOpenSettings: (projectId: string) => void
   onOpenMoodBoard: (entityType: 'workspace' | 'project', entityId: string) => void
-  onOpenMoodBoardV2: (entityType: 'workspace' | 'project', entityId: string) => void
   onOpenFlowProjectLab: (entityType: 'workspace' | 'project', entityId: string) => void
+  onOpenProsConsLab: (entityType: 'workspace' | 'project', entityId: string) => void
   moodBoardEnabled?: boolean
   contextName?: string
 }) {
   if (!props.projectId) return null
+  const [showAdvancedActions, setShowAdvancedActions] = useState(false)
 
   const trFolder = props.workspaceType === 'hr' ? 'folder' : props.workspaceType === 'finance' ? 'ledger' : 'project'
   const trTask = props.workspaceType === 'hr' ? 'objective' : props.workspaceType === 'finance' ? 'record' : 'task'
@@ -49,12 +50,12 @@ export const ProjectActionMenu = memo(function ProjectActionMenu(props: {
           <div className="workhub-action-dialog-grid">
             <button
               type="button"
-              className="workhub-action-card"
+              className="workhub-action-card is-record-action"
               disabled={!props.canCreateTopCategory}
               onClick={() => { props.onClose(); props.onCreateTask(selectedWorkspaceProjectId) }}
             >
-              <span className="workhub-action-card-icon">✅</span>
-              <span className="workhub-action-card-label">New task</span>
+              <span className="workhub-action-card-icon">🧾</span>
+              <span className="workhub-action-card-label">{trTask}</span>
             </button>
             <button
               type="button"
@@ -63,7 +64,7 @@ export const ProjectActionMenu = memo(function ProjectActionMenu(props: {
               onClick={() => { props.onClose(); props.onCreateDocument(selectedWorkspaceProjectId) }}
             >
               <span className="workhub-action-card-icon">📝</span>
-              <span className="workhub-action-card-label">New document</span>
+              <span className="workhub-action-card-label">Document</span>
             </button>
             <button
               type="button"
@@ -72,9 +73,8 @@ export const ProjectActionMenu = memo(function ProjectActionMenu(props: {
               onClick={() => { props.onClose(); props.onCreateNote(selectedWorkspaceProjectId) }}
             >
               <span className="workhub-action-card-icon">🗒️</span>
-              <span className="workhub-action-card-label">New note</span>
+              <span className="workhub-action-card-label">Note</span>
             </button>
-            <div className="workhub-action-dialog-divider" />
             <button
               type="button"
               className="workhub-action-card is-project-action"
@@ -82,7 +82,7 @@ export const ProjectActionMenu = memo(function ProjectActionMenu(props: {
               onClick={() => { props.onClose(); props.onCreateTemplateEntity('project', '') }}
             >
               <span className="workhub-action-card-icon">🚀</span>
-              <span className="workhub-action-card-label">New project</span>
+              <span className="workhub-action-card-label">Project</span>
             </button>
             <button
               type="button"
@@ -91,8 +91,18 @@ export const ProjectActionMenu = memo(function ProjectActionMenu(props: {
               onClick={() => { props.onClose(); props.onCreateSubProject('') }}
             >
               <span className="workhub-action-card-icon">📁</span>
-              <span className="workhub-action-card-label">New folder</span>
+              <span className="workhub-action-card-label">Folder</span>
             </button>
+            <button
+              type="button"
+              className="workhub-action-card-toggle"
+              onClick={() => setShowAdvancedActions((current) => !current)}
+            >
+              {showAdvancedActions ? 'Hide extra tools' : 'Show more tools'}
+            </button>
+            {showAdvancedActions ? <div className="workhub-action-dialog-divider" /> : null}
+            {showAdvancedActions ? (
+              <>
             {selectedWorkspaceProjectId && (
               <>
                 <button
@@ -131,28 +141,39 @@ export const ProjectActionMenu = memo(function ProjectActionMenu(props: {
               <button
                 type="button"
                 className="workhub-action-card is-moodboard-action"
-                onClick={() => { props.onClose(); props.onOpenMoodBoard('workspace', selectedWorkspaceProjectId || '__workspace__') }}
+                onClick={() => {
+                  props.onClose()
+                  props.onOpenMoodBoard(selectedWorkspaceProjectId ? 'project' : 'workspace', selectedWorkspaceProjectId || '__workspace__')
+                }}
               >
                 <span className="workhub-action-card-icon">🎨</span>
-                <span className="workhub-action-card-label">New mood board</span>
+                <span className="workhub-action-card-label">Mood board</span>
               </button>
             )}
             <button
               type="button"
               className="workhub-action-card"
-              onClick={() => { props.onClose(); props.onOpenMoodBoardV2('workspace', selectedWorkspaceProjectId || '__workspace__') }}
-            >
-              <span className="workhub-action-card-icon">🧠</span>
-              <span className="workhub-action-card-label">Mood Board #2</span>
-            </button>
-            <button
-              type="button"
-              className="workhub-action-card"
-              onClick={() => { props.onClose(); props.onOpenFlowProjectLab('workspace', selectedWorkspaceProjectId || '__workspace__') }}
+              onClick={() => {
+                props.onClose()
+                props.onOpenFlowProjectLab(selectedWorkspaceProjectId ? 'project' : 'workspace', selectedWorkspaceProjectId || '__workspace__')
+              }}
             >
               <span className="workhub-action-card-icon">🧭</span>
               <span className="workhub-action-card-label">Flow Project Lab</span>
             </button>
+            <button
+              type="button"
+              className="workhub-action-card is-proscons-action"
+              onClick={() => {
+                props.onClose()
+                props.onOpenProsConsLab(selectedWorkspaceProjectId ? 'project' : 'workspace', selectedWorkspaceProjectId || '__workspace__')
+              }}
+            >
+              <span className="workhub-action-card-icon">⚖️</span>
+              <span className="workhub-action-card-label">Pros &amp; Cons</span>
+            </button>
+              </>
+            ) : null}
           </div>
         </div>
       </div>
@@ -167,19 +188,18 @@ export const ProjectActionMenu = memo(function ProjectActionMenu(props: {
           <button type="button" className="workhub-action-dialog-close" onClick={props.onClose} aria-label="Close">✕</button>
         </div>
         <div className="workhub-action-dialog-grid">
-          <button type="button" className="workhub-action-card" onClick={() => { props.onClose(); props.onCreateTask(props.projectId || '') }}>
-            <span className="workhub-action-card-icon">✓</span>
-            <span className="workhub-action-card-label" style={{ textTransform: 'capitalize' }}>New {trTask}</span>
+          <button type="button" className="workhub-action-card is-record-action" onClick={() => { props.onClose(); props.onCreateTask(props.projectId || '') }}>
+            <span className="workhub-action-card-icon">🧾</span>
+            <span className="workhub-action-card-label" style={{ textTransform: 'capitalize' }}>{trTask}</span>
           </button>
           <button type="button" className="workhub-action-card" onClick={() => { props.onClose(); props.onCreateDocument(props.projectId || '') }}>
             <span className="workhub-action-card-icon">📝</span>
-            <span className="workhub-action-card-label">New document</span>
+            <span className="workhub-action-card-label">Document</span>
           </button>
           <button type="button" className="workhub-action-card is-note-action" onClick={() => { props.onClose(); props.onCreateNote(props.projectId || '') }}>
             <span className="workhub-action-card-icon">🗒️</span>
-            <span className="workhub-action-card-label">New note</span>
+            <span className="workhub-action-card-label">Note</span>
           </button>
-          <div className="workhub-action-dialog-divider" />
           <button
             type="button"
             className="workhub-action-card is-project-action"
@@ -187,7 +207,7 @@ export const ProjectActionMenu = memo(function ProjectActionMenu(props: {
           >
             <span className="workhub-action-card-icon">🚀</span>
             <span className="workhub-action-card-label" style={{ textTransform: 'capitalize' }}>
-              New {trFolder === 'project' ? 'project' : trFolder}
+              {trFolder === 'project' ? 'project' : trFolder}
             </span>
           </button>
           <button
@@ -196,9 +216,23 @@ export const ProjectActionMenu = memo(function ProjectActionMenu(props: {
             onClick={() => { props.onClose(); props.onCreateSubProject(props.projectId || '') }}
           >
             <span className="workhub-action-card-icon">📁</span>
-            <span className="workhub-action-card-label" style={{ textTransform: 'capitalize' }}>New folder</span>
+            <span className="workhub-action-card-label" style={{ textTransform: 'capitalize' }}>folder</span>
           </button>
-          {props.templateCreateActions.map((action) => (
+          {props.canManageProject && (
+            <button type="button" className="workhub-action-card is-settings-action" onClick={() => { props.onClose(); props.onOpenSettings(props.projectId || '') }}>
+              <span className="workhub-action-card-icon">⚙️</span>
+              <span className="workhub-action-card-label">Open settings</span>
+            </button>
+          )}
+          <button
+            type="button"
+            className="workhub-action-card-toggle"
+            onClick={() => setShowAdvancedActions((current) => !current)}
+          >
+            {showAdvancedActions ? 'Hide extra tools' : 'Show more tools'}
+          </button>
+          {showAdvancedActions ? <div className="workhub-action-dialog-divider" /> : null}
+          {showAdvancedActions ? props.templateCreateActions.map((action) => (
             <button
               key={action.id}
               type="button"
@@ -214,42 +248,36 @@ export const ProjectActionMenu = memo(function ProjectActionMenu(props: {
             >
               <span className="workhub-action-card-icon">{action.icon}</span>
               <span className="workhub-action-card-label" style={action.intent === 'project' ? { textTransform: 'capitalize' } : undefined}>
-                {action.intent === 'project' ? `New sub-${trFolder}` : action.label}
+                {action.intent === 'project' ? `sub-${trFolder}` : action.label}
               </span>
             </button>
-          ))}
-          {props.moodBoardEnabled !== false && (
+          )) : null}
+          {showAdvancedActions && props.moodBoardEnabled !== false && (
             <button
               type="button"
               className="workhub-action-card is-moodboard-action"
               onClick={() => { props.onClose(); props.onOpenMoodBoard('project', props.projectId || '') }}
             >
               <span className="workhub-action-card-icon">🎨</span>
-              <span className="workhub-action-card-label">New mood board</span>
+              <span className="workhub-action-card-label">Mood board</span>
             </button>
           )}
-          <button
-            type="button"
-            className="workhub-action-card"
-            onClick={() => { props.onClose(); props.onOpenMoodBoardV2('project', props.projectId || '') }}
-          >
-            <span className="workhub-action-card-icon">🧠</span>
-            <span className="workhub-action-card-label">Mood Board #2</span>
-          </button>
-          <button
+          {showAdvancedActions ? <button
             type="button"
             className="workhub-action-card"
             onClick={() => { props.onClose(); props.onOpenFlowProjectLab('project', props.projectId || '') }}
           >
             <span className="workhub-action-card-icon">🧭</span>
             <span className="workhub-action-card-label">Flow Project Lab</span>
-          </button>
-          {props.canManageProject && (
-            <button type="button" className="workhub-action-card is-settings-action" onClick={() => { props.onClose(); props.onOpenSettings(props.projectId || '') }}>
-              <span className="workhub-action-card-icon">⚙</span>
-              <span className="workhub-action-card-label">Open settings</span>
-            </button>
-          )}
+          </button> : null}
+          {showAdvancedActions ? <button
+            type="button"
+            className="workhub-action-card is-proscons-action"
+            onClick={() => { props.onClose(); props.onOpenProsConsLab('project', props.projectId || '') }}
+          >
+            <span className="workhub-action-card-icon">⚖️</span>
+            <span className="workhub-action-card-label">Pros &amp; Cons</span>
+          </button> : null}
         </div>
       </div>
     </div>

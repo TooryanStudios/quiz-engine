@@ -1,0 +1,789 @@
+{
+  "_ScannerDesktopPage-CxjkfjBU.css": {
+    "file": "assets/ScannerDesktopPage-CxjkfjBU.css",
+    "src": "_ScannerDesktopPage-CxjkfjBU.css"
+  },
+  "_ScannerDesktopPage-dqdcOM3H.js": {
+    "file": "assets/ScannerDesktopPage-dqdcOM3H.js",
+    "name": "ScannerDesktopPage",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-CnHX55eu.js",
+      "_firebase-app-DQmPummf.js",
+      "_workhub-repo-BWhh7_g_.js",
+      "_firebase-firestore-DkJlrTfp.js"
+    ],
+    "css": [
+      "assets/ScannerDesktopPage-CxjkfjBU.css"
+    ]
+  },
+  "_WorkHubPage-XHrjfuwi.js": {
+    "file": "assets/WorkHubPage-XHrjfuwi.js",
+    "name": "WorkHubPage",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html",
+      "_react-vendor-CnHX55eu.js",
+      "_firebase-app-DQmPummf.js",
+      "_workhub-repo-BWhh7_g_.js",
+      "_workhub-emoji-BM7LTgyg.js",
+      "_projectUtils-Bv5sIIer.js"
+    ],
+    "dynamicImports": [
+      "src/pages/workhub/components/WorkhubNotesSection.tsx",
+      "src/pages/workhub/components/WorkhubMoodboardSection.tsx",
+      "src/pages/workhub/components/WorkhubTasksSection.tsx",
+      "src/pages/workhub/components/WorkhubProjectDetailRail.tsx",
+      "src/pages/workhub/components/WorkhubUsersSection.tsx",
+      "src/pages/workhub/components/WorkhubClientsSection.tsx",
+      "src/pages/workhub/components/WorkhubHomeSection.tsx",
+      "_workhub-doc-editor-DcJvShmF.js"
+    ]
+  },
+  "_coverImage-CpJiDrvK.js": {
+    "file": "assets/coverImage-CpJiDrvK.js",
+    "name": "coverImage",
+    "imports": [
+      "_workhub-repo-BWhh7_g_.js"
+    ]
+  },
+  "_engine-BjhMBfVk.js": {
+    "file": "assets/engine-BjhMBfVk.js",
+    "name": "engine"
+  },
+  "_firebase-app-DQmPummf.js": {
+    "file": "assets/firebase-app-DQmPummf.js",
+    "name": "firebase-app"
+  },
+  "_firebase-firestore-DkJlrTfp.js": {
+    "file": "assets/firebase-firestore-DkJlrTfp.js",
+    "name": "firebase-firestore",
+    "imports": [
+      "_firebase-app-DQmPummf.js"
+    ]
+  },
+  "_game-loader-C7H5GGqg.js": {
+    "file": "assets/game-loader-C7H5GGqg.js",
+    "name": "game-loader",
+    "imports": [
+      "index.html"
+    ],
+    "dynamicImports": [
+      "modular-game-platform/src/games/game-01/index.ts",
+      "modular-game-platform/src/games/game-02/index.ts",
+      "modular-game-platform/src/games/build-the-story/index.ts",
+      "modular-game-platform/src/games/map-quest-trivia/index.ts",
+      "modular-game-platform/src/games/debate-duel-quiz/index.ts",
+      "modular-game-platform/src/games/puzzle-relay/index.ts",
+      "modular-game-platform/src/games/time-pressure-heist/index.ts",
+      "modular-game-platform/src/games/memory-grid-battle/index.ts",
+      "modular-game-platform/src/games/reverse-quiz/index.ts",
+      "modular-game-platform/src/games/fact-or-fiction-lab/index.ts",
+      "modular-game-platform/src/games/creative-constraint-quiz/index.ts",
+      "modular-game-platform/src/games/html5-target-rush/index.ts",
+      "modular-game-platform/src/games/lights-skill-game/index.ts",
+      "modular-game-platform/src/games/fish-fence-count/index.ts",
+      "modular-game-platform/src/games/alliance-betrayal-mode/index.ts"
+    ]
+  },
+  "_gameModeUrl-GVcIAkOQ.js": {
+    "file": "assets/gameModeUrl-GVcIAkOQ.js",
+    "name": "gameModeUrl"
+  },
+  "_hostLaunchAuth-CbSedVR6.js": {
+    "file": "assets/hostLaunchAuth-CbSedVR6.js",
+    "name": "hostLaunchAuth",
+    "imports": [
+      "index.html"
+    ]
+  },
+  "_play-CJNnv5kV.js": {
+    "file": "assets/play-CJNnv5kV.js",
+    "name": "play",
+    "imports": [
+      "_react-vendor-CnHX55eu.js",
+      "_game-loader-C7H5GGqg.js"
+    ],
+    "css": [
+      "assets/play-sIxucVTW.css"
+    ]
+  },
+  "_play-sIxucVTW.css": {
+    "file": "assets/play-sIxucVTW.css",
+    "src": "_play-sIxucVTW.css"
+  },
+  "_projectUtils-Bv5sIIer.js": {
+    "file": "assets/projectUtils-Bv5sIIer.js",
+    "name": "projectUtils"
+  },
+  "_questionTypeSchemas-Ds7CNsGS.js": {
+    "file": "assets/questionTypeSchemas-Ds7CNsGS.js",
+    "name": "questionTypeSchemas"
+  },
+  "_quizQuestions-D3zzigR5.js": {
+    "file": "assets/quizQuestions-D3zzigR5.js",
+    "name": "quizQuestions",
+    "imports": [
+      "_workhub-repo-BWhh7_g_.js"
+    ]
+  },
+  "_quizRepo-Bht3nGH8.js": {
+    "file": "assets/quizRepo-Bht3nGH8.js",
+    "name": "quizRepo",
+    "imports": [
+      "_firebase-firestore-DkJlrTfp.js",
+      "_workhub-repo-BWhh7_g_.js"
+    ]
+  },
+  "_react-vendor-CnHX55eu.js": {
+    "file": "assets/react-vendor-CnHX55eu.js",
+    "name": "react-vendor"
+  },
+  "_useSubscription-Dlf5QTA4.js": {
+    "file": "assets/useSubscription-Dlf5QTA4.js",
+    "name": "useSubscription",
+    "imports": [
+      "_react-vendor-CnHX55eu.js",
+      "_firebase-firestore-DkJlrTfp.js",
+      "_workhub-repo-BWhh7_g_.js"
+    ]
+  },
+  "_useTheme-D3C976gH.js": {
+    "file": "assets/useTheme-D3C976gH.js",
+    "name": "useTheme",
+    "imports": [
+      "_react-vendor-CnHX55eu.js"
+    ]
+  },
+  "_utils-DycDqSGU.js": {
+    "file": "assets/utils-DycDqSGU.js",
+    "name": "utils"
+  },
+  "_workhub-doc-editor-DcJvShmF.js": {
+    "file": "assets/workhub-doc-editor-DcJvShmF.js",
+    "name": "workhub-doc-editor",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-CnHX55eu.js",
+      "_workhub-repo-BWhh7_g_.js",
+      "_workhub-tinymce-CXZq4Qfj.js",
+      "_workhub-emoji-BM7LTgyg.js"
+    ]
+  },
+  "_workhub-emoji-BM7LTgyg.js": {
+    "file": "assets/workhub-emoji-BM7LTgyg.js",
+    "name": "workhub-emoji",
+    "imports": [
+      "_react-vendor-CnHX55eu.js"
+    ]
+  },
+  "_workhub-flow-BZV40eAE.css": {
+    "file": "assets/workhub-flow-BZV40eAE.css",
+    "src": "_workhub-flow-BZV40eAE.css"
+  },
+  "_workhub-flow-D4nCwCqv.js": {
+    "file": "assets/workhub-flow-D4nCwCqv.js",
+    "name": "workhub-flow",
+    "imports": [
+      "_react-vendor-CnHX55eu.js"
+    ],
+    "css": [
+      "assets/workhub-flow-BZV40eAE.css"
+    ]
+  },
+  "_workhub-moodboard-Cu9I-oFv.js": {
+    "file": "assets/workhub-moodboard-Cu9I-oFv.js",
+    "name": "workhub-moodboard",
+    "imports": [
+      "_react-vendor-CnHX55eu.js",
+      "_workhub-flow-D4nCwCqv.js"
+    ],
+    "css": [
+      "assets/workhub-moodboard-DHmSjLVo.css"
+    ]
+  },
+  "_workhub-moodboard-DHmSjLVo.css": {
+    "file": "assets/workhub-moodboard-DHmSjLVo.css",
+    "src": "_workhub-moodboard-DHmSjLVo.css"
+  },
+  "_workhub-repo-BWhh7_g_.js": {
+    "file": "assets/workhub-repo-BWhh7_g_.js",
+    "name": "workhub-repo",
+    "imports": [
+      "_firebase-firestore-DkJlrTfp.js",
+      "_firebase-app-DQmPummf.js"
+    ]
+  },
+  "_workhub-tinymce-CXZq4Qfj.js": {
+    "file": "assets/workhub-tinymce-CXZq4Qfj.js",
+    "name": "workhub-tinymce",
+    "imports": [
+      "_react-vendor-CnHX55eu.js"
+    ]
+  },
+  "index.html": {
+    "file": "assets/index-DfgZ0u5T.js",
+    "name": "index",
+    "src": "index.html",
+    "isEntry": true,
+    "imports": [
+      "_react-vendor-CnHX55eu.js",
+      "_firebase-app-DQmPummf.js",
+      "_workhub-repo-BWhh7_g_.js",
+      "_firebase-firestore-DkJlrTfp.js"
+    ],
+    "dynamicImports": [
+      "src/pages/DashboardPage.tsx",
+      "src/pages/BillingPage.tsx",
+      "src/pages/DashboardPage.tsx",
+      "src/pages/PacksPage.tsx",
+      "src/pages/MyQuizzesPage.tsx",
+      "_WorkHubPage-XHrjfuwi.js",
+      "src/features/communication/pages/MessagesPage.tsx",
+      "src/features/workhubAdhoc/pages/AdHocTasksPage.tsx",
+      "src/pages/ProfilePage.tsx",
+      "src/pages/QuizEditorPage.tsx",
+      "src/pages/QuizPreviewPage.tsx",
+      "src/pages/GameModesPage.tsx",
+      "src/pages/MasterAdminPage.tsx",
+      "src/pages/VoiceLabPage.tsx",
+      "src/pages/AILabPage.tsx",
+      "src/pages/CoverGenLabPage.tsx",
+      "src/pages/PlayTestPage.tsx",
+      "src/pages/GameEmbedPage.tsx",
+      "src/scanner/ScannerPage.tsx",
+      "_ScannerDesktopPage-dqdcOM3H.js"
+    ],
+    "css": [
+      "assets/index-DU1-geD1.css"
+    ],
+    "assets": [
+      "assets/images/QYan_logo_300x164-D746paDg.jpg"
+    ]
+  },
+  "modular-game-platform/src/games/alliance-betrayal-mode/index.ts": {
+    "file": "assets/index-Cd8bTlHr.js",
+    "name": "index",
+    "src": "modular-game-platform/src/games/alliance-betrayal-mode/index.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "_engine-BjhMBfVk.js"
+    ]
+  },
+  "modular-game-platform/src/games/build-the-story/index.ts": {
+    "file": "assets/index-5TwO0EbZ.js",
+    "name": "index",
+    "src": "modular-game-platform/src/games/build-the-story/index.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "_engine-BjhMBfVk.js"
+    ]
+  },
+  "modular-game-platform/src/games/creative-constraint-quiz/index.ts": {
+    "file": "assets/index-Cq0a5R17.js",
+    "name": "index",
+    "src": "modular-game-platform/src/games/creative-constraint-quiz/index.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "_engine-BjhMBfVk.js"
+    ]
+  },
+  "modular-game-platform/src/games/debate-duel-quiz/index.ts": {
+    "file": "assets/index-DD74Yapg.js",
+    "name": "index",
+    "src": "modular-game-platform/src/games/debate-duel-quiz/index.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "_engine-BjhMBfVk.js"
+    ]
+  },
+  "modular-game-platform/src/games/fact-or-fiction-lab/index.ts": {
+    "file": "assets/index-CxN78zlX.js",
+    "name": "index",
+    "src": "modular-game-platform/src/games/fact-or-fiction-lab/index.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "_engine-BjhMBfVk.js"
+    ]
+  },
+  "modular-game-platform/src/games/fish-fence-count/index.ts": {
+    "file": "assets/index-DR_oYXGl.js",
+    "name": "index",
+    "src": "modular-game-platform/src/games/fish-fence-count/index.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "_engine-BjhMBfVk.js",
+      "_react-vendor-CnHX55eu.js"
+    ],
+    "css": [
+      "assets/index-3RHRHYll.css"
+    ]
+  },
+  "modular-game-platform/src/games/game-01/index.ts": {
+    "file": "assets/index-62oEQ6gY.js",
+    "name": "index",
+    "src": "modular-game-platform/src/games/game-01/index.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "_engine-BjhMBfVk.js"
+    ]
+  },
+  "modular-game-platform/src/games/game-02/index.ts": {
+    "file": "assets/index-BcIhrP9D.js",
+    "name": "index",
+    "src": "modular-game-platform/src/games/game-02/index.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "_engine-BjhMBfVk.js"
+    ]
+  },
+  "modular-game-platform/src/games/html5-target-rush/index.ts": {
+    "file": "assets/index-mHC9nJ3E.js",
+    "name": "index",
+    "src": "modular-game-platform/src/games/html5-target-rush/index.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "_engine-BjhMBfVk.js",
+      "_react-vendor-CnHX55eu.js"
+    ],
+    "css": [
+      "assets/index-DK_90TuD.css"
+    ]
+  },
+  "modular-game-platform/src/games/lights-skill-game/index.ts": {
+    "file": "assets/index-FF7PfxHN.js",
+    "name": "index",
+    "src": "modular-game-platform/src/games/lights-skill-game/index.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "_engine-BjhMBfVk.js",
+      "_react-vendor-CnHX55eu.js"
+    ],
+    "css": [
+      "assets/index-CjDpQ-cF.css"
+    ]
+  },
+  "modular-game-platform/src/games/map-quest-trivia/index.ts": {
+    "file": "assets/index-Da1-6oxn.js",
+    "name": "index",
+    "src": "modular-game-platform/src/games/map-quest-trivia/index.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "_engine-BjhMBfVk.js"
+    ]
+  },
+  "modular-game-platform/src/games/memory-grid-battle/index.ts": {
+    "file": "assets/index-C05HK_bB.js",
+    "name": "index",
+    "src": "modular-game-platform/src/games/memory-grid-battle/index.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "_engine-BjhMBfVk.js"
+    ]
+  },
+  "modular-game-platform/src/games/puzzle-relay/index.ts": {
+    "file": "assets/index-Dy3ku8Tu.js",
+    "name": "index",
+    "src": "modular-game-platform/src/games/puzzle-relay/index.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "_engine-BjhMBfVk.js"
+    ]
+  },
+  "modular-game-platform/src/games/reverse-quiz/index.ts": {
+    "file": "assets/index-BiUNZckS.js",
+    "name": "index",
+    "src": "modular-game-platform/src/games/reverse-quiz/index.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "_engine-BjhMBfVk.js"
+    ]
+  },
+  "modular-game-platform/src/games/time-pressure-heist/index.ts": {
+    "file": "assets/index-D9xNI5Wa.js",
+    "name": "index",
+    "src": "modular-game-platform/src/games/time-pressure-heist/index.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "_engine-BjhMBfVk.js"
+    ]
+  },
+  "src/assets/QYan_logo_300x164.jpg": {
+    "file": "assets/images/QYan_logo_300x164-D746paDg.jpg",
+    "src": "src/assets/QYan_logo_300x164.jpg"
+  },
+  "src/features/communication/pages/MessagesPage.tsx": {
+    "file": "assets/MessagesPage-C_jwQRof.js",
+    "name": "MessagesPage",
+    "src": "src/features/communication/pages/MessagesPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-CnHX55eu.js",
+      "_workhub-repo-BWhh7_g_.js",
+      "index.html",
+      "_firebase-firestore-DkJlrTfp.js",
+      "_firebase-app-DQmPummf.js"
+    ]
+  },
+  "src/features/workhubAdhoc/pages/AdHocTasksPage.tsx": {
+    "file": "assets/AdHocTasksPage-Djr6dFbm.js",
+    "name": "AdHocTasksPage",
+    "src": "src/features/workhubAdhoc/pages/AdHocTasksPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-CnHX55eu.js",
+      "_firebase-app-DQmPummf.js",
+      "_workhub-repo-BWhh7_g_.js",
+      "index.html",
+      "_projectUtils-Bv5sIIer.js",
+      "_firebase-firestore-DkJlrTfp.js"
+    ],
+    "css": [
+      "assets/AdHocTasksPage-BrZHWN64.css"
+    ]
+  },
+  "src/pages/AILabPage.tsx": {
+    "file": "assets/AILabPage-CbBhWnNO.js",
+    "name": "AILabPage",
+    "src": "src/pages/AILabPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-CnHX55eu.js",
+      "index.html",
+      "_quizQuestions-D3zzigR5.js",
+      "_firebase-app-DQmPummf.js",
+      "_workhub-repo-BWhh7_g_.js",
+      "_firebase-firestore-DkJlrTfp.js"
+    ]
+  },
+  "src/pages/BillingPage.tsx": {
+    "file": "assets/BillingPage-CinKuSVD.js",
+    "name": "BillingPage",
+    "src": "src/pages/BillingPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-CnHX55eu.js",
+      "_useSubscription-Dlf5QTA4.js",
+      "index.html",
+      "_firebase-firestore-DkJlrTfp.js",
+      "_firebase-app-DQmPummf.js",
+      "_workhub-repo-BWhh7_g_.js"
+    ]
+  },
+  "src/pages/CoverGenLabPage.tsx": {
+    "file": "assets/CoverGenLabPage-CZcoyhUA.js",
+    "name": "CoverGenLabPage",
+    "src": "src/pages/CoverGenLabPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-CnHX55eu.js",
+      "_workhub-repo-BWhh7_g_.js",
+      "index.html",
+      "_coverImage-CpJiDrvK.js",
+      "_firebase-firestore-DkJlrTfp.js",
+      "_firebase-app-DQmPummf.js"
+    ]
+  },
+  "src/pages/DashboardPage.tsx": {
+    "file": "assets/DashboardPage-sbQStm3n.js",
+    "name": "DashboardPage",
+    "src": "src/pages/DashboardPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-CnHX55eu.js",
+      "_workhub-repo-BWhh7_g_.js",
+      "_quizRepo-Bht3nGH8.js",
+      "_utils-DycDqSGU.js",
+      "index.html",
+      "_hostLaunchAuth-CbSedVR6.js",
+      "_gameModeUrl-GVcIAkOQ.js",
+      "_useSubscription-Dlf5QTA4.js",
+      "_firebase-firestore-DkJlrTfp.js",
+      "_firebase-app-DQmPummf.js"
+    ],
+    "css": [
+      "assets/DashboardPage-Ca3hRl3O.css"
+    ]
+  },
+  "src/pages/GameEmbedPage.tsx": {
+    "file": "assets/GameEmbedPage-CFJfFiha.js",
+    "name": "GameEmbedPage",
+    "src": "src/pages/GameEmbedPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-CnHX55eu.js",
+      "_play-CJNnv5kV.js",
+      "_game-loader-C7H5GGqg.js",
+      "index.html",
+      "_firebase-app-DQmPummf.js",
+      "_workhub-repo-BWhh7_g_.js",
+      "_firebase-firestore-DkJlrTfp.js"
+    ]
+  },
+  "src/pages/GameModesPage.tsx": {
+    "file": "assets/GameModesPage-Dpuyhoz_.js",
+    "name": "GameModesPage",
+    "src": "src/pages/GameModesPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-CnHX55eu.js",
+      "_game-loader-C7H5GGqg.js",
+      "_quizRepo-Bht3nGH8.js",
+      "_workhub-repo-BWhh7_g_.js",
+      "index.html",
+      "_firebase-firestore-DkJlrTfp.js",
+      "_firebase-app-DQmPummf.js"
+    ]
+  },
+  "src/pages/MasterAdminPage.tsx": {
+    "file": "assets/MasterAdminPage-Cjm3BalE.js",
+    "name": "MasterAdminPage",
+    "src": "src/pages/MasterAdminPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-CnHX55eu.js",
+      "_firebase-app-DQmPummf.js",
+      "_workhub-repo-BWhh7_g_.js",
+      "_useTheme-D3C976gH.js",
+      "_firebase-firestore-DkJlrTfp.js",
+      "index.html",
+      "_utils-DycDqSGU.js"
+    ]
+  },
+  "src/pages/MyQuizzesPage.tsx": {
+    "file": "assets/MyQuizzesPage-CtwVTRhb.js",
+    "name": "MyQuizzesPage",
+    "src": "src/pages/MyQuizzesPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-CnHX55eu.js",
+      "_workhub-repo-BWhh7_g_.js",
+      "_quizRepo-Bht3nGH8.js",
+      "_utils-DycDqSGU.js",
+      "_gameModeUrl-GVcIAkOQ.js",
+      "_useTheme-D3C976gH.js",
+      "index.html",
+      "_firebase-firestore-DkJlrTfp.js",
+      "_firebase-app-DQmPummf.js"
+    ],
+    "css": [
+      "assets/MyQuizzesPage-ByJWrCT5.css"
+    ]
+  },
+  "src/pages/PacksPage.tsx": {
+    "file": "assets/PacksPage-CGwRAu6K.js",
+    "name": "PacksPage",
+    "src": "src/pages/PacksPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-CnHX55eu.js",
+      "_workhub-repo-BWhh7_g_.js",
+      "_useTheme-D3C976gH.js",
+      "index.html",
+      "_quizRepo-Bht3nGH8.js",
+      "_hostLaunchAuth-CbSedVR6.js",
+      "_gameModeUrl-GVcIAkOQ.js",
+      "_useSubscription-Dlf5QTA4.js",
+      "_firebase-firestore-DkJlrTfp.js",
+      "_firebase-app-DQmPummf.js"
+    ]
+  },
+  "src/pages/PlayTestPage.tsx": {
+    "file": "assets/PlayTestPage-Dhkl4Uyc.js",
+    "name": "PlayTestPage",
+    "src": "src/pages/PlayTestPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-CnHX55eu.js",
+      "_play-CJNnv5kV.js",
+      "index.html",
+      "_quizRepo-Bht3nGH8.js",
+      "_game-loader-C7H5GGqg.js",
+      "_firebase-app-DQmPummf.js",
+      "_workhub-repo-BWhh7_g_.js",
+      "_firebase-firestore-DkJlrTfp.js"
+    ]
+  },
+  "src/pages/ProfilePage.tsx": {
+    "file": "assets/ProfilePage-CvVIbWjy.js",
+    "name": "ProfilePage",
+    "src": "src/pages/ProfilePage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-CnHX55eu.js",
+      "_firebase-app-DQmPummf.js",
+      "_workhub-repo-BWhh7_g_.js",
+      "index.html",
+      "_useSubscription-Dlf5QTA4.js",
+      "_firebase-firestore-DkJlrTfp.js"
+    ],
+    "css": [
+      "assets/ProfilePage-CE4E0TST.css"
+    ]
+  },
+  "src/pages/QuizEditorPage.tsx": {
+    "file": "assets/QuizEditorPage-DoIK03NF.js",
+    "name": "QuizEditorPage",
+    "src": "src/pages/QuizEditorPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-CnHX55eu.js",
+      "_quizQuestions-D3zzigR5.js",
+      "_workhub-repo-BWhh7_g_.js",
+      "index.html",
+      "_firebase-app-DQmPummf.js",
+      "_useSubscription-Dlf5QTA4.js",
+      "_hostLaunchAuth-CbSedVR6.js",
+      "_gameModeUrl-GVcIAkOQ.js",
+      "_questionTypeSchemas-Ds7CNsGS.js",
+      "_quizRepo-Bht3nGH8.js",
+      "_coverImage-CpJiDrvK.js",
+      "_firebase-firestore-DkJlrTfp.js"
+    ],
+    "css": [
+      "assets/QuizEditorPage-hpB4utH9.css"
+    ]
+  },
+  "src/pages/QuizPreviewPage.tsx": {
+    "file": "assets/QuizPreviewPage-C5OouQ17.js",
+    "name": "QuizPreviewPage",
+    "src": "src/pages/QuizPreviewPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-CnHX55eu.js",
+      "_quizRepo-Bht3nGH8.js",
+      "_questionTypeSchemas-Ds7CNsGS.js",
+      "index.html",
+      "_firebase-firestore-DkJlrTfp.js",
+      "_firebase-app-DQmPummf.js",
+      "_workhub-repo-BWhh7_g_.js"
+    ]
+  },
+  "src/pages/VoiceLabPage.tsx": {
+    "file": "assets/VoiceLabPage-B_qrgC16.js",
+    "name": "VoiceLabPage",
+    "src": "src/pages/VoiceLabPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-CnHX55eu.js",
+      "_firebase-firestore-DkJlrTfp.js",
+      "_workhub-repo-BWhh7_g_.js",
+      "index.html",
+      "_firebase-app-DQmPummf.js"
+    ],
+    "css": [
+      "assets/VoiceLabPage-QGLutRKL.css"
+    ]
+  },
+  "src/pages/workhub/components/WorkhubClientsSection.tsx": {
+    "file": "assets/WorkhubClientsSection-6jgJBasE.js",
+    "name": "WorkhubClientsSection",
+    "src": "src/pages/workhub/components/WorkhubClientsSection.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-CnHX55eu.js",
+      "_workhub-repo-BWhh7_g_.js",
+      "_firebase-firestore-DkJlrTfp.js",
+      "_firebase-app-DQmPummf.js"
+    ]
+  },
+  "src/pages/workhub/components/WorkhubHomeSection.tsx": {
+    "file": "assets/WorkhubHomeSection-BEnwhG6I.js",
+    "name": "WorkhubHomeSection",
+    "src": "src/pages/workhub/components/WorkhubHomeSection.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-CnHX55eu.js"
+    ]
+  },
+  "src/pages/workhub/components/WorkhubMoodboardSection.tsx": {
+    "file": "assets/WorkhubMoodboardSection-cZkiDe0o.js",
+    "name": "WorkhubMoodboardSection",
+    "src": "src/pages/workhub/components/WorkhubMoodboardSection.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-CnHX55eu.js",
+      "_workhub-repo-BWhh7_g_.js",
+      "_workhub-moodboard-Cu9I-oFv.js",
+      "_workhub-doc-editor-DcJvShmF.js",
+      "_firebase-firestore-DkJlrTfp.js",
+      "_firebase-app-DQmPummf.js",
+      "_workhub-flow-D4nCwCqv.js",
+      "_workhub-tinymce-CXZq4Qfj.js",
+      "_workhub-emoji-BM7LTgyg.js"
+    ]
+  },
+  "src/pages/workhub/components/WorkhubNotesSection.tsx": {
+    "file": "assets/WorkhubNotesSection-CsgWqYPa.js",
+    "name": "WorkhubNotesSection",
+    "src": "src/pages/workhub/components/WorkhubNotesSection.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-CnHX55eu.js",
+      "_workhub-repo-BWhh7_g_.js",
+      "_workhub-doc-editor-DcJvShmF.js",
+      "_firebase-firestore-DkJlrTfp.js",
+      "_firebase-app-DQmPummf.js",
+      "_workhub-tinymce-CXZq4Qfj.js",
+      "_workhub-emoji-BM7LTgyg.js"
+    ]
+  },
+  "src/pages/workhub/components/WorkhubProjectDetailRail.tsx": {
+    "file": "assets/WorkhubProjectDetailRail-DlDP0AEP.js",
+    "name": "WorkhubProjectDetailRail",
+    "src": "src/pages/workhub/components/WorkhubProjectDetailRail.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-CnHX55eu.js"
+    ]
+  },
+  "src/pages/workhub/components/WorkhubTasksSection.tsx": {
+    "file": "assets/WorkhubTasksSection-CsN2kkWl.js",
+    "name": "WorkhubTasksSection",
+    "src": "src/pages/workhub/components/WorkhubTasksSection.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-CnHX55eu.js",
+      "_workhub-repo-BWhh7_g_.js",
+      "_WorkHubPage-XHrjfuwi.js",
+      "_projectUtils-Bv5sIIer.js",
+      "_workhub-moodboard-Cu9I-oFv.js",
+      "src/pages/workhub/components/WorkhubProjectDetailRail.tsx",
+      "_workhub-doc-editor-DcJvShmF.js",
+      "_firebase-firestore-DkJlrTfp.js",
+      "_firebase-app-DQmPummf.js",
+      "index.html",
+      "_workhub-emoji-BM7LTgyg.js",
+      "_workhub-flow-D4nCwCqv.js",
+      "_workhub-tinymce-CXZq4Qfj.js"
+    ]
+  },
+  "src/pages/workhub/components/WorkhubUsersSection.tsx": {
+    "file": "assets/WorkhubUsersSection-B6_wnIdh.js",
+    "name": "WorkhubUsersSection",
+    "src": "src/pages/workhub/components/WorkhubUsersSection.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-CnHX55eu.js",
+      "_workhub-repo-BWhh7_g_.js",
+      "_firebase-firestore-DkJlrTfp.js",
+      "_firebase-app-DQmPummf.js"
+    ]
+  },
+  "src/scanner/ScannerPage.tsx": {
+    "file": "assets/ScannerPage-Cbf-5okJ.js",
+    "name": "ScannerPage",
+    "src": "src/scanner/ScannerPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-CnHX55eu.js",
+      "_ScannerDesktopPage-dqdcOM3H.js",
+      "_firebase-app-DQmPummf.js",
+      "_workhub-repo-BWhh7_g_.js",
+      "_firebase-firestore-DkJlrTfp.js"
+    ],
+    "css": [
+      "assets/ScannerPage-XyCYiFvj.css"
+    ]
+  }
+}

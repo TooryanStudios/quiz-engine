@@ -16,6 +16,7 @@ import { WorkhubAttachmentCard } from './WorkhubAttachmentCard'
 import { WorkhubChecklistCard } from './WorkhubChecklistCard'
 import { WorkhubDiscussionCard } from './WorkhubDiscussionCard'
 import { WorkhubDocumentAiPanel } from './WorkhubDocumentAiPanel'
+import { toDocumentBodyEditorHtml } from '../docEditorBody'
 import type { Editor as TinyMCEEditor } from 'tinymce'
 
 type MasterPageVariantKey = 'firstPage' | 'laterPages'
@@ -466,7 +467,7 @@ function buildPreviewPageHtml(params: {
   const headerOffsetMm = showHeader ? 30 : 0
   const footerOffsetMm = showFooter ? 20 : 0
   return `
-    <section class="doc-preview-page-shell" style="--preview-page-width:${params.pageWidthMm}mm;--preview-page-height:${params.pageHeightMm}mm;">
+    <section class="doc-preview-page-shell" style="--preview-page-width:${params.pageWidthMm}mm;--preview-page-height:${params.pageHeightMm}mm;--preview-w:${params.pageWidthMm};--preview-h:${params.pageHeightMm};">
       ${params.hideLabel ? '' : `<div class="doc-preview-page-label">${escapeHtml(params.label)}</div>`}
       <div class="doc-preview-page">
         ${showHeader ? `<div class="doc-preview-page-header"><div class="doc-preview-page-header-inner">${headerHtml}</div></div>` : ''}
@@ -717,7 +718,7 @@ function buildPrintableDocumentHtml(params: {
     }
     .doc-preview-page {
       position: relative;
-      min-height: var(--preview-page-height);
+      aspect-ratio: var(--preview-w) / var(--preview-h);
       background: #fff;
       border: 1px solid #d5e2f5;
       border-radius: 8px;
@@ -1398,6 +1399,7 @@ interface WorkhubDocEditorProps extends UseWorkhubDocEditorHandlersOutput {
   sourceReferenceDocuments: WorkhubDocument[]
   handleCopyDocumentToFolder: () => Promise<void>
   handleRemoveDocumentReference: (referenceDocumentId: string) => Promise<void>
+  onPrintPreviewChange?: (active: boolean) => void
 }
 
 export function WorkhubDocEditor({
@@ -1456,11 +1458,16 @@ export function WorkhubDocEditor({
   handleDocLinkAdd,
   handleDocLinkRemove,
   noteAutoSaveStatus,
+  collaborationConflictBlocked,
+  collaborationConflictUpdatedAtMs,
+  collaborationConflictEditorUid,
   selectedDocumentHasOutgoingReferences,
   sourceReferencedTabIds,
   publicReferenceAutoSaveBlocked,
   recoverableDraftAvailable,
   recoverableDraftUpdatedAt,
+  handleApplyCollaborationRemoteUpdate,
+  handleKeepLocalEditsAfterConflict,
   handleRestoreRecoverableDraft,
   handleDiscardRecoverableDraft,
   selectedDocument,
@@ -1518,6 +1525,7 @@ export function WorkhubDocEditor({
   handleCopyDocumentToFolder,
   handleRemoveDocumentReference,
   handleOpenReferenceSourceDocument,
+  onPrintPreviewChange,
 }: WorkhubDocEditorProps) {
   const [mobileDocDetailsOpen, setMobileDocDetailsOpen] = useState(false)
   const [detailRailTab, setDetailRailTab] = useState<DetailRailTab>('details')
@@ -1536,7 +1544,7 @@ export function WorkhubDocEditor({
   const headerVoiceBookmarkRef = useRef<unknown | null>(null)
   const headerVoiceSilenceTimerRef = useRef<number | null>(null)
   const headerVoiceRestartTimerRef = useRef<number | null>(null)
-  const tabEditorStateRef = useRef<Record<string, { scrollTop: number; bookmark: ReturnType<TinyMCEEditor['selection']['getBookmark']> }>>({})
+  const tabEditorStateRef = useRef<Record<string, { scrollTop: number }>>({})
   const currentDocIdRef = useRef<string | null>(null)
   const activeTabIdRef = useRef<string | null>(null)
 
@@ -1544,6 +1552,10 @@ export function WorkhubDocEditor({
     currentDocIdRef.current = selectedDocument?.id || null
     activeTabIdRef.current = activeTabId
   }, [selectedDocument?.id, activeTabId])
+
+  useEffect(() => {
+    if (selectedDocumentReadOnly) setDocumentEditor(null)
+  }, [selectedDocumentReadOnly, selectedDocument?.id])
 
 
   // Detail rail resize/collapse
@@ -1611,12 +1623,50 @@ export function WorkhubDocEditor({
   const selectedDocumentIcon = selectedDocument?.icon || (selectedDocument?.type === 'note' ? '����ï¸' : '📝')
   const activeTab = documentTabsDraft.length > 0 ? documentTabsDraft.find((tab) => tab.id === activeTabId) || null : null
   const showPublicSourceWarning = Boolean(selectedDocument && selectedDocumentHasOutgoingReferences && !selectedDocument.referenceSourceDocumentId)
-  const autoSaveStatusText = publicReferenceAutoSaveBlocked && selectedDocumentChanged
-    ? 'Autosave paused for public content. Publish manually.'
-    : (noteAutoSaveStatus === 'saving' ? 'Saving…' : noteAutoSaveStatus === 'saved' ? '✔ Saved' : '')
+  const showAutoSaveError = collaborationConflictBlocked || (publicReferenceAutoSaveBlocked && selectedDocumentChanged)
+  const autoSaveStatusText = collaborationConflictBlocked
+    ? 'Autosave paused. New collaborator updates available.'
+    : (publicReferenceAutoSaveBlocked && selectedDocumentChanged
+      ? 'Autosave paused for public content. Publish manually.'
+      : (noteAutoSaveStatus === 'saving' ? 'Saving…' : noteAutoSaveStatus === 'saved' ? '✔ Saved' : ''))
+  const staticDocumentBodyHtml = useMemo(
+    () => sanitizePrintHtmlFragment(toDocumentBodyEditorHtml(selectedDocumentBodyDraft)) || '<p></p>',
+    [selectedDocumentBodyDraft],
+  )
   const recoverableDraftTimeLabel = recoverableDraftUpdatedAt
     ? new Date(recoverableDraftUpdatedAt).toLocaleString('en-GB')
     : ''
+  const collaborationConflictEditorName = collaborationConflictEditorUid
+    ? (memberByUid[collaborationConflictEditorUid]?.displayName || memberByUid[collaborationConflictEditorUid]?.email || 'A collaborator')
+    : 'A collaborator'
+  const collaborationConflictTimeLabel = collaborationConflictUpdatedAtMs
+    ? formatTime(collaborationConflictUpdatedAtMs)
+    : ''
+  const referenceWorkspaceById = useMemo(
+    () => Object.fromEntries(allWorkspaceIds.map((workspace) => [workspace.id, workspace])) as Record<string, { id: string; name: string }>,
+    [allWorkspaceIds],
+  )
+  const referenceProjectById = useMemo(
+    () => Object.fromEntries(allWorkspaceProjects.map((project) => [project.id, project])) as Record<string, { id: string; name: string; workspaceId: string; parentProjectId?: string | null }>,
+    [allWorkspaceProjects],
+  )
+  const referenceLocationsByTabId = useMemo(() => {
+    const map: Record<string, string[]> = {}
+    documentTabsDraft.forEach((tab) => { map[tab.id] = [] })
+    sourceReferenceDocuments.forEach((refDoc) => {
+      const workspaceName = referenceWorkspaceById[refDoc.workspaceId]?.name || refDoc.workspaceId || 'Workspace'
+      const projectName = refDoc.projectId ? (referenceProjectById[refDoc.projectId]?.name || workspaceProjectById[refDoc.projectId]?.name || refDoc.projectId) : 'Folder'
+      const locationLabel = `${workspaceName} / ${projectName}`
+      const refTabIds = Array.isArray(refDoc.referenceTabIds) ? refDoc.referenceTabIds : []
+      documentTabsDraft.forEach((tab) => {
+        if (refTabIds.length > 0 && !refTabIds.includes(tab.id)) return
+        const current = map[tab.id] || []
+        if (!current.includes(locationLabel)) current.push(locationLabel)
+        map[tab.id] = current
+      })
+    })
+    return map
+  }, [documentTabsDraft, referenceProjectById, referenceWorkspaceById, sourceReferenceDocuments, workspaceProjectById])
   const aiPanelPersistenceKey = selectedDocument ? `workhub:${selectedDocument.id}:${activeTab?.id || 'body'}` : undefined
   const [showPublishWarningBox, setShowPublishWarningBox] = useState(false)
   const [publishWarningShownForVisit, setPublishWarningShownForVisit] = useState(false)
@@ -1660,7 +1710,6 @@ export function WorkhubDocEditor({
     try {
       tabEditorStateRef.current[stateKey] = {
         scrollTop: editor.getWin().scrollY,
-        bookmark: editor.selection.getBookmark(2, true),
       }
     } catch {
       // Ignore transient TinyMCE selection and iframe lifecycle errors.
@@ -1677,13 +1726,11 @@ export function WorkhubDocEditor({
       const savedState = tabEditorStateRef.current[key]
       if (savedState) {
         try {
-          editor.selection.moveToBookmark(savedState.bookmark)
           editor.getWin().scrollTo(0, savedState.scrollTop)
         } catch {
           // Ignore transient TinyMCE selection and iframe lifecycle errors.
         }
       }
-      try { editor.focus() } catch {}
       // Allow saves again after a short settling period
       window.setTimeout(() => { restoringRef.current = false }, 50)
     }, 60)
@@ -2010,7 +2057,12 @@ export function WorkhubDocEditor({
   useEffect(() => {
     setMobileDocDetailsOpen(false)
     setDetailRailTab('details')
-    setPrintPreviewMode(false)
+    const nextPrintPreviewMode = Boolean(selectedDocument?.referenceSourceDocumentId)
+    setPrintPreviewMode(nextPrintPreviewMode)
+    if (selectedDocument?.referenceSourceDocumentId) {
+      setDetailRailCollapsed(false)
+      localStorage.setItem('workhub:docRailCollapsed', '0')
+    }
     setActiveMasterVariantKey('firstPage')
   }, [selectedDocument?.id])
 
@@ -2446,7 +2498,7 @@ export function WorkhubDocEditor({
             <div className="workhub-quick-note-head-left">
               <h2>Quick note</h2>
               {projectName && <span className="workhub-quick-note-location">{projectName}</span>}
-              <span className={`workhub-note-autosave-status${publicReferenceAutoSaveBlocked && selectedDocumentChanged ? ' is-error' : ''}`} aria-live="polite">
+              <span className={`workhub-note-autosave-status${showAutoSaveError ? ' is-error' : ''}`} aria-live="polite">
                 {autoSaveStatusText}
               </span>
               {canReopenPublishWarning && (
@@ -2475,6 +2527,21 @@ export function WorkhubDocEditor({
               <div className="workhub-draft-restore-actions">
                 <button type="button" className="workhub-primary-mini" onClick={handleRestoreRecoverableDraft}>Restore draft</button>
                 <button type="button" className="workhub-ghost-mini" onClick={handleDiscardRecoverableDraft}>Discard draft</button>
+              </div>
+            </div>
+          )}
+
+          {collaborationConflictBlocked && (
+            <div className="workhub-collaboration-conflict-banner" role="status" aria-live="polite">
+              <strong>Newer collaborator changes detected.</strong>
+              <span>
+                {collaborationConflictEditorName}
+                {collaborationConflictTimeLabel ? ` updated this document at ${collaborationConflictTimeLabel}.` : ' updated this document while you were editing.'}
+                {' '}Load latest to review their updates, or keep yours to continue with your local version.
+              </span>
+              <div className="workhub-draft-restore-actions">
+                <button type="button" className="workhub-primary-mini" onClick={handleApplyCollaborationRemoteUpdate}>Load latest</button>
+                <button type="button" className="workhub-ghost-mini" onClick={handleKeepLocalEditsAfterConflict}>Keep my edits</button>
               </div>
             </div>
           )}
@@ -2515,15 +2582,22 @@ export function WorkhubDocEditor({
             </div>
           )}
 
-          <TinyRichTextEditor
-            className={`workhub-document-body-editor workhub-quick-note-editor${selectedDocumentReadOnly ? ' is-locked' : ''}`}
-            value={selectedDocumentBodyDraft}
-            onChange={setSelectedDocumentBodyDraft}
-            disabled={selectedDocumentReadOnly}
-            minHeight={420}
-            placeholder="Write a quick idea, reminder, or short note..."
-            autoFocus={!selectedDocumentReadOnly}
-          />
+          {selectedDocumentReadOnly ? (
+            <div
+              className="workhub-document-static-viewer workhub-quick-note-static-viewer"
+              dir="auto"
+              dangerouslySetInnerHTML={{ __html: staticDocumentBodyHtml }}
+            />
+          ) : (
+            <TinyRichTextEditor
+              className="workhub-document-body-editor workhub-quick-note-editor"
+              value={selectedDocumentBodyDraft}
+              onChange={setSelectedDocumentBodyDraft}
+              minHeight={420}
+              placeholder="Write a quick idea, reminder, or short note..."
+              autoFocus
+            />
+          )}
 
           <div className="workhub-quick-note-foot">
             <div className="workhub-quick-note-foot-left">
@@ -2748,7 +2822,15 @@ export function WorkhubDocEditor({
                     className={`workhub-ghost-btn workhub-doc-tool-btn${printPreviewMode ? ' is-active' : ''}`}
                     title={printPreviewMode ? 'Close print preview' : 'Open print preview'}
                     aria-label={printPreviewMode ? 'Close print preview' : 'Open print preview'}
-                    onClick={() => setPrintPreviewMode((prev) => !prev)}
+                    onClick={() => {
+                      const next = !printPreviewMode
+                      setPrintPreviewMode(next)
+                      if (next && !selectedDocument.referenceSourceDocumentId) {
+                        setDetailRailCollapsed(true)
+                        localStorage.setItem('workhub:docRailCollapsed', '1')
+                      }
+                      onPrintPreviewChange?.(next)
+                    }}
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ display: 'block' }}>
                       <path d="M2 12s3.8-6 10-6 10 6 10 6-3.8 6-10 6S2 12 2 12Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
@@ -2784,7 +2866,7 @@ export function WorkhubDocEditor({
                     </button>
                     {selectedDocument && (
                       <>
-                        <span className={`workhub-note-autosave-status${publicReferenceAutoSaveBlocked && selectedDocumentChanged ? ' is-error' : ''}`} aria-live="polite">
+                        <span className={`workhub-note-autosave-status${showAutoSaveError ? ' is-error' : ''}`} aria-live="polite">
                           {autoSaveStatusText}
                         </span>
                         {canReopenPublishWarning && (
@@ -2819,6 +2901,21 @@ export function WorkhubDocEditor({
                 <div className="workhub-draft-restore-actions">
                   <button type="button" className="workhub-primary-mini" onClick={handleRestoreRecoverableDraft}>Restore draft</button>
                   <button type="button" className="workhub-ghost-mini" onClick={handleDiscardRecoverableDraft}>Discard draft</button>
+                </div>
+              </div>
+            )}
+
+            {collaborationConflictBlocked && (
+              <div className="workhub-collaboration-conflict-banner" role="status" aria-live="polite">
+                <strong>Newer collaborator changes detected.</strong>
+                <span>
+                  {collaborationConflictEditorName}
+                  {collaborationConflictTimeLabel ? ` updated this document at ${collaborationConflictTimeLabel}.` : ' updated this document while you were editing.'}
+                  {' '}Load latest to review their updates, or keep yours to continue with your local version.
+                </span>
+                <div className="workhub-draft-restore-actions">
+                  <button type="button" className="workhub-primary-mini" onClick={handleApplyCollaborationRemoteUpdate}>Load latest</button>
+                  <button type="button" className="workhub-ghost-mini" onClick={handleKeepLocalEditsAfterConflict}>Keep my edits</button>
                 </div>
               </div>
             )}
@@ -2879,13 +2976,18 @@ export function WorkhubDocEditor({
                     srcDoc={debouncedPreviewHtml}
                   />
                 </div>
+              ) : selectedDocumentReadOnly ? (
+                <div
+                  className="workhub-document-static-viewer"
+                  dir="auto"
+                  dangerouslySetInnerHTML={{ __html: staticDocumentBodyHtml }}
+                />
               ) : (
                 <>
                   <TinyRichTextEditor
-                    className={`workhub-document-body-editor${selectedDocumentReadOnly ? ' is-locked' : ''}`}
+                    className="workhub-document-body-editor"
                     value={selectedDocumentBodyDraft}
                     onChange={handleEditorChange}
-                    disabled={selectedDocumentReadOnly}
                     minHeight={460}
                     placeholder="Write scope of work, requirements, assumptions, or any project details..."
                     onReady={(ed) => {
@@ -2893,7 +2995,7 @@ export function WorkhubDocEditor({
                       const handleSaveState = () => {
                         saveEditorViewState(ed)
                       }
-                      ed.on('NodeChange SelectionChange keyup mouseup focusout ScrollContent scroll', handleSaveState)
+                      ed.on('NodeChange keyup focusout ScrollContent scroll', handleSaveState)
                       try {
                         const win = ed.getWin()
                         if (win) {
@@ -3937,6 +4039,9 @@ export function WorkhubDocEditor({
                     <option value="">Select folder…</option>
                     {(() => {
                       const wsProjects = allWorkspaceProjects.filter((p) => p.workspaceId === copyToFolderWorkspaceId)
+                      if (wsProjects.length === 0) {
+                        return <option value="" disabled>No folders in this workspace</option>
+                      }
                       const byParent = new Map<string, typeof wsProjects>()
                       wsProjects.forEach((p) => {
                         const key = p.parentProjectId || ''
@@ -3953,13 +4058,11 @@ export function WorkhubDocEditor({
                         const sorted = [...children].sort((a, b) => a.name.localeCompare(b.name))
                         
                         return sorted.flatMap((p) => {
-                          const hasChildren = (byParent.get(p.id) || []).length > 0
-                          const isGroup = hasChildren
                           const indent = '\u00a0'.repeat(depth * 5)
                           const prefix = depth > 0 ? '└ ' : ''
                           
                           const node = (
-                            <option key={p.id} value={p.id} disabled={isGroup} style={isGroup ? { fontWeight: 'bold' } : {}}>
+                            <option key={p.id} value={p.id}>
                               {indent + prefix + p.name}
                             </option>
                           )
@@ -3997,8 +4100,13 @@ export function WorkhubDocEditor({
                           .replace(/\s+/g, ' ')
                           .trim()
                         const resolvedTabTitle = visibleTabTitle || `Tab ${index + 1}`
+                        const referenceLocations = referenceLocationsByTabId[tab.id] || []
+                        const visibleReferenceLocations = referenceLocations.slice(0, 2).join(', ')
+                        const referenceLocationLabel = referenceLocations.length > 2
+                          ? `${visibleReferenceLocations} +${referenceLocations.length - 2} more`
+                          : visibleReferenceLocations
                         return (
-                        <label key={tab.id} className="workhub-copy-tab-check-item">
+                        <label key={tab.id} className={`workhub-copy-tab-check-item${referenceLocations.length > 0 ? ' has-reference' : ''}`}>
                           <input
                             type="checkbox"
                             checked={copyTabSelection.includes(tab.id)}
@@ -4008,9 +4116,14 @@ export function WorkhubDocEditor({
                               )
                             }}
                           />
-                          <span className="workhub-copy-tab-check-text">
-                            {tab.icon ? `${tab.icon} ` : ''}
-                            {resolvedTabTitle}
+                          <span className="workhub-copy-tab-check-main">
+                            <span className="workhub-copy-tab-check-text">
+                              {tab.icon ? `${tab.icon} ` : ''}
+                              {resolvedTabTitle}
+                            </span>
+                            {referenceLocations.length > 0 && (
+                              <span className="workhub-copy-tab-reference-indicator">Referenced in {referenceLocationLabel}</span>
+                            )}
                           </span>
                         </label>
                         )
@@ -4026,8 +4139,8 @@ export function WorkhubDocEditor({
                 ) : (
                   <div className="workhub-share-doc-members">
                     {sourceReferenceDocuments.map((refDoc) => {
-                      const projectName = workspaceProjectById[refDoc.projectId || '']?.name || refDoc.projectId || 'Folder'
-                      const workspaceName = allWorkspaceIds.find((ws) => ws.id === refDoc.workspaceId)?.name || refDoc.workspaceId
+                      const projectName = referenceProjectById[refDoc.projectId || '']?.name || workspaceProjectById[refDoc.projectId || '']?.name || refDoc.projectId || 'Folder'
+                      const workspaceName = referenceWorkspaceById[refDoc.workspaceId]?.name || refDoc.workspaceId
                       return (
                         <div key={refDoc.id} className="workhub-share-doc-member-row">
                           <div className="workhub-share-doc-member-copy">

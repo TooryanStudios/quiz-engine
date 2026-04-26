@@ -8,7 +8,10 @@ import {
   getWorkhubDocumentDraft,
   getWorkhubDocumentReferencesBySource,
   saveWorkhubDocumentDraft,
+  subscribeWorkhubProjects,
+  WorkhubDocumentConflictError,
   updateWorkhubDocument,
+  updateWorkhubDocumentWithOptimisticConcurrency,
   type WorkhubActivity,
   type WorkhubDocument,
   type WorkhubDocumentDraft,
@@ -38,6 +41,16 @@ interface LocalDocumentDraftSnapshot {
   tabs: WorkhubDocumentTab[]
   activeTabId: string
   masterPage: WorkhubDocumentMasterPage
+}
+
+interface RemoteDocumentSnapshot {
+  docId: string
+  revisionMs: number
+  title: string
+  body: string
+  tabs: WorkhubDocumentTab[]
+  masterPage: WorkhubDocumentMasterPage
+  latestExternalEditorUid: string
 }
 
 const DEFAULT_DOCUMENT_MASTER_PAGE: WorkhubDocumentMasterPage = {
@@ -185,6 +198,7 @@ export interface CopyToFolderProject {
   id: string
   name: string
   workspaceId: string
+  parentProjectId?: string | null
 }
 
 export interface UseWorkhubDocEditorHandlersInput {
@@ -286,11 +300,16 @@ export interface UseWorkhubDocEditorHandlersOutput {
   handleDocLinkRemove: (url: string) => void
 
   noteAutoSaveStatus: 'idle' | 'saving' | 'saved'
+  collaborationConflictBlocked: boolean
+  collaborationConflictUpdatedAtMs: number | null
+  collaborationConflictEditorUid: string
   selectedDocumentHasOutgoingReferences: boolean
   sourceReferencedTabIds: string[]
   publicReferenceAutoSaveBlocked: boolean
   recoverableDraftAvailable: boolean
   recoverableDraftUpdatedAt: number | null
+  handleApplyCollaborationRemoteUpdate: () => void
+  handleKeepLocalEditsAfterConflict: () => void
   handleRestoreRecoverableDraft: () => void
   handleDiscardRecoverableDraft: () => void
 
@@ -303,6 +322,7 @@ export interface UseWorkhubDocEditorHandlersOutput {
   copyTabMode: 'all' | 'active' | 'select'
   copyTabSelection: string[]
   sourceReferenceDocuments: WorkhubDocument[]
+  copyToFolderAvailableProjects: CopyToFolderProject[]
   setCopyToFolderDialogOpen: React.Dispatch<React.SetStateAction<boolean>>
   setCopyToFolderWorkspaceId: React.Dispatch<React.SetStateAction<string>>
   setCopyToFolderProjectId: React.Dispatch<React.SetStateAction<string>>
@@ -359,7 +379,11 @@ export function useWorkhubDocEditorHandlers({
   const [copyTabSelection, setCopyTabSelection] = useState<string[]>([])
   const [sourceReferenceDocuments, setSourceReferenceDocuments] = useState<WorkhubDocument[]>([])
   const [sourceReferencedTabIds, setSourceReferencedTabIds] = useState<string[]>([])
+  const [copyToFolderTargetProjects, setCopyToFolderTargetProjects] = useState<CopyToFolderProject[]>([])
   const [recoverableDraft, setRecoverableDraft] = useState<LocalDocumentDraftSnapshot | null>(null)
+  const [collaborationConflictSnapshot, setCollaborationConflictSnapshot] = useState<RemoteDocumentSnapshot | null>(null)
+  const [latestRemoteRevisionMs, setLatestRemoteRevisionMs] = useState<number | null>(null)
+  const appliedRemoteSnapshotRef = useRef<RemoteDocumentSnapshot | null>(null)
 
   const selectedDocumentLocked = !!selectedDocument?.isLocked
   const selectedDocumentIsReference = !!selectedDocument?.referenceSourceDocumentId
@@ -380,11 +404,26 @@ export function useWorkhubDocEditorHandlers({
   }, [currentUid, normalizeMemberUids, selectedDocument])
 
   const selectedDocumentReadOnly = selectedDocumentLocked || !selectedDocumentCanEdit
+  const copyToFolderAvailableProjects = useMemo(() => {
+    const byId = new Map<string, CopyToFolderProject>()
+    allWorkspaceProjects.forEach((project) => byId.set(project.id, project))
+    copyToFolderTargetProjects.forEach((project) => byId.set(project.id, project))
+    return Array.from(byId.values())
+  }, [allWorkspaceProjects, copyToFolderTargetProjects])
   const selectedDocumentHasOutgoingReferences = !selectedDocumentIsReference
     && (!!selectedDocument?.hasOutgoingReferences || sourceReferenceDocuments.length > 0)
   const publicReferenceAutoSaveBlocked = selectedDocumentHasOutgoingReferences
     && (documentTabsDraft.length === 0 || sourceReferencedTabIds.includes(activeTabId))
   const canUnlockDocument = !selectedDocumentIsReference && selectedDocumentLocked && (currentUid === selectedDocument?.createdBy || isPrivilegedMember)
+  const collaborationConflictBlocked = Boolean(
+    collaborationConflictSnapshot
+    && selectedDocument
+    && collaborationConflictSnapshot.docId === selectedDocument.id,
+  )
+  const collaborationConflictUpdatedAtMs = collaborationConflictSnapshot?.revisionMs
+    || latestRemoteRevisionMs
+    || null
+  const collaborationConflictEditorUid = collaborationConflictSnapshot?.latestExternalEditorUid || ''
 
   async function refreshSourceReferenceDocuments() {
     if (!selectedDocument?.id || selectedDocument.referenceSourceDocumentId) {
@@ -433,6 +472,23 @@ export function useWorkhubDocEditorHandlers({
     void refreshSourceReferenceDocuments()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [copyToFolderDialogOpen, selectedDocument?.id, selectedDocumentIsReference])
+
+  useEffect(() => {
+    if (!copyToFolderDialogOpen || !copyToFolderWorkspaceId) {
+      setCopyToFolderTargetProjects([])
+      return
+    }
+
+    const localUid = auth.currentUser?.uid || ''
+    return subscribeWorkhubProjects(copyToFolderWorkspaceId, localUid, isPrivilegedMember, (items) => {
+      setCopyToFolderTargetProjects(items.map((project) => ({
+        id: project.id,
+        name: project.name,
+        workspaceId: project.workspaceId,
+        parentProjectId: project.parentProjectId || null,
+      })))
+    })
+  }, [copyToFolderDialogOpen, copyToFolderWorkspaceId, isPrivilegedMember])
 
   function buildNotificationPreview(value: string) {
     return value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 320)
@@ -625,6 +681,109 @@ export function useWorkhubDocEditorHandlers({
     return 0
   }
 
+  function buildEditedByWithActor(existingEntries: WorkhubDocumentEditEntry[] | undefined, actorUid: string) {
+    if (!actorUid) return Array.isArray(existingEntries) ? existingEntries : []
+    const nowIso = new Date().toISOString()
+    const baseEntries = Array.isArray(existingEntries) ? existingEntries : []
+    const alreadyLogged = baseEntries.some((entry) => entry.uid === actorUid)
+    return alreadyLogged
+      ? baseEntries.map((entry) => (entry.uid === actorUid ? { uid: actorUid, at: nowIso } : entry))
+      : [...baseEntries, { uid: actorUid, at: nowIso }]
+  }
+
+  function resolveLatestExternalEditorUid(document: WorkhubDocument, actorUid: string) {
+    const edits = Array.isArray(document.editedBy) ? document.editedBy : []
+    let latestUid = ''
+    let latestAt = 0
+    edits.forEach((entry) => {
+      if (!entry || !entry.uid || entry.uid === actorUid) return
+      const atMs = getUnknownTimeValue(entry.at)
+      if (atMs >= latestAt) {
+        latestAt = atMs
+        latestUid = entry.uid
+      }
+    })
+    return latestUid
+  }
+
+  function buildRemoteDocumentSnapshot(document: WorkhubDocument): RemoteDocumentSnapshot {
+    const sourceTabs = Array.isArray(document.tabs) ? document.tabs : []
+    const revisionMs = getUnknownTimeValue(document.updatedAt || document.createdAt)
+    return {
+      docId: document.id,
+      revisionMs,
+      title: document.title,
+      body: toDocumentBodyEditorHtml(document.body || ''),
+      tabs: sourceTabs.map((tab) => ({
+        id: tab.id,
+        title: tab.title,
+        ...(tab.icon ? { icon: tab.icon } : {}),
+        body: tab.body || '',
+      })),
+      masterPage: normalizeDocumentMasterPage(document.masterPage),
+      latestExternalEditorUid: resolveLatestExternalEditorUid(document, currentUid),
+    }
+  }
+
+  function doesCurrentDraftDifferFromSnapshot(snapshot: RemoteDocumentSnapshot) {
+    if ((selectedDocumentTitleDraft.trim() || snapshot.title) !== snapshot.title) return true
+    if (!areDocumentMasterPagesEqual(selectedDocumentMasterPageDraft, snapshot.masterPage)) return true
+
+    const draftTabs = documentTabsDraftRef.current
+    const snapshotTabs = Array.isArray(snapshot.tabs) ? snapshot.tabs : []
+    if (snapshotTabs.length !== draftTabs.length) return true
+    if (snapshotTabs.length > 0) {
+      for (let i = 0; i < snapshotTabs.length; i += 1) {
+        const draft = draftTabs[i]
+        const source = snapshotTabs[i]
+        if (!draft || !source) return true
+        if (draft.id !== source.id) return true
+        if (draft.title !== source.title) return true
+        if ((draft.icon || '') !== (source.icon || '')) return true
+        const draftBody = normalizeDocumentBodyForStorage(
+          draft.id === activeTabIdRef.current ? selectedDocumentBodyDraft : (draft.body || ''),
+        )
+        const sourceBody = normalizeDocumentBodyForStorage(source.body || '')
+        if (draftBody !== sourceBody) return true
+      }
+      return false
+    }
+
+    return normalizeDocumentBodyForStorage(selectedDocumentBodyDraft) !== normalizeDocumentBodyForStorage(snapshot.body || '')
+  }
+
+  function applyRemoteDocumentSnapshot(snapshot: RemoteDocumentSnapshot) {
+    setSelectedDocumentTitleDraft(snapshot.title)
+    setSelectedDocumentMasterPageDraft(normalizeDocumentMasterPage(snapshot.masterPage))
+    const nextTabs = Array.isArray(snapshot.tabs) ? snapshot.tabs.map((tab) => ({ ...tab })) : []
+    if (nextTabs.length > 0) {
+      const nextActiveTabId = nextTabs.find((tab) => tab.id === activeTabIdRef.current)?.id || nextTabs[0].id
+      const nextActiveTab = nextTabs.find((tab) => tab.id === nextActiveTabId)
+      setDocumentTabsDraft(nextTabs)
+      setActiveTabId(nextActiveTabId)
+      setSelectedDocumentBodyDraft(nextActiveTab?.body || '')
+    } else {
+      setDocumentTabsDraft([])
+      setActiveTabId('')
+      setSelectedDocumentBodyDraft(snapshot.body || '')
+    }
+  }
+
+  function handleApplyCollaborationRemoteUpdate() {
+    if (!selectedDocument || !collaborationConflictSnapshot || collaborationConflictSnapshot.docId !== selectedDocument.id) return
+    applyRemoteDocumentSnapshot(collaborationConflictSnapshot)
+    appliedRemoteSnapshotRef.current = collaborationConflictSnapshot
+    setCollaborationConflictSnapshot(null)
+  }
+
+  function handleKeepLocalEditsAfterConflict() {
+    if (!selectedDocument || !collaborationConflictSnapshot || collaborationConflictSnapshot.docId !== selectedDocument.id) return
+    const confirmed = window.confirm('Keep your local edits and allow saving over the latest remote version?')
+    if (!confirmed) return
+    appliedRemoteSnapshotRef.current = collaborationConflictSnapshot
+    setCollaborationConflictSnapshot(null)
+  }
+
   function writeLocalDraftFallback(document: WorkhubDocument) {
     const snapshot = getLocalDraftSnapshot(document)
     try {
@@ -780,8 +939,15 @@ export function useWorkhubDocEditorHandlers({
       setDocumentTabsDraft([])
       setActiveTabId('')
       setRecoverableDraft(null)
+      setCollaborationConflictSnapshot(null)
+      setLatestRemoteRevisionMs(null)
+      appliedRemoteSnapshotRef.current = null
       return
     }
+    const remoteSnapshot = buildRemoteDocumentSnapshot(selectedDocument)
+    appliedRemoteSnapshotRef.current = remoteSnapshot
+    setLatestRemoteRevisionMs(remoteSnapshot.revisionMs || null)
+    setCollaborationConflictSnapshot(null)
     setSelectedDocumentTitleDraft(selectedDocument.title)
     setSelectedDocumentMasterPageDraft(normalizeDocumentMasterPage(selectedDocument.masterPage))
     const hasTabs = Array.isArray(selectedDocument.tabs) && selectedDocument.tabs.length > 0
@@ -793,9 +959,19 @@ export function useWorkhubDocEditorHandlers({
       setActiveTabId(rememberedTab.id)
       setSelectedDocumentBodyDraft(rememberedTab.body || '')
     } else {
-      setDocumentTabsDraft([])
-      setActiveTabId('')
-      setSelectedDocumentBodyDraft(toDocumentBodyEditorHtml(selectedDocument.body || ''))
+      const bodyHtml = toDocumentBodyEditorHtml(selectedDocument.body || '')
+      const shouldSeedDefaultTab = !selectedDocument.referenceSourceDocumentId && (selectedDocument.type || 'document') === 'document'
+      if (shouldSeedDefaultTab) {
+        const defaultTabId = `tab_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+        const defaultTab: WorkhubDocumentTab = { id: defaultTabId, title: 'Main', body: bodyHtml }
+        setDocumentTabsDraft([defaultTab])
+        setActiveTabId(defaultTabId)
+        setSelectedDocumentBodyDraft(bodyHtml)
+      } else {
+        setDocumentTabsDraft([])
+        setActiveTabId('')
+        setSelectedDocumentBodyDraft(bodyHtml)
+      }
     }
 
     let cancelled = false
@@ -835,12 +1011,47 @@ export function useWorkhubDocEditorHandlers({
     }
 
     void loadRecoverableDraft()
-  // Re-init when switching documents; title re-syncs too
+  // Re-init only when switching documents.
   // eslint-disable-next-line react-hooks/exhaustive-deps
     return () => {
       cancelled = true
     }
-  }, [selectedDocument?.id, selectedDocument?.title])
+  }, [selectedDocument?.id])
+
+  useEffect(() => {
+    if (!selectedDocument) return
+
+    const incomingSnapshot = buildRemoteDocumentSnapshot(selectedDocument)
+    setLatestRemoteRevisionMs(incomingSnapshot.revisionMs || null)
+
+    const appliedSnapshot = appliedRemoteSnapshotRef.current
+    if (!appliedSnapshot || appliedSnapshot.docId !== selectedDocument.id) {
+      appliedRemoteSnapshotRef.current = incomingSnapshot
+      setCollaborationConflictSnapshot(null)
+      return
+    }
+
+    if (incomingSnapshot.revisionMs <= appliedSnapshot.revisionMs) return
+
+    const hasLocalUnsavedEdits = doesCurrentDraftDifferFromSnapshot(appliedSnapshot)
+    if (!hasLocalUnsavedEdits) {
+      applyRemoteDocumentSnapshot(incomingSnapshot)
+      appliedRemoteSnapshotRef.current = incomingSnapshot
+      setCollaborationConflictSnapshot(null)
+      return
+    }
+
+    setCollaborationConflictSnapshot(incomingSnapshot)
+  }, [
+    selectedDocument?.id,
+    selectedDocument?.updatedAt,
+    selectedDocument?.createdAt,
+    selectedDocument?.title,
+    selectedDocument?.body,
+    selectedDocument?.tabs,
+    selectedDocument?.masterPage,
+    selectedDocument?.editedBy,
+  ])
 
   const localDraftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
@@ -941,6 +1152,15 @@ export function useWorkhubDocEditorHandlers({
     if (!selectedDocument) return
     if (selectedDocumentReadOnly) return
     if (!selectedDocumentChanged) return
+    if (collaborationConflictBlocked) {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current)
+        autoSaveTimerRef.current = null
+      }
+      pendingSaveRef.current = null
+      setNoteAutoSaveStatus('idle')
+      return
+    }
     const hasTabs = documentTabsDraftRef.current.length > 0
     const currentTabId = activeTabIdRef.current
     const isPublicReferenceScope = selectedDocumentHasOutgoingReferences
@@ -977,11 +1197,36 @@ export function useWorkhubDocEditorHandlers({
       if (!save) return
       try {
         setNoteAutoSaveStatus('saving')
+        const actorUid = auth.currentUser?.uid || ''
+        const nextEditedBy = buildEditedByWithActor(selectedDocument.editedBy, actorUid)
+        const expectedRevisionMs = appliedRemoteSnapshotRef.current?.docId === save.docId
+          ? appliedRemoteSnapshotRef.current.revisionMs
+          : null
         if (save.tabs && save.tabs.length > 0) {
-          await updateWorkhubDocument(save.docId, { title: save.title, tabs: save.tabs, masterPage: save.masterPage })
+          await updateWorkhubDocumentWithOptimisticConcurrency(save.docId, {
+            title: save.title,
+            tabs: save.tabs,
+            masterPage: save.masterPage,
+            editedBy: nextEditedBy,
+          }, expectedRevisionMs)
         } else {
-          await updateWorkhubDocument(save.docId, { title: save.title, body: save.body, masterPage: save.masterPage })
+          await updateWorkhubDocumentWithOptimisticConcurrency(save.docId, {
+            title: save.title,
+            body: save.body,
+            masterPage: save.masterPage,
+            editedBy: nextEditedBy,
+          }, expectedRevisionMs)
         }
+        appliedRemoteSnapshotRef.current = {
+          docId: save.docId,
+          revisionMs: expectedRevisionMs || getUnknownTimeValue(selectedDocument.updatedAt || selectedDocument.createdAt),
+          title: save.title,
+          body: save.body,
+          tabs: Array.isArray(save.tabs) ? save.tabs.map((tab) => ({ ...tab })) : [],
+          masterPage: normalizeDocumentMasterPage(save.masterPage),
+          latestExternalEditorUid: '',
+        }
+        setCollaborationConflictSnapshot(null)
         await clearRecoverableDraft(save.docId)
         if (selectedDocument && !selectedDocument.referenceSourceDocumentId && auth.currentUser?.uid) {
           await syncReferencesFromSource({
@@ -997,13 +1242,21 @@ export function useWorkhubDocEditorHandlers({
           })
         }
         setNoteAutoSaveStatus('saved')
-      } catch {
+      } catch (error) {
+        if (error instanceof WorkhubDocumentConflictError && selectedDocument) {
+          const remoteSnapshot = buildRemoteDocumentSnapshot(selectedDocument)
+          if (remoteSnapshot.docId === save.docId) {
+            setCollaborationConflictSnapshot(remoteSnapshot)
+            setLatestRemoteRevisionMs(Math.max(remoteSnapshot.revisionMs, error.currentUpdatedAtMs || 0))
+          }
+          showToast({ type: 'warning', message: 'Another teammate updated this document. Review latest changes before saving.' })
+        }
         setNoteAutoSaveStatus('idle')
       }
     }, 800)
     return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDocumentBodyDraft, selectedDocumentTitleDraft, selectedDocumentMasterPageDraft, documentTabsDraft, selectedDocumentHasOutgoingReferences, sourceReferencedTabIds])
+  }, [selectedDocumentBodyDraft, selectedDocumentTitleDraft, selectedDocumentMasterPageDraft, documentTabsDraft, selectedDocumentHasOutgoingReferences, sourceReferencedTabIds, collaborationConflictBlocked])
 
   useEffect(() => {
     if (!shareDocDialogOpen || !selectedDocument) return
@@ -1042,11 +1295,15 @@ export function useWorkhubDocEditorHandlers({
     if (pendingSaveRef.current) {
       const { docId, title, body, tabs, masterPage } = pendingSaveRef.current
       pendingSaveRef.current = null
-      if (!publicReferenceAutoSaveBlocked) {
+      if (!publicReferenceAutoSaveBlocked && !collaborationConflictBlocked) {
+        const expectedRevisionMs = appliedRemoteSnapshotRef.current?.docId === docId
+          ? appliedRemoteSnapshotRef.current.revisionMs
+          : getUnknownTimeValue(selectedDocument?.updatedAt || selectedDocument?.createdAt)
+        const nextEditedBy = buildEditedByWithActor(selectedDocument?.editedBy, auth.currentUser?.uid || '')
         if (tabs && tabs.length > 0) {
-          void updateWorkhubDocument(docId, { title, tabs, masterPage })
+          void updateWorkhubDocumentWithOptimisticConcurrency(docId, { title, tabs, masterPage, editedBy: nextEditedBy }, expectedRevisionMs)
         } else {
-          void updateWorkhubDocument(docId, { title, body, masterPage })
+          void updateWorkhubDocumentWithOptimisticConcurrency(docId, { title, body, masterPage, editedBy: nextEditedBy }, expectedRevisionMs)
         }
       }
     }
@@ -1058,6 +1315,10 @@ export function useWorkhubDocEditorHandlers({
     if (!auth.currentUser || !selectedWorkspaceId || !selectedDocument) return
     if (selectedDocumentReadOnly) {
       showToast({ type: 'warning', message: 'You only have view access to this document.' })
+      return
+    }
+    if (collaborationConflictBlocked) {
+      showToast({ type: 'warning', message: 'A collaborator has newer changes. Load latest or choose to keep your edits before saving.' })
       return
     }
 
@@ -1096,18 +1357,23 @@ export function useWorkhubDocEditorHandlers({
     try {
       const nextBody = normalizeDocumentBodyForStorage(selectedDocumentBodyDraft)
       const nextMasterPage = normalizeDocumentMasterPage(selectedDocumentMasterPageDraft)
+      const nextEditedBy = buildEditedByWithActor(selectedDocument.editedBy, auth.currentUser.uid)
+      const expectedRevisionMs = appliedRemoteSnapshotRef.current?.docId === selectedDocument.id
+        ? appliedRemoteSnapshotRef.current.revisionMs
+        : getUnknownTimeValue(selectedDocument.updatedAt || selectedDocument.createdAt)
       let syncedReferences: WorkhubDocument[] = []
       if (hasTabs) {
         const savedTabs = documentTabsDraftRef.current.map((t) =>
           t.id === activeTabIdRef.current ? { ...t, body: nextBody } : t,
         )
-        await updateWorkhubDocument(selectedDocument.id, {
+        await updateWorkhubDocumentWithOptimisticConcurrency(selectedDocument.id, {
           title: nextTitle,
           tabs: savedTabs,
           masterPage: nextMasterPage,
+          editedBy: nextEditedBy,
           visibility,
           memberUids,
-        })
+        }, expectedRevisionMs)
         if (!selectedDocument.referenceSourceDocumentId) {
           syncedReferences = await syncReferencesFromSource({
             sourceDocumentId: selectedDocument.id,
@@ -1121,14 +1387,24 @@ export function useWorkhubDocEditorHandlers({
             actorUid: auth.currentUser.uid,
           })
         }
+        appliedRemoteSnapshotRef.current = {
+          docId: selectedDocument.id,
+          revisionMs: expectedRevisionMs,
+          title: nextTitle,
+          body: nextBody,
+          tabs: savedTabs.map((tab) => ({ ...tab })),
+          masterPage: normalizeDocumentMasterPage(nextMasterPage),
+          latestExternalEditorUid: '',
+        }
       } else {
-        await updateWorkhubDocument(selectedDocument.id, {
+        await updateWorkhubDocumentWithOptimisticConcurrency(selectedDocument.id, {
           title: nextTitle,
           body: nextBody,
           masterPage: nextMasterPage,
+          editedBy: nextEditedBy,
           visibility,
           memberUids,
-        })
+        }, expectedRevisionMs)
         if (!selectedDocument.referenceSourceDocumentId) {
           syncedReferences = await syncReferencesFromSource({
             sourceDocumentId: selectedDocument.id,
@@ -1142,7 +1418,17 @@ export function useWorkhubDocEditorHandlers({
             actorUid: auth.currentUser.uid,
           })
         }
+        appliedRemoteSnapshotRef.current = {
+          docId: selectedDocument.id,
+          revisionMs: expectedRevisionMs,
+          title: nextTitle,
+          body: nextBody,
+          tabs: [],
+          masterPage: normalizeDocumentMasterPage(nextMasterPage),
+          latestExternalEditorUid: '',
+        }
       }
+      setCollaborationConflictSnapshot(null)
       if (!selectedDocument.referenceSourceDocumentId && syncedReferences.length > 0) {
         await notifySourceUpdateRecipients({
           sourceDocument: selectedDocument,
@@ -1169,6 +1455,13 @@ export function useWorkhubDocEditorHandlers({
         message: isPublicReferenceScope ? 'Document published and references were notified.' : 'Document saved.',
       })
     } catch (error) {
+      if (error instanceof WorkhubDocumentConflictError) {
+        const remoteSnapshot = buildRemoteDocumentSnapshot(selectedDocument)
+        setCollaborationConflictSnapshot(remoteSnapshot)
+        setLatestRemoteRevisionMs(Math.max(remoteSnapshot.revisionMs, error.currentUpdatedAtMs || 0))
+        showToast({ type: 'warning', message: 'This document was updated by another teammate. Review latest changes before saving.' })
+        return
+      }
       showToast({ type: 'error', message: error instanceof Error ? error.message : 'Could not save document.' })
     } finally {
       setBusyKey('')
@@ -1606,7 +1899,7 @@ export function useWorkhubDocEditorHandlers({
       showToast({ type: 'warning', message: 'Select a workspace first.' })
       return
     }
-    const targetProject = allWorkspaceProjects.find((p) => p.id === copyToFolderProjectId && p.workspaceId === copyToFolderWorkspaceId)
+    const targetProject = copyToFolderAvailableProjects.find((p) => p.id === copyToFolderProjectId && p.workspaceId === copyToFolderWorkspaceId)
     if (!targetProject) {
       showToast({ type: 'warning', message: 'Select a folder for the reference.' })
       return
@@ -1783,11 +2076,16 @@ export function useWorkhubDocEditorHandlers({
     handleDocLinkRemove,
 
     noteAutoSaveStatus,
+    collaborationConflictBlocked,
+    collaborationConflictUpdatedAtMs,
+    collaborationConflictEditorUid,
     selectedDocumentHasOutgoingReferences,
     sourceReferencedTabIds,
     publicReferenceAutoSaveBlocked,
     recoverableDraftAvailable: !!recoverableDraft,
     recoverableDraftUpdatedAt: recoverableDraft?.updatedAt ?? null,
+    handleApplyCollaborationRemoteUpdate,
+    handleKeepLocalEditsAfterConflict,
     handleRestoreRecoverableDraft,
     handleDiscardRecoverableDraft,
 
@@ -1800,6 +2098,7 @@ export function useWorkhubDocEditorHandlers({
     copyTabMode,
     copyTabSelection,
     sourceReferenceDocuments,
+    copyToFolderAvailableProjects,
     setCopyToFolderDialogOpen,
     setCopyToFolderWorkspaceId,
     setCopyToFolderProjectId,

@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
   deleteWorkhubComment,
   subscribeWorkhubCommentsByEntity,
@@ -23,6 +23,21 @@ import { getTaskSelectionSnapshot, setTaskSelectionId, subscribeTaskSelection } 
 const DEFAULT_STATUS_TASK_RENDER_LIMIT = 80
 const STATUS_TASK_RENDER_INCREMENT = 80
 const TASK_DISCUSSION_PAGE_SIZE = 6
+const DETAIL_RAIL_DEFAULT_WIDTH = 320
+const DETAIL_RAIL_MIN_WIDTH = 272
+const DETAIL_RAIL_MIN_WIDTH_COMPACT = 228
+const DETAIL_RAIL_MAX_WIDTH = 620
+const DETAIL_RAIL_MAIN_COLUMN_MIN = 640
+
+function clampDetailRailWidth(width: number, mode: 'expanded' | 'compact') {
+  const minWidth = mode === 'compact' ? DETAIL_RAIL_MIN_WIDTH_COMPACT : DETAIL_RAIL_MIN_WIDTH
+  if (typeof window === 'undefined') {
+    return Math.min(DETAIL_RAIL_MAX_WIDTH, Math.max(minWidth, width))
+  }
+  const viewportAwareMax = Math.max(minWidth, window.innerWidth - DETAIL_RAIL_MAIN_COLUMN_MIN)
+  const maxWidth = Math.min(DETAIL_RAIL_MAX_WIDTH, viewportAwareMax)
+  return Math.min(maxWidth, Math.max(minWidth, width))
+}
 
 type WorkhubTasksSectionProps = Record<string, any>
 
@@ -59,7 +74,13 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
     selectedTaskCount,
     setBulkStatusMenuOpen,
     bulkStatusMenuOpen,
+    setBulkAssigneeMenuOpen,
+    bulkAssigneeMenuOpen,
+    bulkAssignableMembers,
+    bulkUnionAssigneeUids,
+    bulkAssigneeCoverageByUid,
     handleBulkStatusChange,
+    handleBulkAssigneeChange,
     clearTaskSelection,
     setBulkDeleteConfirmOpen,
     selectedWorkspaceScopeType,
@@ -262,6 +283,14 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
     onMilestoneStatusChange: _onMilestoneStatusChangeProp,
   } = props
 
+  const [bulkAssigneeDraftUids, setBulkAssigneeDraftUids] = useState<string[]>([])
+
+  useEffect(() => {
+    if (selectedTaskCount > 0) return
+    setBulkAssigneeDraftUids([])
+    setBulkAssigneeMenuOpen(false)
+  }, [selectedTaskCount, setBulkAssigneeMenuOpen])
+
   // ── Milestone view subscription (isolated here so only this component re-renders on data changes) ──
   const viewMilestones = useWorkhubMilestones({
     projectId: selectedProjectId !== 'all' ? selectedProjectId : null,
@@ -361,8 +390,69 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
     setHidden: setDetailRailHidden,
     toggleCompact: toggleDetailRailCompact,
   } = useDetailRailMode('workhub:task-detail-rail-mode', !isMobileWorkhubLayout)
+  const detailRailRef = useRef<HTMLElement | null>(null)
+  const [isDetailRailResizing, setIsDetailRailResizing] = useState(false)
+  const [detailRailWidth, setDetailRailWidth] = useState(() => {
+    if (typeof window === 'undefined') return DETAIL_RAIL_DEFAULT_WIDTH
+    const raw = window.localStorage.getItem('workhub:task-detail-rail-width')
+    const parsed = raw ? parseInt(raw, 10) : NaN
+    if (!Number.isFinite(parsed)) return DETAIL_RAIL_DEFAULT_WIDTH
+    return clampDetailRailWidth(parsed, 'expanded')
+  })
   const useTaskDetailDialog = workhubViewMode === 'workspace_tree'
   const contentDetailRailMode = useTaskDetailDialog ? 'hidden' : detailRailMode
+  const resolvedDetailRailWidth = useMemo(
+    () => clampDetailRailWidth(detailRailWidth, detailRailMode === 'compact' ? 'compact' : 'expanded'),
+    [detailRailMode, detailRailWidth],
+  )
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem('workhub:task-detail-rail-width', String(Math.round(resolvedDetailRailWidth)))
+  }, [resolvedDetailRailWidth])
+
+  const handleDetailRailResizeStart = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    if (isMobileWorkhubLayout || contentDetailRailMode === 'hidden') return
+    event.preventDefault()
+    event.stopPropagation()
+    setIsDetailRailResizing(true)
+    const initialRight = detailRailRef.current?.getBoundingClientRect().right ?? window.innerWidth
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const nextWidth = Math.round(initialRight - moveEvent.clientX)
+      setDetailRailWidth(clampDetailRailWidth(nextWidth, detailRailMode === 'compact' ? 'compact' : 'expanded'))
+    }
+
+    const handlePointerUp = () => {
+      setIsDetailRailResizing(false)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+    }
+
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+  }, [contentDetailRailMode, detailRailMode, isMobileWorkhubLayout])
+
+  useEffect(() => {
+    if (!isMobileWorkhubLayout && contentDetailRailMode !== 'hidden') return
+    setIsDetailRailResizing(false)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }, [contentDetailRailMode, isMobileWorkhubLayout])
+
+  useEffect(() => () => {
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }, [])
+
+  const contentAreaStyle = useMemo<React.CSSProperties | undefined>(() => {
+    if (isMobileWorkhubLayout || contentDetailRailMode === 'hidden') return undefined
+    return { gridTemplateColumns: `minmax(0, 1fr) ${Math.round(resolvedDetailRailWidth)}px` }
+  }, [contentDetailRailMode, isMobileWorkhubLayout, resolvedDetailRailWidth])
 
   const selectedTaskAssignableMembers = useMemo(
     () => (selectedTask ? (assignableMembersByProjectId[selectedTask.projectId] || workspaceAssignableMembers) : workspaceAssignableMembers),
@@ -743,7 +833,7 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
 
   return (
     <>
-      <main className={`workhub-content-area workhub-detail-rail-${contentDetailRailMode}`}>
+      <main className={`workhub-content-area workhub-detail-rail-${contentDetailRailMode}`} style={contentAreaStyle}>
         <div className="workhub-task-main-column">
           {!useTaskDetailDialog && !isMobileWorkhubLayout && detailRailMode === 'hidden' && (
             <div className="workhub-detail-rail-restore-wrap">
@@ -994,6 +1084,15 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
               </div>
               {selectedTaskCount > 0 && (
                 <>
+                  <button
+                    type="button"
+                    className="workhub-status-manage-btn workhub-bulk-clear-inline-btn"
+                    onClick={clearTaskSelection}
+                    aria-label="Clear selected tasks"
+                    title="Clear selected tasks"
+                  >
+                    Clear
+                  </button>
                   <div className="workhub-bulk-status-wrap">
                     <button
                       type="button"
@@ -1013,6 +1112,75 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
                           </button>
                         ))}
                         <button type="button" className="workhub-bulk-clear-btn" onClick={clearTaskSelection}>Clear selection</button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="workhub-bulk-assignee-wrap">
+                    <button
+                      type="button"
+                      className="workhub-status-manage-btn workhub-bulk-assignee-btn"
+                      onClick={() => {
+                        setBulkAssigneeMenuOpen((current: boolean) => {
+                          const next = !current
+                          if (next) {
+                            setBulkAssigneeDraftUids(Array.isArray(bulkUnionAssigneeUids) ? [...bulkUnionAssigneeUids] : [])
+                          }
+                          return next
+                        })
+                      }}
+                      aria-label="Bulk assign selected tasks"
+                      title="Bulk assign selected tasks"
+                    >
+                      👥
+                    </button>
+                    {bulkAssigneeMenuOpen && (
+                      <div className="workhub-bulk-assignee-menu">
+                        <div className="workhub-bulk-assignee-legend" aria-live="polite">
+                          <span><strong>common</strong> = all selected</span>
+                          <span><strong>partial</strong> = some selected</span>
+                        </div>
+                        <button
+                          type="button"
+                          className={`workhub-composer-notify-option${bulkAssigneeDraftUids.length === 0 ? ' is-active' : ''}`}
+                          onClick={() => setBulkAssigneeDraftUids([])}
+                        >
+                          No one
+                        </button>
+                        <div className="workhub-composer-notify-divider" />
+                        {bulkAssignableMembers.map((item: any) => {
+                          const checked = bulkAssigneeDraftUids.includes(item.uid)
+                          const coverageCount = Number(bulkAssigneeCoverageByUid?.[item.uid] || 0)
+                          const hasCoverage = coverageCount > 0 && selectedTaskCount > 0
+                          const isCommon = hasCoverage && coverageCount === selectedTaskCount
+                          return (
+                            <label key={item.uid} className="workhub-composer-notify-check">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => {
+                                  setBulkAssigneeDraftUids((current: string[]) => {
+                                    if (current.includes(item.uid)) return current.filter((uid) => uid !== item.uid)
+                                    return [...current, item.uid]
+                                  })
+                                }}
+                              />
+                              <span className="workhub-bulk-assignee-option-text">{item.displayName || item.email || item.uid}</span>
+                              {hasCoverage && (
+                                <span className={`workhub-bulk-assignee-coverage-badge${isCommon ? ' is-common' : ' is-partial'}`}>
+                                  {isCommon ? 'common' : `partial ${coverageCount}/${selectedTaskCount}`}
+                                </span>
+                              )}
+                            </label>
+                          )
+                        })}
+                        <div className="workhub-composer-notify-divider" />
+                        <button
+                          type="button"
+                          className="workhub-composer-notify-option is-active"
+                          onClick={() => void handleBulkAssigneeChange(bulkAssigneeDraftUids)}
+                        >
+                          Apply assignees
+                        </button>
                       </div>
                     )}
                   </div>
@@ -1277,9 +1445,19 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
 
         {!useTaskDetailDialog && (
           <aside
+            ref={detailRailRef}
             className={`workhub-task-detail-rail${isMobileWorkhubLayout ? ' is-mobile-drawer' : ''}${isMobileWorkhubLayout && selectedTask ? ' is-open' : ''}${!isMobileWorkhubLayout ? ` is-${detailRailMode}` : ''}`}
             aria-hidden={isMobileWorkhubLayout && !selectedTask}
           >
+            {!isMobileWorkhubLayout && detailRailMode !== 'hidden' && (
+              <button
+                type="button"
+                className={`workhub-task-detail-rail-resize-handle${isDetailRailResizing ? ' is-active' : ''}`}
+                onPointerDown={handleDetailRailResizeStart}
+                aria-label="Resize details panel"
+                title="Drag to resize details panel"
+              />
+            )}
             {!isMobileWorkhubLayout && detailRailMode !== 'hidden' && (
               <div className="workhub-detail-rail-toolbar">
                 <button

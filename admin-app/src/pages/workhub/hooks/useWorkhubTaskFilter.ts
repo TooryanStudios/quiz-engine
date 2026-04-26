@@ -81,7 +81,11 @@ export function useWorkhubTaskFilter({
     return tasks.filter((item) => {
       if (!visibleProjectIds.has(item.projectId)) return false
       if (isEffectivelyEmptyTaskTitle(item.title || '')) return false
-      if (selectedAssigneeUid !== 'all' && item.assigneeUid !== selectedAssigneeUid) return false
+      if (
+        selectedAssigneeUid !== 'all'
+        && item.assigneeUid !== selectedAssigneeUid
+        && !(Array.isArray(item.assigneeUids) && item.assigneeUids.includes(selectedAssigneeUid))
+      ) return false
       return true
     })
   }, [selectedAssigneeUid, tasks, visibleProjectIds])

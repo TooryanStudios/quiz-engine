@@ -22,11 +22,18 @@ const app = initializeApp(firebaseConfig)
 
 export const auth = getAuth(app)
 export const authReady = setPersistence(auth, browserLocalPersistence).catch(() => undefined)
-const enablePersistentFirestore = import.meta.env.VITE_FIRESTORE_PERSISTENCE === '1'
+const firestorePersistenceSetting = import.meta.env.VITE_FIRESTORE_PERSISTENCE
+const isLocalhost = typeof window !== 'undefined' && ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)
+const enablePersistentFirestore = firestorePersistenceSetting === '1'
+  ? true
+  : firestorePersistenceSetting === '0'
+    ? false
+    : !import.meta.env.DEV && !isLocalhost
 
 export const db = initializeFirestore(app, {
-  // Default to memory cache to avoid IndexedDB/tab-sync assertion loops in development.
-  // Set VITE_FIRESTORE_PERSISTENCE=1 to opt into persistent cache.
+  // Production defaults to persistent cache for faster startup and better revisit performance.
+  // In local/dev, default to memory cache to avoid IndexedDB/tab-sync assertion loops.
+  // Optional override: VITE_FIRESTORE_PERSISTENCE=1 (force on) or =0 (force off).
   localCache: enablePersistentFirestore
     ? persistentLocalCache({ tabManager: persistentSingleTabManager(undefined) })
     : memoryLocalCache(),

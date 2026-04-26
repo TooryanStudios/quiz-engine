@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Button Generator</title>
+    <style>
+        body { 
+            background: #1a1a2e; 
+            color: #fff; 
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        .button-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .button-item {
+            text-align: center;
+        }
+        canvas {
+            border: 2px solid #444;
+            margin: 10px;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            border-radius: 5px;
+            margin: 5px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <h1>Modern Button Graphics Generator</h1>
+    <p>Right-click each canvas and "Save image as..." to download the button graphics</p>
+    
+    <div class="button-container" id="buttonContainer"></div>
+
+    <script>
+        const buttons = [
+            { name: 'but_exit', icon: '✕', size: 100, gradient: ['#ff6b6b', '#ee5a6f'], label: 'Exit' },
+            { name: 'but_restart', icon: '↻', size: 120, gradient: ['#4ecdc4', '#44a08d'], label: 'Restart' },
+            { name: 'but_restart_small', icon: '↻', size: 80, gradient: ['#4ecdc4', '#44a08d'], label: 'Restart Small' },
+            { name: 'but_yes', icon: '✓', size: 110, gradient: ['#51cf66', '#37b24d'], label: 'Yes' },
+            { name: 'but_no', icon: '✕', size: 110, gradient: ['#ff8787', '#f03e3e'], label: 'No' },
+            { name: 'but_home', icon: '⌂', size: 110, gradient: ['#748ffc', '#5c7cfa'], label: 'Home' },
+            { name: 'but_arrow_left', icon: '◀', size: 90, gradient: ['#ffd43b', '#fab005'], label: 'Arrow Left' },
+            { name: 'but_arrow_right', icon: '▶', size: 90, gradient: ['#ffd43b', '#fab005'], label: 'Arrow Right' },
+            { name: 'but_play', icon: '▶', size: 110, gradient: ['#51cf66', '#37b24d'], label: 'Play' },
+            { name: 'but_next', icon: '→', size: 110, gradient: ['#ffd43b', '#fab005'], label: 'Next' }
+        ];
+
+        function createButton(config) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const size = config.size;
+            
+            canvas.width = size;
+            canvas.height = size;
+
+            // Create gradient
+            const gradient = ctx.createLinearGradient(0, 0, 0, size);
+            gradient.addColorStop(0, config.gradient[0]);
+            gradient.addColorStop(1, config.gradient[1]);
+
+            // Draw outer glow
+            ctx.shadowColor = config.gradient[0];
+            ctx.shadowBlur = 8;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 0;
+
+            // Draw circle background
+            ctx.beginPath();
+            ctx.arc(size / 2, size / 2, size / 2 - 10, 0, Math.PI * 2);
+            ctx.fillStyle = gradient;
+            ctx.fill();
+
+            // Draw inner highlight
+            ctx.shadowBlur = 0;
+            const highlightGradient = ctx.createRadialGradient(
+                size / 2 - size / 6, size / 2 - size / 6, 0,
+                size / 2, size / 2, size / 2
+            );
+            highlightGradient.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
+            highlightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            
+            ctx.beginPath();
+            ctx.arc(size / 2, size / 2, size / 2 - 10, 0, Math.PI * 2);
+            ctx.fillStyle = highlightGradient;
+            ctx.fill();
+
+            // Draw border
+            ctx.beginPath();
+            ctx.arc(size / 2, size / 2, size / 2 - 10, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            // Draw icon
+            ctx.fillStyle = '#ffffff';
+            ctx.font = `bold ${size * 0.5}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+            ctx.shadowBlur = 5;
+            
+            // Adjust position for arrow symbols to center them properly
+            let offsetX = 0;
+            let offsetY = 0;
+            if (config.icon === '◀') {
+                offsetX = -size * 0.02; // Shift left arrow slightly right
+            } else if (config.icon === '▶') {
+                offsetX = size * 0.02; // Shift right arrow slightly right
+            } else if (config.icon === '→') {
+                offsetY = size * 0.01; // Shift next arrow down slightly
+            }
+            
+            ctx.fillText(config.icon, size / 2 + offsetX, size / 2 + offsetY);
+
+            return canvas;
+        }
+
+        function createBackgroundGradient(width, height, name) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            canvas.width = width;
+            canvas.height = height;
+
+            // Create radial gradient from center
+            const gradient = ctx.createRadialGradient(
+                width / 2, height / 2, 0,
+                width / 2, height / 2, Math.max(width, height) / 1.5
+            );
+            
+            if (name === 'bg_menu') {
+                gradient.addColorStop(0, '#1a1f3a');
+                gradient.addColorStop(0.5, '#0f1729');
+                gradient.addColorStop(1, '#030915');
+            } else if (name === 'bg_game') {
+                gradient.addColorStop(0, '#1e2a47');
+                gradient.addColorStop(0.5, '#141d33');
+                gradient.addColorStop(1, '#030915');
+            } else {
+                gradient.addColorStop(0, '#252d47');
+                gradient.addColorStop(0.5, '#1a2138');
+                gradient.addColorStop(1, '#0d1220');
+            }
+
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, width, height);
+
+            // Add subtle circuit pattern overlay
+            ctx.strokeStyle = 'rgba(100, 150, 255, 0.05)';
+            ctx.lineWidth = 2;
+            
+            for (let i = 0; i < 20; i++) {
+                const x = Math.random() * width;
+                const y = Math.random() * height;
+                const size = 50 + Math.random() * 100;
+                
+                ctx.strokeRect(x, y, size, size);
+                ctx.beginPath();
+                ctx.moveTo(x + size / 2, y);
+                ctx.lineTo(x + size / 2, y + size);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(x, y + size / 2);
+                ctx.lineTo(x + size, y + size / 2);
+                ctx.stroke();
+            }
+
+            return canvas;
+        }
+
+        // Generate buttons
+        buttons.forEach(config => {
+            const div = document.createElement('div');
+            div.className = 'button-item';
+            
+            const canvas = createButton(config);
+            const label = document.createElement('div');
+            label.textContent = config.label;
+            
+            div.appendChild(canvas);
+            div.appendChild(label);
+            document.getElementById('buttonContainer').appendChild(div);
+        });
+
+        // Generate backgrounds
+        const backgrounds = [
+            { name: 'bg_menu', width: 768, height: 1400, label: 'Menu Background' },
+            { name: 'bg_game', width: 768, height: 1400, label: 'Game Background' },
+            { name: 'bg_end_panel', width: 768, height: 1400, label: 'End Panel Background' }
+        ];
+
+        backgrounds.forEach(config => {
+            const div = document.createElement('div');
+            div.className = 'button-item';
+            
+            const canvas = createBackgroundGradient(config.width, config.height, config.name);
+            canvas.style.width = '200px';
+            canvas.style.height = 'auto';
+            
+            const label = document.createElement('div');
+            label.textContent = config.label;
+            
+            div.appendChild(canvas);
+            div.appendChild(label);
+            document.getElementById('buttonContainer').appendChild(div);
+        });
+    </script>
+</body>
+</html>

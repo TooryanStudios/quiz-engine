@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { WorkhubMember, WorkhubTask, WorkhubTaskChecklistItem, WorkhubTaskPriority, WorkhubTaskStatus } from '../../../lib/workhubRepo'
 import { PRIORITY_LABELS, getPriorityIcon } from '../constants'
@@ -98,7 +98,7 @@ interface TaskRowCallbacks {
   onOpenPriorityMenu: (taskId: string) => void
   onOpenMoreMenu: (taskId: string) => void
   onOpenAssigneeMenu: (taskId: string) => void
-  onAssigneeSelect: (task: WorkhubTask, uid: string) => void
+  onAssigneesChange: (task: WorkhubTask, uids: string[]) => void
   onStatusSelect: (task: WorkhubTask, statusId: WorkhubTaskStatus) => void
   onPrioritySelect: (task: WorkhubTask, priorityValue: WorkhubTaskPriority) => void
   onToggleChecklist: (taskId: string) => void
@@ -157,7 +157,24 @@ const TaskRow = memo(function TaskRow({
   const { checklist } = meta
   const assigneeBtnRef = useRef<HTMLButtonElement | null>(null)
   const [assigneeMenuStyle, setAssigneeMenuStyle] = useState<React.CSSProperties>({})
-  const assigneeLabel = taskAssignee?.displayName || taskAssignee?.email || 'Unassigned'
+  const selectedTaskAssigneeUids = useMemo(() => {
+    const validUidSet = new Set(assignableMembers.map((member) => member.uid))
+    const fromTask = (task.assigneeUids || []).filter((uid) => validUidSet.has(uid))
+    const primary = task.assigneeUid && validUidSet.has(task.assigneeUid) ? task.assigneeUid : ''
+    const ordered = primary
+      ? [primary, ...fromTask.filter((uid) => uid !== primary)]
+      : fromTask
+    return Array.from(new Set(ordered))
+  }, [assignableMembers, task.assigneeUid, task.assigneeUids])
+  const assigneeLabel = useMemo(() => {
+    if (selectedTaskAssigneeUids.length === 0) return 'Unassigned'
+    const first = selectedTaskAssigneeUids[0]
+    const firstMember = assignableMembers.find((member) => member.uid === first)
+    const firstLabel = firstMember?.displayName || firstMember?.email || first
+    if (selectedTaskAssigneeUids.length === 1) return firstLabel
+    return `${firstLabel} +${selectedTaskAssigneeUids.length - 1}`
+  }, [assignableMembers, selectedTaskAssigneeUids])
+  const assigneeCount = selectedTaskAssigneeUids.length
   const creatorLabel = taskCreator?.displayName || taskCreator?.email || 'Unknown'
   const showCreatorSeparately = taskCreator && taskCreator.uid !== task.assigneeUid
   const assigneeIsCreator = taskCreator?.uid === task.assigneeUid
@@ -188,20 +205,26 @@ const TaskRow = memo(function TaskRow({
     >
       <button
         type="button"
-        className={!task.assigneeUid ? 'is-active' : ''}
-        onClick={() => callbacks.onAssigneeSelect(task, '')}
+        className={`workhub-composer-notify-option${selectedTaskAssigneeUids.length === 0 ? ' is-active' : ''}`}
+        onClick={() => callbacks.onAssigneesChange(task, [])}
       >
-        Unassigned
+        No one
       </button>
+      <div className="workhub-composer-notify-divider" />
       {assignableMembers.map((member) => (
-        <button
-          key={member.uid}
-          type="button"
-          className={task.assigneeUid === member.uid ? 'is-active' : ''}
-          onClick={() => callbacks.onAssigneeSelect(task, member.uid)}
-        >
+        <label key={member.uid} className="workhub-composer-notify-check">
+          <input
+            type="checkbox"
+            checked={selectedTaskAssigneeUids.includes(member.uid)}
+            onChange={() => {
+              const next = selectedTaskAssigneeUids.includes(member.uid)
+                ? selectedTaskAssigneeUids.filter((uid) => uid !== member.uid)
+                : [...selectedTaskAssigneeUids, member.uid]
+              callbacks.onAssigneesChange(task, next)
+            }}
+          />
           {member.displayName || member.email}
-        </button>
+        </label>
       ))}
     </div>,
     document.body,
@@ -301,6 +324,11 @@ const TaskRow = memo(function TaskRow({
                       : <span className="workhub-task-card-meta-avatar-fallback">👤</span>}
                   </span>
                   <span className="workhub-task-card-meta-copy">{assigneeLabel}</span>
+                  {assigneeCount > 1 && (
+                    <span className="workhub-task-assignee-count" aria-label={`${assigneeCount} assignees`}>
+                      {assigneeCount}
+                    </span>
+                  )}
                 </button>
 
                 <button
@@ -501,6 +529,11 @@ const TaskRow = memo(function TaskRow({
                   {taskAssignee?.photoURL
                     ? <img src={taskAssignee.photoURL} alt={assigneeLabel} style={{ width: 16, height: 16, borderRadius: '50%', objectFit: 'cover', display: 'block' }} />
                     : <span style={{ fontSize: '0.72rem', lineHeight: 1 }}>👤</span>}
+                  {assigneeCount > 1 && (
+                    <span className="workhub-task-assignee-count" aria-label={`${assigneeCount} assignees`}>
+                      {assigneeCount}
+                    </span>
+                  )}
                 </button>
               </div>
 
@@ -693,6 +726,11 @@ const TaskRow = memo(function TaskRow({
                   {taskAssignee?.photoURL
                     ? <img src={taskAssignee.photoURL} alt={assigneeLabel} />
                     : <span className="workhub-assignee-fallback">👤</span>}
+                  {assigneeCount > 1 && (
+                    <span className="workhub-task-assignee-count" aria-label={`${assigneeCount} assignees`}>
+                      {assigneeCount}
+                    </span>
+                  )}
                 </button>
               </div>
               {assigneeMenu}

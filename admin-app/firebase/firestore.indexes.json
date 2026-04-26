@@ -52,6 +52,15 @@
       ]
     },
     {
+      "collectionGroup": "workhub_documents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "workspaceId", "order": "ASCENDING" },
+        { "fieldPath": "visibility", "order": "ASCENDING" },
+        { "fieldPath": "memberUids", "arrayConfig": "CONTAINS" }
+      ]
+    },
+    {
       "collectionGroup": "workhub_notifications",
       "queryScope": "COLLECTION",
       "fields": [

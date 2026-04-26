@@ -1,4 +1,9 @@
-export type WorkhubImageMarkerType = 'point' | 'line' | 'checkbox'
+export type WorkhubImageMarkerType = 'point' | 'line' | 'checkbox' | 'freehand'
+
+export interface WorkhubImagePathPoint {
+  x: number
+  y: number
+}
 
 export interface WorkhubImageComment {
   id: string
@@ -14,6 +19,7 @@ export interface WorkhubImageMarker {
   y: number
   x2?: number
   y2?: number
+  path?: WorkhubImagePathPoint[]
   text?: string
   checked?: boolean
   resolved?: boolean

@@ -16,7 +16,6 @@ import { ToastProvider } from './lib/ToastContext'
 import { Dialog } from './components/Dialog'
 import { VFXContainer } from './components/VFXContainer'
 import { LoginPage } from './pages/LoginPage'
-import WorkHubPage from './pages/WorkHubPage'
 import logoImg from './assets/QYan_logo_300x164.jpg'
 import { communicationFeatureFlags } from './features/communication/config'
 import { InAppNotificationCenter } from './features/communication/components/InAppNotificationCenter'
@@ -31,10 +30,6 @@ function RouteLoadFailure({ routeLabel }: { routeLabel: string }) {
       Could not load {routeLabel}. Please refresh the page.
     </div>
   )
-}
-
-function WorkHubPageProxy() {
-  return <WorkHubPage />
 }
 
 function withRouteBoundary(routeName: string, node: ReactNode) {
@@ -77,6 +72,7 @@ const BillingPage     = createLazyRoute('BillingPage', () => import('./pages/Bil
 const DashboardPage   = createLazyRoute('DashboardPage', () => import('./pages/DashboardPage'), 'DashboardPage')
 const PacksPage       = createLazyRoute('PacksPage', () => import('./pages/PacksPage'), 'PacksPage')
 const MyQuizzesPage   = createLazyRoute('MyQuizzesPage', () => import('./pages/MyQuizzesPage'), 'MyQuizzesPage')
+const WorkHubRoutePage = createLazyRoute('WorkHubPage', () => import('./pages/WorkHubPage'))
 const MessagesPage    = createLazyRoute('MessagesPage', () => import('./features/communication/pages/MessagesPage'), 'MessagesPage')
 const AdHocTasksPage  = createLazyRoute('AdHocTasksPage', () => import('./features/workhubAdhoc/pages/AdHocTasksPage'), 'AdHocTasksPage')
 const ProfilePage     = createLazyRoute('ProfilePage', () => import('./pages/ProfilePage'), 'ProfilePage')
@@ -129,7 +125,22 @@ function resolveNavTarget(to: string) {
   return to
 }
 
-function RequireAuth({ user, children }: { user: User | null; children: ReactElement }) {
+function RequireAuth({
+  user,
+  children,
+  loadingFallback,
+}: {
+  user: User | null | undefined
+  children: ReactElement
+  loadingFallback?: ReactElement
+}) {
+  if (user === undefined) {
+    return loadingFallback || (
+      <div className="app-loading-screen">
+        <div className="app-loading-spinner" />
+      </div>
+    )
+  }
   if (!user) return <Navigate to="/dashboard" replace />
   return children
 }
@@ -171,7 +182,15 @@ function AppLoadingScreen({
 
 function App() {
   const redirectPendingKey = 'qyan:authRedirectPending'
-  const [user, setUser] = useState<User | null | undefined>(undefined)
+  const [user, setUser] = useState<User | null | undefined>(() => {
+    if (typeof window === 'undefined') return undefined
+
+    const hasSessionHint = localStorage.getItem('qyan:session') === '1'
+    const redirectStartedAt = Number(localStorage.getItem(redirectPendingKey) || '0')
+    const redirectStillPending = redirectStartedAt > 0 && Date.now() - redirectStartedAt < 60000
+
+    return (hasSessionHint || redirectStillPending) ? undefined : null
+  })
   const navigate = useNavigate()
   const location = useLocation()
   const isLocalDevHost = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
@@ -208,7 +227,15 @@ function App() {
   } = useChatDockState({
     enabled: communicationFeatureFlags.chatDock,
   })
-  const [chatThreadIntent, setChatThreadIntent] = useState<{ threadId: string; key: number } | null>(null)
+  const [chatThreadIntent, setChatThreadIntent] = useState<{
+    threadId: string
+    key: number
+    targetPath?: string
+    targetTaskId?: string
+    targetLabel?: string
+    projectTargetPath?: string
+    projectTargetLabel?: string
+  } | null>(null)
 
   useEffect(() => {
     if (!communicationFeatureFlags.chatDock) return
@@ -219,7 +246,20 @@ function App() {
       const currentUid = auth.currentUser?.uid || ''
       const resolvedThreadId = (detail.threadId || '').trim()
         || (currentUid && detail.actorUid ? buildThreadId([currentUid, detail.actorUid]) : THREAD_EVERYONE)
-      setChatThreadIntent({ threadId: resolvedThreadId, key: Date.now() })
+      const resolvedTargetPath = (detail.targetPath || '').trim()
+      const resolvedTargetTaskId = (detail.targetTaskId || '').trim()
+      const resolvedTargetLabel = (detail.targetLabel || '').trim()
+      const resolvedProjectTargetPath = (detail.projectTargetPath || '').trim()
+      const resolvedProjectTargetLabel = (detail.projectTargetLabel || '').trim()
+      setChatThreadIntent({
+        threadId: resolvedThreadId,
+        key: Date.now(),
+        ...(resolvedTargetPath ? { targetPath: resolvedTargetPath } : {}),
+        ...(resolvedTargetTaskId ? { targetTaskId: resolvedTargetTaskId } : {}),
+        ...(resolvedTargetLabel ? { targetLabel: resolvedTargetLabel } : {}),
+        ...(resolvedProjectTargetPath ? { projectTargetPath: resolvedProjectTargetPath } : {}),
+        ...(resolvedProjectTargetLabel ? { projectTargetLabel: resolvedProjectTargetLabel } : {}),
+      })
       openChatDock()
     }
 
@@ -471,7 +511,7 @@ function App() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
-  if (user === undefined && !allowUnauthedLocalPlayTest) {
+  if (user === undefined && !allowUnauthedLocalPlayTest && (isLoginPage || isWorkHubPage || isMasterPage)) {
     if (isLoginPage) {
       return (
         <ToastProvider>
@@ -492,9 +532,7 @@ function App() {
         variant={isWorkHubPage ? 'workhub' : 'default'}
         note={isWorkHubPage
           ? (isAr ? 'جارٍ تجهيز مساحة العمل…' : 'Preparing your workspace…')
-          : (isAr
-              ? 'نقوم بتحميل ألعاب واختبارات مجانية لك الآن. يمكنك اللعب بدون تسجيل، وتسجيل الدخول يمنحك تجربة أفضل.'
-              : 'We are loading free challenges and games for you. No registration is required to play, and signing in gives you a better experience.')}
+          : (isAr ? 'جارٍ التحقق من جلسة الدخول…' : 'Checking your session…')}
       />
     )
   }
@@ -536,21 +574,22 @@ function App() {
                   note={isAr ? 'جارٍ تحميل WorkHub…' : 'Loading WorkHub…'}
                 />
               }>
-                <WorkHubPageProxy />
+                <RequireAuth
+                  user={user}
+                  loadingFallback={
+                    <AppLoadingScreen
+                      variant="workhub"
+                      note={isAr ? 'جارٍ تحميل WorkHub…' : 'Loading WorkHub…'}
+                    />
+                  }
+                >
+                  <WorkHubRoutePage />
+                </RequireAuth>
               </Suspense>
             </ErrorBoundary>
             <Dialog />
             {user && communicationFeatureFlags.chatDock && (
               <>
-                <button
-                  type="button"
-                  className={`workhub-floating-chat-btn shell-comm-btn${chatDockOpen ? ' is-active' : ''}`}
-                  onClick={toggleChatDock}
-                  aria-label={isAr ? 'لوحة الرسائل' : 'Messages panel'}
-                  title={isAr ? 'الرسائل' : 'Messages'}
-                >
-                  <span aria-hidden="true">💬</span>
-                </button>
                 <FeatureErrorBoundary
                   name="ChatDock"
                   resetKey={`${chatDockOpen ? 'open' : 'closed'}:${chatThreadIntent?.key || ''}`}
@@ -561,6 +600,12 @@ function App() {
                     onClose={closeChatDock}
                     onOpenMessagesPage={handleOpenMessagesPage}
                     layout="floating"
+                    floatingSide="left"
+                    defaultTargetPath={chatThreadIntent?.targetPath}
+                    defaultTargetTaskId={chatThreadIntent?.targetTaskId}
+                    defaultTargetLabel={chatThreadIntent?.targetLabel}
+                    projectTargetPath={chatThreadIntent?.projectTargetPath}
+                    projectTargetLabel={chatThreadIntent?.projectTargetLabel}
                     currentUser={{
                       uid: user.uid,
                       displayName: user.displayName || undefined,
@@ -676,20 +721,20 @@ function App() {
       <Route path="/play/:gameId" element={withRouteBoundary('play-game', <GameEmbedPage />)} />
       <Route path="/preview" element={withRouteBoundary('preview', <QuizPreviewPage />)} />
       <Route path="/preview/:id" element={withRouteBoundary('preview-id', <QuizPreviewPage />)} />
-      <Route path="/packs" element={withRouteBoundary('packs', <RequireAuth user={user ?? null}><PacksPage /></RequireAuth>)} />
-      <Route path="/my-quizzes" element={withRouteBoundary('my-quizzes', <RequireAuth user={user ?? null}><MyQuizzesPage /></RequireAuth>)} />
-      <Route path="/workhub/*" element={withRouteBoundary('workhub', <RequireAuth user={user ?? null}><WorkHubPageProxy /></RequireAuth>)} />
+      <Route path="/packs" element={withRouteBoundary('packs', <RequireAuth user={user}><PacksPage /></RequireAuth>)} />
+      <Route path="/my-quizzes" element={withRouteBoundary('my-quizzes', <RequireAuth user={user}><MyQuizzesPage /></RequireAuth>)} />
+      <Route path="/workhub/*" element={withRouteBoundary('workhub', <RequireAuth user={user} loadingFallback={<AppLoadingScreen variant="workhub" note={isAr ? 'جارٍ تحميل WorkHub…' : 'Loading WorkHub…'} />}><WorkHubRoutePage /></RequireAuth>)} />
       {communicationFeatureFlags.messagesPage ? (
-        <Route path="/messages" element={withRouteBoundary('messages', <RequireAuth user={user ?? null}><MessagesPage /></RequireAuth>)} />
+        <Route path="/messages" element={withRouteBoundary('messages', <RequireAuth user={user}><MessagesPage /></RequireAuth>)} />
       ) : null}
       {communicationFeatureFlags.adHocTasksPage ? (
-        <Route path="/ops-tasks" element={withRouteBoundary('ops-tasks', <RequireAuth user={user ?? null}><AdHocTasksPage /></RequireAuth>)} />
+        <Route path="/ops-tasks" element={withRouteBoundary('ops-tasks', <RequireAuth user={user}><AdHocTasksPage /></RequireAuth>)} />
       ) : null}
       <Route path="/voice-lab" element={withRouteBoundary('voice-lab', <RequireAdmin user={user ?? null}><VoiceLabPage /></RequireAdmin>)} />
       <Route path="/ai-lab" element={withRouteBoundary('ai-lab', <RequireAdmin user={user ?? null}><AILabPage /></RequireAdmin>)} />
       <Route path="/cover-gen-lab" element={withRouteBoundary('cover-gen-lab', <RequireAdmin user={user ?? null}><CoverGenLabPage /></RequireAdmin>)} />
-      <Route path="/billing" element={withRouteBoundary('billing', <RequireAuth user={user ?? null}><BillingPage /></RequireAuth>)} />
-      <Route path="/profile" element={withRouteBoundary('profile', <RequireAuth user={user ?? null}><ProfilePage /></RequireAuth>)} />
+      <Route path="/billing" element={withRouteBoundary('billing', <RequireAuth user={user}><BillingPage /></RequireAuth>)} />
+      <Route path="/profile" element={withRouteBoundary('profile', <RequireAuth user={user}><ProfilePage /></RequireAuth>)} />
     </Routes>
   )
 
@@ -1190,6 +1235,11 @@ function App() {
               isAr={isAr}
               onClose={closeChatDock}
               onOpenMessagesPage={handleOpenMessagesPage}
+              defaultTargetPath={chatThreadIntent?.targetPath}
+              defaultTargetTaskId={chatThreadIntent?.targetTaskId}
+              defaultTargetLabel={chatThreadIntent?.targetLabel}
+              projectTargetPath={chatThreadIntent?.projectTargetPath}
+              projectTargetLabel={chatThreadIntent?.projectTargetLabel}
               currentUser={{
                 uid: user.uid,
                 displayName: user.displayName || undefined,

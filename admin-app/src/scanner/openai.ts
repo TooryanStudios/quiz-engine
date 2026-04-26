@@ -153,7 +153,7 @@ export async function scanImage(
   if (!response.ok) {
     const err = await response.json().catch(() => ({ error: { message: response.statusText } }))
     const msg = (err as { error?: { message?: string } }).error?.message ?? response.statusText
-    if (response.status === 401) throw new Error('Invalid API key. Check the VITE_OPENAI_API_KEY environment variable.')
+    if (response.status === 401) throw new Error('Invalid API key. Check the configured OpenAI key.')
     if (response.status === 429) throw new Error('Rate limit reached. Please wait a moment and try again.')
     throw new Error(`OpenAI error: ${msg}`)
   }

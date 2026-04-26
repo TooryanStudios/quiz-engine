@@ -62,7 +62,7 @@ export function DashboardPage() {
     playNow: isAr ? 'العب الآن' : 'Play Now',
     browseAll: isAr ? 'تصفح المكتبة' : 'Browse Library',
     createMiniGame: isAr ? 'إنشاء لعبة أو اختبار' : 'Create Game Or Challenge',
-    openMoodBoardV2: isAr ? 'لوحة الأفكار 2' : 'Mood Board #2',
+    openMoodBoard: isAr ? 'لوحة الأفكار' : 'Mood Board',
     openFlowProjectPlan: isAr ? 'تدفق المشروع' : 'Flow Project Plan',
     noGames: isAr ? 'لا توجد ألعاب متاحة بعد.' : 'No games available yet.',
     createFirst: isAr ? 'أنشئ أول لعبة صغيرة للبدء.' : 'Create your first mini-game to begin.',
@@ -225,8 +225,8 @@ export function DashboardPage() {
         <div className="gameplay-action-buttons">
           <Link to="/editor" className="dashboard-btn dashboard-btn-primary gameplay-action-btn">{t.createMiniGame}</Link>
           <Link to="/packs" className="dashboard-btn dashboard-btn-secondary gameplay-action-btn">{t.browseAll}</Link>
-          <Link to="/mood-board-v2" className="dashboard-btn dashboard-btn-secondary gameplay-action-btn">{t.openMoodBoardV2}</Link>
-          <Link to="/flow-project-plan" className="dashboard-btn dashboard-btn-secondary gameplay-action-btn">{t.openFlowProjectPlan}</Link>
+          <Link to="/workhub" className="dashboard-btn dashboard-btn-secondary gameplay-action-btn">{t.openMoodBoard}</Link>
+          <Link to="/workhub" className="dashboard-btn dashboard-btn-secondary gameplay-action-btn">{t.openFlowProjectPlan}</Link>
         </div>
       </section>
 

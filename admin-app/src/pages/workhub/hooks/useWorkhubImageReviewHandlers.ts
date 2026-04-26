@@ -9,6 +9,7 @@ import {
 } from 'react'
 import {
   createEmptyImageReview,
+  type WorkhubImagePathPoint,
   type WorkhubImageMarkerType,
   type WorkhubImageReview,
 } from '../imageReview'
@@ -30,13 +31,21 @@ export function useWorkhubImageReviewHandlers({
   const [lightboxTool, setLightboxTool] = useState<WorkhubImageMarkerType>('point')
   const [lightboxImageFit, setLightboxImageFit] = useState<'contain' | 'cover' | 'scale-down'>('contain')
   const [lightboxImageAspect, setLightboxImageAspect] = useState<number | null>(null)
-  const [lightboxLineStart, setLightboxLineStart] = useState<{ x: number; y: number } | null>(null)
+  const [lightboxDraftLine, setLightboxDraftLine] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
+  const [lightboxDraftFreehandPath, setLightboxDraftFreehandPath] = useState<WorkhubImagePathPoint[] | null>(null)
   const [lightboxMarkerEditorId, setLightboxMarkerEditorId] = useState('')
   const [lightboxMarkerDraft, setLightboxMarkerDraft] = useState('')
   const [lightboxMarkerResolved, setLightboxMarkerResolved] = useState(false)
   const [lightboxMarkerEditorIsNew, setLightboxMarkerEditorIsNew] = useState(false)
   const lightboxStageRef = useRef<HTMLDivElement | null>(null)
   const lightboxDragRef = useRef<{ markerId: string; imageUrl: string } | null>(null)
+  const lightboxDrawingRef = useRef<{
+    tool: 'line' | 'freehand'
+    imageUrl: string
+    pointerId: number
+    start: WorkhubImagePathPoint
+    points: WorkhubImagePathPoint[]
+  } | null>(null)
 
   const updateImageReview = useCallback((url: string, updater: (current: WorkhubImageReview) => WorkhubImageReview) => {
     setAttachmentReviews((current) => {
@@ -53,21 +62,27 @@ export function useWorkhubImageReviewHandlers({
     setLightboxTool('point')
     setLightboxImageFit('contain')
     setLightboxImageAspect(null)
-    setLightboxLineStart(null)
+    setLightboxDraftLine(null)
+    setLightboxDraftFreehandPath(null)
     setLightboxMarkerEditorId('')
     setLightboxMarkerDraft('')
     setLightboxMarkerEditorIsNew(false)
+    lightboxDrawingRef.current = null
   }, [])
 
-  const getLightboxClickPosition = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect()
-    const x = ((event.clientX - rect.left) / rect.width) * 100
-    const y = ((event.clientY - rect.top) / rect.height) * 100
+  const getLightboxPointerPosition = useCallback((clientX: number, clientY: number, stage: HTMLDivElement) => {
+    const rect = stage.getBoundingClientRect()
+    const x = ((clientX - rect.left) / rect.width) * 100
+    const y = ((clientY - rect.top) / rect.height) * 100
     return {
       x: Math.min(100, Math.max(0, x)),
       y: Math.min(100, Math.max(0, y)),
     }
   }, [])
+
+  const getLightboxClickPosition = useCallback((event: ReactMouseEvent<HTMLDivElement>) => (
+    getLightboxPointerPosition(event.clientX, event.clientY, event.currentTarget)
+  ), [getLightboxPointerPosition])
 
   const handleLightboxMarkerRemove = useCallback((markerId: string) => {
     if (!lightboxImageUrl) return
@@ -91,34 +106,9 @@ export function useWorkhubImageReviewHandlers({
       setLightboxMarkerEditorIsNew(false)
     }
 
-    const position = getLightboxClickPosition(event)
-    if (lightboxTool === 'line') {
-      if (!lightboxLineStart) {
-        setLightboxLineStart(position)
-        return
-      }
-      const markerId = `mk_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
-      updateImageReview(lightboxImageUrl, (review) => ({
-        ...review,
-        markers: [...review.markers, {
-          id: markerId,
-          type: 'line',
-          x: lightboxLineStart.x,
-          y: lightboxLineStart.y,
-          x2: position.x,
-          y2: position.y,
-          text: '',
-          createdBy: markerAuthor,
-          createdAt: new Date().toISOString(),
-        }],
-      }))
-      setLightboxLineStart(null)
-      setLightboxMarkerEditorId(markerId)
-      setLightboxMarkerDraft('')
-      setLightboxMarkerEditorIsNew(true)
-      return
-    }
+    if (lightboxTool === 'line' || lightboxTool === 'freehand') return
 
+    const position = getLightboxClickPosition(event)
     const markerId = `mk_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
     updateImageReview(lightboxImageUrl, (review) => ({
       ...review,
@@ -140,7 +130,6 @@ export function useWorkhubImageReviewHandlers({
     getLightboxClickPosition,
     handleLightboxMarkerRemove,
     lightboxImageUrl,
-    lightboxLineStart,
     lightboxMarkerDraft,
     lightboxMarkerEditorId,
     lightboxMarkerEditorIsNew,
@@ -148,6 +137,179 @@ export function useWorkhubImageReviewHandlers({
     markerAuthor,
     updateImageReview,
   ])
+
+  const handleLightboxStagePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!lightboxImageUrl) return
+    if (event.button !== 0) return
+    if (lightboxTool !== 'line' && lightboxTool !== 'freehand') return
+
+    if (lightboxMarkerEditorIsNew && !lightboxMarkerDraft.trim() && lightboxMarkerEditorId) {
+      handleLightboxMarkerRemove(lightboxMarkerEditorId)
+      setLightboxMarkerEditorId('')
+      setLightboxMarkerDraft('')
+      setLightboxMarkerEditorIsNew(false)
+    }
+
+    const stage = event.currentTarget
+    const start = getLightboxPointerPosition(event.clientX, event.clientY, stage)
+    stage.setPointerCapture(event.pointerId)
+    event.preventDefault()
+
+    if (lightboxTool === 'line') {
+      lightboxDrawingRef.current = {
+        tool: 'line',
+        imageUrl: lightboxImageUrl,
+        pointerId: event.pointerId,
+        start,
+        points: [start],
+      }
+      setLightboxDraftLine({ x1: start.x, y1: start.y, x2: start.x, y2: start.y })
+      setLightboxDraftFreehandPath(null)
+      return
+    }
+
+    lightboxDrawingRef.current = {
+      tool: 'freehand',
+      imageUrl: lightboxImageUrl,
+      pointerId: event.pointerId,
+      start,
+      points: [start],
+    }
+    setLightboxDraftLine(null)
+    setLightboxDraftFreehandPath([start])
+  }, [
+    getLightboxPointerPosition,
+    handleLightboxMarkerRemove,
+    lightboxImageUrl,
+    lightboxMarkerDraft,
+    lightboxMarkerEditorId,
+    lightboxMarkerEditorIsNew,
+    lightboxTool,
+  ])
+
+  const handleLightboxStagePointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const drawing = lightboxDrawingRef.current
+    if (!drawing || drawing.pointerId !== event.pointerId) return
+    const position = getLightboxPointerPosition(event.clientX, event.clientY, event.currentTarget)
+    event.preventDefault()
+
+    if (drawing.tool === 'line') {
+      setLightboxDraftLine({
+        x1: drawing.start.x,
+        y1: drawing.start.y,
+        x2: position.x,
+        y2: position.y,
+      })
+      return
+    }
+
+    const lastPoint = drawing.points[drawing.points.length - 1]
+    if (Math.hypot(position.x - lastPoint.x, position.y - lastPoint.y) < 0.35) return
+    drawing.points = [...drawing.points, position]
+    setLightboxDraftFreehandPath(drawing.points)
+  }, [getLightboxPointerPosition])
+
+  const handleLightboxStagePointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const drawing = lightboxDrawingRef.current
+    if (!drawing || drawing.pointerId !== event.pointerId) return
+    const stage = event.currentTarget
+    if (stage.hasPointerCapture(event.pointerId)) {
+      stage.releasePointerCapture(event.pointerId)
+    }
+    event.preventDefault()
+
+    const markerId = `mk_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+    if (drawing.tool === 'line') {
+      const end = getLightboxPointerPosition(event.clientX, event.clientY, stage)
+      const distance = Math.hypot(end.x - drawing.start.x, end.y - drawing.start.y)
+      lightboxDrawingRef.current = null
+      setLightboxDraftLine(null)
+      if (distance < 0.6) return
+
+      updateImageReview(drawing.imageUrl, (review) => ({
+        ...review,
+        markers: [...review.markers, {
+          id: markerId,
+          type: 'line',
+          x: drawing.start.x,
+          y: drawing.start.y,
+          x2: end.x,
+          y2: end.y,
+          text: '',
+          createdBy: markerAuthor,
+          createdAt: new Date().toISOString(),
+        }],
+      }))
+      setLightboxMarkerEditorId(markerId)
+      setLightboxMarkerDraft('')
+      setLightboxMarkerEditorIsNew(true)
+      return
+    }
+
+    const finalizedPath = drawing.points.length > 1
+      ? drawing.points
+      : [...drawing.points, getLightboxPointerPosition(event.clientX, event.clientY, stage)]
+
+    lightboxDrawingRef.current = null
+    setLightboxDraftFreehandPath(null)
+    if (finalizedPath.length < 2) return
+
+    const totalPathDistance = finalizedPath.slice(1).reduce((distance, point, index) => {
+      const previous = finalizedPath[index]
+      return distance + Math.hypot(point.x - previous.x, point.y - previous.y)
+    }, 0)
+    if (totalPathDistance < 0.8) return
+
+    const centroid = finalizedPath.reduce((acc, point) => ({
+      x: acc.x + point.x,
+      y: acc.y + point.y,
+    }), { x: 0, y: 0 })
+
+    updateImageReview(drawing.imageUrl, (review) => ({
+      ...review,
+      markers: [...review.markers, {
+        id: markerId,
+        type: 'freehand',
+        x: centroid.x / finalizedPath.length,
+        y: centroid.y / finalizedPath.length,
+        path: finalizedPath,
+        text: '',
+        createdBy: markerAuthor,
+        createdAt: new Date().toISOString(),
+      }],
+    }))
+    setLightboxMarkerEditorId(markerId)
+    setLightboxMarkerDraft('')
+    setLightboxMarkerEditorIsNew(true)
+  }, [getLightboxPointerPosition, markerAuthor, updateImageReview])
+
+  const handleLightboxStagePointerCancel = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const drawing = lightboxDrawingRef.current
+    if (!drawing || drawing.pointerId !== event.pointerId) return
+    const stage = event.currentTarget
+    if (stage.hasPointerCapture(event.pointerId)) {
+      stage.releasePointerCapture(event.pointerId)
+    }
+    lightboxDrawingRef.current = null
+    setLightboxDraftLine(null)
+    setLightboxDraftFreehandPath(null)
+  }, [])
+
+  const handleLightboxClearAllMarkers = useCallback(() => {
+    if (!lightboxImageUrl) return
+    updateImageReview(lightboxImageUrl, (review) => ({
+      ...review,
+      markers: [],
+    }))
+    lightboxDrawingRef.current = null
+    setLightboxDraftLine(null)
+    setLightboxDraftFreehandPath(null)
+    setLightboxMarkerEditorId('')
+    setLightboxMarkerDraft('')
+    setLightboxMarkerResolved(false)
+    setLightboxMarkerEditorIsNew(false)
+    showToast({ type: 'info', message: 'Cleared all drawings and annotations for this image.' })
+  }, [lightboxImageUrl, showToast, updateImageReview])
 
   const openLightboxMarkerEditor = useCallback((markerId: string, isNew = false) => {
     if (!lightboxImageUrl) return
@@ -262,8 +424,8 @@ export function useWorkhubImageReviewHandlers({
     setLightboxImageFit,
     lightboxImageAspect,
     setLightboxImageAspect,
-    lightboxLineStart,
-    setLightboxLineStart,
+    lightboxDraftLine,
+    lightboxDraftFreehandPath,
     lightboxMarkerEditorId,
     lightboxMarkerDraft,
     setLightboxMarkerDraft,
@@ -273,9 +435,14 @@ export function useWorkhubImageReviewHandlers({
     lightboxDragRef,
     openAttachmentLightbox,
     handleLightboxStageClick,
+    handleLightboxStagePointerDown,
+    handleLightboxStagePointerMove,
+    handleLightboxStagePointerUp,
+    handleLightboxStagePointerCancel,
     openLightboxMarkerEditor,
     closeLightboxMarkerEditor,
     handleLightboxMarkerEditorSave,
+    handleLightboxClearAllMarkers,
     handleMarkerPointerDown,
     handleLightboxFullscreenToggle,
   }

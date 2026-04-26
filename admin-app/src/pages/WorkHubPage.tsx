@@ -1,6 +1,6 @@
 import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Link, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 import { auth, storage } from '../lib/firebase'
 import { markSignOut } from '../lib/signOutState'
@@ -24,6 +24,7 @@ import {
   subscribeAllWorkhubMembers,
   subscribeOwnWorkhubMember,
   subscribeWorkhubActivity,
+  subscribeWorkhubClients,
   subscribeWorkhubCommentsByEntity,
   subscribeWorkhubClientsMulti,
   subscribeWorkhubDocuments,
@@ -34,6 +35,7 @@ import {
   saveWorkhubProjectNotificationPreference,
   subscribeWorkhubNotifications,
   subscribeWorkhubProjectNotificationPreference,
+  subscribeWorkhubProjects,
   subscribeWorkhubProjectsMulti,
   subscribeWorkhubTasks,
   subscribeWorkhubWorkspaces,
@@ -68,15 +70,10 @@ import {
   deleteWorkhubMoodBoard,
   subscribeWorkhubMoodBoardsForWorkspace,
   type WorkhubMoodBoard,
-  updateWorkhubMoodBoardChecklist,
-  updateWorkhubMoodBoardFlow,
-  updateWorkhubMoodBoardTitle,
   updateWorkhubDocument,
 } from '../lib/workhubRepo'
 
 import { ProjectActionMenu } from './workhub/components/ProjectActionMenu'
-import { MoodBoardPanel } from './workhub/components/MoodBoardDialog'
-import { FlowBoardCanvas } from '../components/flowboard/FlowBoardCanvas'
 import { TeamDialog } from './workhub/components/TeamDialog'
 import { WorkspaceSettingsDialog } from './workhub/components/WorkspaceSettingsDialog'
 import { WorkhubStyles } from './workhub/components/WorkhubStyles'
@@ -162,22 +159,58 @@ import { useWorkhubUiInteractionHandlers } from './workhub/hooks/useWorkhubUiInt
 import { useWorkhubProjectTreeSidebarHandlers } from './workhub/hooks/useWorkhubProjectTreeSidebarHandlers'
 import { useWorkhubDocumentCreation } from './workhub/hooks/useWorkhubDocumentCreation'
 import { useWorkhubWorkspaceTemplates } from './workhub/hooks/useWorkhubWorkspaceTemplates'
-import { useWorkhubDocEditorHandlers } from './workhub/hooks/useWorkhubDocEditorHandlers'
-import { WorkhubDocEditor } from './workhub/components/WorkhubDocEditor'
-import { WorkhubDiscussionCard } from './workhub/components/WorkhubDiscussionCard'
-import { WorkhubChecklistCard } from './workhub/components/WorkhubChecklistCard'
-import { WorkhubProjectDetailRail } from './workhub/components/WorkhubProjectDetailRail'
-import { WorkhubTasksSection } from './workhub/components/WorkhubTasksSection'
 import { MilestoneCreateEditDialog } from './workhub/components/MilestoneCreateEditDialog'
 import { useWorkhubMilestones } from './workhub/hooks/useWorkhubMilestones'
 import { getTaskSelectionSnapshot, setTaskSelectionId, subscribeTaskSelection } from './workhub/taskSelectionStore'
 import type { WorkhubUserAccessDraft, WorkhubUserAccessMode, WorkhubUserWorkspaceDraft } from './workhub/accessTypes'
+import { shouldResetSelectedProjectAfterHydration } from './workhub/routeHydrationGuards'
+import { dispatchChatDockOpen } from '../features/communication/utils/chatDockEvents'
 
 const MASTER_EMAIL = import.meta.env.VITE_MASTER_EMAIL as string | undefined
 const WORKHUB_PHONE_MAX_WIDTH = 767
 const WORKHUB_DESKTOP_MIN_WIDTH = WORKHUB_PHONE_MAX_WIDTH + 1
 const WORKHUB_DISCUSSION_PAGE_SIZE = 6
 const DEFAULT_STATUS_TASK_RENDER_LIMIT = 80
+
+const WorkhubNotesSectionLazy = lazy(async () => {
+  const mod = await import('./workhub/components/WorkhubNotesSection')
+  return { default: mod.WorkhubNotesSection }
+})
+
+const WorkhubMoodboardSectionLazy = lazy(async () => {
+  const mod = await import('./workhub/components/WorkhubMoodboardSection')
+  return { default: mod.WorkhubMoodboardSection }
+})
+
+const WorkhubTasksSectionLazy = lazy(async () => {
+  const mod = await import('./workhub/components/WorkhubTasksSection')
+  return { default: mod.WorkhubTasksSection }
+})
+
+const WorkhubProjectDetailRailLazy = lazy(async () => {
+  const mod = await import('./workhub/components/WorkhubProjectDetailRail')
+  return { default: mod.WorkhubProjectDetailRail }
+})
+
+const WorkhubUsersSectionLazy = lazy(async () => {
+  const mod = await import('./workhub/components/WorkhubUsersSection')
+  return { default: mod.WorkhubUsersSection }
+})
+
+const WorkhubClientsSectionLazy = lazy(async () => {
+  const mod = await import('./workhub/components/WorkhubClientsSection')
+  return { default: mod.WorkhubClientsSection }
+})
+
+const WorkhubHomeSectionLazy = lazy(async () => {
+  const mod = await import('./workhub/components/WorkhubHomeSection')
+  return { default: mod.WorkhubHomeSection }
+})
+
+const WorkhubDiscussionCardLazy = lazy(async () => {
+  const mod = await import('./workhub/components/WorkhubDiscussionCard')
+  return { default: mod.WorkhubDiscussionCard }
+})
 
 type WorkhubFolderNotificationEvent = 'task_created' | 'task_completed' | 'folder_completed'
 
@@ -720,6 +753,13 @@ function buildWorkhubPathname(wsId: string, projId: string, section: string, ent
   return `/workhub/w/${encodedWorkspaceId}/s/${normalizedSection}${search}`
 }
 
+function resolveMoodboardPanelMode(panelVariant?: string | null): 'classic' | 'v2' | 'flow' | 'proscons' {
+  if (panelVariant === 'flow') return 'flow'
+  if (panelVariant === 'proscons') return 'proscons'
+  if (panelVariant === 'v2') return 'v2'
+  return 'classic'
+}
+
 function splitPersistedWorkhubRoute(value: string): { pathname: string; search: string } {
   const trimmedValue = value.trim()
   const [pathname = '', ...searchParts] = trimmedValue.split('?')
@@ -800,6 +840,11 @@ export default function WorkHubPage() {
   // re-creating the navigate function on every URL change (useNavigateUnstable behaviour).
   const navigateRef = useRef(navigate)
   navigateRef.current = navigate
+
+  // Parse the initial location exactly once so state starts hydrated on first render.
+  // This prevents a brief flicker of the dashboard view if the user lands directly on a deep link.
+  const [initialRoute] = useState(() => parseWorkhubPathname(location.pathname, location.search))
+
   const [userEmail, setUserEmail] = useState('')
   const [userName, setUserName] = useState('')
   const [member, setMember] = useState<WorkhubMember | null>(null)
@@ -814,13 +859,16 @@ export default function WorkHubPage() {
   const [activity, setActivity] = useState<WorkhubActivity[]>([])
   const [notifications, setNotifications] = useState<WorkhubNotification[]>([])
   const [notificationMenuOpen, setNotificationMenuOpen] = useState(false)
+  const [notificationFetchLimit, setNotificationFetchLimit] = useState(10)
+  const [dataReloadNonce, setDataReloadNonce] = useState(0)
+  const [isDataReloading, setIsDataReloading] = useState(false)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const [dashboardSummaryCollapsed, setDashboardSummaryCollapsed] = useState(false)
   const [comments, setComments] = useState<WorkhubTaskComment[]>([])
   const [commentsFetchLimit, setCommentsFetchLimit] = useState(WORKHUB_DISCUSSION_PAGE_SIZE)
   const [commentsHasMoreOlder, setCommentsHasMoreOlder] = useState(false)
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState('')
-  const [selectedProjectId, setSelectedProjectId] = useState('all')
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(() => initialRoute.wsId || '')
+  const [selectedProjectId, setSelectedProjectId] = useState(() => initialRoute.projId || 'all')
   const [selectedAssigneeUid, setSelectedAssigneeUid] = useState('all')
   const selectedTaskIdSnapshot = useSyncExternalStore(subscribeTaskSelection, getTaskSelectionSnapshot)
   const setSelectedTaskId = useCallback((nextValue: string | ((prevState: string) => string)) => {
@@ -834,13 +882,23 @@ export default function WorkHubPage() {
     setTaskSelectionId(resolvedValue)
   }, [])
   const [selectedNoteProjectId, setSelectedNoteProjectId] = useState('')
-  const [selectedDocumentId, setSelectedDocumentId] = useState('')
+  const [selectedDocumentId, setSelectedDocumentId] = useState(() => initialRoute.kind === 'document' ? initialRoute.entityId : '')
   const [pendingNotificationDocument, setPendingNotificationDocument] = useState<WorkhubDocument | null>(null)
-  const [activeSection, setActiveSection] = useState<'home' | 'users' | 'tasks' | 'notes' | 'dashboard' | 'clients' | 'moodboard'>('dashboard')
+  const [activeSection, setActiveSection] = useState<'home' | 'users' | 'tasks' | 'notes' | 'dashboard' | 'clients' | 'moodboard'>(() => {
+    if (initialRoute.kind === 'document') return 'notes'
+    if (initialRoute.kind === 'moodboard') return 'moodboard'
+    if (initialRoute.kind === 'task') return 'tasks'
+    if (initialRoute.kind === 'root') return 'home'
+    if (initialRoute.kind === 'workspace' && initialRoute.section && isWorkhubWorkspaceSection(initialRoute.section)) return initialRoute.section as any
+    return 'dashboard'
+  })
   const [workhubViewMode, setWorkhubViewMode] = useState<WorkhubViewMode>('tabs')
   const [workhubViewModeHydrated, setWorkhubViewModeHydrated] = useState(false)
-  const [moodboardPanelMode, setMoodboardPanelMode] = useState<'classic' | 'v2' | 'flow'>('classic')
-  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<WorkhubCanonicalSection>('dashboard')
+  const [moodboardPanelMode, setMoodboardPanelMode] = useState<'classic' | 'v2' | 'flow' | 'proscons'>('classic')
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<WorkhubCanonicalSection>(() => {
+    if (isWorkhubWorkspaceSection(initialRoute.section)) return initialRoute.section as WorkhubCanonicalSection
+    return 'dashboard'
+  })
   const [quickAddFocusTrigger, setQuickAddFocusTrigger] = useState(0)
   const [quickAddFocusStatusId, setQuickAddFocusStatusId] = useState('')
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
@@ -876,6 +934,7 @@ export default function WorkHubPage() {
   const [workspaceDeletePhrase, setWorkspaceDeletePhrase] = useState('')
   const [workspaceDeleteAcknowledge, setWorkspaceDeleteAcknowledge] = useState(false)
   const [projectName, setProjectName] = useState('')
+  const [projectsFeedHydrated, setProjectsFeedHydrated] = useState(false)
   const [projectParentId, setProjectParentId] = useState('')
   const [projectDescription, setProjectDescription] = useState('')
   const [projectColor, setProjectColor] = useState(PROJECT_COLORS[0])
@@ -963,7 +1022,8 @@ export default function WorkHubPage() {
   const [actionMenuProjectId, setActionMenuProjectId] = useState<string | null>(null)
   const [actionMenuPosition, setActionMenuPosition] = useState({ x: 0, y: 0 })
   const [workspaceMoodBoards, setWorkspaceMoodBoards] = useState<WorkhubMoodBoard[]>([])
-  const [selectedMoodBoardId, setSelectedMoodBoardId] = useState('')
+  const [workspaceMoodBoardsLoaded, setWorkspaceMoodBoardsLoaded] = useState(false)
+  const [selectedMoodBoardId, setSelectedMoodBoardId] = useState(() => initialRoute.kind === 'moodboard' ? initialRoute.entityId : '')
   const [moodBoardChecklistDraft, setMoodBoardChecklistDraft] = useState('')
   const [moodBoardEditingChecklistId, setMoodBoardEditingChecklistId] = useState<string | null>(null)
   const [moodBoardEditingChecklistText, setMoodBoardEditingChecklistText] = useState('')
@@ -1043,6 +1103,7 @@ export default function WorkHubPage() {
   const [taskContextMenuState, setTaskContextMenuState] = useState<{ taskId: string; x: number; y: number } | null>(null)
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([])
   const [bulkStatusMenuOpen, setBulkStatusMenuOpen] = useState(false)
+  const [bulkAssigneeMenuOpen, setBulkAssigneeMenuOpen] = useState(false)
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false)
   const [taskDeleteConfirmOpen, setTaskDeleteConfirmOpen] = useState(false)
   const [attachmentReviews, setAttachmentReviews] = useState<Record<string, WorkhubImageReview>>({})
@@ -1054,6 +1115,7 @@ export default function WorkHubPage() {
   const mobileGearMenuRef = useRef<HTMLDivElement | null>(null)
   const statusBootstrapWorkspaceIdsRef = useRef<Set<string>>(new Set())
   const projectIntentMigrationIdsRef = useRef<Set<string>>(new Set())
+  const moodBoardLegacyPurgeWorkspaceIdsRef = useRef<Set<string>>(new Set())
   // Stable ref that always carries the latest unstable values needed by taskRowCallbacks
   const _cbRef = useRef<{
     dragTaskId: string; dragStatusId: string; dropTargetKey: string
@@ -1062,6 +1124,7 @@ export default function WorkHubPage() {
     selectedTaskIdSet: Set<string>; selectedTaskCount: number
     handleTaskUpdate: (task: WorkhubTask, updates: Partial<WorkhubTask>, options?: { silent?: boolean }) => Promise<void>
     handleBulkStatusChange: (statusId: WorkhubTaskStatus) => Promise<void>
+    handleBulkAssigneeChange: (uids: string[]) => Promise<void>
     handleTaskReorder: (draggedId: string, statusId: string, targetTaskId: string | null) => Promise<void>
     handleQuickAddTask: (input: QuickAddTaskSubmitInput) => Promise<boolean | void>
     clearTaskSelection: () => void
@@ -1078,7 +1141,7 @@ export default function WorkHubPage() {
     dragTaskId: '', dragStatusId: '', dropTargetKey: '',
     editingTaskTitleText: '', editingChecklistItemText: '',
     taskChecklistDrafts: {}, selectedTaskIdSet: new Set(), selectedTaskCount: 0,
-    handleTaskUpdate: async () => {}, handleBulkStatusChange: async () => {}, handleTaskReorder: async () => {},
+    handleTaskUpdate: async () => {}, handleBulkStatusChange: async () => {}, handleBulkAssigneeChange: async () => {}, handleTaskReorder: async () => {},
     handleQuickAddTask: async () => {}, clearTaskSelection: () => {}, handleBulkDeleteSelected: async () => {},
     handleDeleteSingleTask: async () => {}, handleQuickTaskViewModeChange: async () => {}, handleAddTaskComment: async () => {},
     handleAddComment: async () => {}, handleStartCommentEdit: () => {}, handleCancelCommentEdit: () => {},
@@ -1089,7 +1152,7 @@ export default function WorkHubPage() {
     const handleDocumentPointerDown = (event: MouseEvent) => {
       const target = event.target
       if (!(target instanceof Element)) return
-      if (target.closest('.workhub-task-status-btn, .workhub-task-status-menu, .workhub-priority-indicator, .workhub-task-priority-menu, .workhub-task-more-btn, .workhub-task-more-menu, .workhub-detail-icon-btn, .workhub-detail-icon-menu, .workhub-detail-assignee-picker, .workhub-detail-assignee-trigger, .workhub-detail-assignee-menu, .workhub-task-filter-btn, .workhub-task-filter-menu, .workhub-bulk-status-btn, .workhub-bulk-status-menu, .workhub-task-assignee-btn, .workhub-task-assignee-menu, .workhub-task-context-menu, .workhub-notify-btn, .workhub-notify-menu, .workhub-account-btn, .workhub-account-menu, .workhub-project-color-select-btn, .workhub-project-color-select-menu, .workhub-mobile-workspace-panel, .workhub-mobile-workspace-toggle, .workhub-mobile-footer, .workhub-mobile-footer-btn')) {
+      if (target.closest('.workhub-task-row, .workhub-task-status-btn, .workhub-task-status-menu, .workhub-priority-indicator, .workhub-task-priority-menu, .workhub-task-more-btn, .workhub-task-more-menu, .workhub-detail-icon-btn, .workhub-detail-icon-menu, .workhub-detail-assignee-picker, .workhub-detail-assignee-trigger, .workhub-detail-assignee-menu, .workhub-task-filter-btn, .workhub-task-filter-menu, .workhub-bulk-status-btn, .workhub-bulk-status-menu, .workhub-bulk-assignee-btn, .workhub-bulk-assignee-menu, .workhub-task-assignee-btn, .workhub-task-card-meta-item.is-assignee, .workhub-task-grid-meta-btn.is-assignee, .workhub-task-assignee-menu, .workhub-task-context-menu, .workhub-notify-btn, .workhub-notify-menu, .workhub-account-btn, .workhub-account-menu, .workhub-project-color-select-btn, .workhub-project-color-select-menu, .workhub-mobile-workspace-panel, .workhub-mobile-workspace-toggle, .workhub-mobile-footer, .workhub-mobile-footer-btn')) {
         return
       }
       setOpenTaskStatusMenuId('')
@@ -1099,6 +1162,7 @@ export default function WorkHubPage() {
       setTaskContextMenuState(null)
       setTaskFilterMenuOpen(false)
       setBulkStatusMenuOpen(false)
+      setBulkAssigneeMenuOpen(false)
       setDetailMenuOpen('')
       setNotificationMenuOpen(false)
       setAccountMenuOpen(false)
@@ -1241,63 +1305,113 @@ export default function WorkHubPage() {
       unsubMembers()
       unsubWorkspaces()
     }
-  }, [member])
+  }, [dataReloadNonce, member])
 
   useEffect(() => {
     if (!member || member.status !== 'approved') {
       setProjects([])
-      setTasks([])
-      setActivity([])
+      setProjectsFeedHydrated(false)
       return
     }
+
+    if (workhubViewMode !== 'tabs') return
+
+    const localUid = auth.currentUser?.uid || ''
+    const localPrivileged = !!((!!MASTER_EMAIL && userEmail === MASTER_EMAIL) || member.role === 'admin' || member.role === 'manager')
+
+    if (!selectedWorkspaceId) {
+      setProjects([])
+      setProjectsFeedHydrated(false)
+      return
+    }
+
+    setProjectsFeedHydrated(false)
+    return subscribeWorkhubProjects(selectedWorkspaceId, localUid, localPrivileged, (nextProjects) => {
+      setProjectsFeedHydrated(true)
+      setProjects(nextProjects)
+    })
+  }, [dataReloadNonce, member, selectedWorkspaceId, userEmail, workhubViewMode])
+
+  useEffect(() => {
+    if (!member || member.status !== 'approved') {
+      setProjects([])
+      setProjectsFeedHydrated(false)
+      return
+    }
+
+    if (workhubViewMode !== 'workspace_tree') return
+
     const localUid = auth.currentUser?.uid || ''
     const localPrivileged = !!((!!MASTER_EMAIL && userEmail === MASTER_EMAIL) || member.role === 'admin' || member.role === 'manager')
     const accessibleWorkspaceIds = workspaces
       .filter((item) => canAccessWorkspace(item, localUid, userEmail, localPrivileged))
       .map((item) => item.id)
 
-    if (accessibleWorkspaceIds.length === 0) {
+    if (!accessibleWorkspaceIds.length) {
       setProjects([])
+      setProjectsFeedHydrated(false)
+      return
+    }
+
+    setProjectsFeedHydrated(false)
+    return subscribeWorkhubProjectsMulti(accessibleWorkspaceIds, localUid, localPrivileged, (nextProjects) => {
+      setProjectsFeedHydrated(true)
+      setProjects(nextProjects)
+    })
+  }, [dataReloadNonce, member, userEmail, workhubViewMode, workspaces])
+
+  useEffect(() => {
+    if (!member || member.status !== 'approved') {
       setTasks([])
       setActivity([])
       return
     }
 
-    const unsubProjects = subscribeWorkhubProjectsMulti(accessibleWorkspaceIds, localUid, localPrivileged, setProjects)
+    const localUid = auth.currentUser?.uid || ''
+    const localPrivileged = !!((!!MASTER_EMAIL && userEmail === MASTER_EMAIL) || member.role === 'admin' || member.role === 'manager')
 
     if (!selectedWorkspaceId) {
       setTasks([])
       setActivity([])
-      return () => {
-        unsubProjects()
-      }
+      return
     }
 
     const unsubTasks = subscribeWorkhubTasks(selectedWorkspaceId, localUid, localPrivileged, setTasks)
     const unsubActivity = subscribeWorkhubActivity(selectedWorkspaceId, localUid, localPrivileged, setActivity)
     return () => {
-      unsubProjects()
       unsubTasks()
       unsubActivity()
     }
-  }, [member, selectedWorkspaceId, userEmail, workspaces])
+  }, [dataReloadNonce, member, selectedWorkspaceId, userEmail])
 
   useEffect(() => {
     if (!member || member.status !== 'approved') {
       setClients([])
       return
     }
-    const localUid = auth.currentUser?.uid || ''
-    const localPrivileged = !!((!!MASTER_EMAIL && userEmail === MASTER_EMAIL) || member.role === 'admin' || member.role === 'manager')
-    const accessibleWorkspaceIds = workspaces
-      .filter((item) => canAccessWorkspace(item, localUid, userEmail, localPrivileged))
-      .map((item) => item.id)
-    if (!accessibleWorkspaceIds.length) {
+
+    if (workhubViewMode === 'workspace_tree') {
+      const localUid = auth.currentUser?.uid || ''
+      const localPrivileged = !!((!!MASTER_EMAIL && userEmail === MASTER_EMAIL) || member.role === 'admin' || member.role === 'manager')
+      const accessibleWorkspaceIds = workspaces
+        .filter((item) => canAccessWorkspace(item, localUid, userEmail, localPrivileged))
+        .map((item) => item.id)
+
+      if (!accessibleWorkspaceIds.length) {
+        setClients([])
+        return
+      }
+
+      return subscribeWorkhubClientsMulti(accessibleWorkspaceIds, setClients)
+    }
+
+    if (!selectedWorkspaceId) {
       setClients([])
       return
     }
-    return subscribeWorkhubClientsMulti(accessibleWorkspaceIds, setClients)
-  }, [member, userEmail, workspaces])
+
+    return subscribeWorkhubClients(selectedWorkspaceId, setClients)
+  }, [dataReloadNonce, member, selectedWorkspaceId, userEmail, workhubViewMode, workspaces])
 
   useEffect(() => {
     const localUid = auth.currentUser?.uid || ''
@@ -1307,7 +1421,7 @@ export default function WorkHubPage() {
     }
     const localPrivileged = !!((!!MASTER_EMAIL && userEmail === MASTER_EMAIL) || member.role === 'admin' || member.role === 'manager')
     return subscribeWorkhubDocuments(selectedWorkspaceId, localUid, localPrivileged, setDocuments)
-  }, [member, selectedWorkspaceId, userEmail])
+  }, [dataReloadNonce, member, selectedWorkspaceId, userEmail])
 
   useEffect(() => {
     if (!member || member.status !== 'approved') {
@@ -1375,16 +1489,26 @@ export default function WorkHubPage() {
       setNotifications([])
       return
     }
-    return subscribeWorkhubNotifications(localUid, setNotifications)
-  }, [member])
+    return subscribeWorkhubNotifications(localUid, setNotifications, { maxCount: notificationFetchLimit })
+  }, [dataReloadNonce, member, notificationFetchLimit])
+
+  useEffect(() => {
+    if (notificationMenuOpen) return
+    setNotificationFetchLimit(10)
+  }, [notificationMenuOpen])
 
   useEffect(() => {
     if (!selectedWorkspaceId) {
       setWorkspaceMoodBoards([])
+      setWorkspaceMoodBoardsLoaded(true)
       return
     }
-    return subscribeWorkhubMoodBoardsForWorkspace(selectedWorkspaceId, setWorkspaceMoodBoards)
-  }, [selectedWorkspaceId])
+    setWorkspaceMoodBoardsLoaded(false)
+    return subscribeWorkhubMoodBoardsForWorkspace(selectedWorkspaceId, (data) => {
+      setWorkspaceMoodBoards(data)
+      setWorkspaceMoodBoardsLoaded(true)
+    })
+  }, [dataReloadNonce, selectedWorkspaceId])
 
   useEffect(() => {
     if (!member || member.status !== 'approved') return
@@ -1476,8 +1600,7 @@ export default function WorkHubPage() {
     setLightboxImageFit,
     lightboxImageAspect,
     setLightboxImageAspect,
-    lightboxLineStart,
-    setLightboxLineStart,
+    lightboxDraftLine,
     lightboxMarkerEditorId,
     lightboxMarkerDraft,
     setLightboxMarkerDraft,
@@ -1635,7 +1758,11 @@ export default function WorkHubPage() {
     const counts: Record<string, number> = {}
     tasks.forEach((task) => {
       if (!workspaceTreeVisibleProjectIdSet.has(task.projectId)) return
-      if (selectedAssigneeUid !== 'all' && task.assigneeUid !== selectedAssigneeUid) return
+      if (
+        selectedAssigneeUid !== 'all'
+        && task.assigneeUid !== selectedAssigneeUid
+        && !(Array.isArray(task.assigneeUids) && task.assigneeUids.includes(selectedAssigneeUid))
+      ) return
       counts[task.projectId] = (counts[task.projectId] || 0) + 1
     })
     return counts
@@ -1644,7 +1771,11 @@ export default function WorkHubPage() {
     const directDoneCounts: Record<string, number> = {}
     tasks.forEach((task) => {
       if (!workspaceTreeVisibleProjectIdSet.has(task.projectId)) return
-      if (selectedAssigneeUid !== 'all' && task.assigneeUid !== selectedAssigneeUid) return
+      if (
+        selectedAssigneeUid !== 'all'
+        && task.assigneeUid !== selectedAssigneeUid
+        && !(Array.isArray(task.assigneeUids) && task.assigneeUids.includes(selectedAssigneeUid))
+      ) return
       if (!/done|complete/i.test(task.status)) return
       directDoneCounts[task.projectId] = (directDoneCounts[task.projectId] || 0) + 1
     })
@@ -1781,6 +1912,16 @@ export default function WorkHubPage() {
     navigateToProfile: () => navigate('/profile'),
     showToast,
   })
+  const handleOptimisticDataReload = useCallback(() => {
+    if (isDataReloading) return
+    setIsDataReloading(true)
+    setProjectsFeedHydrated(false)
+    setWorkspaceMoodBoardsLoaded(false)
+    setNotificationMenuOpen(false)
+    setAccountMenuOpen(false)
+    setDataReloadNonce((current) => current + 1)
+    window.setTimeout(() => setIsDataReloading(false), 850)
+  }, [isDataReloading])
   const handleNotificationMenuItemClick = useCallback(async (item: WorkhubNotification) => {
     if (!item.read) {
       await markWorkhubNotificationRead(item.id).catch(() => undefined)
@@ -2014,6 +2155,71 @@ export default function WorkHubPage() {
       showToast({ type: 'error', message: 'Could not copy task token.' })
     }
   }, [selectedTaskForContextMenu, showToast])
+
+  const handleOpenLinkedChat = useCallback(() => {
+    const selectedTask = selectedTaskIdSnapshot
+      ? (tasks.find((item) => item.id === selectedTaskIdSnapshot) || null)
+      : null
+    const selectedDocumentForChat = selectedDocumentId
+      ? (documents.find((item) => item.id === selectedDocumentId)
+        || (pendingNotificationDocument?.id === selectedDocumentId ? pendingNotificationDocument : null)
+        || null)
+      : null
+    const selectedMoodBoardForChat = selectedMoodBoardId
+      ? (workspaceMoodBoards.find((item) => item.id === selectedMoodBoardId) || null)
+      : null
+
+    let targetPath = ''
+    let targetTaskId = ''
+    let targetLabel = ''
+    const projectTargetPath = selectedWorkspaceId && selectedProject && selectedProjectId !== 'all'
+      ? buildWorkhubPathname(selectedWorkspaceId, selectedProjectId, 'dashboard')
+      : ''
+    const projectTargetLabel = selectedProject
+      ? ((selectedProject.name || '').trim() || 'Project')
+      : ''
+
+    if (selectedTask) {
+      const projectIdForPath = selectedTask.projectId || selectedProjectId || 'all'
+      targetPath = buildWorkhubPathname(selectedTask.workspaceId, projectIdForPath, 'tasks', selectedTask.id)
+      targetTaskId = selectedTask.id
+      targetLabel = (selectedTask.title || '').trim() || 'Untitled task'
+    } else if (activeSection === 'notes' && selectedDocumentForChat) {
+      const projectIdForPath = selectedDocumentForChat.projectId || selectedProjectId || 'all'
+      targetPath = buildWorkhubPathname(selectedDocumentForChat.workspaceId, projectIdForPath, 'notes', selectedDocumentForChat.id)
+      targetLabel = (selectedDocumentForChat.title || '').trim() || 'Untitled document'
+    } else if (activeSection === 'moodboard' && selectedMoodBoardForChat) {
+      const projectIdForPath = selectedMoodBoardForChat.entityType === 'project'
+        ? (selectedMoodBoardForChat.entityId || selectedProjectId || 'all')
+        : (selectedProjectId || 'all')
+      targetPath = buildWorkhubPathname(selectedMoodBoardForChat.workspaceId, projectIdForPath, 'moodboard', selectedMoodBoardForChat.id)
+      targetLabel = (selectedMoodBoardForChat.title || '').trim() || 'Mood Board'
+    } else if (selectedWorkspaceId && selectedProject && selectedProjectId !== 'all') {
+      targetPath = projectTargetPath
+      targetLabel = projectTargetLabel
+    }
+
+    dispatchChatDockOpen({
+      source: 'ui',
+      ...(targetPath ? { targetPath } : {}),
+      ...(targetTaskId ? { targetTaskId } : {}),
+      ...(targetLabel ? { targetLabel } : {}),
+      ...(projectTargetPath ? { projectTargetPath } : {}),
+      ...(projectTargetLabel ? { projectTargetLabel } : {}),
+    })
+  }, [
+    activeSection,
+    documents,
+    pendingNotificationDocument,
+    selectedProject,
+    selectedProjectId,
+    selectedDocumentId,
+    selectedMoodBoardId,
+    selectedTaskIdSnapshot,
+    selectedWorkspaceId,
+    tasks,
+    workspaceMoodBoards,
+  ])
   // Stable callbacks bag — created once on mount, reads current state via _cbRef.
   // This lets TaskRow be memoised: it only re-renders when its own props change.
   const taskRowCallbacks = useMemo<TaskRowCallbacks>(() => ({
@@ -2036,12 +2242,14 @@ export default function WorkHubPage() {
       setOpenTaskStatusMenuId('')
       setOpenTaskPriorityMenuId('')
       setOpenTaskAssigneeMenuId('')
+      setBulkAssigneeMenuOpen(false)
     },
     onRowContextMenu: (taskId, clientX, clientY) => {
       setOpenTaskMoreMenuId('')
       setOpenTaskStatusMenuId('')
       setOpenTaskPriorityMenuId('')
       setOpenTaskAssigneeMenuId('')
+      setBulkAssigneeMenuOpen(false)
       setTaskContextMenuState({ taskId, x: clientX, y: clientY })
     },
     onDoubleClickRow: (taskId) => {
@@ -2096,9 +2304,16 @@ export default function WorkHubPage() {
       setOpenTaskPriorityMenuId('')
       setOpenTaskMoreMenuId('')
     },
-    onAssigneeSelect: (task, uid) => {
-      void _cbRef.current.handleTaskUpdate(task, { assigneeUid: uid || undefined }, { silent: true })
-      setOpenTaskAssigneeMenuId('')
+    onAssigneesChange: (task, uids) => {
+      const normalized = Array.from(new Set(uids.filter(Boolean)))
+      void _cbRef.current.handleTaskUpdate(
+        task,
+        {
+          assigneeUid: normalized[0] || '',
+          assigneeUids: normalized.length > 0 ? normalized : undefined,
+        },
+        { silent: true },
+      )
     },
     onStatusSelect: (task, statusId) => {
       const { selectedTaskIdSet: set, selectedTaskCount: count } = _cbRef.current
@@ -2193,6 +2408,8 @@ export default function WorkHubPage() {
     (draggedId: string, statusId: string, targetTaskId: string | null) => _cbRef.current.handleTaskReorder(draggedId, statusId, targetTaskId), [])
   const stableHandleBulkStatusChange = useCallback(
     (statusId: WorkhubTaskStatus) => _cbRef.current.handleBulkStatusChange(statusId), [])
+  const stableHandleBulkAssigneeChange = useCallback(
+    (uids: string[]) => _cbRef.current.handleBulkAssigneeChange(uids), [])
   const stableHandleQuickAddTask = useCallback(
     (input: QuickAddTaskSubmitInput) => _cbRef.current.handleQuickAddTask(input), [])
   const stableClearTaskSelection = useCallback(() => _cbRef.current.clearTaskSelection(), [])
@@ -2485,6 +2702,51 @@ export default function WorkHubPage() {
     })
     return map
   }, [approvedMembers, isPrivilegedMember, workspaceAssignableMemberUidSet, workspaceAssignableMembers, workspaceProjects])
+  const bulkAssignableMembers = useMemo(() => {
+    if (selectedTasks.length === 0) return [] as WorkhubMember[]
+    const merged = new Map<string, WorkhubMember>()
+    selectedTasks.forEach((task) => {
+      const members = assignableMembersByProjectId[task.projectId] || workspaceAssignableMembers
+      members.forEach((member) => {
+        if (!merged.has(member.uid)) {
+          merged.set(member.uid, member)
+        }
+      })
+    })
+    return Array.from(merged.values())
+  }, [assignableMembersByProjectId, selectedTasks, workspaceAssignableMembers])
+  const bulkUnionAssigneeUids = useMemo(() => {
+    if (selectedTasks.length === 0) return [] as string[]
+    const unionSet = new Set<string>()
+    selectedTasks.forEach((task) => {
+      const validUidSet = new Set((assignableMembersByProjectId[task.projectId] || workspaceAssignableMembers).map((member) => member.uid))
+      const fromTask = Array.isArray(task.assigneeUids) ? task.assigneeUids.filter((uid) => validUidSet.has(uid)) : []
+      const primary = task.assigneeUid && validUidSet.has(task.assigneeUid) ? task.assigneeUid : ''
+      const ordered = primary
+        ? [primary, ...fromTask.filter((uid) => uid !== primary)]
+        : fromTask
+      ordered.forEach((uid) => unionSet.add(uid))
+    })
+    return Array.from(unionSet)
+  }, [assignableMembersByProjectId, selectedTasks, workspaceAssignableMembers])
+  const bulkAssigneeCoverageByUid = useMemo(() => {
+    const coverage: Record<string, number> = {}
+    if (selectedTasks.length === 0) return coverage
+
+    selectedTasks.forEach((task) => {
+      const validUidSet = new Set((assignableMembersByProjectId[task.projectId] || workspaceAssignableMembers).map((member) => member.uid))
+      const fromTask = Array.isArray(task.assigneeUids) ? task.assigneeUids.filter((uid) => validUidSet.has(uid)) : []
+      const primary = task.assigneeUid && validUidSet.has(task.assigneeUid) ? task.assigneeUid : ''
+      const ordered = primary
+        ? [primary, ...fromTask.filter((uid) => uid !== primary)]
+        : fromTask
+      Array.from(new Set(ordered)).forEach((uid) => {
+        coverage[uid] = (coverage[uid] || 0) + 1
+      })
+    })
+
+    return coverage
+  }, [assignableMembersByProjectId, selectedTasks, workspaceAssignableMembers])
   const scopeAssignableMembers = useMemo(() => {
     if (selectedProjectId !== 'all') {
       return assignableMembersByProjectId[selectedProjectId] || workspaceAssignableMembers
@@ -3101,7 +3363,14 @@ export default function WorkHubPage() {
       grouped[item.projectId].push(item)
     })
     Object.values(grouped).forEach((items) => {
-      items.sort((left, right) => getUnknownTimeValue(right.updatedAt || right.createdAt) - getUnknownTimeValue(left.updatedAt || left.createdAt))
+      items.sort((left, right) => {
+        const leftCreated = getUnknownTimeValue(left.createdAt || left.updatedAt)
+        const rightCreated = getUnknownTimeValue(right.createdAt || right.updatedAt)
+        if (leftCreated !== rightCreated) return leftCreated - rightCreated
+        const titleDelta = (left.title || '').localeCompare(right.title || '')
+        if (titleDelta !== 0) return titleDelta
+        return left.id.localeCompare(right.id)
+      })
     })
     return grouped
   }, [visibleProjectIds, workspaceDocuments])
@@ -3111,6 +3380,16 @@ export default function WorkHubPage() {
       if (!item.entityId || !visibleProjectIds.has(item.entityId)) return
       if (!grouped[item.entityId]) grouped[item.entityId] = []
       grouped[item.entityId].push(item)
+    })
+    Object.values(grouped).forEach((items) => {
+      items.sort((left, right) => {
+        const leftCreated = getUnknownTimeValue(left.createdAt || left.updatedAt)
+        const rightCreated = getUnknownTimeValue(right.createdAt || right.updatedAt)
+        if (leftCreated !== rightCreated) return leftCreated - rightCreated
+        const titleDelta = (left.title || '').localeCompare(right.title || '')
+        if (titleDelta !== 0) return titleDelta
+        return left.id.localeCompare(right.id)
+      })
     })
     return grouped
   }, [visibleProjectIds, workspaceMoodBoards])
@@ -3320,14 +3599,20 @@ export default function WorkHubPage() {
     () => activeMoodBoard?.checklist || [],
     [activeMoodBoard],
   )
+  const resolvedMoodboardPanelMode = useMemo(
+    () => activeMoodBoard
+      ? resolveMoodboardPanelMode(activeMoodBoard.panelVariant)
+      : resolveMoodboardPanelMode(moodboardPanelMode),
+    [activeMoodBoard, moodboardPanelMode],
+  )
+  const isResolvingActiveMoodBoard = useMemo(
+    () => activeSection === 'moodboard' && !!selectedMoodBoardId && !activeMoodBoard,
+    [activeMoodBoard, activeSection, selectedMoodBoardId],
+  )
 
   useEffect(() => {
     if (activeSection !== 'moodboard' || !activeMoodBoard) return
-    setMoodboardPanelMode(activeMoodBoard.panelVariant === 'flow'
-      ? 'flow'
-      : activeMoodBoard.panelVariant === 'v2'
-        ? 'v2'
-        : 'classic')
+    setMoodboardPanelMode(resolveMoodboardPanelMode(activeMoodBoard.panelVariant))
   }, [activeMoodBoard, activeSection])
 
   const selectedDiscussionTarget = useMemo(() => {
@@ -3766,22 +4051,6 @@ export default function WorkHubPage() {
       setSidebarCollapsed(false)
     },
   })
-  const docEditor = useWorkhubDocEditorHandlers({
-    selectedDocument: selectedDocument ?? undefined,
-    selectedWorkspaceId,
-    workspaceProjectById,
-    workhubShareCandidates,
-    allWorkspaceIds: visibleWorkspaces.map((ws) => ({ id: ws.id, name: ws.name })),
-    allWorkspaceProjects: projects.map((p) => ({ id: p.id, name: p.name, workspaceId: p.workspaceId })),
-    isPrivilegedMember,
-    showToast,
-    setBusyKey,
-    setSelectedDocumentId,
-    createActivity: createWorkhubActivity,
-    createNotifications: createWorkhubNotifications,
-    deleteDocument: deleteWorkhubDocument,
-    normalizeMemberUids,
-  })
   const settingsMilestones = useWorkhubMilestones({
     projectId: projectAccessDialogId || null,
     workspaceId: selectedWorkspaceId,
@@ -3832,10 +4101,10 @@ export default function WorkHubPage() {
     () => (isWorkhubWorkspaceSection(parsedWorkhubPath.section) ? parsedWorkhubPath.section : ''),
     [parsedWorkhubPath.section],
   )
-  const previousSelectedSectionParamRef = useRef<string | null>(null)
   const prevSelectedWorkspaceIdRef = useRef(selectedWorkspaceId)
   const prevSelectedProjectIdRef = useRef(selectedProjectId)
   const prevSelectedEntityIdRef = useRef('')
+  const prevActiveSectionRef = useRef(activeSection)
   const isWorkspaceSelectionResolved = useMemo(() => {
     if (!selectedWorkspaceId) return false
     return visibleWorkspaces.some((item) => item.id === selectedWorkspaceId)
@@ -4105,18 +4374,15 @@ export default function WorkHubPage() {
   // Sync workspace-section routes from URL to state.
   useEffect(() => {
     if (parsedWorkhubPath.kind !== 'workspace') return
-
-    const previousParam = previousSelectedSectionParamRef.current
-    previousSelectedSectionParamRef.current = selectedSectionParam
     if (!selectedSectionParam) return
-    if (previousParam === selectedSectionParam) return
+    if (activeSection === selectedSectionParam) return
     setSelectedDocumentId('')
     setSelectedMoodBoardId('')
     setSelectedTaskId('')
     setActiveWorkspaceTab(selectedSectionParam)
     setActiveSection(selectedSectionParam)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [parsedWorkhubPath.kind, selectedSectionParam])
+  }, [activeSection, parsedWorkhubPath.kind, selectedSectionParam])
 
   // Sync typed entity routes (and legacy deep links) from URL to state.
   // NOTE: selectedDocumentId, selectedMoodBoardId, selectedProjectId are intentionally
@@ -4203,6 +4469,18 @@ export default function WorkHubPage() {
   useEffect(() => {
     if (!selectedWorkspaceId || !isWorkspaceSelectionResolved) return
 
+    // Track section changes before any early return so POP guards can distinguish
+    // URL-led hydration from user-initiated section changes.
+    const prevSection = prevActiveSectionRef.current
+    prevActiveSectionRef.current = activeSection
+    const sectionChangedThisRender = prevSection !== activeSection
+
+    // If the URL is pointing at a moodboard entity but boards haven't loaded from
+    // Firestore yet, hold off. Without this guard the state→URL sync sees
+    // activeSection='dashboard' (URL→state hasn't fired yet because workspaceMoodBoards
+    // is still empty) and pushes a dashboard URL, causing a visible flicker on refresh.
+    if (parsedWorkhubPath.kind === 'moodboard' && !workspaceMoodBoardsLoaded) return
+
     const prevWorkspaceId = prevSelectedWorkspaceIdRef.current
     prevSelectedWorkspaceIdRef.current = selectedWorkspaceId
     const workspaceChangedThisRender = prevWorkspaceId !== selectedWorkspaceId
@@ -4238,6 +4516,21 @@ export default function WorkHubPage() {
     const prevEntityId = prevSelectedEntityIdRef.current
     prevSelectedEntityIdRef.current = expectedEntityParam
     const entityChangedThisRender = prevEntityId !== expectedEntityParam
+
+    // On refresh/back-forward (POP), when the URL already targets a concrete section
+    // for the currently-selected workspace, let URL→state hydration apply first.
+    // Without this, the default in-memory section ('dashboard') can win one render
+    // and momentarily push a dashboard URL before snapping back.
+    if (
+      navigationType === 'POP'
+      && selectedWorkspaceParam
+      && selectedWorkspaceId === selectedWorkspaceParam
+      && !!selectedSectionParam
+      && activeSection !== selectedSectionParam
+      && !sectionChangedThisRender
+    ) {
+      return
+    }
 
     if (
       navigationType === 'POP'
@@ -4332,6 +4625,7 @@ export default function WorkHubPage() {
     selectedTaskIdSnapshot,
     selectedWorkspaceId,
     selectedWorkspaceParam,
+    workspaceMoodBoardsLoaded,
     resolveRememberedWorkspaceRoute,
   ])
 
@@ -4505,10 +4799,13 @@ export default function WorkHubPage() {
   }, [selectedWorkspaceId, selectedWorkspaceParam, visibleWorkspaces, workspaceSelectionStorageKey])
 
   useEffect(() => {
-    if (selectedProjectId === 'all') return
-    if (visibleWorkspaceProjects.some((item) => item.id === selectedProjectId)) return
+    if (!shouldResetSelectedProjectAfterHydration({
+      selectedProjectId,
+      projectsFeedHydrated,
+      isSelectedProjectVisible: visibleWorkspaceProjects.some((item) => item.id === selectedProjectId),
+    })) return
     setSelectedProjectId('all')
-  }, [selectedProjectId, visibleWorkspaceProjects])
+  }, [projectsFeedHydrated, selectedProjectId, visibleWorkspaceProjects])
 
   useEffect(() => {
     if (!selectedProjectId || selectedProjectId === 'all') return
@@ -4635,12 +4932,48 @@ export default function WorkHubPage() {
 
   useEffect(() => {
     if (!selectedMoodBoardId) return
+    if (!workspaceMoodBoardsLoaded) return
     if (workspaceMoodBoards.some((item) => item.id === selectedMoodBoardId)) return
     if (activeSection === 'moodboard') {
       setActiveSection('dashboard')
     }
     setSelectedMoodBoardId('')
-  }, [activeSection, selectedMoodBoardId, workspaceMoodBoards])
+  }, [activeSection, selectedMoodBoardId, workspaceMoodBoards, workspaceMoodBoardsLoaded])
+
+  useEffect(() => {
+    if (!selectedWorkspaceId || !workspaceMoodBoardsLoaded) return
+    if (moodBoardLegacyPurgeWorkspaceIdsRef.current.has(selectedWorkspaceId)) return
+    moodBoardLegacyPurgeWorkspaceIdsRef.current.add(selectedWorkspaceId)
+
+    const legacyBoards = workspaceMoodBoards.filter((item) => item.panelVariant === 'v2')
+    if (!legacyBoards.length) return
+
+    const legacyBoardIds = new Set(legacyBoards.map((item) => item.id))
+    if (selectedMoodBoardId && legacyBoardIds.has(selectedMoodBoardId)) {
+      setSelectedMoodBoardId('')
+      if (activeSection === 'moodboard') {
+        setActiveSection('dashboard')
+      }
+    }
+
+    void (async () => {
+      const results = await Promise.allSettled(legacyBoards.map((item) => deleteWorkhubMoodBoard(item.id)))
+      const failedCount = results.filter((result) => result.status === 'rejected').length
+      const deletedCount = legacyBoards.length - failedCount
+
+      if (deletedCount > 0 && failedCount === 0) {
+        showToast({
+          type: 'info',
+          message: `Deleted ${deletedCount} old mood board${deletedCount === 1 ? '' : 's'} from this workspace.`,
+        })
+      } else if (failedCount > 0) {
+        showToast({
+          type: 'warning',
+          message: `Deleted ${Math.max(deletedCount, 0)} old mood board${deletedCount === 1 ? '' : 's'}, but ${failedCount} failed to delete.`,
+        })
+      }
+    })()
+  }, [activeSection, selectedMoodBoardId, selectedWorkspaceId, showToast, workspaceMoodBoards, workspaceMoodBoardsLoaded])
 
   useEffect(() => {
     if (selectedAssigneeUid === 'all') return
@@ -5944,6 +6277,7 @@ export default function WorkHubPage() {
   function clearTaskSelection() {
     setSelectedTaskIds([])
     setBulkStatusMenuOpen(false)
+    setBulkAssigneeMenuOpen(false)
   }
 
   async function handleBulkStatusChange(statusId: WorkhubTaskStatus) {
@@ -5969,6 +6303,37 @@ export default function WorkHubPage() {
       setSelectedTaskId('')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not update selected tasks.'
+      showToast({ type: 'error', message })
+    } finally {
+      setBusyKey('')
+    }
+  }
+
+  async function handleBulkAssigneeChange(uids: string[]) {
+    if (!auth.currentUser || !selectedWorkspaceId || selectedTasks.length === 0) return
+    const normalized = Array.from(new Set(uids.filter(Boolean)))
+    setBusyKey('bulk-task')
+    try {
+      await Promise.all(selectedTasks.map((task) => {
+        const validUidSet = new Set((assignableMembersByProjectId[task.projectId] || workspaceAssignableMembers).map((member) => member.uid))
+        const nextTaskAssigneeUids = normalized.filter((uid) => validUidSet.has(uid))
+        return updateWorkhubTask(task.id, {
+          assigneeUid: nextTaskAssigneeUids[0] || '',
+          assigneeUids: nextTaskAssigneeUids.length > 0 ? nextTaskAssigneeUids : undefined,
+        })
+      }))
+      await createWorkhubActivity({
+        workspaceId: selectedWorkspaceId,
+        actorUid: auth.currentUser.uid,
+        entityType: 'task',
+        entityId: selectedTasks[0].id,
+        action: 'bulk_assignee_update',
+        message: `Updated assignees for ${selectedTasks.length} task${selectedTasks.length === 1 ? '' : 's'}`,
+      })
+      showToast({ type: 'success', message: `Updated assignees for ${selectedTasks.length} task${selectedTasks.length === 1 ? '' : 's'}.` })
+      setBulkAssigneeMenuOpen(false)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not update assignees for selected tasks.'
       showToast({ type: 'error', message })
     } finally {
       setBusyKey('')
@@ -6160,32 +6525,34 @@ export default function WorkHubPage() {
   // Memoised project-level discussion node — passed as a ReactNode prop to WorkhubTasksSection.
   // Handlers are stable (via _cbRef wrappers) so this memo only re-runs when discussion data changes.
   const projectDiscussionNode = useMemo(() => (
-    <WorkhubDiscussionCard
-      comments={comments}
-      currentUid={currentUid}
-      memberByUid={memberByUid}
-      showAuthorAvatar
-      formatTime={formatTime}
-      editingId={editingCommentId}
-      editingText={editingCommentText}
-      onEditStart={stableHandleStartCommentEdit}
-      onEditChange={setEditingCommentText}
-      onEditCancel={stableHandleCancelCommentEdit}
-      onEditSave={stableHandleSaveCommentEdit}
-      onDelete={stableHandleDeleteComment}
-      editBusyKey={busyKey}
-      deleteBusyKey={busyKey}
-      onComposerSend={stableHandleAddComment}
-      composerBusy={busyKey === 'comment'}
-      notifyMode={discussionNotifyMode}
-      notifyUids={discussionNotifyUids}
-      notifyCandidates={discussionNotifyCandidates}
-      onNotifyModeChange={setDiscussionNotifyMode}
-      onNotifyUidsChange={setDiscussionNotifyUids}
-      hasMoreOlderMessages={commentsHasMoreOlder}
-      onLoadMoreOlderMessages={() => setCommentsFetchLimit((current) => current + WORKHUB_DISCUSSION_PAGE_SIZE)}
-      threadKey={activeDiscussionEntityKey}
-    />
+    <Suspense fallback={<div className="workhub-empty-state">Loading discussion…</div>}>
+      <WorkhubDiscussionCardLazy
+        comments={comments}
+        currentUid={currentUid}
+        memberByUid={memberByUid}
+        showAuthorAvatar
+        formatTime={formatTime}
+        editingId={editingCommentId}
+        editingText={editingCommentText}
+        onEditStart={stableHandleStartCommentEdit}
+        onEditChange={setEditingCommentText}
+        onEditCancel={stableHandleCancelCommentEdit}
+        onEditSave={stableHandleSaveCommentEdit}
+        onDelete={stableHandleDeleteComment}
+        editBusyKey={busyKey}
+        deleteBusyKey={busyKey}
+        onComposerSend={stableHandleAddComment}
+        composerBusy={busyKey === 'comment'}
+        notifyMode={discussionNotifyMode}
+        notifyUids={discussionNotifyUids}
+        notifyCandidates={discussionNotifyCandidates}
+        onNotifyModeChange={setDiscussionNotifyMode}
+        onNotifyUidsChange={setDiscussionNotifyUids}
+        hasMoreOlderMessages={commentsHasMoreOlder}
+        onLoadMoreOlderMessages={() => setCommentsFetchLimit((current) => current + WORKHUB_DISCUSSION_PAGE_SIZE)}
+        threadKey={activeDiscussionEntityKey}
+      />
+    </Suspense>
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ), [comments, currentUid, memberByUid, editingCommentId, editingCommentText, busyKey,
       discussionNotifyMode, discussionNotifyUids, discussionNotifyCandidates])
@@ -6988,7 +7355,7 @@ export default function WorkHubPage() {
     setSelectedMoodBoardId(boardId)
     setSelectedDocumentId('')
     setSelectedTaskId('')
-    setMoodboardPanelMode(board?.panelVariant === 'flow' ? 'flow' : board?.panelVariant === 'v2' ? 'v2' : 'classic')
+    setMoodboardPanelMode(resolveMoodboardPanelMode(board?.panelVariant))
     setActiveSection('moodboard')
     setProjectsGroupExpanded(true)
     setSidebarCollapsed(false)
@@ -7005,6 +7372,184 @@ export default function WorkHubPage() {
     if (!selectedWorkspaceId) return
     navigate(buildWorkhubPathname(selectedWorkspaceId, nextProjectId, 'moodboard', boardId))
   }, [handleSelectMoodBoardFromTree, navigate, selectedWorkspaceId, visibleProjectIds, workspaceMoodBoards])
+
+  const openMoodBoardVariantForCurrentScope = useCallback(async (panelVariant: 'classic' | 'flow' | 'proscons') => {
+    if (!selectedWorkspaceId) {
+      showToast({ type: 'info', message: 'Select a workspace first.' })
+      navigate('/workhub')
+      return
+    }
+
+    const useProjectScope = selectedProjectId !== 'all' && visibleProjectIds.has(selectedProjectId)
+    const entityType: 'workspace' | 'project' = useProjectScope ? 'project' : 'workspace'
+    const entityId = useProjectScope ? selectedProjectId : selectedWorkspaceId
+
+    const scopedBoards = workspaceMoodBoards.filter((board) => (
+      board.entityType === entityType
+      && board.entityId === entityId
+    ))
+
+    const purgedLegacyBoardIds = new Set<string>()
+    if (panelVariant === 'classic') {
+      const legacyBoards = scopedBoards.filter((board) => resolveMoodboardPanelMode(board.panelVariant) === 'v2')
+      if (legacyBoards.length > 0) {
+        await Promise.allSettled(legacyBoards.map((board) => deleteWorkhubMoodBoard(board.id)))
+        legacyBoards.forEach((board) => purgedLegacyBoardIds.add(board.id))
+      }
+    }
+
+    const matchingBoards = scopedBoards.filter((board) => (
+      !purgedLegacyBoardIds.has(board.id)
+      && resolveMoodboardPanelMode(board.panelVariant) === panelVariant
+    ))
+
+    let boardId = matchingBoards[0]?.id || ''
+
+    if (!boardId) {
+      const label = entityType === 'workspace'
+        ? (selectedWorkspace?.name || 'Workspace')
+        : (workspaceProjectById[entityId]?.name || 'Project')
+      const nextTitle = panelVariant === 'flow'
+        ? `${label} — Flow Project Plan`
+        : panelVariant === 'proscons'
+          ? `${label} — Pros & Cons`
+          : `${label} — Mood Board`
+
+      boardId = await createWorkhubMoodBoard({
+        workspaceId: selectedWorkspaceId,
+        entityType,
+        entityId,
+        title: nextTitle,
+        panelVariant,
+        createdBy: currentUid,
+      })
+    }
+
+    if (entityType === 'project') {
+      const lineage = collectProjectLineage(entityId, workspaceProjectById)
+      if (lineage.length > 0) {
+        setExpandedProjectIds((current) => Array.from(new Set([...current, ...lineage])))
+      }
+      setSelectedProjectId(entityId)
+      setSelectedNoteProjectId(entityId)
+    } else {
+      setSelectedProjectId('all')
+      setSelectedNoteProjectId('')
+    }
+
+    setSelectedMoodBoardId(boardId)
+    setSelectedDocumentId('')
+    setSelectedTaskId('')
+    setMoodboardPanelMode(panelVariant)
+    setActiveSection('moodboard')
+    setProjectsGroupExpanded(true)
+    setSidebarCollapsed(false)
+
+    const projectRouteParam = entityType === 'project' ? entityId : 'all'
+    const nextPath = buildWorkhubPathname(selectedWorkspaceId, projectRouteParam, 'moodboard', boardId)
+    if (`${location.pathname}${location.search}` !== nextPath) {
+      navigate(nextPath)
+    }
+  }, [
+    currentUid,
+    location.pathname,
+    location.search,
+    navigate,
+    selectedProjectId,
+    selectedWorkspace?.name,
+    selectedWorkspaceId,
+    showToast,
+    visibleProjectIds,
+    workspaceMoodBoards,
+    workspaceProjectById,
+  ])
+
+  const createAndOpenMoodBoardVariantForEntity = useCallback(async (
+    panelVariant: 'classic' | 'flow' | 'proscons',
+    entityType: 'workspace' | 'project',
+    entityId: string,
+  ) => {
+    if (!selectedWorkspaceId) {
+      showToast({ type: 'info', message: 'Select a workspace first.' })
+      return
+    }
+
+    const normalizedEntityId = entityType === 'workspace' ? selectedWorkspaceId : entityId
+    if (entityType === 'project' && !normalizedEntityId) {
+      showToast({ type: 'warning', message: 'Select a project first.' })
+      return
+    }
+
+    const variantLabel = panelVariant === 'flow'
+      ? 'Flow Project Plan'
+      : panelVariant === 'proscons'
+        ? 'Pros & Cons'
+        : 'Mood Board'
+
+    const label = entityType === 'workspace'
+      ? (selectedWorkspace?.name || 'Workspace')
+      : (workspaceProjectById[normalizedEntityId]?.name || 'Project')
+
+    const existingCount = workspaceMoodBoards.filter((board) => (
+      board.entityType === entityType
+      && board.entityId === normalizedEntityId
+      && resolveMoodboardPanelMode(board.panelVariant) === panelVariant
+    )).length
+
+    const nextTitle = existingCount === 0
+      ? `${label} — ${variantLabel}`
+      : `${label} — ${variantLabel} ${existingCount + 1}`
+
+    try {
+      const newId = await createWorkhubMoodBoard({
+        workspaceId: selectedWorkspaceId,
+        entityType,
+        entityId: normalizedEntityId,
+        title: nextTitle,
+        panelVariant,
+        createdBy: currentUid,
+      })
+
+      if (entityType === 'project') {
+        const lineage = collectProjectLineage(normalizedEntityId, workspaceProjectById)
+        if (lineage.length > 0) {
+          setExpandedProjectIds((current) => Array.from(new Set([...current, ...lineage])))
+        }
+        setSelectedProjectId(normalizedEntityId)
+        setSelectedNoteProjectId(normalizedEntityId)
+      } else {
+        setSelectedProjectId('all')
+        setSelectedNoteProjectId('')
+      }
+
+      setSelectedMoodBoardId(newId)
+      setSelectedDocumentId('')
+      setSelectedTaskId('')
+      setMoodboardPanelMode(panelVariant)
+      setActiveSection('moodboard')
+      setProjectsGroupExpanded(true)
+      setSidebarCollapsed(false)
+
+      const projectRouteParam = entityType === 'project' ? normalizedEntityId : 'all'
+      const nextPath = buildWorkhubPathname(selectedWorkspaceId, projectRouteParam, 'moodboard', newId)
+      if (`${location.pathname}${location.search}` !== nextPath) {
+        navigate(nextPath)
+      }
+    } catch (error) {
+      console.error('Failed to create moodboard variant', error)
+      showToast({ type: 'error', message: 'Could not create board. Please try again.' })
+    }
+  }, [
+    currentUid,
+    location.pathname,
+    location.search,
+    navigate,
+    selectedWorkspace?.name,
+    selectedWorkspaceId,
+    showToast,
+    workspaceMoodBoards,
+    workspaceProjectById,
+  ])
 
   const handleMobileMoodBoardSelect = useCallback((boardId: string) => {
     setGearMenuOpen(false)
@@ -7023,6 +7568,7 @@ export default function WorkHubPage() {
   _cbRef.current.selectedTaskCount = selectedTaskCount
   _cbRef.current.handleTaskUpdate = handleTaskUpdate
   _cbRef.current.handleBulkStatusChange = handleBulkStatusChange
+  _cbRef.current.handleBulkAssigneeChange = handleBulkAssigneeChange
   _cbRef.current.handleTaskReorder = handleTaskReorder
   _cbRef.current.handleQuickAddTask = handleQuickAddTask
   _cbRef.current.clearTaskSelection = clearTaskSelection
@@ -7320,7 +7866,13 @@ export default function WorkHubPage() {
     selectedTaskCount,
     setBulkStatusMenuOpen,
     bulkStatusMenuOpen,
+    setBulkAssigneeMenuOpen,
+    bulkAssigneeMenuOpen,
+    bulkAssignableMembers,
+    bulkUnionAssigneeUids,
+    bulkAssigneeCoverageByUid,
     handleBulkStatusChange: stableHandleBulkStatusChange,
+    handleBulkAssigneeChange: stableHandleBulkAssigneeChange,
     clearTaskSelection: stableClearTaskSelection,
     setBulkDeleteConfirmOpen,
     selectedWorkspaceScopeType,
@@ -7613,6 +8165,16 @@ export default function WorkHubPage() {
             >
               <span aria-hidden="true">⌕</span>
             </button>
+            <button
+              type="button"
+              className="workhub-tab workhub-top-nav-icon-btn"
+              onClick={handleOptimisticDataReload}
+              disabled={isDataReloading}
+              title={isDataReloading ? 'Reloading...' : 'Reload workspace data'}
+              aria-label={isDataReloading ? 'Reloading workspace data' : 'Reload workspace data'}
+            >
+              <span aria-hidden="true">{isDataReloading ? '...' : '↻'}</span>
+            </button>
             <div className="workhub-notify-wrap">
               <button
                 type="button"
@@ -7637,25 +8199,41 @@ export default function WorkHubPage() {
                   </div>
                   <div className="workhub-notify-list">
                     {notifications.length === 0 && <div className="workhub-notify-empty">No notifications yet.</div>}
-                    {notifications.map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        className={`workhub-notify-item${item.read ? '' : ' is-unread'}`}
-                        onClick={() => { void handleNotificationMenuItemClick(item) }}
-                      >
-                        <div className="workhub-notify-item-main">
-                          <span
-                            aria-hidden="true"
-                            className={`workhub-notify-item-icon${item.read ? ' is-hidden' : ''}`}
-                          >
-                            🔔
+                    {notifications.map((item) => {
+                      const sender = memberByUid[item.actorUid]
+                      const senderName = sender?.displayName || sender?.email || 'System'
+                      const senderAvatarUrl = (sender?.photoURL || '').trim()
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          className={`workhub-notify-item${item.read ? '' : ' is-unread'}`}
+                          onClick={() => { void handleNotificationMenuItemClick(item) }}
+                        >
+                          <span className="workhub-notify-avatar" aria-hidden="true">
+                            {senderAvatarUrl
+                              ? <img src={senderAvatarUrl} alt="" />
+                              : <span>{getInitials(senderName)}</span>}
                           </span>
-                          <span className="workhub-notify-message">{item.message}</span>
-                        </div>
-                        <small>{formatTime(item.createdAt)}</small>
+                          <span className="workhub-notify-item-body">
+                            <span className="workhub-notify-meta">
+                              <span className="workhub-notify-sender">{senderName}</span>
+                              <span>{formatTime(item.createdAt)}</span>
+                            </span>
+                            <span className="workhub-notify-message">{item.message}</span>
+                          </span>
+                        </button>
+                      )
+                    })}
+                    {notifications.length >= notificationFetchLimit && (
+                      <button
+                        type="button"
+                        className="workhub-notify-load-more"
+                        onClick={() => setNotificationFetchLimit((count) => count + 10)}
+                      >
+                        Load more
                       </button>
-                    ))}
+                    )}
                   </div>
                 </div>
               )}
@@ -7718,20 +8296,30 @@ export default function WorkHubPage() {
                     className="workhub-account-menu-action"
                     onClick={() => {
                       setAccountMenuOpen(false)
-                      navigate('/mood-board-v2')
+                      void openMoodBoardVariantForCurrentScope('classic')
                     }}
                   >
-                    Open Mood Board #2
+                    Open Mood Board
                   </button>
                   <button
                     type="button"
                     className="workhub-account-menu-action"
                     onClick={() => {
                       setAccountMenuOpen(false)
-                      navigate('/flow-project-plan')
+                      void openMoodBoardVariantForCurrentScope('flow')
                     }}
                   >
                     Open Flow Project Plan
+                  </button>
+                  <button
+                    type="button"
+                    className="workhub-account-menu-action"
+                    onClick={() => {
+                      setAccountMenuOpen(false)
+                      void openMoodBoardVariantForCurrentScope('proscons')
+                    }}
+                  >
+                    Open Pros &amp; Cons
                   </button>
                   {selectedWorkspaceId && (
                     <button
@@ -8151,6 +8739,8 @@ export default function WorkHubPage() {
                       onOpenSettings={openProjectSettingsDialog}
                       projectColorMeanings={selectedWorkspaceProjectColorMeanings}
                     />
+                  ) : !projectsFeedHydrated && !!selectedWorkspaceId ? (
+                    <div className="workhub-empty-state">Loading workspace items…</div>
                   ) : (
                     <div className="workhub-empty-state workhub-empty-projects-cta">
                       <span>{emptyProjectsMessage}</span>
@@ -8166,22 +8756,40 @@ export default function WorkHubPage() {
                         <button
                           type="button"
                           className="workhub-ghost-btn"
-                          onClick={() => navigate('/mood-board-v2')}
+                          onClick={() => { void openMoodBoardVariantForCurrentScope('classic') }}
                         >
-                          Mood Board #2
+                          Mood Board
                         </button>
                         <button
                           type="button"
                           className="workhub-ghost-btn"
-                          onClick={() => navigate('/flow-project-plan')}
+                          onClick={() => { void openMoodBoardVariantForCurrentScope('flow') }}
                         >
                           Flow Project Plan
+                        </button>
+                        <button
+                          type="button"
+                          className="workhub-ghost-btn"
+                          onClick={() => { void openMoodBoardVariantForCurrentScope('proscons') }}
+                        >
+                          Pros &amp; Cons
                         </button>
                       </div>
                     </div>
                   )}
 
 
+                </div>
+                <div className="workhub-tree-footer" role="region" aria-label="Workspace quick actions">
+                  <button
+                    type="button"
+                    className="workhub-tree-chat-btn"
+                    onClick={handleOpenLinkedChat}
+                    title="Open chat"
+                  >
+                    <span className="workhub-tree-chat-btn-icon" aria-hidden="true">💬</span>
+                    <span>Chat</span>
+                  </button>
                 </div>
               </>
             )}
@@ -8604,489 +9212,144 @@ export default function WorkHubPage() {
                 </div>
                 {showDashboardDetailRail && (
                   <aside className="workhub-task-detail-rail is-expanded">
-                    <WorkhubProjectDetailRail {...workhubTasksSectionProps} />
+                    <Suspense fallback={<div className="workhub-empty-state">Loading details…</div>}>
+                      <WorkhubProjectDetailRailLazy {...workhubTasksSectionProps} />
+                    </Suspense>
                   </aside>
                 )}
               </main>
             )}
 
             {activeSection === 'users' && isPrivilegedMember && (
-              <main className="workhub-section-stack">
-                <section className="workhub-panel workhub-user-management-panel">
-                  <div className="workhub-panel-head compact">
-                    <div>
-                      <h2>User management</h2>
-                      <p>Approve requests and choose access mode per user: Full or Workspace-based.</p>
-                    </div>
-                    <div className="workhub-user-management-tools">
-                      <label>
-                        <span>Workspace scope</span>
-                        <select
-                          value={userWorkspaceFilter}
-                          onChange={(event) => {
-                            setUserWorkspaceFilter(event.target.value)
-                            setExpandedUserPickerUid(null)
-                          }}
-                        >
-                          <option value="all">All accessible workspaces</option>
-                          {visibleWorkspaces.map((workspace) => (
-                            <option key={workspace.id} value={workspace.id}>{workspaceDisplayNameById[workspace.id] || workspace.name}</option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                  </div>
-
-                  <div className="workhub-members-section">
-                    <div className="workhub-members-section-head">
-                      <strong>Members</strong>
-                      <span className="workhub-members-count">
-                        {userManagementApprovedMembers.length} active
-                        {userManagementPendingMembers.length > 0 && (
-                          <span className="workhub-pending-badge">{userManagementPendingMembers.length} pending</span>
-                        )}
-                      </span>
-                    </div>
-                    {userManagementMembers.length === 0 && (
-                      <div className="workhub-empty-state">No members match this scope.</div>
-                    )}
-                    <div className="workhub-member-list">
-                      {userManagementMembers.map((item) => {
-                        const isPending = item.status === 'pending'
-                        const isSuspended = item.status === 'suspended'
-                        const isMasterTarget = !!normalizedMasterEmail && (item.email || '').trim().toLowerCase() === normalizedMasterEmail
-                        const summary = memberWorkspaceSummaryByUid[item.uid] || { count: 0, names: [] }
-                        const effectiveAccess = userAccessEffectiveByUid[item.uid] || { mode: 'workspace_based' as WorkhubUserAccessMode, workspaceById: {} }
-                        const accessMode = effectiveAccess.mode
-                        const isPickerOpen = expandedUserPickerUid === item.uid
-                        const isBusyRequest = busyKey === `member-request:${item.uid}`
-                        const isSavingAccess = busyKey === `user-access-save:${item.uid}`
-                        const isSavingName = busyKey === `member-name:${item.uid}`
-                        const hasDraftChanges = userAccessDraftDirtyByUid[item.uid] || false
-                        const memberNameDraft = memberNameDraftByUid[item.uid] ?? (item.displayName || '')
-                        const hasNameDraftChange = memberNameDraft.trim().length > 0 && memberNameDraft.trim() !== (item.displayName || '').trim()
-                        const initials = (item.displayName || item.email || '?')
-                          .split(' ').map((word: string) => word[0]).slice(0, 2).join('').toUpperCase()
-                        return (
-                          <div key={item.uid} className="workhub-member-row-wrap">
-                            <div className={`workhub-member-row settings-row${isPending ? ' is-pending' : ''}${isSuspended ? ' is-suspended' : ''}`}>
-                              <div className="workhub-member-avatar settings-avatar" aria-hidden="true">{initials}</div>
-                              <div className="workhub-member-identity">
-                                <span className="workhub-member-name">{item.displayName || item.email || item.uid}</span>
-                                <span className="workhub-member-email">{item.email || '—'}</span>
-                                <div className="workhub-inline-row" style={{ marginTop: 6, gap: 6 }}>
-                                  <input
-                                    type="text"
-                                    value={memberNameDraft}
-                                    disabled={isSavingName || isMasterTarget}
-                                    onChange={(event) => {
-                                      const nextValue = event.target.value
-                                      setMemberNameDraftByUid((current) => ({ ...current, [item.uid]: nextValue }))
-                                    }}
-                                    placeholder="Set display name"
-                                    style={{ minWidth: 170 }}
-                                  />
-                                  <button
-                                    type="button"
-                                    className="workhub-primary-mini"
-                                    disabled={isSavingName || isMasterTarget || !hasNameDraftChange}
-                                    onClick={() => { void handleSaveMemberDisplayName(item.uid) }}
-                                  >
-                                    {isSavingName ? 'Saving…' : 'Save name'}
-                                  </button>
-                                </div>
-                              </div>
-                              <div className="workhub-member-workspaces">
-                                <span className="workhub-ws-count-label">
-                                  {summary.count > 0 ? `${summary.count} workspace${summary.count === 1 ? '' : 's'}` : <span className="workhub-muted">No workspaces</span>}
-                                </span>
-                              </div>
-                              <div className="workhub-member-actions">
-                                {isPending ? (
-                                  <>
-                                    <span className="workhub-status-pill pending">Pending request</span>
-                                    <button
-                                      type="button"
-                                      className="workhub-approve-btn"
-                                      disabled={isBusyRequest || isMasterTarget}
-                                      onClick={() => { void handleApproveRequestGlobal(item.uid) }}
-                                      title="Approve user"
-                                    >
-                                      {isBusyRequest ? '…' : 'Approve'}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="workhub-decline-btn"
-                                      disabled={isBusyRequest || isMasterTarget}
-                                      onClick={() => { void handleMemberModeration(item.uid, 'suspended', item.role) }}
-                                      title="Decline request"
-                                    >
-                                      Reject
-                                    </button>
-                                  </>
-                                ) : isSuspended ? (
-                                  <>
-                                    <span className="workhub-status-pill suspended">Suspended</span>
-                                    <button
-                                      type="button"
-                                      className="workhub-approve-btn"
-                                      disabled={isBusyRequest || isMasterTarget}
-                                      onClick={() => { void handleMemberModeration(item.uid, 'approved', item.role) }}
-                                      title="Re-approve user"
-                                    >
-                                      Reactivate
-                                    </button>
-                                  </>
-                                ) : (
-                                  <>
-                                    <div className="workhub-user-mode-toggle" title="Access mode">
-                                      <button
-                                        type="button"
-                                        className={`workhub-user-mode-btn${accessMode === 'full' ? ' is-active' : ''}`}
-                                        disabled={isSavingAccess || isMasterTarget}
-                                        onClick={() => {
-                                          setExpandedUserPickerUid(null)
-                                          handleSetUserAccessModeDraft(item.uid, 'full')
-                                        }}
-                                      >
-                                        Full
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className={`workhub-user-mode-btn${accessMode === 'workspace_based' ? ' is-active' : ''}`}
-                                        disabled={isSavingAccess || isMasterTarget}
-                                        onClick={() => {
-                                          handleSetUserAccessModeDraft(item.uid, 'workspace_based')
-                                          setExpandedUserPickerUid(item.uid)
-                                        }}
-                                      >
-                                        Workspace
-                                      </button>
-                                    </div>
-                                    {accessMode === 'workspace_based' ? (
-                                      <button
-                                        type="button"
-                                        className={`workhub-ws-count-btn${isPickerOpen ? ' is-open' : ''}`}
-                                        disabled={isSavingAccess || isMasterTarget}
-                                        onClick={() => setExpandedUserPickerUid(isPickerOpen ? null : item.uid)}
-                                      >
-                                        Manage access
-                                        <span className="workhub-ws-count-chevron">{isPickerOpen ? '▲' : '▼'}</span>
-                                      </button>
-                                    ) : (
-                                      <span className="workhub-user-mode-pill">All workspaces</span>
-                                    )}
-                                    <button
-                                      type="button"
-                                      className="workhub-ghost-mini"
-                                      disabled={!hasDraftChanges || isSavingAccess || isMasterTarget}
-                                      onClick={() => handleDiscardUserAccessDraft(item.uid)}
-                                    >
-                                      Discard
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="workhub-primary-mini"
-                                      disabled={!hasDraftChanges || isSavingAccess || isMasterTarget}
-                                      onClick={() => { void handleSaveUserAccessDraft(item.uid) }}
-                                    >
-                                      {isSavingAccess ? 'Saving…' : 'Save'}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="workhub-decline-btn"
-                                      disabled={isBusyRequest || isMasterTarget}
-                                      onClick={() => { void handleMemberModeration(item.uid, 'suspended', item.role) }}
-                                      title="Suspend user"
-                                    >
-                                      Suspend
-                                    </button>
-                                  </>
-                                )}
-                                {isMasterTarget && <span className="workhub-user-mode-pill">Master (locked)</span>}
-                              </div>
-                            </div>
-                            {isPickerOpen && accessMode === 'workspace_based' && (
-                              <div className="workhub-ws-picker">
-                                <div className="workhub-ws-picker-title">Workspace access for {item.displayName || item.email}</div>
-                                <div className="workhub-ws-picker-list">
-                                  {visibleWorkspaces.map((workspace) => {
-                                    const workspaceEntry = effectiveAccess.workspaceById[workspace.id] || { enabled: false, level: 'custom' as const }
-                                    const isChecked = workspaceEntry.enabled
-                                    const accessLevel = workspaceEntry.level
-                                    return (
-                                      <div key={workspace.id} className="workhub-ws-picker-row">
-                                        <input
-                                          type="checkbox"
-                                          checked={isChecked}
-                                          disabled={isSavingAccess}
-                                          onChange={(event) => handleToggleUserWorkspaceDraft(item.uid, workspace.id, event.target.checked)}
-                                        />
-                                        <span className="workhub-ws-picker-name">{workspaceDisplayNameById[workspace.id] || workspace.name}</span>
-                                        {isChecked && (
-                                          <div className="workhub-access-level-toggle workhub-ws-access-level-toggle" title="Access level for this workspace">
-                                            <button
-                                              type="button"
-                                              className={`workhub-access-level-btn${accessLevel === 'full' ? ' is-active' : ''}`}
-                                              disabled={isSavingAccess}
-                                              onClick={() => handleSetUserWorkspaceLevelDraft(item.uid, workspace.id, 'full')}
-                                            >
-                                              Full
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className={`workhub-access-level-btn${accessLevel === 'custom' ? ' is-active' : ''}`}
-                                              disabled={isSavingAccess}
-                                              onClick={() => handleSetUserWorkspaceLevelDraft(item.uid, workspace.id, 'custom')}
-                                            >
-                                              Custom
-                                            </button>
-                                          </div>
-                                        )}
-                                        {workspace.id === selectedWorkspaceId && <span className="workhub-ws-picker-badge current">Current</span>}
-                                      </div>
-                                    )
-                                  })}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                </section>
-              </main>
+              <Suspense
+                fallback={(
+                  <main className="workhub-section-stack">
+                    <section className="workhub-panel">
+                      <div className="workhub-empty-state">Loading user management…</div>
+                    </section>
+                  </main>
+                )}
+              >
+                <WorkhubUsersSectionLazy
+                  userWorkspaceFilter={userWorkspaceFilter}
+                  setUserWorkspaceFilter={setUserWorkspaceFilter}
+                  expandedUserPickerUid={expandedUserPickerUid}
+                  setExpandedUserPickerUid={setExpandedUserPickerUid}
+                  visibleWorkspaces={visibleWorkspaces}
+                  workspaceDisplayNameById={workspaceDisplayNameById}
+                  userManagementApprovedMembers={userManagementApprovedMembers}
+                  userManagementPendingMembers={userManagementPendingMembers}
+                  userManagementMembers={userManagementMembers}
+                  normalizedMasterEmail={normalizedMasterEmail}
+                  memberWorkspaceSummaryByUid={memberWorkspaceSummaryByUid}
+                  userAccessEffectiveByUid={userAccessEffectiveByUid}
+                  busyKey={busyKey}
+                  userAccessDraftDirtyByUid={userAccessDraftDirtyByUid}
+                  memberNameDraftByUid={memberNameDraftByUid}
+                  setMemberNameDraftByUid={setMemberNameDraftByUid}
+                  handleSaveMemberDisplayName={handleSaveMemberDisplayName}
+                  handleApproveRequestGlobal={handleApproveRequestGlobal}
+                  handleMemberModeration={handleMemberModeration}
+                  handleSetUserAccessModeDraft={handleSetUserAccessModeDraft}
+                  handleToggleUserWorkspaceDraft={handleToggleUserWorkspaceDraft}
+                  handleSetUserWorkspaceLevelDraft={handleSetUserWorkspaceLevelDraft}
+                  handleDiscardUserAccessDraft={handleDiscardUserAccessDraft}
+                  handleSaveUserAccessDraft={handleSaveUserAccessDraft}
+                  selectedWorkspaceId={selectedWorkspaceId}
+                />
+              </Suspense>
             )}
 
             {activeSection === 'clients' && (
-              <main className="workhub-section-stack">
-                <section className="workhub-panel">
-                  <div className="workhub-panel-head compact">
-                    <div>
-                      <h2>Client management</h2>
-                      <p>Maintain client profiles and link them to projects for better bid and delivery tracking. Only client name is required.</p>
-                    </div>
-                    <div className="workhub-panel-tools">
-                      <button
-                        className="workhub-ghost-btn"
-                        onClick={() => {
-                          setSelectedClientId('__new__')
-                          setClientNameDraft('')
-                          setClientContactPersonDraft('')
-                          setClientEmailDraft('')
-                          setClientPhoneDraft('')
-                          setClientWebsiteDraft('')
-                          setClientAddressDraft('')
-                          setClientIndustryDraft('')
-                          setClientLogoUrlDraft('')
-                          setClientNotesDraft('')
-                        }}
-                      >
-                        ➕ New client
-                      </button>
-                      {selectedClientId === '__new__' ? (
-                        <button type="button" className="workhub-primary-btn" onClick={() => { void handleCreateClientFromManager() }} disabled={busyKey === 'client:create'}>
-                          {busyKey === 'client:create' ? 'Creating…' : '🏢 Create client'}
-                        </button>
-                      ) : (
-                        <button type="button" className="workhub-primary-btn" onClick={() => { void handleSaveClientDetails() }} disabled={!selectedClientId || busyKey === `client:save:${selectedClientId}`}>
-                          {busyKey === `client:save:${selectedClientId}` ? 'Saving…' : 'Save client'}
-                        </button>
-                      )}
-                      <button
-                        className="workhub-danger-btn"
-                        onClick={handleDeleteClientDetails}
-                        disabled={!selectedClientId || selectedClientId === '__new__' || busyKey === `client:delete:${selectedClientId}`}
-                      >
-                        {busyKey === `client:delete:${selectedClientId}` ? 'Deleting…' : 'Delete client'}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="workhub-client-layout">
-                    <div className="workhub-client-list">
-                      {clients.map((client) => {
-                        const linkedCount = projects.filter((project) => project.clientId === client.id).length
-                        const workspace = visibleWorkspaces.find((item) => item.id === client.workspaceId) || null
-                        const workspaceName = workspace
-                          ? (workspaceDisplayNameById[workspace.id] || workspace.name)
-                          : 'Workspace'
-                        return (
-                          <button
-                            key={client.id}
-                            type="button"
-                            className={`workhub-client-list-item${selectedClientId === client.id ? ' is-active' : ''}`}
-                            onClick={() => setSelectedClientId(client.id)}
-                          >
-                            <strong>{client.name}</strong>
-                            <span>{client.contactPerson || client.email || 'No contact details'}</span>
-                            <small className="workhub-client-workspace-label">{workspaceName}</small>
-                            <small>{linkedCount} linked project{linkedCount === 1 ? '' : 's'}</small>
-                          </button>
-                        )
-                      })}
-                      {clients.length === 0 && <div className="workhub-empty-state">No clients yet. Create your first client profile.</div>}
-                    </div>
-                    <div className="workhub-modal-form workhub-client-form">
-                      <label>
-                        <span>Client name</span>
-                        <input value={clientNameDraft} onChange={(event) => setClientNameDraft(event.target.value)} placeholder="Acme Industries" />
-                      </label>
-                      <label>
-                        <span>Contact person</span>
-                        <input value={clientContactPersonDraft} onChange={(event) => setClientContactPersonDraft(event.target.value)} placeholder="Primary contact" />
-                      </label>
-                      <div className="workhub-field-grid two compact">
-                        <label>
-                          <span>Email</span>
-                          <input type="email" value={clientEmailDraft} onChange={(event) => setClientEmailDraft(event.target.value)} placeholder="contact@client.com" />
-                        </label>
-                        <label>
-                          <span>Phone</span>
-                          <input value={clientPhoneDraft} onChange={(event) => setClientPhoneDraft(event.target.value)} placeholder="+971 ..." />
-                        </label>
-                      </div>
-                      <div className="workhub-field-grid two compact">
-                        <label>
-                          <span>Website</span>
-                          <input value={clientWebsiteDraft} onChange={(event) => setClientWebsiteDraft(event.target.value)} placeholder="https://client.com" />
-                        </label>
-                        <label>
-                          <span>Industry</span>
-                          <input value={clientIndustryDraft} onChange={(event) => setClientIndustryDraft(event.target.value)} placeholder="Construction, Oil & Gas, Tech..." />
-                        </label>
-                      </div>
-                      <label>
-                        <span>Address</span>
-                        <textarea rows={2} value={clientAddressDraft} onChange={(event) => setClientAddressDraft(event.target.value)} placeholder="Client address" />
-                      </label>
-                      <label>
-                        <span>Logo URL</span>
-                        <input value={clientLogoUrlDraft} onChange={(event) => setClientLogoUrlDraft(event.target.value)} placeholder="https://.../logo.png" />
-                      </label>
-                      <div className="workhub-inline-row workhub-client-logo-upload-row">
-                        <label className="workhub-file-upload-btn workhub-client-logo-upload-btn">
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(event) => {
-                              const file = event.target.files?.[0]
-                              event.target.value = ''
-                              if (!file) return
-                              void handleClientLogoFileUpload(file)
-                            }}
-                          />
-                          Upload logo
-                        </label>
-                        {busyKey === 'client:logo-upload' && <span className="workhub-meta-line">Uploading logo…</span>}
-                      </div>
-                      {clientLogoUrlDraft.trim() && (
-                        <div className="workhub-client-logo-preview">
-                          <img src={clientLogoUrlDraft} alt="Client logo preview" onError={(event) => { (event.currentTarget as HTMLImageElement).style.display = 'none' }} />
-                        </div>
-                      )}
-                      <label>
-                        <span>Notes</span>
-                        <textarea rows={4} value={clientNotesDraft} onChange={(event) => setClientNotesDraft(event.target.value)} placeholder="Commercial terms, preferred formats, compliance notes..." />
-                      </label>
-                    </div>
-                  </div>
-                </section>
-              </main>
+              <Suspense
+                fallback={(
+                  <main className="workhub-section-stack">
+                    <section className="workhub-panel">
+                      <div className="workhub-empty-state">Loading client management…</div>
+                    </section>
+                  </main>
+                )}
+              >
+                <WorkhubClientsSectionLazy
+                  selectedClientId={selectedClientId}
+                  setSelectedClientId={setSelectedClientId}
+                  busyKey={busyKey}
+                  handleCreateClientFromManager={handleCreateClientFromManager}
+                  handleSaveClientDetails={handleSaveClientDetails}
+                  handleDeleteClientDetails={handleDeleteClientDetails}
+                  clients={clients}
+                  projects={projects}
+                  visibleWorkspaces={visibleWorkspaces}
+                  workspaceDisplayNameById={workspaceDisplayNameById}
+                  clientNameDraft={clientNameDraft}
+                  setClientNameDraft={setClientNameDraft}
+                  clientContactPersonDraft={clientContactPersonDraft}
+                  setClientContactPersonDraft={setClientContactPersonDraft}
+                  clientEmailDraft={clientEmailDraft}
+                  setClientEmailDraft={setClientEmailDraft}
+                  clientPhoneDraft={clientPhoneDraft}
+                  setClientPhoneDraft={setClientPhoneDraft}
+                  clientWebsiteDraft={clientWebsiteDraft}
+                  setClientWebsiteDraft={setClientWebsiteDraft}
+                  clientAddressDraft={clientAddressDraft}
+                  setClientAddressDraft={setClientAddressDraft}
+                  clientIndustryDraft={clientIndustryDraft}
+                  setClientIndustryDraft={setClientIndustryDraft}
+                  clientLogoUrlDraft={clientLogoUrlDraft}
+                  setClientLogoUrlDraft={setClientLogoUrlDraft}
+                  clientNotesDraft={clientNotesDraft}
+                  setClientNotesDraft={setClientNotesDraft}
+                  handleClientLogoFileUpload={handleClientLogoFileUpload}
+                />
+              </Suspense>
             )}
 
         {activeSection === 'notes' && (
-          <WorkhubDocEditor
-            {...docEditor}
-            selectedDocument={selectedDocument ?? undefined}
-            scopedWorkspaceDocuments={scopedWorkspaceDocuments}
-            selectedProjectId={selectedProjectId}
-            projectBrandingByProjectId={projectBrandingByProjectId}
-            taskContextTrail={taskContextTrail}
-            taskContextIconByProjectId={Object.fromEntries(taskContextTrail.map((project) => [project.id, projectIntentMetaById[project.id]?.icon || '📁']))}
-            selectedProjectPeriodLabel={selectedProjectPeriodLabel}
-            selectedProjectSubmissionTimeLabel={selectedProjectSubmissionTimeLabel}
-            onSelectProject={handleSelectProject}
-            busyKey={busyKey}
-            memberByUid={memberByUid}
-            workspaceProjectById={workspaceProjectById}
-            workhubShareCandidates={workhubShareCandidates}
-            isImageAttachmentUrl={isImageAttachmentUrl}
-            openAttachmentLightbox={openAttachmentLightbox}
-            formatTime={formatTime}
-            openDocumentCreateDialog={openDocumentCreateDialog}
-            onOpenDocumentSettings={openDocumentSettingsDialog}
-            isMobileLayout={isMobileWorkhubLayout}
-            discussionComments={comments}
-            onDiscussionSend={handleAddComment}
-            discussionBusy={busyKey === 'comment'}
-            discussionNotifyMode={discussionNotifyMode}
-            discussionNotifyUids={discussionNotifyUids}
-            discussionNotifyCandidates={discussionNotifyCandidates}
-            onDiscussionNotifyModeChange={setDiscussionNotifyMode}
-            onDiscussionNotifyUidsChange={setDiscussionNotifyUids}
-            discussionEditingId={editingCommentId}
-            discussionEditingText={editingCommentText}
-            onDiscussionEditStart={handleStartCommentEdit}
-            onDiscussionEditChange={setEditingCommentText}
-            onDiscussionEditCancel={handleCancelCommentEdit}
-            onDiscussionEditSave={handleSaveCommentEdit}
-            discussionEditBusyKey={busyKey}
-            onDiscussionDelete={handleDeleteComment}
-            discussionDeleteBusyKey={busyKey}
-            currentUid={auth.currentUser?.uid || ''}
-            allWorkspaceIds={visibleWorkspaces.map((ws) => ({ id: ws.id, name: ws.name }))}
-            allWorkspaceProjects={projects.map((p) => ({ id: p.id, name: p.name, workspaceId: p.workspaceId }))}
-            isPrivilegedMember={isPrivilegedMember}
-          />
-        )}
-
-        {activeSection === 'moodboard' && (
-          moodboardPanelMode === 'classic' ? (
-            <MoodBoardPanel
-              board={activeMoodBoard}
-              entityLabel={
-                activeMoodBoard?.entityType === 'project'
-                  ? (workspaceProjectById[activeMoodBoard.entityId]?.name || 'Project')
-                  : (selectedWorkspace?.name || 'Workspace')
-              }
-              workspaceProjectById={workspaceProjectById}
-              currentUid={currentUid}
-              canEdit={canSeeAllProjects}
-              memberByUid={memberByUid}
-              formatTime={formatTime}
+          <Suspense
+            fallback={(
+              <main className="workhub-section-stack">
+                <section className="workhub-panel">
+                  <div className="workhub-empty-state">Loading document editor…</div>
+                </section>
+              </main>
+            )}
+          >
+            <WorkhubNotesSectionLazy
+              hookInput={{
+                selectedDocument: selectedDocument ?? undefined,
+                selectedWorkspaceId,
+                workspaceProjectById,
+                workhubShareCandidates,
+                allWorkspaceIds: visibleWorkspaces.map((ws) => ({ id: ws.id, name: ws.name })),
+                allWorkspaceProjects: projects.map((p) => ({ id: p.id, name: p.name, workspaceId: p.workspaceId, parentProjectId: p.parentProjectId || null })),
+                isPrivilegedMember,
+                showToast,
+                setBusyKey,
+                setSelectedDocumentId,
+                createActivity: createWorkhubActivity,
+                createNotifications: createWorkhubNotifications,
+                deleteDocument: deleteWorkhubDocument,
+                normalizeMemberUids,
+              }}
+              selectedDocument={selectedDocument ?? undefined}
+              scopedWorkspaceDocuments={scopedWorkspaceDocuments}
+              selectedProjectId={selectedProjectId}
+              projectBrandingByProjectId={projectBrandingByProjectId}
+              taskContextTrail={taskContextTrail}
+              taskContextIconByProjectId={Object.fromEntries(taskContextTrail.map((project) => [project.id, projectIntentMetaById[project.id]?.icon || '📁']))}
+              selectedProjectPeriodLabel={selectedProjectPeriodLabel}
+              selectedProjectSubmissionTimeLabel={selectedProjectSubmissionTimeLabel}
+              onSelectProject={handleSelectProject}
               busyKey={busyKey}
-              onCreateBoard={async (title) => {
-                if (!selectedWorkspaceId) return null
-                const id = await createWorkhubMoodBoard({
-                  workspaceId: selectedWorkspaceId,
-                  entityType: activeMoodBoard?.entityType ?? 'workspace',
-                  entityId: activeMoodBoard?.entityId ?? selectedWorkspaceId,
-                  title,
-                  createdBy: currentUid,
-                })
-                setSelectedMoodBoardId(id)
-                return id
-              }}
-              onUploadImage={async (boardId, file) => {
-                const ext = file.name.split('.').pop() ?? 'jpg'
-                const storagePath = `workhub-moodboards/${selectedWorkspaceId}/${boardId}/${crypto.randomUUID()}.${ext}`
-                const storageRef = ref(storage, storagePath)
-                await uploadBytes(storageRef, file, { contentType: file.type || 'application/octet-stream' })
-                return await getDownloadURL(storageRef)
-              }}
-              onBoardDeleted={() => {
-                setSelectedMoodBoardId('')
-                setActiveSection('dashboard')
-              }}
-              onOpenAttachmentLightbox={openAttachmentLightbox}
-              getAttachmentReviewCount={(url) => {
-                const review = attachmentReviews[url]
-                return (review?.notes.trim() ? 1 : 0)
-                  + (review?.comments.length || 0)
-                  + (review?.markers.length || 0)
-                  + (review?.modificationChecks.length || 0)
-              }}
+              memberByUid={memberByUid}
+              workspaceProjectById={workspaceProjectById}
+              workhubShareCandidates={workhubShareCandidates}
+              isImageAttachmentUrl={isImageAttachmentUrl}
+              openAttachmentLightbox={openAttachmentLightbox}
+              formatTime={formatTime}
+              openDocumentCreateDialog={openDocumentCreateDialog}
+              onOpenDocumentSettings={openDocumentSettingsDialog}
+              isMobileLayout={isMobileWorkhubLayout}
               discussionComments={comments}
               onDiscussionSend={handleAddComment}
               discussionBusy={busyKey === 'comment'}
@@ -9104,378 +9367,97 @@ export default function WorkHubPage() {
               discussionEditBusyKey={busyKey}
               onDiscussionDelete={handleDeleteComment}
               discussionDeleteBusyKey={busyKey}
+              currentUid={auth.currentUser?.uid || ''}
+              allWorkspaceIds={visibleWorkspaces.map((ws) => ({ id: ws.id, name: ws.name }))}
+              allWorkspaceProjects={projects.map((p) => ({ id: p.id, name: p.name, workspaceId: p.workspaceId, parentProjectId: p.parentProjectId || null }))}
+              isPrivilegedMember={isPrivilegedMember}
             />
-          ) : (
-            <main className="workhub-section-stack">
-              <section className="workhub-panel workhub-flowboard-panel">
-                <FlowBoardCanvas
-                  variant={moodboardPanelMode === 'flow' ? 'project' : 'mood'}
-                  stateKey={activeMoodBoard?.id || `${selectedWorkspaceId}:${moodboardPanelMode}`}
-                  boardTitle={activeMoodBoard?.title || ''}
-                  onBoardTitleChange={(nextTitle) => {
-                    if (!activeMoodBoard?.id) return
-                    void updateWorkhubMoodBoardTitle(activeMoodBoard.id, nextTitle)
-                  }}
-                  onBoardShare={() => {
-                    const url = typeof window === 'undefined' ? '' : window.location.href
-                    if (!url) return
-                    if (navigator.clipboard?.writeText) {
-                      void navigator.clipboard.writeText(url)
-                      showToast({ type: 'success', message: 'Board link copied.' })
-                      return
-                    }
-                    showToast({ type: 'info', message: 'Copy this URL from the address bar.' })
-                  }}
-                  onBoardDelete={() => {
-                    if (!activeMoodBoard?.id) return
-                    const shouldDelete = typeof window === 'undefined' ? true : window.confirm('Delete this mood board? This cannot be undone.')
-                    if (!shouldDelete) return
-                    void (async () => {
-                      await deleteWorkhubMoodBoard(activeMoodBoard.id)
-                      setSelectedMoodBoardId('')
-                      setActiveSection('dashboard')
-                    })()
-                  }}
-                  uploadImages={async (files) => {
-                    if (!selectedWorkspaceId || !activeMoodBoard?.id) return []
-                    const urls: string[] = []
-                    for (const file of files) {
-                      const ext = file.name.split('.').pop() ?? 'jpg'
-                      const storagePath = `workhub-moodboards/${selectedWorkspaceId}/${activeMoodBoard.id}/${crypto.randomUUID()}.${ext}`
-                      const storageRef = ref(storage, storagePath)
-                      await uploadBytes(storageRef, file, { contentType: file.type || 'application/octet-stream' })
-                      urls.push(await getDownloadURL(storageRef))
-                    }
-                    return urls
-                  }}
-                  initialState={{
-                    nodes: (activeMoodBoard?.flowNodes as never[] | undefined) || [],
-                    edges: (activeMoodBoard?.flowEdges as never[] | undefined) || [],
-                    viewport: activeMoodBoard?.flowViewport || undefined,
-                    canvasAppearance: activeMoodBoard?.flowSettings?.canvasAppearance,
-                    showNavigationPreview: activeMoodBoard?.flowSettings?.showNavigationPreview,
-                  }}
-                  renderDetailsPanel={({ selectedNode, selectedData, canvasAppearance, showNavigationPreview, selectedGroupLabel, updateSelectedNodeData, updateSelectedNodeStyle, updateSelectedNodeSize, updateCanvasAppearance, setShowNavigationPreview, applyCanvasPreset, sendSelectedNodeToBack, bringSelectedNodeForward, toggleSelectedGroupLock, toggleSelectedGroupCollapse, removeSelectedNode }) => (
-                    <>
-                      <div className="workhub-task-attachments-head">
-                        <span>Details</span>
-                        <span>{moodboardPanelMode === 'flow' ? 'Flow board' : 'Mood board'}</span>
-                      </div>
-                      <div className="workhub-detail-card">
-                        <h3>Board details</h3>
-                        <div className="flowboard-details-form">
-                          <label>
-                            Board title
-                            <input
-                              value={activeMoodBoard?.title || ''}
-                              onChange={(event) => {
-                                if (!activeMoodBoard?.id) return
-                                const nextTitle = event.target.value
-                                void updateWorkhubMoodBoardTitle(activeMoodBoard.id, nextTitle)
-                              }}
-                            />
-                          </label>
-                          {moodboardPanelMode !== 'flow' ? (
-                            <div className="workhub-empty-state">Use Add group in the top toolbar to place a background container behind a set of images.</div>
-                          ) : null}
-                          <button type="button" className="flowboard-btn flowboard-danger" onClick={removeSelectedNode} disabled={!selectedNode}>
-                            Delete selected node
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="workhub-detail-card">
-                        <h3>Selected node</h3>
-                        {selectedNode ? (
-                          <div className="flowboard-details-form">
-                            <label>
-                              Text
-                              <input
-                                value={selectedData.label || ''}
-                                onChange={(event) => updateSelectedNodeData({ label: event.target.value })}
-                              />
-                            </label>
-                            <label>
-                              Node color
-                              <input
-                                type="color"
-                                value={normalizeColorInputValue(
-                                  selectedData.noteColor,
-                                  selectedNode.type === 'groupNode' || selectedData.kind === 'group' ? '#c7d6ff' : '#ffffff',
-                                )}
-                                onChange={(event) => {
-                                  const nextColor = event.target.value
-                                  const isGroupNode = selectedNode.type === 'groupNode' || selectedData.kind === 'group'
-                                  const nextNodeColor = isGroupNode
-                                    ? hexToRgba(nextColor, getColorAlpha(selectedData.noteColor, 0.16))
-                                    : nextColor
-                                  updateSelectedNodeData({ noteColor: nextNodeColor })
-                                  updateSelectedNodeStyle({ backgroundColor: nextNodeColor })
-                                }}
-                              />
-                            </label>
-                            {(selectedNode.type === 'imageNode' || selectedData.kind === 'image') && selectedGroupLabel ? (
-                              <div className="workhub-empty-state">Attached to group: {selectedGroupLabel}</div>
-                            ) : null}
-                            {(selectedNode.type === 'groupNode' || selectedData.kind === 'group') ? (
-                              <div className="flowboard-preset-row">
-                                <button type="button" className="flowboard-btn" onClick={toggleSelectedGroupLock}>
-                                  {selectedData.locked === false ? 'Lock group' : 'Unlock group'}
-                                </button>
-                                <button type="button" className="flowboard-btn" onClick={toggleSelectedGroupCollapse}>
-                                  {selectedData.collapsed ? 'Expand group' : 'Collapse group'}
-                                </button>
-                              </div>
-                            ) : null}
-                            <div className="flowboard-preset-row">
-                              <button type="button" className="flowboard-btn" onClick={sendSelectedNodeToBack}>Send to back</button>
-                              <button type="button" className="flowboard-btn" onClick={bringSelectedNodeForward}>Bring forward</button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="workhub-empty-state">Select a node to edit text and color.</div>
-                        )}
-                      </div>
-
-                      <div className="workhub-detail-card">
-                        <h3>Canvas style</h3>
-                        {!selectedNode ? (
-                          <div className="flowboard-details-form flowboard-canvas-appearance-form">
-                            <label className="flowboard-toggle-field">
-                              <span>Show navigation preview</span>
-                              <input
-                                type="checkbox"
-                                checked={showNavigationPreview}
-                                onChange={(event) => setShowNavigationPreview(event.target.checked)}
-                              />
-                            </label>
-                            <label>
-                              Canvas background
-                              <input
-                                type="color"
-                                value={canvasAppearance.backgroundColor}
-                                onChange={(event) => updateCanvasAppearance({ backgroundColor: event.target.value })}
-                              />
-                            </label>
-                            <label>
-                              Pattern color
-                              <input
-                                type="color"
-                                value={canvasAppearance.patternColor}
-                                onChange={(event) => updateCanvasAppearance({ patternColor: event.target.value })}
-                              />
-                            </label>
-                            <label>
-                              Pattern
-                              <select
-                                value={canvasAppearance.pattern}
-                                onChange={(event) => updateCanvasAppearance({ pattern: event.target.value as 'dots' | 'lines' })}
-                              >
-                                <option value="dots">Dots</option>
-                                <option value="lines">Grid lines</option>
-                              </select>
-                            </label>
-                            <div className="flowboard-preset-row">
-                              <button type="button" className="flowboard-btn" onClick={() => applyCanvasPreset('bright')}>Bright</button>
-                              <button type="button" className="flowboard-btn" onClick={() => applyCanvasPreset('dark')}>Dark</button>
-                              <button type="button" className="flowboard-btn" onClick={() => applyCanvasPreset('reset')}>Reset</button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="workhub-empty-state">Click empty canvas area to edit background and pattern.</div>
-                        )}
-                      </div>
-
-                      <div className="workhub-detail-card">
-                        <h3>Selected image</h3>
-                        {selectedNode && (selectedNode.type === 'imageNode' || selectedData.kind === 'image') ? (
-                          <div className="flowboard-details-form">
-                            <label>
-                              Label
-                              <input
-                                value={selectedData.label || ''}
-                                onChange={(event) => updateSelectedNodeData({ label: event.target.value })}
-                              />
-                            </label>
-                            <label>
-                              Image URL
-                              <input
-                                value={selectedData.imageUrl || ''}
-                                onChange={(event) => updateSelectedNodeData({ imageUrl: event.target.value })}
-                              />
-                            </label>
-                            <label>
-                              Caption
-                              <input
-                                value={selectedData.caption || ''}
-                                onChange={(event) => updateSelectedNodeData({ caption: event.target.value })}
-                              />
-                            </label>
-                            <label>
-                              Tags
-                              <input
-                                value={selectedData.tags || ''}
-                                onChange={(event) => updateSelectedNodeData({ tags: event.target.value })}
-                              />
-                            </label>
-                            <label>
-                              Width
-                              <input
-                                type="number"
-                                min={120}
-                                value={Number((selectedNode.style as Record<string, unknown> | undefined)?.width) || 220}
-                                onChange={(event) => updateSelectedNodeSize('width', Number(event.target.value))}
-                              />
-                            </label>
-                            <label>
-                              Height
-                              <input
-                                type="number"
-                                min={90}
-                                value={Number((selectedNode.style as Record<string, unknown> | undefined)?.height) || 150}
-                                onChange={(event) => updateSelectedNodeSize('height', Number(event.target.value))}
-                              />
-                            </label>
-                          </div>
-                        ) : (
-                          <div className="workhub-empty-state">Click an image node to view details.</div>
-                        )}
-                      </div>
-
-                      <WorkhubChecklistCard
-                        title="Checklist"
-                        items={activeMoodBoardChecklist}
-                        draftValue={moodBoardChecklistDraft}
-                        onDraftChange={setMoodBoardChecklistDraft}
-                        onAdd={() => {
-                          if (!activeMoodBoard?.id) return
-                          const text = moodBoardChecklistDraft.trim()
-                          if (!text) return
-                          const next = [...activeMoodBoardChecklist, { id: crypto.randomUUID(), text, completed: false }]
-                          setMoodBoardChecklistDraft('')
-                          void updateWorkhubMoodBoardChecklist(activeMoodBoard.id, next)
-                        }}
-                        editingItemId={moodBoardEditingChecklistId}
-                        editingItemText={moodBoardEditingChecklistText}
-                        onEditingItemTextChange={setMoodBoardEditingChecklistText}
-                        onEditStart={(item) => {
-                          setMoodBoardEditingChecklistId(item.id)
-                          setMoodBoardEditingChecklistText(item.text)
-                        }}
-                        onEditSave={(item) => {
-                          if (!activeMoodBoard?.id) return
-                          const text = moodBoardEditingChecklistText.trim()
-                          const next = activeMoodBoardChecklist.map((entry) => entry.id === item.id ? { ...entry, text: text || entry.text } : entry)
-                          setMoodBoardEditingChecklistId(null)
-                          setMoodBoardEditingChecklistText('')
-                          void updateWorkhubMoodBoardChecklist(activeMoodBoard.id, next)
-                        }}
-                        onEditCancel={() => {
-                          setMoodBoardEditingChecklistId(null)
-                          setMoodBoardEditingChecklistText('')
-                        }}
-                        onToggle={(item, checked) => {
-                          if (!activeMoodBoard?.id) return
-                          const next = activeMoodBoardChecklist.map((entry) => entry.id === item.id ? { ...entry, completed: checked } : entry)
-                          void updateWorkhubMoodBoardChecklist(activeMoodBoard.id, next)
-                        }}
-                        onRemove={(item) => {
-                          if (!activeMoodBoard?.id) return
-                          const next = activeMoodBoardChecklist.filter((entry) => entry.id !== item.id)
-                          void updateWorkhubMoodBoardChecklist(activeMoodBoard.id, next)
-                        }}
-                        emptyStateText="No checklist items yet for this mood board."
-                      />
-
-                      <WorkhubDiscussionCard
-                        title="Discussion"
-                        comments={comments}
-                        currentUid={auth.currentUser?.uid || ''}
-                        memberByUid={memberByUid}
-                        formatTime={formatTime}
-                        editingId={editingCommentId}
-                        editingText={editingCommentText}
-                        onEditStart={handleStartCommentEdit}
-                        onEditChange={setEditingCommentText}
-                        onEditCancel={handleCancelCommentEdit}
-                        onEditSave={handleSaveCommentEdit}
-                        onDelete={handleDeleteComment}
-                        editBusyKey={busyKey}
-                        deleteBusyKey={busyKey}
-                        onComposerSend={handleAddComment}
-                        composerBusy={busyKey === 'comment'}
-                        emptyStateText="No comments yet."
-                      />
-                    </>
-                  )}
-                  onStateChange={(state) => {
-                    if (!activeMoodBoard?.id) return
-                    void updateWorkhubMoodBoardFlow(
-                      activeMoodBoard.id,
-                      state.nodes as WorkhubMoodBoard['flowNodes'],
-                      state.edges as WorkhubMoodBoard['flowEdges'],
-                      state.viewport,
-                      {
-                        canvasAppearance: state.settings.canvasAppearance,
-                        showNavigationPreview: state.settings.showNavigationPreview,
-                      },
-                    )
-                  }}
-                />
-              </section>
-            </main>
-          )
+          </Suspense>
         )}
 
-                {activeSection === 'tasks' && (
-          <WorkhubTasksSection {...workhubTasksSectionProps} />
+        {activeSection === 'moodboard' && (
+          <Suspense
+            fallback={(
+              <main className="workhub-section-stack">
+                <section className="workhub-panel">
+                  <div className="workhub-empty-state">Loading mood board editor…</div>
+                </section>
+              </main>
+            )}
+          >
+            <WorkhubMoodboardSectionLazy
+              isResolvingActiveMoodBoard={isResolvingActiveMoodBoard}
+              activeMoodBoard={activeMoodBoard}
+              selectedWorkspaceId={selectedWorkspaceId}
+              resolvedMoodboardPanelMode={resolvedMoodboardPanelMode}
+              setSelectedMoodBoardId={setSelectedMoodBoardId}
+              setActiveSection={setActiveSection}
+              showToast={showToast}
+              activeMoodBoardChecklist={activeMoodBoardChecklist}
+              moodBoardChecklistDraft={moodBoardChecklistDraft}
+              setMoodBoardChecklistDraft={setMoodBoardChecklistDraft}
+              moodBoardEditingChecklistId={moodBoardEditingChecklistId}
+              setMoodBoardEditingChecklistId={setMoodBoardEditingChecklistId}
+              moodBoardEditingChecklistText={moodBoardEditingChecklistText}
+              setMoodBoardEditingChecklistText={setMoodBoardEditingChecklistText}
+              comments={comments}
+              currentUid={auth.currentUser?.uid || ''}
+              memberByUid={memberByUid}
+              formatTime={formatTime}
+              editingCommentId={editingCommentId}
+              editingCommentText={editingCommentText}
+              onDiscussionEditStart={handleStartCommentEdit}
+              onDiscussionEditChange={setEditingCommentText}
+              onDiscussionEditCancel={handleCancelCommentEdit}
+              onDiscussionEditSave={handleSaveCommentEdit}
+              onDiscussionDelete={handleDeleteComment}
+              onDiscussionSend={handleAddComment}
+              busyKey={busyKey}
+              normalizeColorInputValue={normalizeColorInputValue}
+              hexToRgba={hexToRgba}
+              getColorAlpha={getColorAlpha}
+            />
+          </Suspense>
+        )}
+
+        {activeSection === 'tasks' && (
+          <Suspense
+            fallback={(
+              <main className="workhub-section-stack">
+                <section className="workhub-panel">
+                  <div className="workhub-empty-state">Loading tasks…</div>
+                </section>
+              </main>
+            )}
+          >
+            <WorkhubTasksSectionLazy {...workhubTasksSectionProps} />
+          </Suspense>
         )}
 
 
         {activeSection === 'home' && (
-          <main className="workhub-section-stack">
-            <section className="workhub-panel">
-              <div className="workhub-panel-head">
-                <div>
-                  <h2>Home</h2>
-                  <p>
-                    {selectedWorkspaceId
-                      ? `${selectedWorkspaceHomeTemplate.label}. ${selectedWorkspaceHomeTemplate.description}`
-                      : 'Select a workspace to load template-focused home panels.'}
-                  </p>
-                </div>
-              </div>
-              <div className="workhub-summary-strip">
-                <div className="workhub-summary-tile"><strong>{selectedWorkspace?.name || 'No workspace selected'}</strong><span>Current workspace</span></div>
-                <div className="workhub-summary-tile"><strong>{selectedProject ? selectedProjectDisplayName : 'All projects'}</strong><span>Current scope</span></div>
-                <div className="workhub-summary-tile"><strong>{taskCounts.total}</strong><span>Tasks in scope</span></div>
-                <div className="workhub-summary-tile"><strong>{tasksByAssignee.length}</strong><span>Members with assigned tasks</span></div>
-              </div>
-              {selectedWorkspaceId && selectedWorkspaceTemplateResolution.warning ? (
-                <div className="workhub-template-warning-note">{selectedWorkspaceTemplateResolution.warning}</div>
-              ) : null}
-              {selectedWorkspaceId ? (
-                <div className="workhub-home-template-grid">
-                  {homeTemplateWidgets.map((widget) => (
-                    <article key={widget.id} className={`workhub-overview-card workhub-home-widget${widget.tone ? ` is-${widget.tone}` : ''}`}>
-                      <div className="workhub-overview-head">
-                        <h3>{widget.title}</h3>
-                        <span>{widget.value}</span>
-                      </div>
-                      <p className="workhub-home-widget-note">{widget.detail}</p>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <div className="workhub-empty-state">Select a workspace to view template-based home widgets.</div>
-              )}
-              <div className="workhub-home-actions">
-                <button className="workhub-primary-btn" onClick={() => navigateToWorkspaceSection('dashboard')} disabled={!selectedWorkspaceId}>Open workspace overview</button>
-                <button className="workhub-ghost-btn" onClick={() => navigateToWorkspaceSection('tasks')} disabled={!selectedWorkspaceId}>Go to tasks</button>
-                <button className="workhub-ghost-btn" onClick={() => selectedWorkspaceId && openWorkspaceSettings(selectedWorkspaceId)} disabled={!selectedWorkspaceId}>Workspace settings</button>
-              </div>
-            </section>
-          </main>
+          <Suspense
+            fallback={(
+              <main className="workhub-section-stack">
+                <section className="workhub-panel">
+                  <div className="workhub-empty-state">Loading home…</div>
+                </section>
+              </main>
+            )}
+          >
+            <WorkhubHomeSectionLazy
+              selectedWorkspaceId={selectedWorkspaceId}
+              selectedWorkspaceName={selectedWorkspace?.name || ''}
+              selectedProjectDisplayName={selectedProject ? selectedProjectDisplayName : 'All projects'}
+              taskTotal={taskCounts.total}
+              membersWithAssignedTasks={tasksByAssignee.length}
+              selectedWorkspaceHomeTemplate={selectedWorkspaceHomeTemplate}
+              selectedWorkspaceWarning={selectedWorkspaceTemplateResolution.warning || ''}
+              homeTemplateWidgets={homeTemplateWidgets}
+              navigateToWorkspaceSection={navigateToWorkspaceSection}
+              openWorkspaceSettings={openWorkspaceSettings}
+            />
+          </Suspense>
         )}
 
           {isMobileWorkhubLayout && (
@@ -9865,93 +9847,14 @@ export default function WorkHubPage() {
           onCreateTemplateEntity={(intent, projectId) => openWorkspaceTypeCreateDialog(intent, projectId || '')}
           onOpenSettings={(projectId) => setProjectAccessDialogId(projectId)}
           moodBoardEnabled={selectedWorkspace?.moodBoardEnabled !== false}
-          onOpenMoodBoardV2={async (entityType, entityId) => {
-            if (!selectedWorkspaceId) return
-            const normalizedEntityId = entityType === 'workspace'
-              ? selectedWorkspaceId
-              : entityId
-            const label = entityType === 'workspace'
-              ? (selectedWorkspace?.name || 'Workspace')
-              : (workspaceProjectById[normalizedEntityId]?.name || 'Project')
-            const existingCount = workspaceMoodBoards.filter((board) => (
-              board.entityType === entityType
-              && board.entityId === normalizedEntityId
-              && board.panelVariant === 'v2'
-            )).length
-            const nextTitle = existingCount === 0
-              ? `${label} — Mood Board 2`
-              : `${label} — Mood Board 2 ${existingCount + 1}`
-            const newId = await createWorkhubMoodBoard({
-              workspaceId: selectedWorkspaceId,
-              entityType,
-              entityId: normalizedEntityId,
-              title: nextTitle,
-              panelVariant: 'v2',
-              createdBy: currentUid,
-            })
-            setSelectedMoodBoardId(newId)
-            setSelectedDocumentId('')
-            setSelectedTaskId('')
-            setMoodboardPanelMode('v2')
-            setActiveSection('moodboard')
-          }}
           onOpenFlowProjectLab={async (entityType, entityId) => {
-            if (!selectedWorkspaceId) return
-            const normalizedEntityId = entityType === 'workspace'
-              ? selectedWorkspaceId
-              : entityId
-            const label = entityType === 'workspace'
-              ? (selectedWorkspace?.name || 'Workspace')
-              : (workspaceProjectById[normalizedEntityId]?.name || 'Project')
-            const existingCount = workspaceMoodBoards.filter((board) => (
-              board.entityType === entityType
-              && board.entityId === normalizedEntityId
-              && board.panelVariant === 'flow'
-            )).length
-            const nextTitle = existingCount === 0
-              ? `${label} — Flow Project Plan`
-              : `${label} — Flow Project Plan ${existingCount + 1}`
-            const newId = await createWorkhubMoodBoard({
-              workspaceId: selectedWorkspaceId,
-              entityType,
-              entityId: normalizedEntityId,
-              title: nextTitle,
-              panelVariant: 'flow',
-              createdBy: currentUid,
-            })
-            setSelectedMoodBoardId(newId)
-            setSelectedDocumentId('')
-            setSelectedTaskId('')
-            setMoodboardPanelMode('flow')
-            setActiveSection('moodboard')
+            await createAndOpenMoodBoardVariantForEntity('flow', entityType, entityId)
+          }}
+          onOpenProsConsLab={async (entityType, entityId) => {
+            await createAndOpenMoodBoardVariantForEntity('proscons', entityType, entityId)
           }}
           onOpenMoodBoard={async (entityType, entityId) => {
-            if (!selectedWorkspaceId) return
-            const normalizedEntityId = entityType === 'workspace'
-              ? selectedWorkspaceId
-              : entityId
-            const label = entityType === 'workspace'
-              ? (selectedWorkspace?.name || 'Workspace')
-              : (workspaceProjectById[normalizedEntityId]?.name || 'Project')
-            const existingCount = workspaceMoodBoards.filter((board) => (
-              board.entityType === entityType && board.entityId === normalizedEntityId
-            )).length
-            const nextTitle = existingCount === 0
-              ? `${label} — Mood Board`
-              : `${label} — Mood Board ${existingCount + 1}`
-            const newId = await createWorkhubMoodBoard({
-              workspaceId: selectedWorkspaceId,
-              entityType,
-              entityId: normalizedEntityId,
-              title: nextTitle,
-              panelVariant: 'classic',
-              createdBy: currentUid,
-            })
-            setSelectedMoodBoardId(newId)
-            setSelectedDocumentId('')
-            setSelectedTaskId('')
-            setMoodboardPanelMode('classic')
-            setActiveSection('moodboard')
+            await createAndOpenMoodBoardVariantForEntity('classic', entityType, entityId)
           }}
         />
 
@@ -10062,12 +9965,12 @@ export default function WorkHubPage() {
                 <div className="workhub-image-review-stage-wrap">
                   <div className="workhub-image-review-toolbar">
                     <div className="workhub-image-tool-group">
-                      <button type="button" className={lightboxTool === 'point' ? 'is-active' : ''} onClick={() => { setLightboxTool('point'); setLightboxLineStart(null) }}>Point</button>
+                      <button type="button" className={lightboxTool === 'point' ? 'is-active' : ''} onClick={() => setLightboxTool('point')}>Point</button>
                       <button type="button" className={lightboxTool === 'line' ? 'is-active' : ''} onClick={() => setLightboxTool('line')}>Line</button>
-                      <button type="button" className={lightboxTool === 'checkbox' ? 'is-active' : ''} onClick={() => { setLightboxTool('checkbox'); setLightboxLineStart(null) }}>Checkbox</button>
+                      <button type="button" className={lightboxTool === 'checkbox' ? 'is-active' : ''} onClick={() => setLightboxTool('checkbox')}>Checkbox</button>
                     </div>
                     <span className="workhub-image-review-tip">
-                      {lightboxTool === 'line' && lightboxLineStart ? 'Tap second point to finish line' : 'Tap image to add annotation'}
+                      {lightboxTool === 'line' && lightboxDraftLine ? 'Tap second point to finish line' : 'Tap image to add annotation'}
                     </span>
                     <div className="workhub-image-review-fit-group">
                       <button type="button" className={lightboxImageFit === 'contain' ? 'is-active' : ''} onClick={() => setLightboxImageFit('contain')}>Fit</button>

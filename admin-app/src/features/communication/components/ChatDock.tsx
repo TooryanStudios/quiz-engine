@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { storage } from '../../../lib/firebase'
 import {
   createWorkhubTask,
@@ -21,7 +21,7 @@ import {
 } from '../hooks/useGlobalTeamChat'
 import { useCommunicationNotificationToasts } from '../hooks/useCommunicationNotificationToasts'
 import { formatNotificationTime, formatFullMessageTime } from '../utils/workhubNotificationNavigation'
-import { playChatSendSound, readChatSoundPrefs, writeChatSoundPrefs, type ChatSoundPrefs } from '../utils/chatSound'
+import { playChatSendSound, primeChatAudio, readChatSoundPrefs, writeChatSoundPrefs, type ChatSoundPrefs } from '../utils/chatSound'
 import '../communication.css'
 
 const CHAT_REACTIONS = ['👍', '❤️', '😂', '🎉', '😮', '😢'] as const
@@ -74,9 +74,12 @@ interface ChatDockProps {
   currentUser: TeamChatUser | null
   showOpenPageButton?: boolean
   layout?: 'drawer' | 'floating'
+  floatingSide?: 'left' | 'right'
   defaultTargetPath?: string
   defaultTargetTaskId?: string
   defaultTargetLabel?: string
+  projectTargetPath?: string
+  projectTargetLabel?: string
   requestedThreadId?: string
   requestKey?: number
 }
@@ -138,6 +141,22 @@ function withChatLinkedMarker(targetPath: string): string {
   return hash ? `${next}#${hash}` : next
 }
 
+function isLinkableChatPath(pathname: string): boolean {
+  const normalized = pathname.replace(/\/+$/, '') || '/'
+  if (normalized === '/' || normalized === '/messages' || normalized === '/workhub') return false
+  if (/^\/workhub\/u\/[^/]+$/.test(normalized)) return false
+  if (/^\/workhub\/w\/[^/]+(?:\/s\/(?:home|users|tasks|notes|dashboard|clients))?$/.test(normalized)) return false
+  return true
+}
+
+function resolvePageLinkLabel(): string {
+  if (typeof document === 'undefined') return 'Current item'
+  return document.title
+    .replace(/^WorkHub\s*\|\s*/i, '')
+    .replace(/^QYan\s*[|–-]\s*/i, '')
+    .trim() || 'Current item'
+}
+
 export function ChatDock({
   open,
   isAr: _isAr,
@@ -146,13 +165,17 @@ export function ChatDock({
   currentUser,
   showOpenPageButton = true,
   layout = 'drawer',
+  floatingSide = 'right',
   defaultTargetPath,
   defaultTargetTaskId,
   defaultTargetLabel,
+  projectTargetPath,
+  projectTargetLabel,
   requestedThreadId,
   requestKey,
 }: ChatDockProps) {
   const navigate = useNavigate()
+  const location = useLocation()
   const dockRef = useRef<HTMLElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -204,7 +227,30 @@ export function ChatDock({
   const [filterHasLink, setFilterHasLink] = useState(false)
   const [filterPanelOpen, setFilterPanelOpen] = useState(false)
   const isFloating = layout === 'floating'
-  const hasTaskContext = !!defaultTargetPath && !!defaultTargetTaskId
+  const currentRoutePath = `${location.pathname}${location.search}${location.hash}`
+  const canLinkCurrentRoute = isLinkableChatPath(location.pathname)
+  const canLinkCurrentItem = !!(defaultTargetPath && defaultTargetPath !== '/messages') || canLinkCurrentRoute
+  const projectLinkTarget = projectTargetPath && projectTargetPath !== '/messages'
+    ? {
+      targetPath: projectTargetPath,
+      targetLabel: projectTargetLabel || 'Project',
+    }
+    : null
+  const [linkedTarget, setLinkedTarget] = useState<{
+    targetPath: string
+    targetTaskId?: string
+    targetLabel?: string
+  } | null>(() => (
+    defaultTargetPath && defaultTargetPath !== '/messages'
+      ? {
+        targetPath: defaultTargetPath,
+        ...(defaultTargetTaskId ? { targetTaskId: defaultTargetTaskId } : {}),
+        ...(defaultTargetLabel ? { targetLabel: defaultTargetLabel } : {}),
+      }
+      : null
+  ))
+  const hasLinkedContext = !!linkedTarget?.targetPath
+  const isProjectLinked = !!(linkedTarget?.targetPath && projectLinkTarget?.targetPath && linkedTarget.targetPath === projectLinkTarget.targetPath)
   const convertWorkspace = useMemo(
     () => convertWorkspaces.find((item) => item.id === convertWorkspaceId) || null,
     [convertWorkspaceId, convertWorkspaces],
@@ -232,6 +278,11 @@ export function ChatDock({
       : buildThreadId([...(currentUser ? [currentUser.uid] : []), ...selectedRecipientUids]),
     [currentUser, selectedRecipientUids],
   )
+
+  useEffect(() => {
+    if (!currentUser?.uid || soundPrefs.muteReceive) return
+    primeChatAudio()
+  }, [currentUser?.uid, soundPrefs.muteReceive])
 
   const {
     messages,
@@ -516,6 +567,19 @@ export function ChatDock({
   }, [currentUser?.uid, requestedThreadId, requestKey])
 
   useEffect(() => {
+    if (!defaultTargetPath || defaultTargetPath === '/messages') {
+      setLinkedTarget(null)
+      return
+    }
+
+    setLinkedTarget({
+      targetPath: defaultTargetPath,
+      ...(defaultTargetTaskId ? { targetTaskId: defaultTargetTaskId } : {}),
+      ...(defaultTargetLabel ? { targetLabel: defaultTargetLabel } : {}),
+    })
+  }, [defaultTargetLabel, defaultTargetPath, defaultTargetTaskId, requestKey])
+
+  useEffect(() => {
     if (recipientInitialized) return
     if (!currentUser?.uid) return
     setSelectedRecipientUids([currentUser.uid])
@@ -695,8 +759,8 @@ export function ChatDock({
     }
 
     const messageOptions = {
-      targetPath: defaultTargetPath || '/messages',
-      targetTaskId: defaultTargetTaskId,
+      targetPath: linkedTarget?.targetPath || '/messages',
+      targetTaskId: linkedTarget?.targetTaskId,
       recipientUids: selectedRecipientUids.length > 0 ? selectedRecipientUids : undefined,
       priority: selectedPriority,
       replyToActivityId: replyingToMessageId || undefined,
@@ -727,6 +791,35 @@ export function ChatDock({
     setAttachmentInfo('')
     pendingImages.forEach((image) => URL.revokeObjectURL(image.previewUrl))
     setPendingImages([])
+  }
+
+  const handleLinkCurrentItem = () => {
+    const targetPath = (defaultTargetPath && defaultTargetPath !== '/messages')
+      ? defaultTargetPath
+      : (canLinkCurrentRoute ? currentRoutePath : '')
+    if (!targetPath) return
+
+    const targetLabel = (defaultTargetPath && defaultTargetPath !== '/messages')
+      ? (defaultTargetLabel || defaultTargetTaskId || 'Current item')
+      : resolvePageLinkLabel()
+
+    setLinkedTarget({
+      targetPath,
+      ...(defaultTargetTaskId ? { targetTaskId: defaultTargetTaskId } : {}),
+      targetLabel,
+    })
+    setAttachmentInfo(`Linked current item: ${targetLabel}`)
+  }
+
+  const handleLinkProject = () => {
+    if (!projectLinkTarget) return
+    setLinkedTarget(projectLinkTarget)
+    setAttachmentInfo(`Linked project: ${projectLinkTarget.targetLabel}`)
+  }
+
+  const handleRemoveLinkedTarget = () => {
+    setLinkedTarget(null)
+    setAttachmentInfo('Link removed.')
   }
 
   const toggleSendSound = () => {
@@ -964,7 +1057,7 @@ export function ChatDock({
 
       <aside
         ref={dockRef}
-        className={`shell-chat-dock${isFloating ? ' is-floating' : ''}`}
+        className={`shell-chat-dock${isFloating ? ' is-floating' : ''}${isFloating && floatingSide === 'left' ? ' is-floating-left' : ''}`}
         role="dialog"
         aria-label={'Chat panel'}
       >
@@ -1136,17 +1229,17 @@ export function ChatDock({
         )}
 
         <div className="shell-chat-dock-body is-thread">
-          {hasTaskContext && (
+          {hasLinkedContext && (
             <button
               type="button"
               className="shell-chat-context-chip"
               onClick={() => {
-                if (!defaultTargetPath) return
+                if (!linkedTarget?.targetPath) return
                 onClose()
-                navigate(defaultTargetPath)
+                navigate(withChatLinkedMarker(linkedTarget.targetPath))
               }}
             >
-              {`Linked task: ${defaultTargetLabel || defaultTargetTaskId}`}
+              {`Linked item: ${linkedTarget?.targetLabel || linkedTarget?.targetTaskId || 'Open linked context'}`}
             </button>
           )}
 
@@ -1549,22 +1642,56 @@ export function ChatDock({
             />
           </form>
 
-          <div className="shell-chat-priority-row" role="group" aria-label="Message priority">
-            <span className="shell-chat-priority-label">Priority:</span>
-            <button
-              type="button"
-              className={`shell-chat-priority-btn${selectedPriority === 'normal' ? ' is-active' : ''}`}
-              onClick={() => setSelectedPriority('normal')}
-            >
-              Normal
-            </button>
-            <button
-              type="button"
-              className={`shell-chat-priority-btn shell-chat-priority-btn-high${selectedPriority === 'high' ? ' is-active' : ''}`}
-              onClick={() => setSelectedPriority('high')}
-            >
-              Very high
-            </button>
+          <div className="shell-chat-composer-meta-row">
+            <div className="shell-chat-priority-row" role="group" aria-label="Message priority">
+              <span className="shell-chat-priority-label">Priority:</span>
+              <button
+                type="button"
+                className={`shell-chat-priority-btn${selectedPriority === 'normal' ? ' is-active' : ''}`}
+                onClick={() => setSelectedPriority('normal')}
+              >
+                Normal
+              </button>
+              <button
+                type="button"
+                className={`shell-chat-priority-btn shell-chat-priority-btn-high${selectedPriority === 'high' ? ' is-active' : ''}`}
+                onClick={() => setSelectedPriority('high')}
+              >
+                Very high
+              </button>
+            </div>
+            <span className="shell-chat-composer-meta-divider" aria-hidden="true" />
+            <div className="shell-chat-link-actions" role="group" aria-label="Message link target">
+              <button
+                type="button"
+                className={`shell-chat-link-current-btn${hasLinkedContext && !isProjectLinked ? ' is-active' : ''}`}
+                onClick={handleLinkCurrentItem}
+                disabled={!canLinkCurrentItem}
+                title={canLinkCurrentItem ? 'Attach the current item to this message' : 'No current item available to link'}
+              >
+                Link current item
+              </button>
+              {projectLinkTarget && (
+                <button
+                  type="button"
+                  className={`shell-chat-link-current-btn${isProjectLinked ? ' is-active' : ''}`}
+                  onClick={handleLinkProject}
+                  title="Attach the whole project to this message"
+                >
+                  Link project
+                </button>
+              )}
+              {hasLinkedContext && (
+                <button
+                  type="button"
+                  className="shell-chat-link-current-btn shell-chat-link-remove-btn"
+                  onClick={handleRemoveLinkedTarget}
+                  title="Send without a linked item"
+                >
+                  Remove link
+                </button>
+              )}
+            </div>
           </div>
 
           {pendingImages.length > 0 && (

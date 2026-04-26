@@ -1,0 +1,1411 @@
+.workhub-proscons-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 8% -10%, rgba(28, 96, 146, 0.08), transparent 36%),
+    radial-gradient(circle at 92% 118%, rgba(146, 114, 28, 0.1), transparent 32%),
+    #f5f8fc;
+}
+
+.workhub-proscons-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #dbe5f2;
+  background: rgba(255, 255, 255, 0.76);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+
+.workhub-proscons-title-wrap {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.workhub-proscons-title-wrap label {
+  font-size: 0.68rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #5f7591;
+}
+
+.workhub-proscons-title-input {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid #c7d7eb;
+  background: #ffffff;
+  color: #122133;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  padding: 8px 11px;
+}
+
+.workhub-proscons-title-input:focus {
+  outline: none;
+  border-color: #5f8dcc;
+  box-shadow: 0 0 0 3px rgba(64, 118, 185, 0.2);
+}
+
+.workhub-proscons-header-actions {
+  display: inline-flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.workhub-proscons-layout {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  position: relative;
+}
+
+.workhub-proscons-main {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ========== Verdict banner ========== */
+.workhub-proscons-verdict {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid #d2deee;
+  background: #ffffff;
+  flex-shrink: 0;
+}
+
+.workhub-proscons-verdict.is-positive {
+  border-color: #9cc8b1;
+  background: linear-gradient(135deg, #f0fbf5 0%, #ffffff 70%);
+}
+
+.workhub-proscons-verdict.is-negative {
+  border-color: #e0b2b2;
+  background: linear-gradient(135deg, #fff5f5 0%, #ffffff 70%);
+}
+
+.workhub-proscons-verdict.is-neutral {
+  border-color: #c5d5ea;
+  background: linear-gradient(135deg, #f4f7fc 0%, #ffffff 70%);
+}
+
+.workhub-proscons-verdict-body {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 220px;
+}
+
+.workhub-proscons-verdict-label {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #1a2b43;
+}
+
+.workhub-proscons-verdict-detail {
+  font-size: 0.71rem;
+  color: #4f6780;
+  line-height: 1.3;
+}
+
+.workhub-proscons-verdict-metrics {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.workhub-proscons-verdict-scores {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.workhub-proscons-verdict-scores .is-pro { color: #1a7a4f; }
+.workhub-proscons-verdict-scores .is-con { color: #b53535; }
+.workhub-proscons-verdict-scores .is-sep { color: #8099b5; font-weight: 400; }
+.workhub-proscons-verdict-scores .is-net { color: #3d5a7a; font-weight: 400; }
+
+.workhub-proscons-verdict-track {
+  height: 12px;
+  display: flex;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #e8eef7;
+  border: 1px solid #ccd8ea;
+}
+
+.workhub-proscons-verdict-track .is-pro {
+  background: linear-gradient(90deg, #1f8b5a, #49af7d);
+  transition: width 0.4s ease;
+}
+
+.workhub-proscons-verdict-track .is-con {
+  background: linear-gradient(90deg, #d35858, #b73f3f);
+  transition: width 0.4s ease;
+}
+
+.workhub-proscons-verdict-pct {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.64rem;
+  color: #6a85a0;
+}
+
+/* ========== Overview 3-column grid ========== */
+.workhub-proscons-overview {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.workhub-proscons-overview.is-edit-mode {
+  grid-template-columns: 154px 1fr;
+}
+
+.workhub-proscons-overview.is-results-mode {
+  grid-template-columns: minmax(340px, 35%) 1fr;
+}
+
+/* ========== Visualization column ========== */
+.workhub-proscons-viz-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 8px;
+  border: 1px solid #e5edf7;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f7faff 0%, #f3f7fc 100%);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workhub-proscons-ranking-head {
+  width: 100%;
+  font-size: 0.67rem;
+  font-weight: 700;
+  color: #36597f;
+}
+
+.workhub-proscons-horizontal-compare {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  min-height: 0;
+  padding: 4px 0 0;
+}
+
+.workhub-proscons-horizontal-col {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 6px 2px;
+  border-top: 1px solid #e4ebf6;
+}
+
+.workhub-proscons-horizontal-col:first-child { border-top: none; }
+
+.workhub-proscons-horizontal-col.is-best .workhub-proscons-horizontal-label {
+  font-weight: 700;
+  color: #213b57;
+}
+
+.workhub-proscons-horizontal-track {
+  width: 100%;
+  height: 12px;
+  display: flex;
+  align-items: center;
+  border-radius: 999px;
+  background: #e7edf7;
+  overflow: hidden;
+}
+
+.workhub-proscons-horizontal-fill {
+  height: 100%;
+  border-radius: 999px;
+}
+
+.workhub-proscons-horizontal-fill.is-positive {
+  background: linear-gradient(90deg, #5ec18f, #228154);
+}
+
+.workhub-proscons-horizontal-fill.is-negative {
+  background: linear-gradient(90deg, #df7a7a, #b84848);
+}
+
+.workhub-proscons-horizontal-label {
+  max-width: 100%;
+  font-size: 0.72rem;
+  color: #5a7491;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workhub-proscons-horizontal-score {
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+
+.workhub-proscons-horizontal-score.is-positive { color: #1f7f54; }
+.workhub-proscons-horizontal-score.is-negative { color: #b33f3f; }
+
+.workhub-proscons-sections-wrap .workhub-proscons-section-card.is-best.is-results-mode {
+  grid-column: 1 / -1;
+}
+
+.workhub-proscons-section-card.is-best.is-results-mode {
+  box-shadow: 0 2px 8px rgba(27, 62, 100, 0.05);
+}
+
+.workhub-proscons-section-card.is-best.is-edit-mode {
+  box-shadow: 0 5px 16px rgba(33, 88, 146, 0.12);
+}
+
+.workhub-proscons-pillars {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 18px;
+  min-height: 0;
+  padding-bottom: 2px;
+}
+
+.workhub-proscons-pillar-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  height: 100%;
+  justify-content: flex-end;
+  width: 34px;
+}
+
+.workhub-proscons-pillar-bar {
+  width: 100%;
+  border-radius: 4px 4px 0 0;
+  min-height: 4px;
+  transition: height 0.5s ease;
+}
+
+.workhub-proscons-pillar-bar.is-pro {
+  background: linear-gradient(180deg, #5ec491 0%, #1f8b5a 100%);
+}
+
+.workhub-proscons-pillar-bar.is-con {
+  background: linear-gradient(180deg, #e07878 0%, #b73f3f 100%);
+}
+
+.workhub-proscons-pillar-wrap > span {
+  font-size: 0.64rem;
+  font-weight: 700;
+}
+
+.workhub-proscons-pillar-wrap > span.is-pro { color: #1a7a4f; }
+.workhub-proscons-pillar-wrap > span.is-con { color: #b53535; }
+
+/* ========== Item columns ========== */
+.workhub-proscons-items-col {
+  display: flex;
+  flex-direction: column;
+  border: none;
+  border-radius: 8px;
+  background: #fbfdff;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.workhub-proscons-items-col.is-pro { background: #f7fcf9; }
+.workhub-proscons-items-col.is-con { background: #fff9f9; }
+
+.workhub-proscons-items-head {
+  padding: 5px 8px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-shrink: 0;
+  border-bottom: 1px solid #edf2f9;
+}
+
+.workhub-proscons-items-col.is-pro .workhub-proscons-items-head {
+  background: transparent;
+  border-bottom-color: #e3f2ea;
+}
+
+.workhub-proscons-items-col.is-con .workhub-proscons-items-head {
+  background: transparent;
+  border-bottom-color: #f3e3e3;
+}
+
+.workhub-proscons-items-head > span:first-child {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #1f334d;
+}
+
+.workhub-proscons-items-count {
+  font-size: 0.66rem;
+  color: #637b96;
+  background: #ecf3f9;
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.workhub-proscons-flat-items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.workhub-proscons-flat-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 7px;
+  border-bottom: 1px solid #f4f7fc;
+  min-width: 0;
+}
+
+.workhub-proscons-flat-item:last-child { border-bottom: none; }
+.workhub-proscons-flat-item:hover { background: #f8fafd; }
+
+.workhub-proscons-inline-remove {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.workhub-proscons-flat-item:hover .workhub-proscons-inline-remove,
+.workhub-proscons-flat-item:focus-within .workhub-proscons-inline-remove {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.workhub-proscons-flat-item.is-input-row {
+  background: #f8fbff;
+}
+
+.workhub-proscons-flat-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.workhub-proscons-flat-item.is-pro .workhub-proscons-flat-dot { background: #2f9f6a; }
+.workhub-proscons-flat-item.is-con .workhub-proscons-flat-dot { background: #c94a4a; }
+
+.workhub-proscons-flat-title {
+  flex: 1;
+  font-size: 0.74rem;
+  color: #233851;
+  line-height: 1.3;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workhub-proscons-flat-score {
+  font-size: 0.63rem;
+  color: #8099b5;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.workhub-proscons-flat-empty {
+  padding: 8px 9px;
+  font-size: 0.71rem;
+  color: #8099b5;
+  text-align: center;
+}
+
+.workhub-proscons-flat-more-row {
+  padding: 3px 7px 5px;
+  border-bottom: 1px solid #f4f7fc;
+}
+
+.workhub-proscons-show-more-btn {
+  border: none;
+  background: transparent;
+  color: #356799;
+  font: inherit;
+  font-size: 0.66rem;
+  font-weight: 600;
+  padding: 0;
+  cursor: pointer;
+}
+
+.workhub-proscons-show-more-btn:hover {
+  color: #244f7a;
+  text-decoration: underline;
+}
+
+.workhub-proscons-sections-wrap {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(280px, 1fr));
+  gap: 8px;
+}
+
+.workhub-proscons-section-card {
+  border: 1px solid #e5edf7;
+  border-radius: 10px;
+  background: #ffffff;
+  min-height: 254px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(27, 62, 100, 0.04);
+}
+
+.workhub-proscons-section-card.is-best {
+  border-color: #b8d4ef;
+  box-shadow: 0 5px 16px rgba(33, 88, 146, 0.12);
+}
+
+.workhub-proscons-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 5px 8px 3px;
+  border-bottom: 1px solid #eef3fa;
+}
+
+.workhub-proscons-section-title-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.workhub-proscons-section-head strong {
+  font-size: 0.78rem;
+  color: #20354f;
+}
+
+.workhub-proscons-section-rank {
+  font-size: 0.62rem;
+  color: #5f7b96;
+  background: #eff4fa;
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+
+.workhub-proscons-section-rank.rank-1 {
+  background: #f8e39a;
+  color: #6f4d00;
+}
+
+.workhub-proscons-section-rank.rank-2 {
+  background: #e3e9f1;
+  color: #4b5f75;
+}
+
+.workhub-proscons-section-rank.rank-3 {
+  background: #edcfb0;
+  color: #6e3f1e;
+}
+
+.workhub-proscons-section-rank.rank-other {
+  background: #eff4fa;
+  color: #5f7b96;
+}
+
+.workhub-proscons-section-title-input {
+  border: 1px solid #c8d8eb;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #20354f;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  min-width: 120px;
+}
+
+.workhub-proscons-section-title-input:focus {
+  outline: none;
+  border-color: #5f8dcc;
+  box-shadow: 0 0 0 2px rgba(64, 118, 185, 0.18);
+}
+
+.workhub-proscons-section-head span {
+  font-size: 0.67rem;
+  color: #5f7b96;
+}
+
+.workhub-proscons-section-badge {
+  margin: 4px 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  align-self: flex-start;
+  background: #edf4fb;
+  color: #355a82;
+  font-size: 0.66rem;
+  font-weight: 600;
+}
+
+.workhub-proscons-section-balance {
+  padding: 0 8px 4px;
+}
+
+.workhub-proscons-section-balance-track {
+  height: 8px;
+  display: flex;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #edf2f8;
+}
+
+.workhub-proscons-section-balance-track .is-pro {
+  background: linear-gradient(90deg, #2f9f6a, #43b67f);
+}
+
+.workhub-proscons-section-balance-track .is-con {
+  background: linear-gradient(90deg, #d05a5a, #b84343);
+}
+
+.workhub-proscons-section-balance-text {
+  margin-top: 3px;
+  display: flex;
+  gap: 7px;
+  font-size: 0.63rem;
+  color: #607b98;
+}
+
+.workhub-proscons-section-balance-text .is-positive {
+  color: #228154;
+  font-weight: 700;
+}
+
+.workhub-proscons-section-balance-text .is-negative {
+  color: #b24747;
+  font-weight: 700;
+}
+
+.workhub-proscons-section-columns {
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  padding: 0 6px 6px;
+}
+
+.workhub-proscons-inline-add-section {
+  width: 220px;
+  border-radius: 8px;
+  border: 1px solid #c8d8eb;
+  background: #ffffff;
+  color: #1d2e44;
+  font: inherit;
+  font-size: 0.74rem;
+  padding: 6px 9px;
+}
+
+.workhub-proscons-inline-add-section:focus {
+  outline: none;
+  border-color: #5f8dcc;
+  box-shadow: 0 0 0 3px rgba(64, 118, 185, 0.18);
+}
+
+/* ========== Bottom strip ========== */
+.workhub-proscons-bottom-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.workhub-proscons-suggestion-text {
+  flex: 1;
+  margin: 0;
+  font-size: 0.71rem;
+  color: #4f6880;
+  line-height: 1.3;
+  min-width: 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.workhub-proscons-show-details {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 2;
+  border: 1px solid #b9cce4;
+  background: #f6faff;
+  color: #1f3f66;
+  border-radius: 9px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 0.74rem;
+  cursor: pointer;
+}
+
+.workhub-proscons-show-details:hover {
+  background: #ebf4ff;
+}
+
+.workhub-proscons-detail-resizer {
+  width: 10px;
+  flex: 0 0 auto;
+  cursor: col-resize;
+  background: linear-gradient(180deg, rgba(118, 148, 186, 0.26) 0%, rgba(118, 148, 186, 0.1) 100%);
+  border-left: 1px solid #d4e0ef;
+  border-right: 1px solid #d4e0ef;
+}
+
+.workhub-proscons-detail-rail {
+  flex: 0 0 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid #d6e1ef;
+  background: #f8fbff;
+}
+
+.workhub-proscons-detail-rail.is-compact {
+  width: 290px;
+}
+
+.workhub-proscons-detail-toolbar {
+  border-bottom: 1px solid #dbe6f3;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.workhub-proscons-detail-scroll {
+  min-height: 0;
+  overflow: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.workhub-proscons-form-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.workhub-proscons-form-grid label,
+.workhub-proscons-inline-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: #4f657f;
+}
+
+.workhub-proscons-form-grid input,
+.workhub-proscons-form-grid select,
+.workhub-proscons-form-grid textarea,
+.workhub-proscons-inline-grid input,
+.workhub-proscons-inline-grid select,
+.workhub-proscons-manage-columns input,
+.workhub-proscons-manage-columns select,
+.workhub-proscons-manage-columns textarea {
+  border-radius: 8px;
+  border: 1px solid #c9d8ea;
+  background: #ffffff;
+  color: #1d2e44;
+  font: inherit;
+  font-size: 0.75rem;
+  padding: 7px 9px;
+}
+
+.workhub-proscons-form-grid input:focus,
+.workhub-proscons-form-grid select:focus,
+.workhub-proscons-form-grid textarea:focus,
+.workhub-proscons-inline-grid input:focus,
+.workhub-proscons-inline-grid select:focus,
+.workhub-proscons-manage-columns input:focus,
+.workhub-proscons-manage-columns select:focus,
+.workhub-proscons-manage-columns textarea:focus {
+  outline: none;
+  border-color: #5f8dcc;
+  box-shadow: 0 0 0 3px rgba(64, 118, 185, 0.18);
+}
+
+
+.workhub-proscons-donut-chart {
+  --pros-pct: 50;
+  width: 72px;
+  height: 72px;
+  border-radius: 999px;
+  background: conic-gradient(
+    #2f9f6a 0,
+    #2f9f6a calc(var(--pros-pct) * 1%),
+    #c94a4a calc(var(--pros-pct) * 1%),
+    #c94a4a 100%
+  );
+  border: 1px solid #d4dfed;
+  position: relative;
+}
+
+.workhub-proscons-donut-chart::after {
+  content: '';
+  position: absolute;
+  inset: 13px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid #e1e9f4;
+}
+
+.workhub-proscons-donut-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.workhub-proscons-donut-legend span {
+  font-size: 0.73rem;
+  color: #4a617e;
+}
+
+.workhub-proscons-donut-legend span.is-pro::before,
+.workhub-proscons-donut-legend span.is-con::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.workhub-proscons-donut-legend span.is-pro::before {
+  background: #2f9f6a;
+}
+
+.workhub-proscons-donut-legend span.is-con::before {
+  background: #c94a4a;
+}
+
+.workhub-proscons-scoring-grid {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.workhub-proscons-hint {
+  margin: 0;
+  font-size: 0.72rem;
+  color: #566f8c;
+  line-height: 1.35;
+}
+
+.workhub-proscons-dynamic-fields {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.workhub-proscons-chip-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.workhub-proscons-chip-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid #d2deec;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 6px 8px;
+}
+
+.workhub-proscons-chip-item span {
+  font-size: 0.72rem;
+  color: #405672;
+}
+
+.workhub-proscons-inline-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.workhub-proscons-inline-grid.compact {
+  grid-template-columns: repeat(3, minmax(62px, 1fr));
+}
+
+.workhub-proscons-manage-columns {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.workhub-proscons-manage-columns h4 {
+  margin: 0 0 6px;
+  font-size: 0.78rem;
+  color: #344f70;
+}
+
+.workhub-proscons-edit-item {
+  border: 1px solid #d3deeb;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.workhub-proscons-editor-backdrop {
+  z-index: 120;
+}
+
+.workhub-modal.workhub-proscons-editor-dialog {
+  width: 1120px;
+  height: 760px;
+  max-width: calc(100vw - 40px);
+  max-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+
+.workhub-proscons-editor-head {
+  border-bottom: 1px solid #d9e5f4;
+  padding: 12px 14px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.workhub-proscons-editor-footer {
+  border-top: 1px solid #d9e5f4;
+  padding: 10px 14px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  background: #fbfdff;
+}
+
+.workhub-proscons-editor-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0 14px 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.workhub-proscons-editor-panel {
+  border: 1px solid #d8e3f2;
+  border-radius: 12px;
+  background: #f9fbff;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 8px;
+}
+
+.workhub-proscons-editor-panel.is-pro {
+  border-color: #b9ddc7;
+}
+
+.workhub-proscons-editor-panel.is-con {
+  border-color: #e5c2c2;
+}
+
+.workhub-proscons-editor-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.workhub-proscons-editor-panel-head h3 {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #1f334d;
+}
+
+.workhub-proscons-editor-panel-head span {
+  font-size: 0.68rem;
+  color: #5a6f87;
+}
+
+.workhub-proscons-editor-add-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.workhub-proscons-editor-add-row input {
+  border-radius: 8px;
+  border: 1px solid #c9d8ea;
+  background: #ffffff;
+  color: #1d2e44;
+  font: inherit;
+  font-size: 0.72rem;
+  padding: 5px 8px;
+}
+
+.workhub-proscons-editor-add-row input:focus {
+  outline: none;
+  border-color: #5f8dcc;
+  box-shadow: 0 0 0 3px rgba(64, 118, 185, 0.18);
+}
+
+.workhub-proscons-editor-table-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid #d3deeb;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.workhub-proscons-editor-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.workhub-proscons-editor-table th,
+.workhub-proscons-editor-table td {
+  padding: 5px 6px;
+  border-bottom: 1px solid #e1e9f4;
+  vertical-align: middle;
+}
+
+.workhub-proscons-editor-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.workhub-proscons-editor-table th {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #566f8c;
+  background: #f7faff;
+  text-align: left;
+}
+
+.workhub-proscons-editor-table th:last-child,
+.workhub-proscons-editor-table td:last-child {
+  width: 40px;
+}
+
+.workhub-proscons-editor-table input {
+  width: 100%;
+  border-radius: 7px;
+  border: 1px solid #c9d8ea;
+  background: #ffffff;
+  color: #1d2e44;
+  font: inherit;
+  font-size: 0.72rem;
+  padding: 4px 6px;
+}
+
+.workhub-proscons-editor-table input:focus {
+  outline: none;
+  border-color: #5f8dcc;
+  box-shadow: 0 0 0 3px rgba(64, 118, 185, 0.16);
+}
+
+.workhub-proscons-row-view-btn {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: #223851;
+  font: inherit;
+  font-size: 0.74rem;
+  text-align: left;
+  padding: 4px 6px;
+  border-radius: 7px;
+  cursor: text;
+}
+
+.workhub-proscons-row-view-btn:hover {
+  background: #f6f9ff;
+}
+
+.workhub-proscons-row-view-btn:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.workhub-proscons-row-title-input {
+  width: 100%;
+  border-radius: 7px;
+  border: 1px solid #7ea4d6;
+  background: #ffffff;
+  color: #1d2e44;
+  font: inherit;
+  font-size: 0.72rem;
+  padding: 4px 6px;
+}
+
+.workhub-proscons-row-title-input:focus {
+  outline: none;
+  border-color: #5f8dcc;
+  box-shadow: 0 0 0 3px rgba(64, 118, 185, 0.18);
+}
+
+.workhub-proscons-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.workhub-proscons-btn {
+  border: 1px solid #b8cce6;
+  border-radius: 8px;
+  background: #f1f6fd;
+  color: #20456f;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 600;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.workhub-proscons-btn:hover {
+  background: #e4effc;
+}
+
+.workhub-proscons-btn.is-primary {
+  border-color: #5c83bb;
+  background: #2f68b8;
+  color: #ffffff;
+}
+
+.workhub-proscons-btn.is-primary:hover {
+  background: #28599f;
+}
+
+.workhub-proscons-btn.is-danger {
+  border-color: #cc9ea0;
+  background: #fff4f4;
+  color: #8f2e35;
+}
+
+.workhub-proscons-btn.is-danger:hover {
+  background: #fdebec;
+}
+
+.workhub-proscons-btn.is-icon {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  line-height: 1;
+  font-weight: 700;
+}
+
+@media (max-width: 1180px) {
+  .workhub-proscons-overview {
+    grid-template-columns: 140px 1fr;
+  }
+
+  .workhub-proscons-sections-wrap {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 1000px) {
+  .workhub-proscons-layout {
+    flex-direction: column;
+  }
+
+  .workhub-proscons-editor-grid {
+    overflow: auto;
+    padding-top: 14px;
+    grid-template-columns: 1fr;
+    grid-template-rows: none;
+  }
+
+  .workhub-proscons-detail-resizer {
+    display: none;
+  }
+
+  .workhub-proscons-detail-rail,
+  .workhub-proscons-detail-rail.is-compact {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid #d6e1ef;
+  }
+
+  .workhub-proscons-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .workhub-proscons-viz-col {
+    flex-direction: row;
+    justify-content: center;
+    padding: 8px 14px;
+  }
+
+  .workhub-proscons-sections-wrap {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .workhub-proscons-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .workhub-modal.workhub-proscons-editor-dialog {
+    width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+  }
+
+  .workhub-proscons-editor-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .workhub-proscons-editor-footer {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .workhub-proscons-editor-add-row {
+    grid-template-columns: 1fr;
+  }
+
+  .workhub-proscons-editor-table-wrap {
+    max-height: none;
+  }
+
+  .workhub-proscons-editor-table th:last-child,
+  .workhub-proscons-editor-table td:last-child {
+    width: 40px;
+  }
+
+  .workhub-proscons-inline-grid,
+  .workhub-proscons-inline-grid.compact {
+    grid-template-columns: 1fr;
+  }
+
+  .workhub-proscons-scoring-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workhub-proscons-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .workhub-proscons-viz-col {
+    grid-column: auto;
+  }
+
+  .workhub-proscons-section-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .workhub-proscons-bottom-strip {
+    flex-wrap: wrap;
+  }
+
+  .workhub-proscons-inline-add-section {
+    width: 100%;
+  }
+}
+/* Matrix Mode Editor & Grid */
+.workhub-proscons-matrix-editor {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.workhub-proscons-matrix-editor-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.workhub-proscons-matrix-editor-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  border: 1px solid #dce7f5;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  color: #263d58;
+}
+
+.workhub-proscons-matrix-editor-item > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workhub-proscons-matrix-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 6px 6px;
+}
+
+.workhub-proscons-matrix-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  background: #f8fbff;
+  border: 1px solid #e3ebf6;
+  border-radius: 6px;
+}
+
+.workhub-proscons-matrix-prop {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  font-size: 0.72rem;
+  color: #263d58;
+}
+
+.workhub-proscons-matrix-toggles {
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: 2px;
+  background: #e9eff8;
+  padding: 2px;
+  border-radius: 6px;
+}
+
+.workhub-proscons-matrix-btn {
+  min-width: 34px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: #516b88;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.67rem;
+  font-weight: 700;
+  padding: 3px 6px;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.workhub-proscons-matrix-btn:hover {
+  background: #ffffff;
+  color: #1f334d;
+}
+
+.workhub-proscons-matrix-btn.is-pro.is-active {
+  background: #2f9f6a;
+  color: #ffffff;
+}
+
+.workhub-proscons-matrix-btn.is-con.is-active {
+  background: #c94a4a;
+  color: #ffffff;
+}
+
+.workhub-proscons-matrix-btn.is-neutral.is-active {
+  background: #ffffff;
+  border-color: #c9d7ea;
+  color: #46617f;
+}
+
+.workhub-proscons-matrix-indicator {
+  flex: 0 0 auto;
+  min-width: 54px;
+  text-align: center;
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
+.workhub-proscons-matrix-indicator.is-pro {
+  color: #1d764f;
+  background: #e6f6ee;
+}
+
+.workhub-proscons-matrix-indicator.is-con {
+  color: #a93d3d;
+  background: #fbeaea;
+}
+
+.workhub-proscons-matrix-indicator.is-neutral {
+  color: #5f7591;
+  background: #edf3fb;
+}
+
+.workhub-proscons-matrix-empty {
+  padding: 8px;
+  border: 1px dashed #c9d7ea;
+  border-radius: 6px;
+  color: #6a85a0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}

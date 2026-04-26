@@ -173,6 +173,76 @@ const QuickAddTaskRow = memo(function QuickAddTaskRow(props: {
     }
   }
 
+  const commitPastedLines = async (rawText: string) => {
+    const lines = rawText
+      .split(/\r?\n/)
+      .map((line) => normalizeTaskTitle(line))
+      .filter((line) => line.length > 0)
+    if (lines.length <= 1 || submitting || isCommittingRef.current) return false
+
+    isCommittingRef.current = true
+    skipNextBlurCommitRef.current = true
+    const snapshot = {
+      title: titleDraftRef.current,
+      assigneeUid: assigneeDraftRef.current,
+      priority: priorityDraftRef.current,
+      dueDate: dueDateDraftRef.current,
+      projectId: projectDraftRef.current,
+      valueAmountDraft: valueAmountDraftRef.current,
+    }
+
+    setTitle('')
+    titleDraftRef.current = ''
+    setValueAmountDraft('')
+    valueAmountDraftRef.current = ''
+    setAssigneeMenuOpen(false)
+    setPriorityMenuOpen(false)
+    setSubmitting(true)
+
+    let createdCount = 0
+    try {
+      const parsedValue = Number(snapshot.valueAmountDraft)
+      for (const line of lines) {
+        const created = await onCommit({
+          statusId: status.id,
+          title: line,
+          assigneeUid: snapshot.assigneeUid,
+          priority: snapshot.priority,
+          dueDate: snapshot.dueDate,
+          projectId: snapshot.projectId,
+          valueAmount: isFinanceLayout && Number.isFinite(parsedValue) && parsedValue >= 0 ? Math.round(parsedValue * 100) / 100 : undefined,
+          valueCurrency: isFinanceLayout ? financeCurrency : undefined,
+        })
+        if (!created) break
+        createdCount += 1
+      }
+
+      if (createdCount === lines.length) {
+        resetDraft()
+        return true
+      }
+
+      const remaining = lines.slice(createdCount)
+      const fallbackTitle = remaining[0] || snapshot.title
+      setTitle(fallbackTitle)
+      titleDraftRef.current = fallbackTitle
+      setAssigneeUid(snapshot.assigneeUid)
+      assigneeDraftRef.current = snapshot.assigneeUid
+      setPriority(snapshot.priority)
+      priorityDraftRef.current = snapshot.priority
+      setDueDate(snapshot.dueDate)
+      dueDateDraftRef.current = snapshot.dueDate
+      setProjectId(snapshot.projectId)
+      projectDraftRef.current = snapshot.projectId
+      setValueAmountDraft(snapshot.valueAmountDraft)
+      valueAmountDraftRef.current = snapshot.valueAmountDraft
+      return false
+    } finally {
+      setSubmitting(false)
+      isCommittingRef.current = false
+    }
+  }
+
   const commitDraft = async (rawTitle?: string) => commitWithTitle(typeof rawTitle === 'string' ? rawTitle : title)
 
   return (
@@ -227,8 +297,14 @@ const QuickAddTaskRow = memo(function QuickAddTaskRow(props: {
                 onPaste={(event) => {
                   const pastedText = event.clipboardData.getData('text')
                   if (!/\r?\n/.test(pastedText)) return
+                  const nonEmptyLineCount = pastedText
+                    .split(/\r?\n/)
+                    .map((line) => normalizeTaskTitle(line))
+                    .filter((line) => line.length > 0)
+                    .length
+                  if (nonEmptyLineCount <= 1) return
                   event.preventDefault()
-                  void commitWithTitle(pastedText)
+                  void commitPastedLines(pastedText)
                 }}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') {

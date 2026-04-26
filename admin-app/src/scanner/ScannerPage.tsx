@@ -19,7 +19,6 @@ import './Scanner.css'
 import { AnswerContent } from './answerRenderer'
 import { resolveReasoningAnswer } from './reasoningAnswer'
 
-const ENV_API_KEY = (import.meta.env.VITE_OPENAI_API_KEY as string | undefined) ?? ''
 const LS_KEY = 'scanner_openai_key'
 const LS_MODE = 'scanner_mode'
 const LS_SHOW_CAPTURED_IMAGE = 'scanner_show_captured_image'
@@ -77,7 +76,6 @@ async function buildHistoryPreview(imageDataUrl: string, maxWidth = 620): Promis
 // --- Settings panel ---
 
 function SettingsPanel({
-  envKeySet,
   currentKey,
   mode,
   showCapturedImage,
@@ -86,7 +84,6 @@ function SettingsPanel({
   onToggleShowCapturedImage,
   onClose,
 }: {
-  envKeySet: boolean
   currentKey: string
   mode: ScanMode
   showCapturedImage: boolean
@@ -149,35 +146,29 @@ function SettingsPanel({
         <div className="sc-settings-divider" />
         <p className="sc-settings-section-title">API Key</p>
 
-        {envKeySet ? (
-          <div className="sc-env-badge">API key loaded from environment</div>
-        ) : (
-          <>
-            <p className="sc-settings-note">
-              Your key is stored only in your browser local storage and sent directly to OpenAI.
-            </p>
-            <div className="sc-key-row">
-              <input
-                type={show ? 'text' : 'password'}
-                className="sc-key-input"
-                placeholder="sk-..."
-                value={value}
-                onChange={e => setValue(e.target.value)}
-                spellCheck={false}
-                autoComplete="off"
-              />
-              <button className="sc-btn-show" onClick={() => setShow(s => !s)} aria-label={show ? 'Hide' : 'Show'}>
-                {show ? 'hide' : 'show'}
-              </button>
-            </div>
-            <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="sc-get-key-link">
-              Get an API key
-            </a>
-            <button className="sc-btn-save" onClick={() => onSaveKey(value.trim())} disabled={!value.trim()}>
-              Save Key
-            </button>
-          </>
-        )}
+        <p className="sc-settings-note">
+          Your key is stored only in your browser local storage and sent directly to OpenAI.
+        </p>
+        <div className="sc-key-row">
+          <input
+            type={show ? 'text' : 'password'}
+            className="sc-key-input"
+            placeholder="sk-..."
+            value={value}
+            onChange={e => setValue(e.target.value)}
+            spellCheck={false}
+            autoComplete="off"
+          />
+          <button className="sc-btn-show" onClick={() => setShow(s => !s)} aria-label={show ? 'Hide' : 'Show'}>
+            {show ? 'hide' : 'show'}
+          </button>
+        </div>
+        <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="sc-get-key-link">
+          Get an API key
+        </a>
+        <button className="sc-btn-save" onClick={() => onSaveKey(value.trim())} disabled={!value.trim()}>
+          Save Key
+        </button>
       </div>
     </div>
   )
@@ -470,7 +461,7 @@ function ScannerCapturePage({
   const [showCapturedImage, setShowCapturedImage] = useState<boolean>(() => localStorage.getItem(LS_SHOW_CAPTURED_IMAGE) === '1')
   const isLandscape = orientation === 'landscape'
 
-  const apiKey = ENV_API_KEY || lsKey
+  const apiKey = lsKey
   const showApiBanner = !apiKey && (screen === 'camera' || isLandscape)
 
   const refreshHistory = useCallback(async () => {
@@ -733,7 +724,6 @@ function ScannerCapturePage({
 
       {showSettings && (
         <SettingsPanel
-          envKeySet={!!ENV_API_KEY}
           currentKey={lsKey}
           mode={mode}
           showCapturedImage={showCapturedImage}

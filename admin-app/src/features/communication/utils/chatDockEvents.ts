@@ -4,6 +4,11 @@ export interface ChatDockOpenDetail {
   threadId?: string
   actorUid?: string
   source?: 'toast' | 'notification' | 'ui'
+  targetPath?: string
+  targetTaskId?: string
+  targetLabel?: string
+  projectTargetPath?: string
+  projectTargetLabel?: string
 }
 
 export function dispatchChatDockOpen(detail: ChatDockOpenDetail) {

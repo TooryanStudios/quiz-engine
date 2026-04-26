@@ -1,4 +1,8 @@
 import type { WorkhubNotification } from '../../../lib/workhubRepo'
+import {
+  buildWorkhubWorkspaceProjectPath,
+  encodeWorkhubWorkspaceProjectSlugSegment,
+} from '../../../lib/workhubRoutes'
 
 type WorkhubNotificationWithProject = WorkhubNotification & {
   projectId?: string
@@ -34,7 +38,7 @@ export function resolveWorkhubNotificationPath(notification: WorkhubNotification
   if (!workspaceId) return '/workhub'
 
   const projectParam = resolveProjectParam(withProject.projectId)
-  const encodedWorkspaceId = encodeSegment(workspaceId)
+  const encodedWorkspaceId = encodeWorkhubWorkspaceProjectSlugSegment(workspaceId)
   const normalizedAction = normalizedIncomingAction
 
   if (notification.entityType === 'task' && notification.entityId) {
@@ -48,7 +52,7 @@ export function resolveWorkhubNotificationPath(notification: WorkhubNotification
   }
 
   if (notification.entityType === 'project' && notification.entityId) {
-    return `/workhub/w/${encodedWorkspaceId}/p/${encodeSegment(notification.entityId)}`
+    return buildWorkhubWorkspaceProjectPath(workspaceId, notification.entityId)
   }
 
   // Task comments are currently stored as entityType=comment with entityId=taskId.

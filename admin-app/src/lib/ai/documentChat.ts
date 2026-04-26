@@ -1,4 +1,3 @@
-const ENV_OPENAI_API_KEY = (import.meta.env.VITE_OPENAI_API_KEY as string | undefined)?.trim() ?? ''
 const SCANNER_LOCAL_STORAGE_KEY = 'scanner_openai_key'
 const MAX_IMAGE_FILE_BYTES = 8 * 1024 * 1024
 const MAX_TEXT_FILE_BYTES = 2 * 1024 * 1024
@@ -173,7 +172,7 @@ function buildPrompt(params: RunDocumentChatParams) {
 }
 
 export function getDocumentChatApiKey() {
-  return ENV_OPENAI_API_KEY || readLocalStorageKey(SCANNER_LOCAL_STORAGE_KEY)
+  return readLocalStorageKey(SCANNER_LOCAL_STORAGE_KEY)
 }
 
 export function hasDocumentChatApiKey() {

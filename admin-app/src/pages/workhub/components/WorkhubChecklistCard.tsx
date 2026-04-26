@@ -53,8 +53,8 @@ export function WorkhubChecklistCard({
         {items.length === 0 ? (
           <div className="workhub-empty-state">{emptyStateText}</div>
         ) : (
-          items.map((item) => (
-            <div key={item.id} className="workhub-checklist-item even">
+          items.map((item, index) => (
+            <div key={`${item.id}-${index}`} className="workhub-checklist-item even">
               <div className="workhub-checklist-left">
                 <div className="workhub-checklist-item-main">
                   <input

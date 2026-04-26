@@ -5,6 +5,74 @@ import { fileURLToPath } from 'node:url'
 
 const rootDir = fileURLToPath(new URL('.', import.meta.url))
 
+function resolveManualChunk(id: string): string | undefined {
+  const normalizedId = id.replace(/\\/g, '/')
+
+  if (normalizedId.includes('/src/lib/workhubRepo')) {
+    return 'workhub-repo'
+  }
+
+  if (normalizedId.includes('/src/components/EmojiPickerPopover')) {
+    return 'workhub-emoji'
+  }
+
+  if (
+    normalizedId.includes('/src/pages/workhub/components/WorkhubDocEditor')
+    || normalizedId.includes('/src/pages/workhub/hooks/useWorkhubDocEditorHandlers')
+  ) {
+    return 'workhub-doc-editor'
+  }
+
+  if (
+    normalizedId.includes('/src/pages/workhub/components/MoodBoardDialog')
+    || normalizedId.includes('/src/components/flowboard/')
+  ) {
+    return 'workhub-moodboard'
+  }
+
+  if (!normalizedId.includes('/node_modules/')) return undefined
+
+  if (
+    normalizedId.includes('/node_modules/react/')
+    || normalizedId.includes('/node_modules/react-dom/')
+    || normalizedId.includes('/node_modules/react-router-dom/')
+  ) {
+    return 'react-vendor'
+  }
+
+  if (
+    normalizedId.includes('/node_modules/firebase/app/')
+    || normalizedId.includes('/node_modules/firebase/auth/')
+  ) {
+    return 'firebase-app'
+  }
+
+  if (normalizedId.includes('/node_modules/firebase/firestore/')) {
+    return 'firebase-firestore'
+  }
+
+  if (normalizedId.includes('/node_modules/@xyflow/')) {
+    return 'workhub-flow'
+  }
+
+  if (
+    normalizedId.includes('/node_modules/@tinymce/')
+    || normalizedId.includes('/node_modules/tinymce/')
+  ) {
+    return 'workhub-tinymce'
+  }
+
+  if (normalizedId.includes('/node_modules/@excalidraw/')) {
+    return 'workhub-excalidraw'
+  }
+
+  if (normalizedId.includes('/node_modules/pagedjs/')) {
+    return 'pagedjs-vendor'
+  }
+
+  return undefined
+}
+
 // Vite 7 tries to run its CSS transform pipeline on every *.css request, including
 // ones that TinyMCE's runtime makes for its own skin assets in /public/tinymce/.
 // Those requests arrive with Vite's "?direct" query param appended, which causes Vite
@@ -54,11 +122,7 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-          'firebase-app': ['firebase/app', 'firebase/auth'],
-          'firebase-firestore': ['firebase/firestore'],
-        },
+        manualChunks: resolveManualChunk,
         assetFileNames: (assetInfo) => {
           const info = assetInfo.name?.split('.') || []
           const ext = info[info.length - 1]

@@ -39,10 +39,34 @@ function getDocumentIcon(document: Pick<WorkhubDocument, 'type' | 'icon' | 'refe
   return (document.icon || '').trim() || (document.type === 'note' ? '🗒️' : '📝')
 }
 
-function getMoodBoardVariantBadge(panelVariant?: WorkhubMoodBoard['panelVariant']): string {
-  if (panelVariant === 'v2') return 'V2'
-  if (panelVariant === 'flow') return 'FLOW'
-  return ''
+function getMoodBoardVariantMeta(panelVariant?: WorkhubMoodBoard['panelVariant']): {
+  badge: string
+  badgeClassName: string
+  icon: string
+  title: string
+} {
+  if (panelVariant === 'flow') {
+    return {
+      badge: 'FLOW',
+      badgeClassName: 'is-flow',
+      icon: '🧭',
+      title: 'Flow Project Plan board',
+    }
+  }
+  if (panelVariant === 'proscons') {
+    return {
+      badge: 'P/C',
+      badgeClassName: 'is-proscons',
+      icon: '⚖',
+      title: 'Pros and cons board',
+    }
+  }
+  return {
+    badge: '',
+    badgeClassName: '',
+    icon: '🎨',
+    title: 'Mood board',
+  }
 }
 
 function parseProjectSubmissionTimestamp(projectDeadline?: string, submissionTime?: string): number | null {
@@ -357,31 +381,34 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
                     </button>
                   )
                 })}
-                {nodeMoodBoards.map((board) => (
-                  <button
-                    key={board.id}
-                    type="button"
-                    className={`workhub-tree-doc-subitem${selectedMoodBoardId === board.id ? ' is-active' : ''}${linkedHighlightedMoodBoardId === board.id ? ' is-linked-highlight' : ''}`}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      onSelectMoodBoard(board.id)
-                    }}
-                    title={board.title}
-                  >
-                    <span className="workhub-tree-doc-subitem-title">
-                      🎨 {board.title}
-                      {getMoodBoardVariantBadge(board.panelVariant) && (
-                        <span
-                          className={`workhub-tree-moodboard-variant-badge is-${getMoodBoardVariantBadge(board.panelVariant).toLowerCase()}`}
-                          title={board.panelVariant === 'flow' ? 'Flow Project Plan board' : 'Mood Board #2'}
-                          aria-label={board.panelVariant === 'flow' ? 'Flow Project Plan board' : 'Mood Board #2 board'}
-                        >
-                          {getMoodBoardVariantBadge(board.panelVariant)}
-                        </span>
-                      )}
-                    </span>
-                  </button>
-                ))}
+                {nodeMoodBoards.map((board) => {
+                  const variantMeta = getMoodBoardVariantMeta(board.panelVariant)
+                  return (
+                    <button
+                      key={board.id}
+                      type="button"
+                      className={`workhub-tree-doc-subitem${selectedMoodBoardId === board.id ? ' is-active' : ''}${linkedHighlightedMoodBoardId === board.id ? ' is-linked-highlight' : ''}`}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onSelectMoodBoard(board.id)
+                      }}
+                      title={board.title}
+                    >
+                      <span className="workhub-tree-doc-subitem-title">
+                        {variantMeta.icon} {board.title}
+                        {variantMeta.badge && (
+                          <span
+                            className={`workhub-tree-moodboard-variant-badge ${variantMeta.badgeClassName}`}
+                            title={variantMeta.title}
+                            aria-label={variantMeta.title}
+                          >
+                            {variantMeta.badge}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  )
+                })}
               </div>
             </div>
           </div>

@@ -1,0 +1,1 @@
+import{o as e,p as r}from"./workhub-repo-BWhh7_g_.js";async function i(t){const a=(await e(r,"generateQuizQuestions")(t)).data;if(!a||!Array.isArray(a.questions))throw new Error("AI returned an invalid response.");return a}export{i as g};

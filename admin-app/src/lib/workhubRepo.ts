@@ -1,6 +1,11 @@
-import { addDoc, arrayRemove, arrayUnion, collection, deleteDoc, deleteField, doc, getDoc, getDocs, limit, onSnapshot as firestoreOnSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
+import { addDoc, arrayRemove, arrayUnion, collection, deleteDoc, deleteField, doc, getDoc, getDocs, limit, onSnapshot as firestoreOnSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { db, functions } from './firebase'
+import {
+  buildWorkhubProsConsDefaults,
+  buildWorkhubProsConsPersistencePayload,
+  type WorkhubMoodBoardProsCons,
+} from './workhubProsCons'
 
 export type WorkhubMemberStatus = 'pending' | 'approved' | 'suspended'
 export type WorkhubMemberRole = 'member' | 'manager' | 'admin'
@@ -530,6 +535,28 @@ function stripUndefinedDeep<T>(value: T): T {
   return next as T
 }
 
+function normalizeChecklistItems(items: WorkhubTaskChecklistItem[] | null | undefined): WorkhubTaskChecklistItem[] {
+  const usedIds = new Set<string>()
+  return (items || []).map((item, index) => {
+    const baseId = typeof item?.id === 'string' && item.id.trim()
+      ? item.id.trim()
+      : `chk_${index + 1}`
+    let nextId = baseId
+    let suffix = 1
+    while (usedIds.has(nextId)) {
+      nextId = `${baseId}_${suffix++}`
+    }
+    usedIds.add(nextId)
+
+    return stripUndefinedDeep({
+      ...item,
+      id: nextId,
+      text: typeof item?.text === 'string' ? item.text : '',
+      completed: !!item?.completed,
+    }) as WorkhubTaskChecklistItem
+  })
+}
+
 function safeListen(start: () => (() => void), onFailure?: () => void) {
   try {
     return start()
@@ -917,7 +944,12 @@ export function subscribeWorkhubDocuments(
   }
 
   const workspaceQuery = query(documentsCol, where('workspaceId', '==', workspaceId), where('visibility', '==', 'workspace'))
-  const restrictedQuery = query(documentsCol, where('memberUids', 'array-contains', currentUid))
+  const restrictedQuery = query(
+    documentsCol,
+    where('workspaceId', '==', workspaceId),
+    where('visibility', '==', 'restricted'),
+    where('memberUids', 'array-contains', currentUid),
+  )
   let workspaceItems: WorkhubDocument[] = []
   let restrictedItems: WorkhubDocument[] = []
   const emit = () => onData(mergeDocumentsById([workspaceItems, restrictedItems]))
@@ -943,9 +975,7 @@ export function subscribeWorkhubDocuments(
     () => onSnapshot(
       restrictedQuery,
       (snap) => {
-        restrictedItems = snap.docs
-          .map((item) => ({ id: item.id, ...item.data() } as WorkhubDocument))
-          .filter((item) => item.workspaceId === workspaceId && item.visibility === 'restricted')
+        restrictedItems = snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubDocument))
         emit()
       },
       () => {
@@ -971,6 +1001,7 @@ export async function createWorkhubDocument(input: {
   icon?: string
   title: string
   body: string
+  tabs?: WorkhubDocumentTab[]
   masterPage?: WorkhubDocumentMasterPage
   visibility: WorkhubVisibility
   memberUids: string[]
@@ -978,6 +1009,15 @@ export async function createWorkhubDocument(input: {
   notifyUids?: string[]
   createdBy: string
 }): Promise<string> {
+  const normalizedTabs = Array.isArray(input.tabs)
+    ? input.tabs.map((tab) => ({
+        id: String(tab.id || '').trim(),
+        title: String(tab.title || '').trim() || 'Main',
+        ...(tab.icon ? { icon: String(tab.icon).trim() } : {}),
+        body: String(tab.body || ''),
+      })).filter((tab) => tab.id)
+    : undefined
+
   const docRef = await addDoc(documentsCol, {
     workspaceId: input.workspaceId,
     projectId: input.projectId || null,
@@ -985,6 +1025,7 @@ export async function createWorkhubDocument(input: {
     icon: (input.icon || '').trim() || null,
     title: input.title,
     body: input.body,
+    ...(normalizedTabs ? { tabs: normalizedTabs } : {}),
     masterPage: input.masterPage || null,
     isLocked: false,
     lockedBy: null,
@@ -1015,10 +1056,37 @@ export async function getWorkhubDocumentById(documentId: string): Promise<Workhu
   return { id: snap.id, ...snap.data() } as WorkhubDocument
 }
 
-export async function updateWorkhubDocument(
-  documentId: string,
-  patch: Partial<Pick<WorkhubDocument, 'projectId' | 'hasOutgoingReferences' | 'referenceSourceDocumentId' | 'referenceSourceWorkspaceId' | 'referenceSourceProjectId' | 'referenceTabIds' | 'icon' | 'title' | 'body' | 'tabs' | 'masterPage' | 'checklist' | 'attachments' | 'links' | 'editedBy' | 'isLocked' | 'lockedBy' | 'lockedAt' | 'shareToken' | 'shareEnabled' | 'visibility' | 'memberUids' | 'editMemberUids' | 'notifyMode' | 'notifyUids'>>,
-) {
+export class WorkhubDocumentConflictError extends Error {
+  readonly code = 'workhub_document_conflict'
+  readonly currentUpdatedAtMs: number
+
+  constructor(currentUpdatedAtMs: number) {
+    super('Document was updated by another collaborator.')
+    this.name = 'WorkhubDocumentConflictError'
+    this.currentUpdatedAtMs = currentUpdatedAtMs
+  }
+}
+
+type WorkhubDocumentUpdatePatch = Partial<Pick<WorkhubDocument, 'projectId' | 'hasOutgoingReferences' | 'referenceSourceDocumentId' | 'referenceSourceWorkspaceId' | 'referenceSourceProjectId' | 'referenceTabIds' | 'icon' | 'title' | 'body' | 'tabs' | 'masterPage' | 'checklist' | 'attachments' | 'links' | 'editedBy' | 'isLocked' | 'lockedBy' | 'lockedAt' | 'shareToken' | 'shareEnabled' | 'visibility' | 'memberUids' | 'editMemberUids' | 'notifyMode' | 'notifyUids'>>
+
+function getWorkhubTimestampMs(value: unknown): number {
+  if (!value) return 0
+  if (typeof value === 'object' && value !== null && 'toMillis' in value && typeof (value as { toMillis?: unknown }).toMillis === 'function') {
+    return (value as { toMillis: () => number }).toMillis()
+  }
+  if (typeof value === 'object' && value !== null && 'seconds' in value) {
+    const seconds = Number((value as { seconds?: unknown }).seconds || 0)
+    const nanoseconds = Number((value as { nanoseconds?: unknown }).nanoseconds || 0)
+    return (seconds * 1000) + Math.floor(nanoseconds / 1_000_000)
+  }
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+  return 0
+}
+
+function buildWorkhubDocumentUpdatePayload(patch: WorkhubDocumentUpdatePatch): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     ...patch,
     updatedAt: serverTimestamp(),
@@ -1044,7 +1112,41 @@ export async function updateWorkhubDocument(
   if (Object.prototype.hasOwnProperty.call(patch, 'icon')) {
     payload.icon = (patch.icon || '').trim() || null
   }
+  return payload
+}
+
+export async function updateWorkhubDocument(
+  documentId: string,
+  patch: WorkhubDocumentUpdatePatch,
+) {
+  const payload = buildWorkhubDocumentUpdatePayload(patch)
   await updateDoc(doc(db, 'workhub_documents', documentId), payload)
+}
+
+export async function updateWorkhubDocumentWithOptimisticConcurrency(
+  documentId: string,
+  patch: WorkhubDocumentUpdatePatch,
+  expectedUpdatedAtMs: number | null | undefined,
+) {
+  const docRef = doc(db, 'workhub_documents', documentId)
+  const expected = typeof expectedUpdatedAtMs === 'number' && Number.isFinite(expectedUpdatedAtMs)
+    ? expectedUpdatedAtMs
+    : null
+
+  await runTransaction(db, async (transaction) => {
+    const snap = await transaction.get(docRef)
+    if (!snap.exists()) {
+      throw new Error('Document not found.')
+    }
+
+    const currentData = snap.data() as WorkhubDocument
+    const currentUpdatedAtMs = getWorkhubTimestampMs(currentData.updatedAt || currentData.createdAt)
+    if (expected != null && expected > 0 && currentUpdatedAtMs > 0 && currentUpdatedAtMs !== expected) {
+      throw new WorkhubDocumentConflictError(currentUpdatedAtMs)
+    }
+
+    transaction.update(docRef, buildWorkhubDocumentUpdatePayload(patch))
+  })
 }
 
 export async function getWorkhubDocumentReferencesBySource(sourceDocumentId: string): Promise<WorkhubDocument[]> {
@@ -1577,16 +1679,22 @@ export async function createWorkhubActivity(input: {
   })
 }
 
-export function subscribeWorkhubNotifications(recipientUid: string, onData: (items: WorkhubNotification[]) => void) {
+export function subscribeWorkhubNotifications(
+  recipientUid: string,
+  onData: (items: WorkhubNotification[]) => void,
+  options?: { maxCount?: number },
+) {
+  const maxCount = Number.isFinite(options?.maxCount) ? Math.max(1, Math.floor(options?.maxCount as number)) : 0
   const q = query(
     notificationsCol,
-      where('recipientUid', '==', recipientUid),
+    where('recipientUid', '==', recipientUid),
   )
   return safeListen(
     () => onSnapshot(
       q,
       (snap) => {
-        onData(sortByNewest(snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubNotification))))
+        const items = sortByNewest(snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubNotification)))
+        onData(maxCount > 0 ? items.slice(0, maxCount) : items)
       },
       () => onData([]),
     ),
@@ -1728,7 +1836,7 @@ export interface WorkhubMoodBoardImage {
   id?: string
   tabId?: string
   url: string
-  caption: string
+  label?: string
   addedBy: string
   addedAt?: unknown
   x?: number
@@ -1750,12 +1858,29 @@ export interface WorkhubMoodBoardUserPreference {
   updatedAt?: unknown
 }
 
+export type {
+  WorkhubMoodBoardProsCons,
+  WorkhubProsConsAmountMode,
+  WorkhubProsConsChartVariant,
+  WorkhubProsConsCustomFieldAppliesTo,
+  WorkhubProsConsCustomFieldDefinition,
+  WorkhubProsConsCustomFieldType,
+  WorkhubProsConsGroup,
+  WorkhubProsConsGroupingMode,
+  WorkhubProsConsItem,
+  WorkhubProsConsRecommendation,
+  WorkhubProsConsRecommendationTone,
+  WorkhubProsConsScoringConfig,
+  WorkhubProsConsScoringMethod,
+  WorkhubProsConsSide,
+} from './workhubProsCons'
+
 export interface WorkhubMoodBoard {
   id: string
   workspaceId: string
   entityType: WorkhubMoodBoardEntityType
   entityId: string
-  panelVariant?: 'classic' | 'v2' | 'flow'
+  panelVariant?: 'classic' | 'v2' | 'flow' | 'proscons'
   title: string
   flowViewport?: {
     x: number
@@ -1784,12 +1909,14 @@ export interface WorkhubMoodBoard {
       pattern?: 'dots' | 'lines'
     }
     showNavigationPreview?: boolean
+    showImageLabels?: boolean
   }
   tabs?: WorkhubMoodBoardTab[]
   activeTabId?: string
   images: WorkhubMoodBoardImage[]
   userPreferences?: Record<string, WorkhubMoodBoardUserPreference>
   checklist?: WorkhubTaskChecklistItem[]
+  prosCons?: WorkhubMoodBoardProsCons
   createdBy: string
   createdAt?: unknown
   updatedAt?: unknown
@@ -1845,18 +1972,34 @@ export async function createWorkhubMoodBoard(input: {
   entityType: WorkhubMoodBoardEntityType
   entityId: string
   title: string
-  panelVariant?: 'classic' | 'v2' | 'flow'
+  panelVariant?: 'classic' | 'v2' | 'flow' | 'proscons'
   createdBy: string
 }): Promise<string> {
   const defaultTabs: WorkhubMoodBoardTab[] = [{ id: 'tab-main', title: 'Board' }]
+  const nextPanelVariant = input.panelVariant || 'classic'
+  const nextFlowSettings = nextPanelVariant === 'v2'
+    ? { showNavigationPreview: false, showImageLabels: false }
+    : null
+  const nextProsCons = nextPanelVariant === 'proscons'
+    ? buildWorkhubProsConsDefaults({
+      topic: input.title,
+      objective: '',
+      recommendationNote: '',
+      currency: 'USD',
+      pros: [],
+      cons: [],
+    })
+    : null
   const ref = await addDoc(collection(db, 'workhub_mood_boards'), {
     workspaceId: input.workspaceId,
     entityType: input.entityType,
     entityId: input.entityId,
     title: input.title,
-    panelVariant: input.panelVariant || 'classic',
+    panelVariant: nextPanelVariant,
     flowNodes: [],
     flowEdges: [],
+    ...(nextFlowSettings ? { flowSettings: nextFlowSettings } : {}),
+    ...(nextProsCons ? { prosCons: nextProsCons } : {}),
     tabs: defaultTabs,
     activeTabId: defaultTabs[0].id,
     images: [],
@@ -1873,18 +2016,28 @@ export async function updateWorkhubMoodBoardChecklist(
   checklist: WorkhubTaskChecklistItem[],
 ): Promise<void> {
   await updateDoc(doc(db, 'workhub_mood_boards', boardId), {
-    checklist,
+    checklist: normalizeChecklistItems(checklist),
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function updateWorkhubMoodBoardProsCons(
+  boardId: string,
+  prosCons: WorkhubMoodBoard['prosCons'],
+): Promise<void> {
+  await updateDoc(doc(db, 'workhub_mood_boards', boardId), {
+    prosCons: buildWorkhubProsConsPersistencePayload(prosCons),
     updatedAt: serverTimestamp(),
   })
 }
 
 export async function addWorkhubMoodBoardImage(
   boardId: string,
-  images: WorkhubMoodBoardImage[],
   newImage: WorkhubMoodBoardImage,
 ): Promise<void> {
+  const payload = stripUndefinedDeep(newImage)
   await updateDoc(doc(db, 'workhub_mood_boards', boardId), {
-    images: [...images, newImage],
+    images: arrayUnion(payload),
     updatedAt: serverTimestamp(),
   })
 }
@@ -2002,20 +2155,20 @@ export async function removeWorkhubMoodBoardImage(
   images: WorkhubMoodBoardImage[],
   index: number,
 ): Promise<void> {
-  await updateDoc(doc(db, 'workhub_mood_boards', boardId), {
+  await updateDoc(doc(db, 'workhub_mood_boards', boardId), stripUndefinedDeep({
     images: images.filter((_, i) => i !== index),
     updatedAt: serverTimestamp(),
-  })
+  }))
 }
 
 export async function updateWorkhubMoodBoardImages(
   boardId: string,
   images: WorkhubMoodBoardImage[],
 ): Promise<void> {
-  await updateDoc(doc(db, 'workhub_mood_boards', boardId), {
+  await updateDoc(doc(db, 'workhub_mood_boards', boardId), stripUndefinedDeep({
     images,
     updatedAt: serverTimestamp(),
-  })
+  }))
 }
 
 export async function updateWorkhubMoodBoardTitle(boardId: string, title: string): Promise<void> {
@@ -2032,12 +2185,102 @@ export async function updateWorkhubMoodBoardFlow(
   flowViewport?: WorkhubMoodBoard['flowViewport'],
   flowSettings?: WorkhubMoodBoard['flowSettings'],
 ): Promise<void> {
-  await updateDoc(doc(db, 'workhub_mood_boards', boardId), {
+  const payload = stripUndefinedDeep({
     flowNodes: flowNodes || [],
     flowEdges: flowEdges || [],
     flowViewport: flowViewport || { x: 0, y: 0, zoom: 1 },
     flowSettings: flowSettings || {},
     updatedAt: serverTimestamp(),
+  })
+  await updateDoc(doc(db, 'workhub_mood_boards', boardId), payload)
+}
+
+export async function finalizeWorkhubMoodBoardImageUploads(
+  boardId: string,
+  uploads: Array<{
+    nodeId: string
+    imageUrl: string
+    label?: string
+    position?: { x: number; y: number }
+    style?: Record<string, unknown>
+  }>,
+): Promise<void> {
+  if (!boardId) return
+  const normalizedUploads = (uploads || []).filter((item) => {
+    return !!item
+      && typeof item.nodeId === 'string'
+      && item.nodeId.trim().length > 0
+      && typeof item.imageUrl === 'string'
+      && item.imageUrl.trim().length > 0
+  })
+  if (!normalizedUploads.length) return
+
+  await runTransaction(db, async (transaction) => {
+    const boardRef = doc(db, 'workhub_mood_boards', boardId)
+    const snapshot = await transaction.get(boardRef)
+    if (!snapshot.exists()) return
+
+    const current = snapshot.data() as Partial<WorkhubMoodBoard>
+    type WorkhubFlowNode = NonNullable<WorkhubMoodBoard['flowNodes']>[number]
+    const currentNodes = (Array.isArray(current.flowNodes) ? current.flowNodes : []) as NonNullable<WorkhubMoodBoard['flowNodes']>
+    const nextNodes: NonNullable<WorkhubMoodBoard['flowNodes']> = [...currentNodes]
+    const indexById = new Map<string, number>()
+
+    nextNodes.forEach((node, index) => {
+      if (!node || typeof node !== 'object') return
+      const nodeId = typeof node.id === 'string' ? node.id.trim() : ''
+      if (!nodeId) return
+      indexById.set(nodeId, index)
+    })
+
+    normalizedUploads.forEach((upload) => {
+      const nodeId = upload.nodeId.trim()
+      const existingIndex = indexById.get(nodeId)
+
+      if (existingIndex === undefined) {
+        const createdNode = stripUndefinedDeep({
+          id: nodeId,
+          type: 'imageNode',
+          position: upload.position || { x: 0, y: 0 },
+          data: {
+            kind: 'image',
+            imageUrl: upload.imageUrl,
+            isUploading: false,
+            ...(upload.label && upload.label.trim() ? { label: upload.label.trim() } : {}),
+          },
+          style: upload.style || { width: 220, height: 150 },
+        }) as WorkhubFlowNode
+        nextNodes.push(createdNode)
+        indexById.set(nodeId, nextNodes.length - 1)
+        return
+      }
+
+      const existingNode = nextNodes[existingIndex] as WorkhubFlowNode
+      const existingData = (existingNode?.data && typeof existingNode.data === 'object')
+        ? (existingNode.data as Record<string, unknown>)
+        : {}
+
+      nextNodes[existingIndex] = stripUndefinedDeep({
+        id: existingNode.id || nodeId,
+        type: existingNode.type || 'imageNode',
+        position: existingNode.position || upload.position || { x: 0, y: 0 },
+        style: existingNode.style || upload.style || { width: 220, height: 150 },
+        data: {
+          ...existingData,
+          kind: 'image',
+          imageUrl: upload.imageUrl,
+          isUploading: false,
+          ...(upload.label && upload.label.trim() && !String(existingData.label || '').trim()
+            ? { label: upload.label.trim() }
+            : {}),
+        },
+      }) as WorkhubFlowNode
+    })
+
+    transaction.update(boardRef, stripUndefinedDeep({
+      flowNodes: nextNodes,
+      updatedAt: serverTimestamp(),
+    }))
   })
 }
 
@@ -2058,11 +2301,11 @@ export async function updateWorkhubMoodBoardTabs(
   const nextActiveTabId = normalizedTabs.some((item) => item.id === activeTabId)
     ? activeTabId
     : fallbackActiveTabId
-  await updateDoc(doc(db, 'workhub_mood_boards', boardId), {
+  await updateDoc(doc(db, 'workhub_mood_boards', boardId), stripUndefinedDeep({
     tabs: normalizedTabs,
     activeTabId: nextActiveTabId,
     updatedAt: serverTimestamp(),
-  })
+  }))
 }
 
 export async function updateWorkhubMoodBoardUserPreference(

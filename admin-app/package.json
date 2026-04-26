@@ -9,6 +9,7 @@
     "dev:games": "npm run sync:tinymce && vite --open /game-modes",
     "build": "npm run sync:tinymce && tsc -b && vite build",
     "test:workhub-templates": "vitest run tests/workhub-template-contracts.test.ts",
+    "test:workhub-proscons": "vitest run tests/workhub-proscons-engine.test.ts",
     "stamp-build": "node ./scripts/stamp-build.mjs",
     "build:deploy": "npm run stamp-build && npm run build",
     "build:chatbot": "node ./scripts/build-chatbot.mjs",
