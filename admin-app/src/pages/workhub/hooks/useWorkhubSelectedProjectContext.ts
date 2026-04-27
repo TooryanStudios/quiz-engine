@@ -17,6 +17,7 @@ import type { WorkhubWorkspaceTemplateId } from '../workspaceTemplates'
 
 interface UseWorkhubSelectedProjectContextParams {
   selectedProject: WorkhubProject | null
+  currentUid: string
   visibleProjectById: Record<string, WorkhubProject>
   visibleProjectsByParent: Map<string, WorkhubProject[]>
   visibleWorkspaceProjects: WorkhubProject[]
@@ -33,6 +34,7 @@ interface UseWorkhubSelectedProjectContextParams {
 
 export function useWorkhubSelectedProjectContext({
   selectedProject,
+  currentUid,
   visibleProjectById,
   visibleProjectsByParent,
   visibleWorkspaceProjects,
@@ -124,12 +126,14 @@ export function useWorkhubSelectedProjectContext({
       visited.add(currentId)
       const project = visibleProjectById[currentId]
       if (!project) break
+      const userMode = currentUid ? project.userPreferences?.[currentUid]?.taskItemDisplayMode : undefined
+      if (userMode) return userMode
       const mode = project.taskItemDisplayMode || 'inherit'
       if (mode !== 'inherit') return mode
       currentId = project.parentProjectId || ''
     }
     return 'list'
-  }, [visibleProjectById])
+  }, [currentUid, visibleProjectById])
 
   const taskItemDisplayMode = useMemo(() => {
     if (!selectedProject || selectedProject.id === 'all') return 'list' as const

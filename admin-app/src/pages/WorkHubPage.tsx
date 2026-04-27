@@ -10,6 +10,7 @@ import {
   createWorkhubActivity,
   createWorkhubClient,
   createWorkhubNotifications,
+  createWorkhubDocument,
   createWorkhubProject,
   createWorkhubTask,
   createWorkhubWorkspace,
@@ -43,6 +44,7 @@ import {
   uploadWorkhubAttachmentToDrive,
   updateWorkhubMemberProfile,
   updateWorkhubProject,
+  updateWorkhubProjectUserPreference,
   updateWorkhubComment,
   updateWorkhubTask,
   updateWorkhubClient,
@@ -70,12 +72,20 @@ import {
   deleteWorkhubMoodBoard,
   subscribeWorkhubMoodBoardsForWorkspace,
   type WorkhubMoodBoard,
+  updateWorkhubMoodBoard,
+  updateWorkhubMoodBoardChecklist,
+  updateWorkhubMoodBoardFlow,
+  updateWorkhubMoodBoardImages,
+  updateWorkhubMoodBoardProsCons,
+  updateWorkhubMoodBoardTabs,
+  updateWorkhubMoodBoardTitle,
   updateWorkhubDocument,
 } from '../lib/workhubRepo'
 
 import { ProjectActionMenu } from './workhub/components/ProjectActionMenu'
 import { TeamDialog } from './workhub/components/TeamDialog'
 import { WorkspaceSettingsDialog } from './workhub/components/WorkspaceSettingsDialog'
+import { WorkspaceBrowserDialog } from './workhub/components/WorkspaceBrowserDialog'
 import { WorkhubStyles } from './workhub/components/WorkhubStyles'
 import { type TaskRowCallbacks, type TaskRowMeta } from './workhub/components/TaskRow'
 import { type QuickAddTaskSubmitInput } from './workhub/components/QuickAddTaskRow'
@@ -831,6 +841,16 @@ function getUnknownTimeValue(value: unknown): number {
   return 0
 }
 
+function getWorkhubEntitySortOrderValue(sortOrder: unknown, createdAt: unknown, updatedAt: unknown): number {
+  if (typeof sortOrder === 'number' && Number.isFinite(sortOrder)) return sortOrder
+  return getUnknownTimeValue(createdAt || updatedAt)
+}
+
+function buildQuickDocumentTabs(initialBody = '') {
+  const tabId = `tab_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  return [{ id: tabId, title: 'Main', body: initialBody }]
+}
+
 export default function WorkHubPage() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -1101,11 +1121,21 @@ export default function WorkHubPage() {
   const [openTaskPriorityMenuId, setOpenTaskPriorityMenuId] = useState('')
   const [openTaskAssigneeMenuId, setOpenTaskAssigneeMenuId] = useState('')
   const [taskContextMenuState, setTaskContextMenuState] = useState<{ taskId: string; x: number; y: number } | null>(null)
+  const [taskMoveDialogState, setTaskMoveDialogState] = useState<{ taskId: string; workspaceId: string; projectId: string } | null>(null)
+  const [projectMoveDialogState, setProjectMoveDialogState] = useState<{ projectId: string; workspaceId: string; parentProjectId: string } | null>(null)
+  const [pendingTreeInlineRename, setPendingTreeInlineRename] = useState<{ itemType: 'project' | 'document' | 'moodboard'; itemId: string } | null>(null)
+  const [treeItemMoveDialogState, setTreeItemMoveDialogState] = useState<{
+    itemType: 'document' | 'moodboard'
+    itemId: string
+    workspaceId: string
+    projectId: string
+  } | null>(null)
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([])
   const [bulkStatusMenuOpen, setBulkStatusMenuOpen] = useState(false)
   const [bulkAssigneeMenuOpen, setBulkAssigneeMenuOpen] = useState(false)
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false)
   const [taskDeleteConfirmOpen, setTaskDeleteConfirmOpen] = useState(false)
+  const [folderDeleteTarget, setFolderDeleteTarget] = useState<{ id: string; name: string } | null>(null)
   const [attachmentReviews, setAttachmentReviews] = useState<Record<string, WorkhubImageReview>>({})
   const [attachmentViewMode, setAttachmentViewMode] = useState<'thumbnail' | 'list' | 'card'>('thumbnail')
   const [taskAttachmentsCollapsed, setTaskAttachmentsCollapsed] = useState(true)
@@ -1565,6 +1595,7 @@ export default function WorkHubPage() {
   const MAX_EXPANDED_PROJECT_IDS_PER_WORKSPACE = 300
   const MAX_EXPANDED_PROJECT_WORKSPACES = 120
   const expandedProjectSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const expandedProjectInitWorkspaceRef = useRef('')
 
   function readExpandedProjectsByWorkspaceMap() {
     if (!expandedProjectSelectionStorageKey) return {} as Record<string, string[]>
@@ -1980,6 +2011,7 @@ export default function WorkHubPage() {
     selectedProjectTypeOptions,
   } = useWorkhubSelectedProjectContext({
     selectedProject,
+    currentUid,
     visibleProjectById,
     visibleProjectsByParent,
     visibleWorkspaceProjects,
@@ -2121,10 +2153,667 @@ export default function WorkHubPage() {
     () => (taskContextMenuState ? tasks.find((item) => item.id === taskContextMenuState.taskId) || null : null),
     [taskContextMenuState, tasks],
   )
+  const workspaceBrowserWorkspaces = useMemo(
+    () => visibleWorkspaces.map((item) => ({ id: item.id, name: item.name })),
+    [visibleWorkspaces],
+  )
+  const workspaceBrowserProjects = useMemo(
+    () => projects.map((item) => ({ id: item.id, name: item.name, workspaceId: item.workspaceId, parentProjectId: item.parentProjectId || null })),
+    [projects],
+  )
 
   const closeTaskContextMenu = useCallback(() => {
     setTaskContextMenuState(null)
   }, [])
+
+  const openTaskMoveDialog = useCallback((taskId: string) => {
+    const task = tasks.find((item) => item.id === taskId)
+    if (!task) return
+    setTaskContextMenuState(null)
+    setTaskMoveDialogState({ taskId: task.id, workspaceId: task.workspaceId, projectId: task.projectId })
+  }, [tasks])
+
+  const openProjectMoveDialog = useCallback((projectId: string) => {
+    const project = projects.find((item) => item.id === projectId)
+    if (!project) return
+    setProjectMoveDialogState({
+      projectId: project.id,
+      workspaceId: project.workspaceId,
+      parentProjectId: project.parentProjectId || '',
+    })
+  }, [projects])
+
+  const handleMoveProjectToFolder = useCallback(async (workspaceId: string, parentProjectId: string) => {
+    const pendingMove = projectMoveDialogState
+    if (!pendingMove) return
+    if (!parentProjectId) {
+      showToast({ type: 'warning', message: 'No destination folder selected. Choose a folder in the picker and try again.' })
+      return
+    }
+    if (pendingMove.workspaceId !== workspaceId) {
+      showToast({ type: 'warning', message: 'Folder move is currently limited to the current workspace.' })
+      return
+    }
+
+    const source = projects.find((item) => item.id === pendingMove.projectId)
+    if (!source) {
+      setProjectMoveDialogState(null)
+      return
+    }
+    if (source.id === parentProjectId) {
+      showToast({ type: 'warning', message: 'Cannot move a folder into itself.' })
+      return
+    }
+    if ((source.parentProjectId || null) === parentProjectId) {
+      setProjectMoveDialogState(null)
+      showToast({ type: 'warning', message: 'Folder is already in this destination.' })
+      return
+    }
+
+    const projectById = new Map(projects.map((item) => [item.id, item]))
+    let cursor: string | null = parentProjectId
+    while (cursor) {
+      if (cursor === source.id) {
+        showToast({ type: 'warning', message: 'Cannot move a folder into itself.' })
+        return
+      }
+      cursor = projectById.get(cursor)?.parentProjectId || null
+    }
+
+    setBusyKey(`project-move:${source.id}`)
+    try {
+      await updateWorkhubProject(source.id, {
+        parentProjectId,
+        sortOrder: Date.now(),
+      })
+      setProjectMoveDialogState(null)
+      showToast({ type: 'success', message: 'Folder moved.' })
+    } catch {
+      showToast({ type: 'error', message: 'Could not move folder.' })
+    } finally {
+      setBusyKey('')
+    }
+  }, [projectMoveDialogState, projects, showToast])
+
+  const handleMoveTaskToProject = useCallback(async (workspaceId: string, projectId: string) => {
+    const pendingMove = taskMoveDialogState
+    if (!pendingMove) return
+    const task = tasks.find((item) => item.id === pendingMove.taskId)
+    if (!task) {
+      setTaskMoveDialogState(null)
+      return
+    }
+    if (workspaceId !== task.workspaceId) {
+      showToast({ type: 'warning', message: 'Task move is currently limited to the current workspace.' })
+      return
+    }
+    if (task.projectId === projectId) {
+      setTaskMoveDialogState(null)
+      showToast({ type: 'warning', message: 'Task is already in this folder.' })
+      return
+    }
+
+    setBusyKey(`task-move:${task.id}`)
+    try {
+      await updateWorkhubTask(task.id, { projectId, sortOrder: Date.now() })
+      setSelectedProjectId(projectId)
+      setSelectedTaskId(task.id)
+      setActiveSection('tasks')
+      showToast({ type: 'success', message: 'Task moved successfully.' })
+      setTaskMoveDialogState(null)
+    } catch {
+      showToast({ type: 'error', message: 'Could not move task.' })
+    } finally {
+      setBusyKey('')
+    }
+  }, [setSelectedTaskId, showToast, taskMoveDialogState, tasks])
+
+  const handleMoveProjectInTree = useCallback(async (sourceProjectId: string, targetParentProjectId: string | null) => {
+    const source = projects.find((item) => item.id === sourceProjectId)
+    if (!source) return
+    if (source.id === (targetParentProjectId || '')) return
+    if ((source.parentProjectId || null) === (targetParentProjectId || null)) return
+
+    const projectById = new Map(projects.map((item) => [item.id, item]))
+    if (targetParentProjectId) {
+      const target = projectById.get(targetParentProjectId)
+      if (!target) return
+      if (target.workspaceId !== source.workspaceId) {
+        showToast({ type: 'warning', message: 'Projects can only be moved inside the same workspace.' })
+        return
+      }
+
+      let cursor: string | null = targetParentProjectId
+      while (cursor) {
+        if (cursor === source.id) {
+          showToast({ type: 'warning', message: 'Cannot move a folder into itself.' })
+          return
+        }
+        cursor = projectById.get(cursor)?.parentProjectId || null
+      }
+    }
+
+    setBusyKey(`project-move:${source.id}`)
+    try {
+      await updateWorkhubProject(source.id, {
+        parentProjectId: targetParentProjectId || null,
+        sortOrder: Date.now(),
+      })
+      showToast({ type: 'success', message: 'Folder moved.' })
+    } catch {
+      showToast({ type: 'error', message: 'Could not move folder.' })
+    } finally {
+      setBusyKey('')
+    }
+  }, [projects, showToast])
+
+  const handleQuickCreateProjectFromContext = useCallback(async (kind: 'project' | 'folder', parentProjectId = '') => {
+    const localUid = auth.currentUser?.uid || currentUid
+    if (!selectedWorkspaceId || !localUid) return
+    const resolvedParentProjectId = parentProjectId || (selectedProjectId !== 'all' ? selectedProjectId : '')
+    if (kind === 'folder' && !resolvedParentProjectId) {
+      showToast({ type: 'warning', message: 'No parent folder selected. Select a folder, then create a sub-folder.' })
+      return
+    }
+    const defaultName = kind === 'folder' ? 'New folder' : 'New project'
+    const projectColorPool = selectedWorkspaceProjectColorOptions.length > 0 ? selectedWorkspaceProjectColorOptions : PROJECT_COLORS
+
+    if (resolvedParentProjectId) {
+      const projectById = new Map(projects.map((item) => [item.id, item]))
+      const lineage: string[] = []
+      let cursor: string | null = resolvedParentProjectId
+      while (cursor) {
+        lineage.push(cursor)
+        cursor = projectById.get(cursor)?.parentProjectId || null
+      }
+      setExpandedProjectIds((current) => Array.from(new Set([...current, ...lineage])))
+    }
+
+    setBusyKey(`project-create:${kind}`)
+    try {
+      const projectId = await createWorkhubProject({
+        workspaceId: selectedWorkspaceId,
+        parentProjectId: resolvedParentProjectId || null,
+        intent: 'project',
+        name: defaultName,
+        description: '',
+        color: projectColorPool[(Math.floor(Math.random() * projectColorPool.length))],
+        visibility: 'workspace',
+        memberUids: [],
+        storageMethod: 'firebase',
+        createdBy: localUid,
+      })
+
+      await createWorkhubActivity({
+        workspaceId: selectedWorkspaceId,
+        actorUid: localUid,
+        entityType: 'project',
+        entityId: projectId,
+        action: 'create',
+        message: `Created ${kind} ${defaultName}`,
+      })
+
+      setSelectedProjectId(projectId)
+      setSelectedNoteProjectId(projectId)
+      setSelectedDocumentId('')
+      setSelectedMoodBoardId('')
+      setSelectedTaskId('')
+      setActiveSection('tasks')
+      setProjectsGroupExpanded(true)
+      setSidebarCollapsed(false)
+      setPendingTreeInlineRename({ itemType: 'project', itemId: projectId })
+      showToast({ type: 'success', message: `${kind === 'folder' ? 'Folder' : 'Project'} created.` })
+    } catch {
+      showToast({ type: 'error', message: `Could not create ${kind}.` })
+    } finally {
+      setBusyKey('')
+    }
+  }, [currentUid, projects, selectedProjectId, selectedWorkspaceId, selectedWorkspaceProjectColorOptions, showToast])
+
+  const handleQuickCreateDocumentLikeFromContext = useCallback(async (type: 'document' | 'note', projectId = '') => {
+    const localUid = auth.currentUser?.uid || currentUid
+    if (!selectedWorkspaceId || !localUid) return
+
+    const resolvedProjectId = projectId || (selectedProjectId !== 'all' ? selectedProjectId : '')
+    if (!resolvedProjectId) {
+      showToast({ type: 'warning', message: 'No folder selected. Right-click a folder in the tree and try again.' })
+      return
+    }
+
+    const targetProject = projects.find((item) => item.id === resolvedProjectId) || null
+
+    const projectById = new Map(projects.map((item) => [item.id, item]))
+    const lineage: string[] = []
+    let cursor: string | null = resolvedProjectId
+    while (cursor) {
+      lineage.push(cursor)
+      cursor = projectById.get(cursor)?.parentProjectId || null
+    }
+    setExpandedProjectIds((current) => Array.from(new Set([...current, ...lineage])))
+
+    const visibility = targetProject?.visibility || 'workspace'
+    const memberUids = visibility === 'restricted'
+      ? normalizeMemberUids(targetProject?.memberUids?.length ? targetProject.memberUids : [localUid])
+      : []
+    const notifyUids = normalizeMemberUids(memberUids).filter((uid) => uid !== localUid)
+    const notifyMode = notifyUids.length > 0 ? 'selected' : 'all'
+    const defaultTitle = type === 'note' ? 'New note' : 'New document'
+
+    setBusyKey(`${type}:create:menu`)
+    try {
+      const documentId = await createWorkhubDocument({
+        workspaceId: selectedWorkspaceId,
+        projectId: resolvedProjectId,
+        type,
+        title: defaultTitle,
+        body: '',
+        ...(type === 'document' ? { tabs: buildQuickDocumentTabs('') } : {}),
+        visibility,
+        memberUids,
+        notifyMode,
+        notifyUids,
+        createdBy: localUid,
+      })
+
+      await createWorkhubActivity({
+        workspaceId: selectedWorkspaceId,
+        actorUid: localUid,
+        entityType: 'document',
+        entityId: documentId,
+        action: 'create',
+        message: `Created ${type} ${defaultTitle}`,
+        visibility,
+        memberUids,
+      })
+
+      setSelectedProjectId(resolvedProjectId)
+      setSelectedNoteProjectId(resolvedProjectId)
+      setSelectedDocumentId(documentId)
+      setSelectedMoodBoardId('')
+      setSelectedTaskId('')
+      setActiveSection('notes')
+      setPendingTreeInlineRename({ itemType: 'document', itemId: documentId })
+      showToast({ type: 'success', message: `${type === 'note' ? 'Note' : 'Document'} created.` })
+    } catch {
+      showToast({ type: 'error', message: `Could not create ${type}.` })
+    } finally {
+      setBusyKey('')
+    }
+  }, [currentUid, projects, selectedProjectId, selectedWorkspaceId, showToast])
+
+  const handleDeleteProjectFromTree = useCallback(async (projectId: string) => {
+    const project = projects.find((item) => item.id === projectId)
+    if (!project) return
+
+    const hasSubProjects = projects.some((item) => item.parentProjectId === projectId)
+    const hasDocuments = documents.some((item) => item.projectId === projectId)
+    const hasTasks = tasks.some((item) => item.projectId === projectId)
+    const hasMoodBoards = workspaceMoodBoards.some((item) => item.entityType === 'project' && item.entityId === projectId)
+    if (hasSubProjects || hasDocuments || hasTasks || hasMoodBoards) {
+      showToast({ type: 'warning', message: 'Folder is not empty. Move or delete its nested items before deleting it.' })
+      return
+    }
+    setFolderDeleteTarget({ id: projectId, name: (project.name || '').trim() || 'Untitled folder' })
+  }, [documents, projects, selectedProjectId, showToast, tasks, workspaceMoodBoards])
+
+  const handleCancelFolderDelete = useCallback(() => {
+    setFolderDeleteTarget(null)
+  }, [])
+
+  const handleConfirmFolderDelete = useCallback(async () => {
+    if (!folderDeleteTarget) return
+    const projectId = folderDeleteTarget.id
+
+    setBusyKey(`project-delete:${projectId}`)
+    try {
+      await deleteWorkhubProject(projectId)
+      if (selectedProjectId === projectId) {
+        setSelectedProjectId('all')
+        setSelectedNoteProjectId('')
+        setSelectedDocumentId('')
+        setSelectedMoodBoardId('')
+        setSelectedTaskId('')
+        setActiveSection('dashboard')
+      }
+      setFolderDeleteTarget(null)
+      showToast({ type: 'success', message: 'Folder deleted.' })
+    } catch {
+      showToast({ type: 'error', message: 'Could not delete folder.' })
+    } finally {
+      setBusyKey('')
+    }
+  }, [folderDeleteTarget, selectedProjectId, showToast])
+
+  const handleMoveDocumentInTree = useCallback(async (documentId: string, targetProjectId: string) => {
+    const document = documents.find((item) => item.id === documentId)
+    if (!document || !targetProjectId) return
+    if (document.projectId === targetProjectId) return
+
+    setBusyKey(`document-move:${document.id}`)
+    try {
+      await updateWorkhubDocument(document.id, {
+        projectId: targetProjectId,
+        sortOrder: Date.now(),
+      })
+      showToast({ type: 'success', message: 'Document moved.' })
+    } catch {
+      showToast({ type: 'error', message: 'Could not move document.' })
+    } finally {
+      setBusyKey('')
+    }
+  }, [documents, showToast])
+
+  const handleReorderDocumentInTree = useCallback(async (sourceDocumentId: string, targetDocumentId: string, projectId: string) => {
+    if (!sourceDocumentId || !targetDocumentId || sourceDocumentId === targetDocumentId) return
+    const source = documents.find((item) => item.id === sourceDocumentId)
+    const target = documents.find((item) => item.id === targetDocumentId)
+    if (!source || !target || !projectId) return
+
+    const nextSortOrder = getWorkhubEntitySortOrderValue(target.sortOrder, target.createdAt, target.updatedAt) - 0.5
+    setBusyKey(`document-reorder:${sourceDocumentId}`)
+    try {
+      await updateWorkhubDocument(sourceDocumentId, {
+        projectId,
+        sortOrder: nextSortOrder,
+      })
+      showToast({ type: 'success', message: 'Document reordered.' })
+    } catch {
+      showToast({ type: 'error', message: 'Could not reorder document.' })
+    } finally {
+      setBusyKey('')
+    }
+  }, [documents, showToast])
+
+  const handleMoveMoodBoardInTree = useCallback(async (boardId: string, targetProjectId: string) => {
+    const board = workspaceMoodBoards.find((item) => item.id === boardId)
+    if (!board || !targetProjectId) return
+    if (board.entityId === targetProjectId) return
+    if (board.entityType !== 'project') {
+      showToast({ type: 'warning', message: 'Only project mood boards can be moved in the tree.' })
+      return
+    }
+
+    setBusyKey(`moodboard-move:${board.id}`)
+    try {
+      await updateWorkhubMoodBoard(board.id, {
+        entityId: targetProjectId,
+        sortOrder: Date.now(),
+      })
+      showToast({ type: 'success', message: 'Mood board moved.' })
+    } catch {
+      showToast({ type: 'error', message: 'Could not move mood board.' })
+    } finally {
+      setBusyKey('')
+    }
+  }, [showToast, workspaceMoodBoards])
+
+  const handleReorderMoodBoardInTree = useCallback(async (sourceBoardId: string, targetBoardId: string, projectId: string) => {
+    if (!sourceBoardId || !targetBoardId || sourceBoardId === targetBoardId) return
+    const source = workspaceMoodBoards.find((item) => item.id === sourceBoardId)
+    const target = workspaceMoodBoards.find((item) => item.id === targetBoardId)
+    if (!source || !target || !projectId) return
+    if (source.entityType !== 'project' || target.entityType !== 'project') return
+
+    const nextSortOrder = getWorkhubEntitySortOrderValue(target.sortOrder, target.createdAt, target.updatedAt) - 0.5
+    setBusyKey(`moodboard-reorder:${sourceBoardId}`)
+    try {
+      await updateWorkhubMoodBoard(sourceBoardId, {
+        entityId: projectId,
+        sortOrder: nextSortOrder,
+      })
+      showToast({ type: 'success', message: 'Mood board reordered.' })
+    } catch {
+      showToast({ type: 'error', message: 'Could not reorder mood board.' })
+    } finally {
+      setBusyKey('')
+    }
+  }, [showToast, workspaceMoodBoards])
+
+  const openTreeItemMoveDialog = useCallback((itemType: 'document' | 'moodboard', itemId: string) => {
+    if (itemType === 'document') {
+      const document = documents.find((item) => item.id === itemId)
+      if (!document) return
+      const initialProjectId = document.projectId || (selectedProjectId !== 'all' ? selectedProjectId : '')
+      if (!initialProjectId) {
+        showToast({ type: 'warning', message: 'Select a destination folder first.' })
+        return
+      }
+      setTreeItemMoveDialogState({
+        itemType,
+        itemId,
+        workspaceId: document.workspaceId,
+        projectId: initialProjectId,
+      })
+      return
+    }
+
+    const board = workspaceMoodBoards.find((item) => item.id === itemId)
+    if (!board) return
+    const initialProjectId = board.entityType === 'project'
+      ? board.entityId
+      : (selectedProjectId !== 'all' ? selectedProjectId : '')
+    if (!initialProjectId) {
+      showToast({ type: 'warning', message: 'Select a destination folder first.' })
+      return
+    }
+    setTreeItemMoveDialogState({
+      itemType,
+      itemId,
+      workspaceId: board.workspaceId,
+      projectId: initialProjectId,
+    })
+  }, [documents, selectedProjectId, showToast, workspaceMoodBoards])
+
+  const handleMoveTreeItemToProject = useCallback(async (workspaceId: string, projectId: string) => {
+    const pendingMove = treeItemMoveDialogState
+    if (!pendingMove) return
+    if (!projectId) return
+    if (pendingMove.workspaceId !== workspaceId) {
+      showToast({ type: 'warning', message: 'Move is currently limited to the current workspace.' })
+      return
+    }
+
+    if (pendingMove.itemType === 'document') {
+      await handleMoveDocumentInTree(pendingMove.itemId, projectId)
+    } else {
+      await handleMoveMoodBoardInTree(pendingMove.itemId, projectId)
+    }
+    setTreeItemMoveDialogState(null)
+  }, [handleMoveDocumentInTree, handleMoveMoodBoardInTree, showToast, treeItemMoveDialogState])
+
+  const handleRenameProjectFromTree = useCallback(async (projectId: string, nextName?: string) => {
+    const project = projects.find((item) => item.id === projectId)
+    if (!project) return
+    const currentName = (project.name || '').trim() || 'Untitled folder'
+    const normalizedName = (nextName || '').trim()
+    if (!normalizedName || normalizedName === currentName) return
+
+    setBusyKey(`project-rename:${projectId}`)
+    try {
+      await updateWorkhubProject(projectId, { name: normalizedName })
+      showToast({ type: 'success', message: 'Folder renamed.' })
+    } catch {
+      showToast({ type: 'error', message: 'Could not rename folder.' })
+    } finally {
+      setBusyKey('')
+    }
+  }, [projects, showToast])
+
+  const handleRenameDocumentFromTree = useCallback(async (documentId: string, nextTitle?: string) => {
+    const document = documents.find((item) => item.id === documentId)
+    if (!document) return
+    const currentTitle = (document.title || '').trim() || 'Untitled document'
+    const normalizedTitle = (nextTitle || '').trim()
+    if (!normalizedTitle || normalizedTitle === currentTitle) return
+
+    setBusyKey(`document-rename:${documentId}`)
+    try {
+      await updateWorkhubDocument(documentId, { title: normalizedTitle })
+      showToast({ type: 'success', message: 'Document renamed.' })
+    } catch {
+      showToast({ type: 'error', message: 'Could not rename document.' })
+    } finally {
+      setBusyKey('')
+    }
+  }, [documents, showToast])
+
+  const handleDuplicateDocumentFromTree = useCallback(async (documentId: string) => {
+    const document = documents.find((item) => item.id === documentId)
+    const localUid = auth.currentUser?.uid || currentUid
+    if (!document || !localUid) return
+
+    const duplicatedTitle = `${(document.title || 'Untitled document').trim() || 'Untitled document'} (Copy)`
+    setBusyKey(`document-duplicate:${documentId}`)
+    try {
+      const duplicatedId = await createWorkhubDocument({
+        workspaceId: document.workspaceId,
+        projectId: document.projectId || null,
+        type: document.type || 'document',
+        icon: document.icon || '',
+        title: duplicatedTitle,
+        body: document.body || '',
+        tabs: Array.isArray(document.tabs)
+          ? document.tabs.map((tab) => ({
+            id: tab.id,
+            title: tab.title,
+            ...(tab.icon ? { icon: tab.icon } : {}),
+            body: tab.body || '',
+          }))
+          : [],
+        masterPage: document.masterPage,
+        visibility: document.visibility || 'workspace',
+        memberUids: Array.isArray(document.memberUids) ? document.memberUids : [],
+        notifyMode: document.notifyMode || 'all',
+        notifyUids: Array.isArray(document.notifyUids) ? document.notifyUids : [],
+        createdBy: localUid,
+      })
+
+      setSelectedWorkspaceId(document.workspaceId)
+      setSelectedProjectId(document.projectId || 'all')
+      setSelectedNoteProjectId(document.projectId || '')
+      setSelectedDocumentId(duplicatedId)
+      setSelectedMoodBoardId('')
+      setSelectedTaskId('')
+      setActiveSection('notes')
+      showToast({ type: 'success', message: 'Document duplicated.' })
+    } catch {
+      showToast({ type: 'error', message: 'Could not duplicate document.' })
+    } finally {
+      setBusyKey('')
+    }
+  }, [currentUid, documents, showToast])
+
+  const handleDeleteDocumentFromTree = useCallback(async (documentId: string) => {
+    const document = documents.find((item) => item.id === documentId)
+    if (!document) return
+    if (!window.confirm(`Delete "${(document.title || 'Untitled document').trim() || 'Untitled document'}"?`)) return
+
+    setBusyKey(`document-delete:${documentId}`)
+    try {
+      await deleteWorkhubDocument(documentId)
+      if (selectedDocumentId === documentId) {
+        setSelectedDocumentId('')
+        if (activeSection === 'notes') {
+          setActiveSection('tasks')
+        }
+      }
+      showToast({ type: 'success', message: 'Document deleted.' })
+    } catch {
+      showToast({ type: 'error', message: 'Could not delete document.' })
+    } finally {
+      setBusyKey('')
+    }
+  }, [activeSection, documents, selectedDocumentId, showToast])
+
+  const handleRenameMoodBoardFromTree = useCallback(async (boardId: string, nextTitle?: string) => {
+    const board = workspaceMoodBoards.find((item) => item.id === boardId)
+    if (!board) return
+    const currentTitle = (board.title || '').trim() || 'Mood board'
+    const normalizedTitle = (nextTitle || '').trim()
+    if (!normalizedTitle || normalizedTitle === currentTitle) return
+
+    setBusyKey(`moodboard-rename:${boardId}`)
+    try {
+      await updateWorkhubMoodBoardTitle(boardId, normalizedTitle)
+      showToast({ type: 'success', message: 'Mood board renamed.' })
+    } catch {
+      showToast({ type: 'error', message: 'Could not rename mood board.' })
+    } finally {
+      setBusyKey('')
+    }
+  }, [showToast, workspaceMoodBoards])
+
+  const handleDuplicateMoodBoardFromTree = useCallback(async (boardId: string) => {
+    const board = workspaceMoodBoards.find((item) => item.id === boardId)
+    const localUid = auth.currentUser?.uid || currentUid
+    if (!board || !localUid) return
+
+    const duplicatedTitle = `${(board.title || 'Mood board').trim() || 'Mood board'} (Copy)`
+    setBusyKey(`moodboard-duplicate:${boardId}`)
+    try {
+      const duplicatedId = await createWorkhubMoodBoard({
+        workspaceId: board.workspaceId,
+        entityType: board.entityType,
+        entityId: board.entityId,
+        title: duplicatedTitle,
+        panelVariant: resolveMoodboardPanelMode(board.panelVariant),
+        createdBy: localUid,
+      })
+
+      await updateWorkhubMoodBoardFlow(
+        duplicatedId,
+        board.flowNodes || [],
+        board.flowEdges || [],
+        board.flowViewport,
+        board.flowSettings,
+      )
+      await updateWorkhubMoodBoardImages(duplicatedId, board.images || [])
+      if (Array.isArray(board.tabs) && board.tabs.length > 0) {
+        await updateWorkhubMoodBoardTabs(duplicatedId, board.tabs, board.activeTabId || board.tabs[0].id)
+      }
+      if (Array.isArray(board.checklist)) {
+        await updateWorkhubMoodBoardChecklist(duplicatedId, board.checklist)
+      }
+      if (board.prosCons) {
+        await updateWorkhubMoodBoardProsCons(duplicatedId, board.prosCons)
+      }
+
+      setSelectedWorkspaceId(board.workspaceId)
+      setSelectedProjectId(board.entityType === 'project' ? board.entityId : 'all')
+      setSelectedNoteProjectId(board.entityType === 'project' ? board.entityId : '')
+      setSelectedMoodBoardId(duplicatedId)
+      setSelectedDocumentId('')
+      setSelectedTaskId('')
+      setActiveSection('moodboard')
+      showToast({ type: 'success', message: 'Mood board duplicated.' })
+    } catch {
+      showToast({ type: 'error', message: 'Could not duplicate mood board.' })
+    } finally {
+      setBusyKey('')
+    }
+  }, [currentUid, showToast, workspaceMoodBoards])
+
+  const handleDeleteMoodBoardFromTree = useCallback(async (boardId: string) => {
+    const board = workspaceMoodBoards.find((item) => item.id === boardId)
+    if (!board) return
+    if (!window.confirm(`Delete "${(board.title || 'Mood board').trim() || 'Mood board'}"?`)) return
+
+    setBusyKey(`moodboard-delete:${boardId}`)
+    try {
+      await deleteWorkhubMoodBoard(boardId)
+      if (selectedMoodBoardId === boardId) {
+        setSelectedMoodBoardId('')
+        if (activeSection === 'moodboard') {
+          setActiveSection('tasks')
+        }
+      }
+      showToast({ type: 'success', message: 'Mood board deleted.' })
+    } catch {
+      showToast({ type: 'error', message: 'Could not delete mood board.' })
+    } finally {
+      setBusyKey('')
+    }
+  }, [activeSection, selectedMoodBoardId, showToast, workspaceMoodBoards])
 
   const copyTaskDeepLink = useCallback(async () => {
     if (!selectedTaskForContextMenu) return
@@ -3364,9 +4053,9 @@ export default function WorkHubPage() {
     })
     Object.values(grouped).forEach((items) => {
       items.sort((left, right) => {
-        const leftCreated = getUnknownTimeValue(left.createdAt || left.updatedAt)
-        const rightCreated = getUnknownTimeValue(right.createdAt || right.updatedAt)
-        if (leftCreated !== rightCreated) return leftCreated - rightCreated
+        const leftSortOrder = getWorkhubEntitySortOrderValue(left.sortOrder, left.createdAt, left.updatedAt)
+        const rightSortOrder = getWorkhubEntitySortOrderValue(right.sortOrder, right.createdAt, right.updatedAt)
+        if (leftSortOrder !== rightSortOrder) return leftSortOrder - rightSortOrder
         const titleDelta = (left.title || '').localeCompare(right.title || '')
         if (titleDelta !== 0) return titleDelta
         return left.id.localeCompare(right.id)
@@ -3383,9 +4072,9 @@ export default function WorkHubPage() {
     })
     Object.values(grouped).forEach((items) => {
       items.sort((left, right) => {
-        const leftCreated = getUnknownTimeValue(left.createdAt || left.updatedAt)
-        const rightCreated = getUnknownTimeValue(right.createdAt || right.updatedAt)
-        if (leftCreated !== rightCreated) return leftCreated - rightCreated
+        const leftSortOrder = getWorkhubEntitySortOrderValue(left.sortOrder, left.createdAt, left.updatedAt)
+        const rightSortOrder = getWorkhubEntitySortOrderValue(right.sortOrder, right.createdAt, right.updatedAt)
+        if (leftSortOrder !== rightSortOrder) return leftSortOrder - rightSortOrder
         const titleDelta = (left.title || '').localeCompare(right.title || '')
         if (titleDelta !== 0) return titleDelta
         return left.id.localeCompare(right.id)
@@ -4030,8 +4719,6 @@ export default function WorkHubPage() {
     openDocumentCreateDialog,
     closeDocumentCreateDialog,
     handleCreateDocument,
-    createDocumentQuick,
-    createNoteQuick,
   } = useWorkhubDocumentCreation({
     currentUserUid: currentUid,
     selectedWorkspaceId,
@@ -4475,6 +5162,20 @@ export default function WorkHubPage() {
     prevActiveSectionRef.current = activeSection
     const sectionChangedThisRender = prevSection !== activeSection
 
+    // If the URL explicitly targets a section for this workspace, never let
+    // stale in-memory section state overwrite it while URL->state hydration is
+    // still catching up. This guard is navigation-type agnostic so it also
+    // covers non-POP race conditions that can bounce between /s/tasks and root.
+    if (
+      selectedWorkspaceParam
+      && selectedWorkspaceId === selectedWorkspaceParam
+      && !!selectedSectionParam
+      && activeSection !== selectedSectionParam
+      && !sectionChangedThisRender
+    ) {
+      return
+    }
+
     // If the URL is pointing at a moodboard entity but boards haven't loaded from
     // Firestore yet, hold off. Without this guard the state→URL sync sees
     // activeSection='dashboard' (URL→state hasn't fired yet because workspaceMoodBoards
@@ -4816,12 +5517,22 @@ export default function WorkHubPage() {
 
   useEffect(() => {
     if (!selectedWorkspaceId) {
+      expandedProjectInitWorkspaceRef.current = ''
       setExpandedProjectIds([])
+      return
+    }
+
+    if (expandedProjectInitWorkspaceRef.current === selectedWorkspaceId) {
+      return
+    }
+
+    if (!projectsFeedHydrated) {
       return
     }
 
     if (visibleProjectTree.length === 0) {
       setExpandedProjectIds([])
+      expandedProjectInitWorkspaceRef.current = selectedWorkspaceId
       return
     }
 
@@ -4831,6 +5542,7 @@ export default function WorkHubPage() {
       const visibleProjectIdSet = new Set(visibleWorkspaceProjects.map((item) => item.id))
       const nextExpandedIds = savedExpandedIds.filter((id) => visibleProjectIdSet.has(id))
       setExpandedProjectIds(nextExpandedIds)
+      expandedProjectInitWorkspaceRef.current = selectedWorkspaceId
       return
     }
 
@@ -4838,7 +5550,8 @@ export default function WorkHubPage() {
       .map((item) => item.id)
       .filter((id) => !defaultCollapsedClosedRootIds.includes(id))
     setExpandedProjectIds(defaultExpandedIds)
-  }, [defaultCollapsedClosedRootIds, expandedProjectSelectionStorageKey, selectedWorkspaceId, visibleProjectTree, visibleWorkspaceProjects])
+    expandedProjectInitWorkspaceRef.current = selectedWorkspaceId
+  }, [defaultCollapsedClosedRootIds, projectsFeedHydrated, selectedWorkspaceId, visibleProjectTree, visibleWorkspaceProjects])
 
   useEffect(() => {
     if (!expandedProjectSelectionStorageKey || !selectedWorkspaceId) return
@@ -6856,23 +7569,30 @@ export default function WorkHubPage() {
 
   async function handleQuickTaskViewModeChange(nextMode: 'list' | 'cards' | 'grid' | 'timeline') {
     const targetProject = quickTaskViewTargetProject
-    if (!auth.currentUser || !selectedWorkspaceId || !targetProject) return
+    const localUid = auth.currentUser?.uid || currentUid
+    if (!localUid || !selectedWorkspaceId || !targetProject) return
 
-    if (taskItemDisplayMode === nextMode && (targetProject.taskItemDisplayMode || 'inherit') === nextMode) return
+    if ((targetProject.userPreferences?.[localUid]?.taskItemDisplayMode || taskItemDisplayMode) === nextMode) return
 
     const previousProjectsSnapshot = projects
     setProjects((current) => current.map((item) => (
       item.id === targetProject.id
-        ? { ...item, taskItemDisplayMode: nextMode }
+        ? {
+          ...item,
+          userPreferences: {
+            ...(item.userPreferences || {}),
+            [localUid]: {
+              ...(item.userPreferences?.[localUid] || {}),
+              taskItemDisplayMode: nextMode,
+            },
+          },
+        }
         : item
     )))
     setBusyKey(`task-view:${targetProject.id}`)
 
     try {
-      await updateWorkhubProject(targetProject.id, { taskItemDisplayMode: nextMode })
-      if (projectAccessDialogId === targetProject.id) {
-        setSettingsProjectTaskItemDisplayMode(nextMode)
-      }
+      await updateWorkhubProjectUserPreference(targetProject.id, localUid, { taskItemDisplayMode: nextMode })
     } catch (error) {
       setProjects(previousProjectsSnapshot)
       const message = error instanceof Error ? error.message : 'Could not change task view mode.'
@@ -6881,6 +7601,47 @@ export default function WorkHubPage() {
       setBusyKey('')
     }
   }
+
+  useEffect(() => {
+    const handleWindowKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat || event.key !== 'F2') return
+
+      const target = event.target as HTMLElement | null
+      if (target) {
+        const tagName = target.tagName
+        if (
+          target.isContentEditable
+          || tagName === 'INPUT'
+          || tagName === 'TEXTAREA'
+          || tagName === 'SELECT'
+        ) {
+          return
+        }
+      }
+
+      if (selectedDocumentId) {
+        event.preventDefault()
+        setPendingTreeInlineRename({ itemType: 'document', itemId: selectedDocumentId })
+        return
+      }
+
+      if (selectedMoodBoardId) {
+        event.preventDefault()
+        setPendingTreeInlineRename({ itemType: 'moodboard', itemId: selectedMoodBoardId })
+        return
+      }
+
+      if (selectedProjectId && selectedProjectId !== 'all') {
+        event.preventDefault()
+        setPendingTreeInlineRename({ itemType: 'project', itemId: selectedProjectId })
+      }
+    }
+
+    window.addEventListener('keydown', handleWindowKeyDown)
+    return () => {
+      window.removeEventListener('keydown', handleWindowKeyDown)
+    }
+  }, [selectedDocumentId, selectedMoodBoardId, selectedProjectId])
 
   async function handleEnsureDriveFolder() {
     if (!selectedAccessProject) return
@@ -7923,6 +8684,7 @@ export default function WorkHubPage() {
     setDropTargetKey,
     handleTaskReorder: stableHandleTaskReorder,
     closeTaskContextMenu,
+    openTaskMoveDialog,
     copyTaskDeepLink,
     copyTaskUniqueToken,
     handleQuickAddTask: stableHandleQuickAddTask,
@@ -8095,7 +8857,6 @@ export default function WorkHubPage() {
                   className={`workhub-mobile-workspace-toggle${mobileWorkspacePanelOpen ? ' is-active' : ''}`}
                   onClick={() => setMobileWorkspacePanelOpen((current) => !current)}
                   aria-label="Toggle workspace list"
-                  aria-expanded={mobileWorkspacePanelOpen}
                 >
                   <span aria-hidden="true">☰</span>
                   <span className="workhub-mobile-context-label">
@@ -8114,6 +8875,7 @@ export default function WorkHubPage() {
                           key={item.id}
                           type="button"
                           className={`workhub-tab workhub-workspace-tab${selectedWorkspaceId === item.id ? ' is-active' : ''}`}
+                          role="tab"
                           onClick={() => {
                             if (item.id !== selectedWorkspaceId) {
                               navigateToRememberedWorkspaceRoute(item.id)
@@ -8379,6 +9141,8 @@ export default function WorkHubPage() {
                   <select
                     id="workhub-mobile-workspace-select"
                     className="workhub-mobile-workspace-picker-select"
+                    aria-label="Select workspace"
+                    title="Select workspace"
                     value={selectedWorkspaceId}
                     onChange={(event) => handleMobileWorkspaceChange(event.target.value)}
                   >
@@ -8479,7 +9243,25 @@ export default function WorkHubPage() {
                         }}
                         onToggleExpansion={toggleProjectExpansion}
                         onOpenActionMenu={handleProjectActionMenu}
+                        onOpenWorkspaceActionMenu={(event) => handleProjectActionMenu('__workspace__', event)}
+                        onQuickAddTask={(projectId) => focusQuickAddInline(projectId)}
                         onOpenSettings={openProjectSettingsDialog}
+                        onRenameProject={handleRenameProjectFromTree}
+                        onMoveProject={handleMoveProjectInTree}
+                        onMoveDocument={handleMoveDocumentInTree}
+                        onMoveMoodBoard={handleMoveMoodBoardInTree}
+                        onReorderDocument={handleReorderDocumentInTree}
+                        onReorderMoodBoard={handleReorderMoodBoardInTree}
+                        onRenameDocument={handleRenameDocumentFromTree}
+                        onDuplicateDocument={handleDuplicateDocumentFromTree}
+                        onDeleteDocument={handleDeleteDocumentFromTree}
+                        onMoveDocumentViaDialog={(documentId) => openTreeItemMoveDialog('document', documentId)}
+                        onRenameMoodBoard={handleRenameMoodBoardFromTree}
+                        onDuplicateMoodBoard={handleDuplicateMoodBoardFromTree}
+                        onDeleteMoodBoard={handleDeleteMoodBoardFromTree}
+                        onMoveMoodBoardViaDialog={(boardId) => openTreeItemMoveDialog('moodboard', boardId)}
+                        pendingInlineRename={pendingTreeInlineRename}
+                        onConsumePendingInlineRename={() => setPendingTreeInlineRename(null)}
                         projectColorMeanings={selectedWorkspaceProjectColorMeanings}
                       />
                     ) : (
@@ -8623,7 +9405,25 @@ export default function WorkHubPage() {
                                     onSelectMoodBoard={() => {}}
                                     onToggleExpansion={toggleProjectExpansion}
                                     onOpenActionMenu={handleProjectActionMenu}
+                                    onOpenWorkspaceActionMenu={(event) => handleProjectActionMenu('__workspace__', event)}
+                                    onQuickAddTask={(projectId) => focusQuickAddInline(projectId)}
                                     onOpenSettings={openProjectSettingsDialog}
+                                    onRenameProject={handleRenameProjectFromTree}
+                                    onMoveProject={handleMoveProjectInTree}
+                                    onMoveDocument={handleMoveDocumentInTree}
+                                    onMoveMoodBoard={handleMoveMoodBoardInTree}
+                                    onReorderDocument={handleReorderDocumentInTree}
+                                    onReorderMoodBoard={handleReorderMoodBoardInTree}
+                                    onRenameDocument={handleRenameDocumentFromTree}
+                                    onDuplicateDocument={handleDuplicateDocumentFromTree}
+                                    onDeleteDocument={handleDeleteDocumentFromTree}
+                                    onMoveDocumentViaDialog={(documentId) => openTreeItemMoveDialog('document', documentId)}
+                                    onRenameMoodBoard={handleRenameMoodBoardFromTree}
+                                    onDuplicateMoodBoard={handleDuplicateMoodBoardFromTree}
+                                    onDeleteMoodBoard={handleDeleteMoodBoardFromTree}
+                                    onMoveMoodBoardViaDialog={(boardId) => openTreeItemMoveDialog('moodboard', boardId)}
+                                    pendingInlineRename={pendingTreeInlineRename}
+                                    onConsumePendingInlineRename={() => setPendingTreeInlineRename(null)}
                                     projectColorMeanings={resolveProjectColorMeanings(workspaceTemplateId, workspace.projectColorMeanings)}
                                   />
                                 ) : (
@@ -8675,7 +9475,25 @@ export default function WorkHubPage() {
                                 onSelectMoodBoard={handleSelectMoodBoardTreeItem}
                                 onToggleExpansion={toggleProjectExpansion}
                                 onOpenActionMenu={handleProjectActionMenu}
+                                onOpenWorkspaceActionMenu={(event) => handleProjectActionMenu('__workspace__', event)}
+                                onQuickAddTask={(projectId) => focusQuickAddInline(projectId)}
                                 onOpenSettings={openProjectSettingsDialog}
+                                onRenameProject={handleRenameProjectFromTree}
+                                onMoveProject={handleMoveProjectInTree}
+                                onMoveDocument={handleMoveDocumentInTree}
+                                onMoveMoodBoard={handleMoveMoodBoardInTree}
+                                onReorderDocument={handleReorderDocumentInTree}
+                                onReorderMoodBoard={handleReorderMoodBoardInTree}
+                                onRenameDocument={handleRenameDocumentFromTree}
+                                onDuplicateDocument={handleDuplicateDocumentFromTree}
+                                onDeleteDocument={handleDeleteDocumentFromTree}
+                                onMoveDocumentViaDialog={(documentId) => openTreeItemMoveDialog('document', documentId)}
+                                onRenameMoodBoard={handleRenameMoodBoardFromTree}
+                                onDuplicateMoodBoard={handleDuplicateMoodBoardFromTree}
+                                onDeleteMoodBoard={handleDeleteMoodBoardFromTree}
+                                onMoveMoodBoardViaDialog={(boardId) => openTreeItemMoveDialog('moodboard', boardId)}
+                                pendingInlineRename={pendingTreeInlineRename}
+                                onConsumePendingInlineRename={() => setPendingTreeInlineRename(null)}
                                 projectColorMeanings={selectedWorkspaceProjectColorMeanings}
                               />
                             </div>
@@ -8708,7 +9526,25 @@ export default function WorkHubPage() {
                             onSelectMoodBoard={handleSelectMoodBoardTreeItem}
                             onToggleExpansion={toggleProjectExpansion}
                             onOpenActionMenu={handleProjectActionMenu}
+                            onOpenWorkspaceActionMenu={(event) => handleProjectActionMenu('__workspace__', event)}
+                            onQuickAddTask={(projectId) => focusQuickAddInline(projectId)}
                             onOpenSettings={openProjectSettingsDialog}
+                            onRenameProject={handleRenameProjectFromTree}
+                            onMoveProject={handleMoveProjectInTree}
+                            onMoveDocument={handleMoveDocumentInTree}
+                            onMoveMoodBoard={handleMoveMoodBoardInTree}
+                            onReorderDocument={handleReorderDocumentInTree}
+                            onReorderMoodBoard={handleReorderMoodBoardInTree}
+                            onRenameDocument={handleRenameDocumentFromTree}
+                            onDuplicateDocument={handleDuplicateDocumentFromTree}
+                            onDeleteDocument={handleDeleteDocumentFromTree}
+                            onMoveDocumentViaDialog={(documentId) => openTreeItemMoveDialog('document', documentId)}
+                            onRenameMoodBoard={handleRenameMoodBoardFromTree}
+                            onDuplicateMoodBoard={handleDuplicateMoodBoardFromTree}
+                            onDeleteMoodBoard={handleDeleteMoodBoardFromTree}
+                            onMoveMoodBoardViaDialog={(boardId) => openTreeItemMoveDialog('moodboard', boardId)}
+                            pendingInlineRename={pendingTreeInlineRename}
+                            onConsumePendingInlineRename={() => setPendingTreeInlineRename(null)}
                             projectColorMeanings={selectedWorkspaceProjectColorMeanings}
                           />
                         </div>
@@ -8736,7 +9572,25 @@ export default function WorkHubPage() {
                       onSelectMoodBoard={handleSelectMoodBoardTreeItem}
                       onToggleExpansion={toggleProjectExpansion}
                       onOpenActionMenu={handleProjectActionMenu}
+                      onOpenWorkspaceActionMenu={(event) => handleProjectActionMenu('__workspace__', event)}
+                      onQuickAddTask={(projectId) => focusQuickAddInline(projectId)}
                       onOpenSettings={openProjectSettingsDialog}
+                      onRenameProject={handleRenameProjectFromTree}
+                      onMoveProject={handleMoveProjectInTree}
+                      onMoveDocument={handleMoveDocumentInTree}
+                      onMoveMoodBoard={handleMoveMoodBoardInTree}
+                      onReorderDocument={handleReorderDocumentInTree}
+                      onReorderMoodBoard={handleReorderMoodBoardInTree}
+                      onRenameDocument={handleRenameDocumentFromTree}
+                      onDuplicateDocument={handleDuplicateDocumentFromTree}
+                      onDeleteDocument={handleDeleteDocumentFromTree}
+                      onMoveDocumentViaDialog={(documentId) => openTreeItemMoveDialog('document', documentId)}
+                      onRenameMoodBoard={handleRenameMoodBoardFromTree}
+                      onDuplicateMoodBoard={handleDuplicateMoodBoardFromTree}
+                      onDeleteMoodBoard={handleDeleteMoodBoardFromTree}
+                      onMoveMoodBoardViaDialog={(boardId) => openTreeItemMoveDialog('moodboard', boardId)}
+                      pendingInlineRename={pendingTreeInlineRename}
+                      onConsumePendingInlineRename={() => setPendingTreeInlineRename(null)}
                       projectColorMeanings={selectedWorkspaceProjectColorMeanings}
                     />
                   ) : !projectsFeedHydrated && !!selectedWorkspaceId ? (
@@ -8820,7 +9674,6 @@ export default function WorkHubPage() {
                         type="button"
                         className="workhub-collapse-toggle"
                         onClick={() => setDashboardSummaryCollapsed((current) => !current)}
-                        aria-expanded={!dashboardSummaryCollapsed}
                         aria-label={dashboardSummaryCollapsed ? 'Expand proposal summary' : 'Collapse proposal summary'}
                         title={dashboardSummaryCollapsed ? 'Expand proposal summary' : 'Collapse proposal summary'}
                       >
@@ -9599,7 +10452,6 @@ export default function WorkHubPage() {
                         onMouseEnter={() => setGlobalFinderActiveIndex(index)}
                         onClick={() => handleGlobalFinderSelect(entry)}
                         role="option"
-                        aria-selected={index === globalFinderResolvedActiveIndex}
                       >
                         <div className="workhub-global-finder-result-main">
                           <strong>{entry.name}</strong>
@@ -9835,16 +10687,21 @@ export default function WorkHubPage() {
             }
             openCreateTaskDialog(projectId)
           }}
-          onCreateSubProject={(projectId) => openCreateProjectDialog(projectId)}
+          onCreateSubProject={(projectId) => { void handleQuickCreateProjectFromContext('folder', projectId) }}
           onCreateDocument={(projectId) => {
-            if (projectId) {
-              void createDocumentQuick(projectId)
+            void handleQuickCreateDocumentLikeFromContext('document', projectId || '')
+          }}
+          onCreateNote={(projectId) => { void handleQuickCreateDocumentLikeFromContext('note', projectId || '') }}
+          onCreateTemplateEntity={(intent, projectId) => {
+            if (intent === 'project') {
+              void handleQuickCreateProjectFromContext('project', projectId || '')
               return
             }
-            openDocumentCreateDialog(projectId || '')
+            openWorkspaceTypeCreateDialog(intent, projectId || '')
           }}
-          onCreateNote={(projectId) => { void createNoteQuick(projectId || '') }}
-          onCreateTemplateEntity={(intent, projectId) => openWorkspaceTypeCreateDialog(intent, projectId || '')}
+          onRequestInlineRename={(projectId) => setPendingTreeInlineRename({ itemType: 'project', itemId: projectId })}
+          onMoveProject={(projectId) => openProjectMoveDialog(projectId)}
+          onDeleteProject={(projectId) => { void handleDeleteProjectFromTree(projectId) }}
           onOpenSettings={(projectId) => setProjectAccessDialogId(projectId)}
           moodBoardEnabled={selectedWorkspace?.moodBoardEnabled !== false}
           onOpenFlowProjectLab={async (entityType, entityId) => {
@@ -9948,6 +10805,45 @@ export default function WorkHubPage() {
           project={selectedAccessProject}
           onSave={(formData) => { void milestones.handleSaveMilestone(formData) }}
           onClose={milestones.handleCloseMilestoneDialog}
+        />
+
+        <WorkspaceBrowserDialog
+          open={!!taskMoveDialogState}
+          title="Move task"
+          confirmLabel="Move task"
+          workspaces={workspaceBrowserWorkspaces}
+          projects={workspaceBrowserProjects}
+          initialWorkspaceId={taskMoveDialogState?.workspaceId || ''}
+          initialProjectId={taskMoveDialogState?.projectId || ''}
+          allowWorkspaceChange={false}
+          onClose={() => setTaskMoveDialogState(null)}
+          onConfirm={(workspaceId, projectId) => { void handleMoveTaskToProject(workspaceId, projectId) }}
+        />
+
+        <WorkspaceBrowserDialog
+          open={!!projectMoveDialogState}
+          title="Move folder"
+          confirmLabel="Move folder"
+          workspaces={workspaceBrowserWorkspaces}
+          projects={workspaceBrowserProjects}
+          initialWorkspaceId={projectMoveDialogState?.workspaceId || ''}
+          initialProjectId={projectMoveDialogState?.parentProjectId || ''}
+          allowWorkspaceChange={false}
+          onClose={() => setProjectMoveDialogState(null)}
+          onConfirm={(workspaceId, projectId) => { void handleMoveProjectToFolder(workspaceId, projectId) }}
+        />
+
+        <WorkspaceBrowserDialog
+          open={!!treeItemMoveDialogState}
+          title={treeItemMoveDialogState?.itemType === 'moodboard' ? 'Move mood board' : 'Move document'}
+          confirmLabel={treeItemMoveDialogState?.itemType === 'moodboard' ? 'Move mood board' : 'Move document'}
+          workspaces={workspaceBrowserWorkspaces}
+          projects={workspaceBrowserProjects}
+          initialWorkspaceId={treeItemMoveDialogState?.workspaceId || ''}
+          initialProjectId={treeItemMoveDialogState?.projectId || ''}
+          allowWorkspaceChange={false}
+          onClose={() => setTreeItemMoveDialogState(null)}
+          onConfirm={(workspaceId, projectId) => { void handleMoveTreeItemToProject(workspaceId, projectId) }}
         />
 
         {lightboxImageUrl && activeImageReview && (
@@ -10219,6 +11115,37 @@ export default function WorkHubPage() {
                   {busyKey === `client:delete:${clientDeleteTarget.id}` ? 'Deleting…' : 'Delete client'}
                 </button>
                 <button type="button" className="workhub-ghost-btn" disabled={busyKey === `client:delete:${clientDeleteTarget.id}`} onClick={handleCancelClientDelete}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {folderDeleteTarget && (
+          <div className="workhub-modal-backdrop workhub-delete-prompt-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget && busyKey !== `project-delete:${folderDeleteTarget.id}`) handleCancelFolderDelete() }}>
+            <div className="workhub-modal workhub-delete-prompt-modal" onMouseDown={(event) => event.stopPropagation()}>
+              <div className="workhub-modal-head">
+                <div>
+                  <h2>Delete folder</h2>
+                  <p>Are you sure you want to delete this folder?</p>
+                </div>
+                <button className="workhub-ghost-btn" disabled={busyKey === `project-delete:${folderDeleteTarget.id}`} onClick={handleCancelFolderDelete}>✕</button>
+              </div>
+              <div className="workhub-delete-prompt-filename">
+                <span>🗑</span>
+                <span>{folderDeleteTarget.name}</span>
+              </div>
+              <div className="workhub-delete-prompt-actions">
+                <button
+                  type="button"
+                  className="workhub-danger-btn"
+                  disabled={busyKey === `project-delete:${folderDeleteTarget.id}`}
+                  onClick={() => { void handleConfirmFolderDelete() }}
+                >
+                  {busyKey === `project-delete:${folderDeleteTarget.id}` ? 'Deleting…' : 'Delete folder'}
+                </button>
+                <button type="button" className="workhub-ghost-btn" disabled={busyKey === `project-delete:${folderDeleteTarget.id}`} onClick={handleCancelFolderDelete}>
                   Cancel
                 </button>
               </div>

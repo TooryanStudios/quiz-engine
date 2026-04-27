@@ -197,6 +197,27 @@
   position: relative;
 }
 
+.flowboard-canvas-wrap.is-file-drag-over {
+  outline: 2px dashed #3c67b1;
+  outline-offset: -10px;
+}
+
+.flowboard-file-drop-hint {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(17, 36, 78, 0.92);
+  color: #fff;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  z-index: 30;
+}
+
 /* ── React Flow overrides ────────────────────────────────────────────────── */
 
 /* Strip default border/background from the RF node wrappers for our types */

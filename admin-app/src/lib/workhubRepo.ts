@@ -76,6 +76,7 @@ export interface WorkhubProject {
   id: string
   workspaceId: string
   parentProjectId?: string | null
+  sortOrder?: number
   intent?: WorkhubProjectIntent
   mainPanelView?: 'tasks' | 'dashboard' | 'dashboard_with_details'
   taskItemDisplayMode?: 'inherit' | 'list' | 'cards' | 'grid' | 'timeline'
@@ -98,6 +99,7 @@ export interface WorkhubProject {
   clientId?: string
   notes?: string
   taskStatuses?: WorkhubTaskStatusConfig[]
+  userPreferences?: Record<string, WorkhubProjectUserPreference>
   attachments?: string[]
   attachmentTitles?: Record<string, string>
   driveFolderId?: string
@@ -122,6 +124,11 @@ export interface WorkhubProjectNotificationPreference {
   folderCompleted: boolean
   delivery: WorkhubFolderNotifyDelivery
   createdAt?: unknown
+  updatedAt?: unknown
+}
+
+export interface WorkhubProjectUserPreference {
+  taskItemDisplayMode?: 'list' | 'cards' | 'grid' | 'timeline'
   updatedAt?: unknown
 }
 
@@ -216,6 +223,7 @@ export interface WorkhubDocument {
   id: string
   workspaceId: string
   projectId?: string | null
+  sortOrder?: number
   hasOutgoingReferences?: boolean
   referenceSourceDocumentId?: string | null
   referenceSourceWorkspaceId?: string | null
@@ -438,6 +446,21 @@ function sortByNewest<T extends { createdAt?: unknown }>(items: T[]): T[] {
   return [...items].sort((a, b) => getTimeValue(b.createdAt) - getTimeValue(a.createdAt))
 }
 
+function getProjectOrderValue(project: Pick<WorkhubProject, 'sortOrder' | 'createdAt'>): number {
+  if (typeof project.sortOrder === 'number' && Number.isFinite(project.sortOrder)) {
+    return project.sortOrder
+  }
+  return getTimeValue(project.createdAt)
+}
+
+function sortProjects(items: WorkhubProject[]): WorkhubProject[] {
+  return [...items].sort((a, b) => {
+    const orderDelta = getProjectOrderValue(a) - getProjectOrderValue(b)
+    if (orderDelta !== 0) return orderDelta
+    return getTimeValue(a.createdAt) - getTimeValue(b.createdAt)
+  })
+}
+
 function getTaskOrderValue(task: Pick<WorkhubTask, 'sortOrder' | 'createdAt'>): number {
   if (typeof task.sortOrder === 'number' && Number.isFinite(task.sortOrder)) {
     return task.sortOrder
@@ -454,13 +477,28 @@ function sortTasks(items: WorkhubTask[]): WorkhubTask[] {
 }
 
 function sortDocuments(items: WorkhubDocument[]): WorkhubDocument[] {
-  return [...items].sort((a, b) => getTimeValue(a.createdAt) - getTimeValue(b.createdAt))
+  return [...items].sort((a, b) => {
+    const leftOrder = typeof a.sortOrder === 'number' && Number.isFinite(a.sortOrder)
+      ? a.sortOrder
+      : getTimeValue(a.createdAt)
+    const rightOrder = typeof b.sortOrder === 'number' && Number.isFinite(b.sortOrder)
+      ? b.sortOrder
+      : getTimeValue(b.createdAt)
+    if (leftOrder !== rightOrder) return leftOrder - rightOrder
+    return getTimeValue(a.createdAt) - getTimeValue(b.createdAt)
+  })
 }
 
 function sortMoodBoards(items: WorkhubMoodBoard[]): WorkhubMoodBoard[] {
   return [...items].sort((left, right) => {
-    const createdDelta = getTimeValue(right.createdAt) - getTimeValue(left.createdAt)
-    if (createdDelta !== 0) return createdDelta
+    const leftOrder = typeof left.sortOrder === 'number' && Number.isFinite(left.sortOrder)
+      ? left.sortOrder
+      : getTimeValue(left.createdAt)
+    const rightOrder = typeof right.sortOrder === 'number' && Number.isFinite(right.sortOrder)
+      ? right.sortOrder
+      : getTimeValue(right.createdAt)
+    const orderDelta = leftOrder - rightOrder
+    if (orderDelta !== 0) return orderDelta
     const titleDelta = (left.title || '').localeCompare(right.title || '')
     if (titleDelta !== 0) return titleDelta
     return left.id.localeCompare(right.id)
@@ -490,6 +528,14 @@ function mergeById<T extends { id: string; createdAt?: unknown }>(groups: T[][])
     map.set(item.id, item)
   })
   return sortByNewest(Array.from(map.values()))
+}
+
+function mergeProjectsById(groups: WorkhubProject[][]) {
+  const map = new Map<string, WorkhubProject>()
+  groups.flat().forEach((item) => {
+    map.set(item.id, item)
+  })
+  return sortProjects(Array.from(map.values()))
 }
 
 function mergeTasksById(groups: WorkhubTask[][]) {
@@ -799,7 +845,7 @@ export function subscribeWorkhubProjects(workspaceId: string, currentUid: string
       () => onSnapshot(
         q,
         (snap) => {
-          onData(sortByNewest(snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubProject))))
+          onData(sortProjects(snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubProject))))
         },
         () => onData([]),
       ),
@@ -811,7 +857,7 @@ export function subscribeWorkhubProjects(workspaceId: string, currentUid: string
   const restrictedQuery = query(projectsCol, where('workspaceId', '==', workspaceId), where('visibility', '==', 'restricted'), where('memberUids', 'array-contains', currentUid))
   let workspaceItems: WorkhubProject[] = []
   let restrictedItems: WorkhubProject[] = []
-  const emit = () => onData(mergeById([workspaceItems, restrictedItems]))
+  const emit = () => onData(mergeProjectsById([workspaceItems, restrictedItems]))
   const unsubWorkspace = safeListen(
     () => onSnapshot(
       workspaceQuery,
@@ -880,6 +926,7 @@ export async function createWorkhubProject(input: {
   const docRef = await addDoc(projectsCol, {
     workspaceId: input.workspaceId,
     parentProjectId: input.parentProjectId || null,
+    sortOrder: Date.now(),
     intent: input.intent || 'project',
     mainPanelView: input.mainPanelView || 'tasks',
     valueAmount: typeof input.valueAmount === 'number' && Number.isFinite(input.valueAmount) ? Math.max(0, input.valueAmount) : 0,
@@ -908,7 +955,7 @@ export async function createWorkhubProject(input: {
   return docRef.id
 }
 
-export async function updateWorkhubProject(projectId: string, patch: Partial<Pick<WorkhubProject, 'parentProjectId' | 'intent' | 'mainPanelView' | 'taskItemDisplayMode' | 'valueAmount' | 'valueCurrency' | 'tenderNumber' | 'proposalId' | 'technicalProposalUrl' | 'financialProposalUrl' | 'name' | 'description' | 'color' | 'notes' | 'attachments' | 'attachmentTitles' | 'notesUpdatedBy' | 'visibility' | 'memberUids' | 'storageMethod' | 'projectStartDate' | 'projectDeadline' | 'projectType' | 'submissionTime' | 'priority' | 'clientId' | 'taskStatuses'>>) {
+export async function updateWorkhubProject(projectId: string, patch: Partial<Pick<WorkhubProject, 'parentProjectId' | 'sortOrder' | 'intent' | 'mainPanelView' | 'taskItemDisplayMode' | 'valueAmount' | 'valueCurrency' | 'tenderNumber' | 'proposalId' | 'technicalProposalUrl' | 'financialProposalUrl' | 'name' | 'description' | 'color' | 'notes' | 'attachments' | 'attachmentTitles' | 'notesUpdatedBy' | 'visibility' | 'memberUids' | 'storageMethod' | 'projectStartDate' | 'projectDeadline' | 'projectType' | 'submissionTime' | 'priority' | 'clientId' | 'taskStatuses'>>) {
   const payload: Record<string, unknown> = {
     ...patch,
     updatedAt: serverTimestamp(),
@@ -917,6 +964,23 @@ export async function updateWorkhubProject(projectId: string, patch: Partial<Pic
     payload.notesUpdatedAt = serverTimestamp()
   }
   await updateDoc(doc(db, 'workhub_projects', projectId), payload)
+}
+
+export async function updateWorkhubProjectUserPreference(
+  projectId: string,
+  userUid: string,
+  preference: WorkhubProjectUserPreference,
+): Promise<void> {
+  if (!projectId || !userUid) return
+  await setDoc(doc(db, 'workhub_projects', projectId), {
+    userPreferences: {
+      [userUid]: {
+        taskItemDisplayMode: preference.taskItemDisplayMode || 'list',
+        updatedAt: serverTimestamp(),
+      },
+    },
+    updatedAt: serverTimestamp(),
+  }, { merge: true })
 }
 
 export async function deleteWorkhubProject(projectId: string) {
@@ -1021,6 +1085,7 @@ export async function createWorkhubDocument(input: {
   const docRef = await addDoc(documentsCol, {
     workspaceId: input.workspaceId,
     projectId: input.projectId || null,
+    sortOrder: Date.now(),
     type: input.type || 'document',
     icon: (input.icon || '').trim() || null,
     title: input.title,
@@ -1067,7 +1132,7 @@ export class WorkhubDocumentConflictError extends Error {
   }
 }
 
-type WorkhubDocumentUpdatePatch = Partial<Pick<WorkhubDocument, 'projectId' | 'hasOutgoingReferences' | 'referenceSourceDocumentId' | 'referenceSourceWorkspaceId' | 'referenceSourceProjectId' | 'referenceTabIds' | 'icon' | 'title' | 'body' | 'tabs' | 'masterPage' | 'checklist' | 'attachments' | 'links' | 'editedBy' | 'isLocked' | 'lockedBy' | 'lockedAt' | 'shareToken' | 'shareEnabled' | 'visibility' | 'memberUids' | 'editMemberUids' | 'notifyMode' | 'notifyUids'>>
+type WorkhubDocumentUpdatePatch = Partial<Pick<WorkhubDocument, 'projectId' | 'sortOrder' | 'hasOutgoingReferences' | 'referenceSourceDocumentId' | 'referenceSourceWorkspaceId' | 'referenceSourceProjectId' | 'referenceTabIds' | 'icon' | 'title' | 'body' | 'tabs' | 'masterPage' | 'checklist' | 'attachments' | 'links' | 'editedBy' | 'isLocked' | 'lockedBy' | 'lockedAt' | 'shareToken' | 'shareEnabled' | 'visibility' | 'memberUids' | 'editMemberUids' | 'notifyMode' | 'notifyUids'>>
 
 function getWorkhubTimestampMs(value: unknown): number {
   if (!value) return 0
@@ -1335,7 +1400,7 @@ export async function saveWorkhubTaskNotifyPrefs(
   })
 }
 
-export async function updateWorkhubTask(taskId: string, patch: Partial<Pick<WorkhubTask, 'milestoneId' | 'title' | 'description' | 'attachments' | 'attachmentTitles' | 'imageUrls' | 'links' | 'linkTitles' | 'linkCreatedBy' | 'status' | 'priority' | 'assigneeUid' | 'assigneeUids' | 'startDate' | 'dueDate' | 'dueTime' | 'valueAmount' | 'valueCurrency' | 'checklist' | 'completedAt' | 'sortOrder'>>) {
+export async function updateWorkhubTask(taskId: string, patch: Partial<Pick<WorkhubTask, 'projectId' | 'milestoneId' | 'title' | 'description' | 'attachments' | 'attachmentTitles' | 'imageUrls' | 'links' | 'linkTitles' | 'linkCreatedBy' | 'status' | 'priority' | 'assigneeUid' | 'assigneeUids' | 'startDate' | 'dueDate' | 'dueTime' | 'valueAmount' | 'valueCurrency' | 'checklist' | 'completedAt' | 'sortOrder'>>) {
   const normalizedPatch: Record<string, unknown> = {
     ...patch,
   }
@@ -1880,6 +1945,7 @@ export interface WorkhubMoodBoard {
   workspaceId: string
   entityType: WorkhubMoodBoardEntityType
   entityId: string
+  sortOrder?: number
   panelVariant?: 'classic' | 'v2' | 'flow' | 'proscons'
   title: string
   flowViewport?: {
@@ -1994,6 +2060,7 @@ export async function createWorkhubMoodBoard(input: {
     workspaceId: input.workspaceId,
     entityType: input.entityType,
     entityId: input.entityId,
+    sortOrder: Date.now(),
     title: input.title,
     panelVariant: nextPanelVariant,
     flowNodes: [],
@@ -2017,6 +2084,16 @@ export async function updateWorkhubMoodBoardChecklist(
 ): Promise<void> {
   await updateDoc(doc(db, 'workhub_mood_boards', boardId), {
     checklist: normalizeChecklistItems(checklist),
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function updateWorkhubMoodBoard(
+  boardId: string,
+  patch: Partial<Pick<WorkhubMoodBoard, 'entityId' | 'sortOrder' | 'title'>>,
+): Promise<void> {
+  await updateDoc(doc(db, 'workhub_mood_boards', boardId), {
+    ...patch,
     updatedAt: serverTimestamp(),
   })
 }

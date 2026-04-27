@@ -1,8 +1,12 @@
-import { memo } from 'react'
+import { memo, useEffect, useState } from 'react'
 import type { MouseEvent } from 'react'
 import type { WorkhubDocument, WorkhubMoodBoard, WorkhubProjectIntent } from '../../../lib/workhubRepo'
 import type { WorkhubProjectColorMeaning } from '../constants'
 import type { WorkhubProjectTreeNode } from '../projectUtils'
+
+const PROJECT_DRAG_MIME = 'application/x-workhub-project-id'
+const DOCUMENT_DRAG_MIME = 'application/x-workhub-document-id'
+const MOODBOARD_DRAG_MIME = 'application/x-workhub-moodboard-id'
 
 interface ProjectTreeNodesProps {
   nodes: WorkhubProjectTreeNode[]
@@ -29,7 +33,25 @@ interface ProjectTreeNodesProps {
   onSelectMoodBoard: (boardId: string) => void
   onToggleExpansion: (projectId: string) => void
   onOpenActionMenu: (projectId: string, event: MouseEvent<HTMLElement>) => void
+  onOpenWorkspaceActionMenu?: (event: MouseEvent<HTMLElement>) => void
+  onQuickAddTask?: (projectId: string) => void
   onOpenSettings: (projectId: string) => void
+  onRenameProject?: (projectId: string, nextName?: string) => void
+  onMoveProject?: (sourceProjectId: string, targetParentProjectId: string | null) => void
+  onMoveDocument?: (documentId: string, targetProjectId: string) => void
+  onMoveMoodBoard?: (boardId: string, targetProjectId: string) => void
+  onReorderDocument?: (sourceDocumentId: string, targetDocumentId: string, projectId: string) => void
+  onReorderMoodBoard?: (sourceBoardId: string, targetBoardId: string, projectId: string) => void
+  onRenameDocument?: (documentId: string, nextTitle?: string) => void
+  onDuplicateDocument?: (documentId: string) => void
+  onDeleteDocument?: (documentId: string) => void
+  onMoveDocumentViaDialog?: (documentId: string) => void
+  onRenameMoodBoard?: (boardId: string, nextTitle?: string) => void
+  onDuplicateMoodBoard?: (boardId: string) => void
+  onDeleteMoodBoard?: (boardId: string) => void
+  onMoveMoodBoardViaDialog?: (boardId: string) => void
+  pendingInlineRename?: { itemType: 'project' | 'document' | 'moodboard'; itemId: string } | null
+  onConsumePendingInlineRename?: () => void
   depth?: number
 }
 
@@ -154,11 +176,245 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
   onSelectMoodBoard = () => {},
   onToggleExpansion,
   onOpenActionMenu,
+  onOpenWorkspaceActionMenu,
+  onQuickAddTask,
   onOpenSettings,
+  onRenameProject,
+  onMoveProject,
+  onMoveDocument,
+  onMoveMoodBoard,
+  onReorderDocument,
+  onReorderMoodBoard,
+  onRenameDocument,
+  onDuplicateDocument,
+  onDeleteDocument,
+  onMoveDocumentViaDialog,
+  onRenameMoodBoard,
+  onDuplicateMoodBoard,
+  onDeleteMoodBoard,
+  onMoveMoodBoardViaDialog,
+  pendingInlineRename = null,
+  onConsumePendingInlineRename,
   depth = 0,
 }: ProjectTreeNodesProps) {
+  const [dropTargetKey, setDropTargetKey] = useState('')
+  const [inlineRename, setInlineRename] = useState<{
+    itemId: string
+    itemType: 'project' | 'document' | 'moodboard'
+    value: string
+  } | null>(null)
+  const [subItemContextMenu, setSubItemContextMenu] = useState<{
+    x: number
+    y: number
+    itemId: string
+    itemType: 'document' | 'moodboard'
+    parentProjectId: string
+  } | null>(null)
+
+  const clampContextMenuPoint = (x: number, y: number, menuWidth: number, menuHeight: number) => {
+    const margin = 8
+    const nextX = Math.max(margin, Math.min(x, Math.max(margin, window.innerWidth - menuWidth - margin)))
+    const nextY = Math.max(margin, Math.min(y, Math.max(margin, window.innerHeight - menuHeight - margin)))
+    return { x: nextX, y: nextY }
+  }
+
+  const commitInlineRename = () => {
+    if (!inlineRename) return
+    const nextValue = inlineRename.value.trim()
+    if (!nextValue) {
+      setInlineRename(null)
+      return
+    }
+    if (inlineRename.itemType === 'project') {
+      onRenameProject?.(inlineRename.itemId, nextValue)
+    } else if (inlineRename.itemType === 'document') {
+      onRenameDocument?.(inlineRename.itemId, nextValue)
+    } else {
+      onRenameMoodBoard?.(inlineRename.itemId, nextValue)
+    }
+    setInlineRename(null)
+  }
+
+  const cancelInlineRename = () => {
+    setInlineRename(null)
+  }
+
+  const startInlineRename = (itemType: 'project' | 'document' | 'moodboard', itemId: string, value: string) => {
+    setInlineRename({ itemType, itemId, value })
+  }
+
+  const runSubItemAction = (action: 'open' | 'open-parent-folder' | 'rename' | 'duplicate' | 'move' | 'delete') => {
+    if (!subItemContextMenu) return
+    if (action === 'open') {
+      if (subItemContextMenu.itemType === 'document') {
+        onSelectDocument(subItemContextMenu.itemId)
+      } else {
+        onSelectMoodBoard(subItemContextMenu.itemId)
+      }
+      setSubItemContextMenu(null)
+      return
+    }
+    if (action === 'open-parent-folder') {
+      onSelectProject(subItemContextMenu.parentProjectId)
+      setSubItemContextMenu(null)
+      return
+    }
+    if (action === 'rename') {
+      if (subItemContextMenu.itemType === 'document') {
+        const projectDocuments = documentsByProjectId[subItemContextMenu.parentProjectId] || []
+        const targetDocument = projectDocuments.find((item) => item.id === subItemContextMenu.itemId)
+        const title = (targetDocument?.title || '').trim() || 'Untitled document'
+        startInlineRename('document', subItemContextMenu.itemId, title)
+      } else {
+        const projectBoards = moodBoardsByProjectId[subItemContextMenu.parentProjectId] || []
+        const targetBoard = projectBoards.find((item) => item.id === subItemContextMenu.itemId)
+        const title = (targetBoard?.title || '').trim() || 'Mood board'
+        startInlineRename('moodboard', subItemContextMenu.itemId, title)
+      }
+      setSubItemContextMenu(null)
+      return
+    }
+    if (action === 'duplicate') {
+      if (subItemContextMenu.itemType === 'document') {
+        onDuplicateDocument?.(subItemContextMenu.itemId)
+      } else {
+        onDuplicateMoodBoard?.(subItemContextMenu.itemId)
+      }
+      setSubItemContextMenu(null)
+      return
+    }
+    if (action === 'move') {
+      if (subItemContextMenu.itemType === 'document') {
+        onMoveDocumentViaDialog?.(subItemContextMenu.itemId)
+      } else {
+        onMoveMoodBoardViaDialog?.(subItemContextMenu.itemId)
+      }
+      setSubItemContextMenu(null)
+      return
+    }
+    if (subItemContextMenu.itemType === 'document') {
+      onDeleteDocument?.(subItemContextMenu.itemId)
+    } else {
+      onDeleteMoodBoard?.(subItemContextMenu.itemId)
+    }
+    setSubItemContextMenu(null)
+  }
+
+  useEffect(() => {
+    if (!subItemContextMenu) return
+    const handleWindowPointerDown = () => setSubItemContextMenu(null)
+    const handleWindowKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setSubItemContextMenu(null)
+        return
+      }
+      if (event.key === 'F2') {
+        event.preventDefault()
+        runSubItemAction('rename')
+        return
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') {
+        event.preventDefault()
+        runSubItemAction('duplicate')
+        return
+      }
+      if (event.key === 'Delete') {
+        event.preventDefault()
+        runSubItemAction('delete')
+      }
+    }
+    window.addEventListener('pointerdown', handleWindowPointerDown)
+    window.addEventListener('keydown', handleWindowKeyDown)
+    return () => {
+      window.removeEventListener('pointerdown', handleWindowPointerDown)
+      window.removeEventListener('keydown', handleWindowKeyDown)
+    }
+  }, [runSubItemAction, subItemContextMenu])
+
+  useEffect(() => {
+    if (!pendingInlineRename || !onConsumePendingInlineRename) return
+
+    const findProjectNode = (items: WorkhubProjectTreeNode[], projectId: string): WorkhubProjectTreeNode | null => {
+      for (const item of items) {
+        if (item.id === projectId) return item
+        const nested = findProjectNode(item.children, projectId)
+        if (nested) return nested
+      }
+      return null
+    }
+
+    if (pendingInlineRename.itemType === 'project') {
+      const projectNode = findProjectNode(nodes, pendingInlineRename.itemId)
+      if (!projectNode) return
+      startInlineRename('project', projectNode.id, (projectNode.name || '').trim() || 'Untitled folder')
+      onConsumePendingInlineRename()
+      return
+    }
+
+    for (const [projectId, projectDocuments] of Object.entries(documentsByProjectId)) {
+      if (pendingInlineRename.itemType !== 'document') continue
+      const doc = projectDocuments.find((item) => item.id === pendingInlineRename.itemId)
+      if (!doc) continue
+      if (!findProjectNode(nodes, projectId)) return
+      startInlineRename('document', doc.id, (doc.title || '').trim() || 'Untitled document')
+      onConsumePendingInlineRename()
+      return
+    }
+
+    for (const [projectId, boards] of Object.entries(moodBoardsByProjectId)) {
+      if (pendingInlineRename.itemType !== 'moodboard') continue
+      const board = boards.find((item) => item.id === pendingInlineRename.itemId)
+      if (!board) continue
+      if (!findProjectNode(nodes, projectId)) return
+      startInlineRename('moodboard', board.id, (board.title || '').trim() || 'Mood board')
+      onConsumePendingInlineRename()
+      return
+    }
+  }, [documentsByProjectId, moodBoardsByProjectId, nodes, onConsumePendingInlineRename, pendingInlineRename])
+
   return (
-    <>
+    <div
+      className="workhub-tree-node-list"
+      onContextMenu={(event) => {
+        if (!onOpenWorkspaceActionMenu) return
+        const target = event.target as HTMLElement
+        if (target.closest('.workhub-tree-node, .workhub-tree-doc-subitem, .workhub-tree-root-dropzone, .workhub-tree-item-context-menu')) return
+        event.preventDefault()
+        onOpenWorkspaceActionMenu(event)
+      }}
+    >
+      {depth === 0 && onMoveProject && (
+        <div
+          className={`workhub-tree-root-dropzone${dropTargetKey === 'project:root' ? ' is-drop-target' : ''}`}
+          onContextMenu={(event) => {
+            if (!onOpenWorkspaceActionMenu) return
+            event.preventDefault()
+            event.stopPropagation()
+            onOpenWorkspaceActionMenu(event)
+          }}
+          onDragOver={(event) => {
+            if (!Array.from(event.dataTransfer.types || []).includes(PROJECT_DRAG_MIME)) return
+            event.preventDefault()
+            event.dataTransfer.dropEffect = 'move'
+            if (dropTargetKey !== 'project:root') setDropTargetKey('project:root')
+          }}
+          onDragLeave={() => {
+            if (dropTargetKey === 'project:root') setDropTargetKey('')
+          }}
+          onDrop={(event) => {
+            const dragTypes = new Set(Array.from(event.dataTransfer.types || []))
+            if (!dragTypes.has(PROJECT_DRAG_MIME)) return
+            const draggedId = event.dataTransfer.getData(PROJECT_DRAG_MIME) || event.dataTransfer.getData('text/plain')
+            if (!draggedId) return
+            event.preventDefault()
+            event.stopPropagation()
+            setDropTargetKey('')
+            onMoveProject(draggedId, null)
+          }}
+        >
+          Drop here to move to workspace root
+        </div>
+      )}
       {nodes.map((node) => {
         const isExpanded = expandedProjectIds.includes(node.id)
         const childCount = node.children.length
@@ -201,17 +457,59 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
         return (
           <div key={node.id} className={`workhub-tree-node-wrap${depth === 0 ? ' is-root' : ' is-nested'}`}>
             <div
-              className={`workhub-tree-node${selectedProjectId === node.id && !selectedDocumentId && !selectedMoodBoardId ? ' is-active' : ''}${linkedHighlightedProjectId === node.id ? ' is-linked-highlight' : ''}${depth === 0 && !hasExpandableChildren ? ' is-root-leaf-node' : ''}`}
+              className={`workhub-tree-node${selectedProjectId === node.id && !selectedDocumentId && !selectedMoodBoardId ? ' is-active' : ''}${linkedHighlightedProjectId === node.id ? ' is-linked-highlight' : ''}${depth === 0 && !hasExpandableChildren ? ' is-root-leaf-node' : ''}${dropTargetKey === `project:${node.id}` ? ' is-drop-target' : ''}`}
               style={{ paddingLeft: `${10 + (depth * 14)}px` }}
-              role="button"
-              tabIndex={0}
-              onClick={() => onSelectProject(node.id)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
+              onDragOver={(event) => {
+                const dragTypes = new Set(Array.from(event.dataTransfer.types || []))
+                if (dragTypes.has(PROJECT_DRAG_MIME) || dragTypes.has(DOCUMENT_DRAG_MIME) || dragTypes.has(MOODBOARD_DRAG_MIME)) {
                   event.preventDefault()
-                  onSelectProject(node.id)
+                  event.dataTransfer.dropEffect = 'move'
+                  if (dropTargetKey !== `project:${node.id}`) setDropTargetKey(`project:${node.id}`)
                 }
               }}
+              onDragLeave={() => {
+                if (dropTargetKey === `project:${node.id}`) setDropTargetKey('')
+              }}
+              onDrop={(event) => {
+                const dragTypes = new Set(Array.from(event.dataTransfer.types || []))
+                const hasProjectDrag = dragTypes.has(PROJECT_DRAG_MIME)
+                const hasDocumentDrag = dragTypes.has(DOCUMENT_DRAG_MIME)
+                const hasMoodBoardDrag = dragTypes.has(MOODBOARD_DRAG_MIME)
+
+                const projectDraggedId = hasProjectDrag
+                  ? (event.dataTransfer.getData(PROJECT_DRAG_MIME) || event.dataTransfer.getData('text/plain'))
+                  : ''
+                if (projectDraggedId && onMoveProject && projectDraggedId !== node.id) {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  setDropTargetKey('')
+                  onMoveProject(projectDraggedId, node.id)
+                  return
+                }
+
+                const documentDraggedId = hasDocumentDrag ? event.dataTransfer.getData(DOCUMENT_DRAG_MIME) : ''
+                if (documentDraggedId && onMoveDocument) {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  setDropTargetKey('')
+                  onMoveDocument(documentDraggedId, node.id)
+                  return
+                }
+
+                const moodBoardDraggedId = hasMoodBoardDrag ? event.dataTransfer.getData(MOODBOARD_DRAG_MIME) : ''
+                if (moodBoardDraggedId && onMoveMoodBoard) {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  setDropTargetKey('')
+                  onMoveMoodBoard(moodBoardDraggedId, node.id)
+                }
+              }}
+              onContextMenu={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                onOpenActionMenu(node.id, event)
+              }}
+              onClick={() => onSelectProject(node.id)}
               onDoubleClick={(event) => {
                 const target = event.target as HTMLElement
                 if (target.closest('.workhub-tree-toggle, .workhub-tree-node-actions')) return
@@ -220,10 +518,31 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
                 }
               }}
             >
+              {onMoveProject && (
+                <button
+                  type="button"
+                  className="workhub-tree-drag-handle"
+                  draggable
+                  title="Drag to move this folder"
+                  aria-label="Drag to move this folder"
+                  onClick={(event) => event.stopPropagation()}
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onDragStart={(event) => {
+                    event.stopPropagation()
+                    event.dataTransfer.effectAllowed = 'move'
+                    event.dataTransfer.setData(PROJECT_DRAG_MIME, node.id)
+                    event.dataTransfer.setData('text/plain', node.id)
+                  }}
+                >
+                  ⋮⋮
+                </button>
+              )}
               {hasExpandableChildren ? (
                 <button
                   type="button"
                   className="workhub-tree-toggle"
+                  aria-label={isExpanded ? 'Collapse folder' : 'Expand folder'}
+                  title={isExpanded ? 'Collapse folder' : 'Expand folder'}
                   onClick={(event) => {
                     event.stopPropagation()
                     onToggleExpansion(node.id)
@@ -245,7 +564,38 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
                 <span className="workhub-tree-node-text">
                   <span className="workhub-tree-node-title">
                       <span className={`workhub-tree-node-intent-icon is-${intentIconKind}-kind`} aria-hidden="true">{intentIcon}</span>
-                    <span className="workhub-tree-node-title-text">{node.name}</span>
+                      {inlineRename?.itemType === 'project' && inlineRename.itemId === node.id ? (
+                        <input
+                          type="text"
+                          className="workhub-tree-inline-rename-input"
+                          value={inlineRename.value}
+                          aria-label="Rename folder"
+                          title="Rename folder"
+                          placeholder="Folder name"
+                          autoFocus
+                          onFocus={(event) => event.currentTarget.select()}
+                          onClick={(event) => event.stopPropagation()}
+                          onMouseDown={(event) => event.stopPropagation()}
+                          onBlur={commitInlineRename}
+                          onChange={(event) => {
+                            const value = event.target.value
+                            setInlineRename((current) => (current ? { ...current, value } : current))
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault()
+                              commitInlineRename()
+                              return
+                            }
+                            if (event.key === 'Escape') {
+                              event.preventDefault()
+                              cancelInlineRename()
+                            }
+                          }}
+                        />
+                      ) : (
+                        <span className="workhub-tree-node-title-text">{node.name}</span>
+                      )}
                     {unreadCommentCount > 0 && (
                       <span
                         className="workhub-tree-node-comment-indicator"
@@ -294,7 +644,11 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
                   className="workhub-plus-btn"
                   onClick={(event) => {
                     event.stopPropagation()
-                    onOpenActionMenu(node.id, event)
+                    if (onQuickAddTask) {
+                      onQuickAddTask(node.id)
+                    } else {
+                      onOpenActionMenu(node.id, event)
+                    }
                   }}
                 >
                   +
@@ -344,6 +698,22 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
                   onToggleExpansion={onToggleExpansion}
                   onOpenActionMenu={onOpenActionMenu}
                   onOpenSettings={onOpenSettings}
+                  onRenameProject={onRenameProject}
+                  onMoveProject={onMoveProject}
+                  onMoveDocument={onMoveDocument}
+                  onMoveMoodBoard={onMoveMoodBoard}
+                  onReorderDocument={onReorderDocument}
+                  onReorderMoodBoard={onReorderMoodBoard}
+                  onRenameDocument={onRenameDocument}
+                  onDuplicateDocument={onDuplicateDocument}
+                  onDeleteDocument={onDeleteDocument}
+                  onMoveDocumentViaDialog={onMoveDocumentViaDialog}
+                  onRenameMoodBoard={onRenameMoodBoard}
+                  onDuplicateMoodBoard={onDuplicateMoodBoard}
+                  onDeleteMoodBoard={onDeleteMoodBoard}
+                  onMoveMoodBoardViaDialog={onMoveMoodBoardViaDialog}
+                  pendingInlineRename={pendingInlineRename}
+                  onConsumePendingInlineRename={onConsumePendingInlineRename}
                     />
                   </div>
                 </div>
@@ -364,7 +734,42 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
                     <button
                       key={document.id}
                       type="button"
-                      className={`workhub-tree-doc-subitem${selectedDocumentId === document.id ? ' is-active' : ''}${linkedHighlightedDocumentId === document.id ? ' is-linked-highlight' : ''}${document.hasOutgoingReferences && !document.referenceSourceDocumentId ? ' is-public-source' : ''}`}
+                      className={`workhub-tree-doc-subitem${selectedDocumentId === document.id ? ' is-active' : ''}${linkedHighlightedDocumentId === document.id ? ' is-linked-highlight' : ''}${document.hasOutgoingReferences && !document.referenceSourceDocumentId ? ' is-public-source' : ''}${dropTargetKey === `document:${document.id}` ? ' is-drop-target' : ''}`}
+                      onDragOver={(event) => {
+                        if (!onReorderDocument && !onMoveDocument) return
+                        const dragTypes = new Set(Array.from(event.dataTransfer.types || []))
+                        if (!dragTypes.has(DOCUMENT_DRAG_MIME)) return
+                        event.preventDefault()
+                        event.dataTransfer.dropEffect = 'move'
+                        if (dropTargetKey !== `document:${document.id}`) setDropTargetKey(`document:${document.id}`)
+                      }}
+                      onDragLeave={() => {
+                        if (dropTargetKey === `document:${document.id}`) setDropTargetKey('')
+                      }}
+                      onDrop={(event) => {
+                        const draggedId = event.dataTransfer.getData(DOCUMENT_DRAG_MIME)
+                        if (!draggedId || draggedId === document.id) return
+                        event.preventDefault()
+                        event.stopPropagation()
+                        setDropTargetKey('')
+                        if (onReorderDocument) {
+                          onReorderDocument(draggedId, document.id, node.id)
+                        } else if (onMoveDocument) {
+                          onMoveDocument(draggedId, node.id)
+                        }
+                      }}
+                      onContextMenu={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        const coords = clampContextMenuPoint(event.clientX, event.clientY, 240, 260)
+                        setSubItemContextMenu({
+                          x: coords.x,
+                          y: coords.y,
+                          itemId: document.id,
+                          itemType: 'document',
+                          parentProjectId: node.id,
+                        })
+                      }}
                       onClick={(event) => {
                         event.stopPropagation()
                         onSelectDocument(document.id)
@@ -372,7 +777,53 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
                       title={documentTreeTitle}
                     >
                       <span className="workhub-tree-doc-subitem-title">
-                        {getDocumentIcon(document)} {documentTreeTitle}
+                        <button
+                          type="button"
+                          draggable
+                          className="workhub-tree-subitem-drag-handle"
+                          title="Drag to move this document"
+                          aria-label="Drag to move this document"
+                          onClick={(event) => event.stopPropagation()}
+                          onMouseDown={(event) => event.stopPropagation()}
+                          onDragStart={(event) => {
+                            event.stopPropagation()
+                            event.dataTransfer.effectAllowed = 'move'
+                            event.dataTransfer.setData(DOCUMENT_DRAG_MIME, document.id)
+                            event.dataTransfer.setData('text/plain', document.id)
+                          }}
+                        >
+                          ⋮⋮
+                        </button>
+                        {getDocumentIcon(document)} {inlineRename?.itemType === 'document' && inlineRename.itemId === document.id ? (
+                          <input
+                            type="text"
+                            className="workhub-tree-inline-rename-input"
+                            value={inlineRename.value}
+                            aria-label="Rename document"
+                            title="Rename document"
+                            placeholder="Document title"
+                            autoFocus
+                            onFocus={(event) => event.currentTarget.select()}
+                            onClick={(event) => event.stopPropagation()}
+                            onMouseDown={(event) => event.stopPropagation()}
+                            onBlur={commitInlineRename}
+                            onChange={(event) => {
+                              const value = event.target.value
+                              setInlineRename((current) => (current ? { ...current, value } : current))
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                event.preventDefault()
+                                commitInlineRename()
+                                return
+                              }
+                              if (event.key === 'Escape') {
+                                event.preventDefault()
+                                cancelInlineRename()
+                              }
+                            }}
+                          />
+                        ) : documentTreeTitle}
                         {!!document.attachments?.length && <span className="workhub-tree-doc-attachment-indicator" title={`${document.attachments.length} attachment${document.attachments.length === 1 ? '' : 's'}`}>📎</span>}
                       </span>
                       {document.hasOutgoingReferences && !document.referenceSourceDocumentId && <span className="workhub-tree-doc-lock-badge" title="Public source document">🌐</span>}
@@ -387,7 +838,42 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
                     <button
                       key={board.id}
                       type="button"
-                      className={`workhub-tree-doc-subitem${selectedMoodBoardId === board.id ? ' is-active' : ''}${linkedHighlightedMoodBoardId === board.id ? ' is-linked-highlight' : ''}`}
+                      className={`workhub-tree-doc-subitem${selectedMoodBoardId === board.id ? ' is-active' : ''}${linkedHighlightedMoodBoardId === board.id ? ' is-linked-highlight' : ''}${dropTargetKey === `moodboard:${board.id}` ? ' is-drop-target' : ''}`}
+                      onDragOver={(event) => {
+                        if (!onReorderMoodBoard && !onMoveMoodBoard) return
+                        const dragTypes = new Set(Array.from(event.dataTransfer.types || []))
+                        if (!dragTypes.has(MOODBOARD_DRAG_MIME)) return
+                        event.preventDefault()
+                        event.dataTransfer.dropEffect = 'move'
+                        if (dropTargetKey !== `moodboard:${board.id}`) setDropTargetKey(`moodboard:${board.id}`)
+                      }}
+                      onDragLeave={() => {
+                        if (dropTargetKey === `moodboard:${board.id}`) setDropTargetKey('')
+                      }}
+                      onDrop={(event) => {
+                        const draggedId = event.dataTransfer.getData(MOODBOARD_DRAG_MIME)
+                        if (!draggedId || draggedId === board.id) return
+                        event.preventDefault()
+                        event.stopPropagation()
+                        setDropTargetKey('')
+                        if (onReorderMoodBoard) {
+                          onReorderMoodBoard(draggedId, board.id, node.id)
+                        } else if (onMoveMoodBoard) {
+                          onMoveMoodBoard(draggedId, node.id)
+                        }
+                      }}
+                      onContextMenu={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        const coords = clampContextMenuPoint(event.clientX, event.clientY, 240, 260)
+                        setSubItemContextMenu({
+                          x: coords.x,
+                          y: coords.y,
+                          itemId: board.id,
+                          itemType: 'moodboard',
+                          parentProjectId: node.id,
+                        })
+                      }}
                       onClick={(event) => {
                         event.stopPropagation()
                         onSelectMoodBoard(board.id)
@@ -395,7 +881,53 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
                       title={board.title}
                     >
                       <span className="workhub-tree-doc-subitem-title">
-                        {variantMeta.icon} {board.title}
+                        <button
+                          type="button"
+                          draggable
+                          className="workhub-tree-subitem-drag-handle"
+                          title="Drag to move this mood board"
+                          aria-label="Drag to move this mood board"
+                          onClick={(event) => event.stopPropagation()}
+                          onMouseDown={(event) => event.stopPropagation()}
+                          onDragStart={(event) => {
+                            event.stopPropagation()
+                            event.dataTransfer.effectAllowed = 'move'
+                            event.dataTransfer.setData(MOODBOARD_DRAG_MIME, board.id)
+                            event.dataTransfer.setData('text/plain', board.id)
+                          }}
+                        >
+                          ⋮⋮
+                        </button>
+                        {variantMeta.icon} {inlineRename?.itemType === 'moodboard' && inlineRename.itemId === board.id ? (
+                          <input
+                            type="text"
+                            className="workhub-tree-inline-rename-input"
+                            value={inlineRename.value}
+                            aria-label="Rename mood board"
+                            title="Rename mood board"
+                            placeholder="Mood board title"
+                            autoFocus
+                            onFocus={(event) => event.currentTarget.select()}
+                            onClick={(event) => event.stopPropagation()}
+                            onMouseDown={(event) => event.stopPropagation()}
+                            onBlur={commitInlineRename}
+                            onChange={(event) => {
+                              const value = event.target.value
+                              setInlineRename((current) => (current ? { ...current, value } : current))
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                event.preventDefault()
+                                commitInlineRename()
+                                return
+                              }
+                              if (event.key === 'Escape') {
+                                event.preventDefault()
+                                cancelInlineRename()
+                              }
+                            }}
+                          />
+                        ) : board.title}
                         {variantMeta.badge && (
                           <span
                             className={`workhub-tree-moodboard-variant-badge ${variantMeta.badgeClassName}`}
@@ -416,6 +948,56 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
           </div>
         )
       })}
-    </>
+      {subItemContextMenu && (
+        <div
+          className="workhub-tree-item-context-menu"
+          style={{ left: `${subItemContextMenu.x}px`, top: `${subItemContextMenu.y}px` }}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            className="workhub-tree-item-context-menu-btn"
+            onClick={() => runSubItemAction('open')}
+          >
+            ↗ Open
+          </button>
+          <button
+            type="button"
+            className="workhub-tree-item-context-menu-btn"
+            onClick={() => runSubItemAction('open-parent-folder')}
+          >
+            📁 Open parent folder
+          </button>
+          <button
+            type="button"
+            className="workhub-tree-item-context-menu-btn"
+            onClick={() => runSubItemAction('rename')}
+          >
+            ✏ Rename (F2)
+          </button>
+          <button
+            type="button"
+            className="workhub-tree-item-context-menu-btn"
+            onClick={() => runSubItemAction('duplicate')}
+          >
+            ⧉ Duplicate (Ctrl+D)
+          </button>
+          <button
+            type="button"
+            className="workhub-tree-item-context-menu-btn"
+            onClick={() => runSubItemAction('move')}
+          >
+            ↔ Move to folder...
+          </button>
+          <button
+            type="button"
+            className="workhub-tree-item-context-menu-btn is-danger"
+            onClick={() => runSubItemAction('delete')}
+          >
+            🗑 Delete (Del)
+          </button>
+        </div>
+      )}
+    </div>
   )
 })

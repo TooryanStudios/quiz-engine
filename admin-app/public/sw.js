@@ -38,6 +38,13 @@ self.addEventListener('fetch', (event) => {
   // Skip non-GET requests
   if (request.method !== 'GET') return
 
+  // Browser-internal cache probes can fail for cross-origin requests when SW intercepts.
+  // Let the browser handle these directly.
+  if (request.cache === 'only-if-cached' && request.mode !== 'same-origin') return
+
+  // Do not proxy byte-range media requests through the SW cache layer.
+  if (request.headers.has('range')) return
+
   // Firebase auth helper endpoints must never be cached by SW.
   if (url.pathname.startsWith('/__/auth/') || url.pathname.startsWith('/__/firebase/')) {
     return
@@ -74,6 +81,12 @@ self.addEventListener('fetch', (event) => {
           })
         })
     )
+    return
+  }
+
+  // Avoid SW caching/proxying for cross-origin media and CDN assets.
+  // This prevents cache-mode incompatibilities and keeps video playback stable.
+  if (url.origin !== self.location.origin && (request.destination === 'video' || request.destination === 'audio' || request.destination === 'track')) {
     return
   }
 

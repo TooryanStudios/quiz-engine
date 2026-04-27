@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type DragEvent,
   type ReactNode,
 } from 'react'
 import {
@@ -188,6 +189,13 @@ function clamp(value: number, min: number, max: number): number {
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
   return Boolean(target.closest('input, textarea, select, [contenteditable="true"]'))
+}
+
+function hasDraggedImageFiles(dataTransfer: DataTransfer | null): boolean {
+  if (!dataTransfer) return false
+  if (!Array.from(dataTransfer.types || []).includes('Files')) return false
+  if (!dataTransfer.items || dataTransfer.items.length === 0) return true
+  return Array.from(dataTransfer.items).some((item) => item.kind === 'file' && item.type.startsWith('image/'))
 }
 
 function sanitizeNodeData(data: FlowNodeData | undefined): FlowNodeData {
@@ -731,6 +739,7 @@ function FlowBoardCanvasInner({
     typeof initialState?.showImageLabels === 'boolean' ? initialState.showImageLabels : defaultShowImageLabels,
   )
   const [isUploading, setIsUploading] = useState(false)
+  const [isFileDragOver, setIsFileDragOver] = useState(false)
   const [attachPreviewGroupId, setAttachPreviewGroupId] = useState('')
   const [isImageUrlEntryOpen, setIsImageUrlEntryOpen] = useState(false)
   const [imageUrlDraftText, setImageUrlDraftText] = useState('')
@@ -1005,6 +1014,16 @@ function FlowBoardCanvasInner({
     if (!isUploading) fileInputRef.current?.click()
   }, [isUploading])
 
+  const clearFileDragState = useCallback(() => {
+    setIsFileDragOver(false)
+  }, [])
+
+  const handleCanvasFileDragLeave = useCallback((event: DragEvent<HTMLDivElement>) => {
+    const nextTarget = event.relatedTarget
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return
+    clearFileDragState()
+  }, [clearFileDragState])
+
   const addImageFiles = useCallback(async (files: File[]) => {
     if (!files.length) return
     setIsUploading(true)
@@ -1083,6 +1102,25 @@ function FlowBoardCanvasInner({
       setIsUploading(false)
     }
   }, [focusNodeInView, getInsertPosition, setNodes, uploadImages, variant])
+
+  const handleCanvasFileDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (variant !== 'mood') return
+    if (!hasDraggedImageFiles(event.dataTransfer)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+    if (!isFileDragOver) setIsFileDragOver(true)
+  }, [isFileDragOver, variant])
+
+  const handleCanvasFileDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (variant !== 'mood') return
+    if (!hasDraggedImageFiles(event.dataTransfer)) return
+    event.preventDefault()
+    clearFileDragState()
+
+    const files = Array.from(event.dataTransfer.files || []).filter((file) => file.type.startsWith('image/'))
+    if (!files.length) return
+    void addImageFiles(files).catch(() => {})
+  }, [addImageFiles, clearFileDragState, variant])
 
   const addImageUrls = useCallback(async (urls: string[]) => {
     if (!urls.length) return
@@ -1400,7 +1438,14 @@ function FlowBoardCanvasInner({
       </header>
 
       <div className="flowboard-content">
-        <div ref={canvasWrapRef} className="flowboard-canvas-wrap">
+        <div
+          ref={canvasWrapRef}
+          className={`flowboard-canvas-wrap${isFileDragOver ? ' is-file-drag-over' : ''}`}
+          onDragOver={handleCanvasFileDragOver}
+          onDragEnter={handleCanvasFileDragOver}
+          onDragLeave={handleCanvasFileDragLeave}
+          onDrop={handleCanvasFileDrop}
+        >
           <ReactFlow<RFNode, RFEdge>
             nodes={displayNodes}
             edges={edges}
@@ -1477,6 +1522,11 @@ function FlowBoardCanvasInner({
             >
               {'<'}
             </button>
+          ) : null}
+          {variant === 'mood' && isFileDragOver ? (
+            <div className="flowboard-file-drop-hint" aria-hidden="true">
+              Drop images to add them to this mood board
+            </div>
           ) : null}
         </div>
         {detailRailMode !== 'hidden' && (

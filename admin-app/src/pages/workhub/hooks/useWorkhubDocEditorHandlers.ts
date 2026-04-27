@@ -321,6 +321,8 @@ export interface UseWorkhubDocEditorHandlersOutput {
   copyToFolderProjectId: string
   copyTabMode: 'all' | 'active' | 'select'
   copyTabSelection: string[]
+  highlightedRefDocId: string | null
+  setHighlightedRefDocId: React.Dispatch<React.SetStateAction<string | null>>
   sourceReferenceDocuments: WorkhubDocument[]
   copyToFolderAvailableProjects: CopyToFolderProject[]
   setCopyToFolderDialogOpen: React.Dispatch<React.SetStateAction<boolean>>
@@ -328,7 +330,9 @@ export interface UseWorkhubDocEditorHandlersOutput {
   setCopyToFolderProjectId: React.Dispatch<React.SetStateAction<string>>
   setCopyTabMode: React.Dispatch<React.SetStateAction<'all' | 'active' | 'select'>>
   setCopyTabSelection: React.Dispatch<React.SetStateAction<string[]>>
+  handleResolveAllTabsSharingForNewTab: (existingTabIds: string[]) => Promise<boolean>
   handleCopyDocumentToFolder: () => Promise<void>
+  handleUpdateDocumentReference: (referenceDocumentId: string) => Promise<void>
   handleRemoveDocumentReference: (referenceDocumentId: string) => Promise<void>
   handleOpenReferenceSourceDocument: () => void
 }
@@ -377,6 +381,7 @@ export function useWorkhubDocEditorHandlers({
   const [copyToFolderProjectId, setCopyToFolderProjectId] = useState('')
   const [copyTabMode, setCopyTabMode] = useState<'all' | 'active' | 'select'>('select')
   const [copyTabSelection, setCopyTabSelection] = useState<string[]>([])
+  const [highlightedRefDocId, setHighlightedRefDocId] = useState<string | null>(null)
   const [sourceReferenceDocuments, setSourceReferenceDocuments] = useState<WorkhubDocument[]>([])
   const [sourceReferencedTabIds, setSourceReferencedTabIds] = useState<string[]>([])
   const [copyToFolderTargetProjects, setCopyToFolderTargetProjects] = useState<CopyToFolderProject[]>([])
@@ -489,6 +494,12 @@ export function useWorkhubDocEditorHandlers({
       })))
     })
   }, [copyToFolderDialogOpen, copyToFolderWorkspaceId, isPrivilegedMember])
+
+  useEffect(() => {
+    if (!copyToFolderDialogOpen) {
+      setHighlightedRefDocId(null)
+    }
+  }, [copyToFolderDialogOpen])
 
   function buildNotificationPreview(value: string) {
     return value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 320)
@@ -1975,6 +1986,94 @@ export function useWorkhubDocEditorHandlers({
     }
   }
 
+  async function handleResolveAllTabsSharingForNewTab(existingTabIds: string[]): Promise<boolean> {
+    if (!selectedDocument || selectedDocument.referenceSourceDocumentId) return true
+    const normalizedTabIds = Array.from(new Set(existingTabIds.filter(Boolean)))
+    if (normalizedTabIds.length === 0) return true
+
+    const allTabReferences = sourceReferenceDocuments.filter((refDoc) => {
+      const selectedTabIds = Array.isArray(refDoc.referenceTabIds) ? refDoc.referenceTabIds : []
+      return selectedTabIds.length === 0
+    })
+    if (allTabReferences.length === 0) return true
+
+    try {
+      await Promise.all(
+        allTabReferences.map((refDoc) => updateWorkhubDocument(refDoc.id, { referenceTabIds: normalizedTabIds })),
+      )
+      await refreshSourceReferenceDocuments()
+      showToast({ type: 'success', message: 'New tab remains unshared. Existing references now use selected tabs.' })
+      return true
+    } catch (error) {
+      showToast({ type: 'error', message: error instanceof Error ? error.message : 'Could not update all-tab sharing mode.' })
+      return false
+    }
+  }
+
+  async function handleUpdateDocumentReference(referenceDocumentId: string) {
+    if (!selectedDocument || !auth.currentUser) return
+    if (selectedDocument.referenceSourceDocumentId) {
+      showToast({ type: 'warning', message: 'Open the source document to update references.' })
+      return
+    }
+    if (!selectedDocumentCanEdit) {
+      showToast({ type: 'warning', message: 'You only have view access to this document.' })
+      return
+    }
+    const referenceDoc = sourceReferenceDocuments.find((doc) => doc.id === referenceDocumentId)
+    if (!referenceDoc) {
+      showToast({ type: 'error', message: 'Reference not found.' })
+      return
+    }
+
+    const allTabs: WorkhubDocumentTab[] = Array.isArray(selectedDocument.tabs) ? selectedDocument.tabs : []
+    if (allTabs.length > 0 && copyTabSelection.length === 0) {
+      showToast({ type: 'warning', message: 'Choose at least one tab to reference.' })
+      return
+    }
+
+    setBusyKey(`document-reference-update:${referenceDocumentId}`)
+    try {
+      const tabsToReference: WorkhubDocumentTab[] = allTabs
+        .filter((tab) => copyTabSelection.includes(tab.id))
+        .map((tab) => ({
+          id: tab.id,
+          title: tab.title,
+          ...(tab.icon ? { icon: tab.icon } : {}),
+          body: tab.body ?? '',
+        }))
+
+      const patch: Parameters<typeof updateWorkhubDocument>[1] = {
+        title: selectedDocument.title,
+        icon: selectedDocument.icon,
+        masterPage: selectedDocument.masterPage ?? undefined,
+        body: allTabs.length > 0 ? '' : (selectedDocument.body || ''),
+        tabs: allTabs.length > 0 ? tabsToReference : [],
+        referenceTabIds: allTabs.length > 0 ? tabsToReference.map((tab) => tab.id) : [],
+        referenceSourceDocumentId: selectedDocument.id,
+        referenceSourceWorkspaceId: selectedDocument.workspaceId,
+        referenceSourceProjectId: selectedDocument.projectId || null,
+      }
+
+      await updateWorkhubDocument(referenceDocumentId, patch)
+      await createActivity({
+        workspaceId: referenceDoc.workspaceId,
+        actorUid: auth.currentUser.uid,
+        entityType: 'document',
+        entityId: referenceDocumentId,
+        action: 'reference_update',
+        message: `Updated reference for document ${selectedDocument.title}`,
+      })
+
+      await refreshSourceReferenceDocuments()
+      showToast({ type: 'success', message: 'Reference updated.' })
+    } catch (error) {
+      showToast({ type: 'error', message: error instanceof Error ? error.message : 'Could not update reference.' })
+    } finally {
+      setBusyKey('')
+    }
+  }
+
   async function handleRemoveDocumentReference(referenceDocumentId: string) {
     if (!selectedDocument || !auth.currentUser) return
     if (!selectedDocumentCanEdit) {
@@ -2097,6 +2196,8 @@ export function useWorkhubDocEditorHandlers({
     copyToFolderProjectId,
     copyTabMode,
     copyTabSelection,
+    highlightedRefDocId,
+    setHighlightedRefDocId,
     sourceReferenceDocuments,
     copyToFolderAvailableProjects,
     setCopyToFolderDialogOpen,
@@ -2104,7 +2205,9 @@ export function useWorkhubDocEditorHandlers({
     setCopyToFolderProjectId,
     setCopyTabMode,
     setCopyTabSelection,
+    handleResolveAllTabsSharingForNewTab,
     handleCopyDocumentToFolder,
+    handleUpdateDocumentReference,
     handleRemoveDocumentReference,
     handleOpenReferenceSourceDocument,
   }

@@ -107,6 +107,11 @@ export default defineConfig({
     port: 3000,
     strictPort: true,
     proxy: {
+      '/api/seedance': {
+        target: 'http://localhost:8787',
+        changeOrigin: true,
+        secure: false,
+      },
       '/runtime': {
         target: 'http://localhost:3001',
         changeOrigin: true,

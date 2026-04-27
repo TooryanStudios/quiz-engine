@@ -83,6 +83,7 @@ const MasterAdminPage = createLazyRoute('MasterAdminPage', () => import('./pages
 const VoiceLabPage    = createLazyRoute('VoiceLabPage', () => import('./pages/VoiceLabPage'), 'VoiceLabPage')
 const AILabPage       = createLazyRoute('AILabPage', () => import('./pages/AILabPage'))
 const CoverGenLabPage = createLazyRoute('CoverGenLabPage', () => import('./pages/CoverGenLabPage'))
+const ToorGenPage = createLazyRoute('ToorGenPage', () => import('./pages/ToorGenPage'))
 const PlayTestPage    = createLazyRoute('PlayTestPage', () => import('./pages/PlayTestPage'))
 const GameEmbedPage   = createLazyRoute('GameEmbedPage', () => import('./pages/GameEmbedPage'))
 const ScannerPage     = createLazyRoute('ScannerPage', () => import('./scanner/ScannerPage'), 'ScannerPage')
@@ -110,6 +111,7 @@ function getNav(isAr: boolean) {
     { to: '/my-quizzes',       icon: '📚', label: isAr ? 'اختباراتي' : 'My Challenges' },
     { to: '/packs',            icon: '📦', label: isAr ? 'المكتبة' : 'Library' },
     { to: '/workhub',         icon: '🗂️', label: isAr ? 'وورك هَب' : 'WorkHub' },
+    { to: '/toorgen',          icon: '🎬', label: isAr ? 'تورجن' : 'ToorGen' },
     ...(communicationFeatureFlags.messagesPage ? [{ to: '/messages', icon: '💬', label: isAr ? 'الرسائل' : 'Messages' }] : []),
     ...(communicationFeatureFlags.adHocTasksPage ? [{ to: '/ops-tasks', icon: '🧾', label: isAr ? 'مهام التشغيل' : 'Ops Tasks' }] : []),
     { to: '/billing',          icon: '💳', label: isAr ? 'الاشتراك' : 'Billing' },
@@ -308,6 +310,7 @@ function App() {
   const isLoginPage   = location.pathname === '/login'
   const isMasterPage  = MASTER_PATH ? location.pathname.startsWith(MASTER_PATH) : false
   const isWorkHubPage = location.pathname === '/workhub' || location.pathname.startsWith('/workhub/')
+  const isToorGenPage = location.pathname === '/toorgen' || location.pathname.startsWith('/toorgen/')
   const isScannerPage = location.pathname === '/scanner' || location.pathname.startsWith('/scanner/')
   const isScannerDesktopPage = location.pathname === '/scanner/desktop' || location.pathname.startsWith('/scanner/desktop/')
   const isEmbeddedPreview = location.pathname.startsWith('/preview/') && new URLSearchParams(location.search).get('embedded') === '1'
@@ -625,6 +628,42 @@ function App() {
     )
   }
 
+  // ── Standalone ToorGen — dedicated AI generation shell ──
+  if (isToorGenPage) {
+    return (
+      <ToastProvider>
+        <DialogProvider>
+          <div className="master-admin-standalone">
+            <ErrorBoundary>
+              <Suspense fallback={
+                <AppLoadingScreen
+                  variant="default"
+                  note={isAr ? 'جارٍ تحميل ToorGen…' : 'Loading ToorGen…'}
+                />
+              }>
+                <RequireAuth
+                  user={user}
+                  loadingFallback={
+                    <AppLoadingScreen
+                      variant="default"
+                      note={isAr ? 'جارٍ تحميل ToorGen…' : 'Loading ToorGen…'}
+                    />
+                  }
+                >
+                  <Routes>
+                    <Route path="/toorgen" element={<ToorGenPage />} />
+                    <Route path="/toorgen/*" element={<ToorGenPage />} />
+                  </Routes>
+                </RequireAuth>
+              </Suspense>
+            </ErrorBoundary>
+            <Dialog />
+          </div>
+        </DialogProvider>
+      </ToastProvider>
+    )
+  }
+
   // ── Standalone Scanner — no sidebar, no app chrome ──
   if (isScannerPage) {
     return (
@@ -724,6 +763,7 @@ function App() {
       <Route path="/packs" element={withRouteBoundary('packs', <RequireAuth user={user}><PacksPage /></RequireAuth>)} />
       <Route path="/my-quizzes" element={withRouteBoundary('my-quizzes', <RequireAuth user={user}><MyQuizzesPage /></RequireAuth>)} />
       <Route path="/workhub/*" element={withRouteBoundary('workhub', <RequireAuth user={user} loadingFallback={<AppLoadingScreen variant="workhub" note={isAr ? 'جارٍ تحميل WorkHub…' : 'Loading WorkHub…'} />}><WorkHubRoutePage /></RequireAuth>)} />
+      <Route path="/toorgen/*" element={withRouteBoundary('toorgen', <RequireAuth user={user}><ToorGenPage /></RequireAuth>)} />
       {communicationFeatureFlags.messagesPage ? (
         <Route path="/messages" element={withRouteBoundary('messages', <RequireAuth user={user}><MessagesPage /></RequireAuth>)} />
       ) : null}
@@ -754,6 +794,8 @@ function App() {
       ? 'editor'
       : location.pathname.startsWith('/workhub')
         ? 'workhub'
+        : location.pathname.startsWith('/toorgen')
+          ? 'toorgen'
         : location.pathname.startsWith('/packs')
           ? 'library'
           : location.pathname.startsWith('/my-quizzes')
@@ -777,6 +819,8 @@ function App() {
       ? (isAr ? 'استوديو التحديات' : 'Challenge Studio')
       : mobileRouteKey === 'workhub'
         ? (isAr ? 'وورك هَب التشغيلي' : 'WorkHub Operations')
+      : mobileRouteKey === 'toorgen'
+        ? (isAr ? 'تورجن' : 'ToorGen')
         : mobileRouteKey === 'library'
           ? (isAr ? 'المكتبة' : 'Library')
           : mobileRouteKey === 'my-quizzes'
@@ -800,6 +844,8 @@ function App() {
         ? (isAr ? 'صياغة وتحرير ثم نشر' : 'Draft, refine, publish')
       : mobileRouteKey === 'workhub'
           ? (isAr ? 'المشاريع والمهام والمراجعات' : 'Projects, tasks, approvals')
+      : mobileRouteKey === 'toorgen'
+        ? (isAr ? 'توليد فيديوهات الذكاء الاصطناعي' : 'AI video generation workspace')
         : mobileRouteKey === 'messages'
           ? (isAr ? 'محادثات الفريق الموحدة' : 'Unified team communication')
           : mobileRouteKey === 'ops-tasks'
@@ -812,6 +858,7 @@ function App() {
       dashboard: ['/dashboard', '/workhub', '/editor', '/my-quizzes', '/packs'],
       editor: ['/editor', '/mini-game-editor', '/workhub', '/my-quizzes', '/dashboard'],
       workhub: ['/workhub', '/dashboard', '/editor', '/my-quizzes', '/packs'],
+    toorgen: ['/toorgen', '/workhub', '/dashboard', '/editor', '/my-quizzes'],
     library: ['/packs', '/my-quizzes', '/dashboard', '/editor', '/profile'],
     'my-quizzes': ['/my-quizzes', '/editor', '/dashboard', '/packs', '/profile'],
     messages: ['/messages', '/dashboard', '/workhub', '/editor', '/profile'],

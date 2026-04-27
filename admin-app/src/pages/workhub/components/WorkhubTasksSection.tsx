@@ -131,6 +131,7 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
     setDropTargetKey,
     handleTaskReorder,
     closeTaskContextMenu,
+    openTaskMoveDialog,
     copyTaskDeepLink,
     copyTaskUniqueToken,
     handleQuickAddTask,
@@ -1225,6 +1226,9 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
                   selectedProjectEffectiveTaskStatuses={selectedProjectEffectiveTaskStatuses}
                   selectedTaskId={selectedTaskId}
                   setSelectedTaskId={setSelectedTaskId}
+                  onRowContextMenu={(taskId, x, y) => {
+                    setTaskContextMenuState({ taskId, x, y })
+                  }}
                   handleTaskUpdate={handleTaskUpdate}
                   quickAddStatusId={timelineQuickAddStatusId}
                   quickAddProjectId={timelineQuickAddProjectId}
@@ -1447,7 +1451,6 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
           <aside
             ref={detailRailRef}
             className={`workhub-task-detail-rail${isMobileWorkhubLayout ? ' is-mobile-drawer' : ''}${isMobileWorkhubLayout && selectedTask ? ' is-open' : ''}${!isMobileWorkhubLayout ? ` is-${detailRailMode}` : ''}`}
-            aria-hidden={isMobileWorkhubLayout && !selectedTask}
           >
             {!isMobileWorkhubLayout && detailRailMode !== 'hidden' && (
               <button
@@ -1644,9 +1647,57 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
           }}
           onClick={(event) => event.stopPropagation()}
         >
-          <button type="button" onClick={() => { void copyTaskUniqueToken() }}>Copy task token</button>
-          <button type="button" onClick={() => { void copyTaskDeepLink() }}>Copy task URL</button>
-          <button type="button" onClick={closeTaskContextMenu}>Cancel</button>
+          <button
+            type="button"
+            onClick={() => {
+              if (!taskContextMenuState?.taskId) return
+              setSelectedTaskId(taskContextMenuState.taskId)
+              closeTaskContextMenu()
+            }}
+          >
+            ↗ Open task
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void copyTaskUniqueToken()
+            }}
+          >
+            📋 Copy task token
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void copyTaskDeepLink()
+            }}
+          >
+            🔗 Copy task URL
+          </button>
+          <div className="workhub-task-context-menu-separator" />
+          <button
+            type="button"
+            onClick={() => {
+              if (!taskContextMenuState?.taskId) return
+              openTaskMoveDialog(taskContextMenuState.taskId)
+            }}
+          >
+            ↔ Move task...
+          </button>
+          <div className="workhub-task-context-menu-separator" />
+          <button
+            type="button"
+            className="is-danger"
+            onClick={() => {
+              if (!taskContextMenuState?.taskId) return
+              setSelectedTaskId(taskContextMenuState.taskId)
+              setTaskDeleteConfirmOpen(true)
+              closeTaskContextMenu()
+            }}
+          >
+            🗑 Delete task
+          </button>
+          <div className="workhub-task-context-menu-separator" />
+          <button type="button" onClick={closeTaskContextMenu}>✕ Cancel</button>
         </div>
       )}
 

@@ -1,0 +1,743 @@
+.tgfc-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: #07080b;
+  color: #f4f5ee;
+}
+
+.tgfc-shell .react-flow {
+  background:
+    radial-gradient(circle at 18% 12%, rgba(217, 240, 47, 0.08), transparent 30%),
+    radial-gradient(circle at 78% 16%, rgba(90, 128, 255, 0.08), transparent 32%),
+    #07080b;
+}
+
+.tgfc-shell .react-flow__edge-path {
+  stroke: #d9f02f;
+  stroke-width: 1.2;
+}
+
+.tgfc-shell .react-flow__connection-path {
+  stroke: #d9f02f;
+  stroke-width: 1.2;
+}
+
+.tgfc-toolbar,
+.tgfc-floating-panel {
+  position: absolute;
+  z-index: 15;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(14, 16, 21, 0.92);
+  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.36);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+}
+
+.tgfc-toolbar {
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  min-height: 44px;
+  border-radius: 14px;
+  padding: 7px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  pointer-events: auto;
+}
+
+.tgfc-toolbar select,
+.tgfc-toolbar input,
+.tgfc-toolbar button,
+.tgfc-floating-panel select,
+.tgfc-floating-panel input,
+.tgfc-floating-panel textarea,
+.tgfc-floating-panel button {
+  min-height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 9px;
+  background: #090a0d;
+  color: #eef1e6;
+  font: inherit;
+  font-size: 0.78rem;
+  outline: none;
+}
+
+.tgfc-toolbar input {
+  width: min(220px, 22vw);
+  padding: 0 10px;
+}
+
+.tgfc-toolbar select {
+  max-width: 160px;
+  padding: 0 8px;
+}
+
+.tgfc-toolbar button,
+.tgfc-floating-panel button {
+  padding: 0 10px;
+  cursor: pointer;
+  font-weight: 750;
+  background: #191b22;
+}
+
+.tgfc-toolbar button:hover:not(:disabled),
+.tgfc-floating-panel button:hover:not(:disabled) {
+  border-color: rgba(217, 240, 47, 0.34);
+  color: #d9f02f;
+}
+
+.tgfc-toolbar button:disabled,
+.tgfc-floating-panel button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.tgfc-toolbar-divider {
+  width: 1px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.tgfc-node {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 12px;
+  color: #f2f4eb;
+  background: #12141a;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.34);
+  display: flex;
+  flex-direction: column;
+}
+
+.tgfc-node.is-selected {
+  border-color: #d9f02f;
+  box-shadow: 0 0 0 1px rgba(217, 240, 47, 0.42), 0 20px 54px rgba(0, 0, 0, 0.38);
+}
+
+.tgfc-node--prompt { background: linear-gradient(180deg, #252416, #141513); }
+.tgfc-node--image { background: linear-gradient(180deg, #132022, #12141a); }
+.tgfc-node--video { background: linear-gradient(180deg, #171a28, #12141a); }
+.tgfc-node--generation {
+  background: linear-gradient(180deg, #202414, #13150e);
+  padding-left: 86px;
+}
+
+.tgfc-node-dragbar {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  cursor: grab;
+}
+
+.tgfc-node-title-display {
+  width: 100%;
+  min-height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.28);
+  color: #f2f4eb;
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 800;
+  text-align: left;
+  padding: 0 9px;
+  cursor: inherit;
+}
+
+.tgfc-node-title,
+.tgfc-node-input,
+.tgfc-node-textarea {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.28);
+  color: #f2f4eb;
+  font: inherit;
+  outline: none;
+}
+
+.tgfc-node-title {
+  min-height: 32px;
+  padding: 0 9px;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.tgfc-node-input {
+  margin-top: 8px;
+  min-height: 32px;
+  padding: 0 9px;
+  font-size: 0.76rem;
+}
+
+.tgfc-node-textarea {
+  margin-top: 8px;
+  min-height: 0;
+  flex: 1;
+  padding: 9px;
+  resize: vertical;
+  line-height: 1.45;
+  font-size: 0.92rem;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.tgfc-node-count {
+  margin-top: 6px;
+  color: #a5ad9e;
+  font-size: 0.72rem;
+  line-height: 1.2;
+  text-align: right;
+}
+
+.tgfc-node-count.is-over-limit {
+  color: #ff9c8f;
+  font-weight: 800;
+}
+
+.tgfc-media-frame {
+  margin-top: 9px;
+  width: 100%;
+  flex: 1;
+  min-height: 118px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  background: #07080b;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #737a70;
+  font-size: 0.78rem;
+}
+
+.tgfc-node-input,
+.tgfc-node-textarea,
+.tgfc-node-action,
+.tgfc-generate-node-btn,
+.tgfc-floating-panel input,
+.tgfc-floating-panel textarea,
+.tgfc-floating-panel select,
+.tgfc-floating-panel button {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.tgfc-media-frame img,
+.tgfc-media-frame video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.tgfc-node-action,
+.tgfc-generate-node-btn {
+  width: 100%;
+  margin-top: 8px;
+  min-height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: #191b22;
+  color: #eef1e6;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.tgfc-generate-node-btn {
+  background: #d9f02f;
+  color: #101206;
+  border-color: transparent;
+}
+
+.tgfc-node-actions {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 0.75fr) minmax(0, 1fr);
+  gap: 7px;
+}
+
+.tgfc-node-actions .tgfc-node-action,
+.tgfc-node-actions .tgfc-generate-node-btn {
+  margin-top: 0;
+  min-width: 0;
+  white-space: normal;
+}
+
+.tgfc-node--generation p {
+  margin: 9px 0 8px;
+  color: #a5ad9e;
+  font-size: 0.78rem;
+  line-height: 1.42;
+}
+
+.tgfc-generation-node-preview {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  min-height: 90px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  background: #050609;
+  color: #737a70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  font-size: 0.78rem;
+}
+
+.tgfc-generation-node-preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.tgfc-connected-summary {
+  margin-top: 8px;
+  display: inline-flex;
+  min-height: 26px;
+  align-items: center;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: rgba(217, 240, 47, 0.12);
+  color: #d9f02f;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.tgfc-node-task-id {
+  margin-top: 8px;
+  color: #8f9689;
+  font-size: 0.66rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tgfc-handle {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #07080b;
+  background: #d9f02f;
+}
+
+.tgfc-handle--generation-input {
+  width: 16px;
+  height: 16px;
+}
+
+/* Edge reconnect grab handles — make them big enough to find and drag */
+.react-flow__edgeupdater {
+  cursor: grab;
+}
+
+.react-flow__edgeupdater:active {
+  cursor: grabbing;
+}
+
+.react-flow__edgeupdater-target {
+  fill: #d9f02f;
+  stroke: #07080b;
+  stroke-width: 2px;
+  r: 7;
+}
+
+.tgfc-handle--generation-input::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: #07080b;
+  opacity: 0.55;
+}
+
+.tgfc-handle--generation-input.is-input-1,
+.tgfc-generation-socket-label.is-input-1 { top: 28%; }
+
+.tgfc-handle--generation-input.is-input-2,
+.tgfc-generation-socket-label.is-input-2 { top: 43%; }
+
+.tgfc-handle--generation-input.is-input-3,
+.tgfc-generation-socket-label.is-input-3 { top: 58%; }
+
+.tgfc-handle--generation-input.is-input-4,
+.tgfc-generation-socket-label.is-input-4 { top: 73%; }
+
+.tgfc-generation-sockets {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 82px;
+  pointer-events: none;
+}
+
+.tgfc-generation-socket-label {
+  position: absolute;
+  left: 13px;
+  width: 62px;
+  transform: translateY(-50%);
+  display: grid;
+  gap: 1px;
+  color: #f2f4eb;
+}
+
+.tgfc-generation-socket-label strong {
+  display: block;
+  font-size: 0.66rem;
+  font-weight: 850;
+  line-height: 1.05;
+}
+
+.tgfc-generation-socket-label span {
+  display: block;
+  color: #9da696;
+  font-size: 0.55rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.tgfc-floating-panel {
+  border-radius: 16px;
+  padding: 12px;
+}
+
+.tgfc-generation-panel {
+  left: 18px;
+  bottom: 18px;
+  width: min(430px, calc(100vw - 330px));
+  max-height: min(650px, calc(100vh - 106px));
+  overflow: auto;
+}
+
+.tgfc-preview-panel {
+  right: 18px;
+  bottom: 18px;
+  width: 320px;
+  max-height: min(420px, calc(100vh - 130px));
+  overflow: hidden;
+  transition: max-height 0.18s ease;
+}
+
+.tgfc-preview-panel.is-open {
+  overflow: auto;
+}
+
+.tgfc-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 9px;
+  color: #f3f4ee;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.tgfc-panel-head--toggle {
+  width: 100%;
+  margin-bottom: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.tgfc-panel-head--toggle:hover {
+  color: #d9f02f;
+}
+
+.tgfc-panel-toggle-icon {
+  margin-left: auto;
+  font-size: 0.65rem;
+  opacity: 0.6;
+}
+
+.tgfc-preview-panel.is-open .tgfc-panel-head--toggle,
+.tgfc-generation-panel.is-open .tgfc-panel-head--toggle {
+  margin-bottom: 9px;
+}
+
+.tgfc-panel-head strong {
+  color: #d9f02f;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+}
+
+.tgfc-panel-status-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.tgfc-credit-badge {
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid rgba(217, 240, 47, 0.22);
+  border-radius: 999px;
+  background: rgba(217, 240, 47, 0.08);
+  color: #d9f02f;
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.tgfc-generation-panel textarea {
+  width: 100%;
+  min-height: 84px;
+  padding: 9px 10px;
+  resize: vertical;
+  line-height: 1.42;
+}
+
+.tgfc-inline-preview {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  background: #050609;
+  color: #737a70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  margin-bottom: 9px;
+  font-size: 0.82rem;
+}
+
+.tgfc-inline-preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.tgfc-field {
+  display: grid;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.tgfc-field span {
+  color: #9da696;
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tgfc-field input {
+  padding: 0 9px;
+}
+
+.tgfc-control-grid {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: 1fr 78px 84px;
+  gap: 7px;
+}
+
+.tgfc-control-grid select,
+.tgfc-resume-row input {
+  padding: 0 8px;
+}
+
+.tgfc-resume-row {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 7px;
+}
+
+.tgfc-preview-frame {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  background: #050609;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #777f73;
+  font-size: 0.84rem;
+}
+
+.tgfc-preview-frame video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.tgfc-error {
+  margin-top: 8px;
+  padding: 8px 9px;
+  border: 1px solid rgba(255, 110, 110, 0.28);
+  border-radius: 10px;
+  background: rgba(90, 18, 20, 0.7);
+  color: #ffb2b2;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.tgfc-node-error {
+  margin: 8px 0 0;
+  font-size: 0.72rem;
+}
+
+.tgfc-json-panel {
+  margin-top: 8px;
+  color: #a8b09f;
+  font-size: 0.76rem;
+}
+
+.tgfc-json-panel summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.tgfc-json-panel pre {
+  max-height: 180px;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding: 9px;
+  border-radius: 10px;
+  background: #07080b;
+  color: #cbd4c0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tgfc-json-pre {
+  max-height: 330px;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding: 9px;
+  border-radius: 10px;
+  background: #07080b;
+  color: #cbd4c0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.72rem;
+}
+
+.tgfc-copy-json-btn {
+  width: 100%;
+  min-height: 30px;
+}
+
+.tgfc-minimap {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(10, 11, 14, 0.84);
+  overflow: hidden;
+}
+
+.tgfc-controls.react-flow__controls {
+  top: 62px;
+  right: 18px;
+  bottom: auto;
+  left: auto;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.32);
+}
+
+.tgfc-controls .react-flow__controls-button {
+  background: #111318;
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #eef1e6;
+}
+
+.tgfc-delete-selected {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.tgfc-confirm-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.32);
+}
+
+.tgfc-confirm-card {
+  width: min(360px, calc(100% - 32px));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  background: #12141a;
+  padding: 16px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+}
+
+.tgfc-confirm-card strong {
+  display: block;
+  color: #f4f5ee;
+  font-size: 0.95rem;
+}
+
+.tgfc-confirm-card p {
+  margin: 8px 0 14px;
+  color: #9da696;
+  font-size: 0.84rem;
+}
+
+.tgfc-confirm-card div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.tgfc-confirm-card button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: #191b22;
+  color: #eef1e6;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.tgfc-confirm-card button.is-danger {
+  border-color: rgba(255, 93, 93, 0.32);
+  background: rgba(255, 93, 93, 0.13);
+  color: #ffb2b2;
+}
+
+@media (max-width: 980px) {
+  .tgfc-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .tgfc-generation-panel,
+  .tgfc-preview-panel {
+    position: absolute;
+    width: calc(100% - 36px);
+    left: 18px;
+    right: 18px;
+  }
+
+  .tgfc-preview-panel {
+    bottom: 230px;
+  }
+}

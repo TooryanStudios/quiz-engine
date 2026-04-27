@@ -16,6 +16,7 @@ import { WorkhubAttachmentCard } from './WorkhubAttachmentCard'
 import { WorkhubChecklistCard } from './WorkhubChecklistCard'
 import { WorkhubDiscussionCard } from './WorkhubDiscussionCard'
 import { WorkhubDocumentAiPanel } from './WorkhubDocumentAiPanel'
+import { WorkspaceBrowserDialog } from './WorkspaceBrowserDialog'
 import { toDocumentBodyEditorHtml } from '../docEditorBody'
 import type { Editor as TinyMCEEditor } from 'tinymce'
 
@@ -1391,13 +1392,17 @@ interface WorkhubDocEditorProps extends UseWorkhubDocEditorHandlersOutput {
   copyToFolderProjectId: string
   copyTabMode: 'all' | 'active' | 'select'
   copyTabSelection: string[]
+  highlightedRefDocId: string | null
+  setHighlightedRefDocId: React.Dispatch<React.SetStateAction<string | null>>
   setCopyToFolderDialogOpen: React.Dispatch<React.SetStateAction<boolean>>
   setCopyToFolderWorkspaceId: React.Dispatch<React.SetStateAction<string>>
   setCopyToFolderProjectId: React.Dispatch<React.SetStateAction<string>>
   setCopyTabMode: React.Dispatch<React.SetStateAction<'all' | 'active' | 'select'>>
   setCopyTabSelection: React.Dispatch<React.SetStateAction<string[]>>
   sourceReferenceDocuments: WorkhubDocument[]
+  handleResolveAllTabsSharingForNewTab: (existingTabIds: string[]) => Promise<boolean>
   handleCopyDocumentToFolder: () => Promise<void>
+  handleUpdateDocumentReference: (referenceDocumentId: string) => Promise<void>
   handleRemoveDocumentReference: (referenceDocumentId: string) => Promise<void>
   onPrintPreviewChange?: (active: boolean) => void
 }
@@ -1516,18 +1521,23 @@ export function WorkhubDocEditor({
   copyToFolderProjectId,
   copyTabMode,
   copyTabSelection,
+  highlightedRefDocId,
+  setHighlightedRefDocId,
   setCopyToFolderDialogOpen,
   setCopyToFolderWorkspaceId,
   setCopyToFolderProjectId,
   setCopyTabMode,
   setCopyTabSelection,
   sourceReferenceDocuments,
+  handleResolveAllTabsSharingForNewTab,
   handleCopyDocumentToFolder,
+  handleUpdateDocumentReference,
   handleRemoveDocumentReference,
   handleOpenReferenceSourceDocument,
   onPrintPreviewChange,
 }: WorkhubDocEditorProps) {
   const [mobileDocDetailsOpen, setMobileDocDetailsOpen] = useState(false)
+  const [folderBrowserDialogOpen, setFolderBrowserDialogOpen] = useState(false)
   const [detailRailTab, setDetailRailTab] = useState<DetailRailTab>('details')
   const [isHeaderVoiceListening, setIsHeaderVoiceListening] = useState(false)
   const [printPreviewMode, setPrintPreviewMode] = useState(false)
@@ -1650,23 +1660,34 @@ export function WorkhubDocEditor({
     () => Object.fromEntries(allWorkspaceProjects.map((project) => [project.id, project])) as Record<string, { id: string; name: string; workspaceId: string; parentProjectId?: string | null }>,
     [allWorkspaceProjects],
   )
-  const referenceLocationsByTabId = useMemo(() => {
-    const map: Record<string, string[]> = {}
-    documentTabsDraft.forEach((tab) => { map[tab.id] = [] })
-    sourceReferenceDocuments.forEach((refDoc) => {
-      const workspaceName = referenceWorkspaceById[refDoc.workspaceId]?.name || refDoc.workspaceId || 'Workspace'
-      const projectName = refDoc.projectId ? (referenceProjectById[refDoc.projectId]?.name || workspaceProjectById[refDoc.projectId]?.name || refDoc.projectId) : 'Folder'
-      const locationLabel = `${workspaceName} / ${projectName}`
-      const refTabIds = Array.isArray(refDoc.referenceTabIds) ? refDoc.referenceTabIds : []
-      documentTabsDraft.forEach((tab) => {
-        if (refTabIds.length > 0 && !refTabIds.includes(tab.id)) return
-        const current = map[tab.id] || []
-        if (!current.includes(locationLabel)) current.push(locationLabel)
-        map[tab.id] = current
-      })
-    })
-    return map
-  }, [documentTabsDraft, referenceProjectById, referenceWorkspaceById, sourceReferenceDocuments, workspaceProjectById])
+  const highlightedReferenceDocument = useMemo(
+    () => sourceReferenceDocuments.find((doc) => doc.id === highlightedRefDocId) || null,
+    [highlightedRefDocId, sourceReferenceDocuments],
+  )
+  const highlightedReferenceTabIds = useMemo(() => {
+    if (!highlightedReferenceDocument) return [] as string[]
+    const explicit = Array.isArray(highlightedReferenceDocument.referenceTabIds)
+      ? highlightedReferenceDocument.referenceTabIds
+      : []
+    if (explicit.length > 0) return explicit
+    return documentTabsDraft.map((tab) => tab.id)
+  }, [documentTabsDraft, highlightedReferenceDocument])
+  const highlightedReferenceSelectionDirty = useMemo(() => {
+    if (!highlightedReferenceDocument) return false
+    const current = Array.from(new Set(copyTabSelection)).sort()
+    const baseline = Array.from(new Set(highlightedReferenceTabIds)).sort()
+    if (current.length !== baseline.length) return true
+    for (let i = 0; i < current.length; i += 1) {
+      if (current[i] !== baseline[i]) return true
+    }
+    return false
+  }, [copyTabSelection, highlightedReferenceDocument, highlightedReferenceTabIds])
+
+  useEffect(() => {
+    if (!highlightedRefDocId) return
+    const stillExists = sourceReferenceDocuments.some((doc) => doc.id === highlightedRefDocId)
+    if (!stillExists) setHighlightedRefDocId(null)
+  }, [highlightedRefDocId, setHighlightedRefDocId, sourceReferenceDocuments])
   const aiPanelPersistenceKey = selectedDocument ? `workhub:${selectedDocument.id}:${activeTab?.id || 'body'}` : undefined
   const [showPublishWarningBox, setShowPublishWarningBox] = useState(false)
   const [publishWarningShownForVisit, setPublishWarningShownForVisit] = useState(false)
@@ -2118,24 +2139,42 @@ export function WorkhubDocEditor({
   }
 
   // --- Tab management helpers ---
-  function handleAddTab() {
+  async function handleAddTab() {
     if (!selectedDocument || selectedDocumentReadOnly) return
     const hasTabs = documentTabsDraft.length > 0
+    const hasAllTabsSharing = sourceReferenceDocuments.some((refDoc) => {
+      const selectedTabIds = Array.isArray(refDoc.referenceTabIds) ? refDoc.referenceTabIds : []
+      return selectedTabIds.length === 0
+    })
     const newTabId = `tab_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     if (!hasTabs) {
       // First time: convert current body into first tab, then add a second empty tab
       const firstTabId = `tab_${Date.now() - 1}_${Math.random().toString(36).slice(2, 8)}`
+      if (hasAllTabsSharing) {
+        const includeNewTab = window.confirm('All-tabs sharing is active. Include this new tab in shared references? Click Cancel to keep new tab unshared.')
+        if (!includeNewTab) {
+          const resolved = await handleResolveAllTabsSharingForNewTab([firstTabId])
+          if (!resolved) return
+        }
+      }
       const firstTab: WorkhubDocumentTab = { id: firstTabId, title: 'Main', body: selectedDocumentBodyDraft }
       const newTab: WorkhubDocumentTab = { id: newTabId, title: 'Tab 2', body: '' }
       setDocumentTabsDraft([firstTab, newTab])
       setActiveTabId(newTabId)
       setSelectedDocumentBodyDraft('')
     } else {
-      const newTab: WorkhubDocumentTab = { id: newTabId, title: `Tab ${documentTabsDraft.length + 1}`, body: '' }
       // Flush current editor content to active tab before appending
       const updatedTabs = documentTabsDraft.map((t) =>
         t.id === activeTabId ? { ...t, body: selectedDocumentBodyDraft } : t,
       )
+      if (hasAllTabsSharing) {
+        const includeNewTab = window.confirm('All-tabs sharing is active. Include this new tab in shared references? Click Cancel to keep new tab unshared.')
+        if (!includeNewTab) {
+          const resolved = await handleResolveAllTabsSharingForNewTab(updatedTabs.map((tab) => tab.id))
+          if (!resolved) return
+        }
+      }
+      const newTab: WorkhubDocumentTab = { id: newTabId, title: `Tab ${documentTabsDraft.length + 1}`, body: '' }
       setDocumentTabsDraft([...updatedTabs, newTab])
       setActiveTabId(newTabId)
       setSelectedDocumentBodyDraft('')
@@ -4027,6 +4066,13 @@ export function WorkhubDocEditor({
                     <option key={ws.id} value={ws.id}>{ws.name}</option>
                   ))}
                 </select>
+                <button
+                  type="button"
+                  className="workhub-ghost-btn"
+                  onClick={() => setFolderBrowserDialogOpen(true)}
+                >
+                  Browse...
+                </button>
               </label>
               {copyToFolderWorkspaceId && (
                 <label className="workhub-share-doc-form-row">
@@ -4075,113 +4121,185 @@ export function WorkhubDocEditor({
                   </select>
                 </label>
               )}
-              {documentTabsDraft.length > 0 && (
-                <div className="workhub-share-doc-form-row is-full-width">
-                  <span>Tabs to reference</span>
-                  <div className="workhub-copy-tab-mode-group">
-                    {(['all', 'select'] as const).map((mode) => (
-                      <button
-                        key={mode}
-                        type="button"
-                        className={`workhub-copy-tab-mode-btn${copyTabMode === mode ? ' is-active' : ''}`}
-                        onClick={() => { setCopyTabMode(mode); setCopyTabSelection([]) }}
-                      >
-                        {mode === 'all' ? 'All tabs' : 'Choose tabs'}
-                      </button>
-                    ))}
-                  </div>
-                  {copyTabMode === 'select' && (
-                    <div className="workhub-copy-tab-checklist">
-                      {documentTabsDraft.map((tab, index) => {
-                        const rawTabTitle = typeof tab.title === 'string' ? tab.title : ''
-                        const visibleTabTitle = rawTabTitle
-                          .replace(/<[^>]*>/g, ' ')
-                          .replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, '')
-                          .replace(/\s+/g, ' ')
-                          .trim()
-                        const resolvedTabTitle = visibleTabTitle || `Tab ${index + 1}`
-                        const referenceLocations = referenceLocationsByTabId[tab.id] || []
-                        const visibleReferenceLocations = referenceLocations.slice(0, 2).join(', ')
-                        const referenceLocationLabel = referenceLocations.length > 2
-                          ? `${visibleReferenceLocations} +${referenceLocations.length - 2} more`
-                          : visibleReferenceLocations
-                        return (
-                        <label key={tab.id} className={`workhub-copy-tab-check-item${referenceLocations.length > 0 ? ' has-reference' : ''}`}>
-                          <input
-                            type="checkbox"
-                            checked={copyTabSelection.includes(tab.id)}
-                            onChange={(e) => {
-                              setCopyTabSelection((prev) =>
-                                e.target.checked ? [...prev, tab.id] : prev.filter((id) => id !== tab.id),
-                              )
-                            }}
-                          />
-                          <span className="workhub-copy-tab-check-main">
-                            <span className="workhub-copy-tab-check-text">
-                              {tab.icon ? `${tab.icon} ` : ''}
-                              {resolvedTabTitle}
-                            </span>
-                            {referenceLocations.length > 0 && (
-                              <span className="workhub-copy-tab-reference-indicator">Referenced in {referenceLocationLabel}</span>
-                            )}
-                          </span>
-                        </label>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
               <div className="workhub-share-doc-form-row is-full-width">
-                <span>Existing references</span>
-                {sourceReferenceDocuments.length === 0 ? (
-                  <p className="workhub-share-doc-desc">No active references yet.</p>
-                ) : (
-                  <div className="workhub-share-doc-members">
-                    {sourceReferenceDocuments.map((refDoc) => {
-                      const projectName = referenceProjectById[refDoc.projectId || '']?.name || workspaceProjectById[refDoc.projectId || '']?.name || refDoc.projectId || 'Folder'
-                      const workspaceName = referenceWorkspaceById[refDoc.workspaceId]?.name || refDoc.workspaceId
-                      return (
-                        <div key={refDoc.id} className="workhub-share-doc-member-row">
-                          <div className="workhub-share-doc-member-copy">
-                            <strong>{refDoc.title}</strong>
-                            <small>{workspaceName} · {projectName}</small>
-                          </div>
-                          <button
-                            type="button"
-                            className="workhub-ghost-btn"
-                            disabled={!selectedDocumentCanEdit || busyKey === `document-reference-remove:${refDoc.id}`}
-                            onClick={() => {
-                              if (!window.confirm('Remove this reference from its target folder?')) return
-                              void handleRemoveDocumentReference(refDoc.id)
-                            }}
-                          >
-                            {busyKey === `document-reference-remove:${refDoc.id}` ? 'Removing…' : 'Unshare'}
-                          </button>
-                        </div>
-                      )
-                    })}
+                <div className="workhub-share-doc-reference-layout">
+                  <div className="workhub-share-doc-reference-pane">
+                    <span>Existing references</span>
+                    {sourceReferenceDocuments.length === 0 ? (
+                      <p className="workhub-share-doc-desc">No active references yet.</p>
+                    ) : (
+                      <div className="workhub-share-doc-members">
+                        {sourceReferenceDocuments.map((refDoc) => {
+                          const projectName = referenceProjectById[refDoc.projectId || '']?.name || workspaceProjectById[refDoc.projectId || '']?.name || 'Folder'
+                          const workspaceName = referenceWorkspaceById[refDoc.workspaceId]?.name || 'Workspace'
+                          const refTabIds = Array.isArray(refDoc.referenceTabIds) && refDoc.referenceTabIds.length > 0
+                            ? refDoc.referenceTabIds
+                            : documentTabsDraft.map((t) => t.id)
+                          const isHighlighted = highlightedRefDocId === refDoc.id
+                          return (
+                            <div
+                              key={refDoc.id}
+                              className={`workhub-share-doc-member-row is-ref-item${isHighlighted ? ' is-highlighted' : ''}`}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => {
+                                setHighlightedRefDocId(refDoc.id)
+                                setCopyToFolderWorkspaceId(refDoc.workspaceId)
+                                setCopyToFolderProjectId(refDoc.projectId || '')
+                                setCopyTabMode('select')
+                                setCopyTabSelection(refTabIds)
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault()
+                                  setHighlightedRefDocId(refDoc.id)
+                                  setCopyToFolderWorkspaceId(refDoc.workspaceId)
+                                  setCopyToFolderProjectId(refDoc.projectId || '')
+                                  setCopyTabMode('select')
+                                  setCopyTabSelection(refTabIds)
+                                }
+                              }}
+                            >
+                              <div className="workhub-share-doc-member-copy">
+                                <strong className="workhub-ref-location">{workspaceName} · {projectName}</strong>
+                                <small className="workhub-ref-docname">{refDoc.title}</small>
+                              </div>
+                              <button
+                                type="button"
+                                className="workhub-ghost-btn"
+                                disabled={!selectedDocumentCanEdit || busyKey === `document-reference-remove:${refDoc.id}`}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  if (!window.confirm('Remove this reference from its target folder?')) return
+                                  if (highlightedRefDocId === refDoc.id) setHighlightedRefDocId(null)
+                                  void handleRemoveDocumentReference(refDoc.id)
+                                }}
+                              >
+                                {busyKey === `document-reference-remove:${refDoc.id}` ? 'Removing…' : 'Unshare'}
+                              </button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
                   </div>
-                )}
+
+                  <div className="workhub-share-doc-reference-pane">
+                    <span>Tabs to reference</span>
+                    {documentTabsDraft.length === 0 ? (
+                      <p className="workhub-share-doc-desc">This document has no tabs.</p>
+                    ) : (
+                      <>
+                        <div className="workhub-copy-tab-mode-group">
+                          {(['all', 'select'] as const).map((mode) => (
+                            <button
+                              key={mode}
+                              type="button"
+                              className={`workhub-copy-tab-mode-btn${copyTabMode === mode ? ' is-active' : ''}`}
+                              onClick={() => {
+                                setCopyTabMode(mode)
+                                if (mode === 'all') {
+                                  setCopyTabSelection(documentTabsDraft.map((tab) => tab.id))
+                                } else {
+                                  if (highlightedReferenceDocument) {
+                                    setCopyTabSelection(highlightedReferenceTabIds)
+                                  } else {
+                                    setCopyTabSelection([])
+                                  }
+                                }
+                              }}
+                            >
+                              {mode === 'all' ? 'All tabs' : 'Choose tabs'}
+                            </button>
+                          ))}
+                        </div>
+                        {copyTabMode === 'select' && (
+                          <div className="workhub-copy-tab-checklist">
+                            {documentTabsDraft.map((tab, index) => {
+                              const rawTabTitle = typeof tab.title === 'string' ? tab.title : ''
+                              const visibleTabTitle = rawTabTitle
+                                .replace(/<[^>]*>/g, ' ')
+                                .replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, '')
+                                .replace(/\s+/g, ' ')
+                                .trim()
+                              const resolvedTabTitle = visibleTabTitle || `Tab ${index + 1}`
+                              return (
+                                <label key={tab.id} className="workhub-copy-tab-check-item">
+                                  <input
+                                    type="checkbox"
+                                    checked={copyTabSelection.includes(tab.id)}
+                                    onChange={(e) => {
+                                      setCopyTabSelection((prev) =>
+                                        e.target.checked ? [...prev, tab.id] : prev.filter((id) => id !== tab.id),
+                                      )
+                                    }}
+                                  />
+                                  <span className="workhub-copy-tab-check-main">
+                                    <span className="workhub-copy-tab-check-text">
+                                      {tab.icon ? `${tab.icon} ` : ''}
+                                      {resolvedTabTitle}
+                                    </span>
+                                  </span>
+                                </label>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
+            {highlightedReferenceDocument && !highlightedReferenceSelectionDirty && (
+              <p className="workhub-share-doc-inline-hint">No tab changes yet. Adjust selection to enable Update reference.</p>
+            )}
             <div className="workhub-share-doc-actions">
               <button type="button" className="workhub-ghost-btn" onClick={() => setCopyToFolderDialogOpen(false)}>Cancel</button>
               <button
                 type="button"
                 className="workhub-primary-btn"
                 disabled={
-                  !copyToFolderWorkspaceId || !copyToFolderProjectId || copyToFolderSaving ||
+                  copyToFolderSaving ||
+                  (highlightedReferenceDocument
+                    ? !highlightedReferenceSelectionDirty || busyKey === `document-reference-update:${highlightedReferenceDocument.id}`
+                    : (!copyToFolderWorkspaceId || !copyToFolderProjectId)) ||
                   (copyTabMode === 'select' && copyTabSelection.length === 0)
                 }
-                onClick={() => { void handleCopyDocumentToFolder() }}
+                onClick={() => {
+                  if (highlightedReferenceDocument) {
+                    void handleUpdateDocumentReference(highlightedReferenceDocument.id)
+                    return
+                  }
+                  void handleCopyDocumentToFolder()
+                }}
               >
-                {copyToFolderSaving ? 'Referencing…' : 'Create reference'}
+                {copyToFolderSaving
+                  ? 'Saving…'
+                  : highlightedReferenceDocument
+                    ? (busyKey === `document-reference-update:${highlightedReferenceDocument.id}` ? 'Updating…' : 'Update reference')
+                    : 'Create reference'}
               </button>
             </div>
           </div>
         </div>
       )}
+
+      <WorkspaceBrowserDialog
+        open={copyToFolderDialogOpen && folderBrowserDialogOpen}
+        title="Browse folders"
+        confirmLabel="Use folder"
+        workspaces={allWorkspaceIds}
+        projects={allWorkspaceProjects}
+        initialWorkspaceId={copyToFolderWorkspaceId}
+        initialProjectId={copyToFolderProjectId}
+        onClose={() => setFolderBrowserDialogOpen(false)}
+        onConfirm={(workspaceId, projectId) => {
+          setCopyToFolderWorkspaceId(workspaceId)
+          setCopyToFolderProjectId(projectId)
+          setFolderBrowserDialogOpen(false)
+        }}
+      />
     </>
   )
 }

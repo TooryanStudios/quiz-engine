@@ -96,6 +96,7 @@ export function WorkhubNotesSection({
   discussionDeleteBusyKey,
   currentUid,
   allWorkspaceIds,
+  allWorkspaceProjects,
   isPrivilegedMember,
 }: WorkhubNotesSectionProps) {
   const docEditor = useWorkhubDocEditorHandlers(hookInput)
@@ -141,7 +142,7 @@ export function WorkhubNotesSection({
       discussionDeleteBusyKey={discussionDeleteBusyKey}
       currentUid={currentUid}
       allWorkspaceIds={allWorkspaceIds}
-      allWorkspaceProjects={docEditor.copyToFolderAvailableProjects}
+      allWorkspaceProjects={allWorkspaceProjects}
       isPrivilegedMember={isPrivilegedMember}
     />
   )

@@ -39,24 +39,27 @@ export function useWorkhubProjectTreeSidebarHandlers({
   resolveProjectMainPanelSection,
 }: UseWorkhubProjectTreeSidebarHandlersParams) {
   const handleProjectActionMenu = useCallback((projectId: string, event: ReactMouseEvent<HTMLElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
     const viewportWidth = window.innerWidth
     const viewportHeight = window.innerHeight
-    const menuWidth = 196
-    const menuHeight = 236
+    const menuWidth = 260
+    const menuHeight = 520
     const margin = 8
+    const anchorX = event.clientX || rect.left
+    const anchorY = event.clientY || rect.bottom
 
     const nextX = Math.min(
-      Math.max(rect.left, margin),
+      Math.max(anchorX, margin),
       Math.max(margin, viewportWidth - menuWidth - margin),
     )
 
-    const defaultY = rect.bottom + 4
-    const shouldOpenUp = (defaultY + menuHeight) > (viewportHeight - margin)
-    const upY = rect.top - menuHeight - 4
-    const nextY = shouldOpenUp
-      ? Math.max(margin, upY)
-      : Math.min(defaultY, Math.max(margin, viewportHeight - menuHeight - margin))
+    const defaultY = anchorY + 4
+    const nextY = Math.max(
+      margin,
+      Math.min(defaultY, Math.max(margin, viewportHeight - menuHeight - margin)),
+    )
 
     setActionMenuProjectId(projectId)
     setActionMenuPosition({ x: nextX, y: nextY })

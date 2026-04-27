@@ -739,6 +739,15 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       .workhub-shell.is-mobile .workhub-brand-subtitle {
         max-width: 100%;
       }
+      .workhub-workspace-browser-dialog {
+        width: min(560px, 94vw);
+        max-width: 560px;
+      }
+      .workhub-workspace-browser-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }
       .workhub-shell.is-mobile .workhub-topbar-divider {
         display: none;
       }
@@ -2054,6 +2063,33 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         margin-top: 2px;
         margin-bottom: 2px;
       }
+      .workhub-tree-subitem-drag-handle {
+        border: 1px solid transparent;
+        background: transparent;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 16px;
+        height: 16px;
+        flex: 0 0 auto;
+        margin-right: 4px;
+        color: #7890b1;
+        font-size: 0.58rem;
+        letter-spacing: -0.08em;
+        opacity: 0.78;
+        vertical-align: middle;
+        border-radius: 4px;
+        cursor: grab;
+        padding: 0;
+      }
+      .workhub-tree-subitem-drag-handle:hover {
+        border-color: #ccd9ec;
+        background: #f0f5fd;
+        opacity: 1;
+      }
+      .workhub-tree-subitem-drag-handle:active {
+        cursor: grabbing;
+      }
       .workhub-tree-doc-subitem {
         width: 100%;
         border: 1px solid transparent;
@@ -2082,6 +2118,11 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         border-color: transparent;
         box-shadow: inset 2px 0 0 #4f74bd;
       }
+      .workhub-tree-doc-subitem.is-drop-target {
+        background: #e8f2ff;
+        border-color: #7da7df;
+        box-shadow: inset 3px 0 0 #2f65c8;
+      }
       .workhub-tree-doc-subitem-title {
         flex: 1 1 0;
         min-width: 0;
@@ -2091,6 +2132,23 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+      }
+      .workhub-tree-inline-rename-input {
+        width: min(280px, 100%);
+        max-width: 100%;
+        border: 1px solid #8aaee0;
+        border-radius: 5px;
+        background: #ffffff;
+        color: #1f3150;
+        font: inherit;
+        font-size: 0.69rem;
+        line-height: 1.2;
+        padding: 2px 6px;
+        outline: none;
+      }
+      .workhub-tree-inline-rename-input:focus {
+        border-color: #4f78be;
+        box-shadow: 0 0 0 2px rgba(78, 121, 191, 0.15);
       }
       .workhub-tree-moodboard-variant-badge {
         display: inline-flex;
@@ -2201,9 +2259,13 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       .workhub-tree-node-wrap.is-nested {
         gap: 0;
       }
+      .workhub-tree-node-list {
+        position: relative;
+        min-height: 26px;
+      }
       .workhub-tree-node {
         display: grid;
-        grid-template-columns: 18px minmax(0, 1fr) auto;
+        grid-template-columns: auto 18px minmax(0, 1fr) auto;
         align-items: center;
         gap: 6px;
         padding: 5px 7px;
@@ -2218,6 +2280,43 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       .workhub-tree-node-wrap.is-root > .workhub-tree-node {
         padding: 4px 7px;
         min-height: 32px;
+      }
+      .workhub-tree-drag-handle {
+        border: 1px solid transparent;
+        background: transparent;
+        color: #7d8fab;
+        border-radius: 6px;
+        font-size: 0.74rem;
+        line-height: 1;
+        width: 18px;
+        height: 18px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: grab;
+        padding: 0;
+      }
+      .workhub-tree-drag-handle:hover {
+        border-color: #ccd9ec;
+        background: #f0f5fd;
+        color: #5b7192;
+      }
+      .workhub-tree-drag-handle:active {
+        cursor: grabbing;
+      }
+      .workhub-tree-root-dropzone {
+        border: 1px dashed #c5d8f1;
+        border-radius: 8px;
+        background: #f8fbff;
+        color: #63799c;
+        font-size: 0.68rem;
+        padding: 5px 8px;
+        margin-bottom: 6px;
+      }
+      .workhub-tree-root-dropzone.is-drop-target {
+        border-color: #3f71bf;
+        background: #e9f2ff;
+        color: #1d4b90;
       }
       .workhub-tree-node-wrap.is-root:nth-child(odd) > .workhub-tree-node,
       .workhub-tree-node-wrap.is-root:nth-child(even) > .workhub-tree-node,
@@ -2242,6 +2341,101 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         background: #eef3fb;
         border-color: transparent;
         box-shadow: inset 3px 0 0 #4f74bd;
+      }
+      .workhub-tree-node.is-drop-target {
+        background: #e8f2ff;
+        border-color: #7da7df;
+        box-shadow: inset 3px 0 0 #2f65c8;
+      }
+      .workhub-tree-item-context-menu {
+        position: fixed;
+        z-index: 2200;
+        min-width: 180px;
+        border: 1px solid #cad7ea;
+        border-radius: 8px;
+        background: #ffffff;
+        box-shadow: 0 12px 28px rgba(25, 46, 82, 0.22);
+        padding: 4px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .workhub-tree-item-context-menu-title {
+        padding: 4px 8px 6px;
+        font-size: 0.67rem;
+        font-weight: 700;
+        color: #516a90;
+        border-bottom: 1px solid #e3ebf6;
+        margin-bottom: 2px;
+      }
+      .workhub-tree-item-context-menu-separator {
+        height: 1px;
+        background: #e3ebf6;
+        margin: 2px 4px;
+      }
+      .workhub-tree-item-context-menu-btn {
+        width: 100%;
+        border: none;
+        background: transparent;
+        color: #253a59;
+        font: inherit;
+        font-size: 0.74rem;
+        text-align: left;
+        padding: 6px 8px;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      .workhub-tree-item-context-menu-btn:hover {
+        background: #edf4ff;
+        color: #183d74;
+      }
+      .workhub-tree-item-context-menu-btn.is-danger {
+        color: #8a1f21;
+      }
+      .workhub-tree-item-context-menu-btn.is-danger:hover {
+        background: #fdeeee;
+        color: #7b1618;
+      }
+      .workhub-project-action-context-menu {
+        min-width: 244px;
+      }
+      .workhub-tree-item-context-submenu-wrap {
+        position: relative;
+      }
+      .workhub-tree-item-context-submenu-wrap::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 100%;
+        width: 10px;
+        height: 100%;
+      }
+      .workhub-tree-item-context-submenu-wrap.opens-left::after {
+        left: auto;
+        right: 100%;
+      }
+      .workhub-tree-item-context-submenu {
+        position: absolute;
+        left: calc(100% + 6px);
+        top: 0;
+        min-width: 230px;
+        border: 1px solid #cad7ea;
+        border-radius: 8px;
+        background: #fff;
+        box-shadow: 0 12px 28px rgba(25, 46, 82, 0.2);
+        padding: 4px;
+        display: none;
+        flex-direction: column;
+        gap: 2px;
+        z-index: 2201;
+      }
+      .workhub-tree-item-context-submenu-wrap:hover .workhub-tree-item-context-submenu,
+      .workhub-tree-item-context-submenu-wrap:focus-within .workhub-tree-item-context-submenu {
+        display: flex;
+      }
+      .workhub-tree-item-context-submenu-wrap.opens-left .workhub-tree-item-context-submenu {
+        left: auto;
+        right: calc(100% + 6px);
       }
       .workhub-tree-toggle {
         width: 17px;
@@ -10855,6 +11049,20 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         background: #edf4ff;
         border-color: #bdd2f4;
       }
+      .workhub-task-context-menu button.is-danger {
+        color: #9a2434;
+        border-color: #f0c7cf;
+        background: #fff6f7;
+      }
+      .workhub-task-context-menu button.is-danger:hover {
+        background: #ffecee;
+        border-color: #e79aa8;
+      }
+      .workhub-task-context-menu-separator {
+        height: 1px;
+        background: #e3ecfb;
+        margin: 2px 0;
+      }
       .workhub-task-group-head {
         padding: 7px 8px;
         display: flex;
@@ -11742,6 +11950,12 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         justify-content: center;
         cursor: grab;
         user-select: none;
+        opacity: 0;
+        transition: opacity 0.1s;
+      }
+      .workhub-task-row:hover .workhub-task-drag-handle,
+      .workhub-task-row:focus-within .workhub-task-drag-handle {
+        opacity: 1;
       }
       .workhub-task-drag-handle:hover {
         color: #4d84ff;
@@ -14932,7 +15146,7 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         border-radius: 12px;
         box-shadow: 0 8px 40px rgba(20,40,90,0.18);
         padding: 22px 24px 20px;
-        width: min(560px, 92vw);
+        width: min(980px, 94vw);
         max-height: min(82vh, 760px);
         display: flex;
         flex-direction: column;
@@ -15006,6 +15220,26 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       }
       .workhub-share-doc-form-row.is-full-width {
         grid-column: 1 / -1;
+      }
+      .workhub-share-doc-reference-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 10px;
+      }
+      .workhub-share-doc-reference-pane {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        min-width: 0;
+      }
+      .workhub-share-doc-reference-pane + .workhub-share-doc-reference-pane {
+        border-left: 1px solid #d7e4f6;
+        padding-left: 12px;
+      }
+      .workhub-share-doc-inline-hint {
+        margin: 0;
+        font-size: 0.7rem;
+        color: #61799b;
       }
       .workhub-copy-tab-mode-group {
         display: flex;
@@ -15188,6 +15422,21 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         justify-content: space-between;
         gap: 8px;
       }
+      .workhub-share-doc-member-row.is-ref-item {
+        cursor: pointer;
+        transition: background 0.08s ease, border-color 0.08s ease, box-shadow 0.08s ease;
+      }
+      .workhub-share-doc-member-row.is-ref-item:hover {
+        background: #f0f6ff;
+        border-color: #b8d0f0;
+        box-shadow: 0 1px 4px rgba(40, 90, 180, 0.08);
+        transition: none;
+      }
+      .workhub-share-doc-member-row.is-ref-item.is-highlighted {
+        background: #e6f0ff;
+        border-color: #7aaae0;
+        box-shadow: inset 3px 0 0 #2f63c8, 0 1px 4px rgba(40, 90, 180, 0.1);
+      }
       .workhub-share-doc-member-main {
         display: inline-flex;
         align-items: center;
@@ -15200,18 +15449,24 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         display: inline-flex;
         flex-direction: column;
         min-width: 0;
-        gap: 1px;
+        gap: 2px;
       }
-      .workhub-share-doc-member-copy strong {
-        font-size: 0.72rem;
+      .workhub-share-doc-member-copy strong,
+      .workhub-share-doc-member-copy .workhub-ref-location {
+        font-size: 0.74rem;
         color: #1b3157;
         line-height: 1.2;
-        font-weight: 600;
+        font-weight: 700;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
-      .workhub-share-doc-member-copy small {
-        font-size: 0.66rem;
-        color: #6a7f9f;
+      .workhub-share-doc-member-copy small,
+      .workhub-share-doc-member-copy .workhub-ref-docname {
+        font-size: 0.67rem;
+        color: #8a9bb5;
         line-height: 1.2;
+        font-weight: 400;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -15235,6 +15490,15 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       @media (max-width: 720px) {
         .workhub-share-doc-form-grid {
           grid-template-columns: minmax(0, 1fr);
+        }
+        .workhub-share-doc-reference-layout {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .workhub-share-doc-reference-pane + .workhub-share-doc-reference-pane {
+          border-left: none;
+          border-top: 1px solid #d7e4f6;
+          padding-left: 0;
+          padding-top: 10px;
         }
       }
       .workhub-empty-state,
