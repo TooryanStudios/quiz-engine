@@ -3343,6 +3343,8 @@
   flex: 1;
   min-width: 140px;
 }
+
+.mvp-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(8, 14, 24, 0.65);
