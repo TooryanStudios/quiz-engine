@@ -128,6 +128,26 @@ export function canViewProject(project: WorkhubProject, uid: string, canSeeAllPr
   return project.createdBy === uid || project.memberUids.includes(uid)
 }
 
+export function canViewProjectWithAncestors(
+  project: WorkhubProject,
+  uid: string,
+  canSeeAllProjects: boolean,
+  projectById: Map<string, WorkhubProject>,
+): boolean {
+  if (!canViewProject(project, uid, canSeeAllProjects)) return false
+  const seen = new Set<string>()
+  let cursor = project.parentProjectId || null
+  while (cursor) {
+    if (seen.has(cursor)) return false
+    seen.add(cursor)
+    const parent = projectById.get(cursor)
+    if (!parent) return false
+    if (!canViewProject(parent, uid, canSeeAllProjects)) return false
+    cursor = parent.parentProjectId || null
+  }
+  return true
+}
+
 export function getWorkspaceType(
   workspace: Pick<WorkhubWorkspace, 'type'> | null | undefined,
 ): 'technical' | 'hr' | 'finance' {

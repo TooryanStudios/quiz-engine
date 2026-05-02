@@ -46,10 +46,12 @@ interface ProjectTreeNodesProps {
   onDuplicateDocument?: (documentId: string) => void
   onDeleteDocument?: (documentId: string) => void
   onMoveDocumentViaDialog?: (documentId: string) => void
+  onOpenDocumentSettings?: (documentId: string) => void
   onRenameMoodBoard?: (boardId: string, nextTitle?: string) => void
   onDuplicateMoodBoard?: (boardId: string) => void
   onDeleteMoodBoard?: (boardId: string) => void
   onMoveMoodBoardViaDialog?: (boardId: string) => void
+  onOpenMoodBoardSettings?: (boardId: string) => void
   pendingInlineRename?: { itemType: 'project' | 'document' | 'moodboard'; itemId: string } | null
   onConsumePendingInlineRename?: () => void
   depth?: number
@@ -189,10 +191,12 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
   onDuplicateDocument,
   onDeleteDocument,
   onMoveDocumentViaDialog,
+  onOpenDocumentSettings,
   onRenameMoodBoard,
   onDuplicateMoodBoard,
   onDeleteMoodBoard,
   onMoveMoodBoardViaDialog,
+  onOpenMoodBoardSettings,
   pendingInlineRename = null,
   onConsumePendingInlineRename,
   depth = 0,
@@ -243,7 +247,7 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
     setInlineRename({ itemType, itemId, value })
   }
 
-  const runSubItemAction = (action: 'open' | 'open-parent-folder' | 'rename' | 'duplicate' | 'move' | 'delete') => {
+  const runSubItemAction = (action: 'open' | 'open-parent-folder' | 'rename' | 'duplicate' | 'move' | 'settings' | 'delete') => {
     if (!subItemContextMenu) return
     if (action === 'open') {
       if (subItemContextMenu.itemType === 'document') {
@@ -288,6 +292,15 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
         onMoveDocumentViaDialog?.(subItemContextMenu.itemId)
       } else {
         onMoveMoodBoardViaDialog?.(subItemContextMenu.itemId)
+      }
+      setSubItemContextMenu(null)
+      return
+    }
+    if (action === 'settings') {
+      if (subItemContextMenu.itemType === 'document') {
+        onOpenDocumentSettings?.(subItemContextMenu.itemId)
+      } else {
+        onOpenMoodBoardSettings?.(subItemContextMenu.itemId)
       }
       setSubItemContextMenu(null)
       return
@@ -518,24 +531,39 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
                 }
               }}
             >
-              {onMoveProject && (
-                <button
-                  type="button"
-                  className="workhub-tree-drag-handle"
-                  draggable
-                  title="Drag to move this folder"
-                  aria-label="Drag to move this folder"
-                  onClick={(event) => event.stopPropagation()}
-                  onMouseDown={(event) => event.stopPropagation()}
-                  onDragStart={(event) => {
-                    event.stopPropagation()
-                    event.dataTransfer.effectAllowed = 'move'
-                    event.dataTransfer.setData(PROJECT_DRAG_MIME, node.id)
-                    event.dataTransfer.setData('text/plain', node.id)
-                  }}
-                >
-                  ⋮⋮
-                </button>
+              {(onMoveProject || node.visibility === 'restricted') && (
+                <span className="workhub-tree-leading-icons" aria-hidden="true">
+                  {onMoveProject && (
+                    <button
+                      type="button"
+                      className="workhub-tree-drag-handle"
+                      draggable
+                      title="Drag to move this folder"
+                      aria-label="Drag to move this folder"
+                      onClick={(event) => event.stopPropagation()}
+                      onMouseDown={(event) => event.stopPropagation()}
+                      onDragStart={(event) => {
+                        event.stopPropagation()
+                        event.dataTransfer.effectAllowed = 'move'
+                        event.dataTransfer.setData(PROJECT_DRAG_MIME, node.id)
+                        event.dataTransfer.setData('text/plain', node.id)
+                      }}
+                    >
+                      ⋮⋮
+                    </button>
+                  )}
+                  {node.visibility === 'restricted' && (
+                    <span
+                      className="workhub-tree-restricted-lock"
+                      title="Hidden from supporters"
+                      aria-label="Hidden from supporters"
+                    >
+                      <svg viewBox="0 0 16 16" focusable="false" aria-hidden="true">
+                        <path d="M5 6V4.7A3 3 0 0 1 8 1.8a3 3 0 0 1 3 2.9V6h.7A1.3 1.3 0 0 1 13 7.3v5.4c0 .72-.58 1.3-1.3 1.3H4.3A1.3 1.3 0 0 1 3 12.7V7.3C3 6.58 3.58 6 4.3 6H5Zm1.4 0h3.2V4.8A1.6 1.6 0 0 0 8 3.2a1.6 1.6 0 0 0-1.6 1.6V6Z" />
+                      </svg>
+                    </span>
+                  )}
+                </span>
               )}
               {hasExpandableChildren ? (
                 <button
@@ -708,10 +736,12 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
                   onDuplicateDocument={onDuplicateDocument}
                   onDeleteDocument={onDeleteDocument}
                   onMoveDocumentViaDialog={onMoveDocumentViaDialog}
+                  onOpenDocumentSettings={onOpenDocumentSettings}
                   onRenameMoodBoard={onRenameMoodBoard}
                   onDuplicateMoodBoard={onDuplicateMoodBoard}
                   onDeleteMoodBoard={onDeleteMoodBoard}
                   onMoveMoodBoardViaDialog={onMoveMoodBoardViaDialog}
+                  onOpenMoodBoardSettings={onOpenMoodBoardSettings}
                   pendingInlineRename={pendingInlineRename}
                   onConsumePendingInlineRename={onConsumePendingInlineRename}
                     />
@@ -731,9 +761,10 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
                       ? `${baseTitle} (Public source)`
                     : (document.isLocked ? `${baseTitle} (Locked)` : baseTitle)
                   return (
-                    <button
+                    <div
                       key={document.id}
-                      type="button"
+                      role="button"
+                      tabIndex={0}
                       className={`workhub-tree-doc-subitem${selectedDocumentId === document.id ? ' is-active' : ''}${linkedHighlightedDocumentId === document.id ? ' is-linked-highlight' : ''}${document.hasOutgoingReferences && !document.referenceSourceDocumentId ? ' is-public-source' : ''}${dropTargetKey === `document:${document.id}` ? ' is-drop-target' : ''}`}
                       onDragOver={(event) => {
                         if (!onReorderDocument && !onMoveDocument) return
@@ -774,6 +805,12 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
                         event.stopPropagation()
                         onSelectDocument(document.id)
                       }}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter' && event.key !== ' ') return
+                        event.preventDefault()
+                        event.stopPropagation()
+                        onSelectDocument(document.id)
+                      }}
                       title={documentTreeTitle}
                     >
                       <span className="workhub-tree-doc-subitem-title">
@@ -794,6 +831,13 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
                         >
                           ⋮⋮
                         </button>
+                        {document.visibility === 'restricted' && (
+                          <span className="workhub-tree-subitem-access-lock" title="Hidden from supporters" aria-label="Hidden from supporters">
+                            <svg viewBox="0 0 16 16" focusable="false" aria-hidden="true">
+                              <path d="M5 6V4.7A3 3 0 0 1 8 1.8a3 3 0 0 1 3 2.9V6h.7A1.3 1.3 0 0 1 13 7.3v5.4c0 .72-.58 1.3-1.3 1.3H4.3A1.3 1.3 0 0 1 3 12.7V7.3C3 6.58 3.58 6 4.3 6H5Zm1.4 0h3.2V4.8A1.6 1.6 0 0 0 8 3.2a1.6 1.6 0 0 0-1.6 1.6V6Z" />
+                            </svg>
+                          </span>
+                        )}
                         {getDocumentIcon(document)} {inlineRename?.itemType === 'document' && inlineRename.itemId === document.id ? (
                           <input
                             type="text"
@@ -826,18 +870,36 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
                         ) : documentTreeTitle}
                         {!!document.attachments?.length && <span className="workhub-tree-doc-attachment-indicator" title={`${document.attachments.length} attachment${document.attachments.length === 1 ? '' : 's'}`}>📎</span>}
                       </span>
+                      <span className="workhub-tree-subitem-actions">
+                        {isPrivilegedMember && onOpenDocumentSettings && (
+                          <button
+                            type="button"
+                            className="workhub-tree-subitem-gear"
+                            title="Document settings"
+                            aria-label="Document settings"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              onOpenDocumentSettings(document.id)
+                            }}
+                            onMouseDown={(event) => event.stopPropagation()}
+                          >
+                            ⚙
+                          </button>
+                        )}
+                      </span>
                       {document.hasOutgoingReferences && !document.referenceSourceDocumentId && <span className="workhub-tree-doc-lock-badge" title="Public source document">🌐</span>}
                       {document.referenceSourceDocumentId && <span className="workhub-tree-doc-lock-badge" title="Referenced document">🔗</span>}
                       {document.isLocked && <span className="workhub-tree-doc-lock-badge" title="Locked document">🔒</span>}
-                    </button>
+                    </div>
                   )
                 })}
                 {nodeMoodBoards.map((board) => {
                   const variantMeta = getMoodBoardVariantMeta(board.panelVariant)
                   return (
-                    <button
+                    <div
                       key={board.id}
-                      type="button"
+                      role="button"
+                      tabIndex={0}
                       className={`workhub-tree-doc-subitem${selectedMoodBoardId === board.id ? ' is-active' : ''}${linkedHighlightedMoodBoardId === board.id ? ' is-linked-highlight' : ''}${dropTargetKey === `moodboard:${board.id}` ? ' is-drop-target' : ''}`}
                       onDragOver={(event) => {
                         if (!onReorderMoodBoard && !onMoveMoodBoard) return
@@ -878,6 +940,12 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
                         event.stopPropagation()
                         onSelectMoodBoard(board.id)
                       }}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter' && event.key !== ' ') return
+                        event.preventDefault()
+                        event.stopPropagation()
+                        onSelectMoodBoard(board.id)
+                      }}
                       title={board.title}
                     >
                       <span className="workhub-tree-doc-subitem-title">
@@ -898,6 +966,13 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
                         >
                           ⋮⋮
                         </button>
+                        {board.visibility === 'restricted' && (
+                          <span className="workhub-tree-subitem-access-lock" title="Hidden from supporters" aria-label="Hidden from supporters">
+                            <svg viewBox="0 0 16 16" focusable="false" aria-hidden="true">
+                              <path d="M5 6V4.7A3 3 0 0 1 8 1.8a3 3 0 0 1 3 2.9V6h.7A1.3 1.3 0 0 1 13 7.3v5.4c0 .72-.58 1.3-1.3 1.3H4.3A1.3 1.3 0 0 1 3 12.7V7.3C3 6.58 3.58 6 4.3 6H5Zm1.4 0h3.2V4.8A1.6 1.6 0 0 0 8 3.2a1.6 1.6 0 0 0-1.6 1.6V6Z" />
+                            </svg>
+                          </span>
+                        )}
                         {variantMeta.icon} {inlineRename?.itemType === 'moodboard' && inlineRename.itemId === board.id ? (
                           <input
                             type="text"
@@ -938,7 +1013,24 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
                           </span>
                         )}
                       </span>
-                    </button>
+                      <span className="workhub-tree-subitem-actions">
+                        {isPrivilegedMember && onOpenMoodBoardSettings && (
+                          <button
+                            type="button"
+                            className="workhub-tree-subitem-gear"
+                            title="Mood board settings"
+                            aria-label="Mood board settings"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              onOpenMoodBoardSettings(board.id)
+                            }}
+                            onMouseDown={(event) => event.stopPropagation()}
+                          >
+                            ⚙
+                          </button>
+                        )}
+                      </span>
+                    </div>
                   )
                 })}
               </div>
@@ -988,6 +1080,13 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
             onClick={() => runSubItemAction('move')}
           >
             ↔ Move to folder...
+          </button>
+          <button
+            type="button"
+            className="workhub-tree-item-context-menu-btn"
+            onClick={() => runSubItemAction('settings')}
+          >
+            ⚙ Settings
           </button>
           <button
             type="button"

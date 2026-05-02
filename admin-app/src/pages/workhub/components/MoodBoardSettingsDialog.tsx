@@ -1,70 +1,63 @@
-import { useMemo, useState } from 'react'
-import type { WorkhubDocument, WorkhubMember, WorkhubVisibility } from '../../../lib/workhubRepo'
-import { EmojiPickerPopover, EMOJI_SET_DOCUMENTS } from '../../../components/EmojiPickerPopover'
+import { useMemo } from 'react'
+import type { WorkhubMember, WorkhubMoodBoard, WorkhubVisibility } from '../../../lib/workhubRepo'
 
-interface DocumentSettingsDialogProps {
+interface MoodBoardSettingsDialogProps {
   isOpen: boolean
   busyKey: string
-  document: WorkhubDocument | null
+  moodBoard: WorkhubMoodBoard | null
   workspaceOptions: Array<{ id: string; name: string }>
   projectOptions: Array<{ id: string; workspaceId: string; name: string; depth: number }>
   workspaceId: string
   projectId: string
-  icon: string
+  title: string
   accessVisibility: WorkhubVisibility
   accessMemberUids: string[]
   canSetRestricted: boolean
   restrictableMembers: WorkhubMember[]
   onWorkspaceIdChange: (value: string) => void
   onProjectIdChange: (value: string) => void
-  onIconChange: (value: string) => void
+  onTitleChange: (value: string) => void
   onVisibilityChange: (value: WorkhubVisibility) => void
   onToggleMember: (uid: string) => void
   onClose: () => void
   onSave: () => void
 }
 
-export function DocumentSettingsDialog({
+export function MoodBoardSettingsDialog({
   isOpen,
   busyKey,
-  document,
+  moodBoard,
   workspaceOptions,
   projectOptions,
   workspaceId,
   projectId,
-  icon,
+  title,
   accessVisibility,
   accessMemberUids,
   canSetRestricted,
   restrictableMembers,
   onWorkspaceIdChange,
   onProjectIdChange,
-  onIconChange,
+  onTitleChange,
   onVisibilityChange,
   onToggleMember,
   onClose,
   onSave,
-}: DocumentSettingsDialogProps) {
-  const [iconPickerOpen, setIconPickerOpen] = useState(false)
-
+}: MoodBoardSettingsDialogProps) {
   const filteredProjectOptions = useMemo(
     () => projectOptions.filter((item) => item.workspaceId === workspaceId),
     [projectOptions, workspaceId],
   )
 
-  if (!isOpen || !document) return null
-
-  const fallbackIcon = document.type === 'note' ? '🗒️' : '📝'
-  const effectiveIcon = icon || fallbackIcon
-  const typeLabel = document.type === 'note' ? 'note' : 'document'
+  if (!isOpen || !moodBoard) return null
 
   return (
     <div className="workhub-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
       <div className="workhub-modal workhub-document-settings-modal" onMouseDown={(event) => event.stopPropagation()}>
         <div className="workhub-modal-head">
           <div>
-            <h2>{document.type === 'note' ? 'Note settings' : 'Document settings'}</h2>
-            <p>Change the icon and choose where this {typeLabel} is stored.</p>
+            <h2>Mood board settings</h2>
+            <p>Manage board location, title, and access policy.</p>
           </div>
           <button className="workhub-ghost-btn" onClick={onClose}>Close</button>
         </div>
@@ -77,35 +70,8 @@ export function DocumentSettingsDialog({
           }}
         >
           <label className="workhub-icon-field">
-            <span>Current {typeLabel}</span>
-            <div className="workhub-doc-settings-note">{document.title || (document.type === 'note' ? 'Untitled note' : 'Untitled document')}</div>
-          </label>
-
-          <label className="workhub-icon-field">
-            <span>Icon</span>
-            <div className="workhub-doc-settings-icon-row">
-              <div className="workhub-doc-settings-icon-popover-wrap">
-                <button
-                  type="button"
-                  className="workhub-doc-settings-icon-trigger"
-                  onClick={() => setIconPickerOpen((current) => !current)}
-                  title="Choose icon"
-                  aria-label="Choose icon"
-                >
-                  <span className="workhub-doc-settings-icon-preview" aria-hidden="true">{effectiveIcon}</span>
-                  <span>{icon ? 'Change icon' : 'Choose icon'}</span>
-                </button>
-                {iconPickerOpen && (
-                  <EmojiPickerPopover
-                    value={icon}
-                    emojis={EMOJI_SET_DOCUMENTS}
-                    onSelect={(emoji) => onIconChange(emoji)}
-                    onClear={icon ? () => onIconChange('') : undefined}
-                    onClose={() => setIconPickerOpen(false)}
-                  />
-                )}
-              </div>
-            </div>
+            <span>Board title</span>
+            <input value={title} onChange={(event) => onTitleChange(event.target.value)} placeholder="Mood board title" />
           </label>
 
           <label className="workhub-icon-field">
@@ -120,7 +86,7 @@ export function DocumentSettingsDialog({
           <label className="workhub-icon-field">
             <span>Store under</span>
             <select value={projectId} onChange={(event) => onProjectIdChange(event.target.value)}>
-              <option value="">Workspace level (no parent project)</option>
+              <option value="">Workspace level (no parent folder)</option>
               {filteredProjectOptions.map((item) => (
                 <option key={item.id} value={item.id}>{`${'— '.repeat(item.depth)}${item.name}`}</option>
               ))}
@@ -177,14 +143,14 @@ export function DocumentSettingsDialog({
           )}
 
           <div className="workhub-doc-settings-note">
-            Moving into a restricted folder will enforce that folder's access policy.
+            If this board is under a restricted folder, folder access policy takes precedence.
           </div>
 
           <div className="workhub-create-actions">
             <div className="workhub-create-actions-group">
               <button type="button" className="workhub-ghost-btn" onClick={onClose}>Cancel</button>
-              <button type="submit" className="workhub-primary-btn" disabled={busyKey === 'document:settings'}>
-                {busyKey === 'document:settings' ? 'Saving...' : 'Save settings'}
+              <button type="submit" className="workhub-primary-btn" disabled={busyKey === 'moodboard:settings'}>
+                {busyKey === 'moodboard:settings' ? 'Saving...' : 'Save settings'}
               </button>
             </div>
           </div>

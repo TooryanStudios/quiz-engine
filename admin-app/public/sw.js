@@ -125,6 +125,13 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
+  // Skip all CloudFront CDN responses (e.g. Seedance-generated video/image assets).
+  // These are cross-origin streaming responses that Chrome cannot cache via the SW
+  // cache layer, causing net::ERR_CACHE_OPERATION_NOT_SUPPORTED in the console.
+  if (url.hostname.endsWith('.cloudfront.net')) {
+    return
+  }
+
   // Cache strategy for images
   if (request.destination === 'image' || /\.(png|jpg|jpeg|svg|gif|webp|ico)$/i.test(url.pathname)) {
     event.respondWith(

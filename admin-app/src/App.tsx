@@ -84,6 +84,8 @@ const VoiceLabPage    = createLazyRoute('VoiceLabPage', () => import('./pages/Vo
 const AILabPage       = createLazyRoute('AILabPage', () => import('./pages/AILabPage'))
 const CoverGenLabPage = createLazyRoute('CoverGenLabPage', () => import('./pages/CoverGenLabPage'))
 const ToorGenPage = createLazyRoute('ToorGenPage', () => import('./pages/ToorGenPage'))
+const ToorGenExtendPage = createLazyRoute('ToorGenExtendPage', () => import('./pages/ToorGenExtendPage'))
+const ToorGenLabPage = createLazyRoute('ToorGenLabPage', () => import('./pages/ToorGenLabPage'))
 const PlayTestPage    = createLazyRoute('PlayTestPage', () => import('./pages/PlayTestPage'))
 const GameEmbedPage   = createLazyRoute('GameEmbedPage', () => import('./pages/GameEmbedPage'))
 const ScannerPage     = createLazyRoute('ScannerPage', () => import('./scanner/ScannerPage'), 'ScannerPage')
@@ -491,6 +493,10 @@ function App() {
     }
 
     const onWindowError = (event: ErrorEvent) => {
+      // ResizeObserver loop notifications are benign browser-level events fired by
+      // layout-heavy libraries (e.g. ReactFlow). Suppress them to avoid log spam.
+      const msg = typeof event.message === 'string' ? event.message : ''
+      if (msg.includes('ResizeObserver loop')) return
       reportError('async', 'window.onerror', event.error || event.message)
     }
 
@@ -651,6 +657,8 @@ function App() {
                   }
                 >
                   <Routes>
+                    <Route path="/toorgen/extend" element={<ToorGenExtendPage />} />
+                    <Route path="/toorgen/lab" element={<ToorGenLabPage />} />
                     <Route path="/toorgen" element={<ToorGenPage />} />
                     <Route path="/toorgen/*" element={<ToorGenPage />} />
                   </Routes>

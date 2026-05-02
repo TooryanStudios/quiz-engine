@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { WorkhubClient, WorkhubProject, WorkhubWorkspace } from '../../../lib/workhubRepo'
-import { canViewProject, resolveEffectiveProjectIntent } from '../projectUtils'
+import { canViewProjectWithAncestors, resolveEffectiveProjectIntent } from '../projectUtils'
 import { getTemplateCreationIntentMeta, resolveWorkspaceTemplateIntents } from '../templateCreationMeta'
 import { resolveWorkhubWorkspaceTemplateForWorkspace } from '../workspaceTemplates'
 import {
@@ -79,6 +79,7 @@ export function useWorkhubGlobalFinder({
   // Build the full, filterable entry list whenever projects or workspace data changes.
   const globalFinderEntries = useMemo(() => {
     const entries: WorkhubEntityFinderEntry[] = []
+    const projectById = new Map(projects.map((project) => [project.id, project]))
 
     projects.forEach((item, index) => {
       const workspace = visibleWorkspaceById[item.workspaceId]
@@ -86,7 +87,7 @@ export function useWorkhubGlobalFinder({
 
       const workspaceAccessLevel = workspace.memberAccessLevels?.[currentUid] || 'custom'
       const canSeeWorkspaceProjects = isPrivilegedMember || workspaceAccessLevel === 'full'
-      if (!canViewProject(item, currentUid, canSeeWorkspaceProjects)) return
+      if (!canViewProjectWithAncestors(item, currentUid, canSeeWorkspaceProjects, projectById)) return
 
       const workspaceTemplateId = resolveWorkhubWorkspaceTemplateForWorkspace(workspace).templateId
       const workspaceIntentSet = new Set(resolveWorkspaceTemplateIntents(workspaceTemplateId))

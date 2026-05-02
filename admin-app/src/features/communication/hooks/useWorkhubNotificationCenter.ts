@@ -33,7 +33,7 @@ export function useWorkhubNotificationCenter({
   )
 
   const visibleNotifications = useMemo(
-    () => notifications.slice(0, maxItems),
+    () => notifications.filter((item, index) => index < maxItems || !item.read),
     [maxItems, notifications],
   )
 

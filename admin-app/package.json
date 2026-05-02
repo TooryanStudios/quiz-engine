@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "sync:tinymce": "node ./scripts/sync-tinymce-assets.mjs",
-    "dev": "npm run sync:tinymce && vite",
+    "dev": "npm run sync:tinymce && concurrently -n ui,api -c cyan,magenta \"vite\" \"node functions-chatbot/server/index.js\"",
+    "dev:ui": "npm run sync:tinymce && vite",
+    "dev:api": "node functions-chatbot/server/index.js",
     "dev:games": "npm run sync:tinymce && vite --open /game-modes",
     "build": "npm run sync:tinymce && tsc -b && vite build",
     "test:workhub-templates": "vitest run tests/workhub-template-contracts.test.ts",
@@ -28,13 +30,15 @@
     "@tinymce/tinymce-react": "^6.3.0",
     "@xyflow/react": "^12.10.2",
     "firebase": "^12.9.0",
+    "lucide-react": "^1.14.0",
     "pagedjs": "^0.4.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-easy-crop": "^5.5.6",
     "react-image-crop": "^11.0.10",
     "react-router-dom": "^7.13.0",
-    "tinymce": "^8.4.0"
+    "tinymce": "^8.4.0",
+    "video.js": "^8.23.7"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
@@ -42,6 +46,7 @@
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
+    "concurrently": "^9.2.1",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",

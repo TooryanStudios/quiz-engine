@@ -2124,6 +2124,8 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         box-shadow: inset 3px 0 0 #2f65c8;
       }
       .workhub-tree-doc-subitem-title {
+        display: inline-flex;
+        align-items: center;
         flex: 1 1 0;
         min-width: 0;
         font-size: 0.69rem;
@@ -2132,6 +2134,48 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+      }
+      .workhub-tree-subitem-access-lock {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 12px;
+        height: 12px;
+        margin-right: 2px;
+        color: #4b5563;
+        flex: 0 0 auto;
+      }
+      .workhub-tree-subitem-access-lock svg {
+        width: 11px;
+        height: 11px;
+        display: block;
+        fill: currentColor;
+      }
+      .workhub-tree-subitem-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        flex: 0 0 auto;
+      }
+      .workhub-tree-subitem-gear {
+        border: 1px solid #d9e4f5;
+        background: #ffffff;
+        color: #2b456f;
+        border-radius: 4px;
+        width: 18px;
+        height: 18px;
+        font: inherit;
+        font-size: 0.62rem;
+        line-height: 1;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+      }
+      .workhub-tree-subitem-gear:hover {
+        background: #f6faff;
+        border-color: #c4d5ef;
       }
       .workhub-tree-inline-rename-input {
         width: min(280px, 100%);
@@ -2303,6 +2347,27 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       }
       .workhub-tree-drag-handle:active {
         cursor: grabbing;
+      }
+      .workhub-tree-leading-icons {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .workhub-tree-restricted-lock {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 14px;
+        height: 14px;
+        line-height: 1;
+        color: #4b5563;
+        flex-shrink: 0;
+      }
+      .workhub-tree-restricted-lock svg {
+        width: 12px;
+        height: 12px;
+        display: block;
+        fill: currentColor;
       }
       .workhub-tree-root-dropzone {
         border: 1px dashed #c5d8f1;
@@ -2993,8 +3058,44 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         min-height: 34px;
         padding-top: 2px;
       }
+      .workhub-project-settings-hidden-toggle-wrap {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding-top: 2px;
+      }
+      .workhub-project-settings-hidden-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+      }
+      .workhub-project-settings-hidden-toggle input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        accent-color: #2f5db6;
+        cursor: pointer;
+      }
+      .workhub-project-settings-hidden-toggle input[type="checkbox"]:disabled {
+        cursor: not-allowed;
+      }
+      .workhub-project-settings-hidden-toggle-help {
+        font-size: 0.7rem;
+        color: #5d7397;
+        line-height: 1.35;
+      }
+      .workhub-project-settings-hidden-toggle-note {
+        font-size: 0.68rem;
+        color: #9a6d1b;
+        line-height: 1.3;
+        font-weight: 600;
+      }
       .workhub-project-settings-member-picker {
         margin-top: 2px;
+      }
+      .workhub-project-settings-member-picker-note {
+        font-size: 0.7rem;
+        color: #6f809b;
       }
       .workhub-project-settings-divider {
         border-top: 1px solid #e6eaef;
@@ -10965,6 +11066,10 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       .workhub-create-option-toggle span {
         white-space: nowrap;
       }
+      .workhub-create-hint-text {
+        margin: 2px 0 0;
+        color: var(--wh-text-secondary);
+      }
       .workhub-icon-field {
         display: flex;
         flex-direction: column;
@@ -16693,6 +16798,10 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         background: #edf4ff;
         border-color: #87a9ff;
         color: #224ba6;
+      }
+      .workhub-member-chip:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
       }
       .dashboard-strip {
         margin-top: 4px;

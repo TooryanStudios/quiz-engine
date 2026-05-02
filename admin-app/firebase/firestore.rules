@@ -83,6 +83,49 @@ service cloud.firestore {
       );
     }
 
+    function hasSameMembers(left, right) {
+      return left is list
+        && right is list
+        && left.hasAll(right)
+        && right.hasAll(left);
+    }
+
+    function respectsParentProjectScope(data) {
+      return !(data.parentProjectId is string)
+        || data.parentProjectId == ''
+        || (
+          workhubProjectExists(data.parentProjectId)
+          && workhubProjectDoc(data.parentProjectId).data.workspaceId == data.workspaceId
+          && (
+            workhubProjectDoc(data.parentProjectId).data.visibility != 'restricted'
+            || (
+              data.visibility == 'restricted'
+              && hasSameMembers(data.memberUids, workhubProjectDoc(data.parentProjectId).data.memberUids)
+            )
+          )
+        );
+    }
+
+    function canWriteProjectScopedEntity(data) {
+      return data.projectId is string
+        && data.projectId != ''
+        && workhubProjectExists(data.projectId)
+        && workhubProjectDoc(data.projectId).data.workspaceId == data.workspaceId
+        && (
+          workhubProjectDoc(data.projectId).data.visibility != 'restricted'
+          || (
+            data.visibility == 'restricted'
+            && hasSameMembers(data.memberUids, workhubProjectDoc(data.projectId).data.memberUids)
+          )
+        );
+    }
+
+    function canWriteDocumentScope(data) {
+      return !(data.projectId is string)
+        || data.projectId == ''
+        || canWriteProjectScopedEntity(data);
+    }
+
     function workhubDocumentDoc(documentId) {
       return get(/databases/$(database)/documents/workhub_documents/$(documentId));
     }
@@ -129,6 +172,16 @@ service cloud.firestore {
       allow read: if isOwner(userId) || isMasterAdmin();
       allow create, update: if isOwner(userId) || isMasterAdmin();
       allow delete: if isMasterAdmin();
+
+      match /toorgen_extend_generations/{taskId} {
+        allow read, create, update: if isOwner(userId) || isMasterAdmin();
+        allow delete: if isOwner(userId) || isMasterAdmin();
+      }
+
+      match /toorgen_prompt_lab_generations/{entryId} {
+        allow read, create, update: if isOwner(userId) || isMasterAdmin();
+        allow delete: if isOwner(userId) || isMasterAdmin();
+      }
     }
 
     match /entitlements/{userId} {
@@ -196,7 +249,9 @@ service cloud.firestore {
 
     match /workhub_projects/{projectId} {
       allow read: if isPrivilegedWorkhubMember() || (canAccessWorkhub() && isVisibleWorkhubEntity(resource.data));
-      allow create, update, delete: if canAccessWorkhub();
+      allow create: if canAccessWorkhub() && respectsParentProjectScope(request.resource.data);
+      allow update: if canAccessWorkhub() && respectsParentProjectScope(request.resource.data);
+      allow delete: if canAccessWorkhub();
     }
 
     match /workhub_documents/{documentId} {
@@ -205,12 +260,16 @@ service cloud.firestore {
         || isPrivilegedWorkhubMember()
         || (canAccessWorkhub() && isVisibleWorkhubEntity(resource.data));
       // Public write access when sharing is enabled (allows body/title edits via shared link)
-      allow update: if (resource.data.shareEnabled == true && resource.data.shareToken != null
-        && request.resource.data.shareToken == resource.data.shareToken
-        && request.resource.data.workspaceId == resource.data.workspaceId
-        && request.resource.data.isLocked != true)
-        || canAccessWorkhub();
-      allow create, delete: if canAccessWorkhub();
+      allow update: if (
+        (resource.data.shareEnabled == true && resource.data.shareToken != null
+          && request.resource.data.shareToken == resource.data.shareToken
+          && request.resource.data.workspaceId == resource.data.workspaceId
+          && request.resource.data.isLocked != true)
+        || canAccessWorkhub()
+      )
+      && canWriteDocumentScope(request.resource.data);
+      allow create: if canAccessWorkhub() && canWriteDocumentScope(request.resource.data);
+      allow delete: if canAccessWorkhub() && canWriteDocumentScope(resource.data);
     }
 
     match /workhub_document_drafts/{draftId} {
@@ -233,7 +292,9 @@ service cloud.firestore {
 
     match /workhub_tasks/{taskId} {
       allow read: if isPrivilegedWorkhubMember() || (canAccessWorkhub() && isVisibleWorkhubEntity(resource.data));
-      allow create, update, delete: if canAccessWorkhub();
+      allow create: if canAccessWorkhub() && canWriteProjectScopedEntity(request.resource.data);
+      allow update: if canAccessWorkhub() && canWriteProjectScopedEntity(request.resource.data);
+      allow delete: if canAccessWorkhub() && canWriteProjectScopedEntity(resource.data);
     }
 
     match /workhub_task_comments/{commentId} {
@@ -290,7 +351,12 @@ service cloud.firestore {
     }
 
     match /workhub_mood_boards/{boardId} {
-      allow read: if canAccessWorkhub();
+      allow read: if canAccessWorkhub() && (
+        isPrivilegedWorkhubMember()
+        || resource.data.visibility != 'restricted'
+        || resource.data.createdBy == request.auth.uid
+        || request.auth.uid in resource.data.memberUids
+      );
       allow create, update, delete: if canAccessWorkhub();
     }
 

@@ -4,9 +4,12 @@
  * so it can be deployed as a Firebase Cloud Function.
  *
  * Run: node scripts/sync-chatbot-server.mjs
+ *
+ * NOTE: The `seedance-references/` subdirectory is intentionally preserved
+ * across syncs so that uploaded reference images are not deleted.
  */
-import { cpSync, existsSync, rmSync } from "fs";
-import { resolve, dirname } from "path";
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync } from "fs";
+import { resolve, join, dirname } from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -14,6 +17,7 @@ const adminAppDir = resolve(__dirname, "..");
 
 const CHATBOT_SERVER_SRC = "C:\\Projects\\Tooryan Chatbot\\Chatbot\\server";
 const DEST = resolve(adminAppDir, "functions-chatbot", "server");
+const PRESERVED_DIRS = ["seedance-references"];
 
 if (!existsSync(CHATBOT_SERVER_SRC)) {
   console.error(`\nChatbot server not found at: ${CHATBOT_SERVER_SRC}`);
@@ -22,8 +26,18 @@ if (!existsSync(CHATBOT_SERVER_SRC)) {
 }
 
 if (existsSync(DEST)) {
-  rmSync(DEST, { recursive: true, force: true });
+  // Remove everything except the directories we want to preserve.
+  for (const entry of readdirSync(DEST)) {
+    if (PRESERVED_DIRS.includes(entry)) continue;
+    rmSync(join(DEST, entry), { recursive: true, force: true });
+  }
+} else {
+  mkdirSync(DEST, { recursive: true });
 }
 
 cpSync(CHATBOT_SERVER_SRC, DEST, { recursive: true });
+
+// Ensure the seedance-references directory exists even on a fresh install.
+mkdirSync(join(DEST, "seedance-references"), { recursive: true });
+
 console.log(`✅ Synced chatbot server → functions-chatbot/server/`);

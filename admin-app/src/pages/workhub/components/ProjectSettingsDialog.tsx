@@ -60,6 +60,9 @@ export function ProjectSettingsDialog(props: {
   settingsStorageMethod: 'firebase' | 'drive'
   accessVisibility: WorkhubVisibility
   accessMemberUids: string[]
+  hiddenFromSupporters?: boolean
+  canToggleHiddenFromSupporters?: boolean
+  restrictableMembers?: WorkhubMember[]
   childCount: number
   taskCount: number
   busyKey: string
@@ -94,6 +97,7 @@ export function ProjectSettingsDialog(props: {
   onCreateClientInline: (name: string) => Promise<string | null>
   onStorageMethodChange: (value: 'firebase' | 'drive') => void
   onVisibilityChange: (value: WorkhubVisibility) => void
+  onHiddenFromSupportersChange?: (value: boolean) => void
   onToggleMember: (uid: string) => void
   onDelete: () => void
   onSave: () => void
@@ -117,6 +121,9 @@ export function ProjectSettingsDialog(props: {
     hint: `Custom meaning (${props.settingsColor.toUpperCase()}).`,
   }
   const isFolderContainer = props.intent === 'project'
+  const hiddenFromSupporters = props.hiddenFromSupporters ?? (props.accessVisibility === 'restricted')
+  const canToggleHiddenFromSupporters = props.canToggleHiddenFromSupporters !== false
+  const restrictableMembers = props.restrictableMembers || props.approvedMembers
   const hasDeleteBlockers = props.childCount > 0 || props.taskCount > 0
   const [advancedOpen, setAdvancedOpen] = useState(props.intent === 'proposal')
   const [editingTechnicalProposalUrl, setEditingTechnicalProposalUrl] = useState(props.settingsTechnicalProposalUrl.trim().length === 0)
@@ -372,43 +379,79 @@ export function ProjectSettingsDialog(props: {
                 </label>
               )}
               <div className={`${isFolderContainer ? 'workhub-col-span-6' : 'workhub-col-span-5'} workhub-project-settings-access-field`}>
-                <span>Access and visibility</span>
-                <div className="workhub-project-settings-access-options">
-                  <label className="workhub-access-toggle">
-                    <input
-                      type="checkbox"
-                      checked={props.accessVisibility === 'workspace'}
-                      onChange={() => props.onVisibilityChange('workspace')}
-                    />
-                    <span className={`workhub-access-label${props.accessVisibility === 'workspace' ? ' is-active' : ''}`}>Visible to workspace</span>
-                  </label>
-                  <label className="workhub-access-toggle">
-                    <input
-                      type="checkbox"
-                      checked={props.accessVisibility === 'restricted'}
-                      onChange={() => props.onVisibilityChange('restricted')}
-                    />
-                    <span className={`workhub-access-label${props.accessVisibility === 'restricted' ? ' is-active' : ''}`}>Restricted</span>
-                  </label>
-                </div>
+                <span>{isFolderContainer ? 'Supporter visibility' : 'Access and visibility'}</span>
+                {isFolderContainer ? (
+                  <div className="workhub-project-settings-hidden-toggle-wrap">
+                    <label className="workhub-project-settings-hidden-toggle">
+                      <input
+                        type="checkbox"
+                        checked={hiddenFromSupporters}
+                        onChange={(event) => {
+                          if (!canToggleHiddenFromSupporters) return
+                          if (props.onHiddenFromSupportersChange) {
+                            props.onHiddenFromSupportersChange(event.target.checked)
+                            return
+                          }
+                          props.onVisibilityChange(event.target.checked ? 'restricted' : 'workspace')
+                        }}
+                        disabled={!canToggleHiddenFromSupporters}
+                      />
+                      <span className={`workhub-access-label${hiddenFromSupporters ? ' is-active' : ''}`}>Hidden from supporters</span>
+                    </label>
+                    <span className="workhub-project-settings-hidden-toggle-help">
+                      {hiddenFromSupporters
+                        ? 'This folder and its child items are hidden from supporters.'
+                        : 'Supporters can currently see this folder.'}
+                    </span>
+                    {!canToggleHiddenFromSupporters && (
+                      <span className="workhub-project-settings-hidden-toggle-note">Only admins can change this setting.</span>
+                    )}
+                  </div>
+                ) : (
+                  <div className="workhub-project-settings-access-options">
+                    <label className="workhub-access-toggle">
+                      <input
+                        type="checkbox"
+                        checked={props.accessVisibility === 'workspace'}
+                        onChange={() => props.onVisibilityChange('workspace')}
+                      />
+                      <span className={`workhub-access-label${props.accessVisibility === 'workspace' ? ' is-active' : ''}`}>Visible to workspace</span>
+                    </label>
+                    <label className="workhub-access-toggle">
+                      <input
+                        type="checkbox"
+                        checked={props.accessVisibility === 'restricted'}
+                        onChange={() => props.onVisibilityChange('restricted')}
+                      />
+                      <span className={`workhub-access-label${props.accessVisibility === 'restricted' ? ' is-active' : ''}`}>Restricted</span>
+                    </label>
+                  </div>
+                )}
               </div>
             </div>
 
-            {props.accessVisibility === 'restricted' && (
+            {(isFolderContainer ? hiddenFromSupporters : props.accessVisibility === 'restricted') && (
               <div className="workhub-member-picker workhub-project-settings-member-picker">
-                {props.approvedMembers.map((item) => {
+                {restrictableMembers.map((item) => {
                   const checked = props.accessMemberUids.includes(item.uid)
                   return (
                     <button
                       key={item.uid}
                       type="button"
                       className={`workhub-member-chip${checked ? ' is-selected' : ''}`}
-                      onClick={() => props.onToggleMember(item.uid)}
+                      onClick={() => {
+                        if (isFolderContainer && !canToggleHiddenFromSupporters) return
+                        props.onToggleMember(item.uid)
+                      }}
+                      disabled={isFolderContainer && !canToggleHiddenFromSupporters}
                     >
                       {item.displayName || item.email}
                     </button>
                   )
                 })}
+                {restrictableMembers.length === 0 && (
+                  <span className="workhub-project-settings-member-picker-note">No extra members are available for this hidden scope.</span>
+                )}
               </div>
             )}
 

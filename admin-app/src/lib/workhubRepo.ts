@@ -349,7 +349,7 @@ export interface WorkhubActivity {
   id: string
   workspaceId: string
   actorUid: string
-  entityType: 'workspace' | 'project' | 'task' | 'comment' | 'member' | 'document'
+  entityType: 'workspace' | 'project' | 'task' | 'comment' | 'member' | 'document' | 'moodboard'
   entityId: string
   action: string
   message: string
@@ -379,7 +379,7 @@ export interface WorkhubNotification {
   workspaceId: string
   recipientUid: string
   actorUid: string
-  entityType: 'workspace' | 'project' | 'task' | 'comment' | 'member' | 'document'
+  entityType: 'workspace' | 'project' | 'task' | 'comment' | 'member' | 'document' | 'moodboard'
   entityId: string
   action: string
   message: string
@@ -601,6 +601,10 @@ function normalizeChecklistItems(items: WorkhubTaskChecklistItem[] | null | unde
       completed: !!item?.completed,
     }) as WorkhubTaskChecklistItem
   })
+}
+
+function normalizeMemberUids(uids: string[] | null | undefined): string[] {
+  return Array.from(new Set((uids || []).filter((uid): uid is string => typeof uid === 'string' && uid.length > 0)))
 }
 
 function safeListen(start: () => (() => void), onFailure?: () => void) {
@@ -1400,7 +1404,7 @@ export async function saveWorkhubTaskNotifyPrefs(
   })
 }
 
-export async function updateWorkhubTask(taskId: string, patch: Partial<Pick<WorkhubTask, 'projectId' | 'milestoneId' | 'title' | 'description' | 'attachments' | 'attachmentTitles' | 'imageUrls' | 'links' | 'linkTitles' | 'linkCreatedBy' | 'status' | 'priority' | 'assigneeUid' | 'assigneeUids' | 'startDate' | 'dueDate' | 'dueTime' | 'valueAmount' | 'valueCurrency' | 'checklist' | 'completedAt' | 'sortOrder'>>) {
+export async function updateWorkhubTask(taskId: string, patch: Partial<Pick<WorkhubTask, 'projectId' | 'milestoneId' | 'title' | 'description' | 'attachments' | 'attachmentTitles' | 'imageUrls' | 'links' | 'linkTitles' | 'linkCreatedBy' | 'visibility' | 'memberUids' | 'status' | 'priority' | 'assigneeUid' | 'assigneeUids' | 'startDate' | 'dueDate' | 'dueTime' | 'valueAmount' | 'valueCurrency' | 'checklist' | 'completedAt' | 'sortOrder'>>) {
   const normalizedPatch: Record<string, unknown> = {
     ...patch,
   }
@@ -1759,7 +1763,13 @@ export function subscribeWorkhubNotifications(
       q,
       (snap) => {
         const items = sortByNewest(snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubNotification)))
-        onData(maxCount > 0 ? items.slice(0, maxCount) : items)
+        if (maxCount <= 0) {
+          onData(items)
+          return
+        }
+        // Keep all unread notifications visible even when using a paging cap.
+        const visibleItems = items.filter((item, index) => index < maxCount || !item.read)
+        onData(visibleItems)
       },
       () => onData([]),
     ),
@@ -1945,6 +1955,8 @@ export interface WorkhubMoodBoard {
   workspaceId: string
   entityType: WorkhubMoodBoardEntityType
   entityId: string
+  visibility: WorkhubVisibility
+  memberUids: string[]
   sortOrder?: number
   panelVariant?: 'classic' | 'v2' | 'flow' | 'proscons'
   title: string
@@ -1990,6 +2002,8 @@ export interface WorkhubMoodBoard {
 
 export function subscribeWorkhubMoodBoardsForWorkspace(
   workspaceId: string,
+  currentUid: string,
+  canSeeAll: boolean,
   onData: (boards: WorkhubMoodBoard[]) => void,
 ) {
   const q = query(
@@ -2000,7 +2014,15 @@ export function subscribeWorkhubMoodBoardsForWorkspace(
     () => onSnapshot(
       q,
       (snap) => {
-        onData(sortMoodBoards(snap.docs.map((d) => ({ id: d.id, ...d.data() } as WorkhubMoodBoard))))
+        const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as WorkhubMoodBoard))
+        const visibleItems = canSeeAll
+          ? items
+          : items.filter((item) => (
+            item.visibility !== 'restricted'
+            || item.createdBy === currentUid
+            || normalizeMemberUids(item.memberUids || []).includes(currentUid)
+          ))
+        onData(sortMoodBoards(visibleItems))
       },
       () => onData([]),
     ),
@@ -2039,6 +2061,8 @@ export async function createWorkhubMoodBoard(input: {
   entityId: string
   title: string
   panelVariant?: 'classic' | 'v2' | 'flow' | 'proscons'
+  visibility?: WorkhubVisibility
+  memberUids?: string[]
   createdBy: string
 }): Promise<string> {
   const defaultTabs: WorkhubMoodBoardTab[] = [{ id: 'tab-main', title: 'Board' }]
@@ -2060,6 +2084,10 @@ export async function createWorkhubMoodBoard(input: {
     workspaceId: input.workspaceId,
     entityType: input.entityType,
     entityId: input.entityId,
+    visibility: input.visibility || 'workspace',
+    memberUids: input.visibility === 'restricted'
+      ? normalizeMemberUids(input.memberUids?.length ? input.memberUids : [input.createdBy])
+      : [],
     sortOrder: Date.now(),
     title: input.title,
     panelVariant: nextPanelVariant,
@@ -2090,7 +2118,7 @@ export async function updateWorkhubMoodBoardChecklist(
 
 export async function updateWorkhubMoodBoard(
   boardId: string,
-  patch: Partial<Pick<WorkhubMoodBoard, 'entityId' | 'sortOrder' | 'title'>>,
+  patch: Partial<Pick<WorkhubMoodBoard, 'workspaceId' | 'entityType' | 'entityId' | 'sortOrder' | 'title' | 'visibility' | 'memberUids'>>,
 ): Promise<void> {
   await updateDoc(doc(db, 'workhub_mood_boards', boardId), {
     ...patch,

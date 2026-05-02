@@ -94,6 +94,7 @@ import { CreateDialog } from './workhub/components/CreateDialog'
 import { CreateWorkspaceDialog } from './workhub/components/CreateWorkspaceDialog'
 import { DocumentCreateDialog } from './workhub/components/DocumentCreateDialog'
 import { DocumentSettingsDialog } from './workhub/components/DocumentSettingsDialog'
+import { MoodBoardSettingsDialog } from './workhub/components/MoodBoardSettingsDialog'
 import { ProjectTreeNodes } from './workhub/components/ProjectTreeNodes'
 import {
   TemplateCreateDialog,
@@ -133,7 +134,7 @@ import {
 import {
   buildProjectTree,
   canAccessWorkspace,
-  canViewProject,
+  canViewProjectWithAncestors,
   collectProjectBranchIds,
   collectProjectLineage,
   flattenProjectTree,
@@ -851,6 +852,14 @@ function buildQuickDocumentTabs(initialBody = '') {
   return [{ id: tabId, title: 'Main', body: initialBody }]
 }
 
+function haveSameMembers(left: string[] | undefined, right: string[] | undefined): boolean {
+  const leftMembers = normalizeMemberUids(left || [])
+  const rightMembers = normalizeMemberUids(right || [])
+  if (leftMembers.length !== rightMembers.length) return false
+  const rightSet = new Set(rightMembers)
+  return leftMembers.every((uid) => rightSet.has(uid))
+}
+
 export default function WorkHubPage() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -879,7 +888,7 @@ export default function WorkHubPage() {
   const [activity, setActivity] = useState<WorkhubActivity[]>([])
   const [notifications, setNotifications] = useState<WorkhubNotification[]>([])
   const [notificationMenuOpen, setNotificationMenuOpen] = useState(false)
-  const [notificationFetchLimit, setNotificationFetchLimit] = useState(10)
+  const [notificationFetchLimit, setNotificationFetchLimit] = useState(25)
   const [dataReloadNonce, setDataReloadNonce] = useState(0)
   const [isDataReloading, setIsDataReloading] = useState(false)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
@@ -935,6 +944,14 @@ export default function WorkHubPage() {
   const [documentSettingsWorkspaceIdDraft, setDocumentSettingsWorkspaceIdDraft] = useState('')
   const [documentSettingsProjectIdDraft, setDocumentSettingsProjectIdDraft] = useState('')
   const [documentSettingsIconDraft, setDocumentSettingsIconDraft] = useState('')
+  const [documentSettingsVisibilityDraft, setDocumentSettingsVisibilityDraft] = useState<WorkhubVisibility>('workspace')
+  const [documentSettingsMemberUidsDraft, setDocumentSettingsMemberUidsDraft] = useState<string[]>([])
+  const [moodBoardSettingsDialogId, setMoodBoardSettingsDialogId] = useState('')
+  const [moodBoardSettingsWorkspaceIdDraft, setMoodBoardSettingsWorkspaceIdDraft] = useState('')
+  const [moodBoardSettingsProjectIdDraft, setMoodBoardSettingsProjectIdDraft] = useState('')
+  const [moodBoardSettingsTitleDraft, setMoodBoardSettingsTitleDraft] = useState('')
+  const [moodBoardSettingsVisibilityDraft, setMoodBoardSettingsVisibilityDraft] = useState<WorkhubVisibility>('workspace')
+  const [moodBoardSettingsMemberUidsDraft, setMoodBoardSettingsMemberUidsDraft] = useState<string[]>([])
   const [workspaceName, setWorkspaceName] = useState('')
   const [workspaceDescription, setWorkspaceDescription] = useState('')
   const [workspaceTemplateId, setWorkspaceTemplateId] = useState<WorkhubWorkspaceTemplateId>(DEFAULT_WORKHUB_WORKSPACE_TEMPLATE_ID)
@@ -1522,10 +1539,7 @@ export default function WorkHubPage() {
     return subscribeWorkhubNotifications(localUid, setNotifications, { maxCount: notificationFetchLimit })
   }, [dataReloadNonce, member, notificationFetchLimit])
 
-  useEffect(() => {
-    if (notificationMenuOpen) return
-    setNotificationFetchLimit(10)
-  }, [notificationMenuOpen])
+  const currentUid = auth.currentUser?.uid || ''
 
   useEffect(() => {
     if (!selectedWorkspaceId) {
@@ -1533,12 +1547,16 @@ export default function WorkHubPage() {
       setWorkspaceMoodBoardsLoaded(true)
       return
     }
+    const workspaceAccessLevel = (workspaces.find((item) => item.id === selectedWorkspaceId)?.memberAccessLevels?.[currentUid] || 'custom')
+    const localIsMasterAdmin = !!MASTER_EMAIL && userEmail === MASTER_EMAIL
+    const localPrivileged = !!(localIsMasterAdmin || member?.role === 'admin' || member?.role === 'manager')
+    const canSeeAllMoodBoards = localPrivileged || workspaceAccessLevel === 'full'
     setWorkspaceMoodBoardsLoaded(false)
-    return subscribeWorkhubMoodBoardsForWorkspace(selectedWorkspaceId, (data) => {
+    return subscribeWorkhubMoodBoardsForWorkspace(selectedWorkspaceId, currentUid, canSeeAllMoodBoards, (data) => {
       setWorkspaceMoodBoards(data)
       setWorkspaceMoodBoardsLoaded(true)
     })
-  }, [dataReloadNonce, selectedWorkspaceId])
+  }, [currentUid, dataReloadNonce, member?.role, selectedWorkspaceId, userEmail, workspaces])
 
   useEffect(() => {
     if (!member || member.status !== 'approved') return
@@ -1571,7 +1589,6 @@ export default function WorkHubPage() {
     )
   }, [member, projects, workspaces])
 
-  const currentUid = auth.currentUser?.uid || ''
   const workhubViewModeStorageKey = useMemo(
     () => currentUid ? `workhub:view-mode:${currentUid}` : '',
     [currentUid],
@@ -1618,6 +1635,7 @@ export default function WorkHubPage() {
   const isMasterAdmin = !!MASTER_EMAIL && userEmail === MASTER_EMAIL
   const normalizedMasterEmail = (MASTER_EMAIL || '').trim().toLowerCase()
   const isPrivilegedMember = !!(isMasterAdmin || member?.role === 'admin' || member?.role === 'manager')
+  const isWorkhubAdmin = !!(isMasterAdmin || member?.role === 'admin')
   const accountDisplayName = member?.displayName || userName || userEmail.split('@')[0] || 'Member'
   const accountEmail = member?.email || userEmail || auth.currentUser?.email || ''
   const accountAvatarUrl = (member?.photoURL || auth.currentUser?.photoURL || '').trim()
@@ -1725,6 +1743,10 @@ export default function WorkHubPage() {
     const scopedIds = new Set(scopedWorkspaceIds)
     return projects.filter((item) => scopedIds.has(item.workspaceId))
   }, [projects, scopedWorkspaceIds])
+  const workspaceProjectMap = useMemo(
+    () => new Map(workspaceProjects.map((item) => [item.id, item])),
+    [workspaceProjects],
+  )
   const workspaceProjectsByParent = useMemo(() => {
     const map = new Map<string, WorkhubProject[]>()
     workspaceProjects.forEach((item) => {
@@ -1739,11 +1761,11 @@ export default function WorkHubPage() {
   const canSeeAllProjects = isPrivilegedMember || currentUserAccessLevel === 'full'
   const visibleWorkspaceProjects = useMemo(
     () => workspaceProjects.filter((item) => {
-      if (!canViewProject(item, currentUid, canSeeAllProjects)) return false
+      if (!canViewProjectWithAncestors(item, currentUid, canSeeAllProjects, workspaceProjectMap)) return false
       const effectiveIntent = resolveEffectiveProjectIntent(item, workspaceByIdForFiltering, selectedWorkspaceTemplateIntentSet)
       return selectedWorkspaceTemplateIntentSet.has(effectiveIntent)
     }),
-    [canSeeAllProjects, currentUid, selectedWorkspaceTemplateIntentSet, workspaceByIdForFiltering, workspaceProjects],
+    [canSeeAllProjects, currentUid, selectedWorkspaceTemplateIntentSet, workspaceByIdForFiltering, workspaceProjectMap, workspaceProjects],
   )
   const visibleWorkspaceById = useMemo(
     () => Object.fromEntries(visibleWorkspaces.map((item) => [item.id, item])) as Record<string, WorkhubWorkspace>,
@@ -1756,9 +1778,11 @@ export default function WorkHubPage() {
       const allowedIntentSet = new Set(resolveWorkspaceTemplateIntents(workspaceTemplateId))
       const workspaceAccessLevel = workspace.memberAccessLevels?.[currentUid] || 'custom'
       const canSeeWorkspaceProjectsForTree = isPrivilegedMember || workspaceAccessLevel === 'full'
+      const workspaceProjectItems = projects.filter((project) => project.workspaceId === workspace.id)
+      const workspaceProjectMapForTree = new Map(workspaceProjectItems.map((project) => [project.id, project]))
       grouped[workspace.id] = projects.filter((project) => {
         if (project.workspaceId !== workspace.id) return false
-        if (!canViewProject(project, currentUid, canSeeWorkspaceProjectsForTree)) return false
+        if (!canViewProjectWithAncestors(project, currentUid, canSeeWorkspaceProjectsForTree, workspaceProjectMapForTree)) return false
         const effectiveIntent = resolveEffectiveProjectIntent(project, workspaceByIdForFiltering, allowedIntentSet)
         return allowedIntentSet.has(effectiveIntent)
       })
@@ -1880,7 +1904,11 @@ export default function WorkHubPage() {
     visibleWorkspaces.forEach((workspace) => {
       const workspaceAccessLevel = workspace.memberAccessLevels?.[currentUid] || 'custom'
       const canSeeWorkspaceProjects = isPrivilegedMember || workspaceAccessLevel === 'full'
-      const workspaceVisibleProjects = projects.filter((item) => item.workspaceId === workspace.id && canViewProject(item, currentUid, canSeeWorkspaceProjects))
+      const workspaceProjectsForSettings = projects.filter((item) => item.workspaceId === workspace.id)
+      const workspaceProjectMapForSettings = new Map(workspaceProjectsForSettings.map((item) => [item.id, item]))
+      const workspaceVisibleProjects = workspaceProjectsForSettings.filter((item) => (
+        canViewProjectWithAncestors(item, currentUid, canSeeWorkspaceProjects, workspaceProjectMapForSettings)
+      ))
       const flatOptions = flattenProjectTree(buildProjectTree(workspaceVisibleProjects))
       flatOptions.forEach((item) => {
         options.push({
@@ -2162,6 +2190,84 @@ export default function WorkHubPage() {
     [projects],
   )
 
+  const resolveInheritedProjectAccess = useCallback((
+    parentProjectId: string | null | undefined,
+    fallbackUid: string,
+    fallbackVisibility: WorkhubVisibility,
+    fallbackMemberUids: string[],
+  ): { visibility: WorkhubVisibility; memberUids: string[] } => {
+    if (!parentProjectId) {
+      return {
+        visibility: fallbackVisibility,
+        memberUids: fallbackVisibility === 'restricted' ? normalizeMemberUids(fallbackMemberUids) : [],
+      }
+    }
+    const parentProject = projects.find((item) => item.id === parentProjectId) || null
+    if (!parentProject || parentProject.visibility !== 'restricted') {
+      return {
+        visibility: fallbackVisibility,
+        memberUids: fallbackVisibility === 'restricted' ? normalizeMemberUids(fallbackMemberUids) : [],
+      }
+    }
+    return {
+      visibility: 'restricted',
+      memberUids: normalizeMemberUids(parentProject.memberUids?.length ? parentProject.memberUids : [parentProject.createdBy, fallbackUid]),
+    }
+  }, [projects])
+
+  const applyRestrictedAccessToProjectBranch = useCallback(async (
+    rootProjectId: string,
+    memberUidsInput: string[],
+    updateRootProject = false,
+  ) => {
+    const memberUids = normalizeMemberUids(memberUidsInput)
+    if (!rootProjectId || memberUids.length === 0) return
+
+    const byParent = new Map<string, WorkhubProject[]>()
+    projects.forEach((item) => {
+      const key = item.parentProjectId || ''
+      const bucket = byParent.get(key) || []
+      bucket.push(item)
+      byParent.set(key, bucket)
+    })
+    const branchIds = collectProjectBranchIds(rootProjectId, byParent)
+    if (!branchIds.has(rootProjectId)) branchIds.add(rootProjectId)
+
+    const notifyUids = memberUids.filter((uid) => uid !== auth.currentUser?.uid)
+    const projectUpdates = projects
+      .filter((item) => branchIds.has(item.id) && (updateRootProject || item.id !== rootProjectId))
+      .filter((item) => item.visibility !== 'restricted' || !haveSameMembers(item.memberUids, memberUids))
+      .map((item) => updateWorkhubProject(item.id, {
+        visibility: 'restricted',
+        memberUids,
+      }))
+
+    const taskUpdates = tasks
+      .filter((item) => branchIds.has(item.projectId))
+      .filter((item) => item.visibility !== 'restricted' || !haveSameMembers(item.memberUids, memberUids))
+      .map((item) => updateWorkhubTask(item.id, {
+        visibility: 'restricted',
+        memberUids,
+      }))
+
+    const documentUpdates = documents
+      .filter((item) => !!item.projectId && branchIds.has(item.projectId))
+      .filter((item) => (
+        item.visibility !== 'restricted'
+        || !haveSameMembers(item.memberUids, memberUids)
+        || !haveSameMembers(item.editMemberUids || [], memberUids)
+      ))
+      .map((item) => updateWorkhubDocument(item.id, {
+        visibility: 'restricted',
+        memberUids,
+        editMemberUids: memberUids,
+        notifyMode: notifyUids.length > 0 ? 'selected' : 'all',
+        notifyUids,
+      }))
+
+    await Promise.all([...projectUpdates, ...taskUpdates, ...documentUpdates])
+  }, [documents, projects, tasks])
+
   const closeTaskContextMenu = useCallback(() => {
     setTaskContextMenuState(null)
   }, [])
@@ -2211,6 +2317,11 @@ export default function WorkHubPage() {
     }
 
     const projectById = new Map(projects.map((item) => [item.id, item]))
+    const targetParent = projectById.get(parentProjectId)
+    if (!targetParent) {
+      showToast({ type: 'error', message: 'Destination folder was not found.' })
+      return
+    }
     let cursor: string | null = parentProjectId
     while (cursor) {
       if (cursor === source.id) {
@@ -2220,12 +2331,18 @@ export default function WorkHubPage() {
       cursor = projectById.get(cursor)?.parentProjectId || null
     }
 
+    const inheritedAccess = resolveInheritedProjectAccess(parentProjectId, source.createdBy, source.visibility, source.memberUids || [])
     setBusyKey(`project-move:${source.id}`)
     try {
       await updateWorkhubProject(source.id, {
         parentProjectId,
         sortOrder: Date.now(),
+        visibility: inheritedAccess.visibility,
+        memberUids: inheritedAccess.memberUids,
       })
+      if (inheritedAccess.visibility === 'restricted') {
+        await applyRestrictedAccessToProjectBranch(source.id, inheritedAccess.memberUids)
+      }
       setProjectMoveDialogState(null)
       showToast({ type: 'success', message: 'Folder moved.' })
     } catch {
@@ -2233,7 +2350,7 @@ export default function WorkHubPage() {
     } finally {
       setBusyKey('')
     }
-  }, [projectMoveDialogState, projects, showToast])
+  }, [applyRestrictedAccessToProjectBranch, projectMoveDialogState, projects, resolveInheritedProjectAccess, showToast])
 
   const handleMoveTaskToProject = useCallback(async (workspaceId: string, projectId: string) => {
     const pendingMove = taskMoveDialogState
@@ -2293,19 +2410,30 @@ export default function WorkHubPage() {
       }
     }
 
+    const inheritedAccess = resolveInheritedProjectAccess(
+      targetParentProjectId,
+      source.createdBy,
+      source.visibility,
+      source.memberUids || [],
+    )
     setBusyKey(`project-move:${source.id}`)
     try {
       await updateWorkhubProject(source.id, {
         parentProjectId: targetParentProjectId || null,
         sortOrder: Date.now(),
+        visibility: inheritedAccess.visibility,
+        memberUids: inheritedAccess.memberUids,
       })
+      if (inheritedAccess.visibility === 'restricted') {
+        await applyRestrictedAccessToProjectBranch(source.id, inheritedAccess.memberUids)
+      }
       showToast({ type: 'success', message: 'Folder moved.' })
     } catch {
       showToast({ type: 'error', message: 'Could not move folder.' })
     } finally {
       setBusyKey('')
     }
-  }, [projects, showToast])
+  }, [applyRestrictedAccessToProjectBranch, projects, resolveInheritedProjectAccess, showToast])
 
   const handleQuickCreateProjectFromContext = useCallback(async (kind: 'project' | 'folder', parentProjectId = '') => {
     const localUid = auth.currentUser?.uid || currentUid
@@ -2317,6 +2445,12 @@ export default function WorkHubPage() {
     }
     const defaultName = kind === 'folder' ? 'New folder' : 'New project'
     const projectColorPool = selectedWorkspaceProjectColorOptions.length > 0 ? selectedWorkspaceProjectColorOptions : PROJECT_COLORS
+    const inheritedAccess = resolveInheritedProjectAccess(
+      resolvedParentProjectId || null,
+      localUid,
+      isWorkhubAdmin ? 'restricted' : 'workspace',
+      [],
+    )
 
     if (resolvedParentProjectId) {
       const projectById = new Map(projects.map((item) => [item.id, item]))
@@ -2338,8 +2472,8 @@ export default function WorkHubPage() {
         name: defaultName,
         description: '',
         color: projectColorPool[(Math.floor(Math.random() * projectColorPool.length))],
-        visibility: 'workspace',
-        memberUids: [],
+        visibility: inheritedAccess.visibility,
+        memberUids: inheritedAccess.memberUids,
         storageMethod: 'firebase',
         createdBy: localUid,
       })
@@ -2351,6 +2485,8 @@ export default function WorkHubPage() {
         entityId: projectId,
         action: 'create',
         message: `Created ${kind} ${defaultName}`,
+        visibility: inheritedAccess.visibility,
+        memberUids: inheritedAccess.memberUids,
       })
 
       setSelectedProjectId(projectId)
@@ -2368,7 +2504,7 @@ export default function WorkHubPage() {
     } finally {
       setBusyKey('')
     }
-  }, [currentUid, projects, selectedProjectId, selectedWorkspaceId, selectedWorkspaceProjectColorOptions, showToast])
+  }, [currentUid, isWorkhubAdmin, projects, resolveInheritedProjectAccess, selectedProjectId, selectedWorkspaceId, selectedWorkspaceProjectColorOptions, showToast])
 
   const handleQuickCreateDocumentLikeFromContext = useCallback(async (type: 'document' | 'note', projectId = '') => {
     const localUid = auth.currentUser?.uid || currentUid
@@ -2751,12 +2887,18 @@ export default function WorkHubPage() {
     const duplicatedTitle = `${(board.title || 'Mood board').trim() || 'Mood board'} (Copy)`
     setBusyKey(`moodboard-duplicate:${boardId}`)
     try {
+      const duplicatedVisibility = board.visibility || 'workspace'
+      const duplicatedMemberUids = duplicatedVisibility === 'restricted'
+        ? normalizeMemberUids(board.memberUids?.length ? board.memberUids : [board.createdBy || localUid])
+        : []
       const duplicatedId = await createWorkhubMoodBoard({
         workspaceId: board.workspaceId,
         entityType: board.entityType,
         entityId: board.entityId,
         title: duplicatedTitle,
         panelVariant: resolveMoodboardPanelMode(board.panelVariant),
+        visibility: duplicatedVisibility,
+        memberUids: duplicatedMemberUids,
         createdBy: localUid,
       })
 
@@ -3186,6 +3328,32 @@ export default function WorkHubPage() {
   }
   const selectedNoteProject = useMemo(() => visibleWorkspaceProjects.find((item) => item.id === selectedNoteProjectId) || null, [selectedNoteProjectId, visibleWorkspaceProjects])
   const selectedAccessProject = useMemo(() => workspaceProjects.find((item) => item.id === projectAccessDialogId) || null, [projectAccessDialogId, workspaceProjects])
+  const createRestrictedMemberCandidates = useMemo(() => workspaceAssignableMembers.filter((item) => {
+    if (item.uid === currentUid) return false
+    if (item.role === 'admin') return false
+    const candidateEmail = (item.email || '').trim().toLowerCase()
+    if (normalizedMasterEmail && candidateEmail === normalizedMasterEmail) return false
+    return true
+  }), [currentUid, normalizedMasterEmail, workspaceAssignableMembers])
+  const createRestrictedMemberUidSet = useMemo(
+    () => new Set(createRestrictedMemberCandidates.map((item) => item.uid)),
+    [createRestrictedMemberCandidates],
+  )
+  const selectedAccessProjectRestrictedMemberCandidates = useMemo(() => {
+    const creatorUid = selectedAccessProject?.createdBy || ''
+    return workspaceAssignableMembers.filter((item) => {
+      if (item.uid === currentUid) return false
+      if (item.uid === creatorUid) return false
+      if (item.role === 'admin') return false
+      const candidateEmail = (item.email || '').trim().toLowerCase()
+      if (normalizedMasterEmail && candidateEmail === normalizedMasterEmail) return false
+      return true
+    })
+  }, [currentUid, normalizedMasterEmail, selectedAccessProject?.createdBy, workspaceAssignableMembers])
+  const selectedAccessProjectRestrictedMemberUidSet = useMemo(
+    () => new Set(selectedAccessProjectRestrictedMemberCandidates.map((item) => item.uid)),
+    [selectedAccessProjectRestrictedMemberCandidates],
+  )
   const selectedAccessProjectEffectiveIntent = useMemo(() => {
     if (!selectedAccessProject) return 'project' as WorkhubProjectIntent
     return resolveEffectiveProjectIntent(selectedAccessProject, workspaceByIdForFiltering, selectedWorkspaceTemplateIntentSet)
@@ -4066,6 +4234,7 @@ export default function WorkHubPage() {
   const workspaceMoodBoardsByProjectId = useMemo(() => {
     const grouped: Record<string, WorkhubMoodBoard[]> = {}
     workspaceMoodBoards.forEach((item) => {
+      if (item.entityType !== 'project') return
       if (!item.entityId || !visibleProjectIds.has(item.entityId)) return
       if (!grouped[item.entityId]) grouped[item.entityId] = []
       grouped[item.entityId].push(item)
@@ -4193,15 +4362,46 @@ export default function WorkHubPage() {
     () => (documentSettingsDialogId ? (workspaceDocumentById[documentSettingsDialogId] || (selectedDocument?.id === documentSettingsDialogId ? selectedDocument : null) || null) : null),
     [documentSettingsDialogId, selectedDocument, workspaceDocumentById],
   )
+  const documentSettingsRestrictableMembers = useMemo(() => {
+    const creatorUid = selectedDocumentSettingsTarget?.createdBy || ''
+    return approvedMembers.filter((item) => {
+      if (item.uid === currentUid) return false
+      if (item.uid === creatorUid) return false
+      if (item.role === 'admin') return false
+      const candidateEmail = (item.email || '').trim().toLowerCase()
+      if (normalizedMasterEmail && candidateEmail === normalizedMasterEmail) return false
+      return true
+    })
+  }, [approvedMembers, currentUid, normalizedMasterEmail, selectedDocumentSettingsTarget?.createdBy])
+  const documentSettingsRestrictableUidSet = useMemo(
+    () => new Set(documentSettingsRestrictableMembers.map((item) => item.uid)),
+    [documentSettingsRestrictableMembers],
+  )
 
   function openDocumentSettingsDialog(documentId: string) {
     const targetDocument = workspaceDocumentById[documentId] || (selectedDocument?.id === documentId ? selectedDocument : null)
     if (!targetDocument) return
     const targetWorkspaceId = targetDocument.workspaceId || selectedWorkspaceId
+    const targetVisibility = targetDocument.visibility || 'workspace'
+    const creatorUid = targetDocument.createdBy || ''
+    const allowedMemberUidSet = new Set(approvedMembers.filter((item) => {
+      if (item.uid === currentUid) return false
+      if (item.uid === creatorUid) return false
+      if (item.role === 'admin') return false
+      const candidateEmail = (item.email || '').trim().toLowerCase()
+      if (normalizedMasterEmail && candidateEmail === normalizedMasterEmail) return false
+      return true
+    }).map((item) => item.uid))
     setDocumentSettingsDialogId(targetDocument.id)
     setDocumentSettingsWorkspaceIdDraft(targetWorkspaceId)
     setDocumentSettingsProjectIdDraft(targetDocument.projectId || '')
     setDocumentSettingsIconDraft(targetDocument.icon || '')
+    setDocumentSettingsVisibilityDraft(targetVisibility)
+    setDocumentSettingsMemberUidsDraft(
+      targetVisibility === 'restricted'
+        ? normalizeMemberUids(targetDocument.memberUids || []).filter((uid) => allowedMemberUidSet.has(uid))
+        : [],
+    )
   }
 
   function closeDocumentSettingsDialog() {
@@ -4209,6 +4409,8 @@ export default function WorkHubPage() {
     setDocumentSettingsWorkspaceIdDraft('')
     setDocumentSettingsProjectIdDraft('')
     setDocumentSettingsIconDraft('')
+    setDocumentSettingsVisibilityDraft('workspace')
+    setDocumentSettingsMemberUidsDraft([])
   }
 
   function handleDocumentSettingsWorkspaceChange(workspaceId: string) {
@@ -4231,9 +4433,22 @@ export default function WorkHubPage() {
     const selectedProjectOption = documentSettingsProjectIdDraft ? documentSettingsProjectOptionById[documentSettingsProjectIdDraft] : null
     const nextProjectId = selectedProjectOption?.workspaceId === nextWorkspaceId ? selectedProjectOption.id : ''
     const targetProject = nextProjectId ? (projects.find((item) => item.id === nextProjectId) || null) : null
-    const nextVisibility = targetProject?.visibility || 'workspace'
+    const canManageDocumentPolicy = isWorkhubAdmin
+    const requestedVisibility = canManageDocumentPolicy
+      ? documentSettingsVisibilityDraft
+      : (selectedDocumentSettingsTarget.visibility || 'workspace')
+    const requestedMemberUids = canManageDocumentPolicy
+      ? normalizeMemberUids(documentSettingsMemberUidsDraft.filter((uid) => documentSettingsRestrictableUidSet.has(uid)))
+      : normalizeMemberUids(selectedDocumentSettingsTarget.memberUids || [])
+    const nextVisibility = targetProject?.visibility === 'restricted'
+      ? 'restricted'
+      : requestedVisibility
     const nextMemberUids = nextVisibility === 'restricted'
-      ? normalizeMemberUids(targetProject?.memberUids?.length ? targetProject.memberUids : [auth.currentUser.uid])
+      ? normalizeMemberUids(
+        targetProject?.visibility === 'restricted'
+          ? (targetProject.memberUids?.length ? targetProject.memberUids : [targetProject.createdBy || auth.currentUser.uid])
+          : (requestedMemberUids.length > 0 ? requestedMemberUids : [selectedDocumentSettingsTarget.createdBy || auth.currentUser.uid]),
+      )
       : []
     const nextNotifyUids = nextVisibility === 'restricted'
       ? normalizeMemberUids(nextMemberUids).filter((uid) => uid !== auth.currentUser?.uid)
@@ -4275,6 +4490,143 @@ export default function WorkHubPage() {
       showToast({ type: 'success', message: `${selectedDocumentSettingsTarget.type === 'note' ? 'Note' : 'Document'} settings updated.` })
     } catch (error) {
       showToast({ type: 'error', message: error instanceof Error ? error.message : 'Could not save document settings.' })
+    } finally {
+      setBusyKey('')
+    }
+  }
+
+  const selectedMoodBoardSettingsTarget = useMemo(
+    () => (moodBoardSettingsDialogId ? (workspaceMoodBoards.find((item) => item.id === moodBoardSettingsDialogId) || null) : null),
+    [moodBoardSettingsDialogId, workspaceMoodBoards],
+  )
+  const moodBoardSettingsRestrictableMembers = useMemo(() => {
+    const creatorUid = selectedMoodBoardSettingsTarget?.createdBy || ''
+    return approvedMembers.filter((item) => {
+      if (item.uid === currentUid) return false
+      if (item.uid === creatorUid) return false
+      if (item.role === 'admin') return false
+      const candidateEmail = (item.email || '').trim().toLowerCase()
+      if (normalizedMasterEmail && candidateEmail === normalizedMasterEmail) return false
+      return true
+    })
+  }, [approvedMembers, currentUid, normalizedMasterEmail, selectedMoodBoardSettingsTarget?.createdBy])
+  const moodBoardSettingsRestrictableUidSet = useMemo(
+    () => new Set(moodBoardSettingsRestrictableMembers.map((item) => item.uid)),
+    [moodBoardSettingsRestrictableMembers],
+  )
+
+  function openMoodBoardSettingsDialog(boardId: string) {
+    const targetBoard = workspaceMoodBoards.find((item) => item.id === boardId) || null
+    if (!targetBoard) return
+    const targetWorkspaceId = targetBoard.workspaceId || selectedWorkspaceId
+    const targetProjectId = targetBoard.entityType === 'project' ? targetBoard.entityId : ''
+    const targetVisibility = targetBoard.visibility || 'workspace'
+    const creatorUid = targetBoard.createdBy || ''
+    const allowedMemberUidSet = new Set(approvedMembers.filter((item) => {
+      if (item.uid === currentUid) return false
+      if (item.uid === creatorUid) return false
+      if (item.role === 'admin') return false
+      const candidateEmail = (item.email || '').trim().toLowerCase()
+      if (normalizedMasterEmail && candidateEmail === normalizedMasterEmail) return false
+      return true
+    }).map((item) => item.uid))
+    const targetMemberUids = targetVisibility === 'restricted'
+      ? normalizeMemberUids(targetBoard.memberUids || []).filter((uid) => allowedMemberUidSet.has(uid))
+      : []
+    setMoodBoardSettingsDialogId(targetBoard.id)
+    setMoodBoardSettingsWorkspaceIdDraft(targetWorkspaceId)
+    setMoodBoardSettingsProjectIdDraft(targetProjectId)
+    setMoodBoardSettingsTitleDraft((targetBoard.title || '').trim() || 'Mood board')
+    setMoodBoardSettingsVisibilityDraft(targetVisibility)
+    setMoodBoardSettingsMemberUidsDraft(targetMemberUids)
+  }
+
+  function closeMoodBoardSettingsDialog() {
+    setMoodBoardSettingsDialogId('')
+    setMoodBoardSettingsWorkspaceIdDraft('')
+    setMoodBoardSettingsProjectIdDraft('')
+    setMoodBoardSettingsTitleDraft('')
+    setMoodBoardSettingsVisibilityDraft('workspace')
+    setMoodBoardSettingsMemberUidsDraft([])
+  }
+
+  function handleMoodBoardSettingsWorkspaceChange(workspaceId: string) {
+    setMoodBoardSettingsWorkspaceIdDraft(workspaceId)
+    setMoodBoardSettingsProjectIdDraft((current) => {
+      const currentProject = documentSettingsProjectOptionById[current]
+      return currentProject?.workspaceId === workspaceId ? current : ''
+    })
+  }
+
+  async function handleSaveMoodBoardSettings() {
+    if (!auth.currentUser || !selectedMoodBoardSettingsTarget) return
+
+    const nextWorkspaceId = moodBoardSettingsWorkspaceIdDraft || selectedMoodBoardSettingsTarget.workspaceId
+    if (!visibleWorkspaceById[nextWorkspaceId]) {
+      showToast({ type: 'error', message: 'Choose an accessible workspace.' })
+      return
+    }
+
+    const selectedProjectOption = moodBoardSettingsProjectIdDraft ? documentSettingsProjectOptionById[moodBoardSettingsProjectIdDraft] : null
+    const nextProjectId = selectedProjectOption?.workspaceId === nextWorkspaceId ? selectedProjectOption.id : ''
+    const targetProject = nextProjectId ? (projects.find((item) => item.id === nextProjectId) || null) : null
+    const nextTitle = (moodBoardSettingsTitleDraft || '').trim() || ((selectedMoodBoardSettingsTarget.title || '').trim() || 'Mood board')
+    const canManageMoodBoardPolicy = isWorkhubAdmin
+    const requestedVisibility = canManageMoodBoardPolicy
+      ? moodBoardSettingsVisibilityDraft
+      : (selectedMoodBoardSettingsTarget.visibility || 'workspace')
+    const requestedMemberUids = canManageMoodBoardPolicy
+      ? normalizeMemberUids(moodBoardSettingsMemberUidsDraft.filter((uid) => moodBoardSettingsRestrictableUidSet.has(uid)))
+      : normalizeMemberUids(selectedMoodBoardSettingsTarget.memberUids || [])
+
+    const nextVisibility = targetProject?.visibility === 'restricted'
+      ? 'restricted'
+      : requestedVisibility
+    const nextMemberUids = nextVisibility === 'restricted'
+      ? normalizeMemberUids(
+        targetProject?.visibility === 'restricted'
+          ? (targetProject.memberUids?.length ? targetProject.memberUids : [targetProject.createdBy || selectedMoodBoardSettingsTarget.createdBy || auth.currentUser.uid])
+          : (requestedMemberUids.length > 0 ? requestedMemberUids : [selectedMoodBoardSettingsTarget.createdBy || auth.currentUser.uid]),
+      )
+      : []
+    const nextEntityType = nextProjectId ? 'project' : 'workspace'
+    const nextEntityId = nextProjectId || nextWorkspaceId
+
+    setBusyKey('moodboard:settings')
+    try {
+      await updateWorkhubMoodBoard(selectedMoodBoardSettingsTarget.id, {
+        workspaceId: nextWorkspaceId,
+        entityType: nextEntityType,
+        entityId: nextEntityId,
+        title: nextTitle,
+        visibility: nextVisibility,
+        memberUids: nextMemberUids,
+      })
+
+      await createWorkhubActivity({
+        workspaceId: nextWorkspaceId,
+        actorUid: auth.currentUser.uid,
+        entityType: 'moodboard',
+        entityId: selectedMoodBoardSettingsTarget.id,
+        action: 'update',
+        message: `Updated mood board settings for ${nextTitle}`,
+        visibility: nextVisibility,
+        memberUids: nextMemberUids,
+      })
+
+      setSelectedWorkspaceId(nextWorkspaceId)
+      setSelectedProjectId(nextProjectId || 'all')
+      setSelectedNoteProjectId(nextProjectId || '')
+      setSelectedTaskId('')
+      setSelectedDocumentId('')
+      setSelectedMoodBoardId(selectedMoodBoardSettingsTarget.id)
+      setActiveSection('moodboard')
+      setProjectsGroupExpanded(true)
+      setSidebarCollapsed(false)
+      closeMoodBoardSettingsDialog()
+      showToast({ type: 'success', message: 'Mood board settings updated.' })
+    } catch (error) {
+      showToast({ type: 'error', message: error instanceof Error ? error.message : 'Could not save mood board settings.' })
     } finally {
       setBusyKey('')
     }
@@ -4792,6 +5144,7 @@ export default function WorkHubPage() {
   const prevSelectedProjectIdRef = useRef(selectedProjectId)
   const prevSelectedEntityIdRef = useRef('')
   const prevActiveSectionRef = useRef(activeSection)
+  const prevParsedKindRef = useRef(parsedWorkhubPath.kind)
   const isWorkspaceSelectionResolved = useMemo(() => {
     if (!selectedWorkspaceId) return false
     return visibleWorkspaces.some((item) => item.id === selectedWorkspaceId)
@@ -5162,6 +5515,12 @@ export default function WorkHubPage() {
     prevActiveSectionRef.current = activeSection
     const sectionChangedThisRender = prevSection !== activeSection
 
+    // Track URL-kind changes so we can detect the frame where navigate() has
+    // landed but the URL→state effects haven't updated activeSection yet.
+    const prevKind = prevParsedKindRef.current
+    prevParsedKindRef.current = parsedWorkhubPath.kind
+    const kindChangedThisRender = prevKind !== parsedWorkhubPath.kind
+
     // If the URL explicitly targets a section for this workspace, never let
     // stale in-memory section state overwrite it while URL->state hydration is
     // still catching up. This guard is navigation-type agnostic so it also
@@ -5181,6 +5540,16 @@ export default function WorkHubPage() {
     // activeSection='dashboard' (URL→state hasn't fired yet because workspaceMoodBoards
     // is still empty) and pushes a dashboard URL, causing a visible flicker on refresh.
     if (parsedWorkhubPath.kind === 'moodboard' && !workspaceMoodBoardsLoaded) return
+
+    // Guard: the URL kind just transitioned to 'project' in this render (React Router
+    // defers navigate() via startTransition, so the URL change can land in a separate
+    // render from the synchronous state updates in handleSelectProjectFromTree).
+    // In that gap, "Sync workspace-section" may revert activeSection back to the old
+    // section before "Sync project" has had a chance to advance it to 'tasks'/'dashboard'.
+    // Without this guard, state→URL would compute the old section URL and navigate back,
+    // creating the notes ↔ project oscillation loop.  Hold off for exactly one render
+    // and let the "Sync project" effect update activeSection first.
+    if (kindChangedThisRender && parsedWorkhubPath.kind === 'project') return
 
     const prevWorkspaceId = prevSelectedWorkspaceIdRef.current
     prevSelectedWorkspaceIdRef.current = selectedWorkspaceId
@@ -5314,6 +5683,7 @@ export default function WorkHubPage() {
     location.search,
     navigate,
     navigationType,
+    parsedWorkhubPath.kind,
     parsedWorkhubPath.source,
     parsedWorkhubPath.wsId,
     selectedDocumentId,
@@ -5806,9 +6176,9 @@ export default function WorkHubPage() {
     setSettingsProjectClientId(selectedAccessProject.clientId || '')
     setSettingsStorageMethod(selectedAccessProject.storageMethod || 'firebase')
     setAccessVisibility(selectedAccessProject.visibility || 'workspace')
-    setAccessMemberUids(selectedAccessProject.memberUids || [])
+    setAccessMemberUids(normalizeMemberUids(selectedAccessProject.memberUids || []).filter((uid) => selectedAccessProjectRestrictedMemberUidSet.has(uid)))
     setSettingsProjectCreateDeliveryFolder(false)
-  }, [selectedAccessProject])
+  }, [selectedAccessProject, selectedAccessProjectRestrictedMemberUidSet])
 
   useEffect(() => {
     if (!selectedAccessProject?.id || !selectedWorkspaceId || !currentUid) {
@@ -5878,10 +6248,24 @@ export default function WorkHubPage() {
   }, [allClientById, clients, selectedClientId])
 
   useEffect(() => {
-    if (projectVisibility === 'restricted' && projectMemberUids.length === 0 && currentUid) {
-      setProjectMemberUids([currentUid])
-    }
-  }, [currentUid, projectMemberUids.length, projectVisibility])
+    setProjectMemberUids((current) => {
+      const next = normalizeMemberUids(current).filter((uid) => createRestrictedMemberUidSet.has(uid))
+      if (next.length === current.length && next.every((uid, index) => uid === current[index])) {
+        return current
+      }
+      return next
+    })
+  }, [createRestrictedMemberUidSet])
+
+  useEffect(() => {
+    setAccessMemberUids((current) => {
+      const next = normalizeMemberUids(current).filter((uid) => selectedAccessProjectRestrictedMemberUidSet.has(uid))
+      if (next.length === current.length && next.every((uid, index) => uid === current[index])) {
+        return current
+      }
+      return next
+    })
+  }, [selectedAccessProjectRestrictedMemberUidSet])
 
   useEffect(() => {
     if (projectType === 'tender') {
@@ -6339,11 +6723,20 @@ export default function WorkHubPage() {
       showToast({ type: 'error', message: 'Deadline cannot be earlier than the start date.' })
       return
     }
-    const memberUids = projectVisibility === 'restricted'
-      ? normalizeMemberUids(projectMemberUids.length > 0 ? projectMemberUids : [auth.currentUser.uid])
-      : []
     const shouldKeepOpen = options?.keepDialogOpen === true || !closeProjectAfterCreate
     const currentParentId = projectParentId
+    const requestedVisibility = isWorkhubAdmin ? projectVisibility : 'workspace'
+    const requestedMemberUids = requestedVisibility === 'restricted'
+      ? normalizeMemberUids(projectMemberUids.filter((uid) => createRestrictedMemberUidSet.has(uid)))
+      : []
+    const inheritedAccess = resolveInheritedProjectAccess(
+      currentParentId || null,
+      auth.currentUser.uid,
+      requestedVisibility,
+      requestedMemberUids,
+    )
+    const visibility = inheritedAccess.visibility
+    const memberUids = visibility === 'restricted' ? inheritedAccess.memberUids : []
     const projectIntent: WorkhubProjectIntent = 'project'
     setBusyKey('project')
     try {
@@ -6361,7 +6754,7 @@ export default function WorkHubPage() {
         submissionTime: '',
         priority: projectPriority,
         clientId: projectClientId,
-        visibility: projectVisibility,
+        visibility,
         memberUids,
         storageMethod: projectStorageMethod,
         createdBy: auth.currentUser.uid,
@@ -6373,7 +6766,7 @@ export default function WorkHubPage() {
         entityId: projectId,
         action: 'create',
         message: `Created folder ${pName}`,
-        visibility: projectVisibility,
+        visibility,
         memberUids,
       })
       
@@ -6394,7 +6787,7 @@ export default function WorkHubPage() {
         setProjectClientId('')
         const projectColorPool = selectedWorkspaceProjectColorOptions.length > 0 ? selectedWorkspaceProjectColorOptions : PROJECT_COLORS
         setProjectColor(projectColorPool[(Math.floor(Math.random() * projectColorPool.length))])
-        setProjectVisibility('workspace')
+        setProjectVisibility(isWorkhubAdmin ? 'restricted' : 'workspace')
         setProjectMemberUids([])
       }
       setSelectedProjectId(projectId)
@@ -7402,9 +7795,23 @@ export default function WorkHubPage() {
       && !existingProposalDeliveryFolder
       && !!settingsProjectName.trim()
     )
-    const memberUids = accessVisibility === 'restricted'
-      ? normalizeMemberUids(accessMemberUids.length > 0 ? accessMemberUids : [selectedAccessProject.createdBy])
-      : []
+    const canManageFolderHiddenFromSupporters = !isFolderContainer || isWorkhubAdmin
+    const requestedVisibility = canManageFolderHiddenFromSupporters
+      ? accessVisibility
+      : (selectedAccessProject.visibility || 'workspace')
+    const requestedAccessMembers = canManageFolderHiddenFromSupporters
+      ? normalizeMemberUids(accessMemberUids.filter((uid) => selectedAccessProjectRestrictedMemberUidSet.has(uid)))
+      : normalizeMemberUids(selectedAccessProject.memberUids || [])
+    const resolvedAccess = resolveInheritedProjectAccess(
+      settingsProjectParentId || null,
+      selectedAccessProject.createdBy,
+      requestedVisibility,
+      requestedVisibility === 'restricted'
+        ? (requestedAccessMembers.length > 0 ? requestedAccessMembers : [selectedAccessProject.createdBy])
+        : [],
+    )
+    const nextVisibility = resolvedAccess.visibility
+    const memberUids = nextVisibility === 'restricted' ? resolvedAccess.memberUids : []
     const previousProjectSnapshot = selectedAccessProject
     const optimisticProjectPatch = {
       name: settingsProjectName.trim(),
@@ -7426,7 +7833,7 @@ export default function WorkHubPage() {
       taskStatuses: settingsProjectTaskStatuses ?? [],
       clientId: settingsProjectClientId,
       storageMethod: settingsStorageMethod,
-      visibility: accessVisibility,
+      visibility: nextVisibility,
       memberUids,
     }
     setProjects((current) => current.map((item) => (item.id === selectedAccessProject.id ? { ...item, ...optimisticProjectPatch } : item)))
@@ -7442,9 +7849,12 @@ export default function WorkHubPage() {
         entityId: selectedAccessProject.id,
         action: 'settings_update',
         message: `${entityLabel} ${settingsProjectName.trim()} settings were updated`,
-        visibility: accessVisibility,
+        visibility: nextVisibility,
         memberUids,
       })
+      if (isFolderContainer && nextVisibility === 'restricted') {
+        await applyRestrictedAccessToProjectBranch(selectedAccessProject.id, memberUids)
+      }
       let deliveryFolderCreated = false
       let deliveryFolderWarning = ''
       if (shouldCreateProposalDeliveryFolder && proposalProjectsWorkspace) {
@@ -7827,6 +8237,8 @@ export default function WorkHubPage() {
     setProjectSubmissionTime('')
     setProjectPriority('medium')
     setProjectClientId('')
+    setProjectVisibility(isWorkhubAdmin ? 'restricted' : 'workspace')
+    setProjectMemberUids([])
     setCreateDialogType('project')
     setCreateDialogOpen(true)
   }
@@ -7929,6 +8341,12 @@ export default function WorkHubPage() {
     const description = buildTemplateCreationDescription(templateCreateIntent, draft)
     const projectSubject = intentMeta.subjectLabel
     const resolvedParentProjectId = templateCreateParentProjectId || (selectedProjectId !== 'all' ? selectedProjectId : '')
+    const inheritedAccess = resolveInheritedProjectAccess(
+      resolvedParentProjectId || null,
+      auth.currentUser.uid,
+      isWorkhubAdmin ? 'restricted' : 'workspace',
+      [],
+    )
 
     setBusyKey('template-create')
     try {
@@ -7940,8 +8358,8 @@ export default function WorkHubPage() {
         name,
         description,
         color: projectColorPool[(Math.floor(Math.random() * projectColorPool.length))],
-        visibility: 'workspace',
-        memberUids: [],
+        visibility: inheritedAccess.visibility,
+        memberUids: inheritedAccess.memberUids,
         storageMethod: 'firebase',
         projectStartDate: draft.startDate.trim(),
         projectDeadline: draft.deadline.trim(),
@@ -7961,6 +8379,8 @@ export default function WorkHubPage() {
         entityId: projectId,
         action: 'create',
         message: `Created ${projectSubject} ${name}`,
+        visibility: inheritedAccess.visibility,
+        memberUids: inheritedAccess.memberUids,
       })
 
       ensureWorkhubDriveProjectFolder({ projectId, projectName: name }).catch((error) => {
@@ -8175,6 +8595,11 @@ export default function WorkHubPage() {
         : panelVariant === 'proscons'
           ? `${label} — Pros & Cons`
           : `${label} — Mood Board`
+      const targetProject = entityType === 'project' ? (workspaceProjectById[entityId] || null) : null
+      const boardVisibility = targetProject?.visibility === 'restricted' ? 'restricted' : 'workspace'
+      const boardMemberUids = boardVisibility === 'restricted'
+        ? normalizeMemberUids(targetProject?.memberUids?.length ? targetProject.memberUids : [targetProject?.createdBy || currentUid])
+        : []
 
       boardId = await createWorkhubMoodBoard({
         workspaceId: selectedWorkspaceId,
@@ -8182,6 +8607,8 @@ export default function WorkHubPage() {
         entityId,
         title: nextTitle,
         panelVariant,
+        visibility: boardVisibility,
+        memberUids: boardMemberUids,
         createdBy: currentUid,
       })
     }
@@ -8260,6 +8687,11 @@ export default function WorkHubPage() {
     const nextTitle = existingCount === 0
       ? `${label} — ${variantLabel}`
       : `${label} — ${variantLabel} ${existingCount + 1}`
+    const targetProject = entityType === 'project' ? (workspaceProjectById[normalizedEntityId] || null) : null
+    const boardVisibility = targetProject?.visibility === 'restricted' ? 'restricted' : 'workspace'
+    const boardMemberUids = boardVisibility === 'restricted'
+      ? normalizeMemberUids(targetProject?.memberUids?.length ? targetProject.memberUids : [targetProject?.createdBy || currentUid])
+      : []
 
     try {
       const newId = await createWorkhubMoodBoard({
@@ -8268,6 +8700,8 @@ export default function WorkHubPage() {
         entityId: normalizedEntityId,
         title: nextTitle,
         panelVariant,
+        visibility: boardVisibility,
+        memberUids: boardMemberUids,
         createdBy: currentUid,
       })
 
@@ -9256,10 +9690,12 @@ export default function WorkHubPage() {
                         onDuplicateDocument={handleDuplicateDocumentFromTree}
                         onDeleteDocument={handleDeleteDocumentFromTree}
                         onMoveDocumentViaDialog={(documentId) => openTreeItemMoveDialog('document', documentId)}
+                        onOpenDocumentSettings={openDocumentSettingsDialog}
                         onRenameMoodBoard={handleRenameMoodBoardFromTree}
                         onDuplicateMoodBoard={handleDuplicateMoodBoardFromTree}
                         onDeleteMoodBoard={handleDeleteMoodBoardFromTree}
                         onMoveMoodBoardViaDialog={(boardId) => openTreeItemMoveDialog('moodboard', boardId)}
+                        onOpenMoodBoardSettings={openMoodBoardSettingsDialog}
                         pendingInlineRename={pendingTreeInlineRename}
                         onConsumePendingInlineRename={() => setPendingTreeInlineRename(null)}
                         projectColorMeanings={selectedWorkspaceProjectColorMeanings}
@@ -9418,10 +9854,12 @@ export default function WorkHubPage() {
                                     onDuplicateDocument={handleDuplicateDocumentFromTree}
                                     onDeleteDocument={handleDeleteDocumentFromTree}
                                     onMoveDocumentViaDialog={(documentId) => openTreeItemMoveDialog('document', documentId)}
+                                    onOpenDocumentSettings={openDocumentSettingsDialog}
                                     onRenameMoodBoard={handleRenameMoodBoardFromTree}
                                     onDuplicateMoodBoard={handleDuplicateMoodBoardFromTree}
                                     onDeleteMoodBoard={handleDeleteMoodBoardFromTree}
                                     onMoveMoodBoardViaDialog={(boardId) => openTreeItemMoveDialog('moodboard', boardId)}
+                                    onOpenMoodBoardSettings={openMoodBoardSettingsDialog}
                                     pendingInlineRename={pendingTreeInlineRename}
                                     onConsumePendingInlineRename={() => setPendingTreeInlineRename(null)}
                                     projectColorMeanings={resolveProjectColorMeanings(workspaceTemplateId, workspace.projectColorMeanings)}
@@ -9488,10 +9926,12 @@ export default function WorkHubPage() {
                                 onDuplicateDocument={handleDuplicateDocumentFromTree}
                                 onDeleteDocument={handleDeleteDocumentFromTree}
                                 onMoveDocumentViaDialog={(documentId) => openTreeItemMoveDialog('document', documentId)}
+                                onOpenDocumentSettings={openDocumentSettingsDialog}
                                 onRenameMoodBoard={handleRenameMoodBoardFromTree}
                                 onDuplicateMoodBoard={handleDuplicateMoodBoardFromTree}
                                 onDeleteMoodBoard={handleDeleteMoodBoardFromTree}
                                 onMoveMoodBoardViaDialog={(boardId) => openTreeItemMoveDialog('moodboard', boardId)}
+                                onOpenMoodBoardSettings={openMoodBoardSettingsDialog}
                                 pendingInlineRename={pendingTreeInlineRename}
                                 onConsumePendingInlineRename={() => setPendingTreeInlineRename(null)}
                                 projectColorMeanings={selectedWorkspaceProjectColorMeanings}
@@ -9539,10 +9979,12 @@ export default function WorkHubPage() {
                             onDuplicateDocument={handleDuplicateDocumentFromTree}
                             onDeleteDocument={handleDeleteDocumentFromTree}
                             onMoveDocumentViaDialog={(documentId) => openTreeItemMoveDialog('document', documentId)}
+                            onOpenDocumentSettings={openDocumentSettingsDialog}
                             onRenameMoodBoard={handleRenameMoodBoardFromTree}
                             onDuplicateMoodBoard={handleDuplicateMoodBoardFromTree}
                             onDeleteMoodBoard={handleDeleteMoodBoardFromTree}
                             onMoveMoodBoardViaDialog={(boardId) => openTreeItemMoveDialog('moodboard', boardId)}
+                            onOpenMoodBoardSettings={openMoodBoardSettingsDialog}
                             pendingInlineRename={pendingTreeInlineRename}
                             onConsumePendingInlineRename={() => setPendingTreeInlineRename(null)}
                             projectColorMeanings={selectedWorkspaceProjectColorMeanings}
@@ -9585,10 +10027,12 @@ export default function WorkHubPage() {
                       onDuplicateDocument={handleDuplicateDocumentFromTree}
                       onDeleteDocument={handleDeleteDocumentFromTree}
                       onMoveDocumentViaDialog={(documentId) => openTreeItemMoveDialog('document', documentId)}
+                      onOpenDocumentSettings={openDocumentSettingsDialog}
                       onRenameMoodBoard={handleRenameMoodBoardFromTree}
                       onDuplicateMoodBoard={handleDuplicateMoodBoardFromTree}
                       onDeleteMoodBoard={handleDeleteMoodBoardFromTree}
                       onMoveMoodBoardViaDialog={(boardId) => openTreeItemMoveDialog('moodboard', boardId)}
+                      onOpenMoodBoardSettings={openMoodBoardSettingsDialog}
                       pendingInlineRename={pendingTreeInlineRename}
                       onConsumePendingInlineRename={() => setPendingTreeInlineRename(null)}
                       projectColorMeanings={selectedWorkspaceProjectColorMeanings}
@@ -10517,11 +10961,12 @@ export default function WorkHubPage() {
           projectColorOptions={selectedWorkspaceProjectColorOptions}
           projectColorMeanings={selectedWorkspaceProjectColorMeanings}
           projectOptions={flatVisibleProjectOptionsWithIcons}
-          approvedMembers={approvedMembers}
+          approvedMembers={createRestrictedMemberCandidates}
           taskAssignableMembers={taskDialogAssignableMembers}
           busyKey={busyKey}
           canCreateProject={!!selectedWorkspaceId}
           canCreateTask={!!selectedWorkspaceId}
+          canSetRestrictedProjects={isWorkhubAdmin}
           onProjectNameChange={setProjectName}
           onProjectParentIdChange={setProjectParentId}
           onProjectDescriptionChange={setProjectDescription}
@@ -10535,8 +10980,11 @@ export default function WorkHubPage() {
           onCreateClientInline={(name) => handleCreateClientInline(name, undefined, selectedWorkspaceId)}
           onCloseProjectAfterCreateChange={setCloseProjectAfterCreate}
           onProjectStorageMethodChange={setProjectStorageMethod}
-          onProjectVisibilityChange={setProjectVisibility}
+          onProjectVisibilityChange={(nextVisibility) => {
+            setProjectVisibility(isWorkhubAdmin ? nextVisibility : 'workspace')
+          }}
           onProjectMemberToggle={(uid) => {
+            if (!createRestrictedMemberUidSet.has(uid)) return
             const checked = projectMemberUids.includes(uid)
             setProjectMemberUids((current) => checked ? current.filter((item) => item !== uid) : [...current, uid])
           }}
@@ -10591,11 +11039,49 @@ export default function WorkHubPage() {
           workspaceId={documentSettingsWorkspaceIdDraft}
           projectId={documentSettingsProjectIdDraft}
           icon={documentSettingsIconDraft}
+          accessVisibility={documentSettingsVisibilityDraft}
+          accessMemberUids={documentSettingsMemberUidsDraft}
+          canSetRestricted={isWorkhubAdmin}
+          restrictableMembers={documentSettingsRestrictableMembers}
           onWorkspaceIdChange={handleDocumentSettingsWorkspaceChange}
           onProjectIdChange={setDocumentSettingsProjectIdDraft}
           onIconChange={setDocumentSettingsIconDraft}
+          onVisibilityChange={(nextVisibility) => setDocumentSettingsVisibilityDraft(isWorkhubAdmin ? nextVisibility : 'workspace')}
+          onToggleMember={(uid) => {
+            if (!isWorkhubAdmin) return
+            if (!documentSettingsRestrictableUidSet.has(uid)) return
+            const checked = documentSettingsMemberUidsDraft.includes(uid)
+            setDocumentSettingsMemberUidsDraft((current) => checked ? current.filter((item) => item !== uid) : [...current, uid])
+          }}
           onClose={closeDocumentSettingsDialog}
           onSave={() => { void handleSaveDocumentSettings() }}
+        />
+
+        <MoodBoardSettingsDialog
+          isOpen={!!selectedMoodBoardSettingsTarget}
+          busyKey={busyKey}
+          moodBoard={selectedMoodBoardSettingsTarget}
+          workspaceOptions={documentSettingsWorkspaceOptions}
+          projectOptions={documentSettingsProjectOptions}
+          workspaceId={moodBoardSettingsWorkspaceIdDraft}
+          projectId={moodBoardSettingsProjectIdDraft}
+          title={moodBoardSettingsTitleDraft}
+          accessVisibility={moodBoardSettingsVisibilityDraft}
+          accessMemberUids={moodBoardSettingsMemberUidsDraft}
+          canSetRestricted={isWorkhubAdmin}
+          restrictableMembers={moodBoardSettingsRestrictableMembers}
+          onWorkspaceIdChange={handleMoodBoardSettingsWorkspaceChange}
+          onProjectIdChange={setMoodBoardSettingsProjectIdDraft}
+          onTitleChange={setMoodBoardSettingsTitleDraft}
+          onVisibilityChange={(nextVisibility) => setMoodBoardSettingsVisibilityDraft(isWorkhubAdmin ? nextVisibility : 'workspace')}
+          onToggleMember={(uid) => {
+            if (!isWorkhubAdmin) return
+            if (!moodBoardSettingsRestrictableUidSet.has(uid)) return
+            const checked = moodBoardSettingsMemberUidsDraft.includes(uid)
+            setMoodBoardSettingsMemberUidsDraft((current) => checked ? current.filter((item) => item !== uid) : [...current, uid])
+          }}
+          onClose={closeMoodBoardSettingsDialog}
+          onSave={() => { void handleSaveMoodBoardSettings() }}
         />
 
         <TeamDialog
@@ -10755,6 +11241,9 @@ export default function WorkHubPage() {
           settingsStorageMethod={settingsStorageMethod}
           accessVisibility={accessVisibility}
           accessMemberUids={accessMemberUids}
+          hiddenFromSupporters={accessVisibility === 'restricted'}
+          canToggleHiddenFromSupporters={isWorkhubAdmin}
+          restrictableMembers={selectedAccessProjectRestrictedMemberCandidates}
           childCount={selectedAccessProject ? projects.filter((p) => p.parentProjectId === selectedAccessProject.id).length : 0}
           taskCount={selectedAccessProject ? tasks.filter((t) => t.projectId === selectedAccessProject.id).length : 0}
           busyKey={busyKey}
@@ -10783,7 +11272,10 @@ export default function WorkHubPage() {
           onCreateClientInline={handleCreateClientInline}
           onStorageMethodChange={setSettingsStorageMethod}
           onVisibilityChange={setAccessVisibility}
+          onHiddenFromSupportersChange={(hidden) => setAccessVisibility(hidden ? 'restricted' : 'workspace')}
           onToggleMember={(uid) => {
+            if (selectedAccessProjectEffectiveIntent === 'project' && !isWorkhubAdmin) return
+            if (!selectedAccessProjectRestrictedMemberUidSet.has(uid)) return
             const checked = accessMemberUids.includes(uid)
             setAccessMemberUids((current) => checked ? current.filter((item) => item !== uid) : [...current, uid])
           }}

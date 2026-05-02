@@ -39,6 +39,7 @@ export function CreateDialog(props: {
   busyKey: string
   canCreateProject: boolean
   canCreateTask: boolean
+  canSetRestrictedProjects?: boolean
   onProjectNameChange: (value: string) => void
   onProjectParentIdChange: (value: string) => void
   onProjectDescriptionChange: (value: string) => void
@@ -66,6 +67,7 @@ export function CreateDialog(props: {
   onCreateProjectKeepOpen: () => void
   onCreateTask: () => void
 }) {
+  const canSetRestrictedProjects = props.canSetRestrictedProjects !== false
   const workspaceTaskStatuses = props.taskStatusOptions
   const statusLabels = Object.fromEntries(workspaceTaskStatuses.map((s) => [s.id, s.label])) as Record<WorkhubTaskStatus, string>
   const colorMeaningByColor = new Map(props.projectColorMeanings.map((item) => [item.color.toLowerCase(), item]))
@@ -160,8 +162,18 @@ export function CreateDialog(props: {
                 </label>
                 <div className="workhub-switcher compact-switcher">
                   <button className={`workhub-switcher-btn${props.projectVisibility === 'workspace' ? ' is-active' : ''}`} onClick={() => props.onProjectVisibilityChange('workspace')}>🌍 Visible to workspace</button>
-                  <button className={`workhub-switcher-btn${props.projectVisibility === 'restricted' ? ' is-active' : ''}`} onClick={() => props.onProjectVisibilityChange('restricted')}>🔒 Restricted</button>
+                  <button
+                    className={`workhub-switcher-btn${props.projectVisibility === 'restricted' ? ' is-active' : ''}`}
+                    onClick={() => props.onProjectVisibilityChange('restricted')}
+                    disabled={!canSetRestrictedProjects}
+                    title={canSetRestrictedProjects ? 'Restricted access' : 'Only admins can hide folders from supporters'}
+                  >
+                    🔒 Restricted
+                  </button>
                 </div>
+                {!canSetRestrictedProjects && (
+                  <small className="workhub-create-hint-text">Only admins can hide folders from supporters.</small>
+                )}
                 {props.projectVisibility === 'restricted' && (
                   <div className="workhub-member-picker">
                     {props.approvedMembers.map((item) => {
