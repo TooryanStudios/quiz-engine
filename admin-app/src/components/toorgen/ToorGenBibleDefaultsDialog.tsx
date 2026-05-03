@@ -9,7 +9,7 @@ import type {
   ToorGenModel,
 } from './ToorGenFlowCanvas'
 
-type RefKind = 'image' | 'video'
+type RefKind = 'image' | 'video' | 'audio'
 
 type Props = {
   open: boolean
@@ -36,7 +36,7 @@ type Props = {
   refFieldUploading?: string | null
   refFieldUploadError?: string
   onUploadRefFile?: (slot: string, kind: RefKind, file: File) => Promise<void> | void
-  onRequestPick?: (kind: RefKind, slot: string) => void
+  onRequestPick?: (kind: 'image' | 'video', slot: string) => void
   charPhotoUploading?: Record<string, boolean>
   onUploadCharacterPhoto?: (cardId: string, file: File) => Promise<void> | void
   onRequestPickCharacterPhoto?: (cardId: string) => void
@@ -87,6 +87,7 @@ export function ToorGenBibleDefaultsDialog({
   const [pendingDeleteCardId, setPendingDeleteCardId] = useState<string | null>(null)
   const imageFileRef = useRef<HTMLInputElement>(null)
   const videoFileRef = useRef<HTMLInputElement>(null)
+  const audioFileRef = useRef<HTMLInputElement>(null)
   const pendingUploadSlotRef = useRef<string>('')
 
   useEffect(() => {
@@ -100,7 +101,8 @@ export function ToorGenBibleDefaultsDialog({
   const requestUpload = (slot: string, kind: RefKind) => {
     pendingUploadSlotRef.current = slot
     if (kind === 'image') imageFileRef.current?.click()
-    else videoFileRef.current?.click()
+    else if (kind === 'video') videoFileRef.current?.click()
+    else audioFileRef.current?.click()
   }
 
   const handleRefFileChange = async (kind: RefKind, file: File | null) => {
@@ -210,15 +212,24 @@ export function ToorGenBibleDefaultsDialog({
                   <hr className="tgfc-defaults-section-rule" />
                   <label className="tgfc-field">
                     <span>Audio1</span>
-                    <input value={draft.fallbackAudioUrls[0]} onChange={(event) => setDraft((d) => d ? { ...d, fallbackAudioUrls: [event.target.value, d.fallbackAudioUrls[1], d.fallbackAudioUrls[2]] } : d)} placeholder="https://score.mp3" />
+                    <div className="tgfc-ref-input-row">
+                      <input value={draft.fallbackAudioUrls[0]} onChange={(event) => setDraft((d) => d ? { ...d, fallbackAudioUrls: [event.target.value, d.fallbackAudioUrls[1], d.fallbackAudioUrls[2]] } : d)} placeholder="https://score.mp3" />
+                      {onUploadRefFile ? <button type="button" className="tgfc-ref-btn" disabled={refFieldUploading === 'audio1'} onClick={() => requestUpload('audio1', 'audio')}>{refFieldUploading === 'audio1' ? '…' : '↑ Upload'}</button> : null}
+                    </div>
                   </label>
                   <label className="tgfc-field">
                     <span>Audio2</span>
-                    <input value={draft.fallbackAudioUrls[1]} onChange={(event) => setDraft((d) => d ? { ...d, fallbackAudioUrls: [d.fallbackAudioUrls[0], event.target.value, d.fallbackAudioUrls[2]] } : d)} placeholder="https://ambient.mp3" />
+                    <div className="tgfc-ref-input-row">
+                      <input value={draft.fallbackAudioUrls[1]} onChange={(event) => setDraft((d) => d ? { ...d, fallbackAudioUrls: [d.fallbackAudioUrls[0], event.target.value, d.fallbackAudioUrls[2]] } : d)} placeholder="https://ambient.mp3" />
+                      {onUploadRefFile ? <button type="button" className="tgfc-ref-btn" disabled={refFieldUploading === 'audio2'} onClick={() => requestUpload('audio2', 'audio')}>{refFieldUploading === 'audio2' ? '…' : '↑ Upload'}</button> : null}
+                    </div>
                   </label>
                   <label className="tgfc-field">
                     <span>Audio3</span>
-                    <input value={draft.fallbackAudioUrls[2]} onChange={(event) => setDraft((d) => d ? { ...d, fallbackAudioUrls: [d.fallbackAudioUrls[0], d.fallbackAudioUrls[1], event.target.value] } : d)} placeholder="https://foley.mp3" />
+                    <div className="tgfc-ref-input-row">
+                      <input value={draft.fallbackAudioUrls[2]} onChange={(event) => setDraft((d) => d ? { ...d, fallbackAudioUrls: [d.fallbackAudioUrls[0], d.fallbackAudioUrls[1], event.target.value] } : d)} placeholder="https://foley.mp3" />
+                      {onUploadRefFile ? <button type="button" className="tgfc-ref-btn" disabled={refFieldUploading === 'audio3'} onClick={() => requestUpload('audio3', 'audio')}>{refFieldUploading === 'audio3' ? '…' : '↑ Upload'}</button> : null}
+                    </div>
                   </label>
                   <hr className="tgfc-defaults-section-rule" />
                   <label className="tgfc-field">
@@ -452,6 +463,7 @@ export function ToorGenBibleDefaultsDialog({
       </div>
       <input ref={imageFileRef} type="file" accept="image/*" hidden onChange={(event) => { const file = event.target.files?.[0] || null; event.currentTarget.value = ''; void handleRefFileChange('image', file) }} />
       <input ref={videoFileRef} type="file" accept="video/*" hidden onChange={(event) => { const file = event.target.files?.[0] || null; event.currentTarget.value = ''; void handleRefFileChange('video', file) }} />
+      <input ref={audioFileRef} type="file" accept=".mp3,.wav,audio/mpeg,audio/wav,audio/x-wav" hidden onChange={(event) => { const file = event.target.files?.[0] || null; event.currentTarget.value = ''; void handleRefFileChange('audio', file) }} />
     </div>,
     document.body,
   )

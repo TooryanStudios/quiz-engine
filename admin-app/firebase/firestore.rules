@@ -109,13 +109,18 @@ service cloud.firestore {
     function canWriteProjectScopedEntity(data) {
       return data.projectId is string
         && data.projectId != ''
-        && workhubProjectExists(data.projectId)
-        && workhubProjectDoc(data.projectId).data.workspaceId == data.workspaceId
         && (
-          workhubProjectDoc(data.projectId).data.visibility != 'restricted'
+          data.projectId == '__adhoc__'
           || (
-            data.visibility == 'restricted'
-            && hasSameMembers(data.memberUids, workhubProjectDoc(data.projectId).data.memberUids)
+            workhubProjectExists(data.projectId)
+            && workhubProjectDoc(data.projectId).data.workspaceId == data.workspaceId
+            && (
+              workhubProjectDoc(data.projectId).data.visibility != 'restricted'
+              || (
+                data.visibility == 'restricted'
+                && hasSameMembers(data.memberUids, workhubProjectDoc(data.projectId).data.memberUids)
+              )
+            )
           )
         );
     }

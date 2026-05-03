@@ -944,10 +944,17 @@
 /* input-5 "Extend from" uses amber — visually distinct from the yellow-green asset inputs */
 .tgfc-handle--generation-input.is-input-5 {
   background: #f09a2f;
+
+.tgfc-handle--generation-input.is-input-6,
+.tgfc-generation-socket-label.is-input-6 { top: 86%; }
 }
 
 .tgfc-generation-sockets {
   position: absolute;
+
+.tgfc-handle--generation-input.is-input-6 {
+  transform: translate(-50%, -50%);
+}
   inset: 0 auto 0 0;
   width: 82px;
   pointer-events: none;

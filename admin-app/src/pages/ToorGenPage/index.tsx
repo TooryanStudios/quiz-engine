@@ -69,6 +69,7 @@ type HistoryEntry = {
   referenceImages?: string[]
   referenceNodes?: VideoReference[]
   referenceVideos?: string[]
+  referenceAudios?: string[]
   qualityPreset?: '540p' | '720p' | '1080p'
   includeAudio?: boolean
   submittedAt?: number
@@ -80,6 +81,7 @@ type HistoryEntry = {
 type ReferenceLibraryEntry = {
   id: string
   url: string
+  mediaKind: 'image' | 'audio'
   createdAt: number
   lastUsedAt: number
   sourcePrompt?: string
@@ -89,6 +91,10 @@ type ReferenceLibraryEntry = {
   includeAudio?: boolean
   qualityPreset?: '540p' | '720p' | '1080p'
 }
+
+const inferReferenceMediaKind = (url: string): 'image' | 'audio' => (
+  /\.(mp3|wav)(\?|#|$)/i.test(url) ? 'audio' : 'image'
+)
 
 type SimpleImageRole = 'reference' | 'start_frame' | 'end_frame'
 
@@ -218,6 +224,7 @@ type QueueItem = {
   referenceImages?: string[]
   referenceNodes?: VideoReference[]
   referenceVideos?: string[]
+  referenceAudios?: string[]
   qualityPreset?: '540p' | '720p' | '1080p'
   includeAudio?: boolean
   submittedAt?: number
@@ -270,6 +277,7 @@ const STUDIO_MODE_KEY = 'toorgen_studio_mode_v1'
 const REFERENCE_IMAGE_URL_KEY = 'toorgen_reference_image_url_v1'
 const REFERENCE_IMAGE_UPLOADS_KEY = 'toorgen_reference_image_uploads_v1'
 const REFERENCE_VIDEO_URL_KEY = 'toorgen_reference_video_url_v1'
+const REFERENCE_AUDIO_URL_KEY = 'toorgen_reference_audio_url_v1'
 const EXTENSION_VIDEO_URL_KEY = 'toorgen_extension_video_url_v1'
 const REFERENCE_LIBRARY_KEY = 'toorgen_reference_library_v1'
 const FLOW_ACTIVE_COLLECTION_KEY = 'toorgen_flow_active_collection_v1'
@@ -413,11 +421,15 @@ const coerceReferenceLibraryEntry = (value: unknown): ReferenceLibraryEntry | nu
   const raw = value as Partial<ReferenceLibraryEntry>
   const url = typeof raw.url === 'string' ? raw.url.trim() : ''
   if (!isHostedUrl(url)) return null
+  const mediaKind = raw.mediaKind === 'audio' || raw.mediaKind === 'image'
+    ? raw.mediaKind
+    : inferReferenceMediaKind(url)
   const createdAt = typeof raw.createdAt === 'number' && Number.isFinite(raw.createdAt) ? raw.createdAt : Date.now()
   const lastUsedAt = typeof raw.lastUsedAt === 'number' && Number.isFinite(raw.lastUsedAt) ? raw.lastUsedAt : createdAt
   return {
     id: typeof raw.id === 'string' && raw.id.trim() ? raw.id : `ref-${createdAt.toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     url,
+    mediaKind,
     createdAt,
     lastUsedAt,
     ...(typeof raw.sourcePrompt === 'string' && raw.sourcePrompt.trim() ? { sourcePrompt: raw.sourcePrompt.trim().slice(0, 2000) } : {}),
@@ -784,6 +796,7 @@ const getSentPayloadSummary = (item: {
   duration?: number
   referenceImages?: string[]
   referenceVideos?: string[]
+  referenceAudios?: string[]
   apiPayload?: Record<string, unknown>
   studioMode?: 'simple' | 'flow'
 }): string => {
@@ -793,10 +806,12 @@ const getSentPayloadSummary = (item: {
   const duration = getPayloadDuration(payload) || Math.max(1, Math.floor(Number(item.duration) || 5))
   const imageCount = getPayloadArrayLength(payload, 'image_urls') || getPayloadArrayLength(payload, 'images') || (item.referenceImages?.length || 0)
   const videoCount = getPayloadArrayLength(payload, 'reference_videos') || getPayloadArrayLength(payload, 'videos') || (item.referenceVideos?.length || 0)
+  const audioCount = getPayloadArrayLength(payload, 'reference_audios') || getPayloadArrayLength(payload, 'audios') || (item.referenceAudios?.length || 0)
   const videoPart = videoCount > 0 ? ` · ${videoCount} video ref${videoCount === 1 ? '' : 's'}` : ''
+  const audioPart = audioCount > 0 ? ` · ${audioCount} audio ref${audioCount === 1 ? '' : 's'}` : ''
   const composerStamp = item.studioMode === 'flow' ? 'Flow Canvas' : (item.studioMode === 'simple' ? 'Simple Mode' : '')
   const stampPart = composerStamp ? ` · ${composerStamp}` : ''
-  return `Sent: ${mode} · ${duration}s · ${imageCount} image ref${imageCount === 1 ? '' : 's'}${videoPart}${stampPart}`
+  return `Sent: ${mode} · ${duration}s · ${imageCount} image ref${imageCount === 1 ? '' : 's'}${videoPart}${audioPart}${stampPart}`
 }
 
 const buildModelProofBadge = (item: {
@@ -933,6 +948,7 @@ export default function ToorGenPage() {
   const [referenceLibrary, setReferenceLibrary] = useState<ReferenceLibraryEntry[]>(() => loadReferenceLibrary())
   const [referenceLibraryQuery, setReferenceLibraryQuery] = useState('')
   const [isReferenceLibraryDialogOpen, setIsReferenceLibraryDialogOpen] = useState(false)
+  const [referenceLibraryTarget, setReferenceLibraryTarget] = useState<'image' | 'audio'>('image')
   const [selectedReferenceLibraryUrls, setSelectedReferenceLibraryUrls] = useState<string[]>([])
   const [pendingReferenceImageRemovalIndex, setPendingReferenceImageRemovalIndex] = useState<number | null>(null)
   const [pendingReferenceLibraryDelete, setPendingReferenceLibraryDelete] = useState<ReferenceLibraryEntry | null>(null)
@@ -943,11 +959,19 @@ export default function ToorGenPage() {
       return ''
     }
   })
+  const [referenceAudioUrl, setReferenceAudioUrl] = useState<string>(() => {
+    try {
+      return localStorage.getItem(REFERENCE_AUDIO_URL_KEY) || ''
+    } catch {
+      return ''
+    }
+  })
   const [extensionVideoUrl, setExtensionVideoUrl] = useState<string>(() => {
     try { return localStorage.getItem(EXTENSION_VIDEO_URL_KEY) || '' } catch { return '' }
   })
   const [refImageUrlEditing, setRefImageUrlEditing] = useState(false)
   const [refVideoUrlEditing, setRefVideoUrlEditing] = useState(false)
+  const [refAudioUrlEditing, setRefAudioUrlEditing] = useState(false)
   const [qualityPreset, setQualityPreset] = useState<'540p' | '720p' | '1080p'>(() => {
     try {
       const saved = localStorage.getItem(QUALITY_PREF_KEY)
@@ -992,6 +1016,7 @@ export default function ToorGenPage() {
   const lastGenerationNodeIdRef = useRef('')
   const generationSequenceRef = useRef(loadGenerationSequence())
   const referenceUploadInputRef = useRef<HTMLInputElement | null>(null)
+  const referenceAudioUploadInputRef = useRef<HTMLInputElement | null>(null)
   const videoModalPlayerRef = useRef<HTMLVideoElement | null>(null)
   const handleSimpleGenerateRef = useRef<() => void>(() => {})
   const promptTextareaRef = useRef<HTMLTextAreaElement | null>(null)
@@ -1107,6 +1132,7 @@ export default function ToorGenPage() {
       localStorage.setItem(STUDIO_MODE_KEY, studioMode)
       localStorage.setItem(REFERENCE_IMAGE_URL_KEY, referenceImageUrl)
       localStorage.setItem(REFERENCE_VIDEO_URL_KEY, referenceVideoUrl)
+      localStorage.setItem(REFERENCE_AUDIO_URL_KEY, referenceAudioUrl)
       localStorage.setItem(EXTENSION_VIDEO_URL_KEY, extensionVideoUrl)
       localStorage.setItem(
         REFERENCE_IMAGE_UPLOADS_KEY,
@@ -1115,7 +1141,7 @@ export default function ToorGenPage() {
     } catch {
       // Ignore localStorage failures.
     }
-  }, [shotViewMode, qualityPreset, includeAudio, studioMode, referenceImageUrl, referenceVideoUrl, referenceImageThumbs, extensionVideoUrl])
+  }, [shotViewMode, qualityPreset, includeAudio, studioMode, referenceImageUrl, referenceVideoUrl, referenceAudioUrl, referenceImageThumbs, extensionVideoUrl])
 
   useEffect(() => {
     try {
@@ -1299,6 +1325,7 @@ export default function ToorGenPage() {
         fallbackReason: queueItem.fallbackReason,
         referenceImages: queueItem.referenceImages,
         referenceVideos: queueItem.referenceVideos,
+        referenceAudios: queueItem.referenceAudios,
         qualityPreset: queueItem.qualityPreset,
         includeAudio: queueItem.includeAudio,
         submittedAt: queueItem.submittedAt,
@@ -1727,6 +1754,7 @@ export default function ToorGenPage() {
       referenceImages: request.images.map(r => r.url),
       referenceNodes: request.images,
       referenceVideos: request.videos,
+      referenceAudios: request.audios,
       qualityPreset,
       includeAudio,
       createdAt: Date.now(),
@@ -2146,7 +2174,7 @@ export default function ToorGenPage() {
         priority: i + 1,
       })),
       videos: item.referenceVideos || [],
-      audios: [],
+      audios: item.referenceAudios || [],
       generationNodeTitle: item.generationNodeTitle,
       localMediaCount: 0,
       duration: item.duration || 5,
@@ -2257,6 +2285,7 @@ export default function ToorGenPage() {
 
   const hostedImageUrl = /^https?:\/\//i.test(referenceImageUrl.trim()) ? referenceImageUrl.trim() : ''
   const hostedVideoUrl = /^https?:\/\//i.test(referenceVideoUrl.trim()) ? referenceVideoUrl.trim() : ''
+  const hostedAudioUrl = /^https?:\/\//i.test(referenceAudioUrl.trim()) ? referenceAudioUrl.trim() : ''
   const composedImageReferences = useMemo(() => Array.from(new Set([
     ...(hostedImageUrl ? [hostedImageUrl] : []),
     ...referenceImageThumbs,
@@ -2326,10 +2355,12 @@ export default function ToorGenPage() {
             ? existing.includeAudio
             : fallbackAudio
         const qualityValue = overrides?.qualityPreset || existing?.qualityPreset || fallbackQuality
+        const mediaKindValue = overrides?.mediaKind || existing?.mediaKind || inferReferenceMediaKind(url)
 
         if (existing) {
           byUrl.set(url, {
             ...existing,
+            mediaKind: mediaKindValue,
             lastUsedAt: now,
             sourcePrompt: promptValue || existing.sourcePrompt,
             model: modelValue || existing.model,
@@ -2344,6 +2375,7 @@ export default function ToorGenPage() {
         byUrl.set(url, {
           id: `ref-${now.toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
           url,
+          mediaKind: mediaKindValue,
           createdAt: now,
           lastUsedAt: now,
           ...(promptValue ? { sourcePrompt: promptValue } : {}),
@@ -2381,6 +2413,7 @@ export default function ToorGenPage() {
           byUrl.set(url, {
             id: `ref-${createdAt.toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
             url,
+            mediaKind: inferReferenceMediaKind(url),
             createdAt,
             lastUsedAt: createdAt,
             ...(sourcePrompt ? { sourcePrompt } : {}),
@@ -2432,22 +2465,41 @@ export default function ToorGenPage() {
     }
   }, [])
 
+  const uploadReferenceAudio = useCallback(async (file: File): Promise<string> => {
+    const ext = file.name.split('.').pop() || 'mp3'
+    const uniqueName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+    const fileRef = storageRef(storage, `seedance-references/${uniqueName}`)
+    await uploadBytes(fileRef, file, { contentType: file.type || 'audio/mpeg' })
+    return getDownloadURL(fileRef)
+  }, [])
+
   const handleAddReferenceImages = async (files: FileList | null) => {
     if (!files || files.length === 0) return
     try {
       const selected = Array.from(files)
-      const uploaded = await Promise.allSettled(selected.map((file) => uploadReferenceImage(file)))
+      const audioPattern = /\.(mp3|wav)$/i
+      const audioFiles = selected.filter((file) => file.type.startsWith('audio/') || audioPattern.test(file.name))
+      const imageFiles = selected.filter((file) => file.type.startsWith('image/'))
+      const unsupportedFiles = selected.filter((file) => !imageFiles.includes(file) && !audioFiles.includes(file))
 
-      const successfulUrls = uploaded
+      const uploadedImages = await Promise.allSettled(imageFiles.map((file) => uploadReferenceImage(file)))
+      const uploadedAudios = await Promise.allSettled(audioFiles.map((file) => uploadReferenceAudio(file)))
+
+      const successfulImageUrls = uploadedImages
         .filter((result): result is PromiseFulfilledResult<string> => result.status === 'fulfilled')
         .map((result) => result.value)
         .filter((value) => isHostedUrl(value))
 
-      const failedFiles: File[] = []
+      const successfulAudioUrls = uploadedAudios
+        .filter((result): result is PromiseFulfilledResult<string> => result.status === 'fulfilled')
+        .map((result) => result.value)
+        .filter((value) => isHostedUrl(value))
+
+      const failedFiles: string[] = []
       let firstFailureMessage = ''
-      uploaded.forEach((result, index) => {
+      uploadedImages.forEach((result, index) => {
         if (result.status === 'rejected') {
-          failedFiles.push(selected[index])
+          failedFiles.push(imageFiles[index]?.name || 'image file')
           if (!firstFailureMessage) {
             firstFailureMessage = result.reason instanceof Error
               ? result.reason.message
@@ -2455,27 +2507,47 @@ export default function ToorGenPage() {
           }
         }
       })
+      uploadedAudios.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          failedFiles.push(audioFiles[index]?.name || 'audio file')
+          if (!firstFailureMessage) {
+            firstFailureMessage = result.reason instanceof Error
+              ? result.reason.message
+              : String(result.reason || 'Upload failed.')
+          }
+        }
+      })
+      for (const file of unsupportedFiles) {
+        failedFiles.push(file.name)
+        if (!firstFailureMessage) firstFailureMessage = 'Only image files and MP3/WAV audio are supported.'
+      }
 
-      const uniqueSuccessfulUrls = Array.from(new Set(successfulUrls))
-      if (uniqueSuccessfulUrls.length > 0) {
+      const uniqueSuccessfulImageUrls = Array.from(new Set(successfulImageUrls))
+      if (uniqueSuccessfulImageUrls.length > 0) {
         setReferenceImageThumbs((current) => {
           const next = [...current]
-          for (const url of uniqueSuccessfulUrls) {
+          for (const url of uniqueSuccessfulImageUrls) {
             if (!next.includes(url)) next.unshift(url)
           }
           return next.filter((value) => isHostedUrl(value)).slice(0, 8)
         })
-        upsertReferenceLibraryEntries(uniqueSuccessfulUrls)
+        upsertReferenceLibraryEntries(uniqueSuccessfulImageUrls, { mediaKind: 'image' })
+      }
+
+      const uniqueSuccessfulAudioUrls = Array.from(new Set(successfulAudioUrls))
+      if (uniqueSuccessfulAudioUrls.length > 0) {
+        setReferenceAudioUrl(uniqueSuccessfulAudioUrls[0])
+        upsertReferenceLibraryEntries(uniqueSuccessfulAudioUrls, { mediaKind: 'audio' })
       }
 
       if (failedFiles.length > 0) {
         const reasonSuffix = firstFailureMessage ? ` First error: ${firstFailureMessage}` : ''
-        setErrorMessage(`Uploaded ${uniqueSuccessfulUrls.length} image(s) to server. ${failedFiles.length} image(s) failed.${reasonSuffix}`)
+        setErrorMessage(`Uploaded ${uniqueSuccessfulImageUrls.length} image(s) and ${uniqueSuccessfulAudioUrls.length} audio file(s). ${failedFiles.length} file(s) failed.${reasonSuffix}`)
       } else {
         setErrorMessage('')
       }
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Could not read selected image.'
+      const message = error instanceof Error ? error.message : 'Could not process selected files.'
       setErrorMessage(message)
     }
   }
@@ -2487,10 +2559,43 @@ export default function ToorGenPage() {
   const handleOpenReferenceUpload = () => {
     referenceUploadInputRef.current?.click()
   }
+  
+  const handleReferenceAudioUploadInputChange = async (files: FileList | null) => {
+    const file = files?.[0]
+    if (!file) return
+    const isMp3 = file.type === 'audio/mpeg' || /\.mp3$/i.test(file.name)
+    const isWav = file.type === 'audio/wav' || file.type === 'audio/x-wav' || /\.wav$/i.test(file.name)
+    if (!isMp3 && !isWav) {
+      setErrorMessage('Audio reference must be MP3 or WAV.')
+      return
+    }
+    try {
+      const url = await uploadReferenceAudio(file)
+      setReferenceAudioUrl(url)
+      upsertReferenceLibraryEntries([url], { mediaKind: 'audio' })
+      setErrorMessage('')
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Could not upload selected audio file.'
+      setErrorMessage(message)
+    }
+  }
 
-  const handleOpenReferenceLibraryDialog = () => {
-    const libraryUrls = new Set(referenceLibrary.map((entry) => entry.url))
-    setSelectedReferenceLibraryUrls(referenceImageThumbs.filter((url) => libraryUrls.has(url)))
+  const handleOpenReferenceAudioUpload = () => {
+    referenceAudioUploadInputRef.current?.click()
+  }
+
+  const handleOpenReferenceLibraryDialog = (target: 'image' | 'audio' = 'image') => {
+    setReferenceLibraryTarget(target)
+    const libraryUrls = new Set(
+      referenceLibrary
+        .filter((entry) => entry.mediaKind === target)
+        .map((entry) => entry.url),
+    )
+    if (target === 'audio') {
+      setSelectedReferenceLibraryUrls(referenceAudioUrl && libraryUrls.has(referenceAudioUrl) ? [referenceAudioUrl] : [])
+    } else {
+      setSelectedReferenceLibraryUrls(referenceImageThumbs.filter((url) => libraryUrls.has(url)))
+    }
     setIsReferenceLibraryDialogOpen(true)
   }
 
@@ -2550,17 +2655,20 @@ export default function ToorGenPage() {
     setSimpleDefaultsOpen(false)
   }
 
-  const handleSimpleDialogRefUpload = useCallback(async (slot: string, _kind: 'image' | 'video', file: File) => {
+  const handleSimpleDialogRefUpload = useCallback(async (slot: string, kind: 'image' | 'video' | 'audio', file: File) => {
     setSimpleRefFieldUploading(slot)
     setSimpleRefFieldUploadError('')
     try {
-      const url = await uploadReferenceImage(file)
+      const url = kind === 'audio' ? await uploadReferenceAudio(file) : await uploadReferenceImage(file)
       setSimpleBibleDraft((current) => {
         if (!current) return current
         if (slot === 'image1') return { ...current, fallbackImageUrl: url }
         if (slot === 'video1') return { ...current, fallbackVideoUrl: url }
         if (slot === 'video2') return { ...current, fallbackVideoUrl2: url }
         if (slot === 'video3') return { ...current, fallbackVideoUrl3: url }
+        if (slot === 'audio1') return { ...current, fallbackAudioUrls: [url, current.fallbackAudioUrls[1], current.fallbackAudioUrls[2]] }
+        if (slot === 'audio2') return { ...current, fallbackAudioUrls: [current.fallbackAudioUrls[0], url, current.fallbackAudioUrls[2]] }
+        if (slot === 'audio3') return { ...current, fallbackAudioUrls: [current.fallbackAudioUrls[0], current.fallbackAudioUrls[1], url] }
         return current
       })
     } catch (error) {
@@ -2568,7 +2676,7 @@ export default function ToorGenPage() {
     } finally {
       setSimpleRefFieldUploading(null)
     }
-  }, [uploadReferenceImage])
+  }, [uploadReferenceAudio, uploadReferenceImage])
 
   const handleSimpleDialogCharacterPhotoUpload = useCallback(async (cardId: string, file: File) => {
     setSimpleCharPhotoUploading((current) => ({ ...current, [cardId]: true }))
@@ -2625,6 +2733,10 @@ export default function ToorGenPage() {
   }
 
   const handleToggleReferenceLibraryEntry = (entry: ReferenceLibraryEntry) => {
+    if (entry.mediaKind === 'audio') {
+      setSelectedReferenceLibraryUrls((current) => current[0] === entry.url ? [] : [entry.url])
+      return
+    }
     setSelectedReferenceLibraryUrls((current) => (
       current.includes(entry.url)
         ? current.filter((value) => value !== entry.url)
@@ -2633,12 +2745,21 @@ export default function ToorGenPage() {
   }
 
   const handleConfirmReferenceLibrarySelection = () => {
-    applyReferenceLibrarySelection(selectedReferenceLibraryUrls)
+    if (referenceLibraryTarget === 'audio') {
+      const selectedAudio = selectedReferenceLibraryUrls[0] || ''
+      if (selectedAudio) setReferenceAudioUrl(selectedAudio)
+    } else {
+      applyReferenceLibrarySelection(selectedReferenceLibraryUrls)
+    }
     setIsReferenceLibraryDialogOpen(false)
   }
 
   const handleUseReferenceLibraryEntryWithSetup = (entry: ReferenceLibraryEntry) => {
-    applyReferenceLibrarySelection([entry.url])
+    if (entry.mediaKind === 'audio') {
+      setReferenceAudioUrl(entry.url)
+    } else {
+      applyReferenceLibrarySelection([entry.url])
+    }
     setSelectedReferenceLibraryUrls([entry.url])
     setIsReferenceLibraryDialogOpen(false)
 
@@ -2850,6 +2971,7 @@ export default function ToorGenPage() {
         public: false,
         ...(mergedImages.length > 0 ? { images: mergedImages } : {}),
         ...(hostedVideoUrl ? { reference_videos: [hostedVideoUrl] } : {}),
+        ...(hostedAudioUrl ? { reference_audios: [hostedAudioUrl] } : {}),
         ...(mode === 'video-extension' && extensionVideoUrl
           ? {
               videoUrl: extensionVideoUrl,
@@ -3008,10 +3130,10 @@ export default function ToorGenPage() {
         priority: i + 1,
       })),
       videos: hostedVideoUrl ? [hostedVideoUrl] : [],
-      audios: [],
+      audios: hostedAudioUrl ? [hostedAudioUrl] : [],
       generationNodeTitle: 'Simple Composer',
       storyContext: { projectRules: globalStoryBible, narrativeGoal: '' },
-      localMediaCount: referenceImageThumbs.filter((value) => !isHostedUrl(value)).length + (referenceImageUrl.trim() && !hostedImageUrl ? 1 : 0) + (referenceVideoUrl.trim() && !hostedVideoUrl ? 1 : 0),
+      localMediaCount: referenceImageThumbs.filter((value) => !isHostedUrl(value)).length + (referenceImageUrl.trim() && !hostedImageUrl ? 1 : 0) + (referenceVideoUrl.trim() && !hostedVideoUrl ? 1 : 0) + (referenceAudioUrl.trim() && !hostedAudioUrl ? 1 : 0),
       duration,
       aspectRatio,
       mode: effectiveMode,
@@ -3021,6 +3143,7 @@ export default function ToorGenPage() {
           image: referenceImageUrl.trim(),
           imageUploads: referenceImageThumbs.length,
           video: referenceVideoUrl.trim(),
+          audio: referenceAudioUrl.trim(),
         },
         options: {
           qualityPreset,
@@ -3048,6 +3171,7 @@ export default function ToorGenPage() {
     setReferenceImageUrl(hostedImage)
     setReferenceImageThumbs(uploadedRefs)
     setReferenceVideoUrl(entry.referenceVideos?.[0] || '')
+    setReferenceAudioUrl(entry.referenceAudios?.[0] || '')
 
     upsertReferenceLibraryEntries(refs, {
       sourcePrompt: getEntryPrompt(entry),
@@ -3119,6 +3243,7 @@ export default function ToorGenPage() {
   const filteredReferenceLibrary = useMemo(() => {
     const query = referenceLibraryQuery.trim().toLowerCase()
     const next = referenceLibrary.filter((entry) => {
+      if (entry.mediaKind !== referenceLibraryTarget) return false
       if (!query) return true
       const haystack = [
         entry.sourcePrompt,
@@ -3130,10 +3255,10 @@ export default function ToorGenPage() {
       return haystack.includes(query)
     })
     return next.slice(0, 36)
-  }, [referenceLibrary, referenceLibraryQuery])
+  }, [referenceLibrary, referenceLibraryQuery, referenceLibraryTarget])
 
   const referenceLibrarySelectedCount = selectedReferenceLibraryUrls.length
-  const pendingReferenceLibraryDeleteLabel = (pendingReferenceLibraryDelete?.sourcePrompt || 'this reference image').trim().slice(0, 120)
+  const pendingReferenceLibraryDeleteLabel = (pendingReferenceLibraryDelete?.sourcePrompt || `this reference ${pendingReferenceLibraryDelete?.mediaKind || 'item'}`).trim().slice(0, 120)
 
   return (
     <div className={`tg-shell${studioMode === 'simple' ? ' tg-shell--no-sidebar' : ''}`}>
@@ -3853,15 +3978,15 @@ export default function ToorGenPage() {
                       type="button"
                       className="tg-upload-plus-btn"
                       onClick={handleOpenReferenceUpload}
-                      aria-label="Upload images"
-                      title="Upload images"
+                      aria-label="Upload media"
+                      title="Upload media"
                     >
                       +
                     </button>
                     <button
                       type="button"
                       className="tg-upload-plus-btn"
-                      onClick={handleOpenReferenceLibraryDialog}
+                      onClick={() => handleOpenReferenceLibraryDialog()}
                       aria-label="Select from library"
                       title="Select from library"
                     >
@@ -3877,12 +4002,24 @@ export default function ToorGenPage() {
                   ref={referenceUploadInputRef}
                   className="tg-hidden-file-input"
                   type="file"
-                  accept="image/*"
+                  accept="image/*,.mp3,.wav,audio/mpeg,audio/wav,audio/x-wav"
                   multiple
-                  aria-label="Upload reference images"
-                  title="Upload reference images"
+                  aria-label="Upload reference media"
+                  title="Upload reference media"
                   onChange={(event) => {
                     handleReferenceUploadInputChange(event.target.files)
+                    event.currentTarget.value = ''
+                  }}
+                />
+                <input
+                  ref={referenceAudioUploadInputRef}
+                  className="tg-hidden-file-input"
+                  type="file"
+                  accept=".mp3,.wav,audio/mpeg,audio/wav,audio/x-wav"
+                  aria-label="Upload reference audio"
+                  title="Upload reference audio"
+                  onChange={(event) => {
+                    void handleReferenceAudioUploadInputChange(event.target.files)
                     event.currentTarget.value = ''
                   }}
                 />
@@ -4016,6 +4153,54 @@ export default function ToorGenPage() {
                       onKeyDown={(event) => { if (event.key === 'Enter' || event.key === 'Escape') setRefVideoUrlEditing(false) }}
                     />
                     <button type="button" className="tg-upload-plus-btn" onClick={() => setRefVideoUrlEditing(false)} title="Done">✓</button>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="tg-ref-thumb-wrap">
+                <button
+                  type="button"
+                  className={`tg-ref-thumb-btn${hostedAudioUrl ? ' has-url' : ''}`}
+                  onClick={() => setRefAudioUrlEditing((v) => !v)}
+                  title={hostedAudioUrl ? 'Edit reference audio URL' : 'Add reference audio URL'}
+                >
+                  <>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9 18V5l12-2v13"></path>
+                      <circle cx="6" cy="18" r="3"></circle>
+                      <circle cx="18" cy="16" r="3"></circle>
+                    </svg>
+                    <span>{hostedAudioUrl ? 'Aud URL' : 'Aud'}</span>
+                  </>
+                </button>
+                {hostedAudioUrl ? (
+                  <button type="button" className="tg-ref-thumb-clear" onClick={() => setReferenceAudioUrl('')} title="Remove">✕</button>
+                ) : null}
+                {refAudioUrlEditing ? (
+                  <div className="tg-ref-url-popover">
+                    <input
+                      autoFocus
+                      className="tg-input-sm"
+                      value={referenceAudioUrl}
+                      onChange={(event) => setReferenceAudioUrl(event.target.value)}
+                      placeholder="https://...mp3 or ...wav"
+                      onKeyDown={(event) => { if (event.key === 'Enter' || event.key === 'Escape') setRefAudioUrlEditing(false) }}
+                    />
+                    <button
+                      type="button"
+                      className="tg-upload-plus-btn"
+                      onClick={() => { handleOpenReferenceLibraryDialog('audio'); setRefAudioUrlEditing(false) }}
+                      title="Select from audio library"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                        <path d="M9 18V7l8-1v10"></path>
+                        <circle cx="7" cy="18" r="2"></circle>
+                        <circle cx="17" cy="16" r="2"></circle>
+                      </svg>
+                    </button>
+                    <button type="button" className="tg-upload-plus-btn" onClick={handleOpenReferenceAudioUpload} title="Upload MP3/WAV">⇪</button>
+                    <button type="button" className="tg-upload-plus-btn" onClick={() => setRefAudioUrlEditing(false)} title="Done">✓</button>
                   </div>
                 ) : null}
               </div>
@@ -4259,6 +4444,7 @@ export default function ToorGenPage() {
             <div className="tg-ref-dialog-head">
               <strong>Reference Library</strong>
               <div className="tg-ref-dialog-head-actions">
+                <span className="tg-ref-dialog-selection-count">{referenceLibraryTarget === 'audio' ? 'Audio mode' : 'Image mode'}</span>
                 <span className="tg-ref-dialog-selection-count">{referenceLibrarySelectedCount} selected</span>
                 <button type="button" className="tg-ref-dialog-close" onClick={() => setIsReferenceLibraryDialogOpen(false)}>Close</button>
               </div>
@@ -4268,7 +4454,7 @@ export default function ToorGenPage() {
               className="tg-ref-dialog-search"
               value={referenceLibraryQuery}
               onChange={(event) => setReferenceLibraryQuery(event.target.value)}
-              placeholder="Search prompt, model, ratio, duration"
+              placeholder={`Search ${referenceLibraryTarget} references`}
               aria-label="Search reference library"
             />
 
@@ -4279,9 +4465,13 @@ export default function ToorGenPage() {
                     type="button"
                     className="tg-ref-dialog-thumb"
                     onClick={() => handleToggleReferenceLibraryEntry(entry)}
-                    title={selectedReferenceLibraryUrls.includes(entry.url) ? 'Remove from selection' : 'Select this image reference'}
+                    title={selectedReferenceLibraryUrls.includes(entry.url) ? 'Remove from selection' : `Select this ${entry.mediaKind} reference`}
                   >
-                    <img src={entry.url} alt="Reference library item" />
+                    {entry.mediaKind === 'audio' ? (
+                      <audio src={entry.url} controls preload="none" />
+                    ) : (
+                      <img src={entry.url} alt="Reference library item" />
+                    )}
                     <span className="tg-ref-dialog-thumb-state">{selectedReferenceLibraryUrls.includes(entry.url) ? 'Selected' : 'Select'}</span>
                   </button>
 
@@ -4299,7 +4489,7 @@ export default function ToorGenPage() {
 
                   <div className="tg-ref-dialog-actions">
                     <button type="button" className={`tg-ref-dialog-btn${selectedReferenceLibraryUrls.includes(entry.url) ? ' is-active' : ''}`} onClick={() => handleToggleReferenceLibraryEntry(entry)}>{selectedReferenceLibraryUrls.includes(entry.url) ? 'Selected' : 'Select'}</button>
-                    <button type="button" className="tg-ref-dialog-btn" onClick={() => handleUseReferenceLibraryEntryWithSetup(entry)}>Use + Setup</button>
+                    <button type="button" className="tg-ref-dialog-btn" onClick={() => handleUseReferenceLibraryEntryWithSetup(entry)}>{entry.mediaKind === 'audio' ? 'Use Audio' : 'Use + Setup'}</button>
                     <button
                       type="button"
                       className="tg-ref-dialog-btn is-danger"
@@ -4312,7 +4502,7 @@ export default function ToorGenPage() {
               ))}
 
               {filteredReferenceLibrary.length === 0 ? (
-                <div className="tg-ref-dialog-empty">No saved references yet. Upload images and they will appear here.</div>
+                <div className="tg-ref-dialog-empty">No saved {referenceLibraryTarget} references yet. Upload {referenceLibraryTarget === 'audio' ? 'MP3/WAV files' : 'images'} and they will appear here.</div>
               ) : null}
             </div>
 

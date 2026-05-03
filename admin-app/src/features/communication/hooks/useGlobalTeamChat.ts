@@ -56,6 +56,14 @@ export interface TeamTypingIndicator {
   name: string
 }
 
+export interface TeamChatThreadSnapshot {
+  threadId: string
+  unreadCount: number
+  lastStamp: number
+  lastPreview: string
+  lastStatus: '' | 'sent' | 'read' | 'unread'
+}
+
 export interface SendTeamChatMessageOptions {
   targetPath?: string
   targetTaskId?: string
@@ -233,6 +241,58 @@ export function useGlobalTeamChat({ user, enabled, threadId = THREAD_EVERYONE, m
 
     return byThread
   }, [activity, user?.uid])
+
+  const threadSnapshotById = useMemo(() => {
+    const snapshots: Record<string, TeamChatThreadSnapshot> = {}
+    if (!user?.uid) return snapshots
+
+    const unreadCountByThread: Record<string, number> = {}
+    const latestByThread: Record<string, WorkhubActivity> = {}
+    const latestStampByThread: Record<string, number> = {}
+
+    activity.forEach((item) => {
+      if (item.action !== 'chat_message') return
+
+      const msgThread = (item.threadId || THREAD_EVERYONE).trim() || THREAD_EVERYONE
+      const readByUids = Array.isArray(item.readByUids) ? item.readByUids.filter(Boolean) : []
+      if (item.actorUid !== user.uid && !readByUids.includes(user.uid)) {
+        unreadCountByThread[msgThread] = (unreadCountByThread[msgThread] || 0) + 1
+      }
+
+      const stamp = getTimeValue(item.createdAt)
+      const prevStamp = latestStampByThread[msgThread] || 0
+      if (!latestByThread[msgThread] || stamp >= prevStamp) {
+        latestByThread[msgThread] = item
+        latestStampByThread[msgThread] = stamp
+      }
+    })
+
+    Object.entries(latestByThread).forEach(([threadIdKey, latest]) => {
+      const msg = toMessage(latest, membersByUid)
+      const text = (msg.text || '').trim()
+      const previewBase = msg.deletedAt
+        ? 'Message deleted'
+        : (msg.imageUrl ? (text ? `Photo: ${text}` : 'Photo') : (text || 'Attachment'))
+      const lastPreview = previewBase.length > 96 ? `${previewBase.slice(0, 96)}...` : previewBase
+
+      const expectedRecipientUids = threadIdKey === THREAD_EVERYONE
+        ? approvedMemberUids.filter((uid) => uid !== msg.senderUid)
+        : parseThreadParticipantUids(threadIdKey).filter((uid) => uid !== msg.senderUid)
+      const lastStatus: '' | 'sent' | 'read' | 'unread' = msg.senderUid === user.uid
+        ? (expectedRecipientUids.length > 0 && expectedRecipientUids.every((uid) => msg.readByUids.includes(uid)) ? 'read' : 'sent')
+        : (msg.readByUids.includes(user.uid) ? 'read' : 'unread')
+
+      snapshots[threadIdKey] = {
+        threadId: threadIdKey,
+        unreadCount: unreadCountByThread[threadIdKey] || 0,
+        lastStamp: latestStampByThread[threadIdKey] || 0,
+        lastPreview,
+        lastStatus,
+      }
+    })
+
+    return snapshots
+  }, [activity, approvedMemberUids, membersByUid, user?.uid])
 
   useEffect(() => {
     if (!enabled || !user?.uid || !markAsReadActive) return
@@ -526,6 +586,7 @@ export function useGlobalTeamChat({ user, enabled, threadId = THREAD_EVERYONE, m
   return {
     messages,
     unreadStampByThread,
+    threadSnapshotById,
     sending,
     sendMessage,
     remindMessage,

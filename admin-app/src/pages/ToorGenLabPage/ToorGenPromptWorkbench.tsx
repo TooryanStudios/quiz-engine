@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type SyntheticEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, startTransition, type KeyboardEvent, type MouseEvent, type SyntheticEvent } from 'react'
 import { onAuthStateChanged } from 'firebase/auth'
 import { collection, doc, getDocs, limit, orderBy, query, serverTimestamp, setDoc } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
@@ -7,7 +7,7 @@ import { ContentEditablePrompt } from '../../components/ContentEditablePrompt/Co
 import { getCaretOffset, setCaretOffset } from '../../components/ContentEditablePrompt/utils'
 import type { ResolvedMentionReference } from '../../components/ContentEditablePrompt/types'
 import { MiniVideoPlaylist } from './MiniVideoPlaylist'
-import { Download, FilePenLine, Info, RotateCcw } from 'lucide-react'
+import { CloudUpload, Download, FilePenLine, Heart, Info, RotateCcw } from 'lucide-react'
 import './workbench.css'
 
 const CHATBOT_BASE = (import.meta.env.VITE_CHATBOT_API_URL as string | undefined) || ''
@@ -23,8 +23,11 @@ const PENDING_TASKS_KEY = 'toorgen_pending_tasks_v1'
 const FIRESTORE_PENDING_TASKS_COLLECTION = 'toorgen_pending_tasks'
 const FIRESTORE_HISTORY_COLLECTION = 'toorgen_prompt_lab_generations'
 const MAX_HISTORY_ITEMS = 80
+const AUTO_REMOTE_COPY_RETRY_DELAY_MS = 5000
+const MAX_AUTO_REMOTE_COPY_RETRIES = 1
+const OVERLAY_AUTO_HIDE_IDLE_MS = 5000
 
-type ProviderId = 'byteplus' | 'atlas'
+type ProviderId = 'byteplus' | 'atlas' | 'grok'
 type MediaKind = 'image' | 'video' | 'audio'
 
 type MediaField = {
@@ -105,6 +108,7 @@ type WorkflowSettingsState = {
   provider: ProviderId
   byteplusModel: string
   atlasModel: string
+  grokModel: string
   ratio: string
   duration: number
   resolution: string
@@ -141,6 +145,7 @@ type GenerationHistoryEntry = {
   outputDimensions: string
   completedAt: number
   ownerUid: string
+  isLiked: boolean
 }
 
 type MediaLibraryItem = {
@@ -343,6 +348,7 @@ type WorkflowFilterMode = 'all' | 'text' | 'video' | 'image'
 
 const PROVIDER_MODELS = {
   byteplus: [
+    'seedance-2.0-fast',
     'dreamina-seedance-2-0-260128',
     'dreamina-seedance-1-5-pro-250528',
     'dreamina-seedance-1-5-lite-250528',
@@ -350,6 +356,9 @@ const PROVIDER_MODELS = {
   atlas: [
     'seedance-2.0-fast',
     'atlas-2.0',
+  ],
+  grok: [
+    'grok-imagine-video',
   ],
 } as const
 
@@ -367,6 +376,12 @@ const COMBINED_MODEL_OPTIONS: Array<{ value: string; label: string; provider: Pr
     model: 'atlas-2.0',
   },
   {
+    value: 'byteplus:seedance-2.0-fast',
+    label: 'BytePlus 2.0 Fast',
+    provider: 'byteplus',
+    model: 'seedance-2.0-fast',
+  },
+  {
     value: 'byteplus:dreamina-seedance-2-0-260128',
     label: 'BytePlus Seedance 2.0',
     provider: 'byteplus',
@@ -377,6 +392,12 @@ const COMBINED_MODEL_OPTIONS: Array<{ value: string; label: string; provider: Pr
     label: 'BytePlus 1.5 Pro',
     provider: 'byteplus',
     model: 'dreamina-seedance-1-5-pro-250528',
+  },
+  {
+    value: 'grok:grok-imagine-video',
+    label: 'Grok Imagine Video',
+    provider: 'grok',
+    model: 'grok-imagine-video',
   },
 ]
 
@@ -447,6 +468,14 @@ const TABS: PromptTab[] = [
         role: 'reference_image',
         placeholder: 'Paste reference image URL...',
         helpText: 'Reference image slot 6.',
+      },
+      {
+        key: 'audio1',
+        label: 'Audio 1',
+        kind: 'audio',
+        role: 'reference_audio',
+        placeholder: 'Paste reference audio URL... (MP3/WAV)',
+        helpText: 'Optional audio timing/style reference.',
       },
     ],
   },
@@ -520,6 +549,14 @@ const TABS: PromptTab[] = [
         role: 'reference_image',
         placeholder: 'Paste reference image URL...',
         helpText: 'Reference image slot 6.',
+      },
+      {
+        key: 'audio1',
+        label: 'Audio 1',
+        kind: 'audio',
+        role: 'reference_audio',
+        placeholder: 'Paste reference audio URL... (MP3/WAV)',
+        helpText: 'Optional audio timing/style reference.',
       },
     ],
   },
@@ -1000,6 +1037,27 @@ const NO_WORKFLOW_REFERENCE_FIELDS: MediaField[] = [
     placeholder: 'Paste image URL...',
   },
   {
+    key: 'nowf-image7',
+    label: 'Image 7',
+    kind: 'image',
+    helpText: 'General reference image slot.',
+    placeholder: 'Paste image URL...',
+  },
+  {
+    key: 'nowf-image8',
+    label: 'Image 8',
+    kind: 'image',
+    helpText: 'General reference image slot.',
+    placeholder: 'Paste image URL...',
+  },
+  {
+    key: 'nowf-image9',
+    label: 'Image 9',
+    kind: 'image',
+    helpText: 'General reference image slot.',
+    placeholder: 'Paste image URL...',
+  },
+  {
     key: 'nowf-video1',
     label: 'Video 1',
     kind: 'video',
@@ -1020,7 +1078,51 @@ const NO_WORKFLOW_REFERENCE_FIELDS: MediaField[] = [
     helpText: 'General reference video slot.',
     placeholder: 'Paste video URL...',
   },
+  {
+    key: 'nowf-audio1',
+    label: 'Audio 1',
+    kind: 'audio',
+    helpText: 'General reference audio slot.',
+    placeholder: 'Paste audio URL...',
+  },
+  {
+    key: 'nowf-audio2',
+    label: 'Audio 2',
+    kind: 'audio',
+    helpText: 'General reference audio slot.',
+    placeholder: 'Paste audio URL...',
+  },
+  {
+    key: 'nowf-audio3',
+    label: 'Audio 3',
+    kind: 'audio',
+    helpText: 'General reference audio slot.',
+    placeholder: 'Paste audio URL...',
+  },
 ]
+
+const getEffectiveReferenceFields = (fields: MediaField[]): MediaField[] => {
+  const filtered = fields.filter((field) => field.kind === 'image' || field.kind === 'video' || field.kind === 'audio')
+  const slotsByKind: Record<'image' | 'video' | 'audio', MediaField[]> = {
+    image: filtered.filter((field) => field.kind === 'image'),
+    video: filtered.filter((field) => field.kind === 'video'),
+    audio: filtered.filter((field) => field.kind === 'audio'),
+  }
+  const fallbackByKind: Record<'image' | 'video' | 'audio', MediaField[]> = {
+    image: NO_WORKFLOW_REFERENCE_FIELDS.filter((field) => field.kind === 'image'),
+    video: NO_WORKFLOW_REFERENCE_FIELDS.filter((field) => field.kind === 'video'),
+    audio: NO_WORKFLOW_REFERENCE_FIELDS.filter((field) => field.kind === 'audio'),
+  }
+  const appendMissingSlots = (kind: 'image' | 'video' | 'audio') => {
+    if (slotsByKind[kind].length >= fallbackByKind[kind].length) return
+    const missingCount = fallbackByKind[kind].length - slotsByKind[kind].length
+    slotsByKind[kind] = slotsByKind[kind].concat(fallbackByKind[kind].slice(0, missingCount))
+  }
+  appendMissingSlots('image')
+  appendMissingSlots('video')
+  appendMissingSlots('audio')
+  return [...slotsByKind.image, ...slotsByKind.video, ...slotsByKind.audio]
+}
 
 const createDefaultMediaUrls = (tab: PromptTab): Record<string, string> => {
   const next: Record<string, string> = {}
@@ -1055,6 +1157,7 @@ const createDefaultWorkflowSettings = (): WorkflowSettingsState => ({
   provider: 'atlas',
   byteplusModel: PROVIDER_MODELS.byteplus[0],
   atlasModel: 'seedance-2.0-fast',
+  grokModel: PROVIDER_MODELS.grok[0],
   ratio: '16:9',
   duration: 5,
   resolution: '720p',
@@ -1100,16 +1203,17 @@ const normalizeDuration = (value: unknown): number => {
 }
 
 const extractMentionQuery = (text: string, cursorIndex: number): string | null => {
-  const left = text.slice(0, Math.max(0, cursorIndex))
-  const match = left.match(/@([a-zA-Z0-9._-]{0,60})$/)
+  const left = text.slice(0, Math.max(0, cursorIndex)).replace(/\u00A0/g, ' ')
+  const match = left.match(/(?:^|\s|\n)@([a-zA-Z0-9._-]{0,60})$/)
   if (!match) return null
   return match[1]
 }
 
 const insertMention = (text: string, cursorIndex: number, mentionKey: string): string => {
-  const left = text.slice(0, Math.max(0, cursorIndex))
+  const leftOriginal = text.slice(0, Math.max(0, cursorIndex))
   const right = text.slice(Math.max(0, cursorIndex))
-  const nextLeft = left.replace(/@([a-zA-Z0-9._-]{0,60})$/, `@${mentionKey} `)
+  const left = leftOriginal.replace(/\u00A0/g, ' ')
+  const nextLeft = left.replace(/(^|\s|\n)@([a-zA-Z0-9._-]{0,60})$/, `$1@${mentionKey} `)
   return `${nextLeft}${right}`
 }
 
@@ -1221,9 +1325,10 @@ const readLabDraft = (): StoredDraftState | null => {
       Object.entries(parsed.workflowSettingsByTabId).forEach(([tabId, value]) => {
         if (!isRecord(value) || !workflowSettingsByTabId[tabId]) return
         workflowSettingsByTabId[tabId] = {
-          provider: value.provider === 'atlas' ? 'atlas' : 'byteplus',
+          provider: value.provider === 'atlas' || value.provider === 'grok' ? value.provider : 'byteplus',
           byteplusModel: typeof value.byteplusModel === 'string' ? value.byteplusModel : PROVIDER_MODELS.byteplus[0],
           atlasModel: typeof value.atlasModel === 'string' ? value.atlasModel : PROVIDER_MODELS.atlas[0],
+          grokModel: typeof value.grokModel === 'string' ? value.grokModel : PROVIDER_MODELS.grok[0],
           ratio: typeof value.ratio === 'string' ? value.ratio : '16:9',
           duration: normalizeDuration(value.duration),
           resolution: typeof value.resolution === 'string' ? value.resolution : '720p',
@@ -1232,9 +1337,10 @@ const readLabDraft = (): StoredDraftState | null => {
       })
     } else {
       const legacySettings: WorkflowSettingsState = {
-        provider: parsed.provider === 'atlas' ? 'atlas' : 'byteplus',
+        provider: parsed.provider === 'atlas' || parsed.provider === 'grok' ? parsed.provider : 'byteplus',
         byteplusModel: typeof parsed.byteplusModel === 'string' ? parsed.byteplusModel : PROVIDER_MODELS.byteplus[0],
         atlasModel: typeof parsed.atlasModel === 'string' ? parsed.atlasModel : PROVIDER_MODELS.atlas[0],
+        grokModel: typeof parsed.grokModel === 'string' ? parsed.grokModel : PROVIDER_MODELS.grok[0],
         ratio: typeof parsed.ratio === 'string' ? parsed.ratio : '16:9',
         duration: normalizeDuration(parsed.duration),
         resolution: typeof parsed.resolution === 'string' ? parsed.resolution : '720p',
@@ -1310,6 +1416,7 @@ const parseHistoryEntry = (value: unknown): GenerationHistoryEntry | null => {
     outputDimensions: typeof value.outputDimensions === 'string' ? value.outputDimensions : estimateDimensions(value.ratio, value.resolution),
     completedAt: value.completedAt,
     ownerUid: typeof value.ownerUid === 'string' ? value.ownerUid : '',
+    isLiked: value.isLiked === true,
   }
 }
 
@@ -1320,7 +1427,18 @@ const sortHistories = (entries: GenerationHistoryEntry[]): GenerationHistoryEntr
 const mergeHistories = (...lists: GenerationHistoryEntry[][]): GenerationHistoryEntry[] => {
   const merged = new Map<string, GenerationHistoryEntry>()
   lists.flat().forEach((entry) => {
-    merged.set(entry.historyId, entry)
+    const existing = merged.get(entry.historyId)
+    if (!existing) {
+      merged.set(entry.historyId, entry)
+      return
+    }
+
+    merged.set(entry.historyId, {
+      ...existing,
+      ...entry,
+      // Keep the local/UI like toggle stable during Firestore merge churn.
+      isLiked: existing.isLiked,
+    })
   })
   return sortHistories(Array.from(merged.values()))
 }
@@ -1824,6 +1942,41 @@ const extractTaskId = (payload: unknown): string => {
   return firstNonEmptyString(payload.task_id, payload.id, nested?.task_id, nested?.id)
 }
 
+const normalizeProviderHint = (value: unknown): ProviderId | '' => {
+  if (typeof value !== 'string') return ''
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'atlas') return 'atlas'
+  if (normalized === 'grok') return 'grok'
+  if (normalized === 'byteplus') return 'byteplus'
+  return ''
+}
+
+const inferProviderForRequest = (
+  endpoint: string,
+  requestBody: Record<string, unknown>,
+  fallback: ProviderId,
+): ProviderId => {
+  const explicitProvider = normalizeProviderHint(
+    requestBody.providerHint ?? requestBody.provider ?? requestBody.provider_hint,
+  )
+  if (explicitProvider) {
+    return explicitProvider
+  }
+
+  const model = typeof requestBody.model === 'string' ? requestBody.model.trim().toLowerCase() : ''
+  if (model.includes('grok')) {
+    return 'grok'
+  }
+
+  if (endpoint.includes('/seedance')) {
+    return 'atlas'
+  }
+  if (endpoint.includes('/byteplus')) {
+    return 'byteplus'
+  }
+  return fallback
+}
+
 const extractStatusValue = (payload: unknown): string => {
   if (!isRecord(payload)) {
     return ''
@@ -1899,10 +2052,33 @@ const isFailureStatus = (status: string) => (
   ['fail', 'failed', 'error', 'cancel'].some((token) => status.includes(token))
 )
 
+const shouldUseDirectPlaybackUrl = (sourceUrl: string): boolean => {
+  const lower = sourceUrl.toLowerCase()
+  if (lower.includes('firebasestorage.googleapis.com')) return true
+  // Signed TOS/Volcengine URLs are already browser-playable and can be fragile through re-proxying.
+  if (lower.includes('volces.com') && lower.includes('x-tos-signature=')) return true
+  return false
+}
+
+const resolveProxySourceUrl = (url: string): string => {
+  const trimmed = url.trim()
+  if (!trimmed) return ''
+  try {
+    const parsed = new URL(trimmed, window.location.origin)
+    if (!parsed.pathname.endsWith('/api/video-proxy')) {
+      return trimmed
+    }
+    const original = parsed.searchParams.get('url') || ''
+    return original.trim() || trimmed
+  } catch {
+    return trimmed
+  }
+}
+
 const getPlaybackUrl = (url: string): string => {
-  const sourceUrl = toPlayableVideoSourceUrl(url)
+  const sourceUrl = toPlayableVideoSourceUrl(resolveProxySourceUrl(url))
   if (!sourceUrl) return ''
-  if (sourceUrl.includes('firebasestorage.googleapis.com')) return sourceUrl
+  if (shouldUseDirectPlaybackUrl(sourceUrl)) return sourceUrl
   return `${apiUrl('/api/video-proxy')}?url=${encodeURIComponent(sourceUrl)}`
 }
 
@@ -2070,23 +2246,55 @@ const buildByteplusContent = (
   return content
 }
 
+const resolveAtlasModelForMode = (
+  selectedModel: string,
+  requestMode: PromptTab['requestMode'],
+): string => {
+  const raw = (selectedModel || '').trim()
+  if (!raw) return 'bytedance/seedance-2.0-fast/text-to-video'
+  if (raw.includes('/')) return raw
+
+  const lower = raw.toLowerCase()
+  const isExplicitFast = lower.includes('fast')
+  const isSeedance20Family = (
+    lower === 'atlas-2.0'
+    || lower === 'seedance-2.0'
+    || lower.includes('dreamina-seedance-2-0')
+    || lower.includes('seedance-2.0')
+  )
+  const baseModel = isSeedance20Family && !isExplicitFast
+    ? 'bytedance/seedance-2.0'
+    : 'bytedance/seedance-2.0-fast'
+
+  const modeSuffix = requestMode === 'image-to-video'
+    ? 'image-to-video'
+    : (requestMode === 'reference-to-video' || requestMode === 'video-extension')
+      ? 'reference-to-video'
+      : 'text-to-video'
+
+  return `${baseModel}/${modeSuffix}`
+}
+
 const buildAtlasPayload = (
   tab: PromptTab,
   state: ModeRuntimeState,
   settings: SharedSettings,
   mentionReferences: ResolvedMentionReference[],
 ): Record<string, unknown> => {
+  const atlasModel = resolveAtlasModelForMode(settings.model, tab.requestMode)
+  const effectiveReferenceFields = getEffectiveReferenceFields(tab.fields)
+
   if (tab.id === IMAGE_SINGLE_REFERENCE_MODE_ID) {
     const selectedImageFieldKey = state.selectedImageReferenceKey
     const selectedImageUrl = selectedImageFieldKey
       ? (state.mediaUrls[selectedImageFieldKey] || '').trim()
       : ''
-    const fallbackImageUrl = tab.fields
+    const fallbackImageUrl = effectiveReferenceFields
       .filter((field) => field.kind === 'image')
       .map((field) => (state.mediaUrls[field.key] || '').trim())
       .find(Boolean) || ''
     return {
-      model: 'bytedance/seedance-2.0-fast/image-to-video',
+      model: atlasModel,
       duration: settings.duration,
       resolution: settings.resolution,
       ratio: settings.ratio,
@@ -2099,14 +2307,12 @@ const buildAtlasPayload = (
   }
 
   if (tab.id === VIDEO_PLUS_IMAGE_MODE_ID) {
-    const referenceImages = tab.fields
-      .filter((field) => field.kind === 'image')
-      .map((field) => (state.mediaUrls[field.key] || '').trim())
-      .filter(Boolean)
-    const referenceVideos = tab.fields
-      .filter((field) => field.kind === 'video')
-      .map((field) => (state.mediaUrls[field.key] || '').trim())
-      .filter(Boolean)
+    const referenceImages = mentionReferences
+      .filter((ref) => ref.kind === 'image')
+      .map((ref) => ref.url)
+    const referenceVideos = mentionReferences
+      .filter((ref) => ref.kind === 'video')
+      .map((ref) => ref.url)
 
     const validVideoOptions = VIDEO_WORKFLOW_OPTIONS.filter((option) => state.selectedVideoOptionIds.includes(option.id))
     const optionInstructions = validVideoOptions.map((option) => option.instruction)
@@ -2128,7 +2334,7 @@ const buildAtlasPayload = (
       : basePrompt
 
     return {
-      model: 'bytedance/seedance-2.0-fast/reference-to-video',
+      model: atlasModel,
       duration: settings.duration,
       resolution: settings.resolution,
       ratio: settings.ratio,
@@ -2151,14 +2357,14 @@ const buildAtlasPayload = (
     .filter((entry) => entry.kind === 'video')
     .map((entry) => entry.url)
 
-  const audioUrls = tab.fields
+  const audioUrls = effectiveReferenceFields
     .filter((field) => field.kind === 'audio')
     .map((field) => state.mediaUrls[field.key]?.trim() || '')
     .filter(Boolean)
 
   const body: Record<string, unknown> = {
     prompt: state.prompt.trim(),
-    model: settings.model,
+    model: atlasModel,
     providerHint: 'fast',
     duration: settings.duration,
     aspect_ratio: settings.ratio,
@@ -2235,6 +2441,22 @@ const buildRequest = (
     }
   }
 
+  if (settings.provider === 'grok') {
+    const atlasPayload = buildAtlasPayload(tab, state, settings, mentionReferences)
+    const grokPayload: Record<string, unknown> = { ...atlasPayload, providerHint: 'grok' }
+    
+    // Grok expects image_urls array, not single image field
+    if (typeof grokPayload['image'] === 'string' && grokPayload['image'].trim()) {
+      grokPayload['image_urls'] = [grokPayload['image']]
+      delete grokPayload['image']
+    }
+    
+    return {
+      endpoint: '/api/seedance/generate',
+      body: grokPayload,
+    }
+  }
+
   return {
     endpoint: '/api/byteplus/generate',
     body: {
@@ -2276,7 +2498,7 @@ const uploadBlobToFirebase = async (blob: Blob, storagePath: string, contentType
 }
 
 const saveGeneratedVideoToFirebase = async (sourceUrl: string, historyId: string): Promise<{ firebaseUrl: string }> => {
-  const normalizedSourceUrl = toPlayableVideoSourceUrl(sourceUrl)
+  const normalizedSourceUrl = toPlayableVideoSourceUrl(resolveProxySourceUrl(sourceUrl))
   if (!normalizedSourceUrl) {
     throw new Error('No result URL was available for Firebase save.')
   }
@@ -2284,10 +2506,26 @@ const saveGeneratedVideoToFirebase = async (sourceUrl: string, historyId: string
     return { firebaseUrl: normalizedSourceUrl }
   }
 
-  const proxyUrl = `${apiUrl('/api/video-proxy')}?url=${encodeURIComponent(normalizedSourceUrl)}`
-  const response = await fetch(proxyUrl)
-  if (!response.ok) {
-    throw new Error(`Failed to download generated video: HTTP ${response.status}`)
+  let response: Response | null = null
+
+  if (shouldUseDirectPlaybackUrl(normalizedSourceUrl)) {
+    try {
+      const directResponse = await fetch(normalizedSourceUrl)
+      if (directResponse.ok) {
+        response = directResponse
+      }
+    } catch {
+      // Fall back to backend proxy below if direct browser fetch fails.
+    }
+  }
+
+  if (!response) {
+    const proxyUrl = `${apiUrl('/api/video-proxy')}?url=${encodeURIComponent(normalizedSourceUrl)}`
+    const proxyResponse = await fetch(proxyUrl)
+    if (!proxyResponse.ok) {
+      throw new Error(`Failed to download generated video: HTTP ${proxyResponse.status}`)
+    }
+    response = proxyResponse
   }
 
   const videoBlob = await response.blob()
@@ -2340,6 +2578,7 @@ const saveHistoryToFirestore = async (entry: GenerationHistoryEntry) => {
     outputDimensions: entry.outputDimensions,
     completedAt: entry.completedAt,
     ownerUid: uid,
+    isLiked: entry.isLiked,
     updatedAt: serverTimestamp(),
   }
 
@@ -2361,6 +2600,7 @@ export default function ToorGenPromptWorkbench() {
   const [railWidth, setRailWidth] = useState<number>(500)
   const [directPanelWidth, setDirectPanelWidth] = useState<number>(360)
   const [historyViewMode, setHistoryViewMode] = useState<HistoryViewMode>('cards')
+  const [isLikedOnlyFilter, setIsLikedOnlyFilter] = useState<boolean>(false)
   const [workflowSearch, setWorkflowSearch] = useState<string>('')
   const [workflowFilterMode, setWorkflowFilterMode] = useState<WorkflowFilterMode>('all')
   const [workflowPickerPosition, setWorkflowPickerPosition] = useState<{ top: number; left: number } | null>(null)
@@ -2374,7 +2614,10 @@ export default function ToorGenPromptWorkbench() {
   const refHoverFixedRef = useRef<HTMLDivElement | null>(null)
   const [isReferenceLibraryDialogOpen, setIsReferenceLibraryDialogOpen] = useState<boolean>(false)
   const [pendingRemoveRefKey, setPendingRemoveRefKey] = useState<string | null>(null)
-  const [referenceLibraryFilter, setReferenceLibraryFilter] = useState<'all' | 'image' | 'video'>('all')
+  const [libraryContextMenu, setLibraryContextMenu] = useState<{ x: number; y: number; item: MediaLibraryItem } | null>(null)
+  const [libraryPreviewItem, setLibraryPreviewItem] = useState<MediaLibraryItem | null>(null)
+  const [pendingLibraryDeleteItem, setPendingLibraryDeleteItem] = useState<MediaLibraryItem | null>(null)
+  const [referenceLibraryFilter, setReferenceLibraryFilter] = useState<'all' | 'image' | 'video' | 'audio'>('all')
   const [referenceLibraryQuery, setReferenceLibraryQuery] = useState<string>('')
   const [selectedReferenceLibraryUrls, setSelectedReferenceLibraryUrls] = useState<string[]>([])
   const [isReferenceLibraryUploading, setIsReferenceLibraryUploading] = useState<boolean>(false)
@@ -2388,6 +2631,7 @@ export default function ToorGenPromptWorkbench() {
   const [selectedPresetId, setSelectedPresetId] = useState<string>('')
   const [isRefreshingRuns, setIsRefreshingRuns] = useState<boolean>(false)
   const [isVideoRequestCopied, setIsVideoRequestCopied] = useState<boolean>(false)
+  const [copiedAudioLibraryItemId, setCopiedAudioLibraryItemId] = useState<string>('')
   const [isVideoDetailsCollapsed, setIsVideoDetailsCollapsed] = useState<boolean>(true)
   const [isVideoMetadataEditing, setIsVideoMetadataEditing] = useState<boolean>(false)
   const [isVideoMetadataSaving, setIsVideoMetadataSaving] = useState<boolean>(false)
@@ -2397,15 +2641,18 @@ export default function ToorGenPromptWorkbench() {
   const [isCapturedFramesVisible, setIsCapturedFramesVisible] = useState<boolean>(false)
   const [videoDialogNotice, setVideoDialogNotice] = useState<string>('')
   const [isVideoDownloading, setIsVideoDownloading] = useState<boolean>(false)
+  const [savingVideoToAssetsHistoryId, setSavingVideoToAssetsHistoryId] = useState<string>('')
   const [savingFrameId, setSavingFrameId] = useState<string>('')
   const [historyDisplayLimit, setHistoryDisplayLimit] = useState<number>(10)
   const [isPlaylistOpen, setIsPlaylistOpen] = useState<boolean>(false)
-  const [composerRefMode, setComposerRefMode] = useState<'text' | 'image' | 'video'>('video')
+  const [composerRefMode, setComposerRefMode] = useState<'text' | 'image' | 'video' | 'audio'>('video')
   const [isDirectSubmitPanelVisible, setIsDirectSubmitPanelVisible] = useState<boolean>(true)
   const [isRecoveryOpen, setIsRecoveryOpen] = useState<boolean>(false)
   const [recoveryTaskId, setRecoveryTaskId] = useState<string>('')
   const [recoveryProvider, setRecoveryProvider] = useState<ProviderId>('atlas')
   const [recoveryModel, setRecoveryModel] = useState<string>('')
+  const [overlayHoverScopeId, setOverlayHoverScopeId] = useState<string>('')
+  const [isOverlayIdle, setIsOverlayIdle] = useState<boolean>(false)
 
   const cancelFlags = useRef<Record<string, boolean>>({})
   const labLayoutRef = useRef<HTMLDivElement | null>(null)
@@ -2417,6 +2664,11 @@ export default function ToorGenPromptWorkbench() {
   const videoDialogNoticeTimeoutRef = useRef<number | null>(null)
   const workflowPickerRef = useRef<HTMLDivElement | null>(null)
   const promptTextareaRef = useRef<HTMLDivElement | null>(null)
+  const remoteCopyRetryAttemptsRef = useRef<Record<string, number>>({})
+  const remoteCopyRetryInFlightRef = useRef<Record<string, boolean>>({})
+  const remoteCopyRetryTimeoutsRef = useRef<Record<string, number>>({})
+  const overlayAutoHideTimerRef = useRef<number | null>(null)
+  const overlayHoverScopeIdRef = useRef<string>('')
 
   const handleRefinePrompt = async () => {
     const currentPrompt = activeState.prompt.trim()
@@ -2455,6 +2707,8 @@ export default function ToorGenPromptWorkbench() {
   const activeWorkflowSettings = workflowSettingsByTabId[activeTab.id] || createDefaultWorkflowSettings()
   const selectedModel = activeWorkflowSettings.provider === 'atlas'
     ? activeWorkflowSettings.atlasModel
+    : activeWorkflowSettings.provider === 'grok'
+    ? activeWorkflowSettings.grokModel
     : activeWorkflowSettings.byteplusModel
   const switchComposerWorkflow = (nextTabId: string, nextRefMode?: 'text' | 'image' | 'video') => {
     const currentPrompt = activeState.prompt
@@ -2473,7 +2727,7 @@ export default function ToorGenPromptWorkbench() {
     : [
         {
           value: selectedCombinedModelValue,
-          label: `${activeWorkflowSettings.provider === 'atlas' ? 'Atlas Cloud' : 'BytePlus'} (${selectedModel})`,
+          label: `${activeWorkflowSettings.provider === 'atlas' ? 'Atlas Cloud' : activeWorkflowSettings.provider === 'grok' ? 'Grok' : 'BytePlus'} (${selectedModel})`,
           provider: activeWorkflowSettings.provider,
           model: selectedModel,
         },
@@ -2510,7 +2764,11 @@ export default function ToorGenPromptWorkbench() {
       modeStates: storedModeStates,
     }
 
-    safeSetLocalStorage(LOCAL_DRAFT_STORAGE_KEY, JSON.stringify(nextDraft))
+    const timer = window.setTimeout(() => {
+      safeSetLocalStorage(LOCAL_DRAFT_STORAGE_KEY, JSON.stringify(nextDraft))
+    }, 1000)
+
+    return () => window.clearTimeout(timer)
   }, [activeTabId, modeStates, workflowSettingsByTabId])
 
   useEffect(() => {
@@ -2743,7 +3001,9 @@ export default function ToorGenPromptWorkbench() {
 
       const statusUrl = requestProvider === 'atlas'
         ? `${apiUrl('/api/seedance/status')}?task_id=${encodeURIComponent(taskId)}&model=${encodeURIComponent(requestModel)}&provider=atlas`
-        : `${apiUrl('/api/byteplus/status')}?task_id=${encodeURIComponent(taskId)}`
+        : requestProvider === 'grok'
+          ? `${apiUrl('/api/seedance/status')}?task_id=${encodeURIComponent(taskId)}&model=${encodeURIComponent(requestModel)}&provider=grok`
+          : `${apiUrl('/api/byteplus/status')}?task_id=${encodeURIComponent(taskId)}`
 
       const response = await fetch(statusUrl)
       const rawBody = await response.text()
@@ -2793,7 +3053,10 @@ export default function ToorGenPromptWorkbench() {
       successWithoutResultCount = 0
 
       if (isFailureStatus(status)) {
-        throw new Error(status || 'Generation failed.')
+        const upstreamError = isRecord(payload) && isRecord(payload.data) && typeof (payload.data as Record<string, unknown>).error === 'string'
+          ? (payload.data as Record<string, unknown>).error as string
+          : ''
+        throw new Error(upstreamError || 'Generation failed on the provider side.')
       }
     }
   }
@@ -2844,6 +3107,7 @@ export default function ToorGenPromptWorkbench() {
       outputDimensions: estimateDimensions(requestSettings.ratio, requestSettings.resolution),
       completedAt,
       ownerUid: auth.currentUser?.uid || '',
+      isLiked: false,
     }
 
     await saveHistoryEntry(entry)
@@ -2929,6 +3193,7 @@ export default function ToorGenPromptWorkbench() {
       outputDimensions: estimateDimensions(task.ratio, task.resolution),
       completedAt,
       ownerUid: auth.currentUser?.uid || '',
+      isLiked: false,
     }
 
     await saveHistoryEntry(entry)
@@ -2943,6 +3208,8 @@ export default function ToorGenPromptWorkbench() {
   }
 
   const handleResumeTask = async (task: PersistedPendingTask) => {
+    let shouldRemovePending = false
+
     setPendingGenerations((current) => {
       if (current.some((p) => p.id === task.requestId)) return current
       return [
@@ -2966,15 +3233,29 @@ export default function ToorGenPromptWorkbench() {
       )
       if (finalResultUrl) {
         await finalizeRecoveredRun(task, finalResultUrl)
+        shouldRemovePending = true
       }
     } catch (error) {
-      updateModeState(task.tabId, (current) => ({
-        ...current,
-        statusText: `Recovery failed: ${(error as Error).message}`,
-      }))
+      const msg = (error as Error).message || ''
+      const lowerMsg = msg.toLowerCase()
+      const isAlreadyFailed = isFailureStatus(lowerMsg)
+        || lowerMsg.includes('provider side')
+        || lowerMsg.includes('generation failed')
+        || lowerMsg.includes('expired')
+      if (!isAlreadyFailed) {
+        updateModeState(task.tabId, (current) => ({
+          ...current,
+          statusText: `Recovery paused: ${msg}. Task kept for next refresh/retry.`,
+        }))
+      } else {
+        shouldRemovePending = true
+      }
+      // If the task was already marked failed by the provider, silently discard it.
     } finally {
-      removePendingTask(task.requestId)
-      setPendingGenerations((current) => current.filter((p) => p.id !== task.requestId))
+      if (shouldRemovePending) {
+        removePendingTask(task.requestId)
+        setPendingGenerations((current) => current.filter((p) => p.id !== task.requestId))
+      }
     }
   }
 
@@ -3061,6 +3342,8 @@ export default function ToorGenPromptWorkbench() {
     const requestId = `${tab.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     cancelFlags.current[requestId] = false
     let submittedAt = 0
+    let pendingTaskId = ''
+    let shouldClearPendingTask = false
 
     const backendReady = await checkBackendHealth()
     if (!backendReady) {
@@ -3079,22 +3362,25 @@ export default function ToorGenPromptWorkbench() {
       resolution: activeWorkflowSettings.resolution,
       generateAudio: activeWorkflowSettings.generateAudio,
     }
-    if (tab.id === VIDEO_PLUS_IMAGE_MODE_ID) {
-      requestSettings.provider = 'atlas'
-      requestSettings.model = 'bytedance/seedance-2.0-fast/reference-to-video'
-    }
-    if (tab.id === IMAGE_SINGLE_REFERENCE_MODE_ID) {
-      requestSettings.provider = 'atlas'
-      requestSettings.model = 'bytedance/seedance-2.0-fast/image-to-video'
-    }
+    // Removed hardcoded provider overrides for specific modes so the UI dropdown selection is respected.
+    
     const request = buildRequest(tab, effectiveState, requestSettings, resolvedMentionReferences)
+    const effectiveRequestProvider = inferProviderForRequest(request.endpoint, request.body, requestSettings.provider)
+    const effectiveRequestModel = typeof request.body.model === 'string' && request.body.model.trim()
+      ? request.body.model.trim()
+      : requestSettings.model
+    const effectiveRequestSettings: SharedSettings = {
+      ...requestSettings,
+      provider: effectiveRequestProvider,
+      model: effectiveRequestModel,
+    }
 
     setPendingGenerations((current) => ([
       {
         id: requestId,
         tabId: tab.id,
-        provider: requestSettings.provider,
-        model: requestSettings.model,
+        provider: effectiveRequestProvider,
+        model: effectiveRequestModel,
         createdAt: Date.now(),
       },
       ...current,
@@ -3126,6 +3412,7 @@ export default function ToorGenPromptWorkbench() {
       }
 
       const taskId = extractTaskId(payload)
+      pendingTaskId = taskId
       const directResultUrl = extractResultUrl(payload)
 
       if (taskId) {
@@ -3133,13 +3420,13 @@ export default function ToorGenPromptWorkbench() {
           requestId,
           taskId,
           tabId: tab.id,
-          provider: requestSettings.provider,
-          model: requestSettings.model,
-          ratio: requestSettings.ratio,
-          duration: requestSettings.duration,
-          resolution: requestSettings.resolution,
+          provider: effectiveRequestProvider,
+          model: effectiveRequestModel,
+          ratio: effectiveRequestSettings.ratio,
+          duration: effectiveRequestSettings.duration,
+          resolution: effectiveRequestSettings.resolution,
           createdAt: submittedAt,
-          generateAudio: requestSettings.generateAudio,
+          generateAudio: effectiveRequestSettings.generateAudio,
           prompt: state.prompt.trim(),
           mediaUrls: filterMediaUrls(state.mediaUrls),
           requestEndpoint: request.endpoint,
@@ -3150,8 +3437,8 @@ export default function ToorGenPromptWorkbench() {
 
       const finalResultUrl = directResultUrl || (taskId
         ? await pollUntilDone(
-          requestSettings.provider,
-          requestSettings.model,
+          effectiveRequestProvider,
+          effectiveRequestModel,
           taskId,
           (statusText) => {
             updateModeState(tab.id, (current) => ({
@@ -3164,6 +3451,7 @@ export default function ToorGenPromptWorkbench() {
         : '')
 
       if (finalResultUrl === null) {
+        shouldClearPendingTask = true
         return
       }
 
@@ -3172,22 +3460,37 @@ export default function ToorGenPromptWorkbench() {
       }
 
       const receivedAt = Date.now()
-      await finalizeCompletedRun(tab, state, request, requestSettings, taskId, finalResultUrl, {
+      await finalizeCompletedRun(tab, state, request, effectiveRequestSettings, taskId, finalResultUrl, {
         submittedAt,
         receivedAt,
       })
+      shouldClearPendingTask = true
     } catch (error) {
       const message = (error as Error).message || ''
       if (/failed to fetch|networkerror|load failed/i.test(message)) {
         markBackendDown()
       }
+      const lowerMessage = message.toLowerCase()
+      const isTerminalFailure = isFailureStatus(lowerMessage)
+        || lowerMessage.includes('provider side')
+        || lowerMessage.includes('generation failed')
+        || lowerMessage.includes('task finished without a result')
+
+      if (!pendingTaskId || isTerminalFailure) {
+        shouldClearPendingTask = true
+      }
+
       updateModeState(tab.id, (current) => ({
         ...current,
-        statusText: `Error: ${(error as Error).message}`,
+        statusText: shouldClearPendingTask
+          ? `Error: ${(error as Error).message}`
+          : `Connection issue while polling. Task kept and will resume after refresh.`,
       }))
     } finally {
-      removePendingTask(requestId)
-      setPendingGenerations((current) => current.filter((entry) => entry.id !== requestId))
+      if (shouldClearPendingTask) {
+        removePendingTask(requestId)
+        setPendingGenerations((current) => current.filter((entry) => entry.id !== requestId))
+      }
       delete cancelFlags.current[requestId]
     }
   }
@@ -3257,10 +3560,10 @@ export default function ToorGenPromptWorkbench() {
 
   const activeTabHistory = history
   const activePendingGenerations = pendingGenerations.filter((entry) => entry.tabId === activeTab.id)
-  const referenceFields = (hasConfiguredWorkflows
-    ? activeTab.fields
-    : NO_WORKFLOW_REFERENCE_FIELDS
-  ).filter((field) => field.kind === 'image' || field.kind === 'video')
+  const referenceFields = useMemo(
+    () => getEffectiveReferenceFields(hasConfiguredWorkflows ? activeTab.fields : NO_WORKFLOW_REFERENCE_FIELDS),
+    [activeTab.fields, hasConfiguredWorkflows],
+  )
 
   const mediaLibraryNameByUrl = useMemo(() => (
     new Map(mediaLibrary.map((item) => [item.url, item.name.trim() || `Reference ${item.kind}`]))
@@ -3294,30 +3597,65 @@ export default function ToorGenPromptWorkbench() {
 
   const mentionableReferences = useMemo<MentionableReference[]>(() => {
     const usedKeys = new Set<string>()
-    return referenceFields
+    const usedUrlKinds = new Set<string>()
+    const collected: MentionableReference[] = []
+
+    const createUniqueMentionKey = (baseName: string, fallback: string) => {
+      const baseKey = createMentionKey(baseName, fallback)
+      let mentionKey = baseKey
+      let suffix = 2
+      while (usedKeys.has(mentionKey.toLowerCase())) {
+        mentionKey = `${baseKey}_${suffix}`
+        suffix += 1
+      }
+      usedKeys.add(mentionKey.toLowerCase())
+      return mentionKey
+    }
+
+    const addReference = (entry: Omit<MentionableReference, 'mentionKey'>, fallbackKey: string) => {
+      const normalizedUrl = entry.url.trim()
+      if (!normalizedUrl) {
+        return
+      }
+      const urlKindKey = `${entry.kind}:${normalizedUrl}`
+      if (usedUrlKinds.has(urlKindKey)) {
+        return
+      }
+      usedUrlKinds.add(urlKindKey)
+      const mentionKey = createUniqueMentionKey(entry.label, fallbackKey)
+      collected.push({
+        ...entry,
+        url: normalizedUrl,
+        mentionKey,
+      })
+    }
+
+    referenceFields
       .filter((field) => field.kind === 'image' || field.kind === 'video')
-      .map((field, index) => {
+      .forEach((field, index) => {
         const url = (activeState.mediaUrls[field.key] || '').trim()
-        if (!url) return null
-        const baseName = mediaLibraryNameByUrl.get(url) || field.label
-        const baseKey = createMentionKey(baseName, `ref_${index + 1}`)
-        let mentionKey = baseKey
-        let suffix = 2
-        while (usedKeys.has(mentionKey.toLowerCase())) {
-          mentionKey = `${baseKey}_${suffix}`
-          suffix += 1
-        }
-        usedKeys.add(mentionKey.toLowerCase())
-        return {
+        if (!url) return
+        addReference({
           id: field.key,
           url,
-          label: baseName,
-          mentionKey,
+          label: mediaLibraryNameByUrl.get(url) || field.label,
           kind: field.kind === 'video' ? 'video' : 'image',
-        }
+        }, `ref_${index + 1}`)
       })
-      .filter((item): item is MentionableReference => Boolean(item))
-  }, [activeState.mediaUrls, mediaLibraryNameByUrl, referenceFields])
+
+    mediaLibrary
+      .filter((item) => item.kind === 'image' || item.kind === 'video')
+      .forEach((item, index) => {
+        addReference({
+          id: `library:${item.id}`,
+          url: item.url,
+          label: item.name || `Library ${item.kind}`,
+          kind: item.kind === 'video' ? 'video' : 'image',
+        }, `asset_${index + 1}`)
+      })
+
+    return collected
+  }, [activeState.mediaUrls, mediaLibrary, mediaLibraryNameByUrl, referenceFields])
 
   const resolvedMentionReferences = useMemo(
     () => resolvePromptMentionReferences(activeState.prompt, mentionableReferences),
@@ -3338,6 +3676,83 @@ export default function ToorGenPromptWorkbench() {
     () => referenceFields.filter((field) => field.kind === 'video' && (activeState.mediaUrls[field.key] || '').trim()).length,
     [referenceFields, activeState.mediaUrls],
   )
+
+  const pushSourceVideoIntoComposer = (mediaUrls: Record<string, string>, sourceUrl: string): Record<string, string> => {
+    const nextSourceUrl = (sourceUrl || '').trim()
+    if (!nextSourceUrl) return mediaUrls
+    const firstVideoKey = referenceFields.find((field) => field.kind === 'video')?.key
+    if (!firstVideoKey) return mediaUrls
+    return {
+      ...mediaUrls,
+      [firstVideoKey]: nextSourceUrl,
+    }
+  }
+
+  const applyExtendActionToComposer = (sourceUrl: string, resolution: string | undefined, direction: 'before' | 'after') => {
+    const resolvedSourceUrl = (sourceUrl || '').trim()
+    if (!resolvedSourceUrl) return
+
+    const extendPrompt = direction === 'before'
+      ? 'Generate the content before Video 1:    [ADD_YOUR_PROMPT]'
+      : 'Generate the content after Video 1:    [ADD_YOUR_PROMPT]'
+    const extendJson = {
+      model: 'bytedance/seedance-2.0-fast/reference-to-video',
+      duration: 15,
+      resolution: (resolution || sharedSettings.resolution || '720p').trim(),
+      ratio: 'adaptive',
+      generate_audio: true,
+      watermark: false,
+      return_last_frame: false,
+      reference_videos: [resolvedSourceUrl],
+      prompt: extendPrompt,
+      providerHint: 'atlas',
+    }
+
+    updateModeState(activeTab.id, (current) => ({
+      ...current,
+      prompt: extendJson.prompt,
+      mediaUrls: pushSourceVideoIntoComposer(current.mediaUrls, resolvedSourceUrl),
+    }))
+    updateWorkflowSettings(activeTab.id, (current) => ({
+      ...current,
+      provider: 'atlas',
+      atlasModel: extendJson.model,
+      duration: extendJson.duration,
+      resolution: extendJson.resolution,
+      ratio: extendJson.ratio,
+      generateAudio: extendJson.generate_audio,
+    }))
+    setDirectRequestJson(JSON.stringify(extendJson, null, 2))
+    setIsDirectSubmitPanelVisible(true)
+  }
+
+  const applyRegenerateActionToComposer = (details?: VideoDialogState['details']) => {
+    if (!details) return
+
+    const provider = details.provider || sharedSettings.provider
+    const modelField = provider === 'atlas'
+      ? 'atlasModel'
+      : provider === 'grok'
+        ? 'grokModel'
+        : 'byteplusModel'
+
+    updateModeState(activeTab.id, (current) => ({
+      ...current,
+      prompt: details.prompt || '',
+      mediaUrls: pushSourceVideoIntoComposer(current.mediaUrls, details.sourceUrl || ''),
+    }))
+    updateWorkflowSettings(activeTab.id, (current) => ({
+      ...current,
+      provider,
+      [modelField]: details.model || current[modelField],
+      duration: details.durationSec || current.duration,
+      resolution: details.resolution || current.resolution,
+      ratio: details.ratio || current.ratio,
+      generateAudio: details.generateAudio ?? current.generateAudio,
+    }))
+    setDirectRequestJson(JSON.stringify(details.requestPayload || {}, null, 2))
+    setIsDirectSubmitPanelVisible(true)
+  }
 
   useEffect(() => {
     if (activeTab.id !== IMAGE_SINGLE_REFERENCE_MODE_ID) return
@@ -3431,6 +3846,10 @@ export default function ToorGenPromptWorkbench() {
     }
     return `${tab.label} ${tab.group} ${tab.summary}`.toLowerCase().includes(workflowSearchValue)
   })
+  const filteredTabHistory = useMemo(
+    () => (isLikedOnlyFilter ? activeTabHistory.filter((entry) => entry.isLiked) : activeTabHistory),
+    [activeTabHistory, isLikedOnlyFilter],
+  )
   const latestTabHistory = activeTabHistory[0]
   const activeOutputUrl = activeState.resultUrl.trim()
   const hasActiveOutputPreview = Boolean(outputPlaybackUrl)
@@ -3503,7 +3922,7 @@ export default function ToorGenPromptWorkbench() {
         }]
         })()
       : []),
-    ...activeTabHistory.map((entry) => {
+    ...filteredTabHistory.map((entry) => {
       const sources = resolvePrimaryAndFallbackVideoSources(entry.firebaseVideoUrl || '', entry.resultUrl || '')
       return {
         id: entry.historyId,
@@ -3539,7 +3958,7 @@ export default function ToorGenPromptWorkbench() {
     activeOutputAlreadySaved,
     activeOutputUrl,
     activeState.prompt,
-    activeTabHistory,
+    filteredTabHistory,
     latestTabHistory?.completedAt,
     previewRequest.body,
     previewRequest.endpoint,
@@ -3594,7 +4013,15 @@ export default function ToorGenPromptWorkbench() {
     setReferenceLibraryFilter('all')
     setReferenceLibraryQuery('')
     setSelectedReferenceLibraryUrls(selectedByKind)
+    setLibraryContextMenu(null)
+    setPendingLibraryDeleteItem(null)
     setIsReferenceLibraryDialogOpen(true)
+  }
+
+  const closeReferenceLibraryDialog = () => {
+    setIsReferenceLibraryDialogOpen(false)
+    setLibraryContextMenu(null)
+    setPendingLibraryDeleteItem(null)
   }
 
   const renameMediaLibraryItem = (id: string, name: string) => {
@@ -3606,6 +4033,35 @@ export default function ToorGenPromptWorkbench() {
       ))
       safeSetLocalStorage(SHARED_REFERENCE_LIBRARY_KEY, JSON.stringify(next))
       return next
+    })
+  }
+
+  const openLibraryContextMenu = (event: MouseEvent<HTMLElement>, item: MediaLibraryItem) => {
+    event.preventDefault()
+    event.stopPropagation()
+    setLibraryContextMenu({ x: event.clientX, y: event.clientY, item })
+  }
+
+  const removeMediaLibraryItem = (item: MediaLibraryItem) => {
+    setMediaLibrary((current) => {
+      const next = current.filter((entry) => entry.id !== item.id)
+      safeSetLocalStorage(SHARED_REFERENCE_LIBRARY_KEY, JSON.stringify(next))
+      return next
+    })
+    setSelectedReferenceLibraryUrls((current) => current.filter((url) => url !== item.url))
+    setModeStates((current) => {
+      const nextEntries = Object.entries(current).map(([tabId, state]) => {
+        let changed = false
+        const mediaUrls = { ...state.mediaUrls }
+        Object.keys(mediaUrls).forEach((key) => {
+          if (mediaUrls[key] === item.url) {
+            mediaUrls[key] = ''
+            changed = true
+          }
+        })
+        return [tabId, changed ? { ...state, mediaUrls } : state] as const
+      })
+      return Object.fromEntries(nextEntries)
     })
   }
 
@@ -3623,37 +4079,61 @@ export default function ToorGenPromptWorkbench() {
   }
 
   const applyReferenceLibrarySelection = () => {
-    const availableByKind: Record<'image' | 'video', string[]> = {
+    const availableByKind: Record<'image' | 'video' | 'audio', string[]> = {
       image: [],
       video: [],
+      audio: [],
+    }
+    const resolveSelectedKind = (url: string): MediaKind => {
+      const mapped = mediaLibraryKindByUrl.get(url)
+      if (mapped === 'image' || mapped === 'video' || mapped === 'audio') return mapped
+      if (/\.(mp3|wav|m4a|aac|ogg|flac)(\?|#|$)/i.test(url) || /audio/i.test(url)) return 'audio'
+      if (/\.(mp4|webm|mov|m4v|mkv|avi|m3u8)(\?|#|$)/i.test(url) || /video/i.test(url)) return 'video'
+      return 'image'
     }
     selectedReferenceLibraryUrls.forEach((url) => {
-      const kind = mediaLibraryKindByUrl.get(url)
-      if (kind === 'image' || kind === 'video') {
-        availableByKind[kind].push(url)
-      }
+      const kind = resolveSelectedKind(url)
+      availableByKind[kind].push(url)
     })
 
     let overflowCount = 0
     updateModeState(activeTab.id, (current) => {
       const nextMediaUrls = { ...current.mediaUrls }
-      referenceFields.forEach((field) => {
-        if (field.kind !== 'image' && field.kind !== 'video') {
-          return
-        }
-        const nextValue = availableByKind[field.kind].shift() || ''
-        nextMediaUrls[field.key] = nextValue
+      const slotsByKind: Record<'image' | 'video' | 'audio', string[]> = {
+        image: referenceFields.filter((field) => field.kind === 'image').map((field) => field.key),
+        video: referenceFields.filter((field) => field.kind === 'video').map((field) => field.key),
+        audio: referenceFields.filter((field) => field.kind === 'audio').map((field) => field.key),
+      }
+
+      ;(['image', 'video', 'audio'] as const).forEach((kind) => {
+        const existingValues = new Set(
+          slotsByKind[kind]
+            .map((key) => (nextMediaUrls[key] || '').trim())
+            .filter(Boolean),
+        )
+        const emptySlots = slotsByKind[kind].filter((key) => !(nextMediaUrls[key] || '').trim())
+        const uniqueSelected = Array.from(new Set(availableByKind[kind]))
+        const candidates = uniqueSelected.filter((url) => !existingValues.has(url))
+        candidates.forEach((url) => {
+          const targetKey = emptySlots.shift()
+          if (!targetKey) {
+            overflowCount += 1
+            return
+          }
+          nextMediaUrls[targetKey] = url
+        })
       })
-      overflowCount = availableByKind.image.length + availableByKind.video.length
+
+      const fittedCount = selectedReferenceLibraryUrls.length - overflowCount
       return {
         ...current,
         mediaUrls: nextMediaUrls,
         statusText: overflowCount > 0
-          ? `Selected ${selectedReferenceLibraryUrls.length} references, but only ${referenceFields.length} fit this workflow.`
-          : 'References updated from library.',
+          ? `${fittedCount} of ${selectedReferenceLibraryUrls.length} selected references fit this workflow (${overflowCount} skipped).`
+          : 'References added from library.',
       }
     })
-    setIsReferenceLibraryDialogOpen(false)
+    closeReferenceLibraryDialog()
   }
 
   const handleReferenceLibraryUpload = async (files: FileList | null) => {
@@ -3663,7 +4143,11 @@ export default function ToorGenPromptWorkbench() {
     const uploadedUrls: string[] = []
     try {
       for (const file of selectedFiles) {
-        const kind: MediaKind = file.type.startsWith('video/') ? 'video' : 'image'
+        const kind: MediaKind = file.type.startsWith('video/')
+          ? 'video'
+          : file.type.startsWith('audio/') || /\.(mp3|wav)$/i.test(file.name)
+            ? 'audio'
+            : 'image'
         const url = await uploadFile(file, kind)
         appendToMediaLibrary(kind, url, file.name)
         uploadedUrls.push(url)
@@ -4083,15 +4567,54 @@ export default function ToorGenPromptWorkbench() {
     }
   }, [historyViewMode, railPreviewSelectionId, selectedRailItem, historyRailItems])
 
+  const clearOverlayAutoHideTimer = useCallback(() => {
+    if (overlayAutoHideTimerRef.current !== null) {
+      window.clearTimeout(overlayAutoHideTimerRef.current)
+      overlayAutoHideTimerRef.current = null
+    }
+  }, [])
+
+  const armOverlayAutoHideTimer = useCallback((scopeId: string) => {
+    clearOverlayAutoHideTimer()
+    overlayAutoHideTimerRef.current = window.setTimeout(() => {
+      if (overlayHoverScopeIdRef.current === scopeId) {
+        setIsOverlayIdle(true)
+      }
+    }, OVERLAY_AUTO_HIDE_IDLE_MS)
+  }, [clearOverlayAutoHideTimer])
+
+  const refreshOverlayScopeActivity = useCallback((scopeId: string) => {
+    overlayHoverScopeIdRef.current = scopeId
+    setOverlayHoverScopeId(scopeId)
+    setIsOverlayIdle(false)
+    armOverlayAutoHideTimer(scopeId)
+  }, [armOverlayAutoHideTimer])
+
+  const clearOverlayScopeActivity = useCallback((scopeId: string) => {
+    if (overlayHoverScopeIdRef.current !== scopeId) {
+      return
+    }
+    clearOverlayAutoHideTimer()
+    overlayHoverScopeIdRef.current = ''
+    setOverlayHoverScopeId('')
+    setIsOverlayIdle(false)
+  }, [clearOverlayAutoHideTimer])
+
+  const resolveCardPreviewVideo = (element: HTMLElement) => {
+    const node = element.querySelector('video.lab-history-thumb')
+    return node instanceof HTMLVideoElement ? node : null
+  }
+
   const stopHistoryThumbPlayback = (element: HTMLVideoElement) => {
     element.pause()
     element.muted = true
+    element.loop = false
     element.dataset.hoverActive = '0'
   }
 
-  const handleVideoCardHoverStart = (event: MouseEvent<HTMLVideoElement>) => {
-    const element = event.currentTarget
+  const startHistoryThumbPlayback = (element: HTMLVideoElement) => {
     element.dataset.hoverActive = '1'
+    element.loop = true
     element.muted = false
     element.volume = 1
     const playAttempt = element.play()
@@ -4106,15 +4629,64 @@ export default function ToorGenPromptWorkbench() {
     }
   }
 
+  const handleVideoCardHoverStart = (event: MouseEvent<HTMLVideoElement>) => {
+    startHistoryThumbPlayback(event.currentTarget)
+  }
+
+  const handleOverlayScopePointerEnter = (event: MouseEvent<HTMLDivElement>) => {
+    const scopeId = event.currentTarget.dataset.overlayScopeId
+    if (!scopeId) {
+      return
+    }
+    refreshOverlayScopeActivity(scopeId)
+    if (event.currentTarget.classList.contains('lab-history-video-stage')) {
+      const video = resolveCardPreviewVideo(event.currentTarget)
+      if (video) {
+        startHistoryThumbPlayback(video)
+      }
+    }
+  }
+
+  const handleOverlayScopePointerMove = (event: MouseEvent<HTMLDivElement>) => {
+    const scopeId = event.currentTarget.dataset.overlayScopeId
+    if (!scopeId) {
+      return
+    }
+    refreshOverlayScopeActivity(scopeId)
+  }
+
   const handleVideoCardHoverEnd = (event: MouseEvent<HTMLVideoElement>) => {
+    const nextTarget = event.relatedTarget
+    if (nextTarget instanceof Node) {
+      const hoverScope = event.currentTarget.closest('.lab-history-video-stage, .lab-history-rail-preview-video-wrap')
+      if (hoverScope?.contains(nextTarget)) {
+        return
+      }
+    }
     stopHistoryThumbPlayback(event.currentTarget)
   }
 
-  const handleHistoryCardPointerLeave = (event: MouseEvent<HTMLDivElement>) => {
-    const element = event.currentTarget.querySelector('video')
-    if (!element) return
-    stopHistoryThumbPlayback(element)
+  const handleOverlayScopePointerLeave = (event: MouseEvent<HTMLDivElement>) => {
+    const scopeId = event.currentTarget.dataset.overlayScopeId
+    if (!scopeId) {
+      return
+    }
+    clearOverlayScopeActivity(scopeId)
+    if (event.currentTarget.classList.contains('lab-history-video-stage')) {
+      const element = resolveCardPreviewVideo(event.currentTarget)
+      if (element) {
+        stopHistoryThumbPlayback(element)
+      }
+    }
   }
+
+  const isOverlayIdleForScope = (scopeId: string) => overlayHoverScopeId === scopeId && isOverlayIdle
+
+  useEffect(() => {
+    return () => {
+      clearOverlayAutoHideTimer()
+    }
+  }, [clearOverlayAutoHideTimer])
 
   useEffect(() => {
     const stopAllHistoryPreviews = () => {
@@ -4173,19 +4745,46 @@ export default function ToorGenPromptWorkbench() {
     }
   }
 
-  const handleCopyVideoRequestJson = async () => {
-    const requestPayload = videoDialogState?.details?.requestPayload
-    if (!requestPayload) {
-      return
+  const handleAudioCardHoverStart = (event: MouseEvent<HTMLElement>) => {
+    const element = event.currentTarget.querySelector('audio')
+    if (!(element instanceof HTMLAudioElement)) return
+    element.dataset.hoverActive = '1'
+    element.muted = false
+    element.volume = 1
+    try {
+      element.currentTime = 0
+    } catch {
+      // Ignore seek failures on remote media.
     }
+    const playAttempt = element.play()
+    if (playAttempt) {
+      playAttempt.catch(() => {
+        if (element.dataset.hoverActive !== '1') return
+        element.muted = true
+        void element.play().catch(() => {})
+      })
+    }
+  }
 
-    const payloadText = JSON.stringify(requestPayload, null, 2)
+  const handleAudioCardHoverEnd = (event: MouseEvent<HTMLElement>) => {
+    const element = event.currentTarget.querySelector('audio')
+    if (!(element instanceof HTMLAudioElement)) return
+    element.dataset.hoverActive = '0'
+    element.pause()
+    try {
+      element.currentTime = 0
+    } catch {
+      // Ignore reset failures on remote media.
+    }
+  }
+
+  const copyTextToClipboard = async (value: string): Promise<boolean> => {
     try {
       if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(payloadText)
+        await navigator.clipboard.writeText(value)
       } else {
         const textArea = document.createElement('textarea')
-        textArea.value = payloadText
+        textArea.value = value
         textArea.setAttribute('readonly', 'true')
         textArea.style.position = 'fixed'
         textArea.style.left = '-9999px'
@@ -4194,10 +4793,30 @@ export default function ToorGenPromptWorkbench() {
         document.execCommand('copy')
         document.body.removeChild(textArea)
       }
-      setIsVideoRequestCopied(true)
+      return true
     } catch {
-      setIsVideoRequestCopied(false)
+      return false
     }
+  }
+
+  const handleCopyAudioLibraryUrl = async (itemId: string, url: string) => {
+    const copied = await copyTextToClipboard(url)
+    setCopiedAudioLibraryItemId(copied ? itemId : '')
+    if (!copied) return
+    window.setTimeout(() => {
+      setCopiedAudioLibraryItemId((current) => (current === itemId ? '' : current))
+    }, 1400)
+  }
+
+  const handleCopyVideoRequestJson = async () => {
+    const requestPayload = videoDialogState?.details?.requestPayload
+    if (!requestPayload) {
+      return
+    }
+
+    const payloadText = JSON.stringify(requestPayload, null, 2)
+    const copied = await copyTextToClipboard(payloadText)
+    setIsVideoRequestCopied(copied)
   }
 
   useEffect(() => {
@@ -4216,6 +4835,12 @@ export default function ToorGenPromptWorkbench() {
     if (!videoDialogState) return ''
     return videoDialogState.details?.sourceUrl?.trim() || videoDialogState.playbackUrl.trim()
   }, [videoDialogState])
+
+  const videoDialogHistoryEntry = useMemo(() => {
+    const historyId = videoDialogState?.details?.historyId
+    if (!historyId) return null
+    return history.find((entry) => entry.historyId === historyId) || null
+  }, [history, videoDialogState?.details?.historyId])
 
   const visibleCapturedFrames = useMemo(
     () => capturedFrames.filter((frame) => frame.sourceKey === videoDialogSourceKey),
@@ -4381,6 +5006,188 @@ export default function ToorGenPromptWorkbench() {
     triggerUrlDownload(playbackUrl, buildVideoFileName(title || 'video'))
   }, [triggerUrlDownload])
 
+  const toggleHistoryVideoLike = useCallback(async (historyId: string) => {
+    let updatedEntry: GenerationHistoryEntry | null = null
+
+    setHistory((current) => {
+      const next = current.map((entry) => {
+        if (entry.historyId !== historyId) return entry
+        const updated: GenerationHistoryEntry = {
+          ...entry,
+          isLiked: !entry.isLiked,
+        }
+        updatedEntry = updated
+        return updated
+      })
+
+      safeSetLocalStorage(LOCAL_HISTORY_STORAGE_KEY, JSON.stringify(next))
+      return next
+    })
+
+    if (!updatedEntry) return
+
+    try {
+      await saveHistoryToFirestore(updatedEntry)
+    } catch {
+      // Keep local like state if Firestore sync fails.
+    }
+  }, [])
+
+  const handleSaveVideoToAssetsLibrary = useCallback(async (
+    sourceUrl: string,
+    title: string,
+    historyId?: string,
+  ) => {
+    const resolvedSourceUrl = resolveProxySourceUrl(sourceUrl)
+    const playableSourceUrl = toPlayableVideoSourceUrl(resolvedSourceUrl)
+    if (!playableSourceUrl) {
+      pushVideoDialogNotice('No playable source URL was found for Firebase save.')
+      return
+    }
+
+    const saveKey = historyId || '__dialog__'
+    const nextHistoryId = historyId || `manual-${Date.now()}`
+    setSavingVideoToAssetsHistoryId(saveKey)
+    try {
+      const saved = await saveGeneratedVideoToFirebase(playableSourceUrl, nextHistoryId)
+      appendToMediaLibrary('video', saved.firebaseUrl, title || 'generated video')
+
+      if (historyId) {
+        let updatedEntry: GenerationHistoryEntry | null = null
+        setHistory((current) => {
+          const next = current.map((entry) => {
+            if (entry.historyId !== historyId) {
+              return entry
+            }
+            const updated: GenerationHistoryEntry = {
+              ...entry,
+              resultUrl: saved.firebaseUrl,
+              firebaseVideoUrl: saved.firebaseUrl,
+              storageSaveError: '',
+            }
+            updatedEntry = updated
+            return updated
+          })
+          safeSetLocalStorage(LOCAL_HISTORY_STORAGE_KEY, JSON.stringify(next))
+          return next
+        })
+
+        if (updatedEntry) {
+          try {
+            await saveHistoryToFirestore(updatedEntry)
+          } catch {
+            // Keep local update even if Firestore sync fails.
+          }
+        }
+      }
+
+      setVideoDialogState((current) => {
+        if (!current) return current
+        if (historyId && current.details?.historyId && current.details.historyId !== historyId) {
+          return current
+        }
+        return {
+          ...current,
+          playbackUrl: getPlaybackUrl(saved.firebaseUrl),
+          details: current.details
+            ? {
+                ...current.details,
+                sourceUrl: saved.firebaseUrl,
+              }
+            : current.details,
+        }
+      })
+
+      pushVideoDialogNotice('Video uploaded to Firebase and added to Assets Library.')
+    } catch (error) {
+      pushVideoDialogNotice((error as Error).message || 'Could not save video to Firebase.')
+    } finally {
+      setSavingVideoToAssetsHistoryId('')
+    }
+  }, [appendToMediaLibrary, pushVideoDialogNotice])
+
+  useEffect(() => {
+    history.forEach((entry) => {
+      if (!entry.historyId) return
+      if (entry.firebaseVideoUrl) return
+      if (!entry.storageSaveError) return
+
+      const source = toPlayableVideoSourceUrl(resolveProxySourceUrl(entry.resultUrl || ''))
+      if (!source) return
+
+      const attempts = remoteCopyRetryAttemptsRef.current[entry.historyId] || 0
+      if (attempts >= MAX_AUTO_REMOTE_COPY_RETRIES) return
+      if (remoteCopyRetryInFlightRef.current[entry.historyId]) return
+      if (remoteCopyRetryTimeoutsRef.current[entry.historyId]) return
+
+      remoteCopyRetryTimeoutsRef.current[entry.historyId] = window.setTimeout(() => {
+        delete remoteCopyRetryTimeoutsRef.current[entry.historyId]
+        remoteCopyRetryInFlightRef.current[entry.historyId] = true
+        remoteCopyRetryAttemptsRef.current[entry.historyId] = attempts + 1
+
+        void (async () => {
+          try {
+            const saved = await saveGeneratedVideoToFirebase(source, entry.historyId)
+
+            let updatedEntry: GenerationHistoryEntry | null = null
+            setHistory((current) => {
+              const next = current.map((item) => {
+                if (item.historyId !== entry.historyId) {
+                  return item
+                }
+                const updated: GenerationHistoryEntry = {
+                  ...item,
+                  resultUrl: saved.firebaseUrl,
+                  firebaseVideoUrl: saved.firebaseUrl,
+                  storageSaveError: '',
+                }
+                updatedEntry = updated
+                return updated
+              })
+              safeSetLocalStorage(LOCAL_HISTORY_STORAGE_KEY, JSON.stringify(next))
+              return next
+            })
+
+            if (updatedEntry) {
+              try {
+                await saveHistoryToFirestore(updatedEntry)
+              } catch {
+                // Keep local update even if Firestore sync fails.
+              }
+            }
+
+            setVideoDialogState((current) => {
+              if (!current?.details?.historyId || current.details.historyId !== entry.historyId) {
+                return current
+              }
+              return {
+                ...current,
+                playbackUrl: getPlaybackUrl(saved.firebaseUrl),
+                details: {
+                  ...current.details,
+                  sourceUrl: saved.firebaseUrl,
+                },
+              }
+            })
+          } catch {
+            // Keep the existing error state; manual Save to Assets is still available.
+          } finally {
+            remoteCopyRetryInFlightRef.current[entry.historyId] = false
+          }
+        })()
+      }, AUTO_REMOTE_COPY_RETRY_DELAY_MS)
+    })
+  }, [history])
+
+  useEffect(() => {
+    return () => {
+      Object.values(remoteCopyRetryTimeoutsRef.current).forEach((timeoutId) => {
+        window.clearTimeout(timeoutId)
+      })
+      remoteCopyRetryTimeoutsRef.current = {}
+    }
+  }, [])
+
   const handleHistoryVideoLoadError = (event: SyntheticEvent<HTMLVideoElement>) => {
     const element = event.currentTarget
     const fallbackPlaybackUrl = element.dataset.fallbackPlaybackUrl || ''
@@ -4462,18 +5269,22 @@ export default function ToorGenPromptWorkbench() {
   }, [pushVideoDialogNotice])
 
   const updatePromptMentionState = (nextText: string, cursor: number | null) => {
-    if (cursor === null || cursor < 0) {
-      setPromptMentionQuery(null)
-      return
-    }
-    setPromptMentionQuery(extractMentionQuery(nextText, cursor))
+    startTransition(() => {
+      if (cursor === null || cursor < 0) {
+        setPromptMentionQuery(null)
+        return
+      }
+      setPromptMentionQuery(extractMentionQuery(nextText, cursor))
+    })
   }
 
   const handlePromptChange = (nextPrompt: string, cursor: number | null) => {
-    updateModeState(activeTab.id, (current) => ({
-      ...current,
-      prompt: nextPrompt,
-    }))
+    startTransition(() => {
+      updateModeState(activeTab.id, (current) => ({
+        ...current,
+        prompt: nextPrompt,
+      }))
+    })
     updatePromptMentionState(nextPrompt, cursor)
   }
 
@@ -4575,6 +5386,27 @@ export default function ToorGenPromptWorkbench() {
                 >
                   {isVideoDownloading ? 'Saving...' : 'Save Video'}
                 </button>
+                <button
+                  type="button"
+                  className="lab-secondary-btn"
+                  onClick={() => {
+                    const source = videoDialogState.details?.sourceUrl || videoDialogState.playbackUrl
+                    void handleSaveVideoToAssetsLibrary(source, videoDialogState.title, videoDialogState.details?.historyId)
+                  }}
+                  disabled={!(videoDialogState.details?.sourceUrl || videoDialogState.playbackUrl) || savingVideoToAssetsHistoryId === (videoDialogState.details?.historyId || '__dialog__')}
+                >
+                  {savingVideoToAssetsHistoryId === (videoDialogState.details?.historyId || '__dialog__') ? 'Uploading...' : 'Save to Assets'}
+                </button>
+                {videoDialogHistoryEntry && (
+                  <button
+                    type="button"
+                    className="lab-secondary-btn"
+                    onClick={() => { void toggleHistoryVideoLike(videoDialogHistoryEntry.historyId) }}
+                    title={videoDialogHistoryEntry.isLiked ? 'Unlike this run' : 'Like this run'}
+                  >
+                    {videoDialogHistoryEntry.isLiked ? 'Unlike' : 'Like'}
+                  </button>
+                )}
                 <button
                   type="button"
                   className="lab-secondary-btn"
@@ -4833,7 +5665,7 @@ export default function ToorGenPromptWorkbench() {
       )}
 
       {isReferenceLibraryDialogOpen && (
-        <div className="lab-library-dialog-backdrop" role="dialog" aria-modal="true" aria-label="Reference library" onClick={() => setIsReferenceLibraryDialogOpen(false)}>
+        <div className="lab-library-dialog-backdrop" role="dialog" aria-modal="true" aria-label="Reference library" onClick={() => closeReferenceLibraryDialog()}>
           <div className="lab-library-dialog" onClick={(event) => event.stopPropagation()}>
             <div className="lab-library-dialog-head">
               <strong>Reference Library</strong>
@@ -4842,7 +5674,7 @@ export default function ToorGenPromptWorkbench() {
                 <button type="button" className="lab-secondary-btn" onClick={() => referenceLibraryUploadInputRef.current?.click()}>
                   {isReferenceLibraryUploading ? 'Uploading...' : 'Upload'}
                 </button>
-                <button type="button" className="lab-secondary-btn" onClick={() => setIsReferenceLibraryDialogOpen(false)}>
+                <button type="button" className="lab-secondary-btn" onClick={() => closeReferenceLibraryDialog()}>
                   Close
                 </button>
               </div>
@@ -4857,6 +5689,9 @@ export default function ToorGenPromptWorkbench() {
               </button>
               <button type="button" className={`lab-secondary-btn${referenceLibraryFilter === 'video' ? ' lab-view-mode-btn--active' : ''}`} onClick={() => setReferenceLibraryFilter('video')}>
                 Videos
+              </button>
+              <button type="button" className={`lab-secondary-btn${referenceLibraryFilter === 'audio' ? ' lab-view-mode-btn--active' : ''}`} onClick={() => setReferenceLibraryFilter('audio')}>
+                Audio
               </button>
             </div>
 
@@ -4875,15 +5710,19 @@ export default function ToorGenPromptWorkbench() {
               {filteredReferenceLibrary.map((item) => {
                 const isSelected = selectedReferenceLibraryUrls.includes(item.url)
                 const isVideo = item.kind === 'video'
+                const isAudio = item.kind === 'audio'
                 return (
                   <div
                     key={item.id}
-                    className={`lab-library-item${isSelected ? ' is-selected' : ''}${isVideo ? ' is-video' : ''}`}
+                    className={`lab-library-item${isSelected ? ' is-selected' : ''}${isVideo ? ' is-video' : ''}${isAudio ? ' is-audio' : ''}`}
                   >
                     <button
                       type="button"
                       className="lab-library-item-select"
                       onClick={() => toggleReferenceLibrarySelection(item.url)}
+                      onContextMenu={(event) => openLibraryContextMenu(event, item)}
+                      onMouseEnter={isAudio ? handleAudioCardHoverStart : undefined}
+                      onMouseLeave={isAudio ? handleAudioCardHoverEnd : undefined}
                     >
                       {isVideo ? (
                         <>
@@ -4899,16 +5738,38 @@ export default function ToorGenPromptWorkbench() {
                           />
                           <span className="lab-library-play-badge" aria-hidden="true">▶</span>
                         </>
+                      ) : isAudio ? (
+                        <>
+                          <div className="lab-library-thumb lab-library-thumb--audio" aria-hidden="true">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                          </div>
+                          <audio src={item.url} className="lab-audio-hover-player" preload="metadata" />
+                        </>
                       ) : (
                         <img src={item.url} alt={item.name} className="lab-library-thumb" />
                       )}
                     </button>
-                    <input
-                      className="lab-library-item-name"
-                      value={item.name}
-                      onChange={(event) => renameMediaLibraryItem(item.id, event.target.value)}
-                      aria-label="Asset name"
-                    />
+                    <div className="lab-library-item-foot">
+                      <input
+                        className="lab-library-item-name"
+                        value={item.name}
+                        onChange={(event) => renameMediaLibraryItem(item.id, event.target.value)}
+                        aria-label="Asset name"
+                      />
+                      {isAudio ? (
+                        <button
+                          type="button"
+                          className="lab-library-copy-url-btn"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            void handleCopyAudioLibraryUrl(item.id, item.url)
+                          }}
+                          title="Copy audio URL"
+                        >
+                          {copiedAudioLibraryItemId === item.id ? 'Copied' : 'Copy URL'}
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                 )
               })}
@@ -4921,7 +5782,7 @@ export default function ToorGenPromptWorkbench() {
               multiple
               aria-label="Upload references"
               title="Upload references"
-              accept="image/*,video/*"
+              accept="image/*,video/*,.mp3,.wav,audio/mpeg,audio/wav,audio/x-wav"
               onChange={(event) => {
                 void handleReferenceLibraryUpload(event.target.files)
                 event.target.value = ''
@@ -4929,16 +5790,88 @@ export default function ToorGenPromptWorkbench() {
             />
 
             <div className="lab-library-dialog-footer">
-              <button type="button" className="lab-secondary-btn" onClick={() => setIsReferenceLibraryDialogOpen(false)}>
+              <button type="button" className="lab-secondary-btn" onClick={() => closeReferenceLibraryDialog()}>
                 Cancel
               </button>
               <button type="button" className="lab-primary-btn" onClick={applyReferenceLibrarySelection}>
                 Confirm {selectedReferenceLibraryUrls.length > 0 ? `(${selectedReferenceLibraryUrls.length})` : ''}
               </button>
             </div>
+
+            {libraryContextMenu ? (
+              <div
+                className="lab-library-context-menu"
+                style={{ left: Math.max(8, Math.min(libraryContextMenu.x, window.innerWidth - 170)), top: Math.max(8, Math.min(libraryContextMenu.y, window.innerHeight - 120)) }}
+                onClick={(event) => event.stopPropagation()}
+              >
+                {libraryContextMenu.item.kind === 'image' || libraryContextMenu.item.kind === 'video' ? (
+                  <button
+                    type="button"
+                    className="lab-library-context-menu-btn"
+                    onClick={() => {
+                      setLibraryPreviewItem(libraryContextMenu.item)
+                      setLibraryContextMenu(null)
+                    }}
+                  >
+                    Preview
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="lab-library-context-menu-btn is-danger"
+                  onClick={() => {
+                    setPendingLibraryDeleteItem(libraryContextMenu.item)
+                    setLibraryContextMenu(null)
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
+            ) : null}
           </div>
         </div>
       )}
+
+      {libraryPreviewItem ? (
+        <div className="lab-video-dialog-backdrop lab-video-dialog-backdrop--front" role="dialog" aria-modal="true" aria-label="Library preview" onClick={() => setLibraryPreviewItem(null)}>
+          <div className="lab-library-preview-dialog" onClick={(event) => event.stopPropagation()}>
+            <div className="lab-quick-dialog-head">
+              <strong>{libraryPreviewItem.name || 'Reference Preview'}</strong>
+              <button type="button" className="lab-secondary-btn" onClick={() => setLibraryPreviewItem(null)}>Close</button>
+            </div>
+            {libraryPreviewItem.kind === 'video' ? (
+              <video src={getPlaybackUrl(libraryPreviewItem.url)} className="lab-library-preview-media" controls autoPlay playsInline />
+            ) : (
+              <img src={libraryPreviewItem.url} alt={libraryPreviewItem.name} className="lab-library-preview-media" />
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      {pendingLibraryDeleteItem ? (
+        <div className="lab-video-dialog-backdrop lab-video-dialog-backdrop--front" role="dialog" aria-modal="true" aria-label="Confirm delete" onClick={() => setPendingLibraryDeleteItem(null)}>
+          <div className="lab-quick-dialog" onClick={(event) => event.stopPropagation()}>
+            <div className="lab-quick-dialog-head">
+              <strong>Delete library item?</strong>
+              <button type="button" className="lab-secondary-btn" onClick={() => setPendingLibraryDeleteItem(null)}>Close</button>
+            </div>
+            <div className="lab-details-copy">Delete "{pendingLibraryDeleteItem.name || pendingLibraryDeleteItem.kind}" from Reference Library?</div>
+            <div className="lab-inline-actions lab-inline-actions--compact">
+              <button type="button" className="lab-secondary-btn" onClick={() => setPendingLibraryDeleteItem(null)}>Cancel</button>
+              <button
+                type="button"
+                className="lab-primary-btn"
+                onClick={() => {
+                  removeMediaLibraryItem(pendingLibraryDeleteItem)
+                  setPendingLibraryDeleteItem(null)
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {isPromptTemplateDialogOpen && (
         <div className="lab-video-dialog-backdrop" role="dialog" aria-modal="true" aria-label="Prompt template" onClick={() => setIsPromptTemplateDialogOpen(false)}>
@@ -5296,6 +6229,16 @@ export default function ToorGenPromptWorkbench() {
                 </button>
                 <button
                   type="button"
+                  className={`lab-secondary-btn${isLikedOnlyFilter ? ' lab-view-mode-btn--active' : ''}`}
+                  onClick={() => {
+                    setIsLikedOnlyFilter((current) => !current)
+                    setHistoryDisplayLimit(10)
+                  }}
+                >
+                  {isLikedOnlyFilter ? 'Liked Only' : 'All Runs'}
+                </button>
+                <button
+                  type="button"
                   className="lab-secondary-btn"
                   onClick={() => void handleRefreshGenerations()}
                   disabled={isRefreshingRuns}
@@ -5386,9 +6329,9 @@ export default function ToorGenPromptWorkbench() {
               <div className="lab-status">{activeState.statusText}</div>
             )}
 
-            {historyViewMode === 'cards' && activeTabHistory.length === 0 && !hasActiveOutputPreview && activePendingGenerations.length === 0 && (
+            {historyViewMode === 'cards' && filteredTabHistory.length === 0 && !hasActiveOutputPreview && activePendingGenerations.length === 0 && (
               <div className="lab-empty-state">
-                No saved runs for this workflow yet.
+                {isLikedOnlyFilter ? 'No liked runs for this workflow yet.' : 'No saved runs for this workflow yet.'}
               </div>
             )}
 
@@ -5396,7 +6339,13 @@ export default function ToorGenPromptWorkbench() {
               <div className="lab-history-card-grid">
                 {activePendingGenerations.map((pending) => (
                   <article key={pending.id} className="lab-history-video-card lab-history-video-card--pending">
-                    <div className="lab-history-video-stage" onMouseLeave={handleHistoryCardPointerLeave}>
+                    <div
+                      className={`lab-history-video-stage${isOverlayIdleForScope(`pending-${pending.id}`) ? ' is-overlay-idle' : ''}`}
+                      data-overlay-scope-id={`pending-${pending.id}`}
+                      onMouseEnter={handleOverlayScopePointerEnter}
+                      onMouseMove={handleOverlayScopePointerMove}
+                      onMouseLeave={handleOverlayScopePointerLeave}
+                    >
                       <div className="lab-history-video-visual lab-history-video-visual--pending">
                         <div className="lab-history-thumb lab-history-thumb--pending">
                           <span className="lab-pending-spinner" aria-hidden="true" />
@@ -5448,7 +6397,13 @@ export default function ToorGenPromptWorkbench() {
 
                 {hasActiveOutputPreview && !activeOutputAlreadySaved && (
                   <article className="lab-history-video-card lab-history-video-card--output">
-                    <div className="lab-history-video-stage" onMouseLeave={handleHistoryCardPointerLeave}>
+                    <div
+                      className={`lab-history-video-stage${isOverlayIdleForScope('active-output') ? ' is-overlay-idle' : ''}`}
+                      data-overlay-scope-id="active-output"
+                      onMouseEnter={handleOverlayScopePointerEnter}
+                      onMouseMove={handleOverlayScopePointerMove}
+                      onMouseLeave={handleOverlayScopePointerLeave}
+                    >
                       <button type="button" className="lab-history-video-visual" aria-label="Open latest output details" onClick={() => openVideoDialog(activeOutputUrl, {
                         sourceUrl: activeOutputUrl,
                         prompt: activeState.prompt,
@@ -5468,6 +6423,7 @@ export default function ToorGenPromptWorkbench() {
                           data-fallback-playback-url=""
                           className="lab-history-thumb"
                           muted
+                          loop
                           playsInline
                           preload="metadata"
                           onMouseEnter={handleVideoCardHoverStart}
@@ -5476,6 +6432,20 @@ export default function ToorGenPromptWorkbench() {
                         />
                       </button>
                       <div className="lab-history-overlay-actions" role="group" aria-label="Latest output actions">
+                        {latestTabHistory?.historyId && (
+                          <button
+                            type="button"
+                            className={`lab-history-overlay-btn${latestTabHistory.isLiked ? ' is-liked' : ''}`}
+                            aria-label={latestTabHistory.isLiked ? 'Unlike video' : 'Like video'}
+                            title={latestTabHistory.isLiked ? 'Unlike' : 'Like'}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              void toggleHistoryVideoLike(latestTabHistory.historyId)
+                            }}
+                          >
+                            <Heart size={13} strokeWidth={1.8} fill={latestTabHistory.isLiked ? 'currentColor' : 'none'} aria-hidden="true" />
+                          </button>
+                        )}
                         <button
                           type="button"
                           className="lab-history-overlay-btn"
@@ -5518,7 +6488,7 @@ export default function ToorGenPromptWorkbench() {
                   </article>
                 )}
 
-                {activeTabHistory.slice(0, historyDisplayLimit).map((entry) => {
+                {filteredTabHistory.slice(0, historyDisplayLimit).map((entry) => {
                   const sources = resolvePrimaryAndFallbackVideoSources(entry.firebaseVideoUrl || '', entry.resultUrl || '')
                   const displayUrl = sources.primary
                   const hasPlayablePreview = Boolean(displayUrl)
@@ -5544,9 +6514,16 @@ export default function ToorGenPromptWorkbench() {
                     receivedAt: entry.receivedAt,
                     generationMs: entry.generationMs,
                   }
+                  const historyScopeId = `history-${entry.historyId}`
                   return (
                     <article key={entry.historyId} className="lab-history-video-card">
-                      <div className="lab-history-video-stage" onMouseLeave={handleHistoryCardPointerLeave}>
+                      <div
+                        className={`lab-history-video-stage${isOverlayIdleForScope(historyScopeId) ? ' is-overlay-idle' : ''}`}
+                        data-overlay-scope-id={historyScopeId}
+                        onMouseEnter={handleOverlayScopePointerEnter}
+                        onMouseMove={handleOverlayScopePointerMove}
+                        onMouseLeave={handleOverlayScopePointerLeave}
+                      >
                         {hasPlayablePreview ? (
                           <button type="button" className="lab-history-video-visual" aria-label={`Open details for ${formatTimestamp(entry.completedAt)}`} onClick={() => openVideoDialog(displayUrl, dialogDetails)}>
                             <video
@@ -5554,6 +6531,7 @@ export default function ToorGenPromptWorkbench() {
                               data-fallback-playback-url={fallbackPlaybackUrl}
                               className="lab-history-thumb"
                               muted
+                              loop
                               playsInline
                               preload="metadata"
                               onMouseEnter={handleVideoCardHoverStart}
@@ -5592,6 +6570,18 @@ export default function ToorGenPromptWorkbench() {
                           </button>
                           <button
                             type="button"
+                            className={`lab-history-overlay-btn${entry.isLiked ? ' is-liked' : ''}`}
+                            aria-label={entry.isLiked ? 'Unlike video' : 'Like video'}
+                            title={entry.isLiked ? 'Unlike' : 'Like'}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              void toggleHistoryVideoLike(entry.historyId)
+                            }}
+                          >
+                            <Heart size={13} strokeWidth={1.8} fill={entry.isLiked ? 'currentColor' : 'none'} aria-hidden="true" />
+                          </button>
+                          <button
+                            type="button"
                             className="lab-history-overlay-btn"
                             aria-label="Load run settings"
                             title="Load"
@@ -5627,22 +6617,71 @@ export default function ToorGenPromptWorkbench() {
                           >
                             <Download size={13} strokeWidth={1.8} aria-hidden="true" />
                           </button>
+                          {!entry.firebaseVideoUrl && hasPlayablePreview && (
+                            <button
+                              type="button"
+                              className="lab-history-overlay-btn"
+                              aria-label="Save to assets library"
+                              title="Save to Assets"
+                              disabled={savingVideoToAssetsHistoryId === entry.historyId}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                void handleSaveVideoToAssetsLibrary(displayUrl, `run-${formatTimestamp(entry.completedAt)}`, entry.historyId)
+                              }}
+                            >
+                              <CloudUpload size={13} strokeWidth={1.8} aria-hidden="true" />
+                            </button>
+                          )}
                         </div>
                         {entry.storageSaveError && (
                           <span className="lab-history-overlay-note" title="Only available remotely">Remote only</span>
+                        )}
+                        {hasPlayablePreview && (
+                          <div className="lab-history-overlay-extend-actions" role="group" aria-label="Video generation actions">
+                            <button
+                              type="button"
+                              className="lab-video-action-btn lab-video-action-btn--extend-before"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                applyExtendActionToComposer(displayUrl, entry.resolution, 'before')
+                              }}
+                            >
+                              Extend Before
+                            </button>
+                            <button
+                              type="button"
+                              className="lab-video-action-btn lab-video-action-btn--regenerate"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                applyRegenerateActionToComposer(dialogDetails)
+                              }}
+                            >
+                              Regenerate
+                            </button>
+                            <button
+                              type="button"
+                              className="lab-video-action-btn lab-video-action-btn--extend-after"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                applyExtendActionToComposer(displayUrl, entry.resolution, 'after')
+                              }}
+                            >
+                              Extend After
+                            </button>
+                          </div>
                         )}
                       </div>
                     </article>
                   )
                 })}
-                {activeTabHistory.length > historyDisplayLimit && (
+                {filteredTabHistory.length > historyDisplayLimit && (
                   <div className="lab-history-load-more">
                     <button
                       type="button"
                       className="lab-secondary-btn"
                       onClick={() => setHistoryDisplayLimit((n) => n + 10)}
                     >
-                      Load more ({activeTabHistory.length - historyDisplayLimit} remaining)
+                      Load more ({filteredTabHistory.length - historyDisplayLimit} remaining)
                     </button>
                   </div>
                 )}
@@ -5653,19 +6692,59 @@ export default function ToorGenPromptWorkbench() {
               <div className="lab-history-rail-view">
                 {selectedRailItem ? (
                   <div className="lab-history-rail-preview">
-                    {selectedRailItem.isPending ? (
-                      <div className="lab-history-rail-preview-pending">
-                        <span className="lab-pending-spinner" aria-hidden="true" />
-                      </div>
-                    ) : (
-                      <video
-                        src={getPlaybackUrl(selectedRailItem.url)}
-                        className="lab-video"
-                        controls
-                        playsInline
-                        preload="metadata"
-                      />
-                    )}
+                    <div
+                      className={`lab-history-rail-preview-video-wrap${isOverlayIdleForScope(`rail-${selectedRailItem.id}`) ? ' is-overlay-idle' : ''}`}
+                      data-overlay-scope-id={`rail-${selectedRailItem.id}`}
+                      onMouseEnter={handleOverlayScopePointerEnter}
+                      onMouseMove={handleOverlayScopePointerMove}
+                      onMouseLeave={handleOverlayScopePointerLeave}
+                    >
+                      {selectedRailItem.isPending ? (
+                        <div className="lab-history-rail-preview-pending">
+                          <span className="lab-pending-spinner" aria-hidden="true" />
+                        </div>
+                      ) : (
+                        <video
+                          src={getPlaybackUrl(selectedRailItem.url)}
+                          className="lab-video"
+                          controls
+                          loop
+                          playsInline
+                          preload="metadata"
+                        />
+                      )}
+                      {!selectedRailItem.isPending && (
+                        <div className="lab-history-overlay-extend-actions lab-history-overlay-extend-actions--rail" role="group" aria-label="Video generation actions">
+                          <button
+                            type="button"
+                            className="lab-video-action-btn lab-video-action-btn--extend-before"
+                            onClick={() => {
+                              applyExtendActionToComposer(selectedRailItem.url, selectedRailItem.details?.resolution, 'before')
+                            }}
+                          >
+                            Extend Before
+                          </button>
+                          <button
+                            type="button"
+                            className="lab-video-action-btn lab-video-action-btn--regenerate"
+                            onClick={() => {
+                              applyRegenerateActionToComposer(selectedRailItem.details)
+                            }}
+                          >
+                            Regenerate
+                          </button>
+                          <button
+                            type="button"
+                            className="lab-video-action-btn lab-video-action-btn--extend-after"
+                            onClick={() => {
+                              applyExtendActionToComposer(selectedRailItem.url, selectedRailItem.details?.resolution, 'after')
+                            }}
+                          >
+                            Extend After
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     <div className="lab-history-video-meta">
                       <span className="lab-history-title">{selectedRailItem.title}</span>
                       <span className="lab-history-meta">{selectedRailItem.provider} • {selectedRailItem.model}</span>
@@ -5853,6 +6932,14 @@ export default function ToorGenPromptWorkbench() {
                   >
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
                   </button>
+                  <button
+                    type="button"
+                    className={`lab-ref-mode-btn${composerRefMode === 'audio' ? ' is-active' : ''}`}
+                    title="Audio references"
+                    onClick={() => setComposerRefMode('audio')}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                  </button>
                 </div>
                 <button
                   type="button"
@@ -5915,10 +7002,14 @@ export default function ToorGenPromptWorkbench() {
                 resolvedReferences={resolvedMentionReferences}
                 onChange={(value, offset) => {
                   handlePromptChange(value, offset)
-                  updatePromptMentionState(value, offset)
                 }}
                 onClick={(event) => updatePromptMentionState(activeState.prompt, getCaretOffset(event.currentTarget))}
-                onKeyUp={(event) => updatePromptMentionState(activeState.prompt, getCaretOffset(event.currentTarget))}
+                onKeyUp={(event) => {
+                  // Only update if it's a navigation key or if text didn't change (input handles text change)
+                  if (event.key.startsWith('Arrow') || event.key === 'Home' || event.key === 'End') {
+                    updatePromptMentionState(activeState.prompt, getCaretOffset(event.currentTarget))
+                  }
+                }}
                 onKeyDown={handlePromptMentionKeyDown}
                 onBlur={() => {
                   window.setTimeout(() => setPromptMentionQuery(null), 120)
@@ -5970,12 +7061,17 @@ export default function ToorGenPromptWorkbench() {
                       {(() => {
                         let imageIndex = 0
                         let videoIndex = 0
-                        const visibleFields = composerRefMode === 'image'
+                        let audioIndex = 0
+                        const visibleFields = (composerRefMode === 'image'
                           ? referenceFields.filter((f) => f.kind === 'image')
+                          : composerRefMode === 'audio'
+                            ? referenceFields.filter((f) => f.kind === 'audio')
                           : referenceFields
+                        ).filter((f) => (activeState.mediaUrls[f.key] || '').trim())
                         return visibleFields.map((field) => {
                           const value = (activeState.mediaUrls[field.key] || '').trim()
                           const isVideo = field.kind === 'video'
+                          const isAudio = field.kind === 'audio'
                           const isMentioned = Boolean(value) && mentionedReferenceUrls.has(value)
                           const isSelectableImage = (
                             activeTab.id === IMAGE_SINGLE_REFERENCE_MODE_ID
@@ -5990,16 +7086,22 @@ export default function ToorGenPromptWorkbench() {
                           )
                           if (isVideo) {
                             videoIndex += 1
+                          } else if (isAudio) {
+                            audioIndex += 1
                           } else {
                             imageIndex += 1
                           }
-                          const orderLabel = isVideo ? `Video ${videoIndex}` : `Image ${imageIndex}`
+                          const orderLabel = isVideo ? `Video ${videoIndex}` : isAudio ? `Audio ${audioIndex}` : `Image ${imageIndex}`
                           return (
                             <div
                               key={field.key}
                               className={`lab-reference-thumb-card${isMentioned ? ' is-mentioned' : ''}${isSelectedImage ? ' is-selected' : ''}${isSelectableImage ? ' is-selectable' : ''}`}
                               onMouseEnter={(e) => {
                                 if (!value) return
+                                if (isAudio) {
+                                  handleAudioCardHoverStart(e)
+                                  return
+                                }
                                 const rect = e.currentTarget.getBoundingClientRect()
                                 const top = rect.top - 160
                                 const left = rect.left + rect.width / 2 - 74
@@ -6009,7 +7111,13 @@ export default function ToorGenPromptWorkbench() {
                                 }
                                 setRefHoverPreview({ url: value, kind: isVideo ? 'video' : 'image' })
                               }}
-                              onMouseLeave={() => setRefHoverPreview(null)}
+                              onMouseLeave={(e) => {
+                                if (isAudio) {
+                                  handleAudioCardHoverEnd(e)
+                                  return
+                                }
+                                setRefHoverPreview(null)
+                              }}
                               onClick={() => {
                                 if (activeTab.id !== IMAGE_SINGLE_REFERENCE_MODE_ID) return
                                 if (field.kind !== 'image') return
@@ -6034,6 +7142,13 @@ export default function ToorGenPromptWorkbench() {
                                     />
                                     <span className="lab-reference-play-badge" aria-hidden="true">▶</span>
                                   </>
+                                ) : isAudio ? (
+                                  <>
+                                    <div className="lab-reference-thumb lab-reference-thumb--audio" aria-hidden="true">
+                                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                                    </div>
+                                    <audio src={value} className="lab-audio-hover-player" preload="metadata" />
+                                  </>
                                 ) : (
                                   <img src={value} alt={field.label} className="lab-reference-thumb" />
                                 )
@@ -6050,6 +7165,19 @@ export default function ToorGenPromptWorkbench() {
                               {isMentioned && (
                                 <span className="lab-reference-mentioned-badge" aria-label="Referenced in prompt">@</span>
                               )}
+                              {isAudio && value ? (
+                                <button
+                                  type="button"
+                                  className="lab-reference-thumb-copy"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    void handleCopyAudioLibraryUrl(field.key, value)
+                                  }}
+                                  title="Copy audio URL"
+                                >
+                                  {copiedAudioLibraryItemId === field.key ? 'Copied' : 'Copy'}
+                                </button>
+                              ) : null}
                               {pendingRemoveRefKey === field.key ? (
                                 <div className="lab-ref-remove-confirm">
                                   <span>Remove?</span>
@@ -6112,6 +7240,7 @@ export default function ToorGenPromptWorkbench() {
                         provider: selectedOption.provider,
                         atlasModel: selectedOption.provider === 'atlas' ? selectedOption.model : current.atlasModel,
                         byteplusModel: selectedOption.provider === 'byteplus' ? selectedOption.model : current.byteplusModel,
+                        grokModel: selectedOption.provider === 'grok' ? selectedOption.model : current.grokModel,
                       }))
                     }}
                   >

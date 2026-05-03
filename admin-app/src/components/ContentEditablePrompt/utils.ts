@@ -9,7 +9,7 @@ export const escapeRegex = (text: string): string => {
   return text.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
 };
 
-export const extractText = (node: Node): string => {
+export const extractText = (node: Node, isRoot = true): string => {
   if (node.nodeType === Node.TEXT_NODE) {
     return node.textContent || '';
   }
@@ -24,13 +24,13 @@ export const extractText = (node: Node): string => {
     if (el.nodeName === 'DIV') {
       let res = '';
       for (let i = 0; i < el.childNodes.length; i++) {
-        res += extractText(el.childNodes[i]);
+        res += extractText(el.childNodes[i], false);
       }
-      return '\n' + res;
+      return (isRoot ? '' : '\n') + res;
     }
     let res = '';
     for (let i = 0; i < el.childNodes.length; i++) {
-      res += extractText(el.childNodes[i]);
+      res += extractText(el.childNodes[i], false);
     }
     return res;
   }

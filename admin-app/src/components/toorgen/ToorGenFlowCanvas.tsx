@@ -33,7 +33,7 @@ export type ToorGenGenerationMode = 'text-to-video' | 'image-to-video' | 'video-
 export type ToorGenStoryContext = Record<string, unknown>
 export type ToorGenModel = 'seedance-2.0' | 'seedance-2.0-fast' | 'atlas-2.0' | 'seedance-api-2.0-fast' | 'seedance-1.5'
 export type ToorGenGenerationStatus = 'IDLE' | 'SUBMITTING' | 'IN_PROGRESS' | 'SUCCESS' | 'FAILED'
-export type ToorGenNodeKind = 'prompt' | 'image-reference' | 'video-reference' | 'generation'
+export type ToorGenNodeKind = 'prompt' | 'image-reference' | 'video-reference' | 'audio-reference' | 'generation'
 
 export type VideoReferenceRole = "source_frame" | "end_frame" | "character" | "location" | "style" | "moodboard" | "color" | "prop"
 export type VideoReference = {
@@ -80,6 +80,7 @@ export type ToorGenNodeData = {
   prompt?: string
   imageUrl?: string
   videoUrl?: string
+  audioUrl?: string
   description?: string
   imageUrls?: string[]
   imageRole?: VideoReferenceRole
@@ -267,11 +268,13 @@ const GENERATION_INPUT_SOCKET_RULES: Record<string, { label: string; accepts: st
   'input-3': { label: 'Video ref', accepts: 'Video references', acceptedKinds: ['video-reference'] },
   'input-4': { label: 'Direction', accepts: 'Prompt notes', acceptedKinds: ['prompt'] },
   'input-5': { label: 'Extend from', accepts: 'Generation nodes', acceptedKinds: ['generation'] },
+  'input-6': { label: 'Audio ref', accepts: 'Audio references', acceptedKinds: ['audio-reference'] },
 }
 
 function getDefaultGenerationSocketForKind(kind: ToorGenNodeKind): string {
   if (kind === 'image-reference') return 'input-2'
   if (kind === 'video-reference') return 'input-3'
+  if (kind === 'audio-reference') return 'input-6'
   if (kind === 'generation') return 'input-5'
   return 'input-1'
 }
@@ -283,6 +286,7 @@ function getNodePreviewSize(node: ToorGenCanvasNode): { width: number; height: n
   if (node.data.kind === 'prompt') return { width: 300, height: 205 }
   if (node.data.kind === 'image-reference') return { width: 320, height: 380 }
   if (node.data.kind === 'video-reference') return { width: 320, height: 285 }
+  if (node.data.kind === 'audio-reference') return { width: 320, height: 240 }
   return { width: 360, height: 330 }
 }
 
@@ -290,6 +294,7 @@ function getNodeSnippet(node: ToorGenCanvasNode): string {
   if (node.data.prompt?.trim()) return node.data.prompt.trim().slice(0, 96)
   if (node.data.description?.trim()) return node.data.description.trim().slice(0, 96)
   if (node.data.videoUrl?.trim()) return node.data.videoUrl.trim()
+  if (node.data.audioUrl?.trim()) return node.data.audioUrl.trim()
   if (node.data.imageUrl?.trim()) return node.data.imageUrl.trim()
   if (node.data.imageUrls?.length) return node.data.imageUrls[0]
   return ''
@@ -313,6 +318,10 @@ function createNode(kind: ToorGenNodeKind, position: { x: number; y: number }): 
       title: 'Video reference',
       description: 'Paste a video URL for motion, pacing, or composition reference.',
     },
+    'audio-reference': {
+      title: 'Audio reference',
+      description: 'Paste an audio URL or upload an MP3/WAV reference.',
+    },
     generation: {
       title: 'Generation',
       description: 'Connect prompt, image, and video references here, then generate.',
@@ -323,6 +332,7 @@ function createNode(kind: ToorGenNodeKind, position: { x: number; y: number }): 
     prompt: { width: 300, height: 205 },
     'image-reference': { width: 320, height: 380 },
     'video-reference': { width: 320, height: 285 },
+    'audio-reference': { width: 320, height: 240 },
     generation: { width: 360, height: 330 },
   }
 
@@ -423,9 +433,11 @@ function loadCollections(): ToorGenCollection[] {
 function stripLocalMediaFromNode(node: ToorGenCanvasNode): ToorGenCanvasNode {
   const imageUrl = node.data.imageUrl || ''
   const videoUrl = node.data.videoUrl || ''
+  const audioUrl = node.data.audioUrl || ''
   const shouldStripImage = LOCAL_MEDIA_PREFIX_PATTERN.test(imageUrl)
   const shouldStripVideo = LOCAL_MEDIA_PREFIX_PATTERN.test(videoUrl)
-  if (!shouldStripImage && !shouldStripVideo) return node
+  const shouldStripAudio = LOCAL_MEDIA_PREFIX_PATTERN.test(audioUrl)
+  if (!shouldStripImage && !shouldStripVideo && !shouldStripAudio) return node
 
   return {
     ...node,
@@ -433,6 +445,7 @@ function stripLocalMediaFromNode(node: ToorGenCanvasNode): ToorGenCanvasNode {
       ...node.data,
       ...(shouldStripImage ? { imageUrl: '' } : {}),
       ...(shouldStripVideo ? { videoUrl: '' } : {}),
+      ...(shouldStripAudio ? { audioUrl: '' } : {}),
       description: node.data.description || 'Local upload is available only in the current session. Paste a hosted URL to persist it.',
     },
   }
@@ -788,6 +801,7 @@ function buildGenerationRequest(params: {
   const promptNodes = connected.filter((node) => node.data.kind === 'prompt')
   const imageNodes = connected.filter((node) => node.data.kind === 'image-reference')
   const videoNodes = connected.filter((node) => node.data.kind === 'video-reference')
+  const audioNodes = connected.filter((node) => node.data.kind === 'audio-reference')
   const prompts = promptNodes
     .map((node) => node.data.prompt?.trim() || '')
     .filter(Boolean)
@@ -803,7 +817,10 @@ function buildGenerationRequest(params: {
     ...(params.fallbackExtraVideoUrls || []),
     ...videoNodes.map((node) => node.data.videoUrl?.trim() || ''),
   ].filter(Boolean)
-  const rawAudios = (params.fallbackAudioUrls || []).map((u) => u.trim()).filter(Boolean)
+  const rawAudios = [
+    ...(params.fallbackAudioUrls || []),
+    ...audioNodes.map((node) => node.data.audioUrl?.trim() || ''),
+  ].map((u) => u.trim()).filter(Boolean)
   const storyBible = params.storyBible?.trim() || DEFAULT_TOORGEN_STORY_BIBLE
   const characterCards = (params.characterCards || [])
     .map((card, index) => {
@@ -852,7 +869,24 @@ function buildGenerationRequest(params: {
   
   const videos = rawVideos.map(cleanMediaUrlForGeneration).filter(Boolean)
   const audios = rawAudios.map(cleanMediaUrlForGeneration).filter(Boolean).slice(0, 3)
-  const localMediaCount = [...rawImages, ...rawVideos].filter(isLocalMediaUrl).length
+  const localMediaCount = [...rawImages, ...rawVideos, ...rawAudios].filter(isLocalMediaUrl).length
+  const connectedAudioSources = audioNodes
+    .map((node, index) => ({
+      label: node.data.title?.trim() || `Audio reference ${index + 1}`,
+      nodeId: node.id,
+      url: cleanMediaUrlForGeneration(node.data.audioUrl || ''),
+    }))
+    .filter((entry) => Boolean(entry.url))
+  const fallbackAudioSources = (params.fallbackAudioUrls || [])
+    .map((value) => cleanMediaUrlForGeneration(value || ''))
+    .filter(Boolean)
+    .slice(0, 3)
+    .map((url, index) => ({
+      label: `Fallback audio ${index + 1}`,
+      nodeId: 'fallback',
+      url,
+    }))
+  const audioDiagnostics = [...connectedAudioSources, ...fallbackAudioSources]
   // Per-node overrides: if the generation node has its own duration/aspectRatio/model, use them.
   const generationNode = params.nodes.find((n) => n.id === params.generationNodeId)
   const effectiveDuration = generationNode?.data.nodeDuration ?? params.duration
@@ -915,6 +949,7 @@ function buildGenerationRequest(params: {
         imageUrl: summarizeMediaUrlForGraph(nodeImageUrls[0] || ''),
         imageUrls: nodeImageUrls.map((u) => summarizeMediaUrlForGraph(u)).filter(Boolean),
         videoUrl: summarizeMediaUrlForGraph(node.data.videoUrl || ''),
+        audioUrl: summarizeMediaUrlForGraph(node.data.audioUrl || ''),
         description: node.data.description || '',
       }
     }),
@@ -931,6 +966,11 @@ function buildGenerationRequest(params: {
       aspectRatio: effectiveAspectRatio,
       mode: effectiveMode,
     },
+    diagnostics: {
+      connectedInputCount: connected.length,
+      connectedAudioRefCount: connectedAudioSources.length,
+      audioSourceLabels: audioDiagnostics.map((entry) => entry.label),
+    },
   }
   const graphJson = JSON.stringify(graph, null, 2)
 
@@ -945,6 +985,13 @@ function buildGenerationRequest(params: {
     ...(images.length > 0 ? { images: images.map((r) => r.url) } : {}),
     ...(videos.length > 0 ? { reference_videos: videos } : {}),
     ...(isAtlasCloud ? { generate_audio: true, resolution: '720p', watermark: false } : {}),
+    _meta: {
+      diagnostics: {
+        connected_input_count: connected.length,
+        connected_audio_ref_count: connectedAudioSources.length,
+        audio_sources: audioDiagnostics,
+      },
+    },
   }
   const apiPayloadJson = JSON.stringify(apiPayload, null, 2)
 
@@ -1277,6 +1324,52 @@ function VideoReferenceNodeInner({ id, data, selected }: NodeProps<ToorGenCanvas
 }
 const VideoReferenceNode = memo(VideoReferenceNodeInner, (prev, next) => prev.selected === next.selected && prev.data === next.data)
 
+function AudioReferenceNodeInner({ id, data, selected }: NodeProps<ToorGenCanvasNode>) {
+  const { onPatch } = useContext(ToorGenCanvasContext)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState('')
+
+  return (
+    <section className={`tgfc-node tgfc-node--video${selected ? ' is-selected' : ''}`}>
+      <NodeResizer minWidth={260} minHeight={220} isVisible={selected} lineStyle={{ borderColor: '#d9f02f' }} handleStyle={{ background: '#d9f02f', borderColor: '#07080b' }} />
+      <CtrlHandle nodeId={id} type="target" position={Position.Left} className="tgfc-handle" />
+      <CtrlHandle nodeId={id} type="source" position={Position.Right} className="tgfc-handle" />
+      <div className="tgfc-node-dragbar"><EditableNodeTitle ariaLabel="Audio reference node title" title={data.title} onChange={(value) => onPatch(id, { title: value })} /></div>
+      <div className="tgfc-media-frame">{data.audioUrl ? <audio src={data.audioUrl} controls /> : <span>Audio reference</span>}</div>
+      <input className="tgfc-node-input nodrag nowheel" value={data.audioUrl || ''} onChange={(event) => onPatch(id, { audioUrl: event.target.value })} placeholder="https://voice-reference.mp3" />
+      {uploadError ? <p className="tgfc-lib-upload-error">{uploadError}</p> : null}
+      <div className="tgfc-node-actions">
+        <button type="button" className="tgfc-node-action nodrag" disabled={uploading} onClick={() => { setUploadError(''); fileInputRef.current?.click() }}>{uploading ? 'Uploading...' : 'Upload MP3/WAV'}</button>
+      </div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".mp3,.wav,audio/mpeg,audio/wav,audio/x-wav"
+        hidden
+        onChange={(event) => {
+          const file = event.target.files?.[0]
+          if (!file) return
+          event.currentTarget.value = ''
+          const isMp3 = file.type === 'audio/mpeg' || /\.mp3$/i.test(file.name)
+          const isWav = file.type === 'audio/wav' || file.type === 'audio/x-wav' || /\.wav$/i.test(file.name)
+          if (!isMp3 && !isWav) {
+            setUploadError('Only MP3 or WAV files are allowed.')
+            return
+          }
+          setUploading(true)
+          setUploadError('')
+          void uploadReferenceAudioToHost(file)
+            .then((url) => onPatch(id, { audioUrl: url }))
+            .catch((err: unknown) => setUploadError(err instanceof Error ? err.message : 'Upload failed.'))
+            .finally(() => setUploading(false))
+        }}
+      />
+    </section>
+  )
+}
+const AudioReferenceNode = memo(AudioReferenceNodeInner, (prev, next) => prev.selected === next.selected && prev.data === next.data)
+
 function GenerationNodeInner({ id, data, selected }: NodeProps<ToorGenCanvasNode>) {
   const {
     onPatch,
@@ -1441,6 +1534,7 @@ const NODE_TYPES = {
   promptNode: PromptNode,
   'image-referenceNode': ImageReferenceNode,
   'video-referenceNode': VideoReferenceNode,
+  'audio-referenceNode': AudioReferenceNode,
   generationNode: GenerationNode,
 } as const
 
@@ -1731,6 +1825,9 @@ function ToorGenFlowCanvasInner(props: ToorGenFlowCanvasProps) {
       if (slot === 'video1') return { ...d, fallbackVideoUrl: url }
       if (slot === 'video2') return { ...d, fallbackVideoUrl2: url }
       if (slot === 'video3') return { ...d, fallbackVideoUrl3: url }
+      if (slot === 'audio1') return { ...d, fallbackAudioUrls: [url, d.fallbackAudioUrls[1], d.fallbackAudioUrls[2]] }
+      if (slot === 'audio2') return { ...d, fallbackAudioUrls: [d.fallbackAudioUrls[0], url, d.fallbackAudioUrls[2]] }
+      if (slot === 'audio3') return { ...d, fallbackAudioUrls: [d.fallbackAudioUrls[0], d.fallbackAudioUrls[1], url] }
       if (slot.startsWith('char-photo:')) {
         const cardId = slot.slice('char-photo:'.length)
         if (!cardId) return d
@@ -1753,6 +1850,9 @@ function ToorGenFlowCanvasInner(props: ToorGenFlowCanvasProps) {
       else if (slot === 'video1') setFallbackVideoUrl(url)
       else if (slot === 'video2') setFallbackVideoUrl2(url)
       else if (slot === 'video3') setFallbackVideoUrl3(url)
+      else if (slot === 'audio1') setFallbackAudioUrls((current) => [url, current[1], current[2]])
+      else if (slot === 'audio2') setFallbackAudioUrls((current) => [current[0], url, current[2]])
+      else if (slot === 'audio3') setFallbackAudioUrls((current) => [current[0], current[1], url])
       else if (slot.startsWith('char-photo:')) {
         const cardId = slot.slice('char-photo:'.length)
         if (!cardId) return
@@ -2571,6 +2671,7 @@ function ToorGenFlowCanvasInner(props: ToorGenFlowCanvasProps) {
         <button type="button" onClick={() => addNode('prompt')}>Prompt</button>
         <button type="button" onClick={() => addNode('image-reference')}>Image ref</button>
         <button type="button" onClick={() => addNode('video-reference')}>Video ref</button>
+        <button type="button" onClick={() => addNode('audio-reference')}>Audio ref</button>
         <button type="button" onClick={() => addNode('generation')}>Generation</button>
         <button type="button" onClick={() => setStoryboardDialogOpen(true)}>Storyboard</button>
         <span className="tgfc-toolbar-divider" />
@@ -2636,11 +2737,13 @@ function ToorGenFlowCanvasInner(props: ToorGenFlowCanvasProps) {
         onSave={saveBibleDialog}
         refFieldUploading={refFieldUploading}
         refFieldUploadError={refFieldUploadError}
-        onUploadRefFile={async (slot, _kind, file) => {
+        onUploadRefFile={async (slot, kind, file) => {
           setRefFieldUploading(slot)
           setRefFieldUploadError('')
           try {
-            const url = await uploadReferenceImageToHost(file)
+            const url = kind === 'audio'
+              ? await uploadReferenceAudioToHost(file)
+              : await uploadReferenceImageToHost(file)
             setRefUrl(slot, url)
           } catch (err) {
             setRefFieldUploadError(err instanceof Error ? err.message : 'Upload failed.')
@@ -2779,4 +2882,12 @@ function ToorGenFlowCanvasInner(props: ToorGenFlowCanvasProps) {
 
 export function ToorGenFlowCanvas(props: ToorGenFlowCanvasProps) {
   return <ReactFlowProvider><ToorGenFlowCanvasInner {...props} /></ReactFlowProvider>
+}
+
+async function uploadReferenceAudioToHost(file: File): Promise<string> {
+  const ext = file.name.split('.').pop() || 'mp3'
+  const uniqueName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+  const fileRef = storageRef(storage, `seedance-references/${uniqueName}`)
+  await uploadBytes(fileRef, file, { contentType: file.type || 'audio/mpeg' })
+  return getDownloadURL(fileRef)
 }

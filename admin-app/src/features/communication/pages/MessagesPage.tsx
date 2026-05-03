@@ -2,8 +2,9 @@ import { useRef, useMemo, useState, useEffect } from 'react'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { useNavigate } from 'react-router-dom'
 import { auth, storage } from '../../../lib/firebase'
-import { formatNotificationTime } from '../utils/workhubNotificationNavigation'
+import { createWorkhubActivity, subscribeWorkhubActivity } from '../../../lib/workhubRepo'
 import {
+  GLOBAL_CHAT_WORKSPACE_ID,
   useGlobalTeamChat,
   buildThreadId,
   THREAD_EVERYONE,
@@ -15,6 +16,21 @@ import '../communication.css'
 const CHAT_REACTIONS = ['👍', '❤️', '😂', '🎉', '😮', '😢'] as const
 const CHAT_PINNED_THREADS_KEY = 'workhub_chat_pinned_threads_v1'
 const CHAT_MUTED_THREADS_KEY = 'workhub_chat_muted_threads_v1'
+const CHAT_FAVORITE_THREADS_KEY = 'workhub_chat_favorite_threads_v1'
+const CHAT_GROUPS_KEY = 'workhub_chat_groups_v1'
+const CHAT_THREAD_PANE_WIDTH_KEY = 'workhub_chat_thread_pane_width_v1'
+
+type ChatGroup = {
+  id: string
+  name: string
+  memberUids: string[]
+}
+
+type ChatGroupActivityPayload = {
+  id: string
+  name: string
+  memberUids: string[]
+}
 
 function readThreadFlagMap(storageKey: string): Record<string, true> {
   try {
@@ -32,6 +48,113 @@ function readThreadFlagMap(storageKey: string): Record<string, true> {
 
 function writeThreadFlagMap(storageKey: string, map: Record<string, true>) {
   localStorage.setItem(storageKey, JSON.stringify(map))
+}
+
+function toMillis(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const asNumber = Number(value)
+    if (Number.isFinite(asNumber)) return asNumber
+    const parsed = Date.parse(value)
+    if (Number.isFinite(parsed)) return parsed
+    return 0
+  }
+  if (value instanceof Date) {
+    const time = value.getTime()
+    return Number.isFinite(time) ? time : 0
+  }
+  if (value && typeof value === 'object') {
+    const maybeTimestamp = value as { seconds?: unknown; toMillis?: () => number }
+    if (typeof maybeTimestamp.toMillis === 'function') {
+      const time = maybeTimestamp.toMillis()
+      return Number.isFinite(time) ? time : 0
+    }
+    if (typeof maybeTimestamp.seconds === 'number' && Number.isFinite(maybeTimestamp.seconds)) {
+      return maybeTimestamp.seconds * 1000
+    }
+  }
+  return 0
+}
+
+function formatThreadLastStamp(value: unknown): string {
+  const time = toMillis(value)
+  if (!time) return ''
+
+  const stamp = new Date(time)
+  const now = new Date()
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const startOfStampDay = new Date(stamp.getFullYear(), stamp.getMonth(), stamp.getDate()).getTime()
+  const dayMs = 24 * 60 * 60 * 1000
+
+  if (startOfStampDay === startOfToday) {
+    return stamp.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  }
+  if (startOfStampDay === startOfToday - dayMs) {
+    return 'Yesterday'
+  }
+  if (startOfStampDay >= startOfToday - (6 * dayMs)) {
+    return stamp.toLocaleDateString('en-GB', { weekday: 'long' })
+  }
+  return stamp.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+
+function clampThreadPaneWidth(width: number): number {
+  if (!Number.isFinite(width)) return 300
+  return Math.min(460, Math.max(220, Math.round(width)))
+}
+
+function readThreadPaneWidth(): number {
+  try {
+    const raw = localStorage.getItem(CHAT_THREAD_PANE_WIDTH_KEY)
+    if (!raw) return 300
+    return clampThreadPaneWidth(Number(raw))
+  } catch {
+    return 300
+  }
+}
+
+function readChatGroups(): ChatGroup[] {
+  try {
+    const raw = localStorage.getItem(CHAT_GROUPS_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter((item) => !!item && typeof item === 'object')
+      .map((item) => {
+        const group = item as Record<string, unknown>
+        const id = typeof group.id === 'string' ? group.id : ''
+        const name = typeof group.name === 'string' ? group.name : ''
+        const memberUids = Array.isArray(group.memberUids)
+          ? group.memberUids.filter((uid): uid is string => typeof uid === 'string' && uid.trim().length > 0)
+          : []
+        return { id, name, memberUids }
+      })
+      .filter((group) => group.id && group.name)
+  } catch {
+    return []
+  }
+}
+
+function writeChatGroups(groups: ChatGroup[]) {
+  localStorage.setItem(CHAT_GROUPS_KEY, JSON.stringify(groups))
+}
+
+function parseChatGroupActivityPayload(rawMessage: string): ChatGroupActivityPayload | null {
+  try {
+    const parsed = JSON.parse(rawMessage) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+    const obj = parsed as Record<string, unknown>
+    const id = typeof obj.id === 'string' ? obj.id.trim() : ''
+    const name = typeof obj.name === 'string' ? obj.name.trim() : ''
+    const memberUids = Array.isArray(obj.memberUids)
+      ? Array.from(new Set(obj.memberUids.filter((uid): uid is string => typeof uid === 'string' && uid.trim().length > 0)))
+      : []
+    if (!id || !name || memberUids.length === 0) return null
+    return { id, name, memberUids }
+  } catch {
+    return null
+  }
 }
 
 function extractMentionQuery(text: string, cursorIndex: number): string {
@@ -91,9 +214,29 @@ async function buildFileSignature(file: File): Promise<string> {
   }
 }
 
-export function MessagesPage() {
+type MessagesPageViewProps = {
+  embedded?: boolean
+  live?: boolean
+}
+
+function getChatDateLabel(timestamp: unknown): string {
+  const normalized = toMillis(timestamp)
+  if (!normalized) return ''
+  const date = new Date(normalized)
+  const now = new Date()
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const startOfGiven = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+  const dayDiff = Math.round((startOfToday - startOfGiven) / 86_400_000)
+
+  if (dayDiff === 0) return 'Today'
+  if (dayDiff === 1) return 'Yesterday'
+  return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+export function MessagesPageView({ embedded = false, live = true }: MessagesPageViewProps) {
   const navigate = useNavigate()
   const currentUser = auth.currentUser
+  const layoutRef = useRef<HTMLDivElement>(null)
   const [draft, setDraft] = useState('')
   const [sendError, setSendError] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -107,7 +250,7 @@ export function MessagesPage() {
   const threadEndRef = useRef<HTMLDivElement>(null)
   const [selectedRecipientUids, setSelectedRecipientUids] = useState<string[]>([])
   const [recipientInitialized, setRecipientInitialized] = useState(false)
-  const [recipientAddMode, setRecipientAddMode] = useState(false)
+  const [activeThreadSelectionKey, setActiveThreadSelectionKey] = useState('everyone')
   const [seenUnreadStampByThread, setSeenUnreadStampByThread] = useState<Record<string, number>>({})
   const [hoveredMessageId, setHoveredMessageId] = useState('')
   const [pendingDeleteMessageId, setPendingDeleteMessageId] = useState('')
@@ -128,6 +271,16 @@ export function MessagesPage() {
   const [highlightedMessageId, setHighlightedMessageId] = useState('')
   const [pinnedThreadIds, setPinnedThreadIds] = useState<Record<string, true>>(() => readThreadFlagMap(CHAT_PINNED_THREADS_KEY))
   const [mutedThreadIds, setMutedThreadIds] = useState<Record<string, true>>(() => readThreadFlagMap(CHAT_MUTED_THREADS_KEY))
+  const [favoriteThreadIds, setFavoriteThreadIds] = useState<Record<string, true>>(() => readThreadFlagMap(CHAT_FAVORITE_THREADS_KEY))
+  const [openThreadMenuKey, setOpenThreadMenuKey] = useState('')
+  const [pendingDeleteGroupId, setPendingDeleteGroupId] = useState('')
+  const [chatGroups, setChatGroups] = useState<ChatGroup[]>(() => readChatGroups())
+  const [showCreateGroup, setShowCreateGroup] = useState(false)
+  const [editingGroupId, setEditingGroupId] = useState('')
+  const [newGroupName, setNewGroupName] = useState('')
+  const [newGroupMemberUids, setNewGroupMemberUids] = useState<string[]>([])
+  const [threadPaneWidth, setThreadPaneWidth] = useState(() => readThreadPaneWidth())
+  const [isResizingThreadPane, setIsResizingThreadPane] = useState(false)
   const [searchText, setSearchText] = useState('')
   const [senderFilterUid, setSenderFilterUid] = useState('all')
   const [priorityFilter, setPriorityFilter] = useState<'all' | 'normal' | 'high'>('all')
@@ -165,9 +318,10 @@ export function MessagesPage() {
     sending,
     approvedMembers,
     unreadStampByThread,
+    threadSnapshotById,
   } = useGlobalTeamChat({
     user: chatUser,
-    enabled: !!chatUser,
+    enabled: !!chatUser && (!embedded || live),
     threadId: activeThreadId,
     markAsReadActive: true,
   })
@@ -217,8 +371,88 @@ export function MessagesPage() {
     if (recipientInitialized) return
     if (!chatUser?.uid) return
     setSelectedRecipientUids([chatUser.uid])
+    setActiveThreadSelectionKey(`member:${chatUser.uid}`)
     setRecipientInitialized(true)
   }, [chatUser?.uid, recipientInitialized])
+
+  useEffect(() => {
+    if (!chatUser?.uid) return
+    return subscribeWorkhubActivity(GLOBAL_CHAT_WORKSPACE_ID, chatUser.uid, false, (items) => {
+      const remoteById = new Map<string, ChatGroup>()
+      const deletedIds = new Set<string>()
+      const asc = [...items].sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt))
+
+      asc.forEach((item) => {
+        if (item.action === 'chat_group_upsert') {
+          const payload = parseChatGroupActivityPayload(item.message || '')
+          if (!payload) return
+          const nextMemberUids = Array.from(new Set(payload.memberUids))
+          if (!nextMemberUids.includes(chatUser.uid) && item.actorUid === chatUser.uid) {
+            nextMemberUids.push(chatUser.uid)
+          }
+          if (!nextMemberUids.includes(chatUser.uid)) return
+          remoteById.set(payload.id, {
+            id: payload.id,
+            name: payload.name,
+            memberUids: nextMemberUids,
+          })
+          deletedIds.delete(payload.id)
+          return
+        }
+
+        if (item.action === 'chat_group_delete') {
+          const payload = parseChatGroupActivityPayload(item.message || '')
+          const groupId = payload?.id || (item.message || '').trim()
+          if (!groupId) return
+          remoteById.delete(groupId)
+          deletedIds.add(groupId)
+        }
+      })
+
+      const remoteGroups = Array.from(remoteById.values())
+      const localGroups = readChatGroups()
+      const merged = [
+        ...remoteGroups,
+        ...localGroups.filter((group) => !remoteById.has(group.id) && !deletedIds.has(group.id)),
+      ]
+      setChatGroups(merged)
+    })
+  }, [chatUser?.uid])
+
+  useEffect(() => {
+    writeChatGroups(chatGroups)
+  }, [chatGroups])
+
+  useEffect(() => {
+    localStorage.setItem(CHAT_THREAD_PANE_WIDTH_KEY, String(threadPaneWidth))
+  }, [threadPaneWidth])
+
+  useEffect(() => {
+    if (!isResizingThreadPane) return
+
+    const handlePointerMove = (event: MouseEvent) => {
+      const rect = layoutRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const nextWidth = clampThreadPaneWidth(event.clientX - rect.left)
+      setThreadPaneWidth(nextWidth)
+    }
+
+    const handlePointerUp = () => {
+      setIsResizingThreadPane(false)
+    }
+
+    window.addEventListener('mousemove', handlePointerMove)
+    window.addEventListener('mouseup', handlePointerUp)
+    return () => {
+      window.removeEventListener('mousemove', handlePointerMove)
+      window.removeEventListener('mouseup', handlePointerUp)
+    }
+  }, [isResizingThreadPane])
+
+  useEffect(() => {
+    if (!layoutRef.current) return
+    layoutRef.current.style.setProperty('--chat-thread-pane-width', `${threadPaneWidth}px`)
+  }, [threadPaneWidth])
 
   useEffect(() => {
     pendingImagesRef.current = pendingImages
@@ -231,13 +465,10 @@ export function MessagesPage() {
     }
   }, [])
 
-  const selectRecipient = (uid: string) => {
-    setSelectedRecipientUids((prev) => {
-      if (recipientAddMode) {
-        return prev.includes(uid) ? prev.filter((u) => u !== uid) : [...prev, uid]
-      }
-      return [uid]
-    })
+  const selectRecipients = (recipientUids: string[], selectionKey: string) => {
+    setSelectedRecipientUids(recipientUids)
+    setActiveThreadSelectionKey(selectionKey)
+    setRecipientInitialized(true)
   }
 
   const togglePinnedThread = (threadId: string) => {
@@ -258,6 +489,20 @@ export function MessagesPage() {
       writeThreadFlagMap(CHAT_MUTED_THREADS_KEY, next)
       return next
     })
+  }
+
+  const toggleFavoriteThread = (threadId: string) => {
+    setFavoriteThreadIds((prev) => {
+      const next = { ...prev }
+      if (next[threadId]) delete next[threadId]
+      else next[threadId] = true
+      writeThreadFlagMap(CHAT_FAVORITE_THREADS_KEY, next)
+      return next
+    })
+  }
+
+  const markThreadUnread = (threadId: string) => {
+    setSeenUnreadStampByThread((prev) => ({ ...prev, [threadId]: 0 }))
   }
 
   const markThreadSeen = (threadId: string) => {
@@ -288,7 +533,97 @@ export function MessagesPage() {
     })
   }, [approvedMembers, chatUser?.uid, pinnedThreadIds])
 
+  const threadItems = useMemo(() => {
+    const everyoneItem = {
+      key: 'everyone',
+      label: 'Everyone',
+      subtitle: threadSnapshotById[THREAD_EVERYONE]?.lastPreview || 'Team-wide channel',
+      lastStatus: threadSnapshotById[THREAD_EVERYONE]?.lastStatus || '',
+      avatar: '#',
+      avatarUrl: '',
+      recipientUids: [] as string[],
+      threadId: THREAD_EVERYONE,
+      pinned: !!pinnedThreadIds[THREAD_EVERYONE],
+      muted: !!mutedThreadIds[THREAD_EVERYONE],
+      favorite: !!favoriteThreadIds[THREAD_EVERYONE],
+      unread: (threadSnapshotById[THREAD_EVERYONE]?.unreadCount || 0) > 0 || hasUnreadForThread(THREAD_EVERYONE),
+      unreadCount: (threadSnapshotById[THREAD_EVERYONE]?.unreadCount || 0) > 0
+        ? (threadSnapshotById[THREAD_EVERYONE]?.unreadCount || 0)
+        : (hasUnreadForThread(THREAD_EVERYONE) ? 1 : 0),
+      lastStamp: threadSnapshotById[THREAD_EVERYONE]?.lastStamp || 0,
+    }
+
+    const groupItems = chatGroups
+      .map((group) => {
+        if (!chatUser?.uid) return null
+        const participantUids = Array.from(new Set((group.memberUids || []).filter(Boolean)))
+        const uniqueMemberUids = participantUids.filter((uid) => uid !== chatUser.uid)
+        const threadId = participantUids.length > 0
+          ? buildThreadId(participantUids)
+          : THREAD_EVERYONE
+        return {
+          key: `group:${group.id}`,
+          label: group.name,
+          subtitle: threadSnapshotById[threadId]?.lastPreview || `${uniqueMemberUids.length} member${uniqueMemberUids.length === 1 ? '' : 's'}`,
+          lastStatus: threadSnapshotById[threadId]?.lastStatus || '',
+          avatar: group.name.trim().slice(0, 1).toUpperCase() || 'G',
+          avatarUrl: '',
+          recipientUids: uniqueMemberUids,
+          threadId,
+          pinned: !!pinnedThreadIds[threadId],
+          muted: !!mutedThreadIds[threadId],
+          favorite: !!favoriteThreadIds[threadId],
+          unread: (threadSnapshotById[threadId]?.unreadCount || 0) > 0 || hasUnreadForThread(threadId),
+          unreadCount: (threadSnapshotById[threadId]?.unreadCount || 0) > 0
+            ? (threadSnapshotById[threadId]?.unreadCount || 0)
+            : (hasUnreadForThread(threadId) ? 1 : 0),
+          lastStamp: threadSnapshotById[threadId]?.lastStamp || 0,
+        }
+      })
+      .filter((item): item is NonNullable<typeof item> => !!item)
+
+    const memberItems = orderedMembers.map((member) => {
+      const isMe = member.uid === chatUser?.uid
+      const threadId = chatUser?.uid
+        ? buildThreadId([chatUser.uid, member.uid])
+        : THREAD_EVERYONE
+      return {
+        key: `member:${member.uid}`,
+        label: isMe ? 'You' : (member.displayName || member.email || member.uid).trim(),
+        subtitle: threadSnapshotById[threadId]?.lastPreview || (isMe ? 'Personal notes' : 'Direct message'),
+        lastStatus: threadSnapshotById[threadId]?.lastStatus || '',
+        avatar: (member.displayName || member.email || member.uid).trim().slice(0, 1).toUpperCase(),
+        avatarUrl: (member.photoURL || '').trim(),
+        recipientUids: [member.uid],
+        threadId,
+        pinned: !!pinnedThreadIds[threadId],
+        muted: !!mutedThreadIds[threadId],
+        favorite: !!favoriteThreadIds[threadId],
+        unread: !isMe && ((threadSnapshotById[threadId]?.unreadCount || 0) > 0 || hasUnreadForThread(threadId)),
+        unreadCount: isMe
+          ? 0
+          : ((threadSnapshotById[threadId]?.unreadCount || 0) > 0
+            ? (threadSnapshotById[threadId]?.unreadCount || 0)
+            : (hasUnreadForThread(threadId) ? 1 : 0)),
+        lastStamp: threadSnapshotById[threadId]?.lastStamp || 0,
+      }
+    })
+
+    return [everyoneItem, ...groupItems, ...memberItems]
+  }, [chatGroups, chatUser?.uid, favoriteThreadIds, hasUnreadForThread, mutedThreadIds, orderedMembers, pinnedThreadIds, threadSnapshotById])
+
+  const activeThreadLabel = useMemo(() => {
+    const current = threadItems.find((item) => item.key === activeThreadSelectionKey)
+    if (current) return current.label
+    if (selectedRecipientUids.length === 0) return 'Everyone'
+    return selectedRecipientUids.map((uid) => {
+      const m = approvedMembers.find((member) => member.uid === uid)
+      return (m?.displayName || m?.email || uid).trim()
+    }).join(', ')
+  }, [activeThreadSelectionKey, approvedMembers, selectedRecipientUids, threadItems])
+
   const filteredMessages = useMemo(() => {
+    if (embedded) return messages
     const q = searchText.trim().toLowerCase()
     return messages.filter((item) => {
       if (senderFilterUid !== 'all' && item.senderUid !== senderFilterUid) return false
@@ -301,7 +636,7 @@ export function MessagesPage() {
       }
       return true
     })
-  }, [messages, searchText, senderFilterUid, priorityFilter, filterHasImage, filterHasLink])
+  }, [embedded, messages, searchText, senderFilterUid, priorityFilter, filterHasImage, filterHasLink])
 
   const messageById = useMemo(
     () => Object.fromEntries(messages.map((msg) => [msg.id, msg] as const)),
@@ -311,6 +646,18 @@ export function MessagesPage() {
   useEffect(() => {
     markThreadSeen(activeThreadId)
   }, [activeThreadId])
+
+  useEffect(() => {
+    if (!openThreadMenuKey) return
+    const handleDocClick = (event: MouseEvent) => {
+      if (!(event.target instanceof Element)) return
+      if (event.target.closest('.shell-messages-thread-menu') || event.target.closest('.shell-messages-thread-menu-trigger')) return
+      setOpenThreadMenuKey('')
+      setPendingDeleteGroupId('')
+    }
+    document.addEventListener('mousedown', handleDocClick)
+    return () => document.removeEventListener('mousedown', handleDocClick)
+  }, [openThreadMenuKey])
 
   const handleSend = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -583,78 +930,335 @@ export function MessagesPage() {
     return (m?.displayName || m?.email || uid).trim()
   }
 
-  return (
-    <section className="panel shell-messages-page">
-      <header className="shell-messages-page-head">
-        <h1>Messages</h1>
-        <p>Send to the full team, a group, or just one person.</p>
-      </header>
+  const handleSaveGroup = async () => {
+    const name = newGroupName.trim()
+    if (!chatUser?.uid) return
+    const members = Array.from(new Set(newGroupMemberUids.filter((uid) => uid !== chatUser?.uid)))
+    if (!name || members.length === 0) return
+    const participantUids = Array.from(new Set([chatUser.uid, ...members]))
 
-      {/* Recipient picker */}
-      <div className="shell-chat-to-row">
-        <span className="shell-chat-to-label">To:</span>
-        <div className="shell-chat-to-chips">
-          <button
-            type="button"
-            className={`shell-chat-to-chip${selectedRecipientUids.length === 0 ? ' is-active' : ''}${hasUnreadForThread(THREAD_EVERYONE) ? ' has-unread' : ''}`}
-            onClick={() => {
-              markThreadSeen(THREAD_EVERYONE)
-              setSelectedRecipientUids([])
-              setRecipientInitialized(true)
-            }}
-          >
-            Everyone
-          </button>
-          <button
-            type="button"
-            className={`shell-chat-to-chip shell-chat-to-chip-mode${recipientAddMode ? ' is-active' : ''}`}
-            onClick={() => setRecipientAddMode((value) => !value)}
-            title="Toggle multi-recipient add mode"
-          >
-            {recipientAddMode ? 'Add mode on' : 'Add mode off'}
-          </button>
-          {orderedMembers.map((member) => {
-            const isMe = member.uid === chatUser?.uid
-            const label = isMe ? 'Me' : (member.displayName || member.email || member.uid).trim()
-            const active = selectedRecipientUids.includes(member.uid)
-            const memberThreadId = chatUser?.uid ? buildThreadId([chatUser.uid, member.uid]) : ''
-            const showUnreadDot = !isMe && !!memberThreadId && hasUnreadForThread(memberThreadId)
-            const showPinned = !!memberThreadId && !!pinnedThreadIds[memberThreadId]
-            return (
+    if (editingGroupId) {
+      const previous = chatGroups.find((group) => group.id === editingGroupId)
+      const notifyMemberUids = Array.from(new Set([...(previous?.memberUids || []), ...participantUids]))
+      await createWorkhubActivity({
+        workspaceId: GLOBAL_CHAT_WORKSPACE_ID,
+        actorUid: chatUser.uid,
+        entityType: 'workspace',
+        entityId: GLOBAL_CHAT_WORKSPACE_ID,
+        action: 'chat_group_upsert',
+        message: JSON.stringify({ id: editingGroupId, name, memberUids: participantUids }),
+        visibility: 'workspace',
+        memberUids: notifyMemberUids,
+      }).catch(() => undefined)
+
+      setChatGroups((prev) => prev.map((group) => {
+        if (group.id !== editingGroupId) return group
+        return {
+          ...group,
+          name,
+          memberUids: participantUids,
+        }
+      }))
+      if (activeThreadSelectionKey === `group:${editingGroupId}`) {
+        selectRecipients(members, `group:${editingGroupId}`)
+      }
+      setEditingGroupId('')
+      setNewGroupName('')
+      setNewGroupMemberUids([])
+      setShowCreateGroup(false)
+      return
+    }
+
+    const id = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    await createWorkhubActivity({
+      workspaceId: GLOBAL_CHAT_WORKSPACE_ID,
+      actorUid: chatUser.uid,
+      entityType: 'workspace',
+      entityId: GLOBAL_CHAT_WORKSPACE_ID,
+      action: 'chat_group_upsert',
+      message: JSON.stringify({ id, name, memberUids: participantUids }),
+      visibility: 'workspace',
+      memberUids: participantUids,
+    }).catch(() => undefined)
+
+    const nextGroup: ChatGroup = {
+      id,
+      name,
+      memberUids: participantUids,
+    }
+    setChatGroups((prev) => [nextGroup, ...prev])
+    setNewGroupName('')
+    setNewGroupMemberUids([])
+    setShowCreateGroup(false)
+    selectRecipients(members, `group:${id}`)
+  }
+
+  const openGroupSettings = (groupId: string) => {
+    const group = chatGroups.find((item) => item.id === groupId)
+    if (!group) return
+    setEditingGroupId(groupId)
+    setNewGroupName(group.name)
+    setNewGroupMemberUids(group.memberUids.filter((uid) => uid !== chatUser?.uid))
+    setShowCreateGroup(true)
+  }
+
+  const handleDeleteGroup = (groupId: string) => {
+    const group = chatGroups.find((item) => item.id === groupId)
+    if (!group) return
+    const confirmed = window.confirm(`Delete group "${group.name}"? This cannot be undone.`)
+    if (!confirmed) return
+
+    if (chatUser?.uid && group) {
+      void createWorkhubActivity({
+        workspaceId: GLOBAL_CHAT_WORKSPACE_ID,
+        actorUid: chatUser.uid,
+        entityType: 'workspace',
+        entityId: GLOBAL_CHAT_WORKSPACE_ID,
+        action: 'chat_group_delete',
+        message: JSON.stringify({ id: groupId, name: group.name, memberUids: group.memberUids }),
+        visibility: 'workspace',
+        memberUids: group.memberUids,
+      }).catch(() => undefined)
+    }
+
+    setChatGroups((prev) => prev.filter((item) => item.id !== groupId))
+    if (editingGroupId === groupId) {
+      setEditingGroupId('')
+      setNewGroupName('')
+      setNewGroupMemberUids([])
+      setShowCreateGroup(false)
+    }
+    if (activeThreadSelectionKey === `group:${groupId}`) {
+      selectRecipients([], 'everyone')
+      markThreadSeen(THREAD_EVERYONE)
+    }
+  }
+
+  return (
+    <section className={`${embedded ? '' : 'panel '}shell-messages-page${embedded ? ' shell-messages-embedded' : ' shell-messages-page-full'}`}>
+      <div className="shell-messages-layout" ref={layoutRef}>
+        <aside className="shell-messages-sidebar">
+          <header className="shell-messages-sidebar-head">
+            <h1>Chats</h1>
+            <div className="shell-messages-head-actions">
               <button
-                key={member.uid}
                 type="button"
-                title={isMe ? 'Send to yourself' : label}
-                className={`shell-chat-to-chip${active ? ' is-active' : ''}${showUnreadDot ? ' has-unread' : ''}`}
+                className="shell-messages-group-toggle"
                 onClick={() => {
-                  if (memberThreadId) markThreadSeen(memberThreadId)
-                  setRecipientInitialized(true)
-                  selectRecipient(member.uid)
+                  setShowCreateGroup((prev) => {
+                    const next = !prev
+                    if (next) {
+                      setEditingGroupId('')
+                      setNewGroupName('')
+                      setNewGroupMemberUids([])
+                    }
+                    return next
+                  })
                 }}
               >
-                {showPinned ? `📌 ${label}` : label}
+                {showCreateGroup ? 'Cancel' : 'New group'}
               </button>
-            )
-          })}
-        </div>
-      </div>
-      <div className="shell-chat-thread-controls">
-        <button
-          type="button"
-          className={`shell-chat-thread-control${pinnedThreadIds[activeThreadId] ? ' is-active' : ''}`}
-          onClick={() => togglePinnedThread(activeThreadId)}
-        >
-          {pinnedThreadIds[activeThreadId] ? 'Unpin thread' : 'Pin thread'}
-        </button>
-        <button
-          type="button"
-          className={`shell-chat-thread-control${mutedThreadIds[activeThreadId] ? ' is-active' : ''}`}
-          onClick={() => toggleMutedThread(activeThreadId)}
-        >
-          {mutedThreadIds[activeThreadId] ? 'Unmute thread' : 'Mute thread'}
-        </button>
-      </div>
-      <div className="shell-chat-filter-row">
+            </div>
+          </header>
+
+          {showCreateGroup && (
+            <div className="shell-messages-group-editor">
+              <input
+                value={newGroupName}
+                onChange={(event) => setNewGroupName(event.target.value)}
+                placeholder="Group name"
+              />
+              <div className="shell-messages-group-member-list">
+                {orderedMembers
+                  .filter((member) => member.uid !== chatUser?.uid)
+                  .map((member) => {
+                    const checked = newGroupMemberUids.includes(member.uid)
+                    const label = (member.displayName || member.email || member.uid).trim()
+                    return (
+                      <label key={member.uid}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(event) => {
+                            setNewGroupMemberUids((prev) => {
+                              if (!event.target.checked) return prev.filter((uid) => uid !== member.uid)
+                              return prev.includes(member.uid) ? prev : [...prev, member.uid]
+                            })
+                          }}
+                        />
+                        <span>{label}</span>
+                      </label>
+                    )
+                  })}
+              </div>
+              <button
+                type="button"
+                className="shell-messages-group-create-btn"
+                onClick={handleSaveGroup}
+                disabled={!newGroupName.trim() || newGroupMemberUids.length === 0}
+              >
+                {editingGroupId ? 'Save group settings' : 'Create group'}
+              </button>
+            </div>
+          )}
+
+          <div className="shell-messages-thread-list" role="list" aria-label="Chat threads">
+            {threadItems.map((thread) => {
+              const isGroup = thread.key.startsWith('group:')
+              const groupId = isGroup ? thread.key.slice('group:'.length) : ''
+              const hasThreadMeta = thread.unreadCount > 0 || (embedded && thread.favorite) || thread.muted || (!embedded && isGroup)
+              return (
+                <div
+                  key={thread.key}
+                  role="listitem"
+                  className={`shell-messages-thread-item${embedded ? ' is-embedded' : ''}${activeThreadSelectionKey === thread.key ? ' is-active' : ''}${thread.unread ? ' has-unread' : ''}`}
+                  onClick={() => {
+                    markThreadSeen(thread.threadId)
+                    selectRecipients(thread.recipientUids, thread.key)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return
+                    event.preventDefault()
+                    markThreadSeen(thread.threadId)
+                    selectRecipients(thread.recipientUids, thread.key)
+                  }}
+                  tabIndex={0}
+                >
+                  <span className="shell-messages-thread-avatar" aria-hidden="true">
+                    {thread.avatarUrl ? <img src={thread.avatarUrl} alt="" loading="lazy" /> : thread.avatar}
+                  </span>
+                  <span className="shell-messages-thread-main">
+                    <span className="shell-messages-thread-top">
+                      <strong>{thread.pinned ? `📌 ${thread.label}` : thread.label}</strong>
+                      <small>{thread.lastStamp ? formatThreadLastStamp(thread.lastStamp) : ''}</small>
+                    </span>
+                    <span className="shell-messages-thread-subtitle">
+                      {thread.lastStatus && (
+                        <span className={`shell-messages-thread-status shell-messages-thread-status-${thread.lastStatus}`} aria-hidden="true">
+                          {thread.lastStatus === 'read' ? '✓✓' : thread.lastStatus === 'sent' ? '✓' : '•'}
+                        </span>
+                      )}
+                      <span className="shell-messages-thread-subtitle-text">{thread.subtitle}</span>
+                    </span>
+                  </span>
+                  {hasThreadMeta && (
+                    <span className="shell-messages-thread-side">
+                      {thread.unreadCount > 0 && <span className="shell-messages-thread-unread-badge">{thread.unreadCount > 999 ? '999+' : thread.unreadCount}</span>}
+                      {embedded && thread.favorite && <span className="shell-messages-thread-favorite" aria-label="Favorite chat">★</span>}
+                      {thread.muted && <span className="shell-messages-thread-muted">Muted</span>}
+                      {!embedded && isGroup && (
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          className="shell-messages-thread-delete"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            handleDeleteGroup(groupId)
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key !== 'Enter' && event.key !== ' ') return
+                            event.preventDefault()
+                            event.stopPropagation()
+                            handleDeleteGroup(groupId)
+                          }}
+                          title="Delete group"
+                        >
+                          x
+                        </span>
+                      )}
+                    </span>
+                  )}
+                  {embedded && (
+                    <button
+                      type="button"
+                      className="shell-messages-thread-menu-trigger"
+                      aria-label="Chat options"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setOpenThreadMenuKey((prev) => {
+                          const next = prev === thread.key ? '' : thread.key
+                          if (next !== prev) setPendingDeleteGroupId('')
+                          return next
+                        })
+                      }}
+                    >
+                      ▾
+                    </button>
+                  )}
+                  {embedded && openThreadMenuKey === thread.key && (
+                    <div className="shell-messages-thread-menu" onClick={(event) => event.stopPropagation()}>
+                      <button type="button" onClick={() => { togglePinnedThread(thread.threadId); setOpenThreadMenuKey('') }}>
+                        {thread.pinned ? 'Unpin chat' : 'Pin chat'}
+                      </button>
+                      <button type="button" onClick={() => { toggleMutedThread(thread.threadId); setOpenThreadMenuKey('') }}>
+                        {thread.muted ? 'Unmute notifications' : 'Mute notifications'}
+                      </button>
+                      <button type="button" onClick={() => { toggleFavoriteThread(thread.threadId); setOpenThreadMenuKey('') }}>
+                        {thread.favorite ? 'Remove from favorites' : 'Add to favorites'}
+                      </button>
+                      <button type="button" onClick={() => { markThreadUnread(thread.threadId); setOpenThreadMenuKey('') }}>
+                        Mark as unread
+                      </button>
+                      {isGroup && (
+                        <button type="button" onClick={() => { openGroupSettings(groupId); setOpenThreadMenuKey('') }}>
+                          Group settings
+                        </button>
+                      )}
+                      {isGroup && (
+                        pendingDeleteGroupId === groupId ? (
+                          <>
+                            <button
+                              type="button"
+                              className="is-danger"
+                              onClick={() => {
+                                handleDeleteGroup(groupId)
+                                setPendingDeleteGroupId('')
+                                setOpenThreadMenuKey('')
+                              }}
+                            >
+                              Confirm delete
+                            </button>
+                            <button type="button" onClick={() => setPendingDeleteGroupId('')}>
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <button type="button" className="is-danger" onClick={() => setPendingDeleteGroupId(groupId)}>
+                            Delete group
+                          </button>
+                        )
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </aside>
+
+        <div
+          className={`shell-messages-resize-handle${isResizingThreadPane ? ' is-active' : ''}`}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize thread list"
+          onMouseDown={() => setIsResizingThreadPane(true)}
+        />
+
+        <div className="shell-messages-main">
+          <header className="shell-messages-page-head">
+            <h1>{activeThreadLabel}</h1>
+            <p>Send to the full team, a group, or just one person.</p>
+            {embedded && (
+              <button type="button" className="shell-messages-main-search-btn" aria-label="Search chat" title="Search chat">
+                <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <circle cx="9" cy="9" r="6" stroke="currentColor" strokeWidth="1.8" />
+                  <path d="M13.5 13.5L18 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                </svg>
+              </button>
+            )}
+          </header>
+
+          {!embedded && <div className="shell-chat-filter-row">
         <input
           className="shell-chat-filter-input"
           value={searchText}
@@ -665,6 +1269,7 @@ export function MessagesPage() {
           className="shell-chat-filter-select"
           value={senderFilterUid}
           onChange={(event) => setSenderFilterUid(event.target.value)}
+          aria-label="Filter by sender"
         >
           <option value="all">All senders</option>
           {orderedMembers.map((member) => (
@@ -675,6 +1280,7 @@ export function MessagesPage() {
           className="shell-chat-filter-select"
           value={priorityFilter}
           onChange={(event) => setPriorityFilter(event.target.value as 'all' | 'normal' | 'high')}
+          aria-label="Filter by priority"
         >
           <option value="all">All priorities</option>
           <option value="normal">Normal</option>
@@ -686,9 +1292,9 @@ export function MessagesPage() {
         <label className="shell-chat-filter-toggle">
           <input type="checkbox" checked={filterHasLink} onChange={(event) => setFilterHasLink(event.target.checked)} /> Link
         </label>
-      </div>
+          </div>}
 
-      <div className="shell-messages-page-thread" ref={threadListRef} onScroll={handleThreadScroll}>
+          <div className="shell-messages-page-thread" ref={threadListRef} onScroll={handleThreadScroll}>
         {filteredMessages.length === 0 ? (
           <div className="shell-chat-empty-thread">
             {messages.length === 0
@@ -703,7 +1309,11 @@ export function MessagesPage() {
               : 'No messages match the current filters.'}
           </div>
         ) : (
-          filteredMessages.map((item) => {
+          filteredMessages.map((item, index) => {
+            const previous = filteredMessages[index - 1]
+            const itemDateLabel = getChatDateLabel(item.createdAt)
+            const previousDateLabel = previous ? getChatDateLabel(previous.createdAt) : ''
+            const showDateSeparator = index === 0 || itemDateLabel !== previousDateLabel
             const mine = item.senderUid === chatUser?.uid
             const isDeleted = !!item.deletedAt
             const isEditing = editingMessageId === item.id
@@ -718,8 +1328,13 @@ export function MessagesPage() {
               const hasAnyReceipt = item.receivedByUids.some((uid) => item.expectedRecipientUids.includes(uid))
               const isDeliveryError = item.deliveryState === 'failed'
             return (
+              <div key={`block_${item.id}`}>
+                {showDateSeparator && (
+                  <div className="shell-chat-date-separator">
+                    <span>{itemDateLabel}</span>
+                  </div>
+                )}
               <article
-                key={item.id}
                 className={`shell-chat-msg${mine ? ' is-mine' : ''}${isDeleted ? ' is-deleted' : ''}${highlightedMessageId === item.id ? ' is-linked-highlight' : ''}`}
                 ref={(el) => {
                   messageElementRefs.current[item.id] = el
@@ -736,7 +1351,7 @@ export function MessagesPage() {
                     )}
                     <strong>{mine ? 'You' : item.senderName}</strong>
                   </div>
-                  <small>{formatNotificationTime(item.createdAt)}</small>
+                  <small>{formatThreadLastStamp(item.createdAt)}</small>
                 </div>
 
                 {isEditing ? (
@@ -746,6 +1361,7 @@ export function MessagesPage() {
                       rows={3}
                       value={editingDraft}
                       onChange={(event) => setEditingDraft(event.target.value)}
+                      aria-label="Edit message text"
                     />
                     <div className="shell-chat-edit-actions">
                       <button type="button" onClick={handleSaveEdit}>Save</button>
@@ -943,6 +1559,7 @@ export function MessagesPage() {
                   </div>
                 )}
               </article>
+              </div>
             )
           })
         )}
@@ -1034,6 +1651,7 @@ export function MessagesPage() {
             multiple
             className="shell-chat-hidden-file-input"
             onChange={handleImageFileChange}
+            aria-label="Upload images"
           />
         </form>
 
@@ -1056,7 +1674,7 @@ export function MessagesPage() {
         </div>
 
         {pendingImages.length > 0 && (
-          <div className="shell-chat-attachment-strip" role="list" aria-label="Attached images">
+          <div className="shell-chat-attachment-strip" aria-label="Attached images">
             {pendingImages.map((image, index) => (
               <div key={image.id} className="shell-chat-inline-attachment" title={image.displayName || `Image ${index + 1}`}>
                 <img src={image.previewUrl} alt="Attached image" onClick={() => openImagePreview(image.previewUrl, image.displayName || 'Attached image')} />
@@ -1123,6 +1741,12 @@ export function MessagesPage() {
           </div>
         )}
       </footer>
+        </div>
+      </div>
     </section>
   )
+}
+
+export function MessagesPage() {
+  return <MessagesPageView />
 }

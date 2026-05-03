@@ -601,7 +601,7 @@ function App() {
               <>
                 <FeatureErrorBoundary
                   name="ChatDock"
-                  resetKey={`${chatDockOpen ? 'open' : 'closed'}:${chatThreadIntent?.key || ''}`}
+                  resetKey={`${chatThreadIntent?.key || ''}`}
                 >
                   <ChatDock
                     open={chatDockOpen}
@@ -1283,7 +1283,7 @@ function App() {
         {user && communicationFeatureFlags.chatDock && (
           <FeatureErrorBoundary
             name="ChatDock"
-            resetKey={`${chatDockOpen ? 'open' : 'closed'}:${chatThreadIntent?.key || ''}`}
+            resetKey={`${chatThreadIntent?.key || ''}`}
           >
             <ChatDock
               open={chatDockOpen}
