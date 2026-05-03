@@ -1,6 +1,6 @@
 # deploy-readme
 
-<small><strong>WorkHub v.010</strong></small>
+<small><strong>WorkHub v.011</strong></small>
 
 Use this file for every release.
 
