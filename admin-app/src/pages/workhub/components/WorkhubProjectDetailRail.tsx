@@ -10,6 +10,7 @@ export const WorkhubProjectDetailRail = memo(function WorkhubProjectDetailRail(p
     selectedProjectIntentMeta,
     selectedProjectColorDraft,
     canEditSelectedProject,
+    isPrivilegedMember,
     canEditProjectAttachments,
     selectedProjectEffectiveIntent,
     selectedProjectNameDraft,
@@ -33,6 +34,10 @@ export const WorkhubProjectDetailRail = memo(function WorkhubProjectDetailRail(p
     handleSelectedProjectDescriptionBlur,
     selectedProjectIntentDetailDrafts,
     setSelectedProjectIntentDetailDrafts,
+    proposalServiceOptions,
+    selectedProposalServicesDraft,
+    setSelectedProposalServicesDraft,
+    handleCreateProposalServiceOption,
     projectDiscussionNode,
     projectAttachmentsCollapsed,
     setProjectAttachmentsCollapsed,
@@ -116,6 +121,11 @@ export const WorkhubProjectDetailRail = memo(function WorkhubProjectDetailRail(p
             [key]: value,
           }))
         }}
+        proposalServiceOptions={proposalServiceOptions}
+        selectedProposalServices={selectedProposalServicesDraft}
+        onSelectedProposalServicesChange={setSelectedProposalServicesDraft}
+        canCreateProposalServiceOption={isPrivilegedMember}
+        onCreateProposalServiceOption={(name) => { void handleCreateProposalServiceOption(name) }}
       />
 
       {projectDiscussionNode}

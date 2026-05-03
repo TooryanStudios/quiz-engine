@@ -45,6 +45,7 @@ interface UseWorkhubProjectDetailHandlersParams {
   selectedProjectTypeDraft: WorkhubProjectType
   selectedProjectValueAmountDraft: string
   selectedProjectValueCurrencyDraft: string
+  selectedProjectProposalServicesDraft: string[]
   setProjects: Dispatch<SetStateAction<WorkhubProject[]>>
   setSelectedProjectColorMenuOpen: Dispatch<SetStateAction<boolean>>
   setBusyKey: Dispatch<SetStateAction<string>>
@@ -70,6 +71,7 @@ export function useWorkhubProjectDetailHandlers({
   selectedProjectTypeDraft,
   selectedProjectValueAmountDraft,
   selectedProjectValueCurrencyDraft,
+  selectedProjectProposalServicesDraft,
   setProjects,
   setSelectedProjectColorMenuOpen,
   setBusyKey,
@@ -128,6 +130,7 @@ export function useWorkhubProjectDetailHandlers({
         projectType: selectedProjectTypeDraft,
         valueAmount: nextValueAmount,
         valueCurrency: nextValueCurrency,
+        proposalServices: selectedProjectProposalServicesDraft,
       }),
     }
 
@@ -168,6 +171,7 @@ export function useWorkhubProjectDetailHandlers({
     selectedProjectTypeDraft,
     selectedProjectValueAmountDraft,
     selectedProjectValueCurrencyDraft,
+    selectedProjectProposalServicesDraft,
     setProjects,
     resolvedProjectDescriptionDraft,
     selectedWorkspaceAccessMemberUids,

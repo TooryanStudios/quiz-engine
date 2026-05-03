@@ -2646,7 +2646,7 @@ export default function ToorGenPromptWorkbench() {
   const [historyDisplayLimit, setHistoryDisplayLimit] = useState<number>(10)
   const [isPlaylistOpen, setIsPlaylistOpen] = useState<boolean>(false)
   const [composerRefMode, setComposerRefMode] = useState<'text' | 'image' | 'video' | 'audio'>('video')
-  const [isDirectSubmitPanelVisible, setIsDirectSubmitPanelVisible] = useState<boolean>(true)
+  const [isDirectSubmitPanelVisible, setIsDirectSubmitPanelVisible] = useState<boolean>(false)
   const [isRecoveryOpen, setIsRecoveryOpen] = useState<boolean>(false)
   const [recoveryTaskId, setRecoveryTaskId] = useState<string>('')
   const [recoveryProvider, setRecoveryProvider] = useState<ProviderId>('atlas')

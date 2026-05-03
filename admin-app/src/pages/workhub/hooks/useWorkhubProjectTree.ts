@@ -54,8 +54,7 @@ export function useWorkhubProjectTree({
     const hasDraftDeadline = !!activeProject && selectedProjectDeadlineDraft !== (activeProject.projectDeadline || '')
     const hasDraftTime = !!activeProject && selectedProjectSubmissionTimeDraft !== (activeProject.submissionTime || '')
     if (!hasDraftDeadline && !hasDraftTime) {
-      if (collapsedClosedRootIdSet.size === 0) return visibleProjectTree
-      return buildProjectTree(visibleWorkspaceProjects, collapsedClosedRootIdSet)
+      return visibleProjectTree
     }
     const patched = visibleWorkspaceProjects.map((project) => {
       if (project.id !== selectedProjectId) return project
@@ -65,8 +64,8 @@ export function useWorkhubProjectTree({
         ...(hasDraftTime ? { submissionTime: selectedProjectSubmissionTimeDraft } : {}),
       }
     })
-    return buildProjectTree(patched, collapsedClosedRootIdSet)
-  }, [collapsedClosedRootIdSet, visibleProjectTree, visibleWorkspaceProjects, visibleProjectById, selectedProjectId, selectedProjectDeadlineDraft, selectedProjectSubmissionTimeDraft])
+    return buildProjectTree(patched)
+  }, [visibleProjectTree, visibleWorkspaceProjects, visibleProjectById, selectedProjectId, selectedProjectDeadlineDraft, selectedProjectSubmissionTimeDraft])
 
   const flatVisibleProjectOptions = useMemo(() => flattenProjectTree(visibleProjectTree), [visibleProjectTree])
 

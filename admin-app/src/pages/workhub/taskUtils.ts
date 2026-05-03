@@ -98,6 +98,22 @@ export function isImageAttachmentUrl(value: string): boolean {
   }
 }
 
+export function isVideoAttachmentUrl(value: string): boolean {
+  const url = (value || '').trim().toLowerCase()
+  if (!url) return false
+  if (url.startsWith('data:video/')) return true
+
+  const videoPattern = /\.(mp4|webm|ogg|mov|m4v|avi|mkv)(\?.*)?$/i
+  try {
+    const parsed = new URL(url)
+    if (videoPattern.test(parsed.pathname)) return true
+    const nameParam = parsed.searchParams.get('name') || parsed.searchParams.get('filename') || ''
+    return videoPattern.test(nameParam)
+  } catch {
+    return videoPattern.test(url)
+  }
+}
+
 export function normalizeTaskTitle(rawTitle: string): string {
   return rawTitle
     .replace(INVISIBLE_TASK_TITLE_CHARS, '')

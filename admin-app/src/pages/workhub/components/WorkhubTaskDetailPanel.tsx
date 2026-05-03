@@ -3,6 +3,8 @@ import type { WorkhubTask, WorkhubTaskStatus, WorkhubTaskStatusConfig, WorkhubMe
 import type { WorkhubImageReview } from '../imageReview'
 import { WorkhubTaskAttachmentCard } from './WorkhubTaskAttachmentCard'
 import { WorkhubTaskChecklistCard } from './WorkhubTaskChecklistCard'
+import { isVideoAttachmentUrl } from '../taskUtils'
+import { WorkhubInlineVideoPlayer } from './WorkhubInlineVideoPlayer'
 
 // ─── Shared context (Priority 4) ───────────────────────────────────────────
 interface TaskDetailSharedContextValue {
@@ -258,24 +260,28 @@ const TaskDetailLinksSection = memo(function TaskDetailLinksSection({
             const linkCreatorInitials = getInitials(linkCreator?.displayName || linkCreator?.email || 'Link')
             return (
               <div key={link} className="workhub-checklist-url-item workhub-task-image-item workhub-task-link-item">
-                <a href={link} target="_blank" rel="noreferrer" className="workhub-task-image-link workhub-task-link-card" title={link}>
-                  <span className="workhub-link-hero">
-                    <span className="workhub-task-attachment-icon">{'\u{1F517}'}</span>
-                    <span className="workhub-attachment-copy workhub-link-copy">
-                      <strong>{linkTitle}</strong>
-                      <small>{linkHost}</small>
-                    </span>
-                  </span>
-                  {attachmentViewMode !== 'list' && (
-                    <span className="workhub-link-meta" title={linkCreatorLabel}>
-                      <span className="workhub-link-meta-avatar">
-                        {linkCreator?.photoURL
-                          ? <img src={linkCreator.photoURL} alt={linkCreatorLabel} />
-                          : <span>{linkCreatorInitials}</span>}
+                {isVideoAttachmentUrl(link) ? (
+                  <WorkhubInlineVideoPlayer url={link} title={linkTitle} className="workhub-task-link-card" />
+                ) : (
+                  <a href={link} target="_blank" rel="noreferrer" className="workhub-task-image-link workhub-task-link-card" title={link}>
+                    <span className="workhub-link-hero">
+                      <span className="workhub-task-attachment-icon">{'\u{1F517}'}</span>
+                      <span className="workhub-attachment-copy workhub-link-copy">
+                        <strong>{linkTitle}</strong>
+                        <small>{linkHost}</small>
                       </span>
                     </span>
-                  )}
-                </a>
+                    {attachmentViewMode !== 'list' && (
+                      <span className="workhub-link-meta" title={linkCreatorLabel}>
+                        <span className="workhub-link-meta-avatar">
+                          {linkCreator?.photoURL
+                            ? <img src={linkCreator.photoURL} alt={linkCreatorLabel} />
+                            : <span>{linkCreatorInitials}</span>}
+                        </span>
+                      </span>
+                    )}
+                  </a>
+                )}
                 <div className="workhub-link-item-actions">
                   <button type="button" title="Edit link" aria-label="Edit link" onClick={() => handleTaskLinkEditStart(selectedTask, link)}>{'\u270F'}</button>
                   <button

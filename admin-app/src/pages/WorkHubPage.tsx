@@ -9,6 +9,7 @@ import {
   addWorkhubComment,
   createWorkhubActivity,
   createWorkhubClient,
+  createWorkhubCompanyService,
   createWorkhubNotifications,
   createWorkhubDocument,
   createWorkhubProject,
@@ -27,6 +28,7 @@ import {
   subscribeWorkhubActivity,
   subscribeWorkhubClients,
   subscribeWorkhubCommentsByEntity,
+  subscribeWorkhubCompanyServices,
   subscribeWorkhubClientsMulti,
   subscribeWorkhubDocuments,
   getWorkhubDocumentById,
@@ -93,6 +95,7 @@ import { ProjectSettingsDialog } from './workhub/components/ProjectSettingsDialo
 import { CreateDialog } from './workhub/components/CreateDialog'
 import { CreateWorkspaceDialog } from './workhub/components/CreateWorkspaceDialog'
 import { DocumentCreateDialog } from './workhub/components/DocumentCreateDialog'
+import { AddItemDialog } from './workhub/components/AddItemDialog'
 import { DocumentSettingsDialog } from './workhub/components/DocumentSettingsDialog'
 import { MoodBoardSettingsDialog } from './workhub/components/MoodBoardSettingsDialog'
 import { ProjectTreeNodes } from './workhub/components/ProjectTreeNodes'
@@ -169,6 +172,7 @@ import { useWorkhubProjectDetailHandlers } from './workhub/hooks/useWorkhubProje
 import { useWorkhubUiInteractionHandlers } from './workhub/hooks/useWorkhubUiInteractionHandlers'
 import { useWorkhubProjectTreeSidebarHandlers } from './workhub/hooks/useWorkhubProjectTreeSidebarHandlers'
 import { useWorkhubDocumentCreation } from './workhub/hooks/useWorkhubDocumentCreation'
+import { useWorkhubAddItemDialog, type AddItemType } from './workhub/hooks/useWorkhubAddItemDialog'
 import { useWorkhubWorkspaceTemplates } from './workhub/hooks/useWorkhubWorkspaceTemplates'
 import { MilestoneCreateEditDialog } from './workhub/components/MilestoneCreateEditDialog'
 import { useWorkhubMilestones } from './workhub/hooks/useWorkhubMilestones'
@@ -182,6 +186,10 @@ const WORKHUB_PHONE_MAX_WIDTH = 767
 const WORKHUB_DESKTOP_MIN_WIDTH = WORKHUB_PHONE_MAX_WIDTH + 1
 const WORKHUB_DISCUSSION_PAGE_SIZE = 6
 const DEFAULT_STATUS_TASK_RENDER_LIMIT = 80
+const DASHBOARD_DETAIL_RAIL_DEFAULT_WIDTH = 340
+const DASHBOARD_DETAIL_RAIL_MIN_WIDTH = 300
+const DASHBOARD_DETAIL_RAIL_MAX_WIDTH = 620
+const DASHBOARD_MAIN_COLUMN_MIN = 720
 
 const WorkhubNotesSectionLazy = lazy(async () => {
   const mod = await import('./workhub/components/WorkhubNotesSection')
@@ -312,6 +320,62 @@ function shiftDateInputValue(baseDate: string, daysDelta: number): string {
   const timezoneOffsetMs = target.getTimezoneOffset() * 60_000
   return new Date(target.getTime() - timezoneOffsetMs).toISOString().slice(0, 10)
 }
+
+function clampDashboardDetailRailWidth(width: number): number {
+  if (typeof window === 'undefined') {
+    return Math.min(DASHBOARD_DETAIL_RAIL_MAX_WIDTH, Math.max(DASHBOARD_DETAIL_RAIL_MIN_WIDTH, width))
+  }
+  const viewportAwareMax = Math.max(DASHBOARD_DETAIL_RAIL_MIN_WIDTH, window.innerWidth - DASHBOARD_MAIN_COLUMN_MIN)
+  const maxWidth = Math.min(DASHBOARD_DETAIL_RAIL_MAX_WIDTH, viewportAwareMax)
+  return Math.min(maxWidth, Math.max(DASHBOARD_DETAIL_RAIL_MIN_WIDTH, width))
+}
+
+function normalizeProposalServiceName(value: string): string {
+  return value.trim().replace(/\s+/g, ' ')
+}
+
+function normalizeProposalServiceKey(value: string): string {
+  return normalizeProposalServiceName(value).toLowerCase()
+}
+
+function dedupeProposalServices(values: string[]): string[] {
+  const seen = new Set<string>()
+  const result: string[] = []
+  values.forEach((entry) => {
+    const name = normalizeProposalServiceName(entry)
+    const key = normalizeProposalServiceKey(name)
+    if (!name || seen.has(key)) return
+    seen.add(key)
+    result.push(name)
+  })
+  return result
+}
+
+function isMasterAdminEmail(email: string): boolean {
+  const normalizedMasterEmail = (MASTER_EMAIL || '').trim().toLowerCase()
+  if (!normalizedMasterEmail) return false
+  return (email || '').trim().toLowerCase() === normalizedMasterEmail
+}
+
+function isPrivilegedWorkhubRole(role: unknown): boolean {
+  const normalizedRole = typeof role === 'string' ? role.trim().toLowerCase() : ''
+  return normalizedRole === 'admin' || normalizedRole === 'manager' || normalizedRole === 'administrator'
+}
+
+const DEFAULT_PROPOSAL_SERVICE_OPTIONS = [
+  '2D Animation',
+  '3D Animation',
+  'Motion Graphics',
+  'Web Design',
+  'Software Development',
+  'Video Production',
+  'Music Creation',
+  'Interactive Game Development',
+  'Branding',
+  'UI/UX Design',
+  'Digital Marketing',
+  'Content Production',
+]
 
 function resolveWorkspaceScopeType(
   workspace: Pick<WorkhubWorkspace, 'type' | 'templateId'> | null | undefined,
@@ -1071,7 +1135,15 @@ export default function WorkHubPage() {
     const n = saved ? parseInt(saved, 10) : 0
     return n >= 200 && n <= 600 ? n : 280
   })
+  const [dashboardDetailRailWidth, setDashboardDetailRailWidth] = useState<number>(() => {
+    const saved = localStorage.getItem('workhub:dashboard-detail-rail-width')
+    const n = saved ? parseInt(saved, 10) : NaN
+    if (!Number.isFinite(n)) return DASHBOARD_DETAIL_RAIL_DEFAULT_WIDTH
+    return clampDashboardDetailRailWidth(n)
+  })
+  const [isDashboardDetailRailResizing, setIsDashboardDetailRailResizing] = useState(false)
   const treeResizeDragRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const dashboardDetailRailRef = useRef<HTMLElement | null>(null)
   const shellLayoutRef = useRef<HTMLDivElement>(null)
   const [isMobileWorkhubLayout, setIsMobileWorkhubLayout] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false
@@ -1112,6 +1184,8 @@ export default function WorkHubPage() {
   const [selectedProjectDescriptionDraft, setSelectedProjectDescriptionDraft] = useState('')
   const [selectedProjectNarrativeDraft, setSelectedProjectNarrativeDraft] = useState('')
   const [selectedProjectIntentDetailDrafts, setSelectedProjectIntentDetailDrafts] = useState<Record<string, string>>({})
+  const [selectedProposalServicesDraft, setSelectedProposalServicesDraft] = useState<string[]>([])
+  const [proposalServiceOptions, setProposalServiceOptions] = useState<string[]>([])
   const [selectedProjectColorDraft, setSelectedProjectColorDraft] = useState(PROJECT_COLORS[0])
   const [selectedProjectStartDateDraft, setSelectedProjectStartDateDraft] = useState('')
   const [selectedProjectDeadlineDraft, setSelectedProjectDeadlineDraft] = useState('')
@@ -1364,7 +1438,7 @@ export default function WorkHubPage() {
     if (workhubViewMode !== 'tabs') return
 
     const localUid = auth.currentUser?.uid || ''
-    const localPrivileged = !!((!!MASTER_EMAIL && userEmail === MASTER_EMAIL) || member.role === 'admin' || member.role === 'manager')
+    const localPrivileged = !!(isMasterAdminEmail(userEmail) || isPrivilegedWorkhubRole(member.role))
 
     if (!selectedWorkspaceId) {
       setProjects([])
@@ -1389,7 +1463,7 @@ export default function WorkHubPage() {
     if (workhubViewMode !== 'workspace_tree') return
 
     const localUid = auth.currentUser?.uid || ''
-    const localPrivileged = !!((!!MASTER_EMAIL && userEmail === MASTER_EMAIL) || member.role === 'admin' || member.role === 'manager')
+    const localPrivileged = !!(isMasterAdminEmail(userEmail) || isPrivilegedWorkhubRole(member.role))
     const accessibleWorkspaceIds = workspaces
       .filter((item) => canAccessWorkspace(item, localUid, userEmail, localPrivileged))
       .map((item) => item.id)
@@ -1415,7 +1489,7 @@ export default function WorkHubPage() {
     }
 
     const localUid = auth.currentUser?.uid || ''
-    const localPrivileged = !!((!!MASTER_EMAIL && userEmail === MASTER_EMAIL) || member.role === 'admin' || member.role === 'manager')
+    const localPrivileged = !!(isMasterAdminEmail(userEmail) || isPrivilegedWorkhubRole(member.role))
 
     if (!selectedWorkspaceId) {
       setTasks([])
@@ -1439,7 +1513,7 @@ export default function WorkHubPage() {
 
     if (workhubViewMode === 'workspace_tree') {
       const localUid = auth.currentUser?.uid || ''
-      const localPrivileged = !!((!!MASTER_EMAIL && userEmail === MASTER_EMAIL) || member.role === 'admin' || member.role === 'manager')
+      const localPrivileged = !!(isMasterAdminEmail(userEmail) || isPrivilegedWorkhubRole(member.role))
       const accessibleWorkspaceIds = workspaces
         .filter((item) => canAccessWorkspace(item, localUid, userEmail, localPrivileged))
         .map((item) => item.id)
@@ -1466,7 +1540,7 @@ export default function WorkHubPage() {
       setDocuments([])
       return
     }
-    const localPrivileged = !!((!!MASTER_EMAIL && userEmail === MASTER_EMAIL) || member.role === 'admin' || member.role === 'manager')
+    const localPrivileged = !!(isMasterAdminEmail(userEmail) || isPrivilegedWorkhubRole(member.role))
     return subscribeWorkhubDocuments(selectedWorkspaceId, localUid, localPrivileged, setDocuments)
   }, [dataReloadNonce, member, selectedWorkspaceId, userEmail])
 
@@ -1548,8 +1622,8 @@ export default function WorkHubPage() {
       return
     }
     const workspaceAccessLevel = (workspaces.find((item) => item.id === selectedWorkspaceId)?.memberAccessLevels?.[currentUid] || 'custom')
-    const localIsMasterAdmin = !!MASTER_EMAIL && userEmail === MASTER_EMAIL
-    const localPrivileged = !!(localIsMasterAdmin || member?.role === 'admin' || member?.role === 'manager')
+    const localIsMasterAdmin = isMasterAdminEmail(userEmail)
+    const localPrivileged = !!(localIsMasterAdmin || isPrivilegedWorkhubRole(member?.role))
     const canSeeAllMoodBoards = localPrivileged || workspaceAccessLevel === 'full'
     setWorkspaceMoodBoardsLoaded(false)
     return subscribeWorkhubMoodBoardsForWorkspace(selectedWorkspaceId, currentUid, canSeeAllMoodBoards, (data) => {
@@ -1632,9 +1706,9 @@ export default function WorkHubPage() {
       return {} as Record<string, string[]>
     }
   }
-  const isMasterAdmin = !!MASTER_EMAIL && userEmail === MASTER_EMAIL
+  const isMasterAdmin = isMasterAdminEmail(userEmail)
   const normalizedMasterEmail = (MASTER_EMAIL || '').trim().toLowerCase()
-  const isPrivilegedMember = !!(isMasterAdmin || member?.role === 'admin' || member?.role === 'manager')
+  const isPrivilegedMember = !!(isMasterAdmin || isPrivilegedWorkhubRole(member?.role))
   const isWorkhubAdmin = !!(isMasterAdmin || member?.role === 'admin')
   const accountDisplayName = member?.displayName || userName || userEmail.split('@')[0] || 'Member'
   const accountEmail = member?.email || userEmail || auth.currentUser?.email || ''
@@ -2448,7 +2522,7 @@ export default function WorkHubPage() {
     const inheritedAccess = resolveInheritedProjectAccess(
       resolvedParentProjectId || null,
       localUid,
-      isWorkhubAdmin ? 'restricted' : 'workspace',
+      'workspace',
       [],
     )
 
@@ -3947,6 +4021,13 @@ export default function WorkHubPage() {
     [selectedScopeMoneyIntentTotals.marketing],
   )
   const memberByUid = useMemo(() => Object.fromEntries(members.map((item) => [item.uid, item])) as Record<string, WorkhubMember>, [members])
+  const memberEmailByUid = useMemo(() => {
+    const result: Record<string, string> = {}
+    members.forEach((item) => {
+      result[item.uid] = (item.email || '').trim().toLowerCase()
+    })
+    return result
+  }, [members])
   const memberWorkspaceSummaryByUid = useMemo(() => {
     const result: Record<string, { count: number; names: string[] }> = {}
     members.forEach((item) => {
@@ -3993,12 +4074,16 @@ export default function WorkHubPage() {
   const userAccessSourceByUid = useMemo(() => {
     const result: Record<string, WorkhubUserAccessDraft> = {}
     members.forEach((item) => {
+      const memberEmail = (item.email || '').trim().toLowerCase()
       const workspaceById: Record<string, WorkhubUserWorkspaceDraft> = {}
       workspaces.forEach((workspace) => {
-        const hasWorkspaceAccess = normalizeMemberUids(workspace.accessMemberUids || []).includes(item.uid)
+        const hasUidAccess = normalizeMemberUids(workspace.accessMemberUids || []).includes(item.uid)
+        const hasEmailInvite = !!memberEmail && normalizeInviteEmails(workspace.invitedEmails || []).includes(memberEmail)
+        const hasWorkspaceAccess = hasUidAccess || hasEmailInvite
         workspaceById[workspace.id] = {
           enabled: hasWorkspaceAccess,
           level: (workspace.memberAccessLevels?.[item.uid] || 'custom') as 'full' | 'custom',
+          invited: !hasUidAccess && hasEmailInvite,
         }
       })
       result[item.uid] = {
@@ -4068,6 +4153,7 @@ export default function WorkHubPage() {
     userAccessDraftByUid,
     setUserAccessDraftByUid,
     userAccessDraftDirtyByUid,
+    memberEmailByUid,
     currentUserUid: currentUid,
     setBusyKey,
     showToast,
@@ -4863,6 +4949,50 @@ export default function WorkHubPage() {
 
     return workspaceAssignableMemberUidSet.has(currentUid)
   }, [currentUid, currentUserAccessLevel, isPrivilegedMember, selectedProject, workspaceAssignableMemberUidSet])
+
+  useEffect(() => {
+    if (!currentUid) {
+      setProposalServiceOptions(dedupeProposalServices(DEFAULT_PROPOSAL_SERVICE_OPTIONS))
+      return
+    }
+    return subscribeWorkhubCompanyServices((items) => {
+      setProposalServiceOptions(dedupeProposalServices([
+        ...DEFAULT_PROPOSAL_SERVICE_OPTIONS,
+        ...items.map((item) => item.name || ''),
+      ]))
+    })
+  }, [currentUid])
+
+  const handleCreateProposalServiceOption = useCallback(async (name: string) => {
+    const normalizedName = normalizeProposalServiceName(name)
+    if (!normalizedName) return
+
+    if (!isPrivilegedMember) {
+      showToast({ type: 'info', message: 'Only managers/admins can create new services. You can still select from the service list.' })
+      return
+    }
+
+    const exists = proposalServiceOptions.some((item) => normalizeProposalServiceKey(item) === normalizeProposalServiceKey(normalizedName))
+    if (!exists) {
+      setProposalServiceOptions((current) => dedupeProposalServices([...current, normalizedName]))
+    }
+
+    try {
+      await createWorkhubCompanyService({ name: normalizedName, createdBy: currentUid })
+      showToast({ type: 'success', message: `Service "${normalizedName}" added to company catalog.` })
+    } catch (error) {
+      const code = typeof error === 'object' && error && 'code' in error
+        ? String((error as { code?: unknown }).code || '')
+        : ''
+      if (code.includes('permission-denied')) {
+        showToast({ type: 'error', message: 'Only managers/admins can create global services. Select from existing services instead.' })
+        return
+      }
+      const message = error instanceof Error ? error.message : 'Could not add company service.'
+      showToast({ type: 'error', message })
+    }
+  }, [currentUid, isPrivilegedMember, proposalServiceOptions, showToast])
+
   const {
     handleSaveSelectedProjectDetails,
     handleSelectedProjectDescriptionBlur,
@@ -4886,6 +5016,7 @@ export default function WorkHubPage() {
     selectedProjectTypeDraft,
     selectedProjectValueAmountDraft,
     selectedProjectValueCurrencyDraft,
+    selectedProjectProposalServicesDraft: selectedProposalServicesDraft,
     setProjects,
     setSelectedProjectColorMenuOpen,
     setBusyKey,
@@ -4937,6 +5068,58 @@ export default function WorkHubPage() {
     setTreePanelWidth(next)
     localStorage.setItem('workhub:treePanelWidth', String(next))
     treeResizeDragRef.current = null
+  }, [])
+
+  const showDashboardDetailRail = !isMobileWorkhubLayout
+    && workhubViewMode === 'tabs'
+    && activeSection === 'dashboard'
+    && selectedProject?.mainPanelView === 'dashboard_with_details'
+
+  const resolvedDashboardDetailRailWidth = useMemo(
+    () => clampDashboardDetailRailWidth(dashboardDetailRailWidth),
+    [dashboardDetailRailWidth],
+  )
+
+  useEffect(() => {
+    localStorage.setItem('workhub:dashboard-detail-rail-width', String(Math.round(resolvedDashboardDetailRailWidth)))
+  }, [resolvedDashboardDetailRailWidth])
+
+  const handleDashboardDetailRailResizeStart = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    if (isMobileWorkhubLayout || !showDashboardDetailRail) return
+    event.preventDefault()
+    event.stopPropagation()
+    setIsDashboardDetailRailResizing(true)
+    const initialRight = dashboardDetailRailRef.current?.getBoundingClientRect().right ?? window.innerWidth
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const nextWidth = Math.round(initialRight - moveEvent.clientX)
+      setDashboardDetailRailWidth(clampDashboardDetailRailWidth(nextWidth))
+    }
+
+    const handlePointerUp = () => {
+      setIsDashboardDetailRailResizing(false)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+    }
+
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+  }, [isMobileWorkhubLayout, showDashboardDetailRail])
+
+  useEffect(() => {
+    if (!isMobileWorkhubLayout && showDashboardDetailRail) return
+    setIsDashboardDetailRailResizing(false)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }, [isMobileWorkhubLayout, showDashboardDetailRail])
+
+  useEffect(() => () => {
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
   }, [])
   const resolveRememberedWorkspaceRoute = useCallback((workspaceId: string) => {
     if (!workspaceId || !workspaceRouteMemoryStorageKey) return ''
@@ -5071,6 +5254,8 @@ export default function WorkHubPage() {
     openDocumentCreateDialog,
     closeDocumentCreateDialog,
     handleCreateDocument,
+    createDocumentQuick,
+    createNoteQuick,
   } = useWorkhubDocumentCreation({
     currentUserUid: currentUid,
     selectedWorkspaceId,
@@ -5090,6 +5275,114 @@ export default function WorkHubPage() {
       setSidebarCollapsed(false)
     },
   })
+  const {
+    addItemDialogOpen,
+    addItemProjectId,
+    openAddItemDialog,
+    closeAddItemDialog,
+    handleCreateItem: handleCreateItemType,
+  } = useWorkhubAddItemDialog({
+    selectedProjectId,
+    workspaceProjectById,
+  })
+
+  const createTaskQuick = useCallback(async (projectId: string) => {
+    if (!auth.currentUser || !selectedWorkspaceId || !projectId) return
+    const targetProject = visibleProjectById[projectId]
+    if (!targetProject) return
+
+    setBusyKey('task')
+    try {
+      const taskId = await createWorkhubTask({
+        workspaceId: selectedWorkspaceId,
+        projectId,
+        title: 'New task',
+        description: '',
+        visibility: targetProject.visibility || 'workspace',
+        memberUids: targetProject.memberUids || [],
+        status: defaultTaskStatusId,
+        priority: 'medium',
+        assigneeUid: auth.currentUser.uid,
+        startDate: undefined,
+        dueDate: '',
+        createdBy: auth.currentUser.uid,
+      })
+
+      setSelectedTaskId(taskId)
+      setSelectedDocumentId('')
+      setSelectedMoodBoardId('')
+      setActiveSection('tasks')
+      setProjectsGroupExpanded(true)
+      setSidebarCollapsed(false)
+
+      showToast({ type: 'success', message: 'Task created.' })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not create task.'
+      showToast({ type: 'error', message })
+    } finally {
+      setBusyKey('')
+    }
+  }, [auth.currentUser, selectedWorkspaceId, visibleProjectById, defaultTaskStatusId, showToast, setBusyKey])
+
+  const createMoodBoardQuick = useCallback(async (projectId: string) => {
+    if (!auth.currentUser || !selectedWorkspaceId || !projectId) return
+    const targetProject = visibleProjectById[projectId]
+    if (!targetProject) return
+
+    setBusyKey('moodboard')
+    try {
+      const moodBoardId = await createWorkhubMoodBoard({
+        workspaceId: selectedWorkspaceId,
+        entityType: 'project',
+        entityId: projectId,
+        title: 'New mood board',
+        createdBy: auth.currentUser.uid,
+      })
+
+      setSelectedMoodBoardId(moodBoardId)
+      setSelectedDocumentId('')
+      setSelectedTaskId('')
+      setActiveSection('moodboard')
+      setProjectsGroupExpanded(true)
+      setSidebarCollapsed(false)
+
+      showToast({ type: 'success', message: 'Mood board created.' })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not create mood board.'
+      showToast({ type: 'error', message })
+    } finally {
+      setBusyKey('')
+    }
+  }, [auth.currentUser, selectedWorkspaceId, visibleProjectById, showToast, setBusyKey])
+
+  const handleCreateItem = useCallback(async (type: AddItemType) => {
+    if (addItemProjectId) {
+      const lineage = collectProjectLineage(addItemProjectId, workspaceProjectById)
+      if (lineage.length > 0) {
+        setExpandedProjectIds((current) => Array.from(new Set([...current, ...lineage])))
+      }
+    }
+
+    try {
+      switch (type) {
+        case 'task':
+          await createTaskQuick(addItemProjectId)
+          break
+        case 'document':
+          await createDocumentQuick(addItemProjectId)
+          break
+        case 'note':
+          await createNoteQuick(addItemProjectId)
+          break
+        case 'moodboard':
+          await createMoodBoardQuick(addItemProjectId)
+          break
+      }
+      handleCreateItemType(type)
+    } catch (error) {
+      // Error handling is done in the individual creation hooks
+    }
+  }, [addItemProjectId, createTaskQuick, createDocumentQuick, createNoteQuick, createMoodBoardQuick, handleCreateItemType, workspaceProjectById])
   const settingsMilestones = useWorkhubMilestones({
     projectId: projectAccessDialogId || null,
     workspaceId: selectedWorkspaceId,
@@ -5109,6 +5402,10 @@ export default function WorkHubPage() {
     const selectedProjectValueCurrency = normalizeMoneyCurrency(selectedProject.valueCurrency)
     const nextValueAmount = parseMonetaryAmountInput(selectedProjectValueAmountDraft)
     const nextValueCurrency = normalizeMoneyCurrency(selectedProjectValueCurrencyDraft)
+    const selectedProjectServiceKeys = new Set((selectedProject.proposalServices || []).map((value) => normalizeProposalServiceKey(value)))
+    const draftServiceKeys = new Set(selectedProposalServicesDraft.map((value) => normalizeProposalServiceKey(value)))
+    const proposalServicesChanged = selectedProjectServiceKeys.size !== draftServiceKeys.size
+      || Array.from(draftServiceKeys).some((key) => !selectedProjectServiceKeys.has(key))
     return (
       selectedProjectNameDraft.trim() !== selectedProject.name
       || selectedProjectComposedDescriptionDraft.trim() !== (selectedProject.description || '')
@@ -5119,6 +5416,7 @@ export default function WorkHubPage() {
       || selectedProjectTypeDraft !== selectedProjectType
       || (nextValueAmount !== null && nextValueAmount !== selectedProjectValueAmount)
       || nextValueCurrency !== selectedProjectValueCurrency
+      || proposalServicesChanged
     )
   }, [
     selectedProject,
@@ -5126,6 +5424,7 @@ export default function WorkHubPage() {
     selectedProjectComposedDescriptionDraft,
     selectedProjectDeadlineDraft,
     selectedProjectNameDraft,
+    selectedProposalServicesDraft,
     selectedProjectStartDateDraft,
     selectedProjectSubmissionTimeDraft,
     selectedProjectTypeDraft,
@@ -5157,6 +5456,7 @@ export default function WorkHubPage() {
       setSelectedProjectDescriptionDraft('')
       setSelectedProjectNarrativeDraft('')
       setSelectedProjectIntentDetailDrafts({})
+      setSelectedProposalServicesDraft([])
       setSelectedProjectColorDraft(selectedWorkspaceProjectColorOptions[0] || PROJECT_COLORS[0])
       setSelectedProjectStartDateDraft('')
       setSelectedProjectDeadlineDraft('')
@@ -5177,6 +5477,7 @@ export default function WorkHubPage() {
     setSelectedProjectDescriptionDraft(selectedProject.description || '')
     setSelectedProjectNarrativeDraft(splitDescription.narrative)
     setSelectedProjectIntentDetailDrafts(splitDescription.detailsByKey)
+    setSelectedProposalServicesDraft(dedupeProposalServices(selectedProject.proposalServices || []))
     setSelectedProjectColorDraft(selectedProject.color)
     setSelectedProjectStartDateDraft(selectedProject.projectStartDate || '')
     setSelectedProjectDeadlineDraft(selectedProject.projectDeadline || '')
@@ -5198,6 +5499,7 @@ export default function WorkHubPage() {
     selectedProject?.name,
     selectedProject?.projectStartDate,
     selectedProject?.submissionTime,
+    selectedProject?.proposalServices,
     selectedProject?.projectType,
     selectedProject?.valueAmount,
     selectedProject?.valueCurrency,
@@ -6787,7 +7089,7 @@ export default function WorkHubPage() {
         setProjectClientId('')
         const projectColorPool = selectedWorkspaceProjectColorOptions.length > 0 ? selectedWorkspaceProjectColorOptions : PROJECT_COLORS
         setProjectColor(projectColorPool[(Math.floor(Math.random() * projectColorPool.length))])
-        setProjectVisibility(isWorkhubAdmin ? 'restricted' : 'workspace')
+        setProjectVisibility('workspace')
         setProjectMemberUids([])
       }
       setSelectedProjectId(projectId)
@@ -8237,7 +8539,7 @@ export default function WorkHubPage() {
     setProjectSubmissionTime('')
     setProjectPriority('medium')
     setProjectClientId('')
-    setProjectVisibility(isWorkhubAdmin ? 'restricted' : 'workspace')
+    setProjectVisibility('workspace')
     setProjectMemberUids([])
     setCreateDialogType('project')
     setCreateDialogOpen(true)
@@ -8344,7 +8646,7 @@ export default function WorkHubPage() {
     const inheritedAccess = resolveInheritedProjectAccess(
       resolvedParentProjectId || null,
       auth.currentUser.uid,
-      isWorkhubAdmin ? 'restricted' : 'workspace',
+      'workspace',
       [],
     )
 
@@ -8387,11 +8689,11 @@ export default function WorkHubPage() {
         console.error('Failed to create drive folder:', error)
       })
 
+      const workspaceName = (selectedWorkspace?.name || '').trim() || 'current workspace'
       setSelectedProjectId(projectId)
       setSelectedNoteProjectId(projectId)
       setActiveSection('home')
       closeTemplateCreateDialog()
-      const workspaceName = selectedWorkspace?.name?.trim() || 'current workspace'
       showToast({ type: 'success', message: `${projectSubject} created in ${workspaceName}.` })
     } catch (error) {
       const message = error instanceof Error ? error.message : `Could not create ${projectSubject.toLowerCase()}.`
@@ -9234,6 +9536,10 @@ export default function WorkHubPage() {
     handleSelectedProjectDescriptionBlur,
     selectedProjectIntentDetailDrafts,
     setSelectedProjectIntentDetailDrafts,
+    proposalServiceOptions,
+    selectedProposalServicesDraft,
+    setSelectedProposalServicesDraft,
+    handleCreateProposalServiceOption,
     projectAttachmentsCollapsed,
     setProjectAttachmentsCollapsed,
     selectedProjectAttachmentTitleDraft,
@@ -9268,11 +9574,6 @@ export default function WorkHubPage() {
     selectedWorkspaceId,
     showToast,
   }
-  const showDashboardDetailRail = !isMobileWorkhubLayout
-    && workhubViewMode === 'tabs'
-    && activeSection === 'dashboard'
-    && selectedProject?.mainPanelView === 'dashboard_with_details'
-
   return (
     <div className={`workhub-shell${isMobileWorkhubLayout ? ' is-mobile' : ''}${isMobileWorkhubLayout && mobileTaskDetailOpen ? ' task-detail-open' : ''}${isMobileWorkhubLayout && mobileWorkspacePanelOpen ? ' workspace-drawer-open' : ''}`} dir="ltr">
       <div className="workhub-app">
@@ -9678,7 +9979,7 @@ export default function WorkHubPage() {
                         onToggleExpansion={toggleProjectExpansion}
                         onOpenActionMenu={handleProjectActionMenu}
                         onOpenWorkspaceActionMenu={(event) => handleProjectActionMenu('__workspace__', event)}
-                        onQuickAddTask={(projectId) => focusQuickAddInline(projectId)}
+                        onQuickAddTask={(projectId) => openAddItemDialog(projectId)}
                         onOpenSettings={openProjectSettingsDialog}
                         onRenameProject={handleRenameProjectFromTree}
                         onMoveProject={handleMoveProjectInTree}
@@ -9842,7 +10143,7 @@ export default function WorkHubPage() {
                                     onToggleExpansion={toggleProjectExpansion}
                                     onOpenActionMenu={handleProjectActionMenu}
                                     onOpenWorkspaceActionMenu={(event) => handleProjectActionMenu('__workspace__', event)}
-                                    onQuickAddTask={(projectId) => focusQuickAddInline(projectId)}
+                                    onQuickAddTask={(projectId) => openAddItemDialog(projectId)}
                                     onOpenSettings={openProjectSettingsDialog}
                                     onRenameProject={handleRenameProjectFromTree}
                                     onMoveProject={handleMoveProjectInTree}
@@ -9914,7 +10215,7 @@ export default function WorkHubPage() {
                                 onToggleExpansion={toggleProjectExpansion}
                                 onOpenActionMenu={handleProjectActionMenu}
                                 onOpenWorkspaceActionMenu={(event) => handleProjectActionMenu('__workspace__', event)}
-                                onQuickAddTask={(projectId) => focusQuickAddInline(projectId)}
+                                onQuickAddTask={(projectId) => openAddItemDialog(projectId)}
                                 onOpenSettings={openProjectSettingsDialog}
                                 onRenameProject={handleRenameProjectFromTree}
                                 onMoveProject={handleMoveProjectInTree}
@@ -9967,7 +10268,7 @@ export default function WorkHubPage() {
                             onToggleExpansion={toggleProjectExpansion}
                             onOpenActionMenu={handleProjectActionMenu}
                             onOpenWorkspaceActionMenu={(event) => handleProjectActionMenu('__workspace__', event)}
-                            onQuickAddTask={(projectId) => focusQuickAddInline(projectId)}
+                            onQuickAddTask={(projectId) => openAddItemDialog(projectId)}
                             onOpenSettings={openProjectSettingsDialog}
                             onRenameProject={handleRenameProjectFromTree}
                             onMoveProject={handleMoveProjectInTree}
@@ -10015,7 +10316,7 @@ export default function WorkHubPage() {
                       onToggleExpansion={toggleProjectExpansion}
                       onOpenActionMenu={handleProjectActionMenu}
                       onOpenWorkspaceActionMenu={(event) => handleProjectActionMenu('__workspace__', event)}
-                      onQuickAddTask={(projectId) => focusQuickAddInline(projectId)}
+                      onQuickAddTask={(projectId) => openAddItemDialog(projectId)}
                       onOpenSettings={openProjectSettingsDialog}
                       onRenameProject={handleRenameProjectFromTree}
                       onMoveProject={handleMoveProjectInTree}
@@ -10105,7 +10406,10 @@ export default function WorkHubPage() {
           <section className="workhub-main-stage">
 
             {activeSection === 'dashboard' && (
-              <main className={`workhub-section-stack is-dashboard${showDashboardDetailRail ? ' workhub-dashboard-with-details' : ''}`}>
+              <main
+                className={`workhub-section-stack is-dashboard${showDashboardDetailRail ? ' workhub-dashboard-with-details' : ''}`}
+                style={showDashboardDetailRail ? { gridTemplateColumns: `minmax(0, 1fr) ${Math.round(resolvedDashboardDetailRailWidth)}px` } : undefined}
+              >
                 <div className="workhub-dashboard-stack">
                 <section className="workhub-panel">
                   <div className="workhub-panel-head compact">
@@ -10508,10 +10812,19 @@ export default function WorkHubPage() {
                 )}
                 </div>
                 {showDashboardDetailRail && (
-                  <aside className="workhub-task-detail-rail is-expanded">
-                    <Suspense fallback={<div className="workhub-empty-state">Loading details…</div>}>
-                      <WorkhubProjectDetailRailLazy {...workhubTasksSectionProps} />
-                    </Suspense>
+                  <aside ref={dashboardDetailRailRef} className="workhub-task-detail-rail is-expanded">
+                    <button
+                      type="button"
+                      className={`workhub-task-detail-rail-resize-handle${isDashboardDetailRailResizing ? ' is-active' : ''}`}
+                      onPointerDown={handleDashboardDetailRailResizeStart}
+                      aria-label="Resize proposal properties panel"
+                      title="Drag to resize proposal properties panel"
+                    />
+                    <div className="workhub-task-detail-rail-scroll">
+                      <Suspense fallback={<div className="workhub-empty-state">Loading details…</div>}>
+                        <WorkhubProjectDetailRailLazy {...workhubTasksSectionProps} />
+                      </Suspense>
+                    </div>
                   </aside>
                 )}
               </main>
@@ -11028,6 +11341,16 @@ export default function WorkHubPage() {
           onProjectIdChange={setDocumentProjectIdDraft}
           onClose={closeDocumentCreateDialog}
           onCreate={() => { void handleCreateDocument() }}
+        />
+
+        <AddItemDialog
+          isOpen={addItemDialogOpen}
+          projectId={addItemProjectId}
+          onClose={closeAddItemDialog}
+          onCreateTask={() => { void handleCreateItem('task') }}
+          onCreateDocument={() => { void handleCreateItem('document') }}
+          onCreateNote={() => { void handleCreateItem('note') }}
+          onCreateMoodBoard={() => { void handleCreateItem('moodboard') }}
         />
 
         <DocumentSettingsDialog

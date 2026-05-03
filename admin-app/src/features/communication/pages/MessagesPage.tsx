@@ -100,7 +100,7 @@ function formatThreadLastStamp(value: unknown): string {
 
 function clampThreadPaneWidth(width: number): number {
   if (!Number.isFinite(width)) return 300
-  return Math.min(460, Math.max(220, Math.round(width)))
+  return Math.min(680, Math.max(220, Math.round(width)))
 }
 
 function readThreadPaneWidth(): number {
@@ -248,6 +248,7 @@ export function MessagesPageView({ embedded = false, live = true }: MessagesPage
   const messageElementRefs = useRef<Record<string, HTMLElement | null>>({})
   const stickToBottomRef = useRef(true)
   const threadEndRef = useRef<HTMLDivElement>(null)
+  const resizeStartRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const [selectedRecipientUids, setSelectedRecipientUids] = useState<string[]>([])
   const [recipientInitialized, setRecipientInitialized] = useState(false)
   const [activeThreadSelectionKey, setActiveThreadSelectionKey] = useState('everyone')
@@ -370,8 +371,8 @@ export function MessagesPageView({ embedded = false, live = true }: MessagesPage
   useEffect(() => {
     if (recipientInitialized) return
     if (!chatUser?.uid) return
-    setSelectedRecipientUids([chatUser.uid])
-    setActiveThreadSelectionKey(`member:${chatUser.uid}`)
+    setSelectedRecipientUids([])
+    setActiveThreadSelectionKey('everyone')
     setRecipientInitialized(true)
   }, [chatUser?.uid, recipientInitialized])
 
@@ -430,24 +431,64 @@ export function MessagesPageView({ embedded = false, live = true }: MessagesPage
   useEffect(() => {
     if (!isResizingThreadPane) return
 
-    const handlePointerMove = (event: MouseEvent) => {
-      const rect = layoutRef.current?.getBoundingClientRect()
-      if (!rect) return
-      const nextWidth = clampThreadPaneWidth(event.clientX - rect.left)
+    const prevBodyUserSelect = document.body.style.userSelect
+    const prevBodyCursor = document.body.style.cursor
+    const prevHtmlUserSelect = document.documentElement.style.userSelect
+    const prevHtmlCursor = document.documentElement.style.cursor
+
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'col-resize'
+    document.documentElement.style.userSelect = 'none'
+    document.documentElement.style.cursor = 'col-resize'
+
+    const handlePointerMove = (event: MouseEvent | PointerEvent) => {
+      if ('preventDefault' in event) event.preventDefault()
+      console.log('PointerMove during resize', event.clientX)
+      if (!resizeStartRef.current) return
+      const dx = event.clientX - resizeStartRef.current.startX
+      const nextWidth = clampThreadPaneWidth(resizeStartRef.current.startWidth + dx)
+      console.log('Next width', nextWidth)
       setThreadPaneWidth(nextWidth)
     }
 
     const handlePointerUp = () => {
+      console.log('PointerUp during resize')
+      resizeStartRef.current = null
       setIsResizingThreadPane(false)
     }
 
-    window.addEventListener('mousemove', handlePointerMove)
-    window.addEventListener('mouseup', handlePointerUp)
+    document.addEventListener('mousemove', handlePointerMove)
+    document.addEventListener('pointermove', handlePointerMove)
+    document.addEventListener('mouseup', handlePointerUp)
+    document.addEventListener('pointerup', handlePointerUp)
+    document.addEventListener('pointercancel', handlePointerUp)
+    document.addEventListener('blur', handlePointerUp)
     return () => {
-      window.removeEventListener('mousemove', handlePointerMove)
-      window.removeEventListener('mouseup', handlePointerUp)
+      document.body.style.userSelect = prevBodyUserSelect
+      document.body.style.cursor = prevBodyCursor
+      document.documentElement.style.userSelect = prevHtmlUserSelect
+      document.documentElement.style.cursor = prevHtmlCursor
+      document.removeEventListener('mousemove', handlePointerMove)
+      document.removeEventListener('pointermove', handlePointerMove)
+      document.removeEventListener('mouseup', handlePointerUp)
+      document.removeEventListener('pointerup', handlePointerUp)
+      document.removeEventListener('pointercancel', handlePointerUp)
+      document.removeEventListener('blur', handlePointerUp)
     }
   }, [isResizingThreadPane])
+
+  useEffect(() => {
+    if (!showCreateGroup) return
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setShowCreateGroup(false)
+      setEditingGroupId('')
+      setNewGroupName('')
+      setNewGroupMemberUids([])
+    }
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [showCreateGroup])
 
   useEffect(() => {
     if (!layoutRef.current) return
@@ -1002,6 +1043,13 @@ export function MessagesPageView({ embedded = false, live = true }: MessagesPage
     setShowCreateGroup(true)
   }
 
+  const openNewGroupDialog = () => {
+    setEditingGroupId('')
+    setNewGroupName('')
+    setNewGroupMemberUids([])
+    setShowCreateGroup(true)
+  }
+
   const handleDeleteGroup = (groupId: string) => {
     const group = chatGroups.find((item) => item.id === groupId)
     if (!group) return
@@ -1044,63 +1092,12 @@ export function MessagesPageView({ embedded = false, live = true }: MessagesPage
               <button
                 type="button"
                 className="shell-messages-group-toggle"
-                onClick={() => {
-                  setShowCreateGroup((prev) => {
-                    const next = !prev
-                    if (next) {
-                      setEditingGroupId('')
-                      setNewGroupName('')
-                      setNewGroupMemberUids([])
-                    }
-                    return next
-                  })
-                }}
+                onClick={openNewGroupDialog}
               >
-                {showCreateGroup ? 'Cancel' : 'New group'}
+                New group
               </button>
             </div>
           </header>
-
-          {showCreateGroup && (
-            <div className="shell-messages-group-editor">
-              <input
-                value={newGroupName}
-                onChange={(event) => setNewGroupName(event.target.value)}
-                placeholder="Group name"
-              />
-              <div className="shell-messages-group-member-list">
-                {orderedMembers
-                  .filter((member) => member.uid !== chatUser?.uid)
-                  .map((member) => {
-                    const checked = newGroupMemberUids.includes(member.uid)
-                    const label = (member.displayName || member.email || member.uid).trim()
-                    return (
-                      <label key={member.uid}>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(event) => {
-                            setNewGroupMemberUids((prev) => {
-                              if (!event.target.checked) return prev.filter((uid) => uid !== member.uid)
-                              return prev.includes(member.uid) ? prev : [...prev, member.uid]
-                            })
-                          }}
-                        />
-                        <span>{label}</span>
-                      </label>
-                    )
-                  })}
-              </div>
-              <button
-                type="button"
-                className="shell-messages-group-create-btn"
-                onClick={handleSaveGroup}
-                disabled={!newGroupName.trim() || newGroupMemberUids.length === 0}
-              >
-                {editingGroupId ? 'Save group settings' : 'Create group'}
-              </button>
-            </div>
-          )}
 
           <div className="shell-messages-thread-list" role="list" aria-label="Chat threads">
             {threadItems.map((thread) => {
@@ -1241,7 +1238,18 @@ export function MessagesPageView({ embedded = false, live = true }: MessagesPage
           role="separator"
           aria-orientation="vertical"
           aria-label="Resize thread list"
-          onMouseDown={() => setIsResizingThreadPane(true)}
+          onMouseDown={(event) => {
+            event.preventDefault()
+            console.log('MouseDown on resize handle')
+            resizeStartRef.current = { startX: event.clientX, startWidth: threadPaneWidth }
+            setIsResizingThreadPane(true)
+          }}
+          onPointerDown={(event) => {
+            event.preventDefault()
+            console.log('PointerDown on resize handle')
+            resizeStartRef.current = { startX: event.clientX, startWidth: threadPaneWidth }
+            setIsResizingThreadPane(true)
+          }}
         />
 
         <div className="shell-messages-main">
@@ -1743,6 +1751,102 @@ export function MessagesPageView({ embedded = false, live = true }: MessagesPage
       </footer>
         </div>
       </div>
+
+      {showCreateGroup && (
+        <div
+          className="shell-messages-group-dialog-backdrop"
+          role="presentation"
+          onClick={() => {
+            setShowCreateGroup(false)
+            setEditingGroupId('')
+            setNewGroupName('')
+            setNewGroupMemberUids([])
+          }}
+        >
+          <div
+            className="shell-messages-group-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label={editingGroupId ? 'Edit group' : 'Create group'}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="shell-messages-group-dialog-head">
+              <h2>{editingGroupId ? 'Group settings' : 'Create group'}</h2>
+              <button
+                type="button"
+                className="shell-messages-group-dialog-close"
+                onClick={() => {
+                  setShowCreateGroup(false)
+                  setEditingGroupId('')
+                  setNewGroupName('')
+                  setNewGroupMemberUids([])
+                }}
+                aria-label="Close group dialog"
+              >
+                x
+              </button>
+            </header>
+
+            <div className="shell-messages-group-dialog-body">
+              <label className="shell-messages-group-input-wrap">
+                <span>Group name</span>
+                <input
+                  value={newGroupName}
+                  onChange={(event) => setNewGroupName(event.target.value)}
+                  placeholder="Group name"
+                />
+              </label>
+
+              <div className="shell-messages-group-member-list" role="group" aria-label="Group members">
+                {orderedMembers
+                  .filter((member) => member.uid !== chatUser?.uid)
+                  .map((member) => {
+                    const checked = newGroupMemberUids.includes(member.uid)
+                    const label = (member.displayName || member.email || member.uid).trim()
+                    return (
+                      <label key={member.uid} className="shell-messages-group-member-item">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(event) => {
+                            setNewGroupMemberUids((prev) => {
+                              if (!event.target.checked) return prev.filter((uid) => uid !== member.uid)
+                              return prev.includes(member.uid) ? prev : [...prev, member.uid]
+                            })
+                          }}
+                        />
+                        <span>{label}</span>
+                      </label>
+                    )
+                  })}
+              </div>
+            </div>
+
+            <footer className="shell-messages-group-dialog-actions">
+              <button
+                type="button"
+                className="shell-messages-group-dialog-cancel"
+                onClick={() => {
+                  setShowCreateGroup(false)
+                  setEditingGroupId('')
+                  setNewGroupName('')
+                  setNewGroupMemberUids([])
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="shell-messages-group-create-btn"
+                onClick={handleSaveGroup}
+                disabled={!newGroupName.trim() || newGroupMemberUids.length === 0}
+              >
+                {editingGroupId ? 'Save group settings' : 'Create group'}
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
     </section>
   )
 }

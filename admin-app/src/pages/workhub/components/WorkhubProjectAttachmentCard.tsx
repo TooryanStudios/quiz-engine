@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { isVideoAttachmentUrl } from '../taskUtils'
+import { WorkhubInlineVideoPlayer } from './WorkhubInlineVideoPlayer'
 
 export interface WorkhubProjectAttachmentCardProps {
   collapsed: boolean
@@ -276,6 +278,8 @@ export function WorkhubProjectAttachmentCard({
                       <small>{url}</small>
                     </span>
                   </button>
+                ) : isVideoAttachmentUrl(url) ? (
+                  <WorkhubInlineVideoPlayer url={url} title={attachmentTitle} />
                 ) : (
                   <a href={url} target="_blank" rel="noreferrer" className="workhub-task-image-link">
                     <span className="workhub-task-attachment-icon">📎</span>

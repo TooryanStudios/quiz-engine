@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ChangeEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import type { WorkhubProjectIntent, WorkhubProjectType } from '../../../lib/workhubRepo'
 
 interface WorkhubProjectTypeOption {
@@ -30,6 +30,32 @@ export interface WorkhubEntityIntentDetailFormProps {
   onNarrativeBlur: () => void
   detailDrafts: Record<string, string>
   onDetailDraftChange: (key: string, value: string) => void
+  proposalServiceOptions: string[]
+  selectedProposalServices: string[]
+  onSelectedProposalServicesChange: (services: string[]) => void
+  canCreateProposalServiceOption: boolean
+  onCreateProposalServiceOption: (name: string) => void
+}
+
+function normalizeServiceLabel(value: string): string {
+  return value.trim().replace(/\s+/g, ' ')
+}
+
+function normalizeServiceKey(value: string): string {
+  return normalizeServiceLabel(value).toLowerCase()
+}
+
+function dedupeServices(values: string[]): string[] {
+  const seen = new Set<string>()
+  const result: string[] = []
+  values.forEach((value) => {
+    const normalized = normalizeServiceLabel(value)
+    const key = normalizeServiceKey(normalized)
+    if (!normalized || seen.has(key)) return
+    seen.add(key)
+    result.push(normalized)
+  })
+  return result
 }
 
 function AutoGrowTextarea(props: {
@@ -203,6 +229,47 @@ function ProjectIntentDetailForm(props: WorkhubEntityIntentDetailFormProps) {
 }
 
 function ProposalIntentDetailForm(props: WorkhubEntityIntentDetailFormProps) {
+  const [newServiceName, setNewServiceName] = useState('')
+  const [servicesExpanded, setServicesExpanded] = useState(false)
+  const selectedServiceKeys = useMemo(
+    () => new Set(props.selectedProposalServices.map((value) => normalizeServiceKey(value))),
+    [props.selectedProposalServices],
+  )
+
+  const sortedServiceOptions = useMemo(
+    () => dedupeServices(props.proposalServiceOptions),
+    [props.proposalServiceOptions],
+  )
+
+  const handleToggleService = (value: string, checked: boolean) => {
+    const next = normalizeServiceLabel(value)
+    if (!next) return
+    if (checked) {
+      props.onSelectedProposalServicesChange(dedupeServices([...props.selectedProposalServices, next]))
+      return
+    }
+    const targetKey = normalizeServiceKey(next)
+    props.onSelectedProposalServicesChange(
+      props.selectedProposalServices.filter((item) => normalizeServiceKey(item) !== targetKey),
+    )
+  }
+
+  const handleCreateService = () => {
+    if (!props.canCreateProposalServiceOption) return
+    const next = normalizeServiceLabel(newServiceName)
+    if (!next) return
+    props.onCreateProposalServiceOption(next)
+    props.onSelectedProposalServicesChange(dedupeServices([...props.selectedProposalServices, next]))
+    setNewServiceName('')
+  }
+
+  const handleRemoveService = (value: string) => {
+    const targetKey = normalizeServiceKey(value)
+    props.onSelectedProposalServicesChange(
+      props.selectedProposalServices.filter((item) => normalizeServiceKey(item) !== targetKey),
+    )
+  }
+
   return (
     <div className="workhub-detail-grid workhub-project-detail-grid">
       {renderNameField(props, 'Proposal title', 'Proposal title')}
@@ -237,6 +304,96 @@ function ProposalIntentDetailForm(props: WorkhubEntityIntentDetailFormProps) {
         </label>
       </div>
       {renderMonetaryValueFields(props, 'Estimated value', '250000')}
+      <label className="workhub-span-2">
+        <span>Services provided</span>
+        <div className="workhub-proposal-services-stack">
+          <div className="workhub-proposal-services-collapsible">
+            <button
+              type="button"
+              className="workhub-proposal-services-toggle"
+              onClick={() => setServicesExpanded((current) => !current)}
+              aria-expanded={servicesExpanded}
+              aria-controls="workhub-proposal-services-checklist"
+            >
+              <span>{`Company services (${sortedServiceOptions.length})`}</span>
+              <span className="workhub-proposal-services-toggle-meta">
+                <strong>{`${props.selectedProposalServices.length} selected`}</strong>
+                <span aria-hidden="true">{servicesExpanded ? '▴' : '▾'}</span>
+              </span>
+            </button>
+
+            {servicesExpanded && (
+              <div
+                id="workhub-proposal-services-checklist"
+                className="workhub-proposal-services-checklist"
+                role="group"
+                aria-label="Available company services"
+              >
+                {sortedServiceOptions.map((service) => {
+                  const key = normalizeServiceKey(service)
+                  const checked = selectedServiceKeys.has(key)
+                  return (
+                    <label key={service} className="workhub-proposal-service-option">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={!props.canEdit}
+                        onChange={(event) => handleToggleService(service, event.target.checked)}
+                      />
+                      <span>{service}</span>
+                    </label>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {props.selectedProposalServices.length > 0 && (
+            <ul className="workhub-proposal-selected-services-list">
+              {props.selectedProposalServices.map((service) => (
+                <li key={service} className="workhub-proposal-selected-service-item">
+                  <span>{service}</span>
+                  {props.canEdit && (
+                    <button
+                      type="button"
+                      className="workhub-proposal-service-chip-remove"
+                      onClick={() => handleRemoveService(service)}
+                      aria-label={`Remove ${service}`}
+                      title={`Remove ${service}`}
+                    >
+                      ×
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="workhub-proposal-services-picker">
+            <input
+              type="text"
+              value={newServiceName}
+              onChange={(event) => setNewServiceName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return
+                event.preventDefault()
+                if (!props.canCreateProposalServiceOption || !normalizeServiceLabel(newServiceName)) return
+                handleCreateService()
+              }}
+              placeholder="Add new global service (e.g. Animation)"
+              disabled={!props.canCreateProposalServiceOption}
+            />
+            <button
+              type="button"
+              className="workhub-primary-mini"
+              onClick={handleCreateService}
+              disabled={!props.canCreateProposalServiceOption || !normalizeServiceLabel(newServiceName)}
+            >
+              Create
+            </button>
+          </div>
+        </div>
+      </label>
       {renderNarrativeField(props, 'Proposal scope', 'Proposal scope, assumptions, and notes')}
     </div>
   )

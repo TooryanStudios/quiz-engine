@@ -290,6 +290,7 @@ export function WorkhubUsersSection({
                                   </button>
                                 </div>
                               )}
+                              {isChecked && workspaceEntry.invited && <span className="workhub-ws-picker-badge">Invited</span>}
                               {workspace.id === selectedWorkspaceId && <span className="workhub-ws-picker-badge current">Current</span>}
                             </div>
                           )

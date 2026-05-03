@@ -246,6 +246,10 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
     handleSelectedProjectDescriptionBlur,
     selectedProjectIntentDetailDrafts,
     setSelectedProjectIntentDetailDrafts,
+    proposalServiceOptions,
+    selectedProposalServicesDraft,
+    setSelectedProposalServicesDraft,
+    handleCreateProposalServiceOption,
     projectAttachmentsCollapsed,
     setProjectAttachmentsCollapsed,
     selectedProjectAttachmentTitleDraft,
@@ -1510,6 +1514,10 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
                 handleSelectedProjectDescriptionBlur={handleSelectedProjectDescriptionBlur}
                 selectedProjectIntentDetailDrafts={selectedProjectIntentDetailDrafts}
                 setSelectedProjectIntentDetailDrafts={setSelectedProjectIntentDetailDrafts}
+                proposalServiceOptions={proposalServiceOptions}
+                selectedProposalServicesDraft={selectedProposalServicesDraft}
+                setSelectedProposalServicesDraft={setSelectedProposalServicesDraft}
+                handleCreateProposalServiceOption={handleCreateProposalServiceOption}
                 projectDiscussionNode={projectDiscussionNode}
                 projectAttachmentsCollapsed={projectAttachmentsCollapsed}
                 setProjectAttachmentsCollapsed={setProjectAttachmentsCollapsed}

@@ -1,4 +1,6 @@
 import type { WorkhubTask, WorkhubTaskChecklistItem } from '../../../lib/workhubRepo'
+import { isVideoAttachmentUrl } from '../taskUtils'
+import { WorkhubInlineVideoPlayer } from './WorkhubInlineVideoPlayer'
 
 export interface WorkhubTaskChecklistCardProps {
   task: WorkhubTask
@@ -228,6 +230,8 @@ export function WorkhubTaskChecklistCard({
                                   <img src={url} alt="Checklist attachment preview" className="workhub-task-image-thumb" loading="lazy" />
                                   <span>{url}</span>
                                 </button>
+                              ) : isVideoAttachmentUrl(url) ? (
+                                <WorkhubInlineVideoPlayer url={url} title="Checklist video" />
                               ) : (
                                 <a href={url} target="_blank" rel="noreferrer" className="workhub-task-image-link">
                                   <span className="workhub-task-attachment-icon">📎</span>
@@ -259,7 +263,9 @@ export function WorkhubTaskChecklistCard({
                       <div className="workhub-checklist-url-list">
                         {(item.links || []).map((link) => (
                           <div key={link} className="workhub-checklist-url-item">
-                            <a href={link} target="_blank" rel="noreferrer">{link}</a>
+                            {isVideoAttachmentUrl(link)
+                              ? <WorkhubInlineVideoPlayer url={link} title="Checklist video link" />
+                              : <a href={link} target="_blank" rel="noreferrer">{link}</a>}
                             <button type="button" onClick={() => onChecklistLinkRemove(item.id, link)}>✕</button>
                           </div>
                         ))}

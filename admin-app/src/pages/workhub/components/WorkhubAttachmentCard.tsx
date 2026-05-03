@@ -1,3 +1,6 @@
+import { isVideoAttachmentUrl } from '../taskUtils'
+import { WorkhubInlineVideoPlayer } from './WorkhubInlineVideoPlayer'
+
 export interface WorkhubAttachmentCardProps {
   title?: string
   attachments: string[]
@@ -68,6 +71,8 @@ export function WorkhubAttachmentCard({
                   <img src={url} alt="Attachment" className="workhub-task-image-thumb" loading="lazy" />
                   <span>{url}</span>
                 </button>
+              ) : isVideoAttachmentUrl(url) ? (
+                <WorkhubInlineVideoPlayer url={url} title="Document video" />
               ) : (
                 <a href={url} target="_blank" rel="noreferrer" className="workhub-task-image-link">
                   <span className="workhub-task-attachment-icon">📎</span>

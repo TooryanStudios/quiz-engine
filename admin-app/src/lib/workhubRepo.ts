@@ -95,6 +95,7 @@ export interface WorkhubProject {
   projectDeadline?: string
   projectType?: WorkhubProjectType
   submissionTime?: string
+  proposalServices?: string[]
   priority?: WorkhubProjectPriority
   clientId?: string
   notes?: string
@@ -412,6 +413,15 @@ export interface WorkhubClient {
   updatedAt?: unknown
 }
 
+export interface WorkhubCompanyService {
+  id: string
+  name: string
+  normalizedName: string
+  createdBy: string
+  createdAt?: unknown
+  updatedAt?: unknown
+}
+
 const membersCol = collection(db, 'workhub_members')
 const workspacesCol = collection(db, 'workhub_workspaces')
 const projectsCol = collection(db, 'workhub_projects')
@@ -424,6 +434,7 @@ const projectNotificationPrefsCol = collection(db, 'workhub_project_notification
 const clientsCol = collection(db, 'workhub_clients')
 const documentDraftsCol = collection(db, 'workhub_document_drafts')
 const milestonesCol = collection(db, 'workhub_milestones')
+const companyServicesCol = collection(db, 'workhub_company_services')
 
 function getTimeValue(value: unknown): number {
   if (!value) return 0
@@ -548,6 +559,18 @@ function mergeTasksById(groups: WorkhubTask[][]) {
 
 function sortClients(items: WorkhubClient[]) {
   return [...items].sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+}
+
+function sortCompanyServices(items: WorkhubCompanyService[]) {
+  return [...items].sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+}
+
+function normalizeCompanyServiceName(value: string): string {
+  return value.trim().replace(/\s+/g, ' ')
+}
+
+function normalizeCompanyServiceKey(value: string): string {
+  return normalizeCompanyServiceName(value).toLowerCase()
 }
 
 function mergeClientsById(groups: WorkhubClient[][]) {
@@ -842,6 +865,42 @@ export async function deleteWorkhubClient(clientId: string) {
   await deleteDoc(doc(db, 'workhub_clients', clientId))
 }
 
+export function subscribeWorkhubCompanyServices(onData: (items: WorkhubCompanyService[]) => void) {
+  return safeListen(
+    () => onSnapshot(
+      companyServicesCol,
+      (snap) => {
+        const items = snap.docs.map((item) => ({ id: item.id, ...item.data() } as WorkhubCompanyService))
+        onData(sortCompanyServices(items))
+      },
+      () => onData([]),
+    ),
+    () => onData([]),
+  )
+}
+
+export async function createWorkhubCompanyService(input: { name: string; createdBy: string }): Promise<string> {
+  const name = normalizeCompanyServiceName(input.name)
+  const normalizedName = normalizeCompanyServiceKey(name)
+  if (!name) {
+    throw new Error('Service name is required.')
+  }
+
+  const existing = await getDocs(query(companyServicesCol, where('normalizedName', '==', normalizedName), limit(1)))
+  if (!existing.empty) {
+    return existing.docs[0].id
+  }
+
+  const docRef = await addDoc(companyServicesCol, {
+    name,
+    normalizedName,
+    createdBy: input.createdBy,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  })
+  return docRef.id
+}
+
 export function subscribeWorkhubProjects(workspaceId: string, currentUid: string, canSeeAll: boolean, onData: (items: WorkhubProject[]) => void) {
   if (canSeeAll) {
     const q = query(projectsCol, where('workspaceId', '==', workspaceId))
@@ -923,6 +982,7 @@ export async function createWorkhubProject(input: {
   projectDeadline?: string
   projectType?: WorkhubProjectType
   submissionTime?: string
+  proposalServices?: string[]
   priority?: WorkhubProjectPriority
   clientId?: string
   createdBy: string
@@ -949,6 +1009,7 @@ export async function createWorkhubProject(input: {
     projectDeadline: input.projectDeadline || '',
     projectType: input.projectType || 'other',
     submissionTime: input.submissionTime || '',
+    proposalServices: normalizeMemberUids(input.proposalServices || []),
     priority: input.priority || 'medium',
     clientId: input.clientId || '',
     notes: '',
@@ -959,10 +1020,13 @@ export async function createWorkhubProject(input: {
   return docRef.id
 }
 
-export async function updateWorkhubProject(projectId: string, patch: Partial<Pick<WorkhubProject, 'parentProjectId' | 'sortOrder' | 'intent' | 'mainPanelView' | 'taskItemDisplayMode' | 'valueAmount' | 'valueCurrency' | 'tenderNumber' | 'proposalId' | 'technicalProposalUrl' | 'financialProposalUrl' | 'name' | 'description' | 'color' | 'notes' | 'attachments' | 'attachmentTitles' | 'notesUpdatedBy' | 'visibility' | 'memberUids' | 'storageMethod' | 'projectStartDate' | 'projectDeadline' | 'projectType' | 'submissionTime' | 'priority' | 'clientId' | 'taskStatuses'>>) {
+export async function updateWorkhubProject(projectId: string, patch: Partial<Pick<WorkhubProject, 'parentProjectId' | 'sortOrder' | 'intent' | 'mainPanelView' | 'taskItemDisplayMode' | 'valueAmount' | 'valueCurrency' | 'tenderNumber' | 'proposalId' | 'technicalProposalUrl' | 'financialProposalUrl' | 'name' | 'description' | 'color' | 'notes' | 'attachments' | 'attachmentTitles' | 'notesUpdatedBy' | 'visibility' | 'memberUids' | 'storageMethod' | 'projectStartDate' | 'projectDeadline' | 'projectType' | 'submissionTime' | 'proposalServices' | 'priority' | 'clientId' | 'taskStatuses'>>) {
   const payload: Record<string, unknown> = {
     ...patch,
     updatedAt: serverTimestamp(),
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'proposalServices')) {
+    payload.proposalServices = normalizeMemberUids(patch.proposalServices || [])
   }
   if (Object.prototype.hasOwnProperty.call(patch, 'notes')) {
     payload.notesUpdatedAt = serverTimestamp()

@@ -345,6 +345,11 @@ service cloud.firestore {
       allow create, update, delete: if canAccessWorkhub();
     }
 
+    match /workhub_company_services/{serviceId} {
+      allow read: if canAccessWorkhub();
+      allow create, update, delete: if isPrivilegedWorkhubMember();
+    }
+
     match /workhub_finances/{projectId} {
       allow read: if isPrivilegedWorkhubMember();
       allow create, update, delete: if isPrivilegedWorkhubMember();

@@ -30,6 +30,7 @@ interface UseWorkhubAccessHandlersParams {
   userAccessDraftByUid: Record<string, WorkhubUserAccessDraft>
   setUserAccessDraftByUid: Dispatch<SetStateAction<Record<string, WorkhubUserAccessDraft>>>
   userAccessDraftDirtyByUid: Record<string, boolean>
+  memberEmailByUid: Record<string, string>
   currentUserUid: string
   setBusyKey: Dispatch<SetStateAction<string>>
   showToast: (payload: { message: string; type?: 'success' | 'error' | 'info' | 'warning'; durationMs?: number }) => void
@@ -50,6 +51,7 @@ export function useWorkhubAccessHandlers({
   userAccessDraftByUid,
   setUserAccessDraftByUid,
   userAccessDraftDirtyByUid,
+  memberEmailByUid,
   currentUserUid,
   setBusyKey,
   showToast,
@@ -71,11 +73,11 @@ export function useWorkhubAccessHandlers({
       const nextWorkspaceById = Object.fromEntries(Object.entries(draft.workspaceById).map(([workspaceId, entry]) => [workspaceId, { ...entry }]))
       if (mode === 'full') {
         Object.keys(nextWorkspaceById).forEach((workspaceId) => {
-          nextWorkspaceById[workspaceId] = { enabled: true, level: 'full' }
+          nextWorkspaceById[workspaceId] = { enabled: true, level: 'full', invited: false }
         })
       } else {
         Object.keys(nextWorkspaceById).forEach((workspaceId) => {
-          nextWorkspaceById[workspaceId] = { enabled: false, level: 'custom' }
+          nextWorkspaceById[workspaceId] = { enabled: false, level: 'custom', invited: false }
         })
       }
       return {
@@ -95,6 +97,7 @@ export function useWorkhubAccessHandlers({
           [workspaceId]: {
             enabled: checked,
             level: checked ? currentEntry.level : 'custom',
+            invited: false,
           },
         },
       }
@@ -110,6 +113,7 @@ export function useWorkhubAccessHandlers({
           [workspaceId]: {
             enabled: true,
             level,
+            invited: false,
           },
         },
       }
@@ -130,8 +134,10 @@ export function useWorkhubAccessHandlers({
     if (!draft || !userAccessDraftDirtyByUid[uid]) return
     setBusyKey(`user-access-save:${uid}`)
     try {
+      const memberEmail = (memberEmailByUid[uid] || '').trim().toLowerCase()
       await Promise.all(workspaces.map(async (workspace) => {
         const currentUids = normalizeMemberUids(workspace.accessMemberUids || [])
+        const currentInvites = normalizeInviteEmails(workspace.invitedEmails || [])
         const currentLevels = { ...(workspace.memberAccessLevels || {}) } as Record<string, 'full' | 'custom'>
         const hasCurrentAccess = currentUids.includes(uid)
         const workspaceDraft = draft.workspaceById[workspace.id] || { enabled: false, level: 'custom' as const }
@@ -146,6 +152,9 @@ export function useWorkhubAccessHandlers({
         const nextUids = shouldHaveAccess
           ? (hasCurrentAccess ? currentUids : normalizeMemberUids([...currentUids, uid]))
           : currentUids.filter((itemUid) => itemUid !== uid)
+        const nextInvites = memberEmail
+          ? currentInvites.filter((email) => email !== memberEmail)
+          : currentInvites
         const nextLevels = { ...currentLevels }
         if (shouldHaveAccess) {
           nextLevels[uid] = level
@@ -154,11 +163,13 @@ export function useWorkhubAccessHandlers({
         }
 
         const accessChanged = nextUids.length !== currentUids.length || nextUids.some((itemUid, index) => itemUid !== currentUids[index])
+        const invitesChanged = nextInvites.length !== currentInvites.length || nextInvites.some((email, index) => email !== currentInvites[index])
         const levelChanged = (currentLevels[uid] || null) !== (nextLevels[uid] || null)
-        if (!accessChanged && !levelChanged) return
+        if (!accessChanged && !invitesChanged && !levelChanged) return
 
         await updateWorkhubWorkspace(workspace.id, {
           accessMemberUids: nextUids,
+          invitedEmails: nextInvites,
           memberAccessLevels: nextLevels,
         })
       }))
@@ -181,6 +192,7 @@ export function useWorkhubAccessHandlers({
     showToast,
     userAccessDraftByUid,
     userAccessDraftDirtyByUid,
+    memberEmailByUid,
     workspaces,
   ])
 
