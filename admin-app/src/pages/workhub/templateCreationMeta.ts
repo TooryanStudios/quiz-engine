@@ -133,6 +133,90 @@ const WORKHUB_TEMPLATE_CREATION_INTENT_META: Record<WorkhubTemplateCreationInten
       projectType: 'other',
     },
   },
+  hr_department_unit: {
+    icon: '🏢',
+    title: 'Create Department',
+    subtitle: 'Create a department unit for the organization structure.',
+    submitLabel: 'Create department',
+    subjectLabel: 'Department',
+    actionLabel: 'Create department',
+    defaults: {
+      priority: 'medium',
+      projectType: 'other',
+    },
+  },
+  hr_sub_department_unit: {
+    icon: '🧩',
+    title: 'Create Sub-department',
+    subtitle: 'Create a child department under an existing department.',
+    submitLabel: 'Create sub-department',
+    subjectLabel: 'Sub-department',
+    actionLabel: 'Create sub-department',
+    defaults: {
+      priority: 'medium',
+      projectType: 'other',
+    },
+  },
+  hr_employee_profile: {
+    icon: '🪪',
+    title: 'Create Employee Profile',
+    subtitle: 'Capture employee identity, authority level, and role profile details.',
+    submitLabel: 'Create employee profile',
+    subjectLabel: 'Employee profile',
+    actionLabel: 'Create employee profile',
+    defaults: {
+      priority: 'medium',
+      projectType: 'other',
+    },
+  },
+  hr_leave_case: {
+    icon: '🏖️',
+    title: 'Create Leave Case',
+    subtitle: 'Track leave requests, approvers, and return-to-work commitments.',
+    submitLabel: 'Create leave case',
+    subjectLabel: 'Leave case',
+    actionLabel: 'Create leave case',
+    defaults: {
+      priority: 'medium',
+      projectType: 'other',
+    },
+  },
+  hr_kpi_cycle: {
+    icon: '📈',
+    title: 'Create KPI Cycle',
+    subtitle: 'Set KPI/OKR cycle ownership, cadence, and close targets.',
+    submitLabel: 'Create KPI cycle',
+    subjectLabel: 'KPI cycle',
+    actionLabel: 'Create KPI cycle',
+    defaults: {
+      priority: 'high',
+      projectType: 'other',
+    },
+  },
+  hr_initiative_program: {
+    icon: '🌟',
+    title: 'Create Initiative Program',
+    subtitle: 'Define motivation, engagement, and recognition initiatives.',
+    submitLabel: 'Create initiative program',
+    subjectLabel: 'Initiative program',
+    actionLabel: 'Create initiative program',
+    defaults: {
+      priority: 'medium',
+      projectType: 'other',
+    },
+  },
+  hr_learning_certification: {
+    icon: '🎓',
+    title: 'Create Learning Record',
+    subtitle: 'Track certifications, renewals, and professional upgrade evidence.',
+    submitLabel: 'Create learning record',
+    subjectLabel: 'Learning record',
+    actionLabel: 'Create learning record',
+    defaults: {
+      priority: 'medium',
+      projectType: 'other',
+    },
+  },
 }
 
 const WORKHUB_PROJECTS_TEMPLATE_PROJECT_INTENT_META: WorkhubTemplateCreationIntentMeta = {
@@ -148,12 +232,28 @@ const WORKHUB_PROJECTS_TEMPLATE_PROJECT_INTENT_META: WorkhubTemplateCreationInte
   },
 }
 
+const WORKHUB_HR_TEMPLATE_PROJECT_INTENT_META: WorkhubTemplateCreationIntentMeta = {
+  icon: '🏛️',
+  title: 'Create Organization Unit',
+  subtitle: 'Create an organization-level container for departments and employee records.',
+  submitLabel: 'Create organization unit',
+  subjectLabel: 'Organization unit',
+  actionLabel: 'Create organization unit',
+  defaults: {
+    priority: 'medium',
+    projectType: 'other',
+  },
+}
+
 export function getTemplateCreationIntentMeta(
   intent: WorkhubTemplateCreationIntent,
   workspaceTemplateId?: WorkhubWorkspaceTemplateId,
 ): WorkhubTemplateCreationIntentMeta {
   if (intent === 'project' && workspaceTemplateId === 'projects') {
     return WORKHUB_PROJECTS_TEMPLATE_PROJECT_INTENT_META
+  }
+  if (intent === 'project' && workspaceTemplateId === 'hr') {
+    return WORKHUB_HR_TEMPLATE_PROJECT_INTENT_META
   }
   return WORKHUB_TEMPLATE_CREATION_INTENT_META[intent]
 }
@@ -189,8 +289,14 @@ const WORKHUB_WORKSPACE_TEMPLATE_CREATE_ACTIONS: Record<WorkhubWorkspaceTemplate
     { id: 'create-content-stream', intent: 'marketing_content_stream', tone: 'secondary' },
   ],
   hr: [
-    { id: 'create-requisition', intent: 'hr_requisition', tone: 'primary' },
-    { id: 'create-onboarding-track', intent: 'hr_onboarding_track', tone: 'secondary' },
+    { id: 'create-organization-unit', intent: 'project', tone: 'primary' },
+    { id: 'create-department', intent: 'hr_department_unit', tone: 'secondary' },
+    { id: 'create-sub-department', intent: 'hr_sub_department_unit', tone: 'secondary' },
+    { id: 'create-employee-profile', intent: 'hr_employee_profile', tone: 'secondary' },
+    { id: 'create-leave-case', intent: 'hr_leave_case', tone: 'secondary' },
+    { id: 'create-kpi-cycle', intent: 'hr_kpi_cycle', tone: 'secondary' },
+    { id: 'create-initiative-program', intent: 'hr_initiative_program', tone: 'secondary' },
+    { id: 'create-learning-record', intent: 'hr_learning_certification', tone: 'secondary' },
   ],
   empty: [
     {

@@ -8,10 +8,12 @@ interface TinyRichTextEditorProps {
   onChange: (value: string) => void
   disabled?: boolean
   minHeight?: number
+  contentPaddingPx?: number
   placeholder?: string
   className?: string
   autoFocus?: boolean
   onReady?: (editor: TinyMCEEditor) => void
+  toolbarContainerSelector?: string
 }
 
 export function TinyRichTextEditor({
@@ -19,16 +21,20 @@ export function TinyRichTextEditor({
   onChange,
   disabled = false,
   minHeight = 520,
+  contentPaddingPx = 12,
   placeholder = 'Start writing...',
   className,
   autoFocus = false,
   onReady,
+  toolbarContainerSelector,
 }: TinyRichTextEditorProps) {
   const editorRef = useRef<TinyMCEEditor | null>(null)
   const { apiKey, scriptSrc, init } = useTinyRichTextEditorConfig({
     disabled,
     minHeight,
+    contentPaddingPx,
     placeholder,
+    toolbarContainerSelector,
   })
 
   return (
@@ -44,10 +50,11 @@ export function TinyRichTextEditor({
         onInit={(_event, editor) => {
           editorRef.current = editor
           onReady?.(editor)
-          if (!autoFocus || disabled) return
-          window.setTimeout(() => {
-            editor.focus()
-          }, 0)
+          if (autoFocus && !disabled) {
+            window.setTimeout(() => {
+              editor.focus()
+            }, 0)
+          }
         }}
         onEditorChange={(content) => onChange(content)}
       />

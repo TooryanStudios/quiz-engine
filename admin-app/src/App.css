@@ -53,6 +53,80 @@
   border-color: #8fa8d8;
 }
 
+.studio-invite-message {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.studio-invite-message p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.mse-sequencer-demo-mount {
+  position: fixed;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 30;
+  width: min(420px, calc(100vw - 1.5rem));
+}
+
+.lab-auth-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: radial-gradient(circle at 20% 20%, rgba(63, 100, 156, 0.25) 0%, rgba(7, 12, 20, 1) 48%);
+}
+
+.lab-auth-card {
+  width: min(560px, 100%);
+  border: 1px solid rgba(126, 158, 204, 0.35);
+  border-radius: 14px;
+  background: rgba(11, 18, 29, 0.95);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.lab-auth-card h1 {
+  margin: 0;
+  font-size: 1.15rem;
+  color: #e6f0ff;
+}
+
+.lab-auth-card p {
+  margin: 0;
+  color: #b8cae8;
+  line-height: 1.45;
+}
+
+.lab-auth-actions {
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.lab-auth-actions .btn,
+.lab-auth-actions .btn.ghost {
+  border: 1px solid rgba(126, 158, 204, 0.35);
+  border-radius: 8px;
+  background: #102139;
+  color: #e7f1ff;
+  font-size: 0.86rem;
+  font-weight: 700;
+  padding: 0.52rem 0.82rem;
+  cursor: pointer;
+}
+
+.lab-auth-actions .btn.ghost {
+  background: #0f1725;
+  color: #c9daef;
+}
+
 .login-title span,
 .sidebar-brand span {
   color: #2563eb; /* Blue in light theme */

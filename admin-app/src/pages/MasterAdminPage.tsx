@@ -28,6 +28,7 @@ import { ThemeEditorTab } from './master/ThemeEditorTab'
 import { FeaturedTab }    from './master/FeaturedTab'
 import { ApprovalsTab }   from './master/ApprovalsTab'
 import { FinanceTab }     from './master/FinanceTab'
+import { LabAccessTab }   from './master/LabAccessTab'
 
 const BASE = import.meta.env.VITE_MASTER_PATH as string ?? '/admin-portal'
 
@@ -44,6 +45,7 @@ const TABS: { id: MasterTab; label: string; path: string }[] = [
   { id: 'themeEditor', label: '🎨 Theme Editor', path: 'themes' },
   { id: 'creators',   label: '👤 Creators',   path: 'creators' },
   { id: 'users',      label: '👥 Users',      path: 'users' },
+  { id: 'labAccess',  label: '🧪 Lab Access', path: 'lab-access' },
 ]
 
 export function MasterAdminPage() {
@@ -206,6 +208,7 @@ export function MasterAdminPage() {
         )}
         {activeTab === 'creators'   && <CreatorsTab   creators={creators} users={usersData.users} />}
         {activeTab === 'users'      && <UsersTab      users={usersData.users} quizzes={quizzesData.quizzes} sessions={sessions.sessions} dark={dark} hasMore={usersData.hasMore} loadingMore={usersData.loadingMore} onLoadMore={usersData.loadMore} error={usersData.error} />}
+        {activeTab === 'labAccess'  && <LabAccessTab  users={usersData.users} error={usersData.error} />}
       </main>
     </div>
   )

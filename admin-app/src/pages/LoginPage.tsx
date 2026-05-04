@@ -14,6 +14,7 @@ const TAGLINES = [
 
 export function LoginPage() {
   const redirectPendingKey = 'qyan:authRedirectPending'
+  const accessDeniedReasonKey = 'qyan:accessDeniedReason'
   const navigate = useNavigate()
   const location = useLocation()
   const { showToast, hideToast } = useToast()
@@ -33,6 +34,19 @@ export function LoginPage() {
   const [tagIdx, setTagIdx] = useState(0)
   const hasNavigatedRef = useRef(false)
   const returnTo = (location.state as { returnTo?: string } | null)?.returnTo
+
+  useEffect(() => {
+    const deniedReason = localStorage.getItem(accessDeniedReasonKey)
+    if (!deniedReason) return
+    if (deniedReason === 'pending') {
+      setError('Your account is pending approval by the Lab administrator. Access will be enabled once approved.')
+    } else if (deniedReason === 'rejected') {
+      setError('Your Lab access request was rejected by the administrator. Contact support if this is unexpected.')
+    } else if (deniedReason === 'blocked') {
+      setError('Your account is currently blocked. Contact the administrator.')
+    }
+    localStorage.removeItem(accessDeniedReasonKey)
+  }, [])
   const getPostLoginPath = () => {
     if (typeof returnTo === 'string' && returnTo.startsWith('/')) {
       const normalized = returnTo.trim()

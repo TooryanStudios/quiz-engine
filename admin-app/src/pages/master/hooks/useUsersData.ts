@@ -100,7 +100,7 @@ export function useUsersData(): UsersData {
         email: a.email || '',
         displayName: a.displayName || '',
         photoURL: a.photoURL || '',
-        status: a.disabled ? 'blocked' : 'active',
+        status: a.disabled ? 'blocked' : 'pending',
         platform: 'unknown',
         signInCount: 0,
         createdAt: null,

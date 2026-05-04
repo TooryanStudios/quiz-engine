@@ -287,6 +287,7 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
     onLinkTaskToMilestone: _onLinkTaskToMilestoneProp,
     onMilestoneStatusChange: _onMilestoneStatusChangeProp,
   } = props
+  const isEmployeeProfileFocus = selectedProjectEffectiveIntent === 'hr_employee_profile'
 
   const [bulkAssigneeDraftUids, setBulkAssigneeDraftUids] = useState<string[]>([])
 
@@ -1201,6 +1202,14 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
                 </>
               )}
             </div>
+            {isEmployeeProfileFocus ? (
+              <div className="workhub-detail-card">
+                <h3>Employee profile record</h3>
+                <div className="workhub-empty-state">
+                  Employee profiles are record-based and do not use task boards. Use the details panel to review and edit profile information.
+                </div>
+              </div>
+            ) : (
             <div className={`workhub-task-table-wrap task-view-${taskItemDisplayMode}${selectedWorkspaceScopeType === 'finance' ? ' is-finance' : ''}`}>
               {selectedWorkspaceScopeType === 'finance' && taskItemDisplayMode !== 'timeline' && (
                 <div className="workhub-task-table-head shared">
@@ -1369,6 +1378,7 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
                   })
               })()}
             </div>
+            )}
           </div>
 
           {hasRelatedSelectionItems && (
@@ -1485,77 +1495,79 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
                 </button>
               </div>
             )}
-            {taskDetailPanelNode ? taskDetailPanelNode : selectedProject ? (
-              <WorkhubProjectDetailRail
-                selectedProject={selectedProject}
-                selectedProjectIntentMeta={selectedProjectIntentMeta}
-                selectedProjectColorDraft={selectedProjectColorDraft}
-                canEditSelectedProject={canEditSelectedProject}
-                canEditProjectAttachments={canEditSelectedProjectAttachments}
-                selectedProjectEffectiveIntent={selectedProjectEffectiveIntent}
-                selectedProjectNameDraft={selectedProjectNameDraft}
-                setSelectedProjectNameDraft={setSelectedProjectNameDraft}
-                handleSaveSelectedProjectDetails={handleSaveSelectedProjectDetails}
-                selectedProjectTypeDraft={selectedProjectTypeDraft}
-                selectedProjectTypeOptions={selectedProjectTypeOptions}
-                setSelectedProjectTypeDraft={setSelectedProjectTypeDraft}
-                selectedProjectStartDateDraft={selectedProjectStartDateDraft}
-                setSelectedProjectStartDateDraft={setSelectedProjectStartDateDraft}
-                selectedProjectDeadlineDraft={selectedProjectDeadlineDraft}
-                setSelectedProjectDeadlineDraft={setSelectedProjectDeadlineDraft}
-                selectedProjectSubmissionTimeDraft={selectedProjectSubmissionTimeDraft}
-                setSelectedProjectSubmissionTimeDraft={setSelectedProjectSubmissionTimeDraft}
-                selectedProjectValueAmountDraft={selectedProjectValueAmountDraft}
-                setSelectedProjectValueAmountDraft={setSelectedProjectValueAmountDraft}
-                selectedProjectValueCurrencyDraft={selectedProjectValueCurrencyDraft}
-                setSelectedProjectValueCurrencyDraft={setSelectedProjectValueCurrencyDraft}
-                selectedProjectNarrativeDraft={selectedProjectNarrativeDraft}
-                setSelectedProjectNarrativeDraft={setSelectedProjectNarrativeDraft}
-                handleSelectedProjectDescriptionBlur={handleSelectedProjectDescriptionBlur}
-                selectedProjectIntentDetailDrafts={selectedProjectIntentDetailDrafts}
-                setSelectedProjectIntentDetailDrafts={setSelectedProjectIntentDetailDrafts}
-                proposalServiceOptions={proposalServiceOptions}
-                selectedProposalServicesDraft={selectedProposalServicesDraft}
-                setSelectedProposalServicesDraft={setSelectedProposalServicesDraft}
-                handleCreateProposalServiceOption={handleCreateProposalServiceOption}
-                projectDiscussionNode={projectDiscussionNode}
-                projectAttachmentsCollapsed={projectAttachmentsCollapsed}
-                setProjectAttachmentsCollapsed={setProjectAttachmentsCollapsed}
-                attachmentViewMode={attachmentViewMode}
-                setAttachmentViewMode={setAttachmentViewMode}
-                selectedProjectAttachmentTitleDraft={selectedProjectAttachmentTitleDraft}
-                setSelectedProjectAttachmentTitleDraft={setSelectedProjectAttachmentTitleDraft}
-                selectedProjectAttachmentDraft={selectedProjectAttachmentDraft}
-                setSelectedProjectAttachmentDraft={setSelectedProjectAttachmentDraft}
-                selectedProjectAttachmentFilePathDraft={selectedProjectAttachmentFilePathDraft}
-                setSelectedProjectAttachmentFilePathDraft={setSelectedProjectAttachmentFilePathDraft}
-                selectedProjectAttachmentFileDrafts={selectedProjectAttachmentFileDrafts}
-                setSelectedProjectAttachmentFileDrafts={setSelectedProjectAttachmentFileDrafts}
-                uploadingSelectedProjectAttachment={uploadingSelectedProjectAttachment}
-                handleSelectedProjectAttachmentAdd={handleSelectedProjectAttachmentAdd}
-                handleSelectedProjectAttachmentFileUpload={handleSelectedProjectAttachmentFileUpload}
-                selectedProjectAttachments={selectedProjectAttachments}
-                deriveAttachmentTitle={deriveAttachmentTitle}
-                isImageAttachmentUrl={isImageAttachmentUrl}
-                openAttachmentLightbox={openAttachmentLightbox}
-                handleSelectedProjectAttachmentRemove={handleSelectedProjectAttachmentRemove}
-                selectedProjectColorMenuOpen={selectedProjectColorMenuOpen}
-                setSelectedProjectColorMenuOpen={setSelectedProjectColorMenuOpen}
-                selectedProjectColorMeaning={selectedProjectColorMeaning}
-                selectedWorkspaceProjectColorMeanings={selectedWorkspaceProjectColorMeanings}
-                handleSelectedProjectColorSelect={handleSelectedProjectColorSelect}
-                selectedWorkspaceDisplayName={selectedWorkspaceDisplayName}
-                projectNameById={projectNameById}
-                formatTime={formatTime}
-                setProjectAccessDialogId={setProjectAccessDialogId}
-                selectedProjectDetailsChanged={selectedProjectDetailsChanged}
-                busyKey={busyKey}
-              />
-            ) : (
-              <div className="workhub-detail-card">
-                <div className="workhub-empty-state">Select a task or workspace item to view details.</div>
-              </div>
-            )}
+            <div className="workhub-task-detail-rail-scroll">
+              {taskDetailPanelNode ? taskDetailPanelNode : selectedProject ? (
+                <WorkhubProjectDetailRail
+                  selectedProject={selectedProject}
+                  selectedProjectIntentMeta={selectedProjectIntentMeta}
+                  selectedProjectColorDraft={selectedProjectColorDraft}
+                  canEditSelectedProject={canEditSelectedProject}
+                  canEditProjectAttachments={canEditSelectedProjectAttachments}
+                  selectedProjectEffectiveIntent={selectedProjectEffectiveIntent}
+                  selectedProjectNameDraft={selectedProjectNameDraft}
+                  setSelectedProjectNameDraft={setSelectedProjectNameDraft}
+                  handleSaveSelectedProjectDetails={handleSaveSelectedProjectDetails}
+                  selectedProjectTypeDraft={selectedProjectTypeDraft}
+                  selectedProjectTypeOptions={selectedProjectTypeOptions}
+                  setSelectedProjectTypeDraft={setSelectedProjectTypeDraft}
+                  selectedProjectStartDateDraft={selectedProjectStartDateDraft}
+                  setSelectedProjectStartDateDraft={setSelectedProjectStartDateDraft}
+                  selectedProjectDeadlineDraft={selectedProjectDeadlineDraft}
+                  setSelectedProjectDeadlineDraft={setSelectedProjectDeadlineDraft}
+                  selectedProjectSubmissionTimeDraft={selectedProjectSubmissionTimeDraft}
+                  setSelectedProjectSubmissionTimeDraft={setSelectedProjectSubmissionTimeDraft}
+                  selectedProjectValueAmountDraft={selectedProjectValueAmountDraft}
+                  setSelectedProjectValueAmountDraft={setSelectedProjectValueAmountDraft}
+                  selectedProjectValueCurrencyDraft={selectedProjectValueCurrencyDraft}
+                  setSelectedProjectValueCurrencyDraft={setSelectedProjectValueCurrencyDraft}
+                  selectedProjectNarrativeDraft={selectedProjectNarrativeDraft}
+                  setSelectedProjectNarrativeDraft={setSelectedProjectNarrativeDraft}
+                  handleSelectedProjectDescriptionBlur={handleSelectedProjectDescriptionBlur}
+                  selectedProjectIntentDetailDrafts={selectedProjectIntentDetailDrafts}
+                  setSelectedProjectIntentDetailDrafts={setSelectedProjectIntentDetailDrafts}
+                  proposalServiceOptions={proposalServiceOptions}
+                  selectedProposalServicesDraft={selectedProposalServicesDraft}
+                  setSelectedProposalServicesDraft={setSelectedProposalServicesDraft}
+                  handleCreateProposalServiceOption={handleCreateProposalServiceOption}
+                  projectDiscussionNode={projectDiscussionNode}
+                  projectAttachmentsCollapsed={projectAttachmentsCollapsed}
+                  setProjectAttachmentsCollapsed={setProjectAttachmentsCollapsed}
+                  attachmentViewMode={attachmentViewMode}
+                  setAttachmentViewMode={setAttachmentViewMode}
+                  selectedProjectAttachmentTitleDraft={selectedProjectAttachmentTitleDraft}
+                  setSelectedProjectAttachmentTitleDraft={setSelectedProjectAttachmentTitleDraft}
+                  selectedProjectAttachmentDraft={selectedProjectAttachmentDraft}
+                  setSelectedProjectAttachmentDraft={setSelectedProjectAttachmentDraft}
+                  selectedProjectAttachmentFilePathDraft={selectedProjectAttachmentFilePathDraft}
+                  setSelectedProjectAttachmentFilePathDraft={setSelectedProjectAttachmentFilePathDraft}
+                  selectedProjectAttachmentFileDrafts={selectedProjectAttachmentFileDrafts}
+                  setSelectedProjectAttachmentFileDrafts={setSelectedProjectAttachmentFileDrafts}
+                  uploadingSelectedProjectAttachment={uploadingSelectedProjectAttachment}
+                  handleSelectedProjectAttachmentAdd={handleSelectedProjectAttachmentAdd}
+                  handleSelectedProjectAttachmentFileUpload={handleSelectedProjectAttachmentFileUpload}
+                  selectedProjectAttachments={selectedProjectAttachments}
+                  deriveAttachmentTitle={deriveAttachmentTitle}
+                  isImageAttachmentUrl={isImageAttachmentUrl}
+                  openAttachmentLightbox={openAttachmentLightbox}
+                  handleSelectedProjectAttachmentRemove={handleSelectedProjectAttachmentRemove}
+                  selectedProjectColorMenuOpen={selectedProjectColorMenuOpen}
+                  setSelectedProjectColorMenuOpen={setSelectedProjectColorMenuOpen}
+                  selectedProjectColorMeaning={selectedProjectColorMeaning}
+                  selectedWorkspaceProjectColorMeanings={selectedWorkspaceProjectColorMeanings}
+                  handleSelectedProjectColorSelect={handleSelectedProjectColorSelect}
+                  selectedWorkspaceDisplayName={selectedWorkspaceDisplayName}
+                  projectNameById={projectNameById}
+                  formatTime={formatTime}
+                  setProjectAccessDialogId={setProjectAccessDialogId}
+                  selectedProjectDetailsChanged={selectedProjectDetailsChanged}
+                  busyKey={busyKey}
+                />
+              ) : (
+                <div className="workhub-detail-card">
+                  <div className="workhub-empty-state">Select a task or workspace item to view details.</div>
+                </div>
+              )}
+            </div>
           </aside>
         )}
       </main>

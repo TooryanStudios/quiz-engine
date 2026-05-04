@@ -1267,6 +1267,15 @@ type SendWorkhubTestEmailResponse = {
   message: string
 }
 
+type SendStudioOrgInviteEmailRequest = {
+  inviteId: string
+}
+
+type SendStudioOrgInviteEmailResponse = {
+  toEmail: string
+  message: string
+}
+
 export const sendWorkhubTestEmail = onCall<SendWorkhubTestEmailRequest, Promise<SendWorkhubTestEmailResponse>>(
   { region: 'us-central1', cors: true },
   async (request) => {
@@ -1311,6 +1320,141 @@ export const sendWorkhubTestEmail = onCall<SendWorkhubTestEmailRequest, Promise<
     return {
       toEmail: targetEmail,
       message: `Test email sent to ${targetEmail}.`,
+    }
+  },
+)
+
+export const sendStudioOrgInviteEmail = onCall<SendStudioOrgInviteEmailRequest, Promise<SendStudioOrgInviteEmailResponse>>(
+  { region: 'us-central1', cors: true },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', 'Must be signed in.')
+    }
+
+    const inviteId = typeof request.data?.inviteId === 'string' ? request.data.inviteId.trim() : ''
+
+    if (!inviteId) {
+      throw new HttpsError('invalid-argument', 'inviteId is required.')
+    }
+
+    const inviteRef = admin.firestore().doc(`studio_invites/${inviteId}`)
+    const inviteSnap = await inviteRef.get()
+    if (!inviteSnap.exists) {
+      throw new HttpsError('not-found', 'Invite not found.')
+    }
+
+    const invite = inviteSnap.data() as {
+      invitedBy?: string
+      inviteeEmail?: string
+      inviteeDisplayName?: string
+      targetProjectIds?: string[]
+      targetFolderRefs?: Array<{ projectId: string, folderId: string }>
+      status?: string
+      targetKind?: string
+      targetId?: string
+      orgId?: string
+    }
+
+    if ((invite.invitedBy || '') !== request.auth.uid) {
+      throw new HttpsError('permission-denied', 'Not allowed to send this invite email.')
+    }
+    if ((invite.status || '') !== 'pending') {
+      throw new HttpsError('failed-precondition', 'Invite is no longer pending.')
+    }
+    const targetKind = invite.targetKind || ''
+    if (targetKind !== 'org' && targetKind !== 'project') {
+      throw new HttpsError('failed-precondition', 'Unsupported invite target kind.')
+    }
+
+    const toEmail = toValidEmail(invite.inviteeEmail || '')
+    if (!toEmail) {
+      throw new HttpsError('invalid-argument', 'Invite recipient email is invalid.')
+    }
+
+    const projectCount = Array.isArray(invite.targetProjectIds) ? invite.targetProjectIds.filter((projectId) => typeof projectId === 'string' && projectId.trim()).length : 0
+    const folderCount = Array.isArray(invite.targetFolderRefs)
+      ? invite.targetFolderRefs.filter((folderRef) => folderRef && typeof folderRef.projectId === 'string' && typeof folderRef.folderId === 'string' && folderRef.projectId.trim() && folderRef.folderId.trim()).length
+      : 0
+
+    // Resolve a human-readable name for the org/project being invited to.
+    const orgId = typeof invite.orgId === 'string' ? invite.orgId : ''
+    let contextName = 'your workspace'
+    if (targetKind === 'org' && orgId) {
+      contextName =
+        ((await admin.firestore().doc(`studio_orgs/${orgId}`).get()).data()?.name as string | undefined) || 'your organization'
+    } else if (targetKind === 'project') {
+      const targetId = typeof invite.targetId === 'string' ? invite.targetId : ''
+      if (targetId) {
+        contextName =
+          ((await admin.firestore().doc(`studio_projects/${targetId}`).get()).data()?.name as string | undefined) || 'a project'
+      }
+    }
+
+    const entityLabel = targetKind === 'org' ? 'organization' : 'project'
+    const scopeSummary = [
+      projectCount > 0 ? `${projectCount} project${projectCount === 1 ? '' : 's'}` : '',
+      folderCount > 0 ? `${folderCount} folder${folderCount === 1 ? '' : 's'}` : '',
+    ].filter(Boolean).join(' and ')
+    const subject = `[Lab] New Studio invitation`
+    const text = [
+      `You have a new Studio invitation for ${entityLabel} "${contextName}".`,
+      invite.inviteeDisplayName ? `Invited for: ${invite.inviteeDisplayName}` : '',
+      scopeSummary ? `Access scope: ${scopeSummary}.` : '',
+      '',
+      'Open the app to review the invitation and accept or reject it there.',
+      '',
+      'If you did not expect this notification, you can ignore it.',
+    ].join('\n')
+    const html = [
+      `<p>You have a new Studio invitation for the ${escapeHtml(entityLabel)} <strong>${escapeHtml(contextName)}</strong>.</p>`,
+      invite.inviteeDisplayName ? `<p>Invited for: ${escapeHtml(invite.inviteeDisplayName)}</p>` : '',
+      scopeSummary ? `<p>Access scope: ${escapeHtml(scopeSummary)}</p>` : '',
+      '<p>Open the app to review the invitation and accept or reject it there.</p>',
+      '<p>If you did not expect this notification, you can ignore this email.</p>',
+    ].join('')
+
+    try {
+      const recipient = await admin.auth().getUserByEmail(toEmail)
+      const workspaceId = orgId || (targetKind === 'project' ? (typeof invite.targetId === 'string' ? invite.targetId : '') : '')
+      const notificationId = `studio_invite_${inviteId}_${recipient.uid}`
+      await admin.firestore().doc(`workhub_notifications/${notificationId}`).set({
+        workspaceId,
+        recipientUid: recipient.uid,
+        actorUid: request.auth.uid,
+        entityType: 'member',
+        entityId: inviteId,
+        projectId: targetKind === 'project' ? (typeof invite.targetId === 'string' ? invite.targetId : undefined) : undefined,
+        action: 'studio_invite',
+        message: `Studio invitation for ${contextName}`,
+        delivery: 'in_app',
+        targetPath: '/studio',
+        read: false,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      })
+    } catch (error) {
+      console.warn('[studio invite] Could not create in-app notification:', error)
+    }
+
+    try {
+      const delivery = await deliverEmailMessage({
+        to: toEmail,
+        subject,
+        text,
+        html,
+      })
+
+      if (delivery.suppressed) {
+        throw new HttpsError('resource-exhausted', 'Daily email sending limit reached. Invite email was not sent.')
+      }
+    } catch (error) {
+      if (error instanceof HttpsError) throw error
+      const message = error instanceof Error ? error.message : 'Failed to send invite email.'
+      throw new HttpsError('internal', message)
+    }
+
+    return {
+      toEmail,
+      message: `Invite email sent to ${toEmail}.`,
     }
   },
 )

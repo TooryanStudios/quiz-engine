@@ -11,9 +11,10 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { FeatureErrorBoundary } from './components/FeatureErrorBoundary'
 import { incrementPlatformStat, loadUserPrefs, recordUserActivity, subscribeUserDoc, grantAdminClaim } from './lib/adminRepo'
 import { UserPrefsContext } from './lib/UserPrefsContext'
-import { DialogProvider } from './lib/DialogContext'
+import { DialogProvider, useDialog } from './lib/DialogContext'
 import { ToastProvider } from './lib/ToastContext'
 import { Dialog } from './components/Dialog'
+import { MSEVideoSequencer } from './components/MSEVideoSequencer'
 import { VFXContainer } from './components/VFXContainer'
 import { LoginPage } from './pages/LoginPage'
 import logoImg from './assets/QYan_logo_300x164.jpg'
@@ -23,6 +24,8 @@ import { ChatDock } from './features/communication/components/ChatDock'
 import { useChatDockState } from './features/communication/hooks/useChatDockState'
 import { buildThreadId, THREAD_EVERYONE } from './features/communication/hooks/useGlobalTeamChat'
 import { CHAT_DOCK_OPEN_EVENT, type ChatDockOpenDetail } from './features/communication/utils/chatDockEvents'
+import { acceptInvite, subscribePendingInvitesForRecipient, updateInviteStatus } from './lib/studioService'
+import type { StudioInvite } from './types/studio'
 
 function RouteLoadFailure({ routeLabel }: { routeLabel: string }) {
   return (
@@ -40,6 +43,68 @@ function withRouteBoundary(routeName: string, node: ReactNode) {
   )
 }
 
+function StudioInvitePrompt({ user, isAr }: { user: User | null, isAr: boolean }) {
+  const { show, isOpen } = useDialog()
+  const [pendingInvites, setPendingInvites] = useState<StudioInvite[]>([])
+  const activeInviteIdRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    activeInviteIdRef.current = null
+    setPendingInvites([])
+
+    if (!user?.uid) return
+
+    return subscribePendingInvitesForRecipient({ uid: user.uid, email: user.email }, setPendingInvites)
+  }, [user?.email, user?.uid])
+
+  useEffect(() => {
+    if (!user || isOpen || activeInviteIdRef.current || pendingInvites.length === 0) {
+      return
+    }
+
+    const invite = pendingInvites[0]
+    activeInviteIdRef.current = invite.id
+    const projectCount = invite.targetProjectIds?.length ?? (invite.targetKind === 'project' ? 1 : 0)
+    const folderCount = invite.targetFolderRefs?.length ?? 0
+    const accessSummary = [
+      projectCount > 0 ? (isAr ? `${projectCount} مشروع` : `${projectCount} project${projectCount === 1 ? '' : 's'}`) : '',
+      folderCount > 0 ? (isAr ? `${folderCount} مجلد` : `${folderCount} folder${folderCount === 1 ? '' : 's'}`) : '',
+    ].filter(Boolean).join(isAr ? ' و ' : ' and ')
+
+    show({
+      title: isAr ? 'دعوة Studio' : 'Studio invitation',
+      message: (
+        <div className="studio-invite-message">
+          <p>{isAr ? 'لديك دعوة جديدة داخل التطبيق.' : 'You have a new in-app Studio invitation.'}</p>
+          <p>{isAr ? `البريد المستهدف: ${invite.inviteeEmail}` : `Invite email: ${invite.inviteeEmail}`}</p>
+          <p>{isAr ? `نطاق الوصول: ${accessSummary || 'المنظمة فقط'}` : `Access scope: ${accessSummary || 'org only'}`}</p>
+          <p>{isAr ? 'هل تريد قبولها الآن؟' : 'Do you want to accept it now?'}</p>
+        </div>
+      ),
+      confirmText: isAr ? 'قبول' : 'Accept',
+      cancelText: isAr ? 'رفض' : 'Reject',
+      onConfirm: async () => {
+        if (!user.email) return
+        await acceptInvite(invite, {
+          uid: user.uid,
+          displayName: user.displayName || '',
+          email: user.email || '',
+          photoUrl: user.photoURL || '',
+        })
+        activeInviteIdRef.current = null
+        setPendingInvites((current) => current.filter((item) => item.id !== invite.id))
+      },
+      onCancel: async () => {
+        await updateInviteStatus(invite.id, 'declined').catch(() => undefined)
+        activeInviteIdRef.current = null
+        setPendingInvites((current) => current.filter((item) => item.id !== invite.id))
+      },
+    })
+  }, [isAr, isOpen, pendingInvites, show, user])
+
+  return null
+}
+
 // Dev pressure-test helper:
 // add ?qyanEnableCrash=1&qyanCrash=<boundaryName> (or comma-separated names, or "all")
 // Example: ?qyanEnableCrash=1&qyanCrash=workhub,ChatDock
@@ -48,7 +113,7 @@ function createLazyRoute(
   routeLabel: string,
   loader: () => Promise<Record<string, unknown>>,
   exportName?: string,
-) {
+): React.LazyExoticComponent<ComponentType<any>> {
   return lazy(async () => {
     try {
       const mod = await loader()
@@ -85,11 +150,12 @@ const AILabPage       = createLazyRoute('AILabPage', () => import('./pages/AILab
 const CoverGenLabPage = createLazyRoute('CoverGenLabPage', () => import('./pages/CoverGenLabPage'))
 const ToorGenPage = createLazyRoute('ToorGenPage', () => import('./pages/ToorGenPage'))
 const ToorGenExtendPage = createLazyRoute('ToorGenExtendPage', () => import('./pages/ToorGenExtendPage'))
-const ToorGenLabPage = createLazyRoute('ToorGenLabPage', () => import('./pages/ToorGenLabPage'))
+const LabPage = createLazyRoute('LabPage', () => import('./pages/LabPage'), 'LabPage')
 const PlayTestPage    = createLazyRoute('PlayTestPage', () => import('./pages/PlayTestPage'))
 const GameEmbedPage   = createLazyRoute('GameEmbedPage', () => import('./pages/GameEmbedPage'))
 const ScannerPage     = createLazyRoute('ScannerPage', () => import('./scanner/ScannerPage'), 'ScannerPage')
 const ScannerDesktopPage = createLazyRoute('ScannerDesktopPage', () => import('./scanner/ScannerDesktopPage'), 'ScannerDesktopPage')
+const StudioPage = createLazyRoute('StudioPage', () => import('./pages/StudioPage/StudioPage'), 'StudioPage')
 
 const MASTER_EMAIL = import.meta.env.VITE_MASTER_EMAIL as string | undefined
 const MASTER_PATH  = import.meta.env.VITE_MASTER_PATH  as string | undefined
@@ -113,6 +179,8 @@ function getNav(isAr: boolean) {
     { to: '/my-quizzes',       icon: '📚', label: isAr ? 'اختباراتي' : 'My Challenges' },
     { to: '/packs',            icon: '📦', label: isAr ? 'المكتبة' : 'Library' },
     { to: '/workhub',         icon: '🗂️', label: isAr ? 'وورك هَب' : 'WorkHub' },
+    { to: '/studio',           icon: '🏢', label: isAr ? 'الاستوديو' : 'Studio' },
+    { to: '/lab',              icon: '🧪', label: isAr ? 'المختبر' : 'Lab' },
     { to: '/toorgen',          icon: '🎬', label: isAr ? 'تورجن' : 'ToorGen' },
     ...(communicationFeatureFlags.messagesPage ? [{ to: '/messages', icon: '💬', label: isAr ? 'الرسائل' : 'Messages' }] : []),
     ...(communicationFeatureFlags.adHocTasksPage ? [{ to: '/ops-tasks', icon: '🧾', label: isAr ? 'مهام التشغيل' : 'Ops Tasks' }] : []),
@@ -186,6 +254,7 @@ function AppLoadingScreen({
 
 function App() {
   const redirectPendingKey = 'qyan:authRedirectPending'
+  const accessDeniedReasonKey = 'qyan:accessDeniedReason'
   const [user, setUser] = useState<User | null | undefined>(() => {
     if (typeof window === 'undefined') return undefined
 
@@ -198,6 +267,10 @@ function App() {
   const navigate = useNavigate()
   const location = useLocation()
   const isLocalDevHost = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
+  const enableMSESequencerDemo = import.meta.env.VITE_ENABLE_MSE_SEQUENCER_DEMO === '1'
+    || (import.meta.env.DEV
+      && typeof window !== 'undefined'
+      && new URLSearchParams(window.location.search).get('mseDemo') === '1')
   const isLocalPlayTestPath = location.pathname === '/play-test' || location.pathname.startsWith('/play-test/')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [burgerOpen, setBurgerOpen] = useState(false)
@@ -312,6 +385,7 @@ function App() {
   const isLoginPage   = location.pathname === '/login'
   const isMasterPage  = MASTER_PATH ? location.pathname.startsWith(MASTER_PATH) : false
   const isWorkHubPage = location.pathname === '/workhub' || location.pathname.startsWith('/workhub/')
+  const isLabPage = location.pathname === '/lab' || location.pathname.startsWith('/lab/')
   const isToorGenPage = location.pathname === '/toorgen' || location.pathname.startsWith('/toorgen/')
   const isScannerPage = location.pathname === '/scanner' || location.pathname.startsWith('/scanner/')
   const isScannerDesktopPage = location.pathname === '/scanner/desktop' || location.pathname.startsWith('/scanner/desktop/')
@@ -347,6 +421,8 @@ function App() {
     else if (path.startsWith('/messages')) nextTitle = 'Messages'
     else if (path.startsWith('/ops-tasks')) nextTitle = 'Ops Tasks'
     else if (path.startsWith('/profile')) nextTitle = 'Profile'
+    else if (path.startsWith('/studio')) nextTitle = 'Studio'
+    else if (path.startsWith('/lab')) nextTitle = 'Lab'
     else if (path.startsWith('/voice-lab')) nextTitle = 'Voice Lab'
     else if (path.startsWith('/ai-lab')) nextTitle = 'AI Lab'
     else if (path.startsWith('/cover-gen-lab')) nextTitle = 'Cover Generator'
@@ -389,6 +465,7 @@ function App() {
       if (u) {
         localStorage.removeItem(redirectPendingKey)
         localStorage.setItem('qyan:session', '1')
+        localStorage.removeItem(accessDeniedReasonKey)
       } else {
         if (!redirectStillPending) {
           localStorage.removeItem(redirectPendingKey)
@@ -448,6 +525,7 @@ function App() {
           if (prefs?.slidePanelLayout) setSlidePanelLayout(prefs.slidePanelLayout)
           if (typeof prefs?.slidePanelEnabled === 'boolean') setSlidePanelEnabled(prefs.slidePanelEnabled)
         })
+
       }
     })
     return () => { clearTimeout(authTimeout); unsub() }
@@ -458,7 +536,16 @@ function App() {
     if (!user) return
     const unsub = subscribeUserDoc(user.uid, (profile) => {
       const runtimeStatus = ((profile as { status?: string } | null)?.status || '').toLowerCase()
+      if (runtimeStatus === 'pending') {
+        localStorage.setItem(accessDeniedReasonKey, 'pending')
+        void signOut(auth)
+      }
+      if (runtimeStatus === 'rejected') {
+        localStorage.setItem(accessDeniedReasonKey, 'rejected')
+        void signOut(auth)
+      }
       if (runtimeStatus === 'blocked' || runtimeStatus === 'deleted' || runtimeStatus === 'suspended') {
+        localStorage.setItem(accessDeniedReasonKey, 'blocked')
         void signOut(auth)
       }
     })
@@ -520,7 +607,7 @@ function App() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
-  if (user === undefined && !allowUnauthedLocalPlayTest && (isLoginPage || isWorkHubPage || isMasterPage)) {
+  if (user === undefined && !allowUnauthedLocalPlayTest && (isLoginPage || isWorkHubPage || isMasterPage || isLabPage)) {
     if (isLoginPage) {
       return (
         <ToastProvider>
@@ -541,8 +628,54 @@ function App() {
         variant={isWorkHubPage ? 'workhub' : 'default'}
         note={isWorkHubPage
           ? (isAr ? 'جارٍ تجهيز مساحة العمل…' : 'Preparing your workspace…')
+          : isLabPage
+            ? (isAr ? 'جارٍ تجهيز المختبر…' : 'Preparing Lab…')
           : (isAr ? 'جارٍ التحقق من جلسة الدخول…' : 'Checking your session…')}
       />
+    )
+  }
+
+  // ── Standalone Lab — dedicated workspace-first generation app ──
+  if (isLabPage) {
+    return (
+      <ToastProvider>
+        <DialogProvider>
+          <div className="master-admin-standalone">
+            <ErrorBoundary>
+              <Suspense fallback={
+                <AppLoadingScreen
+                  variant="default"
+                  note={isAr ? 'جارٍ تحميل المختبر…' : 'Loading Lab…'}
+                />
+              }>
+                {user ? (
+                  <LabPage user={user} />
+                ) : (
+                  <div className="lab-auth-shell">
+                    <div className="lab-auth-card">
+                      <h1>{isAr ? 'مختبر تورجن المستقل' : 'Standalone Lab'}</h1>
+                      <p>
+                        {isAr
+                          ? 'أنشئ حسابك، ثم ابدأ فوراً بإنشاء المؤسسة، المشاريع، والمجلدات داخل المختبر.'
+                          : 'Create your account, then immediately start building your organization, projects, and folders in Lab.'}
+                      </p>
+                      <div className="lab-auth-actions">
+                        <button type="button" className="btn" onClick={handleGuestSignIn}>
+                          {isAr ? 'إنشاء حساب / تسجيل الدخول' : 'Sign up / Sign in'}
+                        </button>
+                        <button type="button" className="btn ghost" onClick={() => navigate('/toorgen')}>
+                          {isAr ? 'الانتقال إلى تورجن' : 'Go to ToorGen'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </Suspense>
+            </ErrorBoundary>
+            <Dialog />
+          </div>
+        </DialogProvider>
+      </ToastProvider>
     )
   }
 
@@ -658,7 +791,7 @@ function App() {
                 >
                   <Routes>
                     <Route path="/toorgen/extend" element={<ToorGenExtendPage />} />
-                    <Route path="/toorgen/lab" element={<ToorGenLabPage />} />
+                    <Route path="/toorgen/lab" element={<Navigate to="/lab" replace />} />
                     <Route path="/toorgen" element={<ToorGenPage />} />
                     <Route path="/toorgen/*" element={<ToorGenPage />} />
                   </Routes>
@@ -771,6 +904,7 @@ function App() {
       <Route path="/packs" element={withRouteBoundary('packs', <RequireAuth user={user}><PacksPage /></RequireAuth>)} />
       <Route path="/my-quizzes" element={withRouteBoundary('my-quizzes', <RequireAuth user={user}><MyQuizzesPage /></RequireAuth>)} />
       <Route path="/workhub/*" element={withRouteBoundary('workhub', <RequireAuth user={user} loadingFallback={<AppLoadingScreen variant="workhub" note={isAr ? 'جارٍ تحميل WorkHub…' : 'Loading WorkHub…'} />}><WorkHubRoutePage /></RequireAuth>)} />
+      <Route path="/studio" element={withRouteBoundary('studio', <RequireAuth user={user}><StudioPage user={user ?? null} /></RequireAuth>)} />
       <Route path="/toorgen/*" element={withRouteBoundary('toorgen', <RequireAuth user={user}><ToorGenPage /></RequireAuth>)} />
       {communicationFeatureFlags.messagesPage ? (
         <Route path="/messages" element={withRouteBoundary('messages', <RequireAuth user={user}><MessagesPage /></RequireAuth>)} />
@@ -804,6 +938,10 @@ function App() {
         ? 'workhub'
         : location.pathname.startsWith('/toorgen')
           ? 'toorgen'
+        : location.pathname.startsWith('/lab')
+          ? 'lab'
+        : location.pathname.startsWith('/studio')
+          ? 'studio'
         : location.pathname.startsWith('/packs')
           ? 'library'
           : location.pathname.startsWith('/my-quizzes')
@@ -829,6 +967,10 @@ function App() {
         ? (isAr ? 'وورك هَب التشغيلي' : 'WorkHub Operations')
       : mobileRouteKey === 'toorgen'
         ? (isAr ? 'تورجن' : 'ToorGen')
+        : mobileRouteKey === 'lab'
+          ? (isAr ? 'المختبر' : 'Lab')
+        : mobileRouteKey === 'studio'
+          ? (isAr ? 'الاستوديو' : 'Studio')
         : mobileRouteKey === 'library'
           ? (isAr ? 'المكتبة' : 'Library')
           : mobileRouteKey === 'my-quizzes'
@@ -854,6 +996,10 @@ function App() {
           ? (isAr ? 'المشاريع والمهام والمراجعات' : 'Projects, tasks, approvals')
       : mobileRouteKey === 'toorgen'
         ? (isAr ? 'توليد فيديوهات الذكاء الاصطناعي' : 'AI video generation workspace')
+        : mobileRouteKey === 'lab'
+          ? (isAr ? 'تطبيق المختبر المستقل للمؤسسات والمشاريع' : 'Standalone Lab app for organizations and projects')
+        : mobileRouteKey === 'studio'
+          ? (isAr ? 'المنظمات والمشاريع والأصول' : 'Organizations, projects, and assets')
         : mobileRouteKey === 'messages'
           ? (isAr ? 'محادثات الفريق الموحدة' : 'Unified team communication')
           : mobileRouteKey === 'ops-tasks'
@@ -867,6 +1013,8 @@ function App() {
       editor: ['/editor', '/mini-game-editor', '/workhub', '/my-quizzes', '/dashboard'],
       workhub: ['/workhub', '/dashboard', '/editor', '/my-quizzes', '/packs'],
     toorgen: ['/toorgen', '/workhub', '/dashboard', '/editor', '/my-quizzes'],
+      lab: ['/lab', '/studio', '/toorgen', '/workhub', '/dashboard'],
+    studio: ['/studio', '/toorgen', '/workhub', '/dashboard', '/profile'],
     library: ['/packs', '/my-quizzes', '/dashboard', '/editor', '/profile'],
     'my-quizzes': ['/my-quizzes', '/editor', '/dashboard', '/packs', '/profile'],
     messages: ['/messages', '/dashboard', '/workhub', '/editor', '/profile'],
@@ -917,6 +1065,7 @@ function App() {
     <UserPrefsContext.Provider value={userPrefsValue}>
     <ToastProvider>
       <DialogProvider>
+        <StudioInvitePrompt user={user ?? null} isAr={isAr} />
         {isLoginPage ? (
           <div className="login-shell">
             <main className="login-main">
@@ -1278,6 +1427,11 @@ function App() {
                 </Suspense>
               </ErrorBoundary>
             </main>
+          </div>
+        )}
+        {enableMSESequencerDemo && !isLoginPage && (
+          <div className="mse-sequencer-demo-mount">
+            <MSEVideoSequencer autoPlay={false} />
           </div>
         )}
         {user && communicationFeatureFlags.chatDock && (

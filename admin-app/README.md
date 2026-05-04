@@ -2,6 +2,46 @@
 
 Separate admin app to manage quizzes, packs, and subscription billing.
 
+## MSE video sequencer (fragmented MP4)
+
+The app includes an isolated `MSEVideoSequencer` component that streams a sequence
+through a single `<video>` element using the browser Media Source Extensions API.
+
+Expected preparation pipeline:
+
+AI-generated MP4 clips
+-> normalize with FFmpeg
+-> convert to fragmented MP4 / `.m4s` segments
+-> place files in `public/videos/sequence/`
+-> play using `MSEVideoSequencer`
+
+Expected files:
+
+- `public/videos/sequence/init.mp4`
+- `public/videos/sequence/segment001.m4s`
+- `public/videos/sequence/segment002.m4s`
+- `public/videos/sequence/segment003.m4s`
+- `public/videos/sequence/segment004.m4s`
+
+Notes:
+- Append `init.mp4` first. It carries track/decoder metadata required before media fragments.
+- Append `.m4s` fragments sequentially. Do not append normal standalone MP4 clips as segments.
+- The component is opt-in and removable. Enable the demo mount with
+	`VITE_ENABLE_MSE_SEQUENCER_DEMO=1` or in dev with `?mseDemo=1`.
+
+Page access and clip workflow:
+
+- Start app: `npm run dev`
+- Open: `http://localhost:3000/toorgen/lab`
+- In Generated Runs controls, click `Video Sequencer` (next to `Large Cards`)
+- In the dialog:
+	- Set `Init segment URL` (example: `/videos/sequence/init.mp4`)
+	- Paste one `.m4s` segment URL per line
+	- Click `Apply Clips` to load the player
+	- Click `Save Clips` to keep this list in browser local storage
+
+Your saved clip list can be loaded again from the same page using `Load Saved`.
+
 ## Setup
 
 1. Copy `.env.local.example` to `.env.local`

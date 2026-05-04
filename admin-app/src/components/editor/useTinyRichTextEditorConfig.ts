@@ -6,7 +6,9 @@ type TinyInitOptions = NonNullable<IAllProps['init']>
 export interface UseTinyRichTextEditorConfigInput {
   disabled?: boolean
   minHeight?: number
+  contentPaddingPx?: number
   placeholder?: string
+  toolbarContainerSelector?: string
 }
 
 export interface UseTinyRichTextEditorConfigOutput {
@@ -18,7 +20,9 @@ export interface UseTinyRichTextEditorConfigOutput {
 export function useTinyRichTextEditorConfig({
   disabled = false,
   minHeight = 520,
+  contentPaddingPx = 12,
   placeholder = 'Start writing...',
+  toolbarContainerSelector,
 }: UseTinyRichTextEditorConfigInput): UseTinyRichTextEditorConfigOutput {
   const deploymentModeRaw = (import.meta.env.VITE_TINYMCE_DEPLOYMENT_MODE as string | undefined)?.trim().toLowerCase()
   const cloudApiKey = (import.meta.env.VITE_TINYMCE_API_KEY as string | undefined)?.trim()
@@ -40,6 +44,7 @@ export function useTinyRichTextEditorConfig({
     // Use horizontal scroll on narrow screens instead of wrapping controls.
     toolbar_mode: 'scrolling',
     toolbar_sticky: true,
+    ...(toolbarContainerSelector ? { fixed_toolbar_container: toolbarContainerSelector, toolbar_sticky: false } : {}),
     browser_spellcheck: true,
     convert_urls: false,
     plugins: [
@@ -128,7 +133,7 @@ export function useTinyRichTextEditorConfig({
       '  line-height: 1.7;',
       '  color: #1f355f;',
       '  margin: 0;',
-      '  padding: 12px;',
+      `  padding: 12px ${Math.max(12, Math.round(contentPaddingPx))}px;`,
       '  direction: rtl;',
       '  text-align: right;',
       '  scrollbar-width: thin;',
@@ -146,7 +151,7 @@ export function useTinyRichTextEditorConfig({
       '::-webkit-scrollbar-thumb { background: #c2d0e8; border-radius: 99px; }',
       '::-webkit-scrollbar-thumb:hover { background: #a0b4d6; }',
     ].join(' '),
-  }), [disabled, minHeight, placeholder])
+  }), [contentPaddingPx, disabled, minHeight, placeholder, toolbarContainerSelector])
 
   return { apiKey, scriptSrc, init }
 }

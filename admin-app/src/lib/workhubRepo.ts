@@ -24,6 +24,13 @@ export type WorkhubProjectIntent =
   | 'marketing_content_stream'
   | 'hr_requisition'
   | 'hr_onboarding_track'
+  | 'hr_department_unit'
+  | 'hr_sub_department_unit'
+  | 'hr_employee_profile'
+  | 'hr_leave_case'
+  | 'hr_kpi_cycle'
+  | 'hr_initiative_program'
+  | 'hr_learning_certification'
 
 export interface WorkhubTaskStatusConfig {
   id: string

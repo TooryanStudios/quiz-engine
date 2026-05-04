@@ -1,12 +1,29 @@
-import { useCallback, useEffect, useMemo, useRef, useState, startTransition, type KeyboardEvent, type MouseEvent, type SyntheticEvent } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, startTransition, type KeyboardEvent, type MouseEvent, type SyntheticEvent } from 'react'
 import { onAuthStateChanged } from 'firebase/auth'
-import { collection, doc, getDocs, limit, orderBy, query, serverTimestamp, setDoc } from 'firebase/firestore'
+import { collection, deleteDoc, doc, getDocs, limit, orderBy, query, serverTimestamp, setDoc } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
 import { auth, db, storage } from '../../lib/firebase'
+import { findUserByEmail, loadUserPrefs, saveUserPrefs } from '../../lib/adminRepo'
+import {
+  createFolder,
+  createInvite,
+  createProject,
+  deleteFolder,
+  deleteStudioProject,
+  removeProjectMember,
+  setFolderMemberVisibility,
+  subscribeToProjectFolders,
+  subscribeToProjectMembers,
+  subscribeToUserProjects,
+  updateFolder,
+  updateStudioProject,
+} from '../../lib/studioService'
 import { ContentEditablePrompt } from '../../components/ContentEditablePrompt/ContentEditablePrompt'
 import { getCaretOffset, setCaretOffset } from '../../components/ContentEditablePrompt/utils'
 import type { ResolvedMentionReference } from '../../components/ContentEditablePrompt/types'
+import type { FolderSummary, ProjectMember, ProjectSummary } from '../../types/studio'
 import { MiniVideoPlaylist } from './MiniVideoPlaylist'
+import { MSEVideoSequencerPage } from '../MSEVideoSequencerPage'
 import { CloudUpload, Download, FilePenLine, Heart, Info, RotateCcw } from 'lucide-react'
 import './workbench.css'
 
@@ -20,6 +37,9 @@ const CAPTURED_VIDEO_FRAMES_KEY = 'toorgen_video_frames_v1'
 const DIRECT_REQUEST_PRESETS_KEY = 'toorgen_direct_request_presets_v1'
 const DIRECT_JSON_DRAFT_KEY = 'toorgen_direct_json_draft_v1'
 const PENDING_TASKS_KEY = 'toorgen_pending_tasks_v1'
+const STUDIO_ACTIVE_PROJECT_ID_KEY = 'studio:activeProjectId'
+const STUDIO_ACTIVE_PROJECT_NAME_KEY = 'studio:activeProjectName'
+const STUDIO_ACTIVE_FOLDER_ID_KEY = 'studio:activeFolderId'
 const FIRESTORE_PENDING_TASKS_COLLECTION = 'toorgen_pending_tasks'
 const FIRESTORE_HISTORY_COLLECTION = 'toorgen_prompt_lab_generations'
 const MAX_HISTORY_ITEMS = 80
@@ -146,6 +166,10 @@ type GenerationHistoryEntry = {
   completedAt: number
   ownerUid: string
   isLiked: boolean
+  /** Studio project this generation is filed under (optional). */
+  projectId: string
+  /** Studio folder this generation is filed under (optional). */
+  folderId: string
 }
 
 type MediaLibraryItem = {
@@ -211,6 +235,7 @@ type CapturedVideoFrame = {
   videoTimeSec: number
   width: number
   height: number
+  libraryUrl?: string
 }
 
 type PresetAssetThumb = {
@@ -343,7 +368,7 @@ const WORKFLOW_FILTER_GROUPS: Record<'all' | 'text' | 'video' | 'image', string[
   image: ['Image Reference'],
 }
 
-type HistoryViewMode = 'cards' | 'rail'
+type HistoryViewMode = 'cards' | 'rail' | 'list'
 type WorkflowFilterMode = 'all' | 'text' | 'video' | 'image'
 
 const PROVIDER_MODELS = {
@@ -1417,6 +1442,8 @@ const parseHistoryEntry = (value: unknown): GenerationHistoryEntry | null => {
     completedAt: value.completedAt,
     ownerUid: typeof value.ownerUid === 'string' ? value.ownerUid : '',
     isLiked: value.isLiked === true,
+    projectId: typeof value.projectId === 'string' ? value.projectId : '',
+    folderId: typeof value.folderId === 'string' ? value.folderId : '',
   }
 }
 
@@ -1438,6 +1465,8 @@ const mergeHistories = (...lists: GenerationHistoryEntry[][]): GenerationHistory
       ...entry,
       // Keep the local/UI like toggle stable during Firestore merge churn.
       isLiked: existing.isLiked,
+      projectId: entry.projectId || existing.projectId || '',
+      folderId: entry.folderId || existing.folderId || '',
     })
   })
   return sortHistories(Array.from(merged.values()))
@@ -1530,6 +1559,7 @@ const parseCapturedVideoFrame = (value: unknown): CapturedVideoFrame | null => {
     videoTimeSec: value.videoTimeSec,
     width: value.width,
     height: value.height,
+    libraryUrl: typeof value.libraryUrl === 'string' ? value.libraryUrl : undefined,
   }
 }
 
@@ -2054,7 +2084,6 @@ const isFailureStatus = (status: string) => (
 
 const shouldUseDirectPlaybackUrl = (sourceUrl: string): boolean => {
   const lower = sourceUrl.toLowerCase()
-  if (lower.includes('firebasestorage.googleapis.com')) return true
   // Signed TOS/Volcengine URLs are already browser-playable and can be fragile through re-proxying.
   if (lower.includes('volces.com') && lower.includes('x-tos-signature=')) return true
   return false
@@ -2579,6 +2608,8 @@ const saveHistoryToFirestore = async (entry: GenerationHistoryEntry) => {
     completedAt: entry.completedAt,
     ownerUid: uid,
     isLiked: entry.isLiked,
+    projectId: entry.projectId || '',
+    folderId: entry.folderId || '',
     updatedAt: serverTimestamp(),
   }
 
@@ -2601,6 +2632,15 @@ export default function ToorGenPromptWorkbench() {
   const [directPanelWidth, setDirectPanelWidth] = useState<number>(360)
   const [historyViewMode, setHistoryViewMode] = useState<HistoryViewMode>('cards')
   const [isLikedOnlyFilter, setIsLikedOnlyFilter] = useState<boolean>(false)
+  const [isDiagnoseShowAllHistory, setIsDiagnoseShowAllHistory] = useState<boolean>(false)
+  // Checklist / bulk-move state (list view)
+  const [selectedHistoryIds, setSelectedHistoryIds] = useState<Set<string>>(new Set())
+  const [isBulkMoveDialogOpen, setIsBulkMoveDialogOpen] = useState<boolean>(false)
+  const [bulkMoveTargetProjectId, setBulkMoveTargetProjectId] = useState<string>('')
+  const [bulkMoveTargetFolderId, setBulkMoveTargetFolderId] = useState<string>('')
+  const [bulkMoveFolders, setBulkMoveFolders] = useState<FolderSummary[]>([])
+  const [bulkMoveFoldersLoading, setBulkMoveFoldersLoading] = useState<boolean>(false)
+  const [isBulkMoving, setIsBulkMoving] = useState<boolean>(false)
   const [workflowSearch, setWorkflowSearch] = useState<string>('')
   const [workflowFilterMode, setWorkflowFilterMode] = useState<WorkflowFilterMode>('all')
   const [workflowPickerPosition, setWorkflowPickerPosition] = useState<{ top: number; left: number } | null>(null)
@@ -2647,12 +2687,37 @@ export default function ToorGenPromptWorkbench() {
   const [isPlaylistOpen, setIsPlaylistOpen] = useState<boolean>(false)
   const [composerRefMode, setComposerRefMode] = useState<'text' | 'image' | 'video' | 'audio'>('video')
   const [isDirectSubmitPanelVisible, setIsDirectSubmitPanelVisible] = useState<boolean>(false)
+  const [isMseSequencerDialogOpen, setIsMseSequencerDialogOpen] = useState<boolean>(false)
+  const [isMseSequencerDialogMinimized, setIsMseSequencerDialogMinimized] = useState<boolean>(false)
   const [isRecoveryOpen, setIsRecoveryOpen] = useState<boolean>(false)
+  const [studioProjectId, setStudioProjectId] = useState<string | null>(
+    () => localStorage.getItem(STUDIO_ACTIVE_PROJECT_ID_KEY),
+  )
+  const [studioProjects, setStudioProjects] = useState<ProjectSummary[]>([])
+  const [studioProjectsLoading, setStudioProjectsLoading] = useState<boolean>(true)
+  const [studioActiveFolderId, setStudioActiveFolderId] = useState<string | null>(
+    () => localStorage.getItem(STUDIO_ACTIVE_FOLDER_ID_KEY),
+  )
+  const [studioMembers, setStudioMembers] = useState<ProjectMember[]>([])
+  const [studioFolders, setStudioFolders] = useState<FolderSummary[]>([])
+  const [studioFoldersLoading, setStudioFoldersLoading] = useState<boolean>(false)
+  const [studioAccountOpen, setStudioAccountOpen] = useState<boolean>(false)
+  const [studioPanelMessage, setStudioPanelMessage] = useState<string>('')
+  const [studioBusy, setStudioBusy] = useState<boolean>(false)
+  const [newProjectName, setNewProjectName] = useState<string>('')
+  const [newFolderName, setNewFolderName] = useState<string>('')
+  const [permissionFolderId, setPermissionFolderId] = useState<string>('')
+  const [permissionMemberUid, setPermissionMemberUid] = useState<string>('')
+  const [permissionMode, setPermissionMode] = useState<'default' | 'allowed' | 'hidden'>('default')
+  const [inviteEmail, setInviteEmail] = useState<string>('')
+  const [inviteRole, setInviteRole] = useState<'editor' | 'viewer'>('editor')
   const [recoveryTaskId, setRecoveryTaskId] = useState<string>('')
   const [recoveryProvider, setRecoveryProvider] = useState<ProviderId>('atlas')
   const [recoveryModel, setRecoveryModel] = useState<string>('')
   const [overlayHoverScopeId, setOverlayHoverScopeId] = useState<string>('')
   const [isOverlayIdle, setIsOverlayIdle] = useState<boolean>(false)
+  const [hasLoadedStudioSelection, setHasLoadedStudioSelection] = useState<boolean>(false)
+  const libraryContextMenuRef = useRef<HTMLDivElement | null>(null)
 
   const cancelFlags = useRef<Record<string, boolean>>({})
   const labLayoutRef = useRef<HTMLDivElement | null>(null)
@@ -2669,9 +2734,14 @@ export default function ToorGenPromptWorkbench() {
   const remoteCopyRetryTimeoutsRef = useRef<Record<string, number>>({})
   const overlayAutoHideTimerRef = useRef<number | null>(null)
   const overlayHoverScopeIdRef = useRef<string>('')
+  // Track latest prompt text without triggering re-renders on every keystroke.
+  // modeStates is updated via a debounced sync so the parent does not re-render
+  // on every character. All submit/generation handlers read from this ref.
+  const latestPromptRef = useRef<string>('')
+  const promptSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const handleRefinePrompt = async () => {
-    const currentPrompt = activeState.prompt.trim()
+    const currentPrompt = (latestPromptRef.current || activeState.prompt).trim()
     if (!currentPrompt || isRefiningPrompt) return
     setIsRefiningPrompt(true)
     setPendingRefinedPrompt(null)
@@ -2703,6 +2773,7 @@ export default function ToorGenPromptWorkbench() {
 
   const activeTab = ACTIVE_TABS.find((tab) => tab.id === activeTabId) || FALLBACK_TAB
   const hasConfiguredWorkflows = ACTIVE_TABS.length > 0
+  const canGenerate = hasConfiguredWorkflows && Boolean(studioActiveFolderId)
   const activeState = modeStates[activeTab.id] || createDefaultModeState(activeTab)
   const activeWorkflowSettings = workflowSettingsByTabId[activeTab.id] || createDefaultWorkflowSettings()
   const selectedModel = activeWorkflowSettings.provider === 'atlas'
@@ -2710,8 +2781,16 @@ export default function ToorGenPromptWorkbench() {
     : activeWorkflowSettings.provider === 'grok'
     ? activeWorkflowSettings.grokModel
     : activeWorkflowSettings.byteplusModel
+  const deferredPrompt = useDeferredValue(activeState.prompt)
+  // Sync latestPromptRef to the current tab's prompt when switching tabs,
+  // so submit handlers always have a correct baseline.
+  // (handlePromptChange keeps it updated during typing.)
+  useEffect(() => {
+    latestPromptRef.current = activeState.prompt
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab.id])
   const switchComposerWorkflow = (nextTabId: string, nextRefMode?: 'text' | 'image' | 'video') => {
-    const currentPrompt = activeState.prompt
+    const currentPrompt = latestPromptRef.current || activeState.prompt
     updateModeState(nextTabId, (current) => ({
       ...current,
       prompt: currentPrompt,
@@ -2744,27 +2823,27 @@ export default function ToorGenPromptWorkbench() {
   }
 
   useEffect(() => {
-    const storedModeStates = Object.fromEntries(
-      Object.entries(modeStates).map(([tabId, state]) => [
-        tabId,
-        {
-          prompt: state.prompt,
-          mediaUrls: filterMediaUrls(state.mediaUrls),
-          resultUrl: state.resultUrl,
-          strictReferences: state.strictReferences,
-          selectedVideoOptionIds: state.selectedVideoOptionIds,
-          selectedImageReferenceKey: state.selectedImageReferenceKey,
-        },
-      ]),
-    )
-
-    const nextDraft: StoredDraftState = {
-      activeTabId,
-      workflowSettingsByTabId,
-      modeStates: storedModeStates,
-    }
-
     const timer = window.setTimeout(() => {
+      const storedModeStates = Object.fromEntries(
+        Object.entries(modeStates).map(([tabId, state]) => [
+          tabId,
+          {
+            prompt: state.prompt,
+            mediaUrls: filterMediaUrls(state.mediaUrls),
+            resultUrl: state.resultUrl,
+            strictReferences: state.strictReferences,
+            selectedVideoOptionIds: state.selectedVideoOptionIds,
+            selectedImageReferenceKey: state.selectedImageReferenceKey,
+          },
+        ]),
+      )
+
+      const nextDraft: StoredDraftState = {
+        activeTabId,
+        workflowSettingsByTabId,
+        modeStates: storedModeStates,
+      }
+
       safeSetLocalStorage(LOCAL_DRAFT_STORAGE_KEY, JSON.stringify(nextDraft))
     }, 1000)
 
@@ -2833,6 +2912,79 @@ export default function ToorGenPromptWorkbench() {
       unsub()
     }
   }, [])
+
+  useEffect(() => {
+    if (studioProjectId) {
+      localStorage.setItem(STUDIO_ACTIVE_PROJECT_ID_KEY, studioProjectId)
+      const projectName = studioProjects.find((project) => project.id === studioProjectId)?.name
+      if (projectName) {
+        localStorage.setItem(STUDIO_ACTIVE_PROJECT_NAME_KEY, projectName)
+      }
+    } else {
+      localStorage.removeItem(STUDIO_ACTIVE_PROJECT_ID_KEY)
+      localStorage.removeItem(STUDIO_ACTIVE_PROJECT_NAME_KEY)
+    }
+  }, [studioProjectId, studioProjects])
+
+  useEffect(() => {
+    if (studioActiveFolderId) {
+      localStorage.setItem(STUDIO_ACTIVE_FOLDER_ID_KEY, studioActiveFolderId)
+    } else {
+      localStorage.removeItem(STUDIO_ACTIVE_FOLDER_ID_KEY)
+    }
+  }, [studioActiveFolderId])
+
+  useEffect(() => {
+    setHasLoadedStudioSelection(false)
+    if (!authUid) {
+      setHasLoadedStudioSelection(true)
+      return
+    }
+
+    let cancelled = false
+    void loadUserPrefs(authUid)
+      .then((prefs) => {
+        if (cancelled || !prefs) return
+        if (prefs.activeProjectId !== undefined) {
+          setStudioProjectId(prefs.activeProjectId)
+        }
+        if (prefs.activeFolderId !== undefined) {
+          setStudioActiveFolderId(prefs.activeFolderId)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setHasLoadedStudioSelection(true)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [authUid])
+
+  useEffect(() => {
+    if (!authUid || !hasLoadedStudioSelection) return
+    const timer = window.setTimeout(() => {
+      void saveUserPrefs(authUid, {
+        activeProjectId: studioProjectId,
+        activeFolderId: studioActiveFolderId,
+      })
+    }, 300)
+    return () => window.clearTimeout(timer)
+  }, [authUid, studioProjectId, studioActiveFolderId, hasLoadedStudioSelection])
+
+  useEffect(() => {
+    const node = libraryContextMenuRef.current
+    if (!node || !libraryContextMenu) return
+    node.style.left = `${Math.max(8, Math.min(libraryContextMenu.x, window.innerWidth - 170))}px`
+    node.style.top = `${Math.max(8, Math.min(libraryContextMenu.y, window.innerHeight - 120))}px`
+  }, [libraryContextMenu])
+
+  useEffect(() => {
+    const node = workflowPickerRef.current
+    if (!node || !isWorkflowPickerOpen || !workflowPickerPosition) return
+    node.style.left = `${workflowPickerPosition.left}px`
+    node.style.top = `${workflowPickerPosition.top}px`
+  }, [isWorkflowPickerOpen, workflowPickerPosition])
 
   const updateModeState = (
     tabId: string,
@@ -2934,7 +3086,7 @@ export default function ToorGenPromptWorkbench() {
     }
     setVideoDialogState({
       playbackUrl,
-      title: details ? 'Saved Run Preview' : 'Video Preview',
+      title: 'Video Player',
       details,
     })
   }
@@ -3108,6 +3260,8 @@ export default function ToorGenPromptWorkbench() {
       completedAt,
       ownerUid: auth.currentUser?.uid || '',
       isLiked: false,
+      projectId: studioProjectId || '',
+      folderId: studioActiveFolderId || '',
     }
 
     await saveHistoryEntry(entry)
@@ -3194,6 +3348,8 @@ export default function ToorGenPromptWorkbench() {
       completedAt,
       ownerUid: auth.currentUser?.uid || '',
       isLiked: false,
+      projectId: studioProjectId || '',
+      folderId: studioActiveFolderId || '',
     }
 
     await saveHistoryEntry(entry)
@@ -3260,6 +3416,14 @@ export default function ToorGenPromptWorkbench() {
   }
 
   const handleGenerate = async (tab: PromptTab) => {
+    if (!studioActiveFolderId) {
+      updateModeState(activeTab.id, (current) => ({
+        ...current,
+        statusText: 'Select a folder before generating.',
+      }))
+      return
+    }
+
     if (!hasConfiguredWorkflows) {
       updateModeState(activeTab.id, (current) => ({
         ...current,
@@ -3558,7 +3722,41 @@ export default function ToorGenPromptWorkbench() {
     }))
   }
 
-  const activeTabHistory = history
+  const activeFolderScopeIds = useMemo(() => {
+    if (!studioActiveFolderId) return null
+
+    const byParent = new Map<string | null, FolderSummary[]>()
+    studioFolders.forEach((folder) => {
+      const key = folder.parentId || null
+      const group = byParent.get(key)
+      if (group) group.push(folder)
+      else byParent.set(key, [folder])
+    })
+
+    const scopedIds = new Set<string>()
+    const stack = [studioActiveFolderId]
+
+    while (stack.length > 0) {
+      const currentId = stack.pop()
+      if (!currentId || scopedIds.has(currentId)) continue
+      scopedIds.add(currentId)
+      const children = byParent.get(currentId) || []
+      children.forEach((child) => stack.push(child.id))
+    }
+
+    return scopedIds
+  }, [studioActiveFolderId, studioFolders])
+
+  // Filter history by active studio project + folder scope when selected.
+  const activeTabHistory = useMemo(() => {
+    if (isDiagnoseShowAllHistory) return history
+    if (!studioProjectId) return history
+    return history.filter((entry) => {
+      if (entry.projectId !== studioProjectId) return false
+      if (activeFolderScopeIds && !activeFolderScopeIds.has(entry.folderId || '')) return false
+      return true
+    })
+  }, [activeFolderScopeIds, history, isDiagnoseShowAllHistory, studioProjectId])
   const activePendingGenerations = pendingGenerations.filter((entry) => entry.tabId === activeTab.id)
   const referenceFields = useMemo(
     () => getEffectiveReferenceFields(hasConfiguredWorkflows ? activeTab.fields : NO_WORKFLOW_REFERENCE_FIELDS),
@@ -3658,8 +3856,8 @@ export default function ToorGenPromptWorkbench() {
   }, [activeState.mediaUrls, mediaLibrary, mediaLibraryNameByUrl, referenceFields])
 
   const resolvedMentionReferences = useMemo(
-    () => resolvePromptMentionReferences(activeState.prompt, mentionableReferences),
-    [activeState.prompt, mentionableReferences],
+    () => resolvePromptMentionReferences(deferredPrompt, mentionableReferences),
+    [deferredPrompt, mentionableReferences],
   )
 
   const mentionedReferenceUrls = useMemo(
@@ -3833,7 +4031,13 @@ export default function ToorGenPromptWorkbench() {
     }))
   }, [activeTab.id, activeTab.requestMode, activeState.selectedVideoOptionIds, videoOptionAvailability])
 
-  const previewRequest = buildRequest(activeTab, activeState, sharedSettings, resolvedMentionReferences)
+  const previewRequest = useMemo(() => {
+    const previewState = {
+      ...activeState,
+      prompt: deferredPrompt,
+    }
+    return buildRequest(activeTab, previewState, sharedSettings, resolvedMentionReferences)
+  }, [activeState, activeTab, deferredPrompt, resolvedMentionReferences, sharedSettings])
   const outputPlaybackUrl = getPlaybackUrl(activeState.resultUrl)
   const workflowSearchValue = workflowSearch.trim().toLowerCase()
   const workflowAllowedGroups = WORKFLOW_FILTER_GROUPS[workflowFilterMode]
@@ -3853,6 +4057,7 @@ export default function ToorGenPromptWorkbench() {
   const latestTabHistory = activeTabHistory[0]
   const activeOutputUrl = activeState.resultUrl.trim()
   const hasActiveOutputPreview = Boolean(outputPlaybackUrl)
+  const canRenderActiveOutputPreviewCard = isDiagnoseShowAllHistory || (!studioProjectId && !studioActiveFolderId)
   const activeOutputAlreadySaved = activeOutputUrl
     ? activeTabHistory.some((entry) => (entry.firebaseVideoUrl || entry.resultUrl) === activeOutputUrl)
     : false
@@ -3891,37 +4096,6 @@ export default function ToorGenPromptWorkbench() {
       details: undefined,
       isPending: true,
     })),
-    ...(activeOutputUrl && !activeOutputAlreadySaved
-      ? (() => {
-          const sources = resolvePrimaryAndFallbackVideoSources(activeOutputUrl, '')
-          if (!sources.primary) {
-            return []
-          }
-          return [{
-          id: 'latest-output',
-          url: sources.primary,
-          title: 'Latest output',
-          provider: sharedSettings.provider,
-          model: sharedSettings.model,
-          timestamp: latestTabHistory?.completedAt || Date.now(),
-          details: {
-            sourceUrl: sources.primary,
-            prompt: activeState.prompt,
-            model: sharedSettings.model,
-            provider: sharedSettings.provider,
-            timestamp: latestTabHistory?.completedAt || Date.now(),
-            requestEndpoint: previewRequest.endpoint,
-            requestPayload: previewRequest.body,
-            ratio: sharedSettings.ratio,
-            resolution: sharedSettings.resolution,
-            durationSec: sharedSettings.duration,
-            outputDimensions: estimateDimensions(sharedSettings.ratio, sharedSettings.resolution),
-            generateAudio: sharedSettings.generateAudio,
-          },
-          isPending: false,
-        }]
-        })()
-      : []),
     ...filteredTabHistory.map((entry) => {
       const sources = resolvePrimaryAndFallbackVideoSources(entry.firebaseVideoUrl || '', entry.resultUrl || '')
       return {
@@ -3955,19 +4129,7 @@ export default function ToorGenPromptWorkbench() {
     }).filter((entry) => Boolean(entry.url)),
   ], [
     activePendingGenerations,
-    activeOutputAlreadySaved,
-    activeOutputUrl,
-    activeState.prompt,
     filteredTabHistory,
-    latestTabHistory?.completedAt,
-    previewRequest.body,
-    previewRequest.endpoint,
-    sharedSettings.duration,
-    sharedSettings.generateAudio,
-    sharedSettings.model,
-    sharedSettings.provider,
-    sharedSettings.ratio,
-    sharedSettings.resolution,
   ])
   const selectedRailItem = useMemo(
     () => historyRailItems.find((item) => item.id === railPreviewSelectionId) || historyRailItems[0] || null,
@@ -4842,6 +5004,13 @@ export default function ToorGenPromptWorkbench() {
     return history.find((entry) => entry.historyId === historyId) || null
   }, [history, videoDialogState?.details?.historyId])
 
+  const isVideoAlreadyInLibrary = useMemo(() => {
+    if (!videoDialogState) return false
+    const sourceUrl = resolveProxySourceUrl(videoDialogState.details?.sourceUrl || videoDialogState.playbackUrl)
+    if (!sourceUrl) return false
+    return mediaLibrary.some((item) => item.url === sourceUrl)
+  }, [mediaLibrary, videoDialogState])
+
   const visibleCapturedFrames = useMemo(
     () => capturedFrames.filter((frame) => frame.sourceKey === videoDialogSourceKey),
     [capturedFrames, videoDialogSourceKey],
@@ -5032,6 +5201,51 @@ export default function ToorGenPromptWorkbench() {
       // Keep local like state if Firestore sync fails.
     }
   }, [])
+
+  const handleBulkMoveToProject = useCallback(async (
+    historyIds: string[],
+    projectId: string,
+    folderId: string,
+  ) => {
+    if (historyIds.length === 0) return
+    setIsBulkMoving(true)
+    const updatedEntries: GenerationHistoryEntry[] = []
+    setHistory((current) => {
+      const next = current.map((entry) => {
+        if (!historyIds.includes(entry.historyId)) return entry
+        const updated: GenerationHistoryEntry = { ...entry, projectId, folderId }
+        updatedEntries.push(updated)
+        return updated
+      })
+      safeSetLocalStorage(LOCAL_HISTORY_STORAGE_KEY, JSON.stringify(next))
+      return next
+    })
+    // Persist each changed entry to Firestore (fire and forget individually)
+    await Promise.allSettled(updatedEntries.map(saveHistoryToFirestore))
+    setIsBulkMoving(false)
+    setSelectedHistoryIds(new Set())
+    setIsBulkMoveDialogOpen(false)
+  }, [])
+
+  const handleBulkDeleteHistory = useCallback(async (historyIds: string[]) => {
+    if (historyIds.length === 0) return
+    if (!window.confirm(`Delete ${historyIds.length} selected generation${historyIds.length !== 1 ? 's' : ''}?`)) return
+
+    setHistory((current) => {
+      const next = current.filter((entry) => !historyIds.includes(entry.historyId))
+      safeSetLocalStorage(LOCAL_HISTORY_STORAGE_KEY, JSON.stringify(next))
+      return next
+    })
+
+    if (authUid) {
+      await Promise.allSettled(
+        historyIds.map((historyId) => deleteDoc(doc(db, 'users', authUid, FIRESTORE_HISTORY_COLLECTION, historyId))),
+      )
+    }
+
+    setSelectedHistoryIds(new Set())
+    setIsBulkMoveDialogOpen(false)
+  }, [authUid])
 
   const handleSaveVideoToAssetsLibrary = useCallback(async (
     sourceUrl: string,
@@ -5260,6 +5474,11 @@ export default function ToorGenPromptWorkbench() {
       const storagePath = `toorgen-lab/frames/${Date.now()}-${frame.id}.jpg`
       const firebaseUrl = await uploadBlobToFirebase(blob, storagePath, 'image/jpeg')
       appendToMediaLibrary('image', firebaseUrl, `frame ${formatVideoTime(frame.videoTimeSec)}`)
+      setCapturedFrames((current) => {
+        const next = current.map((f) => f.id === frame.id ? { ...f, libraryUrl: firebaseUrl } : f)
+        writeCapturedVideoFrames(next)
+        return next
+      })
       pushVideoDialogNotice('Frame added to library.')
     } catch {
       pushVideoDialogNotice('Could not save frame to library.')
@@ -5269,30 +5488,38 @@ export default function ToorGenPromptWorkbench() {
   }, [pushVideoDialogNotice])
 
   const updatePromptMentionState = (nextText: string, cursor: number | null) => {
-    startTransition(() => {
-      if (cursor === null || cursor < 0) {
-        setPromptMentionQuery(null)
-        return
-      }
-      setPromptMentionQuery(extractMentionQuery(nextText, cursor))
-    })
+    if (cursor === null || cursor < 0) {
+      setPromptMentionQuery(null)
+      return
+    }
+    setPromptMentionQuery(extractMentionQuery(nextText, cursor))
   }
 
   const handlePromptChange = (nextPrompt: string, cursor: number | null) => {
-    startTransition(() => {
-      updateModeState(activeTab.id, (current) => ({
-        ...current,
-        prompt: nextPrompt,
-      }))
-    })
+    // Always track the latest text synchronously (no re-render).
+    latestPromptRef.current = nextPrompt
+    // Update mention picker immediately (cheap, only small dropdown state).
     updatePromptMentionState(nextPrompt, cursor)
+    // Debounce the expensive modeState update so the parent does not re-render
+    // on every single keystroke.
+    if (promptSyncTimerRef.current) clearTimeout(promptSyncTimerRef.current)
+    promptSyncTimerRef.current = setTimeout(() => {
+      startTransition(() => {
+        updateModeState(activeTab.id, (current) => ({
+          ...current,
+          prompt: nextPrompt,
+        }))
+      })
+    }, 150)
   }
 
   const handleSelectPromptMention = (mentionKey: string) => {
     const target = promptTextareaRef.current
     if (!target) return
     const cursor = getCaretOffset(target)
-    const nextPrompt = insertMention(activeState.prompt, cursor, mentionKey)
+    const basePrompt = latestPromptRef.current || activeState.prompt
+    const nextPrompt = insertMention(basePrompt, cursor, mentionKey)
+    latestPromptRef.current = nextPrompt
     updateModeState(activeTab.id, (current) => ({
       ...current,
       prompt: nextPrompt,
@@ -5338,8 +5565,656 @@ export default function ToorGenPromptWorkbench() {
     }
   }
 
+  useEffect(() => {
+    if (!authUid) {
+      setStudioProjects([])
+      setStudioProjectsLoading(false)
+      return
+    }
+
+    setStudioProjectsLoading(true)
+    const unsub = subscribeToUserProjects(
+      authUid,
+      (next) => {
+        setStudioProjects(next)
+        setStudioProjectsLoading(false)
+        setStudioProjectId((current) => {
+          const resolved = current && next.some((project) => project.id === current) ? current : null
+          if (resolved) {
+            const project = next.find((item) => item.id === resolved)
+            if (project?.name) localStorage.setItem(STUDIO_ACTIVE_PROJECT_NAME_KEY, project.name)
+            localStorage.setItem(STUDIO_ACTIVE_PROJECT_ID_KEY, resolved)
+          } else {
+            localStorage.removeItem(STUDIO_ACTIVE_PROJECT_ID_KEY)
+            localStorage.removeItem(STUDIO_ACTIVE_PROJECT_NAME_KEY)
+          }
+          return resolved
+        })
+      },
+      (err) => {
+        console.error('[Studio] subscribeToUserProjects error:', err)
+        setStudioProjectsLoading(false)
+        setStudioPanelMessage('Could not load projects.')
+      },
+    )
+
+    return unsub
+  }, [authUid])
+
+  useEffect(() => {
+    if (!studioProjectId) {
+      setStudioFolders([])
+      setStudioFoldersLoading(false)
+      setStudioMembers([])
+      return
+    }
+
+    setStudioFoldersLoading(true)
+    const unsubFolders = subscribeToProjectFolders(
+      studioProjectId,
+      (folders) => {
+        setStudioFolders(folders)
+        setStudioFoldersLoading(false)
+        setPermissionFolderId((current) => current || folders[0]?.id || '')
+      },
+      () => {
+        setStudioFolders([])
+        setStudioFoldersLoading(false)
+      },
+    )
+
+    const unsubMembers = subscribeToProjectMembers(
+      studioProjectId,
+      (members) => {
+        setStudioMembers(members)
+        setPermissionMemberUid((current) => current || members[0]?.userId || '')
+      },
+      () => setStudioMembers([]),
+    )
+
+    return () => {
+      unsubFolders()
+      unsubMembers()
+    }
+  }, [studioProjectId])
+
+  const studioProjectName = useMemo(
+    () => studioProjects.find((item) => item.id === studioProjectId)?.name || null,
+    [studioProjectId, studioProjects],
+  )
+
+  useEffect(() => {
+    if (!isBulkMoveDialogOpen || !bulkMoveTargetProjectId) {
+      setBulkMoveFolders([])
+      setBulkMoveFoldersLoading(false)
+      return
+    }
+
+    if (bulkMoveTargetProjectId === studioProjectId) {
+      setBulkMoveFolders(studioFolders)
+      setBulkMoveFoldersLoading(studioFoldersLoading)
+      return
+    }
+
+    setBulkMoveFoldersLoading(true)
+    const unsub = subscribeToProjectFolders(
+      bulkMoveTargetProjectId,
+      (folders) => {
+        setBulkMoveFolders(folders)
+        setBulkMoveFoldersLoading(false)
+      },
+      () => {
+        setBulkMoveFolders([])
+        setBulkMoveFoldersLoading(false)
+      },
+    )
+
+    return () => unsub()
+  }, [
+    bulkMoveTargetProjectId,
+    isBulkMoveDialogOpen,
+    studioFolders,
+    studioFoldersLoading,
+    studioProjectId,
+  ])
+
+  const bulkMoveFolderOptions = useMemo(() => {
+    if (bulkMoveFolders.length === 0) return [] as Array<{ id: string; label: string; depth: number }>
+
+    const byParent = new Map<string, FolderSummary[]>()
+
+    bulkMoveFolders.forEach((folder) => {
+      const parentKey = folder.parentId || '__root__'
+      const group = byParent.get(parentKey)
+      if (group) group.push(folder)
+      else byParent.set(parentKey, [folder])
+    })
+
+    byParent.forEach((children) => children.sort((a, b) => a.name.localeCompare(b.name)))
+
+    const ordered: Array<{ id: string; label: string; depth: number }> = []
+    const visited = new Set<string>()
+
+    const walk = (parentId: string | null, depth: number) => {
+      const children = byParent.get(parentId || '__root__') || []
+      children.forEach((folder) => {
+        if (visited.has(folder.id)) return
+        visited.add(folder.id)
+        ordered.push({
+          id: folder.id,
+          label: `${'  '.repeat(depth)}${depth > 0 ? '↳ ' : ''}${folder.name}`,
+          depth,
+        })
+        walk(folder.id, depth + 1)
+      })
+    }
+
+    walk(null, 0)
+
+    // Fallback for orphan/cyclic nodes: append unseen nodes sorted.
+    bulkMoveFolders
+      .filter((folder) => !visited.has(folder.id))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .forEach((folder) => {
+        ordered.push({ id: folder.id, label: folder.name, depth: 0 })
+      })
+
+    return ordered
+  }, [bulkMoveFolders])
+
+  async function handleCreateStudioProject() {
+    if (!auth.currentUser) return
+    const trimmed = newProjectName.trim()
+    if (!trimmed) {
+      setStudioPanelMessage('Project name is required.')
+      return
+    }
+
+    setStudioBusy(true)
+    try {
+      const project = await createProject(
+        { orgId: auth.currentUser.uid, name: trimmed, visibility: 'private' },
+        {
+          uid: auth.currentUser.uid,
+          displayName: auth.currentUser.displayName || '',
+          email: auth.currentUser.email || '',
+          photoUrl: auth.currentUser.photoURL || '',
+        },
+      )
+      setNewProjectName('')
+      setStudioProjectId(project.id)
+      setStudioProjects((current) => {
+        const next = current.filter((item) => item.id !== project.id)
+        return [{
+          id: project.id,
+          orgId: project.orgId,
+          name: project.name,
+          description: project.description,
+          visibility: project.visibility,
+          status: project.status,
+          coverImageUrl: project.coverImageUrl,
+          tags: project.tags,
+          role: 'owner',
+          updatedAt: Date.now(),
+        }, ...next]
+      })
+      localStorage.setItem(STUDIO_ACTIVE_PROJECT_ID_KEY, project.id)
+      localStorage.setItem(STUDIO_ACTIVE_PROJECT_NAME_KEY, project.name)
+      setStudioPanelMessage('Project created.')
+    } catch {
+      setStudioPanelMessage('Could not create project right now.')
+    } finally {
+      setStudioBusy(false)
+    }
+  }
+
+  async function handleCreateStudioFolder() {
+    if (!studioProjectId || !auth.currentUser) return
+    const trimmed = newFolderName.trim()
+    if (!trimmed) {
+      setStudioPanelMessage('Folder name is required.')
+      return
+    }
+
+    setStudioBusy(true)
+    try {
+      const folder = await createFolder(
+        {
+          projectId: studioProjectId,
+          name: trimmed,
+          parentId: null,
+        },
+        auth.currentUser.uid,
+      )
+      setNewFolderName('')
+      setStudioFolders((current) => {
+        if (current.some((item) => item.id === folder.id)) return current
+        return [...current, folder]
+      })
+      setPermissionFolderId((current) => current || folder.id)
+      setStudioPanelMessage('Folder created.')
+    } catch {
+      setStudioPanelMessage('Could not create folder right now.')
+    } finally {
+      setStudioBusy(false)
+    }
+  }
+
+  async function handleRenameProject(projectId: string, oldName: string) {
+    const next = window.prompt('Rename project:', oldName)
+    if (!next || next.trim() === '' || next === oldName) return
+    setStudioBusy(true)
+    try {
+      await updateStudioProject(projectId, next.trim())
+      setStudioPanelMessage('Project renamed.')
+    } catch {
+      setStudioPanelMessage('Failed to rename project.')
+    } finally {
+      setStudioBusy(false)
+    }
+  }
+
+  async function handleDeleteProject(projectId: string) {
+    if (!window.confirm('Are you sure you want to delete this project?')) return
+    setStudioBusy(true)
+    try {
+      await deleteStudioProject(projectId)
+      if (studioProjectId === projectId) setStudioProjectId('')
+      setStudioPanelMessage('Project deleted.')
+    } catch {
+      setStudioPanelMessage('Failed to delete project.')
+    } finally {
+      setStudioBusy(false)
+    }
+  }
+
+  async function handleRenameFolder(projectId: string, folderId: string, oldName: string) {
+    const next = window.prompt('Rename folder:', oldName)
+    if (!next || next.trim() === '' || next === oldName) return
+    setStudioBusy(true)
+    try {
+      await updateFolder(projectId, folderId, next.trim())
+      setStudioPanelMessage('Folder renamed.')
+    } catch {
+      setStudioPanelMessage('Failed to rename folder.')
+    } finally {
+      setStudioBusy(false)
+    }
+  }
+
+  async function handleDeleteFolder(projectId: string, folderId: string) {
+    if (!window.confirm('Are you sure you want to delete this folder?')) return
+    setStudioBusy(true)
+    try {
+      await deleteFolder(projectId, folderId)
+      setStudioPanelMessage('Folder deleted.')
+    } catch {
+      setStudioPanelMessage('Failed to delete folder.')
+    } finally {
+      setStudioBusy(false)
+    }
+  }
+
+  async function handleApplyFolderPermission() {
+    if (!studioProjectId || !permissionFolderId || !permissionMemberUid) {
+      setStudioPanelMessage('Select project folder and collaborator first.')
+      return
+    }
+
+    setStudioBusy(true)
+    try {
+      await setFolderMemberVisibility(
+      studioProjectId,
+        permissionFolderId,
+        permissionMemberUid,
+        permissionMode,
+      )
+      setStudioPanelMessage('Folder visibility updated for collaborator.')
+    } catch {
+      setStudioPanelMessage('Could not update folder visibility.')
+    } finally {
+      setStudioBusy(false)
+    }
+  }
+
+  async function handleInviteCollaborator() {
+    if (!studioProjectId || !auth.currentUser) return
+    const email = inviteEmail.trim().toLowerCase()
+    if (!email || !email.includes('@')) {
+      setStudioPanelMessage('Enter a valid email address.')
+      return
+    }
+    const currentProject = studioProjects.find((p) => p.id === studioProjectId)
+    if (!currentProject) return
+
+    setStudioBusy(true)
+    try {
+      const recipient = await findUserByEmail(email)
+      console.log('[InviteDebug] findUserByEmail result:', recipient)
+      const invite = await createInvite({
+        targetKind: 'project',
+        targetId: studioProjectId,
+        orgId: currentProject.orgId,
+        role: inviteRole,
+        inviteeEmail: email,
+        inviteeUid: recipient?.uid,
+        invitedBy: auth.currentUser.uid,
+        targetProjectIds: [studioProjectId],
+        targetFolderRefs: studioActiveFolderId
+          ? [{ projectId: studioProjectId, folderId: studioActiveFolderId }]
+          : [],
+        expiryHours: 72,
+      })
+      console.log('[InviteDebug] createInvite result:', invite)
+      setStudioPanelMessage(recipient
+        ? `Invite created and will appear in-app for ${email}.`
+        : `Invite created for ${email}, but no matching app user was found.`)
+      setInviteEmail('')
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error'
+      setStudioPanelMessage(`Could not create invite: ${msg}`)
+    } finally {
+      setStudioBusy(false)
+    }
+  }
+
+  async function handleRemoveMember(userId: string) {
+    if (!studioProjectId) return
+    if (!window.confirm('Remove this collaborator from the project?')) return
+    setStudioBusy(true)
+    try {
+      await removeProjectMember(studioProjectId, userId)
+      setStudioPanelMessage('Collaborator removed.')
+    } catch {
+      setStudioPanelMessage('Could not remove collaborator.')
+    } finally {
+      setStudioBusy(false)
+    }
+  }
+
+  const openMseSequencerDialog = () => {
+    setIsMseSequencerDialogOpen(true)
+    setIsMseSequencerDialogMinimized(false)
+  }
+
+  const minimizeMseSequencerDialog = () => {
+    setIsMseSequencerDialogMinimized(true)
+  }
+
+  const restoreMseSequencerDialog = () => {
+    setIsMseSequencerDialogOpen(true)
+    setIsMseSequencerDialogMinimized(false)
+  }
+
+  const closeMseSequencerDialog = () => {
+    setIsMseSequencerDialogOpen(false)
+    setIsMseSequencerDialogMinimized(false)
+  }
+
+
   return (
     <div className="lab-page">
+      {/* Studio manage dialog */}
+      {studioAccountOpen && (
+        <div className="lab-video-dialog-backdrop" onClick={() => setStudioAccountOpen(false)}>
+          <div className="lab-studio-dialog" onClick={(event) => event.stopPropagation()}>
+            <div className="lab-video-dialog-head">
+              <strong className="lab-studio-dialog-title">Studio Account</strong>
+              <button type="button" className="lab-icon-btn" onClick={() => setStudioAccountOpen(false)} title="Close">✕</button>
+            </div>
+
+            <div className="lab-studio-dialog-body">
+              {/* ── Account ── */}
+              <div className="lab-studio-section">
+                <div className="lab-studio-section-title">Account</div>
+                <div className="lab-studio-kv">
+                  <span>Name</span><span>{auth.currentUser?.displayName || 'Unknown'}</span>
+                  <span>Email</span><span>{auth.currentUser?.email || 'Unknown'}</span>
+                  <span>Project</span><span>{studioProjectName || 'None'}</span>
+                </div>
+              </div>
+
+              {/* ── Projects ── */}
+              <div className="lab-studio-section">
+                <div className="lab-studio-section-title">Projects</div>
+                <div className="lab-inline-actions">
+                  <select
+                    className="lab-select"
+                    value={studioProjectId || ''}
+                    onChange={(event) => {
+                      const nextProjectId = event.target.value || null
+                      setStudioProjectId(nextProjectId)
+                      setStudioActiveFolderId(null)
+                      if (nextProjectId) {
+                        localStorage.setItem(STUDIO_ACTIVE_PROJECT_ID_KEY, nextProjectId)
+                      } else {
+                        localStorage.removeItem(STUDIO_ACTIVE_PROJECT_ID_KEY)
+                        localStorage.removeItem(STUDIO_ACTIVE_PROJECT_NAME_KEY)
+                      }
+                    }}
+                    title="Active project"
+                  >
+                    <option value="">All projects</option>
+                    {studioProjectsLoading
+                      ? <option value="" disabled>Loading projects…</option>
+                      : studioProjects.length === 0
+                        ? <option value="" disabled>No projects yet</option>
+                        : studioProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                  </select>
+                  {studioProjectId && (
+                    <>
+                      <button
+                        type="button"
+                        className="lab-icon-btn lab-icon-btn--small"
+                        onClick={() => handleRenameProject(studioProjectId!, studioProjects.find(p => p.id === studioProjectId)?.name || '')}
+                        disabled={studioBusy}
+                        title="Rename Project"
+                      >
+                        <FilePenLine size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        className="lab-icon-btn lab-icon-btn--small"
+                        onClick={() => handleDeleteProject(studioProjectId!)}
+                        disabled={studioBusy}
+                        title="Delete Project"
+                      >
+                        ✕
+                      </button>
+                    </>
+                  )}
+                </div>
+                <div className="lab-studio-section-title">New project</div>
+                <div className="lab-inline-actions">
+                  <input
+                    className="lab-input"
+                    value={newProjectName}
+                    onChange={(event) => setNewProjectName(event.target.value)}
+                    placeholder="Project name"
+                  />
+                  <button
+                    type="button"
+                    className="lab-primary-btn"
+                    disabled={studioBusy || !newProjectName.trim()}
+                    onClick={() => { void handleCreateStudioProject() }}
+                  >
+                    Create
+                  </button>
+                </div>
+              </div>
+
+              {/* ── Folders ── */}
+              <div className="lab-studio-section">
+                <div className="lab-studio-section-title">Folders</div>
+                <div className="lab-studio-folder-strip" aria-label="Project folders">
+                  {studioFoldersLoading
+                    ? <span className="lab-studio-folder-pill is-muted">Loading…</span>
+                    : studioFolders.length > 0
+                      ? studioFolders.map((folder) => (
+                          <span
+                            key={folder.id}
+                            className={`lab-studio-folder-pill ${permissionFolderId === folder.id ? 'is-active' : ''}`}
+                            onClick={() => setPermissionFolderId(folder.id)}
+                            title="Click to select folder"
+                          >
+                            {folder.name}
+                            <span className="lab-studio-folder-actions" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                type="button"
+                                onClick={() => handleRenameFolder(studioProjectId!, folder.id, folder.name)}
+                                title="Rename folder"
+                              >
+                                <FilePenLine size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteFolder(studioProjectId!, folder.id)}
+                                title="Delete folder"
+                              >
+                                ✕
+                              </button>
+                            </span>
+                          </span>
+                        ))
+                      : <span className="lab-studio-folder-pill is-muted">No folders yet</span>}
+                </div>
+                <div className="lab-studio-section-title">New folder</div>
+                <div className="lab-inline-actions">
+                  <input
+                    className="lab-input"
+                    value={newFolderName}
+                    onChange={(event) => setNewFolderName(event.target.value)}
+                    placeholder="Folder name"
+                  />
+                  <button
+                    type="button"
+                    className="lab-primary-btn"
+                    disabled={studioBusy || !studioProjectId || !newFolderName.trim()}
+                    onClick={() => { void handleCreateStudioFolder() }}
+                  >
+                    Create
+                  </button>
+                </div>
+              </div>
+
+              {/* ── Collaborators ── */}
+              {studioProjectId && (
+                <div className="lab-studio-section">
+                  <div className="lab-studio-section-title">Collaborators</div>
+                  {studioMembers.length === 0
+                    ? <div className="lab-studio-empty-hint">No collaborators yet — invite someone below.</div>
+                    : (
+                      <ul className="lab-studio-member-list">
+                        {studioMembers.map((member) => {
+                          const isMe = member.userId === auth.currentUser?.uid
+                          const currentUserRole = studioMembers.find((m) => m.userId === auth.currentUser?.uid)?.role
+                          const canRemove = !isMe && (currentUserRole === 'owner' || currentUserRole === 'editor')
+                          return (
+                            <li key={member.userId} className="lab-studio-member-row">
+                              <span className="lab-studio-member-name">{member.displayName || member.email}</span>
+                              <span className="lab-studio-member-email">{member.email}</span>
+                              <span className={`lab-studio-member-role lab-studio-member-role--${member.role}`}>{member.role}</span>
+                              {canRemove && (
+                                <button
+                                  type="button"
+                                  className="lab-icon-btn lab-icon-btn--small"
+                                  disabled={studioBusy}
+                                  onClick={() => { void handleRemoveMember(member.userId) }}
+                                  title="Remove collaborator"
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    )}
+
+                  <div className="lab-studio-section-title">Invite collaborator</div>
+                  <div className="lab-inline-actions lab-inline-actions--wrap">
+                    <input
+                      className="lab-input"
+                      type="email"
+                      placeholder="Email address"
+                      value={inviteEmail}
+                      onChange={(e) => setInviteEmail(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { void handleInviteCollaborator() } }}
+                    />
+                    <select
+                      className="lab-select"
+                      value={inviteRole}
+                      onChange={(e) => setInviteRole(e.target.value as 'editor' | 'viewer')}
+                      title="Role"
+                    >
+                      <option value="editor">Editor</option>
+                      <option value="viewer">Viewer</option>
+                    </select>
+                    <button
+                      type="button"
+                      className="lab-primary-btn"
+                      disabled={studioBusy || !inviteEmail.trim()}
+                      onClick={() => { void handleInviteCollaborator() }}
+                    >
+                      Send Invite
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Folder access ── */}
+              <div className="lab-studio-section">
+                <div className="lab-studio-section-title">Folder access / hide</div>
+                <div className="lab-inline-actions lab-inline-actions--wrap">
+                  <select
+                    className="lab-select"
+                    value={permissionFolderId}
+                    onChange={(event) => setPermissionFolderId(event.target.value)}
+                    title="Folder"
+                  >
+                    {studioFolders.length === 0
+                      ? <option value="">No folders</option>
+                      : studioFolders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
+                  </select>
+                  <select
+                    className="lab-select"
+                    value={permissionMemberUid}
+                    onChange={(event) => setPermissionMemberUid(event.target.value)}
+                    title="Collaborator"
+                  >
+                    {studioMembers.length === 0
+                      ? <option value="">No collaborators</option>
+                      : studioMembers.map((member) => (
+                          <option key={member.userId} value={member.userId}>{member.displayName || member.email}</option>
+                        ))}
+                  </select>
+                  <select
+                    className="lab-select"
+                    value={permissionMode}
+                    onChange={(event) => setPermissionMode(event.target.value as 'default' | 'allowed' | 'hidden')}
+                    title="Access mode"
+                  >
+                    <option value="default">Default</option>
+                    <option value="allowed">Allow</option>
+                    <option value="hidden">Hide</option>
+                  </select>
+                  <button
+                    type="button"
+                    className="lab-primary-btn"
+                    disabled={studioBusy || !permissionFolderId || !permissionMemberUid}
+                    onClick={() => { void handleApplyFolderPermission() }}
+                  >
+                    Apply
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {studioPanelMessage && <div className="lab-studio-dialog-status">{studioPanelMessage}</div>}
+          </div>
+        </div>
+      )}
+
       {/* Hidden preloader keeps reference images in browser cache regardless of composerRefMode */}
       <div className="lab-ref-preloader" aria-hidden="true">
         {cachedReferenceImageUrls.map((url) => (
@@ -5393,18 +6268,18 @@ export default function ToorGenPromptWorkbench() {
                     const source = videoDialogState.details?.sourceUrl || videoDialogState.playbackUrl
                     void handleSaveVideoToAssetsLibrary(source, videoDialogState.title, videoDialogState.details?.historyId)
                   }}
-                  disabled={!(videoDialogState.details?.sourceUrl || videoDialogState.playbackUrl) || savingVideoToAssetsHistoryId === (videoDialogState.details?.historyId || '__dialog__')}
+                  disabled={!(videoDialogState.details?.sourceUrl || videoDialogState.playbackUrl) || savingVideoToAssetsHistoryId === (videoDialogState.details?.historyId || '__dialog__') || isVideoAlreadyInLibrary}
                 >
-                  {savingVideoToAssetsHistoryId === (videoDialogState.details?.historyId || '__dialog__') ? 'Uploading...' : 'Save to Assets'}
+                  {savingVideoToAssetsHistoryId === (videoDialogState.details?.historyId || '__dialog__') ? 'Uploading...' : isVideoAlreadyInLibrary ? 'In Assets ✓' : 'Save to Assets'}
                 </button>
                 {videoDialogHistoryEntry && (
                   <button
                     type="button"
-                    className="lab-secondary-btn"
+                    className={`lab-secondary-btn lab-like-btn${videoDialogHistoryEntry.isLiked ? ' is-liked' : ''}`}
                     onClick={() => { void toggleHistoryVideoLike(videoDialogHistoryEntry.historyId) }}
                     title={videoDialogHistoryEntry.isLiked ? 'Unlike this run' : 'Like this run'}
                   >
-                    {videoDialogHistoryEntry.isLiked ? 'Unlike' : 'Like'}
+                    <Heart size={14} fill={videoDialogHistoryEntry.isLiked ? 'currentColor' : 'none'} />
                   </button>
                 )}
                 <button
@@ -5445,7 +6320,8 @@ export default function ToorGenPromptWorkbench() {
                     controls
                     autoPlay
                     playsInline
-                    preload="metadata"
+                    preload="auto"
+                    crossOrigin="anonymous"
                   />
                 ) : (
                   <div className="lab-video-dialog-player lab-video-dialog-player--empty">
@@ -5482,9 +6358,9 @@ export default function ToorGenPromptWorkbench() {
                               type="button"
                               className="lab-primary-btn"
                               onClick={() => { void handleSaveFrameToLibrary(frame) }}
-                              disabled={savingFrameId === frame.id}
+                              disabled={savingFrameId === frame.id || Boolean(frame.libraryUrl)}
                             >
-                              {savingFrameId === frame.id ? 'Saving...' : 'To Library'}
+                              {savingFrameId === frame.id ? 'Saving...' : frame.libraryUrl ? 'In Library ✓' : 'To Library'}
                             </button>
                           </div>
                         </div>
@@ -5801,7 +6677,7 @@ export default function ToorGenPromptWorkbench() {
             {libraryContextMenu ? (
               <div
                 className="lab-library-context-menu"
-                style={{ left: Math.max(8, Math.min(libraryContextMenu.x, window.innerWidth - 170)), top: Math.max(8, Math.min(libraryContextMenu.y, window.innerHeight - 120)) }}
+                ref={libraryContextMenuRef}
                 onClick={(event) => event.stopPropagation()}
               >
                 {libraryContextMenu.item.kind === 'image' || libraryContextMenu.item.kind === 'video' ? (
@@ -5885,6 +6761,72 @@ export default function ToorGenPromptWorkbench() {
             <div className="lab-details-copy">{activeTab.promptTemplate}</div>
           </div>
         </div>
+      )}
+
+      {isMseSequencerDialogOpen && (
+        <>
+          <div
+            className={`lab-video-dialog-backdrop${isMseSequencerDialogMinimized ? ' lab-video-dialog-backdrop--hidden' : ''}`}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Video sequencer"
+            onClick={closeMseSequencerDialog}
+          >
+            <div className="lab-video-dialog lab-video-dialog--sequencer" onClick={(event) => event.stopPropagation()}>
+              <div className="lab-video-dialog-head">
+                <div className="lab-card-title">Video Sequencer</div>
+                <div className="lab-inline-actions lab-inline-actions--compact">
+                  <button
+                    type="button"
+                    className="lab-secondary-btn"
+                    onClick={minimizeMseSequencerDialog}
+                  >
+                    Minimize
+                  </button>
+                  <button
+                    type="button"
+                    className="lab-secondary-btn"
+                    onClick={closeMseSequencerDialog}
+                  >
+                    Close and unload
+                  </button>
+                </div>
+              </div>
+              <div className="lab-sequencer-dialog-body">
+                <MSEVideoSequencerPage
+                  isVisible={isMseSequencerDialogOpen && !isMseSequencerDialogMinimized}
+                  generatedVideos={history
+                    .filter((entry) => entry.firebaseVideoUrl || entry.resultUrl)
+                    .slice(0, 80)
+                    .map((entry) => ({
+                      id: `generated-${entry.historyId}`,
+                      url: getPlaybackUrl(entry.firebaseVideoUrl || entry.resultUrl),
+                      label: entry.prompt ? entry.prompt.slice(0, 68) : entry.tabLabel || 'Generated video',
+                    }))}
+                  libraryVideos={mediaLibrary
+                    .filter((item) => item.kind === 'video')
+                    .slice(0, 80)
+                    .map((item) => ({
+                      id: `library-${item.id}`,
+                      url: getPlaybackUrl(item.url),
+                      label: item.name || 'Library video',
+                    }))}
+                />
+              </div>
+            </div>
+          </div>
+          {isMseSequencerDialogMinimized && (
+            <div className="lab-sequencer-minimized-chip">
+              <span>Video Sequencer minimized</span>
+              <button type="button" className="lab-secondary-btn" onClick={restoreMseSequencerDialog}>
+                Restore
+              </button>
+              <button type="button" className="lab-secondary-btn" onClick={closeMseSequencerDialog}>
+                Close
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       {isPlaylistOpen && (
@@ -6006,7 +6948,6 @@ export default function ToorGenPromptWorkbench() {
           role="dialog"
           aria-modal="false"
           aria-label="Workflow picker"
-          style={{ top: `${workflowPickerPosition.top}px`, left: `${workflowPickerPosition.left}px` }}
         >
           <div className="lab-workflow-picker-popover-head">
             <strong>Select Workflow</strong>
@@ -6190,6 +7131,53 @@ export default function ToorGenPromptWorkbench() {
                 : 'No workflows configured yet. We will add them one by one.'}
             </p>
           </div>
+
+          {/* ── Studio context selectors ── */}
+          <div className="lab-toolbar-studio-context">
+            <select
+              className="lab-select lab-select--compact"
+              value={studioProjectId || ''}
+              onChange={(event) => {
+                const nextId = event.target.value || null
+                setStudioProjectId(nextId)
+                setStudioActiveFolderId(null)
+                if (nextId) {
+                  localStorage.setItem(STUDIO_ACTIVE_PROJECT_ID_KEY, nextId)
+                } else {
+                  localStorage.removeItem(STUDIO_ACTIVE_PROJECT_ID_KEY)
+                  localStorage.removeItem(STUDIO_ACTIVE_PROJECT_NAME_KEY)
+                }
+              }}
+              title="Active project"
+              aria-label="Active project"
+            >
+              <option value="">All projects</option>
+              {studioProjectsLoading
+                ? <option value="" disabled>Loading…</option>
+                : studioProjects.length === 0
+                  ? <option value="" disabled>No projects</option>
+                  : studioProjects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            <select
+              className="lab-select lab-select--compact"
+              value={studioActiveFolderId || ''}
+              onChange={(event) => setStudioActiveFolderId(event.target.value || null)}
+              title="Filter by folder"
+              aria-label="Filter by folder"
+              disabled={studioFolders.length === 0}
+            >
+              <option value="">All folders</option>
+              {studioFolders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+            </select>
+            <button
+              type="button"
+              className="lab-secondary-btn"
+              title="Manage Studio — org, projects, folders, collaborators"
+              onClick={() => setStudioAccountOpen(true)}
+            >
+              Studio
+            </button>
+          </div>
         </div>
 
         {!isBackendAvailable && (
@@ -6222,10 +7210,27 @@ export default function ToorGenPromptWorkbench() {
                 </button>
                 <button
                   type="button"
+                  className={`lab-secondary-btn${isMseSequencerDialogOpen ? ' lab-view-mode-btn--active' : ''}`}
+                  onClick={openMseSequencerDialog}
+                >
+                  Video Sequencer
+                </button>
+                <button
+                  type="button"
                   className={`lab-secondary-btn${historyViewMode === 'rail' ? ' lab-view-mode-btn--active' : ''}`}
                   onClick={() => setHistoryViewMode('rail')}
                 >
                   Bottom Rail
+                </button>
+                <button
+                  type="button"
+                  className={`lab-secondary-btn${historyViewMode === 'list' ? ' lab-view-mode-btn--active' : ''}`}
+                  onClick={() => {
+                    setHistoryViewMode('list')
+                    setSelectedHistoryIds(new Set())
+                  }}
+                >
+                  List
                 </button>
                 <button
                   type="button"
@@ -6236,6 +7241,17 @@ export default function ToorGenPromptWorkbench() {
                   }}
                 >
                   {isLikedOnlyFilter ? 'Liked Only' : 'All Runs'}
+                </button>
+                <button
+                  type="button"
+                  className={`lab-secondary-btn${isDiagnoseShowAllHistory ? ' lab-view-mode-btn--active' : ''}`}
+                  onClick={() => {
+                    setIsDiagnoseShowAllHistory((current) => !current)
+                    setHistoryDisplayLimit(10)
+                    setSelectedHistoryIds(new Set())
+                  }}
+                >
+                  {isDiagnoseShowAllHistory ? 'Diagnose: ON' : 'Diagnose'}
                 </button>
                 <button
                   type="button"
@@ -6262,6 +7278,12 @@ export default function ToorGenPromptWorkbench() {
                 </button>
               </div>
             </div>
+
+            {isDiagnoseShowAllHistory && (
+              <div className="lab-status">
+                Diagnose mode is active: showing all generations across projects/folders so you can bulk move and categorize them.
+              </div>
+            )}
 
             {isRecoveryOpen && (
               <div className="lab-recovery-panel">
@@ -6329,7 +7351,7 @@ export default function ToorGenPromptWorkbench() {
               <div className="lab-status">{activeState.statusText}</div>
             )}
 
-            {historyViewMode === 'cards' && filteredTabHistory.length === 0 && !hasActiveOutputPreview && activePendingGenerations.length === 0 && (
+            {historyViewMode === 'cards' && filteredTabHistory.length === 0 && !(hasActiveOutputPreview && canRenderActiveOutputPreviewCard) && activePendingGenerations.length === 0 && (
               <div className="lab-empty-state">
                 {isLikedOnlyFilter ? 'No liked runs for this workflow yet.' : 'No saved runs for this workflow yet.'}
               </div>
@@ -6395,7 +7417,7 @@ export default function ToorGenPromptWorkbench() {
                   </article>
                 ))}
 
-                {hasActiveOutputPreview && !activeOutputAlreadySaved && (
+                {hasActiveOutputPreview && canRenderActiveOutputPreviewCard && !activeOutputAlreadySaved && (
                   <article className="lab-history-video-card lab-history-video-card--output">
                     <div
                       className={`lab-history-video-stage${isOverlayIdleForScope('active-output') ? ' is-overlay-idle' : ''}`}
@@ -6685,6 +7707,170 @@ export default function ToorGenPromptWorkbench() {
                     </button>
                   </div>
                 )}
+              </div>
+            )}
+
+            {historyViewMode === 'list' && (
+              <>
+                {filteredTabHistory.length === 0 && (
+                  <div className="lab-empty-state">No runs to display.</div>
+                )}
+                {filteredTabHistory.length > 0 && (
+                  <div className="lab-bulk-move-bar">
+                    <span>{selectedHistoryIds.size} selected</span>
+                    <button
+                      type="button"
+                      className="lab-secondary-btn"
+                      onClick={() => setSelectedHistoryIds(new Set(filteredTabHistory.map((entry) => entry.historyId)))}
+                    >
+                      Select All Visible
+                    </button>
+                    <button
+                      type="button"
+                      className="lab-primary-btn"
+                      disabled={selectedHistoryIds.size === 0}
+                      onClick={() => {
+                        setBulkMoveTargetProjectId(studioProjectId || '')
+                        setBulkMoveTargetFolderId('')
+                        setIsBulkMoveDialogOpen(true)
+                      }}
+                    >
+                      Move to Project / Folder…
+                    </button>
+                    <button
+                      type="button"
+                      className="lab-secondary-btn"
+                      disabled={selectedHistoryIds.size === 0}
+                      onClick={() => {
+                        void handleBulkDeleteHistory(Array.from(selectedHistoryIds))
+                      }}
+                    >
+                      Delete Selected
+                    </button>
+                    <button
+                      type="button"
+                      className="lab-secondary-btn"
+                      onClick={() => setSelectedHistoryIds(new Set())}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
+                <ul className="lab-history-checklist">
+                  {filteredTabHistory.map((entry) => {
+                    const isChecked = selectedHistoryIds.has(entry.historyId)
+                    const thumb = entry.resultUrl || entry.firebaseVideoUrl || ''
+                    const projectName = studioProjects.find((p) => p.id === entry.projectId)?.name ?? ''
+                    return (
+                      <li
+                        key={entry.historyId}
+                        className={`lab-history-list-item${isChecked ? ' lab-history-list-item--selected' : ''}`}
+                        onClick={() => {
+                          setSelectedHistoryIds((current) => {
+                            const next = new Set(current)
+                            if (next.has(entry.historyId)) next.delete(entry.historyId)
+                            else next.add(entry.historyId)
+                            return next
+                          })
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          className="lab-history-list-checkbox"
+                          checked={isChecked}
+                          readOnly
+                          aria-label={`Select generation ${formatTimestamp(entry.completedAt)}`}
+                          title={`Select generation ${formatTimestamp(entry.completedAt)}`}
+                        />
+                        {thumb ? (
+                          <video
+                            src={getPlaybackUrl(thumb)}
+                            className="lab-history-list-thumb"
+                            muted
+                            playsInline
+                          />
+                        ) : (
+                          <div className="lab-history-list-thumb lab-history-list-thumb--empty" />
+                        )}
+                        <div className="lab-history-list-meta">
+                          <div className="lab-history-list-prompt">{entry.prompt?.slice(0, 120) || '(no prompt)'}</div>
+                          <div className="lab-history-list-date">{formatTimestamp(entry.completedAt)}</div>
+                          {projectName && (
+                            <div className="lab-history-list-project">{projectName}</div>
+                          )}
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </>
+            )}
+
+            {isBulkMoveDialogOpen && (
+              <div className="lab-bulk-move-dialog-backdrop" onClick={() => setIsBulkMoveDialogOpen(false)}>
+                <div className="lab-bulk-move-dialog" onClick={(e) => e.stopPropagation()}>
+                  <h4 className="lab-bulk-move-dialog-title">Move {selectedHistoryIds.size} generation{selectedHistoryIds.size !== 1 ? 's' : ''}</h4>
+                  <label className="lab-field-label" htmlFor="lab-bulk-move-project-select">Project</label>
+                  <select
+                    id="lab-bulk-move-project-select"
+                    className="lab-select"
+                    value={bulkMoveTargetProjectId}
+                    onChange={(e) => {
+                      setBulkMoveTargetProjectId(e.target.value)
+                      setBulkMoveTargetFolderId('')
+                    }}
+                    aria-label="Bulk move project"
+                  >
+                    <option value="">— None —</option>
+                    {studioProjects.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                  {bulkMoveTargetProjectId && (() => {
+                    if (bulkMoveFoldersLoading) {
+                      return <div className="lab-inline-note">Loading folders…</div>
+                    }
+                    if (bulkMoveFolderOptions.length === 0) return null
+                    const targetProjectName = studioProjects.find((project) => project.id === bulkMoveTargetProjectId)?.name || 'Selected project'
+                    return (
+                      <>
+                        <label className="lab-field-label" htmlFor="lab-bulk-move-folder-select">Folder (inside {targetProjectName})</label>
+                        <select
+                          id="lab-bulk-move-folder-select"
+                          className="lab-select"
+                          value={bulkMoveTargetFolderId}
+                          onChange={(e) => setBulkMoveTargetFolderId(e.target.value)}
+                          aria-label="Bulk move folder"
+                        >
+                          <option value="">— No folder —</option>
+                          {bulkMoveFolderOptions.map((folderOption) => (
+                            <option key={folderOption.id} value={folderOption.id}>{folderOption.label}</option>
+                          ))}
+                        </select>
+                      </>
+                    )
+                  })()}
+                  <div className="lab-bulk-move-dialog-actions">
+                    <button
+                      type="button"
+                      className="lab-secondary-btn"
+                      disabled={isBulkMoving}
+                      onClick={() => setIsBulkMoveDialogOpen(false)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="lab-primary-btn"
+                      disabled={isBulkMoving}
+                      onClick={() => {
+                        void handleBulkMoveToProject(Array.from(selectedHistoryIds), bulkMoveTargetProjectId, bulkMoveTargetFolderId)
+                      }}
+                    >
+                      {isBulkMoving ? 'Moving…' : 'Assign'}
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -7301,7 +8487,8 @@ export default function ToorGenPromptWorkbench() {
               <button
                 type="button"
                 className="lab-primary-btn lab-primary-btn--composer"
-                disabled={!hasConfiguredWorkflows}
+                disabled={!canGenerate}
+                title={studioActiveFolderId ? undefined : 'Select a folder before generating'}
                 onClick={() => void handleGenerate(activeTab)}
               >
                 Generate

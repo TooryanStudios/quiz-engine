@@ -1,4 +1,4 @@
-import { collection, doc, documentId, getCountFromServer, getDoc, getDocs, increment, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, startAfter, updateDoc, type DocumentSnapshot } from 'firebase/firestore'
+import { collection, doc, documentId, getCountFromServer, getDoc, getDocs, increment, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, startAfter, updateDoc, where, type DocumentSnapshot } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { db, functions } from './firebase'
 import type { QuizDoc } from '../types/quiz'
@@ -176,7 +176,7 @@ export interface UserProfile {
   email: string
   displayName: string
   photoURL: string
-  status: 'active' | 'blocked' | 'deleted'
+  status: 'pending' | 'active' | 'blocked' | 'rejected' | 'deleted'
   platform: 'mobile' | 'desktop' | 'unknown'
   signInCount: number
   createdAt: any
@@ -187,6 +187,10 @@ export interface UserProfile {
   /** User preferences — persisted to Firestore */
   language?: 'ar' | 'en'
   theme?: 'dark' | 'light'
+  /** Last selected Studio scope for cross-browser restore */
+  activeOrgId?: string | null
+  activeProjectId?: string | null
+  activeFolderId?: string | null
   /** Gameplay identity (shown in-game, independent of Firebase Auth display name) */
   gameDisplayName?: string
   gameAvatar?: string
@@ -291,14 +295,28 @@ export function subscribeUserDoc(uid: string, onData: (profile: UserProfile | nu
   })
 }
 
-export async function setUserStatus(uid: string, status: 'active' | 'blocked' | 'deleted') {
+export async function findUserByEmail(email: string): Promise<UserProfile | null> {
+  const normalizedEmail = email.trim().toLowerCase()
+  if (!normalizedEmail) return null
+  const exactSnap = await getDocs(query(usersCol, where('email', '==', normalizedEmail), limit(1)))
+  if (!exactSnap.empty) {
+    return { uid: exactSnap.docs[0].id, ...exactSnap.docs[0].data() } as UserProfile
+  }
+
+  const fallbackSnap = await getDocs(query(usersCol, limit(10000)))
+  const match = fallbackSnap.docs.find((item) => ((item.data().email || '') as string).trim().toLowerCase() === normalizedEmail)
+  if (!match) return null
+  return { uid: match.id, ...match.data() } as UserProfile
+}
+
+export async function setUserStatus(uid: string, status: 'pending' | 'active' | 'blocked' | 'rejected' | 'deleted') {
   await updateDoc(doc(db, 'users', uid), { status, statusUpdatedAt: serverTimestamp() })
 }
 
 /** Save user preference + gameplay identity fields to Firestore. */
 export async function saveUserPrefs(
   uid: string,
-  prefs: Partial<Pick<UserProfile, 'language' | 'theme' | 'gameDisplayName' | 'gameAvatar' | 'slidePanelLayout' | 'slidePanelEnabled'>>
+  prefs: Partial<Pick<UserProfile, 'language' | 'theme' | 'activeOrgId' | 'activeProjectId' | 'activeFolderId' | 'gameDisplayName' | 'gameAvatar' | 'slidePanelLayout' | 'slidePanelEnabled'>>
 ): Promise<void> {
   await setDoc(doc(db, 'users', uid), prefs, { merge: true })
 }
@@ -306,7 +324,7 @@ export async function saveUserPrefs(
 /** One-shot load of user preference fields on login. Returns null when no doc exists yet. */
 export async function loadUserPrefs(
   uid: string
-): Promise<Pick<UserProfile, 'language' | 'theme' | 'gameDisplayName' | 'gameAvatar' | 'slidePanelLayout' | 'slidePanelEnabled'> | null> {
+): Promise<Pick<UserProfile, 'language' | 'theme' | 'activeOrgId' | 'activeProjectId' | 'activeFolderId' | 'gameDisplayName' | 'gameAvatar' | 'slidePanelLayout' | 'slidePanelEnabled'> | null> {
   try {
     const snap = await getDoc(doc(db, 'users', uid))
     if (!snap.exists()) return null
@@ -314,6 +332,9 @@ export async function loadUserPrefs(
     return {
       language: d.language ?? undefined,
       theme: d.theme ?? undefined,
+      activeOrgId: d.activeOrgId ?? undefined,
+      activeProjectId: d.activeProjectId ?? undefined,
+      activeFolderId: d.activeFolderId ?? undefined,
       gameDisplayName: d.gameDisplayName ?? undefined,
       gameAvatar: d.gameAvatar ?? undefined,
       slidePanelLayout: d.slidePanelLayout ?? undefined,
@@ -329,19 +350,22 @@ export async function recordUserActivity(uid: string, profile: {
   platform: 'mobile' | 'desktop'; createdAt: string
 }) {
   try {
-    // Use a single write-only merge to avoid read listeners during auth bootstrap.
-    // This is more resilient when Firestore watch streams are unstable in dev.
-    await setDoc(doc(db, 'users', uid), {
-      email: profile.email,
-      displayName: profile.displayName,
-      photoURL: profile.photoURL,
-      platform: profile.platform,
-      status: 'active',
-      signInCount: increment(1),
-      lastSeen: serverTimestamp(),
-      // Keep as "last known account creation time" string from Auth metadata.
-      authCreatedAt: profile.createdAt || null,
-    }, { merge: true })
+    const userRef = doc(db, 'users', uid)
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(userRef)
+      const existing = snap.exists() ? (snap.data() as Partial<UserProfile>) : null
+      tx.set(userRef, {
+        email: profile.email,
+        displayName: profile.displayName,
+        photoURL: profile.photoURL,
+        platform: profile.platform,
+        status: existing?.status || 'pending',
+        signInCount: increment(1),
+        lastSeen: serverTimestamp(),
+        // Keep as "last known account creation time" string from Auth metadata.
+        authCreatedAt: profile.createdAt || null,
+      }, { merge: true })
+    })
   } catch { /* non-critical */ }
 }
 

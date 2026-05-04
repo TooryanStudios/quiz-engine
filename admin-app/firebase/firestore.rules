@@ -10,6 +10,12 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == ownerId;
     }
 
+    function isAppActiveUser() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
+    }
+
     // Primary: custom `admin` claim set by the grantAdminClaim Cloud Function.
     // The email fallback is temporary for existing sessions that predate the
     // claim. Once the admin calls grantAdminClaim (done automatically by
@@ -373,6 +379,254 @@ service cloud.firestore {
     match /workhub_milestones/{milestoneId} {
       allow read: if isPrivilegedWorkhubMember() || (canAccessWorkhub() && canReadWorkhubProject(resource.data.projectId));
       allow create, update, delete: if isPrivilegedWorkhubMember();
+    }
+
+    match /toorgen_sequencer_timelines/{timelineId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if isSignedIn() && resource.data.ownerUid == request.auth.uid;
+    }
+
+    // ─── Studio: Organizations ───────────────────────────────────────────────
+    //
+    // studio_orgs/{orgId}
+    //   members/{userId}
+    //
+    // Access model:
+    //   • Any signed-in user can create an org (they become owner).
+    //   • An org document is readable by its owner and any member recorded in
+    //     the members subcollection.  The helper isOrgMember() performs a
+    //     cross-document read — acceptable because it is only called on org
+    //     docs (not on high-frequency subcollection reads).
+    //   • Org metadata updates are restricted to owner and admin members.
+    //   • Deletion is restricted to the owner only.
+    //
+    // NOTE: The `memberCount` field is denormalized for display only and is
+    // not used in any security decision.
+
+    function isStudioEligibleUser() {
+      return isSignedIn()
+        && (
+          !exists(/databases/$(database)/documents/users/$(request.auth.uid))
+          || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active'
+        );
+    }
+
+    function isOrgMember(orgId) {
+      return isStudioEligibleUser()
+        && exists(/databases/$(database)/documents/studio_orgs/$(orgId)/members/$(request.auth.uid));
+    }
+
+    function orgMemberDoc(orgId) {
+      return get(/databases/$(database)/documents/studio_orgs/$(orgId)/members/$(request.auth.uid));
+    }
+
+    function isOrgAdminOrOwner(orgId) {
+      return isStudioEligibleUser()
+        && isOrgMember(orgId)
+        && (orgMemberDoc(orgId).data.role == 'owner' || orgMemberDoc(orgId).data.role == 'admin');
+    }
+
+    match /studio_orgs/{orgId} {
+      allow read: if isSignedIn()
+        && (resource.data.ownerId == request.auth.uid || isOrgMember(orgId));
+      allow create: if isStudioEligibleUser()
+        // Caller must set themselves as owner
+        && request.resource.data.ownerId == request.auth.uid
+        // Required fields
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 1
+        && request.resource.data.name.size() <= 80
+        && request.resource.data.slug is string
+        && request.resource.data.plan is string;
+      allow update: if isOrgAdminOrOwner(orgId)
+        // ownerId is immutable after creation
+        && request.resource.data.ownerId == resource.data.ownerId;
+      allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+
+      match /members/{userId} {
+        // Any org member can read the full member list (needed for invite flows)
+        allow read: if isSignedIn()
+          && (request.auth.uid == userId || isOrgMember(orgId));
+        // Only org admins/owners can add or update members.
+        // Bootstrap exception: allow creating the caller's owner member doc in
+        // the same transaction that creates the org.
+        allow create: if (
+            isOrgAdminOrOwner(orgId)
+            || (
+              isStudioEligibleUser()
+              && request.auth.uid == userId
+              && request.resource.data.userId == userId
+              && request.resource.data.role == 'owner'
+              && getAfter(/databases/$(database)/documents/studio_orgs/$(orgId)).data.ownerId == request.auth.uid
+            )
+          )
+          && request.resource.data.userId == userId;
+        allow update: if isOrgAdminOrOwner(orgId)
+          && request.resource.data.userId == userId;
+        // Admins/owners can remove others; members can remove themselves
+        allow delete: if isSignedIn()
+          && (request.auth.uid == userId || isOrgAdminOrOwner(orgId));
+      }
+    }
+
+    // ─── Studio: Projects ────────────────────────────────────────────────────
+    //
+    // studio_projects/{projectId}
+    //   members/{userId}
+    //
+    // Access model:
+    //   • 'private'  — only users listed in memberUids can read.
+    //   • 'org'      — any member of the project's parent org can read.
+    //   • 'shared'   — any user in memberUids can read, regardless of org.
+    //
+    // The `memberUids` array is a denormalized copy of the members subcollection
+    // UIDs, maintained in sync by the service layer.  Security rules use this
+    // array for O(1) access checks without extra reads.
+
+    function isProjectMember(projectId) {
+      return isStudioEligibleUser()
+        && exists(/databases/$(database)/documents/studio_projects/$(projectId)/members/$(request.auth.uid));
+    }
+
+    function projectMemberDoc(projectId) {
+      return get(/databases/$(database)/documents/studio_projects/$(projectId)/members/$(request.auth.uid));
+    }
+
+    function isProjectOwnerOrEditor(projectId) {
+      return isStudioEligibleUser()
+        && isProjectMember(projectId)
+        && (projectMemberDoc(projectId).data.role == 'owner'
+            || projectMemberDoc(projectId).data.role == 'editor');
+    }
+
+    function canReadStudioProject(data) {
+      return isStudioEligibleUser() && (
+        // Owner can always read
+        data.ownerId == request.auth.uid
+        // Any explicit member can read — this standalone condition is required so
+        // that Firestore's query engine can statically prove the query
+        //   where('memberUids', 'array-contains', userId)
+        // is safe to run (Firestore rejects queries where the WHERE clause alone
+        // cannot guarantee all results satisfy the read rule).
+        || request.auth.uid in data.memberUids
+        // Org-wide: any org member can read (even without explicit membership)
+        || (data.visibility == 'org' && isOrgMember(data.orgId))
+      );
+    }
+
+    match /studio_projects/{projectId} {
+      allow read: if canReadStudioProject(resource.data);
+      allow create: if isStudioEligibleUser()
+        // Caller must belong to the target org, or create in personal namespace.
+        && (isOrgMember(request.resource.data.orgId) || request.resource.data.orgId == request.auth.uid)
+        // Caller must set themselves as owner
+        && request.resource.data.ownerId == request.auth.uid
+        // Caller must be in memberUids on creation
+        && request.auth.uid in request.resource.data.memberUids
+        // Required fields
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 1
+        && request.resource.data.name.size() <= 120
+        && request.resource.data.visibility is string
+        // orgId is immutable after creation (enforced here on create; checked on update)
+        && request.resource.data.orgId is string;
+      allow update: if isProjectOwnerOrEditor(projectId)
+        // orgId is immutable
+        && request.resource.data.orgId == resource.data.orgId
+        // ownerId is immutable (ownership transfer not supported client-side)
+        && request.resource.data.ownerId == resource.data.ownerId;
+      allow delete: if isSignedIn()
+        && (resource.data.ownerId == request.auth.uid || isOrgAdminOrOwner(resource.data.orgId));
+
+      match /members/{userId} {
+        // Project members can read the member list; org admins can too
+        allow read: if isSignedIn()
+          && (request.auth.uid == userId
+              || isProjectMember(projectId)
+              || isOrgAdminOrOwner(resource.data.get('orgId', '')));
+        // Project owners/editors can manage members.
+        // Bootstrap exception: allow creating the caller's owner member doc in
+        // the same transaction that creates the project.
+        allow create: if (
+            isProjectOwnerOrEditor(projectId)
+            || (
+              isStudioEligibleUser()
+              && request.auth.uid == userId
+              && request.resource.data.userId == userId
+              && request.resource.data.role == 'owner'
+              && getAfter(/databases/$(database)/documents/studio_projects/$(projectId)).data.ownerId == request.auth.uid
+            )
+          )
+          && request.resource.data.userId == userId;
+        allow update: if isProjectOwnerOrEditor(projectId)
+          && request.resource.data.userId == userId;
+        allow delete: if isSignedIn()
+          && (request.auth.uid == userId || isProjectOwnerOrEditor(projectId));
+      }
+
+      match /folders/{folderId} {
+        allow read: if canReadStudioProject(
+          get(/databases/$(database)/documents/studio_projects/$(projectId)).data);
+        allow create: if isProjectOwnerOrEditor(projectId)
+          && request.resource.data.name is string
+          && request.resource.data.name.size() >= 1
+          && request.resource.data.name.size() <= 120
+          && request.resource.data.createdBy == request.auth.uid;
+        allow update: if isProjectOwnerOrEditor(projectId)
+          && request.resource.data.name is string
+          && request.resource.data.name.size() >= 1
+          && request.resource.data.name.size() <= 120;
+        allow delete: if isProjectOwnerOrEditor(projectId);
+      }
+    }
+
+    // ─── Studio: Invites ─────────────────────────────────────────────────────
+    //
+    // studio_invites/{inviteId}
+    //
+    // Invites are created by org/project admins. The invitee (matched by email)
+    // can read and accept/decline their own invites. Anyone with the raw
+    // document ID can read (needed for token-based acceptance links).
+
+    match /studio_invites/{inviteId} {
+      // Invitee can always read their own invite (regardless of Studio eligibility,
+      // since they may be a new user who hasn't been granted Studio access yet).
+      // Inviter and org/project admins also read, subject to isStudioEligibleUser.
+      allow read: if isSignedIn()
+        && (
+          resource.data.inviteeUid == request.auth.uid
+          || resource.data.inviteeEmail == request.auth.token.email
+          || (isStudioEligibleUser()
+              && (resource.data.invitedBy == request.auth.uid
+                  || isOrgAdminOrOwner(resource.data.orgId)))
+        );
+      allow create: if isStudioEligibleUser()
+        && request.resource.data.invitedBy == request.auth.uid
+        && (isOrgAdminOrOwner(request.resource.data.orgId)
+            || isProjectOwnerOrEditor(request.resource.data.targetId))
+        && request.resource.data.status == 'pending'
+        && request.resource.data.token is string
+        && request.resource.data.token.size() == 48
+        && request.resource.data.inviteeEmail is string
+        && request.resource.data.inviteeEmail.size() >= 3;
+      // Only status field can be updated (accept / decline / expire).
+      // Invitee can update their own invite even if not yet Studio-eligible.
+      allow update: if isSignedIn()
+        && request.resource.data.invitedBy == resource.data.invitedBy
+        && request.resource.data.targetKind == resource.data.targetKind
+        && request.resource.data.targetId == resource.data.targetId
+        && request.resource.data.orgId == resource.data.orgId
+        && request.resource.data.inviteeUid == resource.data.inviteeUid
+        && request.resource.data.inviteeEmail == resource.data.inviteeEmail
+        && request.resource.data.token == resource.data.token
+        && request.resource.data.status in ['accepted', 'declined', 'expired']
+        && (resource.data.inviteeEmail == request.auth.token.email
+            || resource.data.inviteeUid == request.auth.uid
+            || (isStudioEligibleUser()
+                && (resource.data.invitedBy == request.auth.uid
+                    || isOrgAdminOrOwner(resource.data.orgId))));
+      allow delete: if false;
     }
   }
 }

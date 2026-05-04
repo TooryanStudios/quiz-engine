@@ -3,56 +3,66 @@ import { asCount, asPercent, countByStatusKeywords } from './homeWidgetUtils'
 import type { WorkhubWorkspaceTemplateModule } from './types'
 
 function buildHrHomeWidgets(metrics: WorkhubHomeWidgetMetrics): WorkhubHomeWidget[] {
-  const openRoles = countByStatusKeywords(metrics, ['requisition', 'sourcing', 'screening'])
-  const interviewLoop = countByStatusKeywords(metrics, ['interview'])
-  const offerApprovals = countByStatusKeywords(metrics, ['offer_approval', 'offer'])
-  const onboardingQueue = countByStatusKeywords(metrics, ['onboarding', 'onboarded'])
-  const hiredCount = countByStatusKeywords(metrics, ['hired'])
-  const closedCount = countByStatusKeywords(metrics, ['closed', 'rejected'])
-  const hiringConversion = asPercent((hiredCount / Math.max(1, hiredCount + closedCount)) * 100)
+  const activeProfiles = countByStatusKeywords(metrics, ['employee_master', 'profile'])
+  const accessReviews = countByStatusKeywords(metrics, ['authority', 'approval'])
+  const leaveCases = countByStatusKeywords(metrics, ['leave', 'return_to_work'])
+  const leaveBreachRisk = countByStatusKeywords(metrics, ['leave_sla_risk', 'leave escalation', 'leave overdue'])
+  const kpiCycles = countByStatusKeywords(metrics, ['kpi', 'okr', 'performance'])
+  const initiatives = countByStatusKeywords(metrics, ['initiative', 'engagement', 'recognition', 'motivation'])
+  const learningRecords = countByStatusKeywords(metrics, ['learning', 'certification', 'upgrade'])
+  const certificationDueSoon = countByStatusKeywords(metrics, ['cert_due_soon', 'renewal_due', 'expiry soon'])
+  const complianceRecords = countByStatusKeywords(metrics, ['policy', 'compliance', 'document'])
+  const peopleThroughput = asPercent((metrics.completionRate / 100) * 100)
 
   return [
     {
-      id: 'hr-open-roles',
-      title: 'Open roles',
-      value: asCount(openRoles),
-      detail: 'Requisitions and sourcing pipeline currently active.',
-      tone: openRoles > 0 ? 'warn' : 'good',
+      id: 'hr-employee-master',
+      title: 'Employee master',
+      value: asCount(activeProfiles),
+      detail: 'Employee records with identity, authority, and role profile coverage.',
+      tone: activeProfiles > 0 ? 'good' : 'neutral',
     },
     {
-      id: 'hr-interview-loop',
-      title: 'Interview loop',
-      value: asCount(interviewLoop),
-      detail: 'Candidates in interview panel or evaluation stages.',
-      tone: interviewLoop > 0 ? 'warn' : 'neutral',
+      id: 'hr-access-reviews',
+      title: 'Authority reviews',
+      value: asCount(accessReviews),
+      detail: 'Pending authority, approval, and profile-governance reviews.',
+      tone: accessReviews > 0 ? 'warn' : 'good',
     },
     {
-      id: 'hr-offer-approvals',
-      title: 'Offer approvals',
-      value: asCount(offerApprovals),
-      detail: 'Offers waiting for compensation and leadership approval.',
-      tone: offerApprovals > 0 ? 'warn' : 'good',
+      id: 'hr-leave-lifecycle',
+      title: 'Leave lifecycle',
+      value: asCount(leaveCases),
+      detail: 'Leave requests and return-to-work plans under active management.',
+      tone: leaveCases > 0 ? 'warn' : 'neutral',
     },
     {
-      id: 'hr-onboarding-queue',
-      title: 'Onboarding queue',
-      value: asCount(onboardingQueue),
-      detail: 'Candidates transitioning from offer to onboarding completion.',
-      tone: onboardingQueue > 0 ? 'neutral' : 'good',
+      id: 'hr-leave-sla-risk',
+      title: 'Leave SLA risk',
+      value: asCount(leaveBreachRisk),
+      detail: 'Leave cases at risk of breaching response/approval SLA windows.',
+      tone: leaveBreachRisk > 0 ? 'danger' : 'good',
     },
     {
-      id: 'hr-hiring-conversion',
-      title: 'Hiring conversion',
-      value: hiringConversion,
-      detail: 'Hired candidates out of all closed candidate decisions.',
-      tone: hiredCount >= closedCount ? 'good' : 'neutral',
+      id: 'hr-kpi-cycles',
+      title: 'KPI cycles',
+      value: asCount(kpiCycles),
+      detail: 'Live KPI / OKR cycles with cadence-based review checkpoints.',
+      tone: kpiCycles > 0 ? 'good' : 'neutral',
     },
     {
-      id: 'hr-team-workload',
-      title: 'Team workload',
-      value: asCount(metrics.inProgressTasks),
-      detail: 'In-progress HR tasks across recruiting and people operations.',
-      tone: metrics.inProgressTasks > 0 ? 'warn' : 'good',
+      id: 'hr-motivation-programs',
+      title: 'Motivation programs',
+      value: asCount(initiatives),
+      detail: 'Engagement, initiative, and recognition programs in execution.',
+      tone: initiatives > 0 ? 'good' : 'neutral',
+    },
+    {
+      id: 'hr-learning-compliance',
+      title: 'Learning & compliance',
+      value: `${asCount(learningRecords)} / ${asCount(complianceRecords)} / ${asCount(certificationDueSoon)}`,
+      detail: `Learning vs compliance vs cert-due-soon. Throughput ${peopleThroughput}.`,
+      tone: learningRecords >= complianceRecords ? 'good' : 'warn',
     },
   ]
 }
@@ -61,19 +71,26 @@ export const HR_WORKSPACE_TEMPLATE_MODULE: WorkhubWorkspaceTemplateModule = {
   definition: {
     id: 'hr',
     label: 'HR KPI workspace',
-    description: 'Track hiring funnel KPIs, offer approvals, onboarding progress, and team capacity.',
+    description: 'Manage employee master data, leave lifecycle, KPI cycles, authority governance, and learning compliance.',
     graphic: 'HR',
-    highlights: ['Hiring funnel', 'KPI tracking', 'Onboarding'],
+    highlights: ['Employee lifecycle', 'KPI + OKR cadence', 'Leave and compliance'],
     workspaceType: 'hr',
     taskStatuses: [
-      { id: 'requisition_planning', label: 'Requisition Planning', color: '#64748b' },
-      { id: 'sourcing', label: 'Sourcing', color: '#2563eb' },
-      { id: 'screening', label: 'Screening', color: '#0ea5e9' },
-      { id: 'interview_panel', label: 'Interview Panel', color: '#8b5cf6' },
-      { id: 'offer_approval', label: 'Offer Approval', color: '#f59e0b' },
-      { id: 'onboarding', label: 'Onboarding', color: '#14b8a6' },
-      { id: 'hired', label: 'Hired', color: '#10b981' },
-      { id: 'closed', label: 'Closed', color: '#ef4444' },
+      { id: 'organization_design', label: 'Organization Design', color: '#334155' },
+      { id: 'department_setup', label: 'Department Setup', color: '#0f766e' },
+      { id: 'sub_department_setup', label: 'Sub-department Setup', color: '#0891b2' },
+      { id: 'employee_master', label: 'Employee Master', color: '#0f766e' },
+      { id: 'authority_review', label: 'Authority Review', color: '#b45309' },
+      { id: 'joining_documentation', label: 'Joining Documentation', color: '#1d4ed8' },
+      { id: 'leave_review', label: 'Leave Review', color: '#0ea5e9' },
+      { id: 'leave_sla_risk', label: 'Leave SLA Risk', color: '#dc2626' },
+      { id: 'return_to_work', label: 'Return To Work', color: '#14b8a6' },
+      { id: 'performance_kpi_cycle', label: 'Performance KPI Cycle', color: '#7c3aed' },
+      { id: 'initiative_program', label: 'Initiative Program', color: '#db2777' },
+      { id: 'certification_tracking', label: 'Certification Tracking', color: '#2563eb' },
+      { id: 'cert_due_soon', label: 'Certification Due Soon', color: '#f97316' },
+      { id: 'policy_compliance', label: 'Policy Compliance', color: '#dc2626' },
+      { id: 'archived', label: 'Archived', color: '#64748b' },
     ],
     mode: 'preset',
   },

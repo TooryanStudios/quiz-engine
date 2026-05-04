@@ -1,6 +1,7 @@
 export function AddItemDialog(props: {
   isOpen: boolean
   projectId: string
+  canCreateTask?: boolean
   onClose: () => void
   onCreateTask: () => void
   onCreateDocument: () => void
@@ -15,27 +16,29 @@ export function AddItemDialog(props: {
         <div className="workhub-modal-head">
           <div>
             <h2>Add item</h2>
-            <p>Choose what type of item to add to this project.</p>
+            <p>Choose what type of item to add to this record.</p>
           </div>
           <button className="workhub-ghost-btn" onClick={props.onClose}>Close</button>
         </div>
 
         <div className="workhub-modal-body">
           <div className="workhub-add-item-options">
-            <button
-              type="button"
-              className="workhub-add-item-option"
-              onClick={() => {
-                props.onCreateTask()
-                props.onClose()
-              }}
-            >
-              <div className="workhub-add-item-option-icon">✓</div>
-              <div className="workhub-add-item-option-content">
-                <strong>Task</strong>
-                <span>Create a new task or milestone</span>
-              </div>
-            </button>
+            {props.canCreateTask !== false && (
+              <button
+                type="button"
+                className="workhub-add-item-option"
+                onClick={() => {
+                  props.onCreateTask()
+                  props.onClose()
+                }}
+              >
+                <div className="workhub-add-item-option-icon">✓</div>
+                <div className="workhub-add-item-option-content">
+                  <strong>Task</strong>
+                  <span>Create a new task or milestone</span>
+                </div>
+              </button>
+            )}
 
             <button
               type="button"

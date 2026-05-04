@@ -1,0 +1,11 @@
+import fs from 'fs';
+let code = fs.readFileSync('src/components/MSEVideoSequencer.tsx', 'utf8');
+code = code.replace('export function MSEVideoSequencer', 'export const MSEVideoSequencer = React.forwardRef<MSEVideoSequencerHandle, MSEVideoSequencerProps>(');
+code = code.replace('}: MSEVideoSequencerProps) {', '}: MSEVideoSequencerProps, ref) => {');
+code = code.replace('type MSEVideoSequencerProps = {', 'export interface MSEVideoSequencerHandle {\\n  play: () => Promise<void>;\\n  pause: () => void;\\n  rewind: () => void;\\n}\\n\\ntype MSEVideoSequencerProps = {\\n  onTimeUpdate?: (currentTime: number, duration: number) => void;\\n');
+let handle = '  React.useImperativeHandle(ref, () => ({\\n    play: async () => { const v = getVideoEl(visibleVideoSlot); if (v) await v.play(); },\\n    pause: () => { const v = getVideoEl(visibleVideoSlot); if (v) v.pause(); },\\n    rewind: () => { const v = getVideoEl(visibleVideoSlot); if (v) try { v.currentTime = 0 } catch {} }\\n  }), [getVideoEl, visibleVideoSlot]);\\n';
+code = code.replace('const handlePlayClick = async () => {', handle + '  const handlePlayClick = async () => {');
+if (!code.includes('import React')) code = code.replace('import { useCallback', 'import React, { useCallback');
+code = code.substring(0, code.lastIndexOf('}')) + '  )\\n})\\n';
+code = code.replace('const handleTimeUpdate = (event: Event) => {', 'const handleTimeUpdate = (event: Event) => {\\n        const v = videos[activeSlot];\\n        if (onTimeUpdate && v) onTimeUpdate(v.currentTime, v.duration);');
+fs.writeFileSync('src/components/MSEVideoSequencer.tsx', code);

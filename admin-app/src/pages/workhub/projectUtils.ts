@@ -38,6 +38,88 @@ export const WORKHUB_INTENT_DETAIL_FIELDS: Record<WorkhubProjectIntent, WorkhubD
   hr_onboarding_track: [
     { label: 'Onboarding owner', descriptionKey: 'onboarding owner' },
   ],
+  hr_department_unit: [
+    { label: 'Department code', descriptionKey: 'department code' },
+    { label: 'Head employee ID', descriptionKey: 'head employee id' },
+    { label: 'Department email', descriptionKey: 'department email' },
+    { label: 'Department phone', descriptionKey: 'department phone' },
+  ],
+  hr_sub_department_unit: [
+    { label: 'Department code', descriptionKey: 'department code' },
+    { label: 'Parent department', descriptionKey: 'parent department' },
+    { label: 'Head employee ID', descriptionKey: 'head employee id' },
+  ],
+  hr_employee_profile: [
+    { label: 'Employee ID', descriptionKey: 'employee id' },
+    { label: 'Payroll ID', descriptionKey: 'payroll id' },
+    { label: 'Name in English', descriptionKey: 'name in english' },
+    { label: 'Name in Arabic', descriptionKey: 'name in arabic' },
+    { label: 'Legal full name', descriptionKey: 'legal full name' },
+    { label: 'Preferred name', descriptionKey: 'preferred name' },
+    { label: 'Gender', descriptionKey: 'gender' },
+    { label: 'Birthday', descriptionKey: 'birthday' },
+    { label: 'Work email', descriptionKey: 'work email' },
+    { label: 'Phone', descriptionKey: 'phone' },
+    { label: 'Department', descriptionKey: 'department' },
+    { label: 'Sub-department', descriptionKey: 'sub-department' },
+    { label: 'Base location', descriptionKey: 'base location' },
+    { label: 'Job title', descriptionKey: 'job title' },
+    { label: 'Job grade', descriptionKey: 'job grade' },
+    { label: 'Authority level', descriptionKey: 'authority level' },
+    { label: 'Role profile', descriptionKey: 'role profile' },
+    { label: 'Employee status', descriptionKey: 'employee status' },
+    { label: 'Work mode', descriptionKey: 'work mode' },
+    { label: 'Employment type', descriptionKey: 'employment type' },
+    { label: 'Probation end', descriptionKey: 'probation end' },
+    { label: 'Basic salary', descriptionKey: 'basic salary' },
+    { label: 'Salary cycle', descriptionKey: 'salary cycle' },
+    { label: 'Salary allowances', descriptionKey: 'salary allowances' },
+    { label: 'Salary deductions', descriptionKey: 'salary deductions' },
+    { label: 'Payment frequency', descriptionKey: 'payment frequency' },
+    { label: 'Available leave days', descriptionKey: 'available leave days' },
+    { label: 'Used leave days', descriptionKey: 'used leave days' },
+    { label: 'Annual leave allowance', descriptionKey: 'annual leave allowance' },
+    { label: 'Annual leave balance', descriptionKey: 'annual leave balance' },
+    { label: 'Sick leave balance', descriptionKey: 'sick leave balance' },
+    { label: 'Hire date', descriptionKey: 'hire date' },
+    { label: 'Exit date', descriptionKey: 'exit date' },
+    { label: 'Certification due date', descriptionKey: 'certification due date' },
+    { label: 'Visa permit expiry', descriptionKey: 'visa permit expiry' },
+    { label: 'Manager employee ID', descriptionKey: 'manager employee id' },
+    { label: 'Emergency contact', descriptionKey: 'emergency contact' },
+    { label: 'Passport number', descriptionKey: 'passport number' },
+    { label: 'National ID', descriptionKey: 'national id' },
+    { label: 'Bank account', descriptionKey: 'bank account' },
+    { label: 'CV link', descriptionKey: 'cv link' },
+    { label: 'Profile photo URL', descriptionKey: 'profile photo url' },
+    { label: 'ID / passport URL', descriptionKey: 'id passport url' },
+    { label: 'Certification files URL', descriptionKey: 'certification files url' },
+  ],
+  hr_leave_case: [
+    { label: 'Employee ID', descriptionKey: 'employee id' },
+    { label: 'Department', descriptionKey: 'department' },
+    { label: 'Approver', descriptionKey: 'approver' },
+    { label: 'Leave type', descriptionKey: 'leave type' },
+  ],
+  hr_kpi_cycle: [
+    { label: 'Cycle owner', descriptionKey: 'cycle owner' },
+    { label: 'Department', descriptionKey: 'department' },
+    { label: 'Cadence', descriptionKey: 'cadence' },
+    { label: 'Primary KPI', descriptionKey: 'primary kpi' },
+  ],
+  hr_initiative_program: [
+    { label: 'Program owner', descriptionKey: 'program owner' },
+    { label: 'Department', descriptionKey: 'department' },
+    { label: 'Program type', descriptionKey: 'program type' },
+    { label: 'Cadence', descriptionKey: 'cadence' },
+  ],
+  hr_learning_certification: [
+    { label: 'Employee ID', descriptionKey: 'employee id' },
+    { label: 'Certification', descriptionKey: 'certification' },
+    { label: 'Issuer', descriptionKey: 'issuer' },
+    { label: 'Evidence link', descriptionKey: 'evidence link' },
+    { label: 'Renewal date', descriptionKey: 'renewal date' },
+  ],
 }
 
 export const WORKHUB_INTENT_ALLOWED_PROJECT_TYPES: Partial<Record<WorkhubProjectIntent, WorkhubProjectType[]>> = {
@@ -49,6 +131,30 @@ export const WORKHUB_INTENT_ALLOWED_PROJECT_TYPES: Partial<Record<WorkhubProject
   marketing_content_stream: ['other'],
   hr_requisition: ['other'],
   hr_onboarding_track: ['other'],
+  hr_department_unit: ['other'],
+  hr_sub_department_unit: ['other'],
+  hr_employee_profile: ['other'],
+  hr_leave_case: ['other'],
+  hr_kpi_cycle: ['other'],
+  hr_initiative_program: ['other'],
+  hr_learning_certification: ['other'],
+}
+
+function inferLegacyHrIntent(project: Pick<WorkhubProject, 'name' | 'description'>): WorkhubProjectIntent {
+  const name = (project.name || '').toLowerCase()
+  const description = (project.description || '').toLowerCase()
+  const haystack = `${name}\n${description}`
+
+  if (/(sub-?department|sub department|team unit|division)/.test(haystack)) return 'hr_sub_department_unit'
+  if (/(department|org unit|organization unit|head of department|department code)/.test(haystack)) return 'hr_department_unit'
+  if (/(leave case|leave type|return-to-work|return to work|approver)/.test(haystack)) return 'hr_leave_case'
+  if (/(kpi cycle|okr|primary kpi|cycle owner|performance cycle)/.test(haystack)) return 'hr_kpi_cycle'
+  if (/(initiative program|motivation|engagement|recognition program)/.test(haystack)) return 'hr_initiative_program'
+  if (/(certification|renewal|issuer|learning record|training)/.test(haystack)) return 'hr_learning_certification'
+  if (/(employee id|payroll id|basic salary|available leave|work mode|employee profile|authority level)/.test(haystack)) return 'hr_employee_profile'
+  if (/(onboarding|joining plan|welcome plan)/.test(haystack)) return 'hr_onboarding_track'
+
+  return 'hr_department_unit'
 }
 
 export function buildProjectDescriptionFromIntentDrafts(
@@ -317,7 +423,7 @@ export function collectProjectLineage(projectId: string, byId: Record<string, Wo
 }
 
 export function inferLegacyProjectIntent(
-  project: Pick<WorkhubProject, 'workspaceId' | 'projectType'>,
+  project: Pick<WorkhubProject, 'workspaceId' | 'projectType' | 'name' | 'description'>,
   workspaceById: Record<string, Pick<WorkhubWorkspace, 'type' | 'templateId'> | undefined>,
 ): WorkhubProjectIntent {
   const workspace = workspaceById[project.workspaceId]
@@ -330,7 +436,7 @@ export function inferLegacyProjectIntent(
     case 'marketing':
       return 'marketing_campaign'
     case 'hr':
-      return 'hr_requisition'
+      return inferLegacyHrIntent(project)
     case 'empty':
     case 'projects':
     default:
@@ -339,7 +445,7 @@ export function inferLegacyProjectIntent(
 }
 
 export function resolveEffectiveProjectIntent(
-  project: Pick<WorkhubProject, 'workspaceId' | 'projectType' | 'intent'>,
+  project: Pick<WorkhubProject, 'workspaceId' | 'projectType' | 'intent' | 'name' | 'description'>,
   workspaceById: Record<string, Pick<WorkhubWorkspace, 'type' | 'templateId'> | undefined>,
   allowedIntents: Set<WorkhubTemplateCreationIntent>,
 ): WorkhubProjectIntent {

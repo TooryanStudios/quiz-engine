@@ -145,6 +145,16 @@
   border-color: var(--accent);
 }
 
+.profile-inline-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.profile-inline-row .profile-input {
+  flex: 1;
+}
+
 .profile-avatar-preview-wrap {
   margin-top: 0.5rem;
 }
@@ -324,4 +334,16 @@
 .profile-info-grid > span:nth-child(even) {
   color: var(--text);
   word-break: break-all;
+}
+
+@media (max-width: 680px) {
+  .profile-inline-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .profile-inline-row .profile-btn {
+    width: 100%;
+    justify-content: center;
+  }
 }

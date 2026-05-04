@@ -3308,7 +3308,7 @@ export default function ToorGenPage() {
           <button
             type="button"
             className="tg-sidebar-refresh-btn"
-            onClick={() => navigate('/toorgen/lab')}
+            onClick={() => navigate('/lab')}
           >
             Open lab
           </button>
@@ -3587,7 +3587,7 @@ export default function ToorGenPage() {
             <button
               type="button"
               className="tg-topbar-queue-btn"
-              onClick={() => navigate('/toorgen/lab')}
+              onClick={() => navigate('/lab')}
             >
               Lab
             </button>

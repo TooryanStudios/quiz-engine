@@ -9,9 +9,7 @@ import {
   getWorkhubDocumentReferencesBySource,
   saveWorkhubDocumentDraft,
   subscribeWorkhubProjects,
-  WorkhubDocumentConflictError,
   updateWorkhubDocument,
-  updateWorkhubDocumentWithOptimisticConcurrency,
   type WorkhubActivity,
   type WorkhubDocument,
   type WorkhubDocumentDraft,
@@ -51,6 +49,12 @@ interface RemoteDocumentSnapshot {
   tabs: WorkhubDocumentTab[]
   masterPage: WorkhubDocumentMasterPage
   latestExternalEditorUid: string
+}
+
+interface PendingOverwriteAudit {
+  docId: string
+  remoteRevisionMs: number
+  remoteEditorUid: string
 }
 
 const DEFAULT_DOCUMENT_MASTER_PAGE: WorkhubDocumentMasterPage = {
@@ -389,6 +393,7 @@ export function useWorkhubDocEditorHandlers({
   const [collaborationConflictSnapshot, setCollaborationConflictSnapshot] = useState<RemoteDocumentSnapshot | null>(null)
   const [latestRemoteRevisionMs, setLatestRemoteRevisionMs] = useState<number | null>(null)
   const appliedRemoteSnapshotRef = useRef<RemoteDocumentSnapshot | null>(null)
+  const pendingOverwriteAuditRef = useRef<PendingOverwriteAudit | null>(null)
 
   const selectedDocumentLocked = !!selectedDocument?.isLocked
   const selectedDocumentIsReference = !!selectedDocument?.referenceSourceDocumentId
@@ -736,6 +741,44 @@ export function useWorkhubDocEditorHandlers({
     }
   }
 
+  function resolveDocumentAudience(document: WorkhubDocument) {
+    const targetProject = document.projectId ? workspaceProjectById[document.projectId] : null
+    const visibility = (document.visibility || targetProject?.visibility || 'workspace') as WorkhubVisibility
+    const memberUids = visibility === 'restricted'
+      ? normalizeMemberUids(
+          Array.isArray(document.memberUids) && document.memberUids.length > 0
+            ? document.memberUids
+            : [document.createdBy],
+        )
+      : []
+    return { visibility, memberUids }
+  }
+
+  async function logOverwriteAuditIfNeeded(document: WorkhubDocument, actorUid: string) {
+    const pending = pendingOverwriteAuditRef.current
+    if (!pending || pending.docId !== document.id || !selectedWorkspaceId || !actorUid) return
+    pendingOverwriteAuditRef.current = null
+
+    const { visibility, memberUids } = resolveDocumentAudience(document)
+    const remoteTimeLabel = pending.remoteRevisionMs
+      ? new Date(pending.remoteRevisionMs).toLocaleString('en-GB')
+      : 'unknown time'
+    const remoteEditorSuffix = pending.remoteEditorUid
+      ? ` by ${pending.remoteEditorUid}`
+      : ''
+
+    await createActivity({
+      workspaceId: selectedWorkspaceId,
+      actorUid,
+      entityType: 'document',
+      entityId: document.id,
+      action: 'overwrite_remote',
+      message: `Saved using last-write-wins after newer remote revision (${remoteTimeLabel})${remoteEditorSuffix} was detected.`,
+      visibility,
+      memberUids,
+    })
+  }
+
   function doesCurrentDraftDifferFromSnapshot(snapshot: RemoteDocumentSnapshot) {
     if ((selectedDocumentTitleDraft.trim() || snapshot.title) !== snapshot.title) return true
     if (!areDocumentMasterPagesEqual(selectedDocumentMasterPageDraft, snapshot.masterPage)) return true
@@ -763,6 +806,30 @@ export function useWorkhubDocEditorHandlers({
     return normalizeDocumentBodyForStorage(selectedDocumentBodyDraft) !== normalizeDocumentBodyForStorage(snapshot.body || '')
   }
 
+  function doesSnapshotContentDiffer(previous: RemoteDocumentSnapshot, incoming: RemoteDocumentSnapshot) {
+    if (previous.docId !== incoming.docId) return true
+    if (previous.title !== incoming.title) return true
+    if (!areDocumentMasterPagesEqual(previous.masterPage, incoming.masterPage)) return true
+
+    const previousTabs = Array.isArray(previous.tabs) ? previous.tabs : []
+    const incomingTabs = Array.isArray(incoming.tabs) ? incoming.tabs : []
+    if (previousTabs.length !== incomingTabs.length) return true
+    if (incomingTabs.length > 0) {
+      for (let i = 0; i < incomingTabs.length; i += 1) {
+        const priorTab = previousTabs[i]
+        const nextTab = incomingTabs[i]
+        if (!priorTab || !nextTab) return true
+        if (priorTab.id !== nextTab.id) return true
+        if (priorTab.title !== nextTab.title) return true
+        if ((priorTab.icon || '') !== (nextTab.icon || '')) return true
+        if (normalizeDocumentBodyForStorage(priorTab.body || '') !== normalizeDocumentBodyForStorage(nextTab.body || '')) return true
+      }
+      return false
+    }
+
+    return normalizeDocumentBodyForStorage(previous.body || '') !== normalizeDocumentBodyForStorage(incoming.body || '')
+  }
+
   function applyRemoteDocumentSnapshot(snapshot: RemoteDocumentSnapshot) {
     setSelectedDocumentTitleDraft(snapshot.title)
     setSelectedDocumentMasterPageDraft(normalizeDocumentMasterPage(snapshot.masterPage))
@@ -784,6 +851,7 @@ export function useWorkhubDocEditorHandlers({
     if (!selectedDocument || !collaborationConflictSnapshot || collaborationConflictSnapshot.docId !== selectedDocument.id) return
     applyRemoteDocumentSnapshot(collaborationConflictSnapshot)
     appliedRemoteSnapshotRef.current = collaborationConflictSnapshot
+    pendingOverwriteAuditRef.current = null
     setCollaborationConflictSnapshot(null)
   }
 
@@ -792,6 +860,7 @@ export function useWorkhubDocEditorHandlers({
     const confirmed = window.confirm('Keep your local edits and allow saving over the latest remote version?')
     if (!confirmed) return
     appliedRemoteSnapshotRef.current = collaborationConflictSnapshot
+    pendingOverwriteAuditRef.current = null
     setCollaborationConflictSnapshot(null)
   }
 
@@ -953,12 +1022,14 @@ export function useWorkhubDocEditorHandlers({
       setCollaborationConflictSnapshot(null)
       setLatestRemoteRevisionMs(null)
       appliedRemoteSnapshotRef.current = null
+      pendingOverwriteAuditRef.current = null
       return
     }
     const remoteSnapshot = buildRemoteDocumentSnapshot(selectedDocument)
     appliedRemoteSnapshotRef.current = remoteSnapshot
     setLatestRemoteRevisionMs(remoteSnapshot.revisionMs || null)
     setCollaborationConflictSnapshot(null)
+    pendingOverwriteAuditRef.current = null
     setSelectedDocumentTitleDraft(selectedDocument.title)
     setSelectedDocumentMasterPageDraft(normalizeDocumentMasterPage(selectedDocument.masterPage))
     const hasTabs = Array.isArray(selectedDocument.tabs) && selectedDocument.tabs.length > 0
@@ -1038,21 +1109,38 @@ export function useWorkhubDocEditorHandlers({
     const appliedSnapshot = appliedRemoteSnapshotRef.current
     if (!appliedSnapshot || appliedSnapshot.docId !== selectedDocument.id) {
       appliedRemoteSnapshotRef.current = incomingSnapshot
+      pendingOverwriteAuditRef.current = null
       setCollaborationConflictSnapshot(null)
       return
     }
 
     if (incomingSnapshot.revisionMs <= appliedSnapshot.revisionMs) return
 
-    const hasLocalUnsavedEdits = doesCurrentDraftDifferFromSnapshot(appliedSnapshot)
-    if (!hasLocalUnsavedEdits) {
-      applyRemoteDocumentSnapshot(incomingSnapshot)
+    // Ignore revision-only server echoes (for example our own autosave writeback) when editor content is unchanged.
+    if (!doesSnapshotContentDiffer(appliedSnapshot, incomingSnapshot)) {
       appliedRemoteSnapshotRef.current = incomingSnapshot
+      pendingOverwriteAuditRef.current = null
       setCollaborationConflictSnapshot(null)
       return
     }
 
-    setCollaborationConflictSnapshot(incomingSnapshot)
+    const hasLocalUnsavedEdits = doesCurrentDraftDifferFromSnapshot(appliedSnapshot)
+    if (!hasLocalUnsavedEdits) {
+      applyRemoteDocumentSnapshot(incomingSnapshot)
+      appliedRemoteSnapshotRef.current = incomingSnapshot
+      pendingOverwriteAuditRef.current = null
+      setCollaborationConflictSnapshot(null)
+      return
+    }
+
+    // Last-write-wins mode: keep local edits as canonical and update revision baseline.
+    pendingOverwriteAuditRef.current = {
+      docId: selectedDocument.id,
+      remoteRevisionMs: incomingSnapshot.revisionMs,
+      remoteEditorUid: incomingSnapshot.latestExternalEditorUid,
+    }
+    appliedRemoteSnapshotRef.current = incomingSnapshot
+    setCollaborationConflictSnapshot(null)
   }, [
     selectedDocument?.id,
     selectedDocument?.updatedAt,
@@ -1210,27 +1298,24 @@ export function useWorkhubDocEditorHandlers({
         setNoteAutoSaveStatus('saving')
         const actorUid = auth.currentUser?.uid || ''
         const nextEditedBy = buildEditedByWithActor(selectedDocument.editedBy, actorUid)
-        const expectedRevisionMs = appliedRemoteSnapshotRef.current?.docId === save.docId
-          ? appliedRemoteSnapshotRef.current.revisionMs
-          : null
         if (save.tabs && save.tabs.length > 0) {
-          await updateWorkhubDocumentWithOptimisticConcurrency(save.docId, {
+          await updateWorkhubDocument(save.docId, {
             title: save.title,
             tabs: save.tabs,
             masterPage: save.masterPage,
             editedBy: nextEditedBy,
-          }, expectedRevisionMs)
+          })
         } else {
-          await updateWorkhubDocumentWithOptimisticConcurrency(save.docId, {
+          await updateWorkhubDocument(save.docId, {
             title: save.title,
             body: save.body,
             masterPage: save.masterPage,
             editedBy: nextEditedBy,
-          }, expectedRevisionMs)
+          })
         }
         appliedRemoteSnapshotRef.current = {
           docId: save.docId,
-          revisionMs: expectedRevisionMs || getUnknownTimeValue(selectedDocument.updatedAt || selectedDocument.createdAt),
+          revisionMs: getUnknownTimeValue(selectedDocument.updatedAt || selectedDocument.createdAt),
           title: save.title,
           body: save.body,
           tabs: Array.isArray(save.tabs) ? save.tabs.map((tab) => ({ ...tab })) : [],
@@ -1252,16 +1337,16 @@ export function useWorkhubDocEditorHandlers({
             actorUid: auth.currentUser.uid,
           })
         }
+        if (selectedDocument) {
+          try {
+            await logOverwriteAuditIfNeeded(selectedDocument, actorUid)
+          } catch {
+            // Ignore audit logging failures; do not block saves.
+          }
+        }
         setNoteAutoSaveStatus('saved')
       } catch (error) {
-        if (error instanceof WorkhubDocumentConflictError && selectedDocument) {
-          const remoteSnapshot = buildRemoteDocumentSnapshot(selectedDocument)
-          if (remoteSnapshot.docId === save.docId) {
-            setCollaborationConflictSnapshot(remoteSnapshot)
-            setLatestRemoteRevisionMs(Math.max(remoteSnapshot.revisionMs, error.currentUpdatedAtMs || 0))
-          }
-          showToast({ type: 'warning', message: 'Another teammate updated this document. Review latest changes before saving.' })
-        }
+        pendingOverwriteAuditRef.current = null
         setNoteAutoSaveStatus('idle')
       }
     }, 800)
@@ -1306,15 +1391,12 @@ export function useWorkhubDocEditorHandlers({
     if (pendingSaveRef.current) {
       const { docId, title, body, tabs, masterPage } = pendingSaveRef.current
       pendingSaveRef.current = null
-      if (!publicReferenceAutoSaveBlocked && !collaborationConflictBlocked) {
-        const expectedRevisionMs = appliedRemoteSnapshotRef.current?.docId === docId
-          ? appliedRemoteSnapshotRef.current.revisionMs
-          : getUnknownTimeValue(selectedDocument?.updatedAt || selectedDocument?.createdAt)
+      if (!publicReferenceAutoSaveBlocked) {
         const nextEditedBy = buildEditedByWithActor(selectedDocument?.editedBy, auth.currentUser?.uid || '')
         if (tabs && tabs.length > 0) {
-          void updateWorkhubDocumentWithOptimisticConcurrency(docId, { title, tabs, masterPage, editedBy: nextEditedBy }, expectedRevisionMs)
+          void updateWorkhubDocument(docId, { title, tabs, masterPage, editedBy: nextEditedBy })
         } else {
-          void updateWorkhubDocumentWithOptimisticConcurrency(docId, { title, body, masterPage, editedBy: nextEditedBy }, expectedRevisionMs)
+          void updateWorkhubDocument(docId, { title, body, masterPage, editedBy: nextEditedBy })
         }
       }
     }
@@ -1328,11 +1410,6 @@ export function useWorkhubDocEditorHandlers({
       showToast({ type: 'warning', message: 'You only have view access to this document.' })
       return
     }
-    if (collaborationConflictBlocked) {
-      showToast({ type: 'warning', message: 'A collaborator has newer changes. Load latest or choose to keep your edits before saving.' })
-      return
-    }
-
     const nextTitle = selectedDocumentTitleDraft.trim()
     if (!nextTitle) {
       showToast({ type: 'error', message: 'Document title is required.' })
@@ -1369,22 +1446,19 @@ export function useWorkhubDocEditorHandlers({
       const nextBody = normalizeDocumentBodyForStorage(selectedDocumentBodyDraft)
       const nextMasterPage = normalizeDocumentMasterPage(selectedDocumentMasterPageDraft)
       const nextEditedBy = buildEditedByWithActor(selectedDocument.editedBy, auth.currentUser.uid)
-      const expectedRevisionMs = appliedRemoteSnapshotRef.current?.docId === selectedDocument.id
-        ? appliedRemoteSnapshotRef.current.revisionMs
-        : getUnknownTimeValue(selectedDocument.updatedAt || selectedDocument.createdAt)
       let syncedReferences: WorkhubDocument[] = []
       if (hasTabs) {
         const savedTabs = documentTabsDraftRef.current.map((t) =>
           t.id === activeTabIdRef.current ? { ...t, body: nextBody } : t,
         )
-        await updateWorkhubDocumentWithOptimisticConcurrency(selectedDocument.id, {
+        await updateWorkhubDocument(selectedDocument.id, {
           title: nextTitle,
           tabs: savedTabs,
           masterPage: nextMasterPage,
           editedBy: nextEditedBy,
           visibility,
           memberUids,
-        }, expectedRevisionMs)
+        })
         if (!selectedDocument.referenceSourceDocumentId) {
           syncedReferences = await syncReferencesFromSource({
             sourceDocumentId: selectedDocument.id,
@@ -1400,7 +1474,7 @@ export function useWorkhubDocEditorHandlers({
         }
         appliedRemoteSnapshotRef.current = {
           docId: selectedDocument.id,
-          revisionMs: expectedRevisionMs,
+          revisionMs: getUnknownTimeValue(selectedDocument.updatedAt || selectedDocument.createdAt),
           title: nextTitle,
           body: nextBody,
           tabs: savedTabs.map((tab) => ({ ...tab })),
@@ -1408,14 +1482,14 @@ export function useWorkhubDocEditorHandlers({
           latestExternalEditorUid: '',
         }
       } else {
-        await updateWorkhubDocumentWithOptimisticConcurrency(selectedDocument.id, {
+        await updateWorkhubDocument(selectedDocument.id, {
           title: nextTitle,
           body: nextBody,
           masterPage: nextMasterPage,
           editedBy: nextEditedBy,
           visibility,
           memberUids,
-        }, expectedRevisionMs)
+        })
         if (!selectedDocument.referenceSourceDocumentId) {
           syncedReferences = await syncReferencesFromSource({
             sourceDocumentId: selectedDocument.id,
@@ -1431,7 +1505,7 @@ export function useWorkhubDocEditorHandlers({
         }
         appliedRemoteSnapshotRef.current = {
           docId: selectedDocument.id,
-          revisionMs: expectedRevisionMs,
+          revisionMs: getUnknownTimeValue(selectedDocument.updatedAt || selectedDocument.createdAt),
           title: nextTitle,
           body: nextBody,
           tabs: [],
@@ -1459,6 +1533,11 @@ export function useWorkhubDocEditorHandlers({
         visibility,
         memberUids,
       })
+      try {
+        await logOverwriteAuditIfNeeded(selectedDocument, auth.currentUser.uid)
+      } catch {
+        // Ignore audit logging failures; do not block successful document saves.
+      }
       await clearRecoverableDraft(selectedDocument.id)
       setRecoverableDraft(null)
       showToast({
@@ -1466,13 +1545,7 @@ export function useWorkhubDocEditorHandlers({
         message: isPublicReferenceScope ? 'Document published and references were notified.' : 'Document saved.',
       })
     } catch (error) {
-      if (error instanceof WorkhubDocumentConflictError) {
-        const remoteSnapshot = buildRemoteDocumentSnapshot(selectedDocument)
-        setCollaborationConflictSnapshot(remoteSnapshot)
-        setLatestRemoteRevisionMs(Math.max(remoteSnapshot.revisionMs, error.currentUpdatedAtMs || 0))
-        showToast({ type: 'warning', message: 'This document was updated by another teammate. Review latest changes before saving.' })
-        return
-      }
+      pendingOverwriteAuditRef.current = null
       showToast({ type: 'error', message: error instanceof Error ? error.message : 'Could not save document.' })
     } finally {
       setBusyKey('')

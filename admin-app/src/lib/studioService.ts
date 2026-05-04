@@ -1,0 +1,869 @@
+/**
+ * studioService.ts
+ *
+ * CRUD service layer for the Studio multi-tenant system.
+ * Handles organizations, projects, members, and invites.
+ *
+ * Firestore layout:
+ *   studio_orgs/{orgId}
+ *   studio_orgs/{orgId}/members/{userId}
+ *   studio_projects/{projectId}
+ *   studio_projects/{projectId}/members/{userId}
+ *   studio_invites/{inviteId}
+ */
+
+import {
+  arrayRemove,
+  arrayUnion,
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  onSnapshot,
+  orderBy,
+  query,
+  runTransaction,
+  serverTimestamp,
+  setDoc,
+  Timestamp,
+  updateDoc,
+  where,
+  type Unsubscribe,
+} from 'firebase/firestore'
+import { httpsCallable } from 'firebase/functions'
+import { db } from './firebase'
+import { functions } from './firebase'
+import type {
+  FolderSummary,
+  OrgMember,
+  OrgRole,
+  OrgSummary,
+  ProjectMember,
+  ProjectRole,
+  ProjectSummary,
+  ProjectVisibility,
+  StudioFolder,
+  StudioInvite,
+  StudioInviteFolderAccess,
+  StudioOrg,
+  StudioProject,
+} from '../types/studio'
+
+// ─── Collection references ────────────────────────────────────────────────────
+
+const orgsCol = () => collection(db, 'studio_orgs')
+const orgDoc = (orgId: string) => doc(db, 'studio_orgs', orgId)
+const orgMembersCol = (orgId: string) => collection(db, 'studio_orgs', orgId, 'members')
+const orgMemberDoc = (orgId: string, userId: string) =>
+  doc(db, 'studio_orgs', orgId, 'members', userId)
+
+const projectsCol = () => collection(db, 'studio_projects')
+const projectDoc = (projectId: string) => doc(db, 'studio_projects', projectId)
+const projectMembersCol = (projectId: string) =>
+  collection(db, 'studio_projects', projectId, 'members')
+const projectMemberDoc = (projectId: string, userId: string) =>
+  doc(db, 'studio_projects', projectId, 'members', userId)
+
+const invitesCol = () => collection(db, 'studio_invites')
+const inviteDoc = (inviteId: string) => doc(db, 'studio_invites', inviteId)
+
+const foldersCol = (projectId: string) =>
+  collection(db, 'studio_projects', projectId, 'folders')
+const folderDoc = (projectId: string, folderId: string) =>
+  doc(db, 'studio_projects', projectId, 'folders', folderId)
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Generate a cryptographically random token suitable for invite links. */
+function generateToken(): string {
+  const bytes = new Uint8Array(24)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+/** Convert a name to a URL-safe lowercase slug. */
+function toSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48)
+}
+
+function docData<T>(snapshot: { data(): unknown; id: string }): T {
+  return { ...(snapshot.data() as object), id: snapshot.id } as T
+}
+
+// ─── Organizations ────────────────────────────────────────────────────────────
+
+export interface CreateOrgInput {
+  name: string
+  description?: string
+  logoUrl?: string
+}
+
+/**
+ * Create a new organization. The caller automatically becomes the owner and is
+ * written into the `members` subcollection.
+ */
+export async function createOrg(
+  input: CreateOrgInput,
+  user: { uid: string; displayName: string; email: string; photoUrl: string },
+): Promise<StudioOrg> {
+  const ref = doc(orgsCol())
+  const slug = toSlug(input.name)
+  const now = serverTimestamp()
+
+  const orgData: Omit<StudioOrg, 'id' | 'createdAt' | 'updatedAt'> & {
+    createdAt: ReturnType<typeof serverTimestamp>
+    updatedAt: ReturnType<typeof serverTimestamp>
+  } = {
+    name: input.name,
+    slug,
+    ownerId: user.uid,
+    description: input.description ?? '',
+    logoUrl: input.logoUrl ?? '',
+    plan: 'free',
+    memberCount: 1,
+    createdAt: now,
+    updatedAt: now,
+  }
+
+  const memberData: Omit<OrgMember, 'joinedAt'> & { joinedAt: ReturnType<typeof serverTimestamp> } =
+    {
+      userId: user.uid,
+      role: 'owner',
+      displayName: user.displayName,
+      email: user.email,
+      photoUrl: user.photoUrl,
+      invitedBy: '',
+      joinedAt: now,
+    }
+
+  await runTransaction(db, async (tx) => {
+    tx.set(ref, orgData)
+    tx.set(orgMemberDoc(ref.id, user.uid), memberData)
+  })
+
+  const snap = await getDoc(ref)
+  return docData<StudioOrg>(snap)
+}
+
+/** Update org metadata (name, description, logoUrl). Only org owner / admin should call. */
+export async function updateOrg(
+  orgId: string,
+  patch: Partial<Pick<StudioOrg, 'name' | 'description' | 'logoUrl' | 'plan'>>,
+): Promise<void> {
+  await updateDoc(orgDoc(orgId), { ...patch, updatedAt: serverTimestamp() })
+}
+
+/** Hard-delete an org and all its sub-documents (requires Cloud Function for full cascades). */
+export async function deleteOrg(orgId: string): Promise<void> {
+  // Subcollection cleanup must be handled server-side; the client only removes
+  // the top-level doc to trigger a Cloud Function cascade if configured.
+  await deleteDoc(orgDoc(orgId))
+}
+
+/** Fetch a single org by ID. Returns null if not found. */
+export async function getOrg(orgId: string): Promise<StudioOrg | null> {
+  const snap = await getDoc(orgDoc(orgId))
+  if (!snap.exists()) return null
+  return docData<StudioOrg>(snap)
+}
+
+/**
+ * Subscribe to all orgs the current user is a member of.
+ * Runs a separate query on the `members` subcollection is not supported client-side
+ * via collectionGroup without index setup, so we store a flat list approach:
+ * query `studio_projects` by `memberUids` array-contains.
+ *
+ * For orgs, we query via the orgs the user owns + separate member lookups.
+ * Returns an array of OrgSummary objects ordered by name.
+ */
+export function subscribeToUserOrgs(
+  userId: string,
+  onResult: (orgs: OrgSummary[]) => void,
+  onError?: (error: Error) => void,
+): Unsubscribe {
+  // Query orgs where the user is the owner OR is in a known set.
+  // Because Firestore doesn't support subcollection-group queries for membership
+  // without the collectionGroup index, we use the owner field for a lightweight
+  // primary query and supplement with per-org membership lookups from the app layer.
+  // In practice, the recommended pattern is to also store orgIds on the user profile.
+  const q = query(orgsCol(), where('ownerId', '==', userId), orderBy('name'))
+
+  return onSnapshot(
+    q,
+    (snap) => {
+      const orgs: OrgSummary[] = snap.docs.map((d) => {
+        const data = d.data() as StudioOrg
+        return {
+          id: d.id,
+          name: data.name,
+          slug: data.slug,
+          logoUrl: data.logoUrl,
+          plan: data.plan,
+          role: 'owner' as const,
+        }
+      })
+      onResult(orgs)
+    },
+    (err) => onError?.(err),
+  )
+}
+
+// ─── Org Members ──────────────────────────────────────────────────────────────
+
+/** Fetch all members of an organization. */
+export async function getOrgMembers(orgId: string): Promise<OrgMember[]> {
+  const snap = await getDocs(orgMembersCol(orgId))
+  return snap.docs.map((d) => docData<OrgMember>(d))
+}
+
+/** Subscribe to org member list in real time. */
+export function subscribeToOrgMembers(
+  orgId: string,
+  onResult: (members: OrgMember[]) => void,
+  onError?: (error: Error) => void,
+): Unsubscribe {
+  return onSnapshot(
+    orgMembersCol(orgId),
+    (snap) => onResult(snap.docs.map((d) => docData<OrgMember>(d))),
+    (err) => onError?.(err),
+  )
+}
+
+/** Change an existing org member's role. */
+export async function setOrgMemberRole(
+  orgId: string,
+  userId: string,
+  role: OrgRole,
+): Promise<void> {
+  await updateDoc(orgMemberDoc(orgId, userId), { role })
+}
+
+/** Remove a member from an org (and decrement count). */
+export async function removeOrgMember(orgId: string, userId: string): Promise<void> {
+  await runTransaction(db, async (tx) => {
+    tx.delete(orgMemberDoc(orgId, userId))
+    tx.update(orgDoc(orgId), { memberCount: (await getDoc(orgDoc(orgId))).data()!.memberCount - 1 })
+  })
+}
+
+// ─── Projects ─────────────────────────────────────────────────────────────────
+
+export interface CreateProjectInput {
+  orgId: string
+  name: string
+  description?: string
+  visibility?: ProjectVisibility
+  coverImageUrl?: string
+  tags?: string[]
+}
+
+/**
+ * Create a project inside an org. The creator becomes the project owner and is
+ * added to both `memberUids` and the `members` subcollection.
+ */
+export async function createProject(
+  input: CreateProjectInput,
+  user: { uid: string; displayName: string; email: string; photoUrl: string },
+): Promise<StudioProject> {
+  const ref = doc(projectsCol())
+  const now = serverTimestamp()
+
+  const projectData: Omit<StudioProject, 'id' | 'createdAt' | 'updatedAt'> & {
+    createdAt: ReturnType<typeof serverTimestamp>
+    updatedAt: ReturnType<typeof serverTimestamp>
+  } = {
+    orgId: input.orgId,
+    name: input.name,
+    description: input.description ?? '',
+    visibility: input.visibility ?? 'private',
+    status: 'active',
+    ownerId: user.uid,
+    coverImageUrl: input.coverImageUrl ?? '',
+    tags: input.tags ?? [],
+    memberUids: [user.uid],
+    createdAt: now,
+    updatedAt: now,
+  }
+
+  const memberData: Omit<ProjectMember, 'addedAt'> & {
+    addedAt: ReturnType<typeof serverTimestamp>
+  } = {
+    userId: user.uid,
+    role: 'owner',
+    displayName: user.displayName,
+    email: user.email,
+    photoUrl: user.photoUrl,
+    addedBy: user.uid,
+    addedAt: now,
+  }
+
+  await runTransaction(db, async (tx) => {
+    tx.set(ref, projectData)
+    tx.set(projectMemberDoc(ref.id, user.uid), memberData)
+  })
+
+  const snap = await getDoc(ref)
+  return docData<StudioProject>(snap)
+}
+
+/** Update project metadata. */
+export async function updateProject(
+  projectId: string,
+  patch: Partial<
+    Pick<
+      StudioProject,
+      'name' | 'description' | 'visibility' | 'status' | 'coverImageUrl' | 'tags'
+    >
+  >,
+): Promise<void> {
+  await updateDoc(projectDoc(projectId), { ...patch, updatedAt: serverTimestamp() })
+}
+
+/** Delete a project document (subcollection cleanup requires server-side cascade). */
+export async function deleteProject(projectId: string): Promise<void> {
+  await deleteDoc(projectDoc(projectId))
+}
+
+/** Fetch a single project. Returns null if not found. */
+export async function getProject(projectId: string): Promise<StudioProject | null> {
+  const snap = await getDoc(projectDoc(projectId))
+  if (!snap.exists()) return null
+  return docData<StudioProject>(snap)
+}
+
+/**
+ * Subscribe to all projects within an org that are visible to a given user.
+ * Covers:
+ *   - 'org' visibility (all org members)
+ *   - 'private' / 'shared' where the user is in memberUids
+ */
+export function subscribeToOrgProjects(
+  orgId: string,
+  userId: string,
+  onResult: (projects: ProjectSummary[]) => void,
+  onError?: (error: Error) => void,
+): Unsubscribe {
+  // Query: projects in this org where the user is a member
+  const q = query(
+    projectsCol(),
+    where('orgId', '==', orgId),
+    where('memberUids', 'array-contains', userId),
+    orderBy('updatedAt', 'desc'),
+  )
+
+  return onSnapshot(
+    q,
+    (snap) => {
+      const projects: ProjectSummary[] = snap.docs.map((d) => {
+        const data = d.data() as StudioProject
+        return {
+          id: d.id,
+          orgId: data.orgId,
+          name: data.name,
+          description: data.description,
+          visibility: data.visibility,
+          status: data.status,
+          coverImageUrl: data.coverImageUrl,
+          tags: data.tags,
+          role: (data.ownerId === userId ? 'owner' : 'editor') as import('../types/studio').ProjectRole,
+          updatedAt:
+            data.updatedAt instanceof Timestamp ? data.updatedAt.toMillis() : Date.now(),
+        }
+      })
+      onResult(projects)
+    },
+    (err) => onError?.(err),
+  )
+}
+
+/**
+ * Subscribe to all projects that include the user as a member.
+ * This powers personal project workflows that do not require explicit org setup.
+ */
+export function subscribeToUserProjects(
+  userId: string,
+  onResult: (projects: ProjectSummary[]) => void,
+  onError?: (error: Error) => void,
+): Unsubscribe {
+  const q = query(projectsCol(), where('memberUids', 'array-contains', userId))
+
+  return onSnapshot(
+    q,
+    (snap) => {
+      const projects: ProjectSummary[] = snap.docs.map((d) => {
+        const data = d.data() as StudioProject
+        return {
+          id: d.id,
+          orgId: data.orgId,
+          name: data.name,
+          description: data.description,
+          visibility: data.visibility,
+          status: data.status,
+          coverImageUrl: data.coverImageUrl,
+          tags: data.tags,
+          role: (data.ownerId === userId ? 'owner' : 'editor') as import('../types/studio').ProjectRole,
+          updatedAt:
+            data.updatedAt instanceof Timestamp ? data.updatedAt.toMillis() : Date.now(),
+        }
+      }).sort((a, b) => b.updatedAt - a.updatedAt)
+      onResult(projects)
+    },
+    (err) => onError?.(err),
+  )
+}
+
+// ─── Project Members ──────────────────────────────────────────────────────────
+
+/** Fetch all members of a project. */
+export async function getProjectMembers(projectId: string): Promise<ProjectMember[]> {
+  const snap = await getDocs(projectMembersCol(projectId))
+  return snap.docs.map((d) => docData<ProjectMember>(d))
+}
+
+/** Subscribe to project member list. */
+export function subscribeToProjectMembers(
+  projectId: string,
+  onResult: (members: ProjectMember[]) => void,
+  onError?: (error: Error) => void,
+): Unsubscribe {
+  return onSnapshot(
+    projectMembersCol(projectId),
+    (snap) => onResult(snap.docs.map((d) => docData<ProjectMember>(d))),
+    (err) => onError?.(err),
+  )
+}
+
+/**
+ * Add a user to a project.
+ * Updates both the subcollection and the denormalized `memberUids` array.
+ */
+export async function addProjectMember(
+  projectId: string,
+  member: { uid: string; displayName: string; email: string; photoUrl: string },
+  role: ProjectRole,
+  addedBy: string,
+): Promise<void> {
+  const now = serverTimestamp()
+  const memberData: Omit<ProjectMember, 'addedAt'> & {
+    addedAt: ReturnType<typeof serverTimestamp>
+  } = {
+    userId: member.uid,
+    role,
+    displayName: member.displayName,
+    email: member.email,
+    photoUrl: member.photoUrl,
+    addedBy,
+    addedAt: now,
+  }
+
+  await runTransaction(db, async (tx) => {
+    tx.set(projectMemberDoc(projectId, member.uid), memberData)
+    tx.update(projectDoc(projectId), {
+      memberUids: arrayUnion(member.uid),
+      updatedAt: serverTimestamp(),
+    })
+  })
+}
+
+/** Change an existing project member's role. */
+export async function setProjectMemberRole(
+  projectId: string,
+  userId: string,
+  role: ProjectRole,
+): Promise<void> {
+  await updateDoc(projectMemberDoc(projectId, userId), { role })
+}
+
+/** Remove a member from a project. */
+export async function removeProjectMember(projectId: string, userId: string): Promise<void> {
+  await runTransaction(db, async (tx) => {
+    tx.delete(projectMemberDoc(projectId, userId))
+    tx.update(projectDoc(projectId), {
+      memberUids: arrayRemove(userId),
+      updatedAt: serverTimestamp(),
+    })
+  })
+}
+
+// ─── Invites ──────────────────────────────────────────────────────────────────
+
+export interface CreateInviteInput {
+  targetKind: 'org' | 'project'
+  targetId: string
+  orgId: string
+  role: OrgRole | ProjectRole
+  inviteeEmail: string
+  inviteeUid?: string
+  inviteeDisplayName?: string
+  targetProjectIds?: string[]
+  targetFolderRefs?: StudioInviteFolderAccess[]
+  invitedBy: string
+  /** Hours until expiry. Defaults to 72. */
+  expiryHours?: number
+}
+
+type SendStudioOrgInviteEmailRequest = {
+  inviteId: string
+}
+
+type SendStudioOrgInviteEmailResponse = {
+  toEmail: string
+  message: string
+}
+
+/** Create an invite document and return the full record with generated token. */
+export async function createInvite(input: CreateInviteInput): Promise<StudioInvite> {
+  const ref = doc(invitesCol())
+  const now = Timestamp.now()
+  const expiryHours = input.expiryHours ?? 72
+  const expiresAt = Timestamp.fromMillis(now.toMillis() + expiryHours * 60 * 60 * 1000)
+  const targetProjectIds = Array.from(new Set((input.targetProjectIds || []).map((projectId) => projectId.trim()).filter(Boolean)))
+  const targetFolderRefs = Array.from(new Map(
+    (input.targetFolderRefs || [])
+      .map((folderRef) => ({ projectId: folderRef.projectId.trim(), folderId: folderRef.folderId.trim() }))
+      .filter((folderRef) => folderRef.projectId && folderRef.folderId)
+      .map((folderRef) => [`${folderRef.projectId}__${folderRef.folderId}`, folderRef] as const),
+  ).values())
+
+  const inviteData: Omit<StudioInvite, 'id'> = {
+    targetKind: input.targetKind,
+    targetId: input.targetId,
+    orgId: input.orgId,
+    role: input.role,
+    inviteeEmail: input.inviteeEmail.toLowerCase().trim(),
+    ...(input.inviteeUid ? { inviteeUid: input.inviteeUid } : {}),
+    inviteeDisplayName: input.inviteeDisplayName ?? '',
+    ...(targetProjectIds.length > 0 ? { targetProjectIds } : {}),
+    ...(targetFolderRefs.length > 0 ? { targetFolderRefs } : {}),
+    invitedBy: input.invitedBy,
+    status: 'pending',
+    token: generateToken(),
+    createdAt: now,
+    expiresAt,
+  }
+
+  await setDoc(ref, inviteData)
+  return { ...inviteData, id: ref.id }
+}
+
+export async function sendStudioOrgInviteEmail(input: SendStudioOrgInviteEmailRequest): Promise<SendStudioOrgInviteEmailResponse> {
+  const fn = httpsCallable<SendStudioOrgInviteEmailRequest, SendStudioOrgInviteEmailResponse>(
+    functions,
+    'sendStudioOrgInviteEmail',
+  )
+  const result = await fn(input)
+  return result.data
+}
+
+/** Look up a pending invite by its opaque token. */
+export async function getInviteByToken(token: string): Promise<StudioInvite | null> {
+  const q = query(invitesCol(), where('token', '==', token), where('status', '==', 'pending'))
+  const snap = await getDocs(q)
+  if (snap.empty) return null
+  return docData<StudioInvite>(snap.docs[0])
+}
+
+/** Fetch all pending invites sent to a given email address (called on sign-in). */
+export async function getPendingInvitesForEmail(email: string): Promise<StudioInvite[]> {
+  const q = query(
+    invitesCol(),
+    where('inviteeEmail', '==', email.toLowerCase().trim()),
+    where('status', '==', 'pending'),
+  )
+  const snap = await getDocs(q)
+  return snap.docs.map((d) => docData<StudioInvite>(d))
+}
+
+export function subscribePendingInvitesForEmail(
+  email: string,
+  onData: (invites: StudioInvite[]) => void,
+): Unsubscribe {
+  const normalizedEmail = email.toLowerCase().trim()
+  if (!normalizedEmail) {
+    onData([])
+    return () => undefined
+  }
+
+  const q = query(
+    invitesCol(),
+    where('inviteeEmail', '==', normalizedEmail),
+    where('status', '==', 'pending'),
+  )
+  return onSnapshot(q, (snap) => onData(snap.docs.map((d) => docData<StudioInvite>(d))), () => onData([]))
+}
+
+export function subscribePendingInvitesForRecipient(
+  input: { uid: string; email?: string | null },
+  onData: (invites: StudioInvite[]) => void,
+): Unsubscribe {
+  const uid = input.uid.trim()
+  const email = (input.email || '').trim().toLowerCase()
+  console.log('[InviteDebug] subscribePendingInvitesForRecipient called', { uid, email })
+  if (!uid && !email) {
+    onData([])
+    return () => undefined
+  }
+
+  const current = new Map<string, StudioInvite>()
+  let uidInvites: StudioInvite[] = []
+  let emailInvites: StudioInvite[] = []
+
+  const emit = () => {
+    current.clear()
+    for (const invite of uidInvites) current.set(invite.id, invite)
+    for (const invite of emailInvites) current.set(invite.id, invite)
+    const all = Array.from(current.values())
+    console.log('[InviteDebug] emit — uidInvites:', uidInvites.length, 'emailInvites:', emailInvites.length, 'total:', all.length, all)
+    onData(all)
+  }
+
+  const unsubscribers: Unsubscribe[] = []
+
+  if (uid) {
+    const q = query(invitesCol(), where('inviteeUid', '==', uid), where('status', '==', 'pending'))
+    unsubscribers.push(onSnapshot(q, (snap) => {
+      console.log('[InviteDebug] UID snapshot — docs:', snap.docs.length, snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+      uidInvites = snap.docs.map((d) => docData<StudioInvite>(d))
+      emit()
+    }, (err) => {
+      console.error('[InviteDebug] UID query error:', err)
+      uidInvites = []
+      emit()
+    }))
+  }
+
+  if (email) {
+    const q = query(invitesCol(), where('inviteeEmail', '==', email), where('status', '==', 'pending'))
+    unsubscribers.push(onSnapshot(q, (snap) => {
+      console.log('[InviteDebug] Email snapshot — docs:', snap.docs.length, snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+      emailInvites = snap.docs.map((d) => docData<StudioInvite>(d))
+      emit()
+    }, (err) => {
+      console.error('[InviteDebug] Email query error:', err)
+      emailInvites = []
+      emit()
+    }))
+  }
+
+  return () => {
+    for (const unsubscribe of unsubscribers) unsubscribe()
+  }
+}
+
+/**
+ * Accept an invite: adds the user to the org/project and marks the invite accepted.
+ * The caller must pass a resolved user identity.
+ */
+export async function acceptInvite(
+  invite: StudioInvite,
+  user: { uid: string; displayName: string; email: string; photoUrl: string },
+): Promise<void> {
+  const now = serverTimestamp()
+  const projectRole = (invite.targetKind === 'project' ? invite.role : 'viewer') as ProjectRole
+  const projectIds = Array.from(new Set([
+    ...(invite.targetKind === 'project' ? [invite.targetId] : []),
+    ...(invite.targetProjectIds || []),
+  ].map((projectId) => projectId.trim()).filter(Boolean)))
+  const folderRefs = Array.from(new Map(
+    (invite.targetFolderRefs || [])
+      .map((folderRef) => ({ projectId: folderRef.projectId.trim(), folderId: folderRef.folderId.trim() }))
+      .filter((folderRef) => folderRef.projectId && folderRef.folderId)
+      .map((folderRef) => [`${folderRef.projectId}__${folderRef.folderId}`, folderRef] as const),
+  ).values())
+
+  await runTransaction(db, async (tx) => {
+    // Mark invite accepted
+    tx.update(inviteDoc(invite.id), { status: 'accepted' })
+
+    if (invite.targetKind === 'org') {
+      const role = invite.role as OrgRole
+      const memberData: Omit<OrgMember, 'joinedAt'> & {
+        joinedAt: ReturnType<typeof serverTimestamp>
+      } = {
+        userId: user.uid,
+        role,
+        displayName: user.displayName,
+        email: user.email,
+        photoUrl: user.photoUrl,
+        invitedBy: invite.invitedBy,
+        joinedAt: now,
+      }
+      tx.set(orgMemberDoc(invite.targetId, user.uid), memberData)
+      // Increment denormalized count
+      const orgSnap = await getDoc(orgDoc(invite.targetId))
+      if (orgSnap.exists()) {
+        tx.update(orgDoc(invite.targetId), {
+          memberCount: (orgSnap.data().memberCount ?? 0) + 1,
+        })
+      }
+    } else {
+      // Project access is granted in the shared project loop below.
+    }
+
+    for (const projectId of projectIds) {
+      const memberData: Omit<ProjectMember, 'addedAt'> & {
+        addedAt: ReturnType<typeof serverTimestamp>
+      } = {
+        userId: user.uid,
+        role: projectRole,
+        displayName: user.displayName,
+        email: user.email,
+        photoUrl: user.photoUrl,
+        addedBy: invite.invitedBy,
+        addedAt: now,
+      }
+      tx.set(projectMemberDoc(projectId, user.uid), memberData)
+      tx.update(projectDoc(projectId), {
+        memberUids: arrayUnion(user.uid),
+        updatedAt: serverTimestamp(),
+      })
+    }
+
+    for (const folderRef of folderRefs) {
+      const folderRefDoc = folderDoc(folderRef.projectId, folderRef.folderId)
+      const folderSnap = await tx.get(folderRefDoc)
+      if (folderSnap.exists()) {
+        tx.update(folderRefDoc, {
+          allowedMemberUids: arrayUnion(user.uid),
+        })
+      }
+    }
+  })
+}
+
+/** Decline or revoke an invite. */
+export async function updateInviteStatus(
+  inviteId: string,
+  status: 'declined' | 'expired',
+): Promise<void> {
+  await updateDoc(inviteDoc(inviteId), { status })
+}
+
+// ─── Folders ───────────────────────────────────────────────────────────────────
+
+export interface CreateFolderInput {
+  projectId: string
+  name: string
+  parentId?: string | null
+}
+
+/** Create a folder inside a project. */
+export async function createFolder(
+  input: CreateFolderInput,
+  userId: string,
+): Promise<FolderSummary> {
+  const ref = doc(foldersCol(input.projectId))
+  const now = serverTimestamp()
+  await setDoc(ref, {
+    projectId: input.projectId,
+    name: input.name,
+    parentId: input.parentId ?? null,
+    createdBy: userId,
+    allowedMemberUids: [],
+    hiddenMemberUids: [],
+    createdAt: now,
+  })
+  const snap = await getDoc(ref)
+  const d = snap.data() as StudioFolder
+  return {
+    id: snap.id,
+    projectId: d.projectId,
+    name: d.name,
+    parentId: d.parentId,
+    createdBy: d.createdBy,
+    allowedMemberUids: Array.isArray(d.allowedMemberUids) ? d.allowedMemberUids : [],
+    hiddenMemberUids: Array.isArray(d.hiddenMemberUids) ? d.hiddenMemberUids : [],
+    createdAt: d.createdAt instanceof Timestamp ? d.createdAt.toMillis() : Date.now(),
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PROJECT CRUD (top-level rename / delete)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function updateStudioProject(projectId: string, name: string): Promise<void> {
+  await updateDoc(projectDoc(projectId), {
+    name,
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function deleteStudioProject(projectId: string): Promise<void> {
+  await deleteDoc(projectDoc(projectId))
+}
+
+/** Rename a folder. */
+export async function updateFolder(
+  projectId: string,
+  folderId: string,
+  name: string,
+): Promise<void> {
+  await updateDoc(folderDoc(projectId, folderId), { name })
+}
+
+export async function setFolderMemberVisibility(
+  projectId: string,
+  folderId: string,
+  userId: string,
+  visibility: 'default' | 'allowed' | 'hidden',
+): Promise<void> {
+  const ref = folderDoc(projectId, folderId)
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref)
+    if (!snap.exists()) {
+      throw new Error('Folder not found.')
+    }
+
+    const data = snap.data() as Partial<StudioFolder>
+    const allowed = Array.isArray(data.allowedMemberUids) ? data.allowedMemberUids.filter((uid) => uid && uid !== userId) : []
+    const hidden = Array.isArray(data.hiddenMemberUids) ? data.hiddenMemberUids.filter((uid) => uid && uid !== userId) : []
+
+    if (visibility === 'allowed') allowed.push(userId)
+    if (visibility === 'hidden') hidden.push(userId)
+
+    tx.update(ref, {
+      allowedMemberUids: Array.from(new Set(allowed)),
+      hiddenMemberUids: Array.from(new Set(hidden)),
+    })
+  })
+}
+
+/** Delete a folder (does not cascade-delete contents). */
+export async function deleteFolder(projectId: string, folderId: string): Promise<void> {
+  await deleteDoc(folderDoc(projectId, folderId))
+}
+
+/** Subscribe to all folders in a project, ordered by creation time. */
+export function subscribeToProjectFolders(
+  projectId: string,
+  onResult: (folders: FolderSummary[]) => void,
+  onError?: (error: Error) => void,
+): Unsubscribe {
+  const q = query(foldersCol(projectId), orderBy('createdAt'))
+  return onSnapshot(
+    q,
+    (snap) => {
+      const folders: FolderSummary[] = snap.docs.map((d) => {
+        const data = d.data() as StudioFolder
+        return {
+          id: d.id,
+          projectId: data.projectId,
+          name: data.name,
+          parentId: data.parentId,
+          createdBy: data.createdBy,
+          allowedMemberUids: Array.isArray(data.allowedMemberUids) ? data.allowedMemberUids : [],
+          hiddenMemberUids: Array.isArray(data.hiddenMemberUids) ? data.hiddenMemberUids : [],
+          createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : Date.now(),
+        }
+      })
+      onResult(folders)
+    },
+    (err) => onError?.(err),
+  )
+}

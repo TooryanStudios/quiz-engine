@@ -135,6 +135,7 @@ import {
   splitTaskTitles,
 } from './workhub/taskUtils'
 import {
+  buildProjectDescriptionFromIntentDrafts,
   buildProjectTree,
   canAccessWorkspace,
   canViewProjectWithAncestors,
@@ -391,6 +392,10 @@ function getTemplateDateRangeValidationMessage(intent: WorkhubTemplateCreationIn
       return 'Target date cannot be earlier than content stream start date.'
     case 'hr_onboarding_track':
       return 'Completion target cannot be earlier than onboarding start date.'
+    case 'hr_leave_case':
+      return 'Return-to-work target cannot be earlier than leave start date.'
+    case 'hr_kpi_cycle':
+      return 'Cycle close date cannot be earlier than cycle start date.'
     default:
       return 'Deadline cannot be earlier than start date.'
   }
@@ -414,6 +419,20 @@ function getIntentSettingsDeadlineLabel(intent: WorkhubProjectIntent, projectTyp
       return 'Target hire date'
     case 'hr_onboarding_track':
       return 'Completion target'
+    case 'hr_department_unit':
+      return 'Department review date'
+    case 'hr_sub_department_unit':
+      return 'Sub-department review date'
+    case 'hr_employee_profile':
+      return 'Profile review date'
+    case 'hr_leave_case':
+      return 'Return-to-work target'
+    case 'hr_kpi_cycle':
+      return 'Cycle close date'
+    case 'hr_initiative_program':
+      return 'Program checkpoint'
+    case 'hr_learning_certification':
+      return 'Renewal / expiry date'
     case 'project':
     default:
       return projectType === 'tender' ? 'Submission date' : 'Final submission deadline'
@@ -490,8 +509,16 @@ function pluralizeDashboardSubjectLabel(label: string): string {
     Lead: 'Leads',
     Folder: 'Folders',
     Project: 'Projects',
+    'Organization unit': 'Organization units',
+    Department: 'Departments',
+    'Sub-department': 'Sub-departments',
     Campaign: 'Campaigns',
     Requisition: 'Requisitions',
+    'Employee profile': 'Employee profiles',
+    'Leave case': 'Leave cases',
+    'KPI cycle': 'KPI cycles',
+    'Initiative program': 'Initiative programs',
+    'Learning record': 'Learning records',
     'Content stream': 'Content streams',
     'Invoice stream': 'Invoice streams',
     'Payment cycle': 'Payment cycles',
@@ -510,7 +537,7 @@ function resolveWorkspaceCollectionHeading(templateId: WorkhubWorkspaceTemplateI
     case 'marketing':
       return 'Campaign categories'
     case 'hr':
-      return 'HR categories'
+      return 'Organization structure'
     case 'projects':
       return 'Project categories'
     default:
@@ -543,6 +570,59 @@ function shouldShowMonetaryValueField(intent: WorkhubProjectIntent): boolean {
   return MONEY_RELATED_INTENTS.has(intent)
 }
 
+function canCreateTasksForIntent(intent: WorkhubProjectIntent): boolean {
+  return intent !== 'hr_employee_profile'
+}
+
+function parseDetailNumber(value: string): number | null {
+  const raw = (value || '').trim()
+  if (!raw) return null
+  const normalized = raw.replace(/,/g, '')
+  const match = normalized.match(/-?\d+(?:\.\d+)?/)
+  if (!match) return null
+  const parsed = Number(match[0])
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function parseHrLineValue(description: string, label: string): string {
+  const normalizedLabel = label.trim().toLowerCase()
+  if (!normalizedLabel) return ''
+  const lines = (description || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const matched = lines.find((line) => line.toLowerCase().startsWith(`${normalizedLabel}:`))
+  if (!matched) return ''
+  return matched.slice(matched.indexOf(':') + 1).trim()
+}
+
+function pickFirstDirectoryPerson(value: string): string {
+  const normalized = (value || '').trim()
+  if (!normalized) return ''
+  const [first] = normalized.split(/[;,|]/).map((part) => part.trim()).filter(Boolean)
+  return first || ''
+}
+
+function resolveSupervisorCandidateFromProject(project: Pick<WorkhubProject, 'description'>, intent: WorkhubProjectIntent): string {
+  const splitDescription = splitTemplateDescriptionForIntent(intent, project.description || '')
+  const details = splitDescription.detailsByKey
+  const candidate = (
+    details['head of department']
+    || details['sub-department lead']
+    || details['manager employee id']
+    || details.owner
+    || details['approval owner']
+    || details['onboarding owner']
+    || details['cycle owner']
+    || details['program owner']
+  )?.trim()
+  if (candidate) return candidate
+
+  const stakeholderCandidate = pickFirstDirectoryPerson(parseHrLineValue(project.description || '', 'Stakeholders'))
+  if (stakeholderCandidate) return stakeholderCandidate
+  return pickFirstDirectoryPerson(parseHrLineValue(project.description || '', 'Stakeholder'))
+}
+
 function getIntentMonetaryValueLabel(intent: WorkhubProjectIntent): string {
   switch (intent) {
     case 'proposal':
@@ -569,6 +649,10 @@ function buildInitialTemplateCreationDraft(intent: WorkhubTemplateCreationIntent
   const base: WorkhubTemplateCreationDraft = {
     name: '',
     description: '',
+    employeeId: '',
+    authorityLevel: '',
+    roleProfile: '',
+    referenceUrl: '',
     clientId: '',
     tenderNumber: '',
     proposalId: '',
@@ -584,6 +668,41 @@ function buildInitialTemplateCreationDraft(intent: WorkhubTemplateCreationIntent
     campaignObjective: '',
     cadence: '',
     department: '',
+    departmentCode: '',
+    headEmployeeId: '',
+    parentDepartment: '',
+    departmentEmail: '',
+    departmentPhone: '',
+    approvalOwner: '',
+    leaveType: '',
+    cycleOwner: '',
+    primaryKpi: '',
+    programType: '',
+    certificationName: '',
+    certificationIssuer: '',
+    payrollId: '',
+    nameArabic: '',
+    gender: '',
+    birthday: '',
+    subDepartment: '',
+    jobTitle: '',
+    jobGrade: '',
+    employmentStatus: '',
+    workMode: '',
+    employmentType: '',
+    basicSalary: '',
+    salaryAllowances: '',
+    salaryDeductions: '',
+    paymentFrequency: '',
+    availableLeaveDays: '',
+    usedLeaveDays: '',
+    hireDate: '',
+    exitDate: '',
+    managerEmployeeId: '',
+    emergencyContact: '',
+    passportNumber: '',
+    nationalId: '',
+    bankAccount: '',
     hiringManager: '',
     onboardingOwner: '',
     budgetAmount: '',
@@ -631,6 +750,73 @@ function buildTemplateCreationDescription(intent: WorkhubTemplateCreationIntent,
       break
     case 'hr_onboarding_track':
       if (draft.onboardingOwner.trim()) lines.push(`Onboarding owner: ${draft.onboardingOwner.trim()}`)
+      break
+    case 'hr_department_unit':
+      if (draft.departmentCode.trim()) lines.push(`Department code: ${draft.departmentCode.trim()}`)
+      if (draft.headEmployeeId.trim()) lines.push(`Head employee ID: ${draft.headEmployeeId.trim()}`)
+      if (draft.departmentEmail.trim()) lines.push(`Department email: ${draft.departmentEmail.trim()}`)
+      if (draft.departmentPhone.trim()) lines.push(`Department phone: ${draft.departmentPhone.trim()}`)
+      break
+    case 'hr_sub_department_unit':
+      if (draft.departmentCode.trim()) lines.push(`Department code: ${draft.departmentCode.trim()}`)
+      if (draft.parentDepartment.trim()) lines.push(`Parent department: ${draft.parentDepartment.trim()}`)
+      if (draft.headEmployeeId.trim()) lines.push(`Head employee ID: ${draft.headEmployeeId.trim()}`)
+      break
+    case 'hr_employee_profile':
+      if (draft.employeeId.trim()) lines.push(`Employee ID: ${draft.employeeId.trim()}`)
+      if (draft.payrollId.trim()) lines.push(`Payroll ID: ${draft.payrollId.trim()}`)
+      if (draft.name.trim()) lines.push(`Name in English: ${draft.name.trim()}`)
+      if (draft.nameArabic.trim()) lines.push(`Name in Arabic: ${draft.nameArabic.trim()}`)
+      if (draft.gender.trim()) lines.push(`Gender: ${draft.gender.trim()}`)
+      if (draft.birthday.trim()) lines.push(`Birthday: ${draft.birthday.trim()}`)
+      if (draft.department.trim()) lines.push(`Department: ${draft.department.trim()}`)
+      if (draft.subDepartment.trim()) lines.push(`Sub-department: ${draft.subDepartment.trim()}`)
+      if (draft.jobTitle.trim()) lines.push(`Job title: ${draft.jobTitle.trim()}`)
+      if (draft.jobGrade.trim()) lines.push(`Job grade: ${draft.jobGrade.trim()}`)
+      if (draft.authorityLevel.trim()) lines.push(`Authority level: ${draft.authorityLevel.trim()}`)
+      if (draft.roleProfile.trim()) lines.push(`Role profile: ${draft.roleProfile.trim()}`)
+      if (draft.employmentStatus.trim()) lines.push(`Employee status: ${draft.employmentStatus.trim()}`)
+      if (draft.workMode.trim()) lines.push(`Work mode: ${draft.workMode.trim()}`)
+      if (draft.employmentType.trim()) lines.push(`Employment type: ${draft.employmentType.trim()}`)
+      if (draft.basicSalary.trim()) lines.push(`Basic salary: ${draft.basicSalary.trim()}`)
+      if (draft.salaryAllowances.trim()) lines.push(`Salary allowances: ${draft.salaryAllowances.trim()}`)
+      if (draft.salaryDeductions.trim()) lines.push(`Salary deductions: ${draft.salaryDeductions.trim()}`)
+      if (draft.paymentFrequency.trim()) lines.push(`Payment frequency: ${draft.paymentFrequency.trim()}`)
+      if (draft.availableLeaveDays.trim()) lines.push(`Available leave days: ${draft.availableLeaveDays.trim()}`)
+      if (draft.usedLeaveDays.trim()) lines.push(`Used leave days: ${draft.usedLeaveDays.trim()}`)
+      if (draft.hireDate.trim()) lines.push(`Hire date: ${draft.hireDate.trim()}`)
+      if (draft.exitDate.trim()) lines.push(`Exit date: ${draft.exitDate.trim()}`)
+      if (draft.managerEmployeeId.trim()) lines.push(`Manager employee ID: ${draft.managerEmployeeId.trim()}`)
+      if (draft.emergencyContact.trim()) lines.push(`Emergency contact: ${draft.emergencyContact.trim()}`)
+      if (draft.passportNumber.trim()) lines.push(`Passport number: ${draft.passportNumber.trim()}`)
+      if (draft.nationalId.trim()) lines.push(`National ID: ${draft.nationalId.trim()}`)
+      if (draft.bankAccount.trim()) lines.push(`Bank account: ${draft.bankAccount.trim()}`)
+      if (draft.referenceUrl.trim()) lines.push(`CV link: ${draft.referenceUrl.trim()}`)
+      break
+    case 'hr_leave_case':
+      if (draft.employeeId.trim()) lines.push(`Employee ID: ${draft.employeeId.trim()}`)
+      if (draft.department.trim()) lines.push(`Department: ${draft.department.trim()}`)
+      if (draft.approvalOwner.trim()) lines.push(`Approver: ${draft.approvalOwner.trim()}`)
+      if (draft.leaveType.trim()) lines.push(`Leave type: ${draft.leaveType.trim()}`)
+      break
+    case 'hr_kpi_cycle':
+      if (draft.cycleOwner.trim()) lines.push(`Cycle owner: ${draft.cycleOwner.trim()}`)
+      if (draft.department.trim()) lines.push(`Department: ${draft.department.trim()}`)
+      if (draft.cadence.trim()) lines.push(`Cadence: ${draft.cadence.trim()}`)
+      if (draft.primaryKpi.trim()) lines.push(`Primary KPI: ${draft.primaryKpi.trim()}`)
+      break
+    case 'hr_initiative_program':
+      if (draft.cycleOwner.trim()) lines.push(`Program owner: ${draft.cycleOwner.trim()}`)
+      if (draft.department.trim()) lines.push(`Department: ${draft.department.trim()}`)
+      if (draft.programType.trim()) lines.push(`Program type: ${draft.programType.trim()}`)
+      if (draft.cadence.trim()) lines.push(`Cadence: ${draft.cadence.trim()}`)
+      break
+    case 'hr_learning_certification':
+      if (draft.employeeId.trim()) lines.push(`Employee ID: ${draft.employeeId.trim()}`)
+      if (draft.certificationName.trim()) lines.push(`Certification: ${draft.certificationName.trim()}`)
+      if (draft.certificationIssuer.trim()) lines.push(`Issuer: ${draft.certificationIssuer.trim()}`)
+      if (draft.referenceUrl.trim()) lines.push(`Evidence link: ${draft.referenceUrl.trim()}`)
+      if (draft.deadline.trim()) lines.push(`Renewal date: ${draft.deadline.trim()}`)
       break
     case 'project':
     default:
@@ -1230,7 +1416,7 @@ export default function WorkHubPage() {
   const [attachmentReviews, setAttachmentReviews] = useState<Record<string, WorkhubImageReview>>({})
   const [attachmentViewMode, setAttachmentViewMode] = useState<'thumbnail' | 'list' | 'card'>('thumbnail')
   const [taskAttachmentsCollapsed, setTaskAttachmentsCollapsed] = useState(true)
-  const [projectAttachmentsCollapsed, setProjectAttachmentsCollapsed] = useState(false)
+  const [projectAttachmentsCollapsed, setProjectAttachmentsCollapsed] = useState(true)
   const [attachmentDeletePrompt, setAttachmentDeletePrompt] = useState<{ task: WorkhubTask, attachment: string, isDriveFile: boolean } | null>(null)
   const mobileGearMenuAnchorRef = useRef<HTMLDivElement | null>(null)
   const mobileGearMenuRef = useRef<HTMLDivElement | null>(null)
@@ -2002,6 +2188,7 @@ export default function WorkHubPage() {
   )
   const resolveProjectMainPanelSection = useCallback((projectId: string): 'tasks' | 'dashboard' => {
     const project = projects.find((item) => item.id === projectId)
+    if (project?.intent === 'hr_employee_profile') return 'dashboard'
     return resolveProjectMainPanelView(project?.mainPanelView)
   }, [projects])
   const openDocumentFromNotification = useCallback(async (notification: WorkhubNotification) => {
@@ -2160,13 +2347,22 @@ export default function WorkHubPage() {
     selectedTaskStatusTab,
   })
   const groupedProjectsWorkspace = selectedWorkspaceScopeType !== 'technical'
+  const useMirroredWorkspaceRoots = groupedProjectsWorkspace && selectedWorkspaceTemplateId === 'proposals_leads'
   const mirroredProjectRoots = useMemo(
-    () => (groupedProjectsWorkspace ? liveProjectTree.filter((item) => item.workspaceId !== selectedWorkspaceId) : []),
-    [groupedProjectsWorkspace, liveProjectTree, selectedWorkspaceId],
+    () => {
+      if (!groupedProjectsWorkspace) return []
+      if (useMirroredWorkspaceRoots) return liveProjectTree.filter((item) => item.workspaceId !== selectedWorkspaceId)
+      return liveProjectTree.filter((item) => item.workspaceId === selectedWorkspaceId)
+    },
+    [groupedProjectsWorkspace, liveProjectTree, selectedWorkspaceId, useMirroredWorkspaceRoots],
   )
   const localWorkspaceRoots = useMemo(
-    () => (groupedProjectsWorkspace ? liveProjectTree.filter((item) => item.workspaceId === selectedWorkspaceId) : liveProjectTree),
-    [groupedProjectsWorkspace, liveProjectTree, selectedWorkspaceId],
+    () => {
+      if (!groupedProjectsWorkspace) return liveProjectTree
+      if (useMirroredWorkspaceRoots) return liveProjectTree.filter((item) => item.workspaceId === selectedWorkspaceId)
+      return []
+    },
+    [groupedProjectsWorkspace, liveProjectTree, selectedWorkspaceId, useMirroredWorkspaceRoots],
   )
   const selectedStatusDraft = useMemo(
     () => statusDrafts.find((item) => item.id === selectedStatusDraftId) || statusDrafts[0] || null,
@@ -2245,7 +2441,7 @@ export default function WorkHubPage() {
     return result
   }, [tasks, selectedWorkspaceScopeType])
   useEffect(() => {
-    setProjectAttachmentsCollapsed(false)
+    setProjectAttachmentsCollapsed(true)
   }, [selectedProject?.id])
   const selectedTaskIdSet = useMemo(() => new Set(selectedTaskIds), [selectedTaskIds])
   const expandedTaskChecklistIdsSet = useMemo(() => new Set(expandedTaskChecklistIds), [expandedTaskChecklistIds])
@@ -2405,7 +2601,56 @@ export default function WorkHubPage() {
       cursor = projectById.get(cursor)?.parentProjectId || null
     }
 
+    const resolveEmployeeHierarchyDefaults = (targetParentId: string | null) => {
+      const empty = { department: '', subDepartment: '', managerEmployeeId: '' }
+      if (!targetParentId) return empty
+      const projectById = new Map(projects.map((item) => [item.id, item]))
+      let department = ''
+      let subDepartment = ''
+      let managerEmployeeId = ''
+      let cursor: string | null = targetParentId
+      while (cursor) {
+        const node = projectById.get(cursor)
+        if (!node) break
+        const nodeIntent = resolveEffectiveProjectIntent(node, workspaceByIdForFiltering, selectedWorkspaceTemplateIntentSet)
+        if (!managerEmployeeId) {
+          managerEmployeeId = resolveSupervisorCandidateFromProject(node, nodeIntent)
+        }
+        if (!subDepartment && nodeIntent === 'hr_sub_department_unit') {
+          subDepartment = node.name.trim()
+          const subDepartmentDetails = splitTemplateDescriptionForIntent(nodeIntent, node.description || '').detailsByKey
+          if (!department) department = (subDepartmentDetails['parent department'] || subDepartmentDetails.department || '').trim()
+        }
+        if (!department && nodeIntent === 'hr_department_unit') {
+          department = node.name.trim()
+        }
+        cursor = node.parentProjectId || null
+      }
+      return {
+        department,
+        subDepartment,
+        managerEmployeeId,
+      }
+    }
+
     const inheritedAccess = resolveInheritedProjectAccess(parentProjectId, source.createdBy, source.visibility, source.memberUids || [])
+    const sourceIntent = resolveEffectiveProjectIntent(source, workspaceByIdForFiltering, selectedWorkspaceTemplateIntentSet)
+    const isEmployeeProfileMove = sourceIntent === 'hr_employee_profile'
+    const hierarchyDefaults = isEmployeeProfileMove ? resolveEmployeeHierarchyDefaults(parentProjectId) : null
+    const employeeDescriptionPatch = (() => {
+      if (!isEmployeeProfileMove || !hierarchyDefaults) return undefined
+      const splitDescription = splitTemplateDescriptionForIntent('hr_employee_profile', source.description || '')
+      const nextDetails = { ...splitDescription.detailsByKey }
+      if (hierarchyDefaults.department) nextDetails.department = hierarchyDefaults.department
+      else delete nextDetails.department
+      if (hierarchyDefaults.subDepartment) nextDetails['sub-department'] = hierarchyDefaults.subDepartment
+      else delete nextDetails['sub-department']
+      if (hierarchyDefaults.managerEmployeeId) {
+        nextDetails['manager employee id'] = hierarchyDefaults.managerEmployeeId
+      }
+      return buildProjectDescriptionFromIntentDrafts('hr_employee_profile', splitDescription.narrative, nextDetails)
+    })()
+
     setBusyKey(`project-move:${source.id}`)
     try {
       await updateWorkhubProject(source.id, {
@@ -2413,6 +2658,7 @@ export default function WorkHubPage() {
         sortOrder: Date.now(),
         visibility: inheritedAccess.visibility,
         memberUids: inheritedAccess.memberUids,
+        ...(employeeDescriptionPatch !== undefined ? { description: employeeDescriptionPatch } : {}),
       })
       if (inheritedAccess.visibility === 'restricted') {
         await applyRestrictedAccessToProjectBranch(source.id, inheritedAccess.memberUids)
@@ -2424,7 +2670,15 @@ export default function WorkHubPage() {
     } finally {
       setBusyKey('')
     }
-  }, [applyRestrictedAccessToProjectBranch, projectMoveDialogState, projects, resolveInheritedProjectAccess, showToast])
+  }, [
+    applyRestrictedAccessToProjectBranch,
+    projectMoveDialogState,
+    projects,
+    resolveInheritedProjectAccess,
+    selectedWorkspaceTemplateIntentSet,
+    showToast,
+    workspaceByIdForFiltering,
+  ])
 
   const handleMoveTaskToProject = useCallback(async (workspaceId: string, projectId: string) => {
     const pendingMove = taskMoveDialogState
@@ -2484,12 +2738,61 @@ export default function WorkHubPage() {
       }
     }
 
+    const resolveEmployeeHierarchyDefaults = (targetParentId: string | null) => {
+      const empty = { department: '', subDepartment: '', managerEmployeeId: '' }
+      if (!targetParentId) return empty
+      const projectById = new Map(projects.map((item) => [item.id, item]))
+      let department = ''
+      let subDepartment = ''
+      let managerEmployeeId = ''
+      let cursor: string | null = targetParentId
+      while (cursor) {
+        const node = projectById.get(cursor)
+        if (!node) break
+        const nodeIntent = resolveEffectiveProjectIntent(node, workspaceByIdForFiltering, selectedWorkspaceTemplateIntentSet)
+        if (!managerEmployeeId) {
+          managerEmployeeId = resolveSupervisorCandidateFromProject(node, nodeIntent)
+        }
+        if (!subDepartment && nodeIntent === 'hr_sub_department_unit') {
+          subDepartment = node.name.trim()
+          const subDepartmentDetails = splitTemplateDescriptionForIntent(nodeIntent, node.description || '').detailsByKey
+          if (!department) department = (subDepartmentDetails['parent department'] || subDepartmentDetails.department || '').trim()
+        }
+        if (!department && nodeIntent === 'hr_department_unit') {
+          department = node.name.trim()
+        }
+        cursor = node.parentProjectId || null
+      }
+      return {
+        department,
+        subDepartment,
+        managerEmployeeId,
+      }
+    }
+
     const inheritedAccess = resolveInheritedProjectAccess(
       targetParentProjectId,
       source.createdBy,
       source.visibility,
       source.memberUids || [],
     )
+    const sourceIntent = resolveEffectiveProjectIntent(source, workspaceByIdForFiltering, selectedWorkspaceTemplateIntentSet)
+    const isEmployeeProfileMove = sourceIntent === 'hr_employee_profile'
+    const hierarchyDefaults = isEmployeeProfileMove ? resolveEmployeeHierarchyDefaults(targetParentProjectId) : null
+    const employeeDescriptionPatch = (() => {
+      if (!isEmployeeProfileMove || !hierarchyDefaults) return undefined
+      const splitDescription = splitTemplateDescriptionForIntent('hr_employee_profile', source.description || '')
+      const nextDetails = { ...splitDescription.detailsByKey }
+      if (hierarchyDefaults.department) nextDetails.department = hierarchyDefaults.department
+      else delete nextDetails.department
+      if (hierarchyDefaults.subDepartment) nextDetails['sub-department'] = hierarchyDefaults.subDepartment
+      else delete nextDetails['sub-department']
+      if (hierarchyDefaults.managerEmployeeId) {
+        nextDetails['manager employee id'] = hierarchyDefaults.managerEmployeeId
+      }
+      return buildProjectDescriptionFromIntentDrafts('hr_employee_profile', splitDescription.narrative, nextDetails)
+    })()
+
     setBusyKey(`project-move:${source.id}`)
     try {
       await updateWorkhubProject(source.id, {
@@ -2497,6 +2800,7 @@ export default function WorkHubPage() {
         sortOrder: Date.now(),
         visibility: inheritedAccess.visibility,
         memberUids: inheritedAccess.memberUids,
+        ...(employeeDescriptionPatch !== undefined ? { description: employeeDescriptionPatch } : {}),
       })
       if (inheritedAccess.visibility === 'restricted') {
         await applyRestrictedAccessToProjectBranch(source.id, inheritedAccess.memberUids)
@@ -2507,7 +2811,14 @@ export default function WorkHubPage() {
     } finally {
       setBusyKey('')
     }
-  }, [applyRestrictedAccessToProjectBranch, projects, resolveInheritedProjectAccess, showToast])
+  }, [
+    applyRestrictedAccessToProjectBranch,
+    projects,
+    resolveInheritedProjectAccess,
+    selectedWorkspaceTemplateIntentSet,
+    showToast,
+    workspaceByIdForFiltering,
+  ])
 
   const handleQuickCreateProjectFromContext = useCallback(async (kind: 'project' | 'folder', parentProjectId = '') => {
     const localUid = auth.currentUser?.uid || currentUid
@@ -3767,6 +4078,20 @@ export default function WorkHubPage() {
         return 'Open requisitions'
       case 'hr_onboarding_track':
         return 'Onboarding tracks'
+      case 'hr_department_unit':
+        return 'Departments'
+      case 'hr_sub_department_unit':
+        return 'Sub-departments'
+      case 'hr_employee_profile':
+        return 'Employee profiles'
+      case 'hr_leave_case':
+        return 'Leave cases'
+      case 'hr_kpi_cycle':
+        return 'KPI cycles'
+      case 'hr_initiative_program':
+        return 'Initiative programs'
+      case 'hr_learning_certification':
+        return 'Learning records'
       default:
         return pluralizeDashboardSubjectLabel(selectedDashboardFocusMeta.subjectLabel)
     }
@@ -3869,6 +4194,69 @@ export default function WorkHubPage() {
       brief: (selectedProject.description || '').trim(),
     }
   }, [allClientById, selectedProject, selectedProjectDraftOwnerId, selectedWorkspaceProjectColorMeanings])
+  const selectedEmployeeProfileSummary = useMemo(() => {
+    if (!selectedProject) return null
+    if (selectedProjectEffectiveIntent !== 'hr_employee_profile') return null
+
+    const details = selectedProjectDraftOwnerId === selectedProject.id ? selectedProjectIntentDetailDrafts : {}
+    const detailValue = (...keys: string[]) => {
+      for (const key of keys) {
+        const value = (details[key] || '').trim()
+        if (value) return value
+      }
+      return ''
+    }
+
+    const annualAllowance = parseDetailNumber(detailValue('annual leave allowance', 'available leave days'))
+    const annualBalance = parseDetailNumber(detailValue('annual leave balance'))
+    const usedLeaveDirect = parseDetailNumber(detailValue('used leave days'))
+
+    const annualUsed = usedLeaveDirect !== null
+      ? usedLeaveDirect
+      : (annualAllowance !== null && annualBalance !== null
+        ? Math.max(annualAllowance - annualBalance, 0)
+        : null)
+
+    const annualRemaining = annualBalance !== null
+      ? Math.max(annualBalance, 0)
+      : (annualAllowance !== null && annualUsed !== null
+        ? Math.max(annualAllowance - annualUsed, 0)
+        : null)
+
+    return {
+      name: (selectedProjectNameDraft || selectedProject.name || '').trim() || 'Employee profile',
+      employeeId: detailValue('employee id', 'payroll id'),
+      position: detailValue('job title', 'role profile'),
+      department: detailValue('department'),
+      subDepartment: detailValue('sub-department'),
+      status: detailValue('employment status', 'employee status'),
+      workMode: detailValue('work mode'),
+      profilePhotoUrl: detailValue('profile photo url'),
+      cvLink: detailValue('cv link'),
+      idPassportUrl: detailValue('id passport url'),
+      certificationsUrl: detailValue('certification files url'),
+      annualAllowance,
+      annualUsed,
+      annualRemaining,
+    }
+  }, [
+    selectedProject,
+    selectedProjectDraftOwnerId,
+    selectedProjectEffectiveIntent,
+    selectedProjectIntentDetailDrafts,
+    selectedProjectNameDraft,
+  ])
+  useEffect(() => {
+    if (selectedProjectEffectiveIntent !== 'hr_employee_profile') return
+    if (activeSection === 'tasks') {
+      setActiveWorkspaceTab('dashboard')
+      setActiveSection('dashboard')
+    }
+    if (settingsProjectMainPanelView === 'tasks') {
+      setSettingsProjectMainPanelView('dashboard_with_details')
+    }
+  }, [activeSection, selectedProjectEffectiveIntent, settingsProjectMainPanelView])
+
   function renderDashboardProjectCard(project: WorkhubProject, depth = 0): JSX.Element {
     const intentMeta = projectIntentMetaById[project.id] || getTemplateCreationIntentMeta(resolveEffectiveProjectIntent(project, workspaceByIdForFiltering, selectedWorkspaceTemplateIntentSet), selectedWorkspaceTemplateId)
     const progress = workspaceTaskProgressByProjectId[project.id] || { done: 0, total: 0 }
@@ -5141,14 +5529,20 @@ export default function WorkHubPage() {
     workspaceId = selectedWorkspaceId,
     projectId: string = 'all',
   ) => {
-    setSelectedProjectId(projectId || 'all')
+    const nextProjectId = projectId || 'all'
+    const nextProjectIntent = nextProjectId !== 'all' ? (projectIntentById[nextProjectId] || 'project') : ''
+    const resolvedSection: WorkhubCanonicalSection = section === 'tasks' && nextProjectIntent === 'hr_employee_profile'
+      ? 'dashboard'
+      : section
+
+    setSelectedProjectId(nextProjectId)
     setSelectedNoteProjectId('')
     setSelectedDocumentId('')
     setSelectedMoodBoardId('')
     setSelectedTaskId('')
     setPendingNotificationDocument(null)
-    setActiveWorkspaceTab(section)
-    setActiveSection(section)
+    setActiveWorkspaceTab(resolvedSection)
+    setActiveSection(resolvedSection)
     setProjectsGroupExpanded(true)
     setSidebarCollapsed(false)
 
@@ -5161,13 +5555,12 @@ export default function WorkHubPage() {
     }
 
     setSelectedWorkspaceId(workspaceId)
-    const nextProjectId = projectId || 'all'
-    const nextPath = buildWorkhubPathname(workspaceId, nextProjectId, section)
+    const nextPath = buildWorkhubPathname(workspaceId, nextProjectId, resolvedSection)
     const currentPath = `${location.pathname}${location.search}`
     if (currentPath !== nextPath) {
       navigate(nextPath)
     }
-  }, [location.pathname, location.search, navigate, selectedWorkspaceId])
+  }, [location.pathname, location.search, navigate, projectIntentById, selectedWorkspaceId])
   const navigateToWorkspaceOverview = useCallback((workspaceId: string) => {
     navigateToWorkspaceSection('dashboard', workspaceId)
   }, [navigateToWorkspaceSection])
@@ -6468,7 +6861,11 @@ export default function WorkHubPage() {
     setSettingsFinancialProposalUrl(selectedAccessProject.financialProposalUrl || '')
     setSettingsProjectValueAmountDraft(String(resolveProjectMonetaryAmount(selectedAccessProject)))
     setSettingsProjectValueCurrencyDraft(normalizeMoneyCurrency(selectedAccessProject.valueCurrency))
-    setSettingsProjectMainPanelView(selectedAccessProject.mainPanelView || 'tasks')
+    setSettingsProjectMainPanelView(
+      selectedAccessProject.intent === 'hr_employee_profile' && selectedAccessProject.mainPanelView === 'tasks'
+        ? 'dashboard_with_details'
+        : (selectedAccessProject.mainPanelView || 'tasks'),
+    )
     setSettingsProjectTaskItemDisplayMode(selectedAccessProject.taskItemDisplayMode || 'inherit')
     setSettingsProjectTaskStatuses(
       Array.isArray(selectedAccessProject.taskStatuses) && selectedAccessProject.taskStatuses.length > 0
@@ -7248,7 +7645,8 @@ export default function WorkHubPage() {
       return
     }
     if (!visibleWorkspaceProjects[0] && selectedProjectId === 'all') {
-      showToast({ type: 'error', message: 'Create a project first.' })
+      const firstEntityLabel = selectedWorkspaceTemplateId === 'hr' ? 'organization unit' : 'project'
+      showToast({ type: 'error', message: `Create an ${firstEntityLabel} first.` })
       return
     }
     const targetProject = selectedProjectId !== 'all'
@@ -7256,7 +7654,12 @@ export default function WorkHubPage() {
       : selectedNoteProject || visibleWorkspaceProjects[0] || null
     const targetProjectId = targetProject?.id || ''
     if (!targetProjectId) {
-      showToast({ type: 'error', message: 'Pick a project for the task.' })
+      showToast({ type: 'error', message: 'Pick a folder or organization unit for the task.' })
+      return
+    }
+    const targetIntent = projectIntentById[targetProjectId] || 'project'
+    if (!canCreateTasksForIntent(targetIntent)) {
+      showToast({ type: 'warning', message: 'Employee profiles are records only. Tasks are disabled for employee profiles.' })
       return
     }
     const allowedAssigneeUids = new Set((assignableMembersByProjectId[targetProjectId] || workspaceAssignableMembers).map((item) => item.uid))
@@ -8104,6 +8507,9 @@ export default function WorkHubPage() {
     const requestedAccessMembers = canManageFolderHiddenFromSupporters
       ? normalizeMemberUids(accessMemberUids.filter((uid) => selectedAccessProjectRestrictedMemberUidSet.has(uid)))
       : normalizeMemberUids(selectedAccessProject.memberUids || [])
+    const normalizedSettingsMainPanelView = selectedAccessProjectEffectiveIntent === 'hr_employee_profile' && settingsProjectMainPanelView === 'tasks'
+      ? 'dashboard_with_details'
+      : settingsProjectMainPanelView
     const resolvedAccess = resolveInheritedProjectAccess(
       settingsProjectParentId || null,
       selectedAccessProject.createdBy,
@@ -8126,7 +8532,7 @@ export default function WorkHubPage() {
       priority: settingsProjectPriority,
       valueAmount: settingsValueAmount || 0,
       valueCurrency: settingsValueCurrency,
-      mainPanelView: settingsProjectMainPanelView,
+      mainPanelView: normalizedSettingsMainPanelView,
       tenderNumber: settingsProjectTenderNumber.trim(),
       proposalId: settingsProjectProposalId.trim(),
       technicalProposalUrl: settingsTechnicalProposalUrl.trim(),
@@ -8517,6 +8923,14 @@ export default function WorkHubPage() {
 
   function openCreateTaskDialog(projectId = '') {
     setQuickAddOpen(false)
+    const effectiveProjectId = projectId || (selectedProjectId !== 'all' ? selectedProjectId : '')
+    if (effectiveProjectId) {
+      const intent = projectIntentById[effectiveProjectId] || 'project'
+      if (!canCreateTasksForIntent(intent)) {
+        showToast({ type: 'warning', message: 'Employee profiles are records only. Tasks are disabled for employee profiles.' })
+        return
+      }
+    }
     if (projectId) {
       setSelectedProjectId(projectId)
       setSelectedNoteProjectId(projectId)
@@ -8629,6 +9043,41 @@ export default function WorkHubPage() {
         if (!requireField(draft.startDate, 'Onboarding start date is required.')) return
         if (!requireField(draft.deadline, 'Completion target is required.')) return
         break
+      case 'hr_department_unit':
+        if (!requireField(draft.departmentCode, 'Department code is required.')) return
+        break
+      case 'hr_sub_department_unit':
+        if (!requireField(draft.departmentCode, 'Sub-department code is required.')) return
+        if (!requireField(draft.parentDepartment, 'Parent department is required.')) return
+        break
+      case 'hr_employee_profile':
+        break
+      case 'hr_leave_case':
+        if (!requireField(draft.employeeId, 'Employee ID is required.')) return
+        if (!requireField(draft.leaveType, 'Leave type is required.')) return
+        if (!requireField(draft.approvalOwner, 'Approver is required.')) return
+        if (!requireField(draft.startDate, 'Leave start date is required.')) return
+        if (!requireField(draft.deadline, 'Return-to-work target is required.')) return
+        break
+      case 'hr_kpi_cycle':
+        if (!requireField(draft.cycleOwner, 'Cycle owner is required.')) return
+        if (!requireField(draft.department, 'Department is required.')) return
+        if (!requireField(draft.primaryKpi, 'Primary KPI is required.')) return
+        if (!requireField(draft.cadence, 'Review cadence is required.')) return
+        if (!requireField(draft.startDate, 'Cycle start date is required.')) return
+        if (!requireField(draft.deadline, 'Cycle close date is required.')) return
+        break
+      case 'hr_initiative_program':
+        if (!requireField(draft.cycleOwner, 'Program owner is required.')) return
+        if (!requireField(draft.programType, 'Program type is required.')) return
+        if (!requireField(draft.cadence, 'Cadence is required.')) return
+        break
+      case 'hr_learning_certification':
+        if (!requireField(draft.employeeId, 'Employee ID is required.')) return
+        if (!requireField(draft.certificationName, 'Certification name is required.')) return
+        if (!requireField(draft.certificationIssuer, 'Certification issuer is required.')) return
+        if (!requireField(draft.deadline, 'Renewal / expiry date is required.')) return
+        break
       default:
         break
     }
@@ -8638,11 +9087,78 @@ export default function WorkHubPage() {
       return
     }
 
+    if (templateCreateIntent === 'hr_employee_profile' && draft.hireDate.trim() && draft.exitDate.trim() && isStartAfterEnd(draft.hireDate.trim(), draft.exitDate.trim())) {
+      showToast({ type: 'error', message: 'Exit date cannot be earlier than hire date.' })
+      return
+    }
+
+    const resolvedParentProjectId = templateCreateParentProjectId || (selectedProjectId !== 'all' ? selectedProjectId : '')
+
+    if (templateCreateIntent === 'hr_sub_department_unit' && !resolvedParentProjectId) {
+      showToast({ type: 'error', message: 'Sub-departments must be created under a department or organization unit.' })
+      return
+    }
+
+    if (templateCreateIntent === 'hr_employee_profile') {
+      if (!resolvedParentProjectId) {
+        showToast({ type: 'error', message: 'Employee profiles must be created inside a department or sub-department.' })
+        return
+      }
+      const parentProject = projects.find((item) => item.id === resolvedParentProjectId)
+      const parentIntent = parentProject
+        ? resolveEffectiveProjectIntent(parentProject, workspaceByIdForFiltering, selectedWorkspaceTemplateIntentSet)
+        : 'project'
+      if (!['hr_department_unit', 'hr_sub_department_unit'].includes(parentIntent)) {
+        showToast({ type: 'error', message: 'Employee profiles can only be created under departments or sub-departments.' })
+        return
+      }
+    }
+
     const intentMeta = getTemplateCreationIntentMeta(templateCreateIntent, selectedWorkspaceTemplateId)
     const projectType = intentMeta.defaults.projectType
-    const description = buildTemplateCreationDescription(templateCreateIntent, draft)
+    const employeeHierarchyDefaults = (() => {
+      if (templateCreateIntent !== 'hr_employee_profile') return null
+      const projectById = new Map(projects.map((item) => [item.id, item]))
+      let department = ''
+      let subDepartment = ''
+      let managerEmployeeId = ''
+      let cursor: string | null = resolvedParentProjectId || null
+      while (cursor) {
+        const node = projectById.get(cursor)
+        if (!node) break
+        const nodeIntent = resolveEffectiveProjectIntent(node, workspaceByIdForFiltering, selectedWorkspaceTemplateIntentSet)
+        if (!managerEmployeeId) {
+          managerEmployeeId = resolveSupervisorCandidateFromProject(node, nodeIntent)
+        }
+        if (!subDepartment && nodeIntent === 'hr_sub_department_unit') {
+          subDepartment = node.name.trim()
+          const subDepartmentDetails = splitTemplateDescriptionForIntent(nodeIntent, node.description || '').detailsByKey
+          if (!department) department = (subDepartmentDetails['parent department'] || subDepartmentDetails.department || '').trim()
+        }
+        if (!department && nodeIntent === 'hr_department_unit') {
+          department = node.name.trim()
+        }
+        cursor = node.parentProjectId || null
+      }
+      return { department, subDepartment, managerEmployeeId }
+    })()
+
+    if (templateCreateIntent === 'hr_employee_profile' && !employeeHierarchyDefaults?.department.trim()) {
+      showToast({ type: 'error', message: 'Could not infer department from the selected parent. Move or create this profile under a department branch.' })
+      return
+    }
+
+    const descriptionDraft = templateCreateIntent === 'hr_employee_profile' && employeeHierarchyDefaults
+      ? {
+          ...draft,
+          department: employeeHierarchyDefaults.department,
+          subDepartment: employeeHierarchyDefaults.subDepartment,
+          managerEmployeeId: employeeHierarchyDefaults.managerEmployeeId || draft.managerEmployeeId,
+        }
+      : draft
+    const description = buildTemplateCreationDescription(templateCreateIntent, descriptionDraft)
     const projectSubject = intentMeta.subjectLabel
-    const resolvedParentProjectId = templateCreateParentProjectId || (selectedProjectId !== 'all' ? selectedProjectId : '')
+
     const inheritedAccess = resolveInheritedProjectAccess(
       resolvedParentProjectId || null,
       auth.currentUser.uid,
@@ -8672,6 +9188,7 @@ export default function WorkHubPage() {
         priority: draft.priority,
         clientId: draft.clientId.trim(),
         createdBy: auth.currentUser.uid,
+        ...(templateCreateIntent === 'hr_employee_profile' ? { mainPanelView: 'dashboard_with_details' as const } : {}),
       })
 
       await createWorkhubActivity({
@@ -9228,6 +9745,7 @@ export default function WorkHubPage() {
   }
 
   const sidebarTemplateTitle = selectedWorkspaceId ? selectedWorkspaceHomeTemplate.label : 'Workspace'
+  const isEmployeeProfileFocus = selectedProjectEffectiveIntent === 'hr_employee_profile'
 
   const workspaceDisplayNameById: Record<string, string> = {}
   visibleWorkspaces.forEach((workspace) => {
@@ -9243,13 +9761,15 @@ export default function WorkHubPage() {
       label: 'Home',
       onClick: () => navigateToWorkspaceSection('home'),
     },
-    {
-      id: 'tasks',
-      section: 'tasks' as const,
-      icon: '✓',
-      label: 'Tasks',
-      onClick: () => navigateToWorkspaceSection('tasks'),
-    },
+    ...(!isEmployeeProfileFocus
+      ? [{
+          id: 'tasks',
+          section: 'tasks' as const,
+          icon: '✓',
+          label: 'Tasks',
+          onClick: () => navigateToWorkspaceSection('tasks'),
+        }]
+      : []),
     {
       id: 'notes',
       section: 'notes' as const,
@@ -9286,8 +9806,16 @@ export default function WorkHubPage() {
   const workspaceTemplateCreateActionsBase: WorkhubWorkspaceTemplateCreateAction[] = selectedWorkspaceId
     ? resolveWorkspaceTemplateCreateActions(selectedWorkspaceTemplateId)
     : []
-  const workspaceProjectActionLabel = selectedWorkspaceTemplateId === 'projects' ? 'Add project' : 'Add folder'
-  const workspaceProjectActionIcon = selectedWorkspaceTemplateId === 'projects' ? '🚀' : '📁'
+  const workspaceProjectActionLabel = selectedWorkspaceTemplateId === 'projects'
+    ? 'Add project'
+    : selectedWorkspaceTemplateId === 'hr'
+      ? 'Add organization unit'
+      : 'Add folder'
+  const workspaceProjectActionIcon = selectedWorkspaceTemplateId === 'projects'
+    ? '🚀'
+    : selectedWorkspaceTemplateId === 'hr'
+      ? '🏛️'
+      : '📁'
 
   const workspaceTemplateCreateActions: WorkhubWorkspaceTemplateCreateAction[] = selectedWorkspaceId
     ? (() : WorkhubWorkspaceTemplateCreateAction[] => {
@@ -9310,6 +9838,17 @@ export default function WorkHubPage() {
       ]
     })()
     : []
+
+  const workspaceHierarchyGroupLabel = selectedWorkspaceTemplateId === 'hr'
+    ? 'Organization units'
+    : selectedWorkspaceTemplateId === 'projects'
+      ? 'Projects'
+      : 'Folders'
+  const workspaceHierarchyEmptyMessage = selectedWorkspaceTemplateId === 'hr'
+    ? 'No organization units found yet. Create a root organization unit or department first.'
+    : selectedWorkspaceTemplateId === 'projects'
+      ? 'No projects found yet. Create a project first.'
+      : 'No folders found yet. Create a folder first.'
 
   const sidebarTemplateActions: Array<{
     id: string
@@ -10186,7 +10725,7 @@ export default function WorkHubPage() {
                         >
                           <span className="workhub-tree-group-label">
                             <span className="workhub-tree-group-caret">{projectsGroupExpanded ? '▾' : '▸'}</span>
-                            <strong>Projects</strong>
+                            <strong>{workspaceHierarchyGroupLabel}</strong>
                           </span>
                           <small>{mirroredProjectRoots.length} root item{mirroredProjectRoots.length === 1 ? '' : 's'}</small>
                         </button>
@@ -10239,7 +10778,7 @@ export default function WorkHubPage() {
                               />
                             </div>
                           ) : (
-                            <div className="workhub-empty-state">No technical projects found yet. Create a project in a technical workspace first.</div>
+                            <div className="workhub-empty-state">{workspaceHierarchyEmptyMessage}</div>
                           )
                         )}
                       </div>
@@ -10463,18 +11002,18 @@ export default function WorkHubPage() {
                       )}
                       {!isMobileWorkhubLayout && (
                         <div className="workhub-home-actions">
-                          {selectedProject && <button className="workhub-primary-btn" onClick={() => openCreateProjectDialog(selectedProject.id)}>{`${selectedDashboardFocusMeta.icon} ${selectedDashboardFocusMeta.actionLabel}`}</button>}
-                          {selectedProject && <button className="workhub-ghost-btn" onClick={() => openCreateTaskDialog(selectedProject.id)}>✅ Add task</button>}
-                          {selectedProject && (workspaceTaskProgressByProjectId[selectedProject.id]?.total ?? 0) > 0 && (
+                          {selectedProject && !isEmployeeProfileFocus && <button className="workhub-primary-btn" onClick={() => openCreateProjectDialog(selectedProject.id)}>{`${selectedDashboardFocusMeta.icon} ${selectedDashboardFocusMeta.actionLabel}`}</button>}
+                          {selectedProject && !isEmployeeProfileFocus && canCreateTasksForIntent(projectIntentById[selectedProject.id] || 'project') && <button className="workhub-ghost-btn" onClick={() => openCreateTaskDialog(selectedProject.id)}>✅ Add task</button>}
+                          {selectedProject && !isEmployeeProfileFocus && (workspaceTaskProgressByProjectId[selectedProject.id]?.total ?? 0) > 0 && (
                             <button className="workhub-ghost-btn" onClick={() => navigateToWorkspaceSection('tasks', selectedWorkspaceId, selectedProject.id)}>View tasks</button>
                           )}
                         </div>
                       )}
                       {isMobileWorkhubLayout && (
                         <div className="workhub-mobile-dashboard-actions">
-                          {selectedProject && <button className="workhub-primary-btn" onClick={() => openCreateProjectDialog(selectedProject.id)}>{`${selectedDashboardFocusMeta.icon} ${selectedDashboardFocusMeta.actionLabel}`}</button>}
-                          {selectedProject && <button className="workhub-ghost-btn" onClick={() => openCreateTaskDialog(selectedProject.id)}>✅ Add task</button>}
-                          {selectedProject && (workspaceTaskProgressByProjectId[selectedProject.id]?.total ?? 0) > 0 && (
+                          {selectedProject && !isEmployeeProfileFocus && <button className="workhub-primary-btn" onClick={() => openCreateProjectDialog(selectedProject.id)}>{`${selectedDashboardFocusMeta.icon} ${selectedDashboardFocusMeta.actionLabel}`}</button>}
+                          {selectedProject && !isEmployeeProfileFocus && canCreateTasksForIntent(projectIntentById[selectedProject.id] || 'project') && <button className="workhub-ghost-btn" onClick={() => openCreateTaskDialog(selectedProject.id)}>✅ Add task</button>}
+                          {selectedProject && !isEmployeeProfileFocus && (workspaceTaskProgressByProjectId[selectedProject.id]?.total ?? 0) > 0 && (
                             <button className="workhub-ghost-btn" onClick={() => navigateToWorkspaceSection('tasks', selectedWorkspaceId, selectedProject.id)}>View tasks</button>
                           )}
                         </div>
@@ -10488,7 +11027,7 @@ export default function WorkHubPage() {
                       </div>
                       <div className="workhub-project-card-grid">
                         {selectedBranchChildProjects.map((project) => renderDashboardProjectCard(project, 0))}
-                        {selectedBranchChildProjects.length === 0 && <div className="workhub-empty-state">No child projects here yet.</div>}
+                        {selectedBranchChildProjects.length === 0 && <div className="workhub-empty-state">No child items here yet.</div>}
                       </div>
                     </div>
                   )}
@@ -10592,6 +11131,63 @@ export default function WorkHubPage() {
                             ))}
                           </div>
                         )}
+                      </article>
+                    </div>
+                  )}
+                  {selectedProject && selectedEmployeeProfileSummary && (
+                    <div className="workhub-overview-dashboard">
+                      <article className="workhub-overview-card workhub-employee-profile-card">
+                        <div className="workhub-overview-head workhub-employee-profile-head">
+                          <h3>Employee summary</h3>
+                          <span>{selectedEmployeeProfileSummary.status || 'Status not set'}</span>
+                        </div>
+
+                        <div className="workhub-employee-profile-identity">
+                          <div className="workhub-employee-photo-frame" aria-hidden="true">
+                            {selectedEmployeeProfileSummary.profilePhotoUrl
+                              ? <img src={selectedEmployeeProfileSummary.profilePhotoUrl} alt="Employee profile" loading="lazy" />
+                              : <span>{(selectedEmployeeProfileSummary.name || 'E').trim()[0]?.toUpperCase() || 'E'}</span>}
+                          </div>
+                          <div className="workhub-employee-identity-copy">
+                            <strong dir="auto">{selectedEmployeeProfileSummary.name}</strong>
+                            <span className="workhub-ltr-token">ID: {selectedEmployeeProfileSummary.employeeId || 'Not set'}</span>
+                            <span dir="auto">{selectedEmployeeProfileSummary.position || 'Position not set'}</span>
+                            <span dir="auto">{selectedEmployeeProfileSummary.department || 'Department not set'}{selectedEmployeeProfileSummary.subDepartment ? ` • ${selectedEmployeeProfileSummary.subDepartment}` : ''}</span>
+                          </div>
+                        </div>
+
+                        <div className="workhub-summary-strip workhub-employee-leave-strip">
+                          <div className="workhub-summary-tile workhub-employee-leave-tile">
+                            <strong>{selectedEmployeeProfileSummary.annualAllowance !== null ? selectedEmployeeProfileSummary.annualAllowance : '--'}</strong>
+                            <span>Annual leave total</span>
+                          </div>
+                          <div className="workhub-summary-tile workhub-employee-leave-tile">
+                            <strong>{selectedEmployeeProfileSummary.annualUsed !== null ? selectedEmployeeProfileSummary.annualUsed : '--'}</strong>
+                            <span>Used leaves</span>
+                          </div>
+                          <div className="workhub-summary-tile workhub-employee-leave-tile">
+                            <strong>{selectedEmployeeProfileSummary.annualRemaining !== null ? selectedEmployeeProfileSummary.annualRemaining : '--'}</strong>
+                            <span>Remaining leaves</span>
+                          </div>
+                        </div>
+
+                        <div className="workhub-employee-link-strip">
+                          {selectedEmployeeProfileSummary.cvLink && (
+                            <a href={selectedEmployeeProfileSummary.cvLink} target="_blank" rel="noreferrer" className="workhub-ghost-mini">CV</a>
+                          )}
+                          {selectedEmployeeProfileSummary.idPassportUrl && (
+                            <a href={selectedEmployeeProfileSummary.idPassportUrl} target="_blank" rel="noreferrer" className="workhub-ghost-mini">ID / Passport</a>
+                          )}
+                          {selectedEmployeeProfileSummary.certificationsUrl && (
+                            <a href={selectedEmployeeProfileSummary.certificationsUrl} target="_blank" rel="noreferrer" className="workhub-ghost-mini">Certifications</a>
+                          )}
+                        </div>
+
+                        <div className="workhub-home-actions">
+                          <button className="workhub-primary-btn" onClick={() => openTemplateCreateDialog('hr_leave_case', selectedProject.id)}>➕ Add leave</button>
+                          <button className="workhub-ghost-btn" onClick={() => openTemplateCreateDialog('hr_leave_case', selectedProject.id)}>✅ Approve leave</button>
+                          <button className="workhub-ghost-btn" onClick={() => setProjectAccessDialogId(selectedProject.id)}>Profile settings</button>
+                        </div>
                       </article>
                     </div>
                   )}
@@ -10806,7 +11402,7 @@ export default function WorkHubPage() {
                     </div>
                     <div className="workhub-project-card-grid">
                       {selectedBranchChildProjects.map((project) => renderDashboardProjectCard(project, 0))}
-                      {selectedBranchChildProjects.length === 0 && <div className="workhub-empty-state">No child projects here yet.</div>}
+                      {selectedBranchChildProjects.length === 0 && <div className="workhub-empty-state">No child items here yet.</div>}
                     </div>
                   </section>
                 )}
@@ -11030,7 +11626,7 @@ export default function WorkHubPage() {
           </Suspense>
         )}
 
-        {activeSection === 'tasks' && (
+        {activeSection === 'tasks' && !isEmployeeProfileFocus && (
           <Suspense
             fallback={(
               <main className="workhub-section-stack">
@@ -11085,19 +11681,21 @@ export default function WorkHubPage() {
                 <span aria-hidden="true">⌂</span>
                 <small>Home</small>
               </button>
-              <button
-                type="button"
-                className={`workhub-mobile-footer-btn${activeWorkspaceTab === 'tasks' ? ' is-active' : ''}`}
-                onClick={() => {
-                  setQuickAddOpen(false)
-                  navigateToWorkspaceSection('tasks')
-                }}
-                aria-label="Tasks"
-                title="Tasks"
-              >
-                <span aria-hidden="true">☑</span>
-                <small>Tasks</small>
-              </button>
+              {!isEmployeeProfileFocus && (
+                <button
+                  type="button"
+                  className={`workhub-mobile-footer-btn${activeWorkspaceTab === 'tasks' ? ' is-active' : ''}`}
+                  onClick={() => {
+                    setQuickAddOpen(false)
+                    navigateToWorkspaceSection('tasks')
+                  }}
+                  aria-label="Tasks"
+                  title="Tasks"
+                >
+                  <span aria-hidden="true">☑</span>
+                  <small>Tasks</small>
+                </button>
+              )}
               <button
                 type="button"
                 className="workhub-mobile-footer-btn workhub-mobile-footer-btn-quick"
@@ -11346,6 +11944,7 @@ export default function WorkHubPage() {
         <AddItemDialog
           isOpen={addItemDialogOpen}
           projectId={addItemProjectId}
+          canCreateTask={canCreateTasksForIntent(projectIntentById[addItemProjectId] || 'project')}
           onClose={closeAddItemDialog}
           onCreateTask={() => { void handleCreateItem('task') }}
           onCreateDocument={() => { void handleCreateItem('document') }}

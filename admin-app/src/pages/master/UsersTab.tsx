@@ -18,7 +18,7 @@ interface Props {
   error?: string | null
 }
 
-type StatusFilter = 'all' | 'active' | 'blocked' | 'deleted'
+type StatusFilter = 'all' | 'pending' | 'active' | 'blocked' | 'rejected' | 'deleted'
 type DisplayMode = 'clean' | 'detailed'
 
 const loadMoreBtnStyle: React.CSSProperties = {
@@ -83,13 +83,38 @@ export function UsersTab({ users, quizzes, sessions, dark, hasMore, loadingMore,
 
   const filterButtons: { key: StatusFilter; label: string; activeColor: string }[] = [
     { key: 'all',     label: 'All',          activeColor: '#2563eb' },
+    { key: 'pending', label: '🟠 Pending',   activeColor: '#d97706' },
     { key: 'active',  label: '✅ Active',    activeColor: '#16a34a' },
     { key: 'blocked', label: '🚫 Blocked',   activeColor: '#dc2626' },
+    { key: 'rejected', label: '❌ Rejected', activeColor: '#7f1d1d' },
     { key: 'deleted', label: '🗑️ Deleted',  activeColor: '#64748b' },
   ]
 
   return (
     <div>
+      <div style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+        <strong style={{ fontSize: '0.78rem', color: 'var(--text)' }}>Lab Access Status</strong>
+        <span
+          title="User status controls Lab and Studio access. For dedicated approval workflow, use the 'Lab Access' tab."
+          style={{
+            width: '1rem',
+            height: '1rem',
+            borderRadius: '50%',
+            border: '1px solid var(--border)',
+            color: 'var(--text-muted)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '0.65rem',
+            fontWeight: 700,
+            cursor: 'help',
+          }}
+          aria-label="Lab access policy tip"
+        >
+          i
+        </span>
+      </div>
+
       {/* ── Search + filter bar ── */}
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
         <input
@@ -245,7 +270,17 @@ function UserRow({ user: u, quizCount, totalPlays, totalPlayers, sessionsHosted,
     ? u.displayName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
     : (u.email?.[0] ?? '?').toUpperCase()
 
-  const statusColor = u._authOnly ? '#d97706' : u.status === 'blocked' ? '#dc2626' : u.status === 'deleted' ? '#64748b' : '#16a34a'
+  const statusColor = u._authOnly
+    ? '#d97706'
+    : u.status === 'pending'
+      ? '#d97706'
+      : u.status === 'blocked'
+        ? '#dc2626'
+        : u.status === 'rejected'
+          ? '#7f1d1d'
+          : u.status === 'deleted'
+            ? '#64748b'
+            : '#16a34a'
 
   const confirmBlock = () => show({
     title: 'Block User',
@@ -263,6 +298,15 @@ function UserRow({ user: u, quizCount, totalPlays, totalPlayers, sessionsHosted,
     cancelText: 'Cancel',
     isDangerous: true,
     onConfirm: () => setUserStatus(u.uid, 'deleted'),
+  })
+
+  const confirmReject = () => show({
+    title: 'Reject User Access',
+    message: `Reject ${u.displayName || u.email}? They will remain blocked from Lab until re-approved.`,
+    confirmText: 'Reject',
+    cancelText: 'Cancel',
+    isDangerous: true,
+    onConfirm: () => setUserStatus(u.uid, 'rejected'),
   })
 
   function handleGrantCredits() {
@@ -436,9 +480,24 @@ function UserRow({ user: u, quizCount, totalPlays, totalPlayers, sessionsHosted,
                     🚫 Block
                   </button>
                 )}
+                {u.status === 'pending' && (
+                  <button onClick={() => { setMenuOpen(false); void setUserStatus(u.uid, 'active') }} style={menuItemStyle('#16a34a')}>
+                    ✅ Approve Access
+                  </button>
+                )}
+                {u.status === 'pending' && (
+                  <button onClick={() => { setMenuOpen(false); confirmReject() }} style={menuItemStyle('#7f1d1d')}>
+                    ❌ Reject Access
+                  </button>
+                )}
                 {u.status === 'blocked' && (
                   <button onClick={() => { setMenuOpen(false); void setUserStatus(u.uid, 'active') }} style={menuItemStyle('#16a34a')}>
                     ✅ Unblock
+                  </button>
+                )}
+                {u.status === 'rejected' && (
+                  <button onClick={() => { setMenuOpen(false); void setUserStatus(u.uid, 'active') }} style={menuItemStyle('#16a34a')}>
+                    ✅ Approve Access
                   </button>
                 )}
                 {u.status === 'deleted' && (
