@@ -6,7 +6,7 @@ import { subscribeUserDoc, saveUserPrefs, type UserProfile } from '../lib/adminR
 import { useSubscription } from '../lib/useSubscription'
 import { useUserPrefs } from '../lib/UserPrefsContext'
 import { AvatarPickerDialog } from '../components/AvatarPickerDialog'
-import { createInvite, createOrg, subscribeToUserOrgs } from '../lib/studioService'
+import { createInvite, createOrg, createStudioInviteNotification, createStudioTestNotification, subscribeToUserOrgs } from '../lib/studioService'
 import { findUserByEmail } from '../lib/adminRepo'
 import type { OrgSummary } from '../types/studio'
 import './ProfilePage.css'
@@ -60,7 +60,8 @@ export function ProfilePage() {
     orgSelectLabel: isAr ? 'المنظمة' : 'Organization',
     inviteEmailLabel: isAr ? 'بريد العضو' : 'Member email',
     inviteEmailBtn: isAr ? 'إرسال دعوة' : 'Send invite',
-    inviteHint: isAr ? 'سيتم إرسال الدعوة بالبريد الإلكتروني من الخادم مباشرة.' : 'Invite email is sent server-side through the configured SMTP provider.',
+    notifyEmailBtn: isAr ? 'إرسال إشعار تجريبي' : 'Send test notification',
+    inviteHint: isAr ? 'اختبار بسيط: أرسل إشعارًا داخل التطبيق إلى الحساب المطابق لهذا البريد.' : 'Simple test: send an in-app notification to the account matching this email.',
     emailLabel: isAr ? 'البريد الإلكتروني' : 'Email',
     signInsLabel: isAr ? 'تسجيلات الدخول' : 'Sign-ins',
     platformLabel: isAr ? 'المنصة' : 'Platform',
@@ -185,7 +186,7 @@ export function ProfilePage() {
     setStudioMessage('')
     try {
       const recipient = await findUserByEmail(email)
-      await createInvite({
+      const invite = await createInvite({
         targetKind: 'org',
         targetId: selectedOrgId,
         orgId: selectedOrgId,
@@ -194,12 +195,53 @@ export function ProfilePage() {
         inviteeUid: recipient?.uid,
         invitedBy: user.uid,
       })
+      if (recipient?.uid) {
+        await createStudioInviteNotification({
+          recipientUid: recipient.uid,
+          createdBy: user.uid,
+          inviteId: invite.id,
+          inviteeEmail: email,
+        })
+      }
       setInviteEmail('')
       setStudioMessage(recipient
         ? (isAr ? 'تم إنشاء الدعوة وسيظهر إشعارها داخل التطبيق.' : 'Invite created and will appear in-app.')
         : (isAr ? 'تم إنشاء الدعوة لكن لم يتم العثور على حساب مطابق داخل التطبيق.' : 'Invite created, but no matching app user was found.'))
     } catch {
       setStudioMessage(isAr ? 'تعذر إرسال الدعوة الآن.' : 'Could not send invite right now.')
+    } finally {
+      setInviteBusy(false)
+    }
+  }
+
+  async function handleSendStudioTestNotification() {
+    if (!user) return
+    const email = inviteEmail.trim().toLowerCase()
+    if (!email || !email.includes('@')) {
+      setStudioMessage(isAr ? 'يرجى إدخال بريد إلكتروني صحيح.' : 'Please enter a valid email address.')
+      return
+    }
+
+    setInviteBusy(true)
+    setStudioMessage('')
+    try {
+      const recipient = await findUserByEmail(email)
+      if (!recipient?.uid) {
+        setStudioMessage(isAr ? 'لم يتم العثور على حساب مطابق لهذا البريد.' : 'No matching app user was found for this email.')
+        return
+      }
+
+      await createStudioTestNotification({
+        recipientUid: recipient.uid,
+        createdBy: user.uid,
+        title: isAr ? 'إشعار تجريبي' : 'Test notification',
+        message: isAr
+          ? `تم إرسال هذا الإشعار التجريبي إلى ${email}.`
+          : `This is a test notification sent to ${email}.`,
+      })
+      setStudioMessage(isAr ? 'تم إرسال الإشعار التجريبي.' : 'Test notification sent.')
+    } catch {
+      setStudioMessage(isAr ? 'تعذر إرسال الإشعار التجريبي الآن.' : 'Could not send test notification right now.')
     } finally {
       setInviteBusy(false)
     }
@@ -445,6 +487,13 @@ export function ProfilePage() {
             disabled={inviteBusy || !selectedOrgId}
           >
             {inviteBusy ? t.savingStr : t.inviteEmailBtn}
+          </button>
+          <button
+            className="profile-btn profile-btn-secondary"
+            onClick={handleSendStudioTestNotification}
+            disabled={inviteBusy}
+          >
+            {inviteBusy ? t.savingStr : t.notifyEmailBtn}
           </button>
         </div>
         <p className="profile-section-desc">{t.inviteHint}</p>

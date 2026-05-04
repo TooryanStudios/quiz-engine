@@ -13,6 +13,7 @@
  */
 
 import {
+  addDoc,
   arrayRemove,
   arrayUnion,
   collection,
@@ -36,6 +37,7 @@ import { db } from './firebase'
 import { functions } from './firebase'
 import type {
   FolderSummary,
+  FolderAccessScope,
   OrgMember,
   OrgRole,
   OrgSummary,
@@ -46,8 +48,11 @@ import type {
   StudioFolder,
   StudioInvite,
   StudioInviteFolderAccess,
+  StudioNotification,
   StudioOrg,
   StudioProject,
+  StudioReferenceAsset,
+  StudioReferenceAssetKind,
 } from '../types/studio'
 
 // ─── Collection references ────────────────────────────────────────────────────
@@ -67,6 +72,10 @@ const projectMemberDoc = (projectId: string, userId: string) =>
 
 const invitesCol = () => collection(db, 'studio_invites')
 const inviteDoc = (inviteId: string) => doc(db, 'studio_invites', inviteId)
+
+const studioNotificationsCol = () => collection(db, 'studio_notifications')
+const projectReferenceLibraryCol = (projectId: string) => collection(db, 'studio_projects', projectId, 'reference_library')
+const projectReferenceLibraryDoc = (projectId: string, itemId: string) => doc(db, 'studio_projects', projectId, 'reference_library', itemId)
 
 const foldersCol = (projectId: string) =>
   collection(db, 'studio_projects', projectId, 'folders')
@@ -296,6 +305,7 @@ export async function createProject(
   } = {
     userId: user.uid,
     role: 'owner',
+    folderScope: 'all',
     displayName: user.displayName,
     email: user.email,
     photoUrl: user.photoUrl,
@@ -448,6 +458,7 @@ export async function addProjectMember(
   member: { uid: string; displayName: string; email: string; photoUrl: string },
   role: ProjectRole,
   addedBy: string,
+  options?: { folderScope?: FolderAccessScope },
 ): Promise<void> {
   const now = serverTimestamp()
   const memberData: Omit<ProjectMember, 'addedAt'> & {
@@ -455,6 +466,7 @@ export async function addProjectMember(
   } = {
     userId: member.uid,
     role,
+    folderScope: options?.folderScope ?? 'all',
     displayName: member.displayName,
     email: member.email,
     photoUrl: member.photoUrl,
@@ -478,6 +490,14 @@ export async function setProjectMemberRole(
   role: ProjectRole,
 ): Promise<void> {
   await updateDoc(projectMemberDoc(projectId, userId), { role })
+}
+
+export async function setProjectMemberFolderScope(
+  projectId: string,
+  userId: string,
+  folderScope: FolderAccessScope,
+): Promise<void> {
+  await updateDoc(projectMemberDoc(projectId, userId), { folderScope })
 }
 
 /** Remove a member from a project. */
@@ -604,7 +624,6 @@ export function subscribePendingInvitesForRecipient(
 ): Unsubscribe {
   const uid = input.uid.trim()
   const email = (input.email || '').trim().toLowerCase()
-  console.log('[InviteDebug] subscribePendingInvitesForRecipient called', { uid, email })
   if (!uid && !email) {
     onData([])
     return () => undefined
@@ -618,9 +637,7 @@ export function subscribePendingInvitesForRecipient(
     current.clear()
     for (const invite of uidInvites) current.set(invite.id, invite)
     for (const invite of emailInvites) current.set(invite.id, invite)
-    const all = Array.from(current.values())
-    console.log('[InviteDebug] emit — uidInvites:', uidInvites.length, 'emailInvites:', emailInvites.length, 'total:', all.length, all)
-    onData(all)
+    onData(Array.from(current.values()))
   }
 
   const unsubscribers: Unsubscribe[] = []
@@ -628,11 +645,9 @@ export function subscribePendingInvitesForRecipient(
   if (uid) {
     const q = query(invitesCol(), where('inviteeUid', '==', uid), where('status', '==', 'pending'))
     unsubscribers.push(onSnapshot(q, (snap) => {
-      console.log('[InviteDebug] UID snapshot — docs:', snap.docs.length, snap.docs.map((d) => ({ id: d.id, ...d.data() })))
       uidInvites = snap.docs.map((d) => docData<StudioInvite>(d))
       emit()
-    }, (err) => {
-      console.error('[InviteDebug] UID query error:', err)
+    }, () => {
       uidInvites = []
       emit()
     }))
@@ -641,11 +656,9 @@ export function subscribePendingInvitesForRecipient(
   if (email) {
     const q = query(invitesCol(), where('inviteeEmail', '==', email), where('status', '==', 'pending'))
     unsubscribers.push(onSnapshot(q, (snap) => {
-      console.log('[InviteDebug] Email snapshot — docs:', snap.docs.length, snap.docs.map((d) => ({ id: d.id, ...d.data() })))
       emailInvites = snap.docs.map((d) => docData<StudioInvite>(d))
       emit()
-    }, (err) => {
-      console.error('[InviteDebug] Email query error:', err)
+    }, () => {
       emailInvites = []
       emit()
     }))
@@ -712,6 +725,7 @@ export async function acceptInvite(
       } = {
         userId: user.uid,
         role: projectRole,
+        folderScope: folderRefs.length > 0 ? 'restricted' : 'all',
         displayName: user.displayName,
         email: user.email,
         photoUrl: user.photoUrl,
@@ -730,6 +744,7 @@ export async function acceptInvite(
       const folderSnap = await tx.get(folderRefDoc)
       if (folderSnap.exists()) {
         tx.update(folderRefDoc, {
+          viewerUids: arrayUnion(user.uid),
           allowedMemberUids: arrayUnion(user.uid),
         })
       }
@@ -743,6 +758,138 @@ export async function updateInviteStatus(
   status: 'declined' | 'expired',
 ): Promise<void> {
   await updateDoc(inviteDoc(inviteId), { status })
+}
+
+/** Load a single invite document by ID. */
+export async function getInviteById(inviteId: string): Promise<StudioInvite | null> {
+  const snap = await getDoc(inviteDoc(inviteId))
+  if (!snap.exists()) return null
+  return docData<StudioInvite>(snap)
+}
+
+// ─── Studio Notifications ─────────────────────────────────────────────────────
+// Same pattern as WorkHub notifications: one document per recipient, keyed by
+// recipientUid. Single-field query — no composite index required.
+
+/** Subscribe to pending studio notifications for the current user. */
+export function subscribeStudioNotifications(
+  recipientUid: string,
+  onData: (items: StudioNotification[]) => void,
+): Unsubscribe {
+  if (!recipientUid) {
+    onData([])
+    return () => undefined
+  }
+  const q = query(studioNotificationsCol(), where('recipientUid', '==', recipientUid))
+  return onSnapshot(
+    q,
+    (snap) => {
+      onData(snap.docs.map((d) => docData<StudioNotification>(d)))
+    },
+    (err) => {
+      console.error('[StudioNotif] subscription error:', err)
+      onData([])
+    },
+  )
+}
+
+/** Write a studio_notifications document to alert the invitee. Called by the invite sender. */
+export async function createStudioInviteNotification(input: {
+  recipientUid: string
+  createdBy: string
+  inviteId: string
+  inviteeEmail: string
+  inviteeDisplayName?: string
+  targetProjectIds?: string[]
+  targetFolderRefs?: StudioInviteFolderAccess[]
+}): Promise<void> {
+  await addDoc(studioNotificationsCol(), {
+    recipientUid: input.recipientUid,
+    createdBy: input.createdBy,
+    type: 'studio_invite',
+    inviteId: input.inviteId,
+    inviteeEmail: input.inviteeEmail,
+    ...(input.inviteeDisplayName ? { inviteeDisplayName: input.inviteeDisplayName } : {}),
+    ...(input.targetProjectIds?.length ? { targetProjectIds: input.targetProjectIds } : {}),
+    ...(input.targetFolderRefs?.length ? { targetFolderRefs: input.targetFolderRefs } : {}),
+    read: false,
+    createdAt: serverTimestamp(),
+  })
+}
+
+export async function createStudioTestNotification(input: {
+  recipientUid: string
+  createdBy: string
+  title?: string
+  message: string
+}): Promise<void> {
+  await addDoc(studioNotificationsCol(), {
+    recipientUid: input.recipientUid,
+    createdBy: input.createdBy,
+    type: 'studio_test',
+    ...(input.title ? { title: input.title } : {}),
+    message: input.message,
+    read: false,
+    createdAt: serverTimestamp(),
+  })
+}
+
+/** Mark a studio notification as read (or delete it after accept/decline). */
+export async function deleteStudioNotification(notificationId: string): Promise<void> {
+  await deleteDoc(doc(studioNotificationsCol(), notificationId))
+}
+
+// ─── Project Reference Library ───────────────────────────────────────────────
+
+export function subscribeToProjectReferenceLibrary(
+  projectId: string,
+  onData: (items: StudioReferenceAsset[]) => void,
+  onError?: (error: Error) => void,
+): Unsubscribe {
+  return onSnapshot(
+    projectReferenceLibraryCol(projectId),
+    (snap) => {
+      const items = snap.docs
+        .map((docSnap) => docData<StudioReferenceAsset>(docSnap))
+        .sort((left, right) => {
+          const leftAt = left.createdAt instanceof Timestamp ? left.createdAt.toMillis() : 0
+          const rightAt = right.createdAt instanceof Timestamp ? right.createdAt.toMillis() : 0
+          return rightAt - leftAt
+        })
+      onData(items)
+    },
+    (err) => onError?.(err),
+  )
+}
+
+export async function saveProjectReferenceLibraryItem(
+  projectId: string,
+  item: { id: string; kind: StudioReferenceAssetKind; url: string; name: string; createdAt: number },
+  createdBy: string,
+): Promise<void> {
+  await setDoc(projectReferenceLibraryDoc(projectId, item.id), {
+    projectId,
+    kind: item.kind,
+    url: item.url,
+    name: item.name,
+    createdBy,
+    createdAt: Timestamp.fromMillis(item.createdAt),
+  })
+}
+
+export async function renameProjectReferenceLibraryItem(
+  projectId: string,
+  itemId: string,
+  name: string,
+): Promise<void> {
+  await updateDoc(projectReferenceLibraryDoc(projectId, itemId), { name: name.trim() || 'Reference asset' })
+}
+
+export async function deleteProjectReferenceLibraryItem(
+  projectId: string,
+  itemId: string,
+): Promise<void> {
+  await deleteDoc(projectReferenceLibraryDoc(projectId, itemId))
 }
 
 // ─── Folders ───────────────────────────────────────────────────────────────────
@@ -760,11 +907,18 @@ export async function createFolder(
 ): Promise<FolderSummary> {
   const ref = doc(foldersCol(input.projectId))
   const now = serverTimestamp()
+  const membersSnap = await getDocs(projectMembersCol(input.projectId))
+  const viewerUids = Array.from(new Set(membersSnap.docs
+    .map((snap) => snap.data() as Partial<ProjectMember>)
+    .filter((member) => member.role === 'owner' || member.role === 'editor' || (member.folderScope ?? 'all') === 'all')
+    .map((member) => String(member.userId || '').trim())
+    .filter(Boolean)))
   await setDoc(ref, {
     projectId: input.projectId,
     name: input.name,
     parentId: input.parentId ?? null,
     createdBy: userId,
+    viewerUids,
     allowedMemberUids: [],
     hiddenMemberUids: [],
     createdAt: now,
@@ -777,6 +931,7 @@ export async function createFolder(
     name: d.name,
     parentId: d.parentId,
     createdBy: d.createdBy,
+    viewerUids: Array.isArray(d.viewerUids) ? d.viewerUids : [],
     allowedMemberUids: Array.isArray(d.allowedMemberUids) ? d.allowedMemberUids : [],
     hiddenMemberUids: Array.isArray(d.hiddenMemberUids) ? d.hiddenMemberUids : [],
     createdAt: d.createdAt instanceof Timestamp ? d.createdAt.toMillis() : Date.now(),
@@ -814,20 +969,28 @@ export async function setFolderMemberVisibility(
   visibility: 'default' | 'allowed' | 'hidden',
 ): Promise<void> {
   const ref = folderDoc(projectId, folderId)
+  const memberRef = projectMemberDoc(projectId, userId)
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(ref)
     if (!snap.exists()) {
       throw new Error('Folder not found.')
     }
+    const memberSnap = await tx.get(memberRef)
 
     const data = snap.data() as Partial<StudioFolder>
+    const memberData = memberSnap.exists() ? memberSnap.data() as Partial<ProjectMember> : null
+    const memberFolderScope = memberData?.folderScope ?? 'all'
+    const viewers = Array.isArray(data.viewerUids) ? data.viewerUids.filter((uid) => uid && uid !== userId) : []
     const allowed = Array.isArray(data.allowedMemberUids) ? data.allowedMemberUids.filter((uid) => uid && uid !== userId) : []
     const hidden = Array.isArray(data.hiddenMemberUids) ? data.hiddenMemberUids.filter((uid) => uid && uid !== userId) : []
 
     if (visibility === 'allowed') allowed.push(userId)
     if (visibility === 'hidden') hidden.push(userId)
+    if (visibility === 'allowed') viewers.push(userId)
+    if (visibility === 'default' && memberFolderScope !== 'restricted') viewers.push(userId)
 
     tx.update(ref, {
+      viewerUids: Array.from(new Set(viewers)),
       allowedMemberUids: Array.from(new Set(allowed)),
       hiddenMemberUids: Array.from(new Set(hidden)),
     })
@@ -842,10 +1005,14 @@ export async function deleteFolder(projectId: string, folderId: string): Promise
 /** Subscribe to all folders in a project, ordered by creation time. */
 export function subscribeToProjectFolders(
   projectId: string,
+  access: { userId: string; role: ProjectRole | null },
   onResult: (folders: FolderSummary[]) => void,
   onError?: (error: Error) => void,
 ): Unsubscribe {
-  const q = query(foldersCol(projectId), orderBy('createdAt'))
+  const canReadAllFolders = access.role === 'owner' || access.role === 'editor'
+  const q = canReadAllFolders
+    ? query(foldersCol(projectId), orderBy('createdAt'))
+    : query(foldersCol(projectId), where('viewerUids', 'array-contains', access.userId))
   return onSnapshot(
     q,
     (snap) => {
@@ -857,11 +1024,12 @@ export function subscribeToProjectFolders(
           name: data.name,
           parentId: data.parentId,
           createdBy: data.createdBy,
+          viewerUids: Array.isArray(data.viewerUids) ? data.viewerUids : [],
           allowedMemberUids: Array.isArray(data.allowedMemberUids) ? data.allowedMemberUids : [],
           hiddenMemberUids: Array.isArray(data.hiddenMemberUids) ? data.hiddenMemberUids : [],
           createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : Date.now(),
         }
-      })
+      }).sort((left, right) => left.createdAt - right.createdAt)
       onResult(folders)
     },
     (err) => onError?.(err),

@@ -247,8 +247,10 @@ export function StudioProvider({
     }
 
     setFoldersLoading(true)
+    const activeProjectRole = projects.find((item) => item.id === activeProjectId)?.role || null
     foldersUnsubRef.current = subscribeToProjectFolders(
       activeProjectId,
+      { userId: user.uid, role: activeProjectRole },
       (next) => { setFolders(next); setFoldersLoading(false) },
       (err) => { setError(err.message); setFoldersLoading(false) },
     )
@@ -266,7 +268,7 @@ export function StudioProvider({
       membersUnsubRef.current?.()
       membersUnsubRef.current = null
     }
-  }, [activeProjectId])
+  }, [activeProjectId, projects, user.uid])
 
   // Derived selectors
   const activeOrg = useMemo(

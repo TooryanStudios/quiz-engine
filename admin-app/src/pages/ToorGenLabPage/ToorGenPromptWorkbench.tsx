@@ -1,17 +1,21 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, startTransition, type KeyboardEvent, type MouseEvent, type SyntheticEvent } from 'react'
+﻿import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, startTransition, type KeyboardEvent, type MouseEvent, type SyntheticEvent } from 'react'
 import { onAuthStateChanged } from 'firebase/auth'
 import { collection, deleteDoc, doc, getDocs, limit, orderBy, query, serverTimestamp, setDoc } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
 import { auth, db, storage } from '../../lib/firebase'
 import { findUserByEmail, loadUserPrefs, saveUserPrefs } from '../../lib/adminRepo'
 import {
+  addProjectMember,
   createFolder,
-  createInvite,
   createProject,
+  deleteProjectReferenceLibraryItem,
   deleteFolder,
   deleteStudioProject,
+  renameProjectReferenceLibraryItem,
   removeProjectMember,
+  saveProjectReferenceLibraryItem,
   setFolderMemberVisibility,
+  subscribeToProjectReferenceLibrary,
   subscribeToProjectFolders,
   subscribeToProjectMembers,
   subscribeToUserProjects,
@@ -21,7 +25,8 @@ import {
 import { ContentEditablePrompt } from '../../components/ContentEditablePrompt/ContentEditablePrompt'
 import { getCaretOffset, setCaretOffset } from '../../components/ContentEditablePrompt/utils'
 import type { ResolvedMentionReference } from '../../components/ContentEditablePrompt/types'
-import type { FolderSummary, ProjectMember, ProjectSummary } from '../../types/studio'
+import type { FolderSummary, ProjectMember, ProjectSummary, StudioReferenceAsset } from '../../types/studio'
+import { StudioDialog } from './StudioDialog'
 import { MiniVideoPlaylist } from './MiniVideoPlaylist'
 import { MSEVideoSequencerPage } from '../MSEVideoSequencerPage'
 import { CloudUpload, Download, FilePenLine, Heart, Info, RotateCcw } from 'lucide-react'
@@ -34,6 +39,7 @@ const LOCAL_DRAFT_STORAGE_KEY = 'toorgen-prompt-lab-draft-v3'
 const LOCAL_HISTORY_STORAGE_KEY = 'toorgen-prompt-lab-history-v3'
 const SHARED_REFERENCE_LIBRARY_KEY = 'toorgen_reference_library_v1'
 const CAPTURED_VIDEO_FRAMES_KEY = 'toorgen_video_frames_v1'
+const STORY_BIBLE_STORAGE_KEY = 'toorgen_story_bible_v1'
 const DIRECT_REQUEST_PRESETS_KEY = 'toorgen_direct_request_presets_v1'
 const DIRECT_JSON_DRAFT_KEY = 'toorgen_direct_json_draft_v1'
 const PENDING_TASKS_KEY = 'toorgen_pending_tasks_v1'
@@ -46,6 +52,13 @@ const MAX_HISTORY_ITEMS = 80
 const AUTO_REMOTE_COPY_RETRY_DELAY_MS = 5000
 const MAX_AUTO_REMOTE_COPY_RETRIES = 1
 const OVERLAY_AUTO_HIDE_IDLE_MS = 5000
+const PROMPT_INPUT_TEMP_DISABLED = false
+const MENTION_RESOLUTION_TEMP_DISABLED = true
+const COMPOSER_RESIZE_TEMP_DISABLED = false
+// Per-section isolation flags (set to true = disabled placeholder, false = real content)
+const MAIN_PANEL_DISABLED = false
+const COMPOSER_RAIL_DISABLED = false
+const PERF_METRICS_LOGGER_ENABLED = true
 
 type ProviderId = 'byteplus' | 'atlas' | 'grok'
 type MediaKind = 'image' | 'video' | 'audio'
@@ -178,6 +191,7 @@ type MediaLibraryItem = {
   url: string
   name: string
   createdAt: number
+  projectId?: string
 }
 
 type DirectRequestPreset = {
@@ -185,6 +199,32 @@ type DirectRequestPreset = {
   name: string
   json: string
   createdAt: number
+}
+
+type DirectPanelTab = 'story' | 'direct'
+
+type StoryBibleEpisode = {
+  id: string
+  title: string
+  section: string
+  scenarios: string[]
+  dialogs: string[]
+  characters: string[]
+}
+
+type StoryBibleChapter = {
+  id: string
+  title: string
+  summary: string
+  folderId: string
+  episodeIds: string[]
+}
+
+type StoryBibleData = {
+  title: string
+  summary: string
+  chapters: StoryBibleChapter[]
+  episodes: StoryBibleEpisode[]
 }
 
 type DraftModeState = {
@@ -354,11 +394,11 @@ const VIDEO_OPTION_PRESETS: VideoOptionPreset[] = [
 ]
 
 const WORKFLOW_GROUP_ICONS: Record<string, string> = {
-  'Core Workflows': '🎬',
-  'Text Rendering': '📝',
-  'Image Reference': '🖼️',
-  'Video Reference': '🎥',
-  'Video Editing': '✂️',
+  'Core Workflows': 'CW',
+  'Text Rendering': 'TX',
+  'Image Reference': 'IM',
+  'Video Reference': 'VD',
+  'Video Editing': 'ED',
 }
 
 const WORKFLOW_FILTER_GROUPS: Record<'all' | 'text' | 'video' | 'image', string[] | null> = {
@@ -778,7 +818,7 @@ const TABS: PromptTab[] = [
     requestMode: 'image-to-video',
     promptTemplate: 'Use Images 1-3 to guide the sequence of a [room fight and acrobatics].',
     examplePrompt: 'Use Images 1 to 3 to map the choreography. Wisam starts on the floor, jumps onto his desk, and backflips to dodge the book, looking terrified then relieved.',
-    documentPrompt: 'Utilize the provided image sequence to direct a complex combat animation inside Wisam\'s room. He begins cornered on the floor, vaults onto his desk—disturbing a glowing computer screen showing small germs—and executes a dramatic backflip to evade the magical book. The character should transition dynamically from intense fear to breathless relief.',
+    documentPrompt: 'Utilize the provided image sequence to direct a complex combat animation inside Wisam\'s room. He begins cornered on the floor, vaults onto his deskâ€”disturbing a glowing computer screen showing small germsâ€”and executes a dramatic backflip to evade the magical book. The character should transition dynamically from intense fear to breathless relief.',
     promptPlaceholder: 'Describe how the image sequence should shape the output...',
     fields: [
       {
@@ -970,7 +1010,7 @@ const TABS: PromptTab[] = [
     requestMode: 'reference-to-video',
     promptTemplate: 'Use Video 1 to track [text/germs] onto [a surface in Wisam room].',
     examplePrompt: 'Track Video 1\'s monitor. Overlay moving germs on the computer screen while Wisam fights the book in the foreground.',
-    documentPrompt: 'Perform a precise surface track on the computer screen present in Wisam\'s bedroom from Video 1. Composite a layer of moving, animated germs onto the screen so they stay locked during the camera movement. The foreground action—Wisam\'s complex fight with the magical book—should remain untouched.',
+    documentPrompt: 'Perform a precise surface track on the computer screen present in Wisam\'s bedroom from Video 1. Composite a layer of moving, animated germs onto the screen so they stay locked during the camera movement. The foreground actionâ€”Wisam\'s complex fight with the magical bookâ€”should remain untouched.',
     promptPlaceholder: 'Describe the tracked subject and the scene changes around it...',
     primaryVideoKey: 'video1',
     fields: [
@@ -1516,6 +1556,7 @@ const parseMediaLibraryItem = (value: unknown): MediaLibraryItem | null => {
     url,
     name: typeof value.name === 'string' && value.name.trim() ? value.name : `Reference ${kind}`,
     createdAt,
+    projectId: typeof value.projectId === 'string' && value.projectId.trim() ? value.projectId.trim() : undefined,
   }
 }
 
@@ -1534,6 +1575,21 @@ const readLocalMediaLibrary = (): MediaLibraryItem[] => {
     return []
   }
 }
+
+const writeLocalMediaLibrary = (items: MediaLibraryItem[]) => {
+  safeSetLocalStorage(SHARED_REFERENCE_LIBRARY_KEY, JSON.stringify(items))
+}
+
+const toMediaLibraryItem = (item: StudioReferenceAsset): MediaLibraryItem => ({
+  id: item.id,
+  kind: item.kind,
+  url: item.url,
+  name: item.name,
+  createdAt: typeof (item.createdAt as { toMillis?: () => number } | undefined)?.toMillis === 'function'
+    ? (item.createdAt as { toMillis: () => number }).toMillis()
+    : Date.now(),
+  projectId: item.projectId,
+})
 
 const parseCapturedVideoFrame = (value: unknown): CapturedVideoFrame | null => {
   if (!isRecord(value)) return null
@@ -1981,6 +2037,102 @@ const normalizeProviderHint = (value: unknown): ProviderId | '' => {
   return ''
 }
 
+const normalizeModelForProvider = (
+  provider: ProviderId,
+  value: unknown,
+  fallback?: string,
+): string => {
+  const options = PROVIDER_MODELS[provider] as readonly string[]
+  const fallbackModel = fallback && options.includes(fallback) ? fallback : options[0]
+  if (typeof value !== 'string') return fallbackModel
+  const raw = value.trim()
+  if (!raw) return fallbackModel
+  if (options.includes(raw)) return raw
+
+  const lower = raw.toLowerCase()
+  const directMatch = options.find((option) => lower.includes(option.toLowerCase()))
+  if (directMatch) return directMatch
+
+  if (provider === 'atlas') {
+    if (lower.includes('seedance-2.0-fast')) return 'seedance-2.0-fast'
+    if (lower.includes('atlas-2.0') || lower.includes('seedance-2.0')) return 'atlas-2.0'
+  }
+  if (provider === 'byteplus') {
+    if (lower.includes('dreamina-seedance-2-0')) return 'dreamina-seedance-2-0-260128'
+    if (lower.includes('seedance-1-5-pro')) return 'dreamina-seedance-1-5-pro-250528'
+    if (lower.includes('seedance-1-5-lite')) return 'dreamina-seedance-1-5-lite-250528'
+    if (lower.includes('seedance-2.0-fast')) return 'seedance-2.0-fast'
+  }
+  if (provider === 'grok' && lower.includes('grok')) {
+    return 'grok-imagine-video'
+  }
+
+  return fallbackModel
+}
+
+const normalizeStoryBibleEpisode = (value: unknown, index: number): StoryBibleEpisode | null => {
+  if (!isRecord(value)) return null
+  const id = firstNonEmptyString(value.id, `episode-${index + 1}`)
+  const title = firstNonEmptyString(value.title, `Episode ${index + 1}`)
+  const section = firstNonEmptyString(value.section, value.storySection, '')
+  const toList = (input: unknown): string[] => (Array.isArray(input) ? input.map((item) => String(item || '').trim()).filter(Boolean) : [])
+  return {
+    id,
+    title,
+    section,
+    scenarios: toList(value.scenarios),
+    dialogs: toList(value.dialogs),
+    characters: toList(value.characters),
+  }
+}
+
+const normalizeStoryBibleChapter = (value: unknown, index: number): StoryBibleChapter | null => {
+  if (!isRecord(value)) return null
+  const id = firstNonEmptyString(value.id, `chapter-${index + 1}`)
+  const title = firstNonEmptyString(value.title, `Chapter ${index + 1}`)
+  const summary = firstNonEmptyString(value.summary, '')
+  const folderId = firstNonEmptyString(value.folderId, value.linkedFolderId, '')
+  const episodeIds = Array.isArray(value.episodeIds)
+    ? value.episodeIds.map((item) => String(item || '').trim()).filter(Boolean)
+    : []
+  return { id, title, summary, folderId, episodeIds }
+}
+
+const readStoryBibleData = (projectId: string | null): StoryBibleData => {
+  if (typeof window === 'undefined') {
+    return { title: '', summary: '', chapters: [], episodes: [] }
+  }
+
+  const scopedKey = projectId ? `${STORY_BIBLE_STORAGE_KEY}:${projectId}` : STORY_BIBLE_STORAGE_KEY
+  const raw = window.localStorage.getItem(scopedKey) || window.localStorage.getItem(STORY_BIBLE_STORAGE_KEY)
+  if (!raw) {
+    return { title: '', summary: '', chapters: [], episodes: [] }
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!isRecord(parsed)) return { title: '', summary: '', chapters: [], episodes: [] }
+    const chapters = Array.isArray(parsed.chapters)
+      ? parsed.chapters
+        .map((entry, index) => normalizeStoryBibleChapter(entry, index))
+        .filter((entry): entry is StoryBibleChapter => Boolean(entry))
+      : []
+    const episodes = Array.isArray(parsed.episodes)
+      ? parsed.episodes
+        .map((entry, index) => normalizeStoryBibleEpisode(entry, index))
+        .filter((entry): entry is StoryBibleEpisode => Boolean(entry))
+      : []
+    return {
+      title: firstNonEmptyString(parsed.title, ''),
+      summary: firstNonEmptyString(parsed.summary, ''),
+      chapters,
+      episodes,
+    }
+  } catch {
+    return { title: '', summary: '', chapters: [], episodes: [] }
+  }
+}
+
 const inferProviderForRequest = (
   endpoint: string,
   requestBody: Record<string, unknown>,
@@ -2199,7 +2351,7 @@ const saveTaskToFirestore = async (task: PersistedPendingTask): Promise<void> =>
       { ...task, uid, updatedAt: serverTimestamp() },
     )
   } catch {
-    // non-critical — localStorage is the primary store
+    // non-critical â€” localStorage is the primary store
   }
 }
 
@@ -2616,12 +2768,86 @@ const saveHistoryToFirestore = async (entry: GenerationHistoryEntry) => {
   await setDoc(doc(db, 'users', uid, FIRESTORE_HISTORY_COLLECTION, entry.historyId), payload, { merge: true })
 }
 
+// ─── Thumbnail poster cache (IndexedDB) ──────────────────────────────────────
+const THUMB_DB_NAME = 'toorgen_thumb_cache_v1'
+const THUMB_STORE_NAME = 'thumbs'
+const MAX_THUMB_CACHE_ITEMS = 180
+
+const openThumbDB = (): Promise<IDBDatabase> =>
+  new Promise((resolve, reject) => {
+    const req = indexedDB.open(THUMB_DB_NAME, 1)
+    req.onupgradeneeded = (e) => {
+      const idb = (e.target as IDBOpenDBRequest).result
+      if (!idb.objectStoreNames.contains(THUMB_STORE_NAME)) {
+        idb.createObjectStore(THUMB_STORE_NAME, { keyPath: 'url' })
+      }
+    }
+    req.onsuccess = () => resolve(req.result)
+    req.onerror = () => reject(req.error)
+  })
+
+const readAllThumbsFromDB = async (): Promise<Map<string, string>> => {
+  try {
+    const idb = await openThumbDB()
+    return new Promise((resolve) => {
+      const tx = idb.transaction(THUMB_STORE_NAME, 'readonly')
+      const req = tx.objectStore(THUMB_STORE_NAME).getAll()
+      req.onsuccess = () => {
+        const map = new Map<string, string>()
+        for (const row of req.result as Array<{ url: string; dataUrl: string }>) {
+          if (row.url && row.dataUrl) map.set(row.url, row.dataUrl)
+        }
+        resolve(map)
+      }
+      req.onerror = () => resolve(new Map())
+    })
+  } catch {
+    return new Map()
+  }
+}
+
+const writeThumbToDB = async (url: string, dataUrl: string): Promise<void> => {
+  try {
+    const idb = await openThumbDB()
+    const tx = idb.transaction(THUMB_STORE_NAME, 'readwrite')
+    tx.objectStore(THUMB_STORE_NAME).put({ url, dataUrl, cachedAt: Date.now() })
+    tx.oncomplete = () => {
+      void (async () => {
+        try {
+          const pruneDb = await openThumbDB()
+          const readTx = pruneDb.transaction(THUMB_STORE_NAME, 'readonly')
+          const readReq = readTx.objectStore(THUMB_STORE_NAME).getAll()
+          readReq.onsuccess = () => {
+            const rows = (readReq.result as Array<{ url: string; cachedAt?: number }>)
+              .filter((row) => typeof row.url === 'string' && row.url)
+              .sort((left, right) => (right.cachedAt || 0) - (left.cachedAt || 0))
+            if (rows.length <= MAX_THUMB_CACHE_ITEMS) return
+
+            const staleRows = rows.slice(MAX_THUMB_CACHE_ITEMS)
+            const deleteTx = pruneDb.transaction(THUMB_STORE_NAME, 'readwrite')
+            const store = deleteTx.objectStore(THUMB_STORE_NAME)
+            staleRows.forEach((row) => {
+              store.delete(row.url)
+            })
+          }
+        } catch {
+          // ignore pruning errors
+        }
+      })()
+    }
+  } catch {
+    // silently ignore
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function ToorGenPromptWorkbench() {
   const [activeTabId, setActiveTabId] = useState<string>(initialDraft?.activeTabId ?? FALLBACK_TAB.id)
   const [modeStates, setModeStates] = useState<Record<string, ModeRuntimeState>>(initialModeStates)
   const [workflowSettingsByTabId, setWorkflowSettingsByTabId] = useState<Record<string, WorkflowSettingsState>>(initialWorkflowSettingsByTabId)
   const [history, setHistory] = useState<GenerationHistoryEntry[]>(() => readLocalHistory())
   const [mediaLibrary, setMediaLibrary] = useState<MediaLibraryItem[]>(() => readLocalMediaLibrary())
+  const [localReferenceLibrarySnapshot, setLocalReferenceLibrarySnapshot] = useState<MediaLibraryItem[]>(() => readLocalMediaLibrary())
   const [authUid, setAuthUid] = useState<string>('')
   const [isBackendAvailable, setIsBackendAvailable] = useState<boolean>(true)
   const [backendNotice, setBackendNotice] = useState<string>('')
@@ -2679,6 +2905,8 @@ export default function ToorGenPromptWorkbench() {
   const [videoMetadataRequestJsonDraft, setVideoMetadataRequestJsonDraft] = useState<string>('{}')
   const [capturedFrames, setCapturedFrames] = useState<CapturedVideoFrame[]>(() => readCapturedVideoFrames())
   const [isCapturedFramesVisible, setIsCapturedFramesVisible] = useState<boolean>(false)
+  const thumbnailPosterCacheRef = useRef(new Map<string, string>())
+  const [thumbnailPosterCache, setThumbnailPosterCache] = useState<Map<string, string>>(new Map())
   const [videoDialogNotice, setVideoDialogNotice] = useState<string>('')
   const [isVideoDownloading, setIsVideoDownloading] = useState<boolean>(false)
   const [savingVideoToAssetsHistoryId, setSavingVideoToAssetsHistoryId] = useState<string>('')
@@ -2686,7 +2914,12 @@ export default function ToorGenPromptWorkbench() {
   const [historyDisplayLimit, setHistoryDisplayLimit] = useState<number>(10)
   const [isPlaylistOpen, setIsPlaylistOpen] = useState<boolean>(false)
   const [composerRefMode, setComposerRefMode] = useState<'text' | 'image' | 'video' | 'audio'>('video')
+  const [composerPreviewFieldKey, setComposerPreviewFieldKey] = useState<string>('')
+  const [composerRefsHeight, setComposerRefsHeight] = useState<number>(248)
   const [isDirectSubmitPanelVisible, setIsDirectSubmitPanelVisible] = useState<boolean>(false)
+  const [activeDirectPanelTab, setActiveDirectPanelTab] = useState<DirectPanelTab>('story')
+  const [isStoryBibleDialogOpen, setIsStoryBibleDialogOpen] = useState<boolean>(false)
+  const thumbnailCaptureInFlightRef = useRef<Set<string>>(new Set())
   const [isMseSequencerDialogOpen, setIsMseSequencerDialogOpen] = useState<boolean>(false)
   const [isMseSequencerDialogMinimized, setIsMseSequencerDialogMinimized] = useState<boolean>(false)
   const [isRecoveryOpen, setIsRecoveryOpen] = useState<boolean>(false)
@@ -2703,14 +2936,6 @@ export default function ToorGenPromptWorkbench() {
   const [studioFoldersLoading, setStudioFoldersLoading] = useState<boolean>(false)
   const [studioAccountOpen, setStudioAccountOpen] = useState<boolean>(false)
   const [studioPanelMessage, setStudioPanelMessage] = useState<string>('')
-  const [studioBusy, setStudioBusy] = useState<boolean>(false)
-  const [newProjectName, setNewProjectName] = useState<string>('')
-  const [newFolderName, setNewFolderName] = useState<string>('')
-  const [permissionFolderId, setPermissionFolderId] = useState<string>('')
-  const [permissionMemberUid, setPermissionMemberUid] = useState<string>('')
-  const [permissionMode, setPermissionMode] = useState<'default' | 'allowed' | 'hidden'>('default')
-  const [inviteEmail, setInviteEmail] = useState<string>('')
-  const [inviteRole, setInviteRole] = useState<'editor' | 'viewer'>('editor')
   const [recoveryTaskId, setRecoveryTaskId] = useState<string>('')
   const [recoveryProvider, setRecoveryProvider] = useState<ProviderId>('atlas')
   const [recoveryModel, setRecoveryModel] = useState<string>('')
@@ -2723,7 +2948,12 @@ export default function ToorGenPromptWorkbench() {
   const labLayoutRef = useRef<HTMLDivElement | null>(null)
   const isResizingRailRef = useRef<boolean>(false)
   const isResizingDirectPanelRef = useRef<boolean>(false)
+  const isResizingComposerRefsRef = useRef<boolean>(false)
+  const composerRefsStartYRef = useRef<number>(0)
+  const composerRefsStartHeightRef = useRef<number>(248)
   const lastDirectResizeClientXRef = useRef<number>(0)
+  const liveRailWidthRef = useRef<number>(500)
+  const liveDirectPanelWidthRef = useRef<number>(360)
   const referenceLibraryUploadInputRef = useRef<HTMLInputElement | null>(null)
   const videoDialogPlayerRef = useRef<HTMLVideoElement | null>(null)
   const videoDialogNoticeTimeoutRef = useRef<number | null>(null)
@@ -2776,12 +3006,111 @@ export default function ToorGenPromptWorkbench() {
   const canGenerate = hasConfiguredWorkflows && Boolean(studioActiveFolderId)
   const activeState = modeStates[activeTab.id] || createDefaultModeState(activeTab)
   const activeWorkflowSettings = workflowSettingsByTabId[activeTab.id] || createDefaultWorkflowSettings()
-  const selectedModel = activeWorkflowSettings.provider === 'atlas'
+  const rawSelectedModel = activeWorkflowSettings.provider === 'atlas'
     ? activeWorkflowSettings.atlasModel
     : activeWorkflowSettings.provider === 'grok'
     ? activeWorkflowSettings.grokModel
     : activeWorkflowSettings.byteplusModel
-  const deferredPrompt = useDeferredValue(activeState.prompt)
+  const selectedModel = normalizeModelForProvider(activeWorkflowSettings.provider, rawSelectedModel)
+  const deferredPrompt = useDeferredValue(PROMPT_INPUT_TEMP_DISABLED ? '' : activeState.prompt)
+
+  // Load thumbnail poster cache from IndexedDB on mount for instant display
+  useEffect(() => {
+    void readAllThumbsFromDB().then((map) => {
+      if (map.size > 0) {
+        thumbnailPosterCacheRef.current = map
+        setThumbnailPosterCache(new Map(map))
+      }
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const addToThumbnailCache = useCallback((url: string, dataUrl: string) => {
+    thumbnailPosterCacheRef.current.set(url, dataUrl)
+    setThumbnailPosterCache((current) => {
+      const next = new Map(current)
+      next.set(url, dataUrl)
+      return next
+    })
+  }, [])
+
+  const captureThumbnailForPlaybackUrl = useCallback(async (playbackUrl: string) => {
+    const url = (playbackUrl || '').trim()
+    if (!url || thumbnailPosterCacheRef.current.has(url) || thumbnailCaptureInFlightRef.current.has(url)) {
+      return
+    }
+    thumbnailCaptureInFlightRef.current.add(url)
+
+    const video = document.createElement('video')
+    video.muted = true
+    video.playsInline = true
+    video.preload = 'auto'
+    video.src = url
+
+    await new Promise<void>((resolve) => {
+      let settled = false
+      const finish = () => {
+        if (settled) return
+        settled = true
+        video.removeEventListener('loadedmetadata', onLoadedMetadata)
+        video.removeEventListener('seeked', onSeeked)
+        video.removeEventListener('error', onError)
+        video.removeAttribute('src')
+        try { video.load() } catch { /* ignore */ }
+        resolve()
+      }
+      const onError = () => finish()
+      const onSeeked = () => {
+        try {
+          const w = video.videoWidth || 0
+          const h = video.videoHeight || 0
+          if (!w || !h) {
+            finish()
+            return
+          }
+          const scale = Math.min(1, 320 / w)
+          const canvas = document.createElement('canvas')
+          canvas.width = Math.round(w * scale)
+          canvas.height = Math.round(h * scale)
+          const ctx = canvas.getContext('2d')
+          if (!ctx) {
+            finish()
+            return
+          }
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.72)
+          if (dataUrl && dataUrl !== 'data:,') {
+            void writeThumbToDB(url, dataUrl)
+            addToThumbnailCache(url, dataUrl)
+          }
+        } catch {
+          // ignore draw failures
+        }
+        finish()
+      }
+      const onLoadedMetadata = () => {
+        try {
+          video.currentTime = 0.01
+        } catch {
+          onSeeked()
+        }
+      }
+
+      video.addEventListener('loadedmetadata', onLoadedMetadata)
+      video.addEventListener('seeked', onSeeked)
+      video.addEventListener('error', onError)
+      window.setTimeout(finish, 6000)
+    })
+
+    thumbnailCaptureInFlightRef.current.delete(url)
+  }, [addToThumbnailCache])
+
+  const handlePreloaderVideoMetadata = useCallback((event: SyntheticEvent<HTMLVideoElement>) => {
+    const src = event.currentTarget.src
+    if (!src) return
+    void captureThumbnailForPlaybackUrl(src)
+  }, [captureThumbnailForPlaybackUrl])
+
   // Sync latestPromptRef to the current tab's prompt when switching tabs,
   // so submit handlers always have a correct baseline.
   // (handlePromptChange keeps it updated during typing.)
@@ -3117,19 +3446,31 @@ export default function ToorGenPromptWorkbench() {
     }
   }
 
-  const appendToMediaLibrary = (kind: MediaKind, url: string, name: string) => {
+  const appendToMediaLibrary = async (kind: MediaKind, url: string, name: string) => {
     if (!url.trim()) return
+    const nextEntry: MediaLibraryItem = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      kind,
+      url: url.trim(),
+      name: name.trim() || `${kind} upload`,
+      createdAt: Date.now(),
+      projectId: studioProjectId || undefined,
+    }
+
+    if (studioProjectId && auth.currentUser?.uid) {
+      await saveProjectReferenceLibraryItem(
+        studioProjectId,
+        nextEntry,
+        auth.currentUser.uid,
+      )
+      return
+    }
+
     setMediaLibrary((current) => {
-      const nextEntry: MediaLibraryItem = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
-        kind,
-        url: url.trim(),
-        name: name.trim() || `${kind} upload`,
-        createdAt: Date.now(),
-      }
       const deduped = [nextEntry, ...current.filter((item) => item.url !== nextEntry.url)]
       const next = deduped.slice(0, 200)
-      safeSetLocalStorage(SHARED_REFERENCE_LIBRARY_KEY, JSON.stringify(next))
+      writeLocalMediaLibrary(next)
+      setLocalReferenceLibrarySnapshot(next)
       return next
     })
   }
@@ -3277,6 +3618,11 @@ export default function ToorGenPromptWorkbench() {
       resultUrl: firebaseVideoUrl || resultUrl,
       statusText: savedStatus,
     }))
+
+    const playbackUrl = getPlaybackUrl(firebaseVideoUrl || resultUrl)
+    if (playbackUrl) {
+      void captureThumbnailForPlaybackUrl(playbackUrl)
+    }
   }
 
   const finalizeRecoveredRun = async (task: PersistedPendingTask, resultUrl: string) => {
@@ -3309,7 +3655,7 @@ export default function ToorGenPromptWorkbench() {
     const recoveredPrompt = firstNonEmptyString(
       typeof task.prompt === 'string' ? task.prompt : undefined,
       tabState.prompt,
-      '[Recovered — page was refreshed during generation]',
+      '[Recovered â€” page was refreshed during generation]',
     )
     const recoveredMediaUrls = isRecord(task.mediaUrls)
       ? filterMediaUrls(task.mediaUrls as Record<string, string>)
@@ -3361,6 +3707,11 @@ export default function ToorGenPromptWorkbench() {
         ? `Recovered. History saved; Firebase copy failed: ${storageSaveError}`
         : 'Recovered. Generation completed and saved to history.',
     }))
+
+    const playbackUrl = getPlaybackUrl(firebaseVideoUrl || resultUrl)
+    if (playbackUrl) {
+      void captureThumbnailForPlaybackUrl(playbackUrl)
+    }
   }
 
   const handleResumeTask = async (task: PersistedPendingTask) => {
@@ -3375,7 +3726,7 @@ export default function ToorGenPromptWorkbench() {
     })
     updateModeState(task.tabId, (current) => ({
       ...current,
-      statusText: `Resuming generation… (task ${task.taskId})`,
+      statusText: `Resuming generationâ€¦ (task ${task.taskId})`,
     }))
     try {
       const finalResultUrl = await pollUntilDone(
@@ -3435,12 +3786,20 @@ export default function ToorGenPromptWorkbench() {
     const state = modeStates[tab.id] || createDefaultModeState(tab)
     let effectiveState = state
 
-    if (!state.prompt.trim()) {
+    const fallbackPrompt = tab.promptTemplate.trim() || tab.examplePrompt.trim() || tab.documentPrompt.trim()
+    const effectivePrompt = state.prompt.trim() || fallbackPrompt
+    if (!effectivePrompt) {
       updateModeState(tab.id, (current) => ({
         ...current,
         statusText: 'Prompt is required.',
       }))
       return
+    }
+    if (effectivePrompt !== state.prompt.trim()) {
+      effectiveState = {
+        ...state,
+        prompt: effectivePrompt,
+      }
     }
 
     const missingField = tab.fields.find((field) => field.required && !(state.mediaUrls[field.key] || '').trim())
@@ -3472,7 +3831,7 @@ export default function ToorGenPromptWorkbench() {
         if (hasVideoAsImage) {
           updateModeState(tab.id, (current) => ({
             ...current,
-            statusText: '⚠ Warning: This model expects images, but one or more reference images appear to be video files. Provide an image to avoid wasting credits.',
+            statusText: 'âš  Warning: This model expects images, but one or more reference images appear to be video files. Provide an image to avoid wasting credits.',
           }))
           // non-blocking: let generation proceed after warning
         }
@@ -3591,7 +3950,7 @@ export default function ToorGenPromptWorkbench() {
           resolution: effectiveRequestSettings.resolution,
           createdAt: submittedAt,
           generateAudio: effectiveRequestSettings.generateAudio,
-          prompt: state.prompt.trim(),
+          prompt: effectiveState.prompt.trim(),
           mediaUrls: filterMediaUrls(state.mediaUrls),
           requestEndpoint: request.endpoint,
           requestPayload: request.body,
@@ -3624,7 +3983,7 @@ export default function ToorGenPromptWorkbench() {
       }
 
       const receivedAt = Date.now()
-      await finalizeCompletedRun(tab, state, request, effectiveRequestSettings, taskId, finalResultUrl, {
+      await finalizeCompletedRun(tab, effectiveState, request, effectiveRequestSettings, taskId, finalResultUrl, {
         submittedAt,
         receivedAt,
       })
@@ -3694,8 +4053,9 @@ export default function ToorGenPromptWorkbench() {
     updateWorkflowSettings(targetTabId, (current) => ({
       ...current,
       provider: entry.provider,
-      atlasModel: entry.provider === 'atlas' ? entry.model : current.atlasModel,
-      byteplusModel: entry.provider === 'byteplus' ? entry.model : current.byteplusModel,
+      atlasModel: entry.provider === 'atlas' ? normalizeModelForProvider('atlas', entry.model, current.atlasModel) : current.atlasModel,
+      byteplusModel: entry.provider === 'byteplus' ? normalizeModelForProvider('byteplus', entry.model, current.byteplusModel) : current.byteplusModel,
+      grokModel: entry.provider === 'grok' ? normalizeModelForProvider('grok', entry.model, current.grokModel) : current.grokModel,
       ratio: entry.ratio,
       duration: entry.duration,
       resolution: entry.resolution,
@@ -3722,11 +4082,52 @@ export default function ToorGenPromptWorkbench() {
     }))
   }
 
+  const currentStudioMemberRole = useMemo(
+    // Prioritise the members subcollection (contains the true role set by the
+    // project owner).  studioProjects.role is always 'editor' for non-owners
+    // because subscribeToUserProjects cannot read the members subcollection in
+    // the same query — so never use it as the primary source.
+    () => studioMembers.find((member) => member.userId === authUid)?.role
+      || studioProjects.find((item) => item.id === studioProjectId)?.role
+      || null,
+    [authUid, studioMembers, studioProjectId, studioProjects],
+  )
+
+  const storyBibleData = useMemo(
+    () => readStoryBibleData(studioProjectId),
+    [studioProjectId],
+  )
+  const storyEpisodesById = useMemo(
+    () => new Map(storyBibleData.episodes.map((episode) => [episode.id, episode])),
+    [storyBibleData.episodes],
+  )
+  const studioFolderNameById = useMemo(
+    () => new Map(studioFolders.map((folder) => [folder.id, folder.name])),
+    [studioFolders],
+  )
+
+  const visibleStudioFolders = useMemo(() => {
+    if (!authUid) return studioFolders
+    // Owners always see every folder.
+    if (currentStudioMemberRole === 'owner') return studioFolders
+    // For editors and viewers: respect per-folder allow/hide lists.
+    // This prevents leaking restricted folders to non-owner members even when
+    // their project role is 'editor'.
+    return studioFolders.filter((folder) => {
+      const hiddenMemberUids = Array.isArray(folder.hiddenMemberUids) ? folder.hiddenMemberUids : []
+      if (hiddenMemberUids.includes(authUid)) return false
+      const allowedMemberUids = Array.isArray(folder.allowedMemberUids) ? folder.allowedMemberUids : []
+      // Empty allowedMemberUids means the folder is visible to all project members by default.
+      if (allowedMemberUids.length === 0) return true
+      return allowedMemberUids.includes(authUid)
+    })
+  }, [authUid, currentStudioMemberRole, studioFolders])
+
   const activeFolderScopeIds = useMemo(() => {
     if (!studioActiveFolderId) return null
 
     const byParent = new Map<string | null, FolderSummary[]>()
-    studioFolders.forEach((folder) => {
+    visibleStudioFolders.forEach((folder) => {
       const key = folder.parentId || null
       const group = byParent.get(key)
       if (group) group.push(folder)
@@ -3745,7 +4146,7 @@ export default function ToorGenPromptWorkbench() {
     }
 
     return scopedIds
-  }, [studioActiveFolderId, studioFolders])
+  }, [studioActiveFolderId, visibleStudioFolders])
 
   // Filter history by active studio project + folder scope when selected.
   const activeTabHistory = useMemo(() => {
@@ -3794,6 +4195,9 @@ export default function ToorGenPromptWorkbench() {
   }, [mediaLibrary, modeStates])
 
   const mentionableReferences = useMemo<MentionableReference[]>(() => {
+    if (MENTION_RESOLUTION_TEMP_DISABLED) {
+      return []
+    }
     const usedKeys = new Set<string>()
     const usedUrlKinds = new Set<string>()
     const collected: MentionableReference[] = []
@@ -3855,8 +4259,33 @@ export default function ToorGenPromptWorkbench() {
     return collected
   }, [activeState.mediaUrls, mediaLibrary, mediaLibraryNameByUrl, referenceFields])
 
+  useEffect(() => {
+    const visibleFields = (composerRefMode === 'image'
+      ? referenceFields.filter((field) => field.kind === 'image')
+      : composerRefMode === 'audio'
+        ? referenceFields.filter((field) => field.kind === 'audio')
+        : referenceFields
+    ).filter((field) => (activeState.mediaUrls[field.key] || '').trim())
+
+    const visibleKeys = visibleFields.map((field) => field.key)
+    if (visibleKeys.length === 0) {
+      if (composerPreviewFieldKey) setComposerPreviewFieldKey('')
+      return
+    }
+    if (visibleKeys.includes(composerPreviewFieldKey)) {
+      return
+    }
+
+    const firstVideoKey = visibleFields.find((field) => field.kind === 'video')?.key
+    const preferredImageKey = activeState.selectedImageReferenceKey
+    const nextKey = preferredImageKey && visibleKeys.includes(preferredImageKey)
+      ? preferredImageKey
+      : firstVideoKey || visibleKeys[0]
+    setComposerPreviewFieldKey(nextKey)
+  }, [activeState.mediaUrls, activeState.selectedImageReferenceKey, composerPreviewFieldKey, composerRefMode, referenceFields])
+
   const resolvedMentionReferences = useMemo(
-    () => resolvePromptMentionReferences(deferredPrompt, mentionableReferences),
+    () => (MENTION_RESOLUTION_TEMP_DISABLED ? [] : resolvePromptMentionReferences(deferredPrompt, mentionableReferences)),
     [deferredPrompt, mentionableReferences],
   )
 
@@ -3914,7 +4343,7 @@ export default function ToorGenPromptWorkbench() {
     updateWorkflowSettings(activeTab.id, (current) => ({
       ...current,
       provider: 'atlas',
-      atlasModel: extendJson.model,
+      atlasModel: normalizeModelForProvider('atlas', extendJson.model, current.atlasModel),
       duration: extendJson.duration,
       resolution: extendJson.resolution,
       ratio: extendJson.ratio,
@@ -3922,6 +4351,7 @@ export default function ToorGenPromptWorkbench() {
     }))
     setDirectRequestJson(JSON.stringify(extendJson, null, 2))
     setIsDirectSubmitPanelVisible(true)
+    setActiveDirectPanelTab('direct')
   }
 
   const applyRegenerateActionToComposer = (details?: VideoDialogState['details']) => {
@@ -3942,7 +4372,7 @@ export default function ToorGenPromptWorkbench() {
     updateWorkflowSettings(activeTab.id, (current) => ({
       ...current,
       provider,
-      [modelField]: details.model || current[modelField],
+      [modelField]: normalizeModelForProvider(provider, details.model, current[modelField]),
       duration: details.durationSec || current.duration,
       resolution: details.resolution || current.resolution,
       ratio: details.ratio || current.ratio,
@@ -3950,6 +4380,7 @@ export default function ToorGenPromptWorkbench() {
     }))
     setDirectRequestJson(JSON.stringify(details.requestPayload || {}, null, 2))
     setIsDirectSubmitPanelVisible(true)
+    setActiveDirectPanelTab('direct')
   }
 
   useEffect(() => {
@@ -4054,6 +4485,75 @@ export default function ToorGenPromptWorkbench() {
     () => (isLikedOnlyFilter ? activeTabHistory.filter((entry) => entry.isLiked) : activeTabHistory),
     [activeTabHistory, isLikedOnlyFilter],
   )
+  const cachedHistoryPlaybackUrls = useMemo(() => {
+    const urls: string[] = []
+    const seen = new Set<string>()
+
+    const appendPlaybackUrl = (source: string) => {
+      const playbackUrl = getPlaybackUrl(source)
+      if (!playbackUrl || seen.has(playbackUrl)) return
+      seen.add(playbackUrl)
+      urls.push(playbackUrl)
+    }
+
+    if (activeState.resultUrl.trim()) {
+      appendPlaybackUrl(activeState.resultUrl)
+    }
+
+    filteredTabHistory.slice(0, 60).forEach((entry) => {
+      const sources = resolvePrimaryAndFallbackVideoSources(entry.firebaseVideoUrl || '', entry.resultUrl || '')
+      appendPlaybackUrl(sources.primary)
+      appendPlaybackUrl(sources.fallback)
+    })
+
+    return urls
+  }, [activeState.resultUrl, filteredTabHistory])
+  const mainPanelStatusMessages = useMemo(() => {
+    const messages: string[] = []
+
+    if (isDiagnoseShowAllHistory) {
+      messages.push('Diagnose mode is active: showing all generations across projects/folders so you can bulk move and categorize them.')
+    }
+
+    if (activeState.statusText && !/^Submitting generation request|^Generating.../i.test(activeState.statusText)) {
+      messages.push(activeState.statusText)
+    }
+
+    return messages
+  }, [activeState.statusText, isDiagnoseShowAllHistory])
+
+  useEffect(() => {
+    if (!PERF_METRICS_LOGGER_ENABLED) return
+
+    let rafId = 0
+    let frameCount = 0
+    let slowFrameCount = 0
+    let windowStart = performance.now()
+
+    const sample = (timestamp: number) => {
+      frameCount += 1
+      const elapsed = timestamp - windowStart
+      if (elapsed > 0 && (1000 / elapsed) * frameCount < 20) {
+        slowFrameCount += 1
+      }
+      if (elapsed >= 5000) {
+        const fps = (frameCount * 1000) / elapsed
+        console.info(
+          `[ToorGenPerf] fps=${fps.toFixed(1)} slowFrames=${slowFrameCount} mode=${historyViewMode} visibleRuns=${filteredTabHistory.length}`,
+        )
+        frameCount = 0
+        slowFrameCount = 0
+        windowStart = timestamp
+      }
+      rafId = window.requestAnimationFrame(sample)
+    }
+
+    rafId = window.requestAnimationFrame(sample)
+    return () => {
+      window.cancelAnimationFrame(rafId)
+    }
+  }, [historyViewMode, filteredTabHistory.length])
+
   const latestTabHistory = activeTabHistory[0]
   const activeOutputUrl = activeState.resultUrl.trim()
   const hasActiveOutputPreview = Boolean(outputPlaybackUrl)
@@ -4076,14 +4576,21 @@ export default function ToorGenPromptWorkbench() {
     }
   }, [activePendingGenerations.length, refreshGeneratedRuns])
 
+  const previewRequestJson = useMemo(
+    () => JSON.stringify(previewRequest.body, null, 2),
+    [previewRequest.body],
+  )
+
   useEffect(() => {
-    if (lastDirectJsonTabIdRef.current === activeTab.id) {
-      return
+    const isTabChanged = lastDirectJsonTabIdRef.current !== activeTab.id
+    if (isTabChanged) {
+      lastDirectJsonTabIdRef.current = activeTab.id
+      setDirectSubmitFeed([])
     }
-    lastDirectJsonTabIdRef.current = activeTab.id
-    setDirectRequestJson(JSON.stringify(previewRequest.body, null, 2))
-    setDirectSubmitFeed([])
-  }, [activeTab.id, previewRequest])
+    if (directRequestJson !== previewRequestJson) {
+      setDirectRequestJson(previewRequestJson)
+    }
+  }, [activeTab.id, directRequestJson, previewRequestJson])
 
   const historyRailItems = useMemo(() => [
     ...activePendingGenerations.map((entry) => ({
@@ -4143,7 +4650,14 @@ export default function ToorGenPromptWorkbench() {
       return `${item.name} ${item.url}`.toLowerCase().includes(query)
     })
 
+  const importableLocalReferenceLibrary = useMemo(() => {
+    if (!studioProjectId) return [] as MediaLibraryItem[]
+    const existingUrls = new Set(mediaLibrary.map((item) => item.url))
+    return localReferenceLibrarySnapshot.filter((item) => !existingUrls.has(item.url))
+  }, [localReferenceLibrarySnapshot, mediaLibrary, studioProjectId])
+
   const promptMentionOptions = useMemo(() => {
+    if (MENTION_RESOLUTION_TEMP_DISABLED) return []
     if (promptMentionQuery === null) return []
     const query = promptMentionQuery.trim().toLowerCase()
     if (!query) return mentionableReferences
@@ -4172,6 +4686,7 @@ export default function ToorGenPromptWorkbench() {
     const selectedByKind = referenceFields
       .map((field) => activeState.mediaUrls[field.key] || '')
       .filter(Boolean)
+    setLocalReferenceLibrarySnapshot(readLocalMediaLibrary())
     setReferenceLibraryFilter('all')
     setReferenceLibraryQuery('')
     setSelectedReferenceLibraryUrls(selectedByKind)
@@ -4185,17 +4700,47 @@ export default function ToorGenPromptWorkbench() {
     setLibraryContextMenu(null)
     setPendingLibraryDeleteItem(null)
   }
+  
+  const handleImportLocalReferencesToProject = async () => {
+    if (!studioProjectId || !auth.currentUser || importableLocalReferenceLibrary.length === 0) return
+    try {
+      for (const item of importableLocalReferenceLibrary) {
+        await saveProjectReferenceLibraryItem(
+          studioProjectId,
+          {
+            id: item.id,
+            kind: item.kind,
+            url: item.url,
+            name: item.name,
+            createdAt: item.createdAt,
+          },
+          auth.currentUser.uid,
+        )
+      }
+      setStudioPanelMessage(`Imported ${importableLocalReferenceLibrary.length} local reference${importableLocalReferenceLibrary.length === 1 ? '' : 's'} into this project.`)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      setStudioPanelMessage(`Could not import local references: ${message}`)
+    }
+  }
 
   const renameMediaLibraryItem = (id: string, name: string) => {
+    const nextName = name.trim() || 'Reference asset'
     setMediaLibrary((current) => {
       const next = current.map((item) => (
         item.id === id
           ? { ...item, name: name.trim() || `Reference ${item.kind}` }
           : item
       ))
-      safeSetLocalStorage(SHARED_REFERENCE_LIBRARY_KEY, JSON.stringify(next))
+      if (!studioProjectId) {
+        writeLocalMediaLibrary(next)
+        setLocalReferenceLibrarySnapshot(next)
+      }
       return next
     })
+    if (studioProjectId) {
+      void renameProjectReferenceLibraryItem(studioProjectId, id, nextName)
+    }
   }
 
   const openLibraryContextMenu = (event: MouseEvent<HTMLElement>, item: MediaLibraryItem) => {
@@ -4207,9 +4752,15 @@ export default function ToorGenPromptWorkbench() {
   const removeMediaLibraryItem = (item: MediaLibraryItem) => {
     setMediaLibrary((current) => {
       const next = current.filter((entry) => entry.id !== item.id)
-      safeSetLocalStorage(SHARED_REFERENCE_LIBRARY_KEY, JSON.stringify(next))
+      if (!studioProjectId) {
+        writeLocalMediaLibrary(next)
+        setLocalReferenceLibrarySnapshot(next)
+      }
       return next
     })
+    if (studioProjectId) {
+      void deleteProjectReferenceLibraryItem(studioProjectId, item.id)
+    }
     setSelectedReferenceLibraryUrls((current) => current.filter((url) => url !== item.url))
     setModeStates((current) => {
       const nextEntries = Object.entries(current).map(([tabId, state]) => {
@@ -4258,6 +4809,12 @@ export default function ToorGenPromptWorkbench() {
       availableByKind[kind].push(url)
     })
 
+    const singleVideoMode = composerRefMode === 'video'
+    const extraVideoSelections = singleVideoMode ? Math.max(0, availableByKind.video.length - 1) : 0
+    if (singleVideoMode && availableByKind.video.length > 1) {
+      availableByKind.video = availableByKind.video.slice(0, 1)
+    }
+
     let overflowCount = 0
     updateModeState(activeTab.id, (current) => {
       const nextMediaUrls = { ...current.mediaUrls }
@@ -4268,6 +4825,15 @@ export default function ToorGenPromptWorkbench() {
       }
 
       ;(['image', 'video', 'audio'] as const).forEach((kind) => {
+        if (singleVideoMode && kind === 'video') {
+          const firstVideoKey = slotsByKind.video[0]
+          slotsByKind.video.forEach((key, index) => {
+            if (index > 0) {
+              nextMediaUrls[key] = ''
+            }
+          })
+          slotsByKind.video = firstVideoKey ? [firstVideoKey] : []
+        }
         const existingValues = new Set(
           slotsByKind[kind]
             .map((key) => (nextMediaUrls[key] || '').trim())
@@ -4285,6 +4851,8 @@ export default function ToorGenPromptWorkbench() {
           nextMediaUrls[targetKey] = url
         })
       })
+
+      overflowCount += extraVideoSelections
 
       const fittedCount = selectedReferenceLibraryUrls.length - overflowCount
       return {
@@ -4311,7 +4879,7 @@ export default function ToorGenPromptWorkbench() {
             ? 'audio'
             : 'image'
         const url = await uploadFile(file, kind)
-        appendToMediaLibrary(kind, url, file.name)
+        await appendToMediaLibrary(kind, url, file.name)
         uploadedUrls.push(url)
       }
       if (uploadedUrls.length > 0) {
@@ -4579,6 +5147,9 @@ export default function ToorGenPromptWorkbench() {
   }, [railWidth])
 
   const handleRailMouseDown = (event: MouseEvent<HTMLDivElement>) => {
+    if (COMPOSER_RESIZE_TEMP_DISABLED) {
+      return
+    }
     if (window.innerWidth <= 760) {
       return
     }
@@ -4596,6 +5167,9 @@ export default function ToorGenPromptWorkbench() {
   }
 
   const handleRailHandleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (COMPOSER_RESIZE_TEMP_DISABLED) {
+      return
+    }
     if (event.key === 'ArrowLeft') {
       event.preventDefault()
       adjustRailByStep(-16)
@@ -4607,6 +5181,9 @@ export default function ToorGenPromptWorkbench() {
   }
 
   const handleDirectPanelMouseDown = (event: MouseEvent<HTMLDivElement>) => {
+    if (COMPOSER_RESIZE_TEMP_DISABLED) {
+      return
+    }
     if (window.innerWidth <= 760) {
       return
     }
@@ -4625,6 +5202,9 @@ export default function ToorGenPromptWorkbench() {
   }
 
   const handleDirectPanelHandleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (COMPOSER_RESIZE_TEMP_DISABLED) {
+      return
+    }
     if (event.key === 'ArrowLeft') {
       event.preventDefault()
       adjustDirectPanelByStep(-16)
@@ -4635,7 +5215,38 @@ export default function ToorGenPromptWorkbench() {
     }
   }
 
+  const handleComposerRefsResizeMouseDown = (event: MouseEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    isResizingComposerRefsRef.current = true
+    composerRefsStartYRef.current = event.clientY
+    composerRefsStartHeightRef.current = composerRefsHeight
+  }
+
   useEffect(() => {
+    const handleMouseMove = (event: globalThis.MouseEvent) => {
+      if (!isResizingComposerRefsRef.current) return
+      const deltaY = event.clientY - composerRefsStartYRef.current
+      const nextHeight = Math.max(170, Math.min(430, composerRefsStartHeightRef.current + deltaY))
+      setComposerRefsHeight(nextHeight)
+    }
+
+    const stopResizing = () => {
+      isResizingComposerRefsRef.current = false
+    }
+
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', stopResizing)
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', stopResizing)
+    }
+  }, [composerRefsHeight])
+
+  useEffect(() => {
+    if (COMPOSER_RESIZE_TEMP_DISABLED) {
+      return
+    }
     const handleMouseMove = (event: globalThis.MouseEvent) => {
       const container = labLayoutRef.current
       if (!container) {
@@ -4651,16 +5262,26 @@ export default function ToorGenPromptWorkbench() {
           return
         }
         lastDirectResizeClientXRef.current = event.clientX
-        setDirectPanelWidth((current) => clampDirectPanelWidth(current + deltaX, container.getBoundingClientRect().width))
+        const containerWidth = container.getBoundingClientRect().width
+        const next = clampDirectPanelWidth(liveDirectPanelWidthRef.current + deltaX, containerWidth)
+        liveDirectPanelWidthRef.current = next
+        container.style.setProperty('--lab-direct-width', `${next}px`)
         return
       }
 
       const rect = container.getBoundingClientRect()
-      const nextWidth = event.clientX - rect.left
-      setRailWidth(clampRailWidth(nextWidth, rect.width))
+      const next = clampRailWidth(event.clientX - rect.left, rect.width)
+      liveRailWidthRef.current = next
+      container.style.setProperty('--lab-rail-width', `${next}px`)
     }
 
     const stopResizing = () => {
+      if (isResizingRailRef.current) {
+        setRailWidth(liveRailWidthRef.current)
+      }
+      if (isResizingDirectPanelRef.current) {
+        setDirectPanelWidth(liveDirectPanelWidthRef.current)
+      }
       isResizingRailRef.current = false
       isResizingDirectPanelRef.current = false
     }
@@ -4677,6 +5298,8 @@ export default function ToorGenPromptWorkbench() {
   useEffect(() => {
     const container = labLayoutRef.current
     if (!container) return
+    liveRailWidthRef.current = railWidth
+    liveDirectPanelWidthRef.current = directPanelWidth
     container.style.setProperty('--lab-rail-width', `${railWidth}px`)
     container.style.setProperty('--lab-direct-width', `${directPanelWidth}px`)
   }, [directPanelWidth, railWidth])
@@ -5264,7 +5887,7 @@ export default function ToorGenPromptWorkbench() {
     setSavingVideoToAssetsHistoryId(saveKey)
     try {
       const saved = await saveGeneratedVideoToFirebase(playableSourceUrl, nextHistoryId)
-      appendToMediaLibrary('video', saved.firebaseUrl, title || 'generated video')
+      await appendToMediaLibrary('video', saved.firebaseUrl, title || 'generated video')
 
       if (historyId) {
         let updatedEntry: GenerationHistoryEntry | null = null
@@ -5473,7 +6096,7 @@ export default function ToorGenPromptWorkbench() {
       const blob = await dataUrlToBlob(frame.imageDataUrl)
       const storagePath = `toorgen-lab/frames/${Date.now()}-${frame.id}.jpg`
       const firebaseUrl = await uploadBlobToFirebase(blob, storagePath, 'image/jpeg')
-      appendToMediaLibrary('image', firebaseUrl, `frame ${formatVideoTime(frame.videoTimeSec)}`)
+      await appendToMediaLibrary('image', firebaseUrl, `frame ${formatVideoTime(frame.videoTimeSec)}`)
       setCapturedFrames((current) => {
         const next = current.map((f) => f.id === frame.id ? { ...f, libraryUrl: firebaseUrl } : f)
         writeCapturedVideoFrames(next)
@@ -5610,12 +6233,13 @@ export default function ToorGenPromptWorkbench() {
     }
 
     setStudioFoldersLoading(true)
+    const projectRole = studioProjects.find((item) => item.id === studioProjectId)?.role || null
     const unsubFolders = subscribeToProjectFolders(
       studioProjectId,
+      { userId: authUid, role: projectRole },
       (folders) => {
         setStudioFolders(folders)
         setStudioFoldersLoading(false)
-        setPermissionFolderId((current) => current || folders[0]?.id || '')
       },
       () => {
         setStudioFolders([])
@@ -5627,7 +6251,6 @@ export default function ToorGenPromptWorkbench() {
       studioProjectId,
       (members) => {
         setStudioMembers(members)
-        setPermissionMemberUid((current) => current || members[0]?.userId || '')
       },
       () => setStudioMembers([]),
     )
@@ -5636,12 +6259,35 @@ export default function ToorGenPromptWorkbench() {
       unsubFolders()
       unsubMembers()
     }
+  }, [authUid, studioProjectId, studioProjects])
+
+  useEffect(() => {
+    if (!studioProjectId) {
+      setMediaLibrary(readLocalMediaLibrary())
+      return
+    }
+
+    const unsub = subscribeToProjectReferenceLibrary(
+      studioProjectId,
+      (items) => setMediaLibrary(items.map(toMediaLibraryItem)),
+      () => setMediaLibrary([]),
+    )
+
+    return () => unsub()
   }, [studioProjectId])
 
   const studioProjectName = useMemo(
     () => studioProjects.find((item) => item.id === studioProjectId)?.name || null,
     [studioProjectId, studioProjects],
   )
+
+  useEffect(() => {
+    const visibleFolderIds = new Set(visibleStudioFolders.map((folder) => folder.id))
+
+    if (studioActiveFolderId && !visibleFolderIds.has(studioActiveFolderId)) {
+      setStudioActiveFolderId(visibleStudioFolders[0]?.id || null)
+    }
+  }, [studioActiveFolderId, visibleStudioFolders])
 
   useEffect(() => {
     if (!isBulkMoveDialogOpen || !bulkMoveTargetProjectId) {
@@ -5651,14 +6297,16 @@ export default function ToorGenPromptWorkbench() {
     }
 
     if (bulkMoveTargetProjectId === studioProjectId) {
-      setBulkMoveFolders(studioFolders)
+      setBulkMoveFolders(visibleStudioFolders)
       setBulkMoveFoldersLoading(studioFoldersLoading)
       return
     }
 
     setBulkMoveFoldersLoading(true)
+    const targetProjectRole = studioProjects.find((item) => item.id === bulkMoveTargetProjectId)?.role || null
     const unsub = subscribeToProjectFolders(
       bulkMoveTargetProjectId,
+      { userId: authUid, role: targetProjectRole },
       (folders) => {
         setBulkMoveFolders(folders)
         setBulkMoveFoldersLoading(false)
@@ -5672,10 +6320,13 @@ export default function ToorGenPromptWorkbench() {
     return () => unsub()
   }, [
     bulkMoveTargetProjectId,
+    authUid,
     isBulkMoveDialogOpen,
     studioFolders,
     studioFoldersLoading,
     studioProjectId,
+    studioProjects,
+    visibleStudioFolders,
   ])
 
   const bulkMoveFolderOptions = useMemo(() => {
@@ -5702,7 +6353,7 @@ export default function ToorGenPromptWorkbench() {
         visited.add(folder.id)
         ordered.push({
           id: folder.id,
-          label: `${'  '.repeat(depth)}${depth > 0 ? '↳ ' : ''}${folder.name}`,
+          label: `${'  '.repeat(depth)}${depth > 0 ? 'â†³ ' : ''}${folder.name}`,
           depth,
         })
         walk(folder.id, depth + 1)
@@ -5722,214 +6373,24 @@ export default function ToorGenPromptWorkbench() {
     return ordered
   }, [bulkMoveFolders])
 
-  async function handleCreateStudioProject() {
-    if (!auth.currentUser) return
-    const trimmed = newProjectName.trim()
-    if (!trimmed) {
-      setStudioPanelMessage('Project name is required.')
-      return
-    }
-
-    setStudioBusy(true)
-    try {
-      const project = await createProject(
-        { orgId: auth.currentUser.uid, name: trimmed, visibility: 'private' },
-        {
-          uid: auth.currentUser.uid,
-          displayName: auth.currentUser.displayName || '',
-          email: auth.currentUser.email || '',
-          photoUrl: auth.currentUser.photoURL || '',
-        },
-      )
-      setNewProjectName('')
-      setStudioProjectId(project.id)
-      setStudioProjects((current) => {
-        const next = current.filter((item) => item.id !== project.id)
-        return [{
-          id: project.id,
-          orgId: project.orgId,
-          name: project.name,
-          description: project.description,
-          visibility: project.visibility,
-          status: project.status,
-          coverImageUrl: project.coverImageUrl,
-          tags: project.tags,
-          role: 'owner',
-          updatedAt: Date.now(),
-        }, ...next]
-      })
-      localStorage.setItem(STUDIO_ACTIVE_PROJECT_ID_KEY, project.id)
-      localStorage.setItem(STUDIO_ACTIVE_PROJECT_NAME_KEY, project.name)
-      setStudioPanelMessage('Project created.')
-    } catch {
-      setStudioPanelMessage('Could not create project right now.')
-    } finally {
-      setStudioBusy(false)
+  const handleProjectSelect = (id: string | null) => {
+    setStudioProjectId(id)
+    setStudioActiveFolderId(null)
+    if (id) {
+      const name = studioProjects.find((p) => p.id === id)?.name || ''
+      localStorage.setItem(STUDIO_ACTIVE_PROJECT_ID_KEY, id)
+      if (name) localStorage.setItem(STUDIO_ACTIVE_PROJECT_NAME_KEY, name)
+    } else {
+      localStorage.removeItem(STUDIO_ACTIVE_PROJECT_ID_KEY)
+      localStorage.removeItem(STUDIO_ACTIVE_PROJECT_NAME_KEY)
     }
   }
 
-  async function handleCreateStudioFolder() {
-    if (!studioProjectId || !auth.currentUser) return
-    const trimmed = newFolderName.trim()
-    if (!trimmed) {
-      setStudioPanelMessage('Folder name is required.')
-      return
-    }
-
-    setStudioBusy(true)
-    try {
-      const folder = await createFolder(
-        {
-          projectId: studioProjectId,
-          name: trimmed,
-          parentId: null,
-        },
-        auth.currentUser.uid,
-      )
-      setNewFolderName('')
-      setStudioFolders((current) => {
-        if (current.some((item) => item.id === folder.id)) return current
-        return [...current, folder]
-      })
-      setPermissionFolderId((current) => current || folder.id)
-      setStudioPanelMessage('Folder created.')
-    } catch {
-      setStudioPanelMessage('Could not create folder right now.')
-    } finally {
-      setStudioBusy(false)
-    }
-  }
-
-  async function handleRenameProject(projectId: string, oldName: string) {
-    const next = window.prompt('Rename project:', oldName)
-    if (!next || next.trim() === '' || next === oldName) return
-    setStudioBusy(true)
-    try {
-      await updateStudioProject(projectId, next.trim())
-      setStudioPanelMessage('Project renamed.')
-    } catch {
-      setStudioPanelMessage('Failed to rename project.')
-    } finally {
-      setStudioBusy(false)
-    }
-  }
-
-  async function handleDeleteProject(projectId: string) {
-    if (!window.confirm('Are you sure you want to delete this project?')) return
-    setStudioBusy(true)
-    try {
-      await deleteStudioProject(projectId)
-      if (studioProjectId === projectId) setStudioProjectId('')
-      setStudioPanelMessage('Project deleted.')
-    } catch {
-      setStudioPanelMessage('Failed to delete project.')
-    } finally {
-      setStudioBusy(false)
-    }
-  }
-
-  async function handleRenameFolder(projectId: string, folderId: string, oldName: string) {
-    const next = window.prompt('Rename folder:', oldName)
-    if (!next || next.trim() === '' || next === oldName) return
-    setStudioBusy(true)
-    try {
-      await updateFolder(projectId, folderId, next.trim())
-      setStudioPanelMessage('Folder renamed.')
-    } catch {
-      setStudioPanelMessage('Failed to rename folder.')
-    } finally {
-      setStudioBusy(false)
-    }
-  }
-
-  async function handleDeleteFolder(projectId: string, folderId: string) {
-    if (!window.confirm('Are you sure you want to delete this folder?')) return
-    setStudioBusy(true)
-    try {
-      await deleteFolder(projectId, folderId)
-      setStudioPanelMessage('Folder deleted.')
-    } catch {
-      setStudioPanelMessage('Failed to delete folder.')
-    } finally {
-      setStudioBusy(false)
-    }
-  }
-
-  async function handleApplyFolderPermission() {
-    if (!studioProjectId || !permissionFolderId || !permissionMemberUid) {
-      setStudioPanelMessage('Select project folder and collaborator first.')
-      return
-    }
-
-    setStudioBusy(true)
-    try {
-      await setFolderMemberVisibility(
-      studioProjectId,
-        permissionFolderId,
-        permissionMemberUid,
-        permissionMode,
-      )
-      setStudioPanelMessage('Folder visibility updated for collaborator.')
-    } catch {
-      setStudioPanelMessage('Could not update folder visibility.')
-    } finally {
-      setStudioBusy(false)
-    }
-  }
-
-  async function handleInviteCollaborator() {
-    if (!studioProjectId || !auth.currentUser) return
-    const email = inviteEmail.trim().toLowerCase()
-    if (!email || !email.includes('@')) {
-      setStudioPanelMessage('Enter a valid email address.')
-      return
-    }
-    const currentProject = studioProjects.find((p) => p.id === studioProjectId)
-    if (!currentProject) return
-
-    setStudioBusy(true)
-    try {
-      const recipient = await findUserByEmail(email)
-      console.log('[InviteDebug] findUserByEmail result:', recipient)
-      const invite = await createInvite({
-        targetKind: 'project',
-        targetId: studioProjectId,
-        orgId: currentProject.orgId,
-        role: inviteRole,
-        inviteeEmail: email,
-        inviteeUid: recipient?.uid,
-        invitedBy: auth.currentUser.uid,
-        targetProjectIds: [studioProjectId],
-        targetFolderRefs: studioActiveFolderId
-          ? [{ projectId: studioProjectId, folderId: studioActiveFolderId }]
-          : [],
-        expiryHours: 72,
-      })
-      console.log('[InviteDebug] createInvite result:', invite)
-      setStudioPanelMessage(recipient
-        ? `Invite created and will appear in-app for ${email}.`
-        : `Invite created for ${email}, but no matching app user was found.`)
-      setInviteEmail('')
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Unknown error'
-      setStudioPanelMessage(`Could not create invite: ${msg}`)
-    } finally {
-      setStudioBusy(false)
-    }
-  }
-
-  async function handleRemoveMember(userId: string) {
-    if (!studioProjectId) return
-    if (!window.confirm('Remove this collaborator from the project?')) return
-    setStudioBusy(true)
-    try {
-      await removeProjectMember(studioProjectId, userId)
-      setStudioPanelMessage('Collaborator removed.')
-    } catch {
-      setStudioPanelMessage('Could not remove collaborator.')
-    } finally {
-      setStudioBusy(false)
-    }
+  const handleProjectCreated = (projectId: string, projectName: string) => {
+    setStudioProjectId(projectId)
+    setStudioActiveFolderId(null)
+    localStorage.setItem(STUDIO_ACTIVE_PROJECT_ID_KEY, projectId)
+    localStorage.setItem(STUDIO_ACTIVE_PROJECT_NAME_KEY, projectName)
   }
 
   const openMseSequencerDialog = () => {
@@ -5957,261 +6418,20 @@ export default function ToorGenPromptWorkbench() {
       {/* Studio manage dialog */}
       {studioAccountOpen && (
         <div className="lab-video-dialog-backdrop" onClick={() => setStudioAccountOpen(false)}>
-          <div className="lab-studio-dialog" onClick={(event) => event.stopPropagation()}>
-            <div className="lab-video-dialog-head">
-              <strong className="lab-studio-dialog-title">Studio Account</strong>
-              <button type="button" className="lab-icon-btn" onClick={() => setStudioAccountOpen(false)} title="Close">✕</button>
-            </div>
-
-            <div className="lab-studio-dialog-body">
-              {/* ── Account ── */}
-              <div className="lab-studio-section">
-                <div className="lab-studio-section-title">Account</div>
-                <div className="lab-studio-kv">
-                  <span>Name</span><span>{auth.currentUser?.displayName || 'Unknown'}</span>
-                  <span>Email</span><span>{auth.currentUser?.email || 'Unknown'}</span>
-                  <span>Project</span><span>{studioProjectName || 'None'}</span>
-                </div>
-              </div>
-
-              {/* ── Projects ── */}
-              <div className="lab-studio-section">
-                <div className="lab-studio-section-title">Projects</div>
-                <div className="lab-inline-actions">
-                  <select
-                    className="lab-select"
-                    value={studioProjectId || ''}
-                    onChange={(event) => {
-                      const nextProjectId = event.target.value || null
-                      setStudioProjectId(nextProjectId)
-                      setStudioActiveFolderId(null)
-                      if (nextProjectId) {
-                        localStorage.setItem(STUDIO_ACTIVE_PROJECT_ID_KEY, nextProjectId)
-                      } else {
-                        localStorage.removeItem(STUDIO_ACTIVE_PROJECT_ID_KEY)
-                        localStorage.removeItem(STUDIO_ACTIVE_PROJECT_NAME_KEY)
-                      }
-                    }}
-                    title="Active project"
-                  >
-                    <option value="">All projects</option>
-                    {studioProjectsLoading
-                      ? <option value="" disabled>Loading projects…</option>
-                      : studioProjects.length === 0
-                        ? <option value="" disabled>No projects yet</option>
-                        : studioProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-                  </select>
-                  {studioProjectId && (
-                    <>
-                      <button
-                        type="button"
-                        className="lab-icon-btn lab-icon-btn--small"
-                        onClick={() => handleRenameProject(studioProjectId!, studioProjects.find(p => p.id === studioProjectId)?.name || '')}
-                        disabled={studioBusy}
-                        title="Rename Project"
-                      >
-                        <FilePenLine size={14} />
-                      </button>
-                      <button
-                        type="button"
-                        className="lab-icon-btn lab-icon-btn--small"
-                        onClick={() => handleDeleteProject(studioProjectId!)}
-                        disabled={studioBusy}
-                        title="Delete Project"
-                      >
-                        ✕
-                      </button>
-                    </>
-                  )}
-                </div>
-                <div className="lab-studio-section-title">New project</div>
-                <div className="lab-inline-actions">
-                  <input
-                    className="lab-input"
-                    value={newProjectName}
-                    onChange={(event) => setNewProjectName(event.target.value)}
-                    placeholder="Project name"
-                  />
-                  <button
-                    type="button"
-                    className="lab-primary-btn"
-                    disabled={studioBusy || !newProjectName.trim()}
-                    onClick={() => { void handleCreateStudioProject() }}
-                  >
-                    Create
-                  </button>
-                </div>
-              </div>
-
-              {/* ── Folders ── */}
-              <div className="lab-studio-section">
-                <div className="lab-studio-section-title">Folders</div>
-                <div className="lab-studio-folder-strip" aria-label="Project folders">
-                  {studioFoldersLoading
-                    ? <span className="lab-studio-folder-pill is-muted">Loading…</span>
-                    : studioFolders.length > 0
-                      ? studioFolders.map((folder) => (
-                          <span
-                            key={folder.id}
-                            className={`lab-studio-folder-pill ${permissionFolderId === folder.id ? 'is-active' : ''}`}
-                            onClick={() => setPermissionFolderId(folder.id)}
-                            title="Click to select folder"
-                          >
-                            {folder.name}
-                            <span className="lab-studio-folder-actions" onClick={(e) => e.stopPropagation()}>
-                              <button
-                                type="button"
-                                onClick={() => handleRenameFolder(studioProjectId!, folder.id, folder.name)}
-                                title="Rename folder"
-                              >
-                                <FilePenLine size={13} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteFolder(studioProjectId!, folder.id)}
-                                title="Delete folder"
-                              >
-                                ✕
-                              </button>
-                            </span>
-                          </span>
-                        ))
-                      : <span className="lab-studio-folder-pill is-muted">No folders yet</span>}
-                </div>
-                <div className="lab-studio-section-title">New folder</div>
-                <div className="lab-inline-actions">
-                  <input
-                    className="lab-input"
-                    value={newFolderName}
-                    onChange={(event) => setNewFolderName(event.target.value)}
-                    placeholder="Folder name"
-                  />
-                  <button
-                    type="button"
-                    className="lab-primary-btn"
-                    disabled={studioBusy || !studioProjectId || !newFolderName.trim()}
-                    onClick={() => { void handleCreateStudioFolder() }}
-                  >
-                    Create
-                  </button>
-                </div>
-              </div>
-
-              {/* ── Collaborators ── */}
-              {studioProjectId && (
-                <div className="lab-studio-section">
-                  <div className="lab-studio-section-title">Collaborators</div>
-                  {studioMembers.length === 0
-                    ? <div className="lab-studio-empty-hint">No collaborators yet — invite someone below.</div>
-                    : (
-                      <ul className="lab-studio-member-list">
-                        {studioMembers.map((member) => {
-                          const isMe = member.userId === auth.currentUser?.uid
-                          const currentUserRole = studioMembers.find((m) => m.userId === auth.currentUser?.uid)?.role
-                          const canRemove = !isMe && (currentUserRole === 'owner' || currentUserRole === 'editor')
-                          return (
-                            <li key={member.userId} className="lab-studio-member-row">
-                              <span className="lab-studio-member-name">{member.displayName || member.email}</span>
-                              <span className="lab-studio-member-email">{member.email}</span>
-                              <span className={`lab-studio-member-role lab-studio-member-role--${member.role}`}>{member.role}</span>
-                              {canRemove && (
-                                <button
-                                  type="button"
-                                  className="lab-icon-btn lab-icon-btn--small"
-                                  disabled={studioBusy}
-                                  onClick={() => { void handleRemoveMember(member.userId) }}
-                                  title="Remove collaborator"
-                                >
-                                  ✕
-                                </button>
-                              )}
-                            </li>
-                          )
-                        })}
-                      </ul>
-                    )}
-
-                  <div className="lab-studio-section-title">Invite collaborator</div>
-                  <div className="lab-inline-actions lab-inline-actions--wrap">
-                    <input
-                      className="lab-input"
-                      type="email"
-                      placeholder="Email address"
-                      value={inviteEmail}
-                      onChange={(e) => setInviteEmail(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') { void handleInviteCollaborator() } }}
-                    />
-                    <select
-                      className="lab-select"
-                      value={inviteRole}
-                      onChange={(e) => setInviteRole(e.target.value as 'editor' | 'viewer')}
-                      title="Role"
-                    >
-                      <option value="editor">Editor</option>
-                      <option value="viewer">Viewer</option>
-                    </select>
-                    <button
-                      type="button"
-                      className="lab-primary-btn"
-                      disabled={studioBusy || !inviteEmail.trim()}
-                      onClick={() => { void handleInviteCollaborator() }}
-                    >
-                      Send Invite
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* ── Folder access ── */}
-              <div className="lab-studio-section">
-                <div className="lab-studio-section-title">Folder access / hide</div>
-                <div className="lab-inline-actions lab-inline-actions--wrap">
-                  <select
-                    className="lab-select"
-                    value={permissionFolderId}
-                    onChange={(event) => setPermissionFolderId(event.target.value)}
-                    title="Folder"
-                  >
-                    {studioFolders.length === 0
-                      ? <option value="">No folders</option>
-                      : studioFolders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
-                  </select>
-                  <select
-                    className="lab-select"
-                    value={permissionMemberUid}
-                    onChange={(event) => setPermissionMemberUid(event.target.value)}
-                    title="Collaborator"
-                  >
-                    {studioMembers.length === 0
-                      ? <option value="">No collaborators</option>
-                      : studioMembers.map((member) => (
-                          <option key={member.userId} value={member.userId}>{member.displayName || member.email}</option>
-                        ))}
-                  </select>
-                  <select
-                    className="lab-select"
-                    value={permissionMode}
-                    onChange={(event) => setPermissionMode(event.target.value as 'default' | 'allowed' | 'hidden')}
-                    title="Access mode"
-                  >
-                    <option value="default">Default</option>
-                    <option value="allowed">Allow</option>
-                    <option value="hidden">Hide</option>
-                  </select>
-                  <button
-                    type="button"
-                    className="lab-primary-btn"
-                    disabled={studioBusy || !permissionFolderId || !permissionMemberUid}
-                    onClick={() => { void handleApplyFolderPermission() }}
-                  >
-                    Apply
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {studioPanelMessage && <div className="lab-studio-dialog-status">{studioPanelMessage}</div>}
-          </div>
+          <StudioDialog
+            studioProjects={studioProjects}
+            studioProjectsLoading={studioProjectsLoading}
+            studioProjectId={studioProjectId}
+            visibleStudioFolders={visibleStudioFolders}
+            studioFolders={studioFolders}
+            studioFoldersLoading={studioFoldersLoading}
+            studioMembers={studioMembers}
+            currentMemberRole={currentStudioMemberRole}
+            studioActiveFolderId={studioActiveFolderId}
+            onClose={() => setStudioAccountOpen(false)}
+            onProjectSelect={handleProjectSelect}
+            onProjectCreated={handleProjectCreated}
+          />
         </div>
       )}
 
@@ -6219,6 +6439,9 @@ export default function ToorGenPromptWorkbench() {
       <div className="lab-ref-preloader" aria-hidden="true">
         {cachedReferenceImageUrls.map((url) => (
           <img key={url} src={url} alt="" loading="eager" decoding="async" />
+        ))}
+        {cachedHistoryPlaybackUrls.map((url) => (
+          <video key={url} src={url} muted playsInline preload="auto" onLoadedMetadata={handlePreloaderVideoMetadata} />
         ))}
       </div>
       <div
@@ -6270,7 +6493,7 @@ export default function ToorGenPromptWorkbench() {
                   }}
                   disabled={!(videoDialogState.details?.sourceUrl || videoDialogState.playbackUrl) || savingVideoToAssetsHistoryId === (videoDialogState.details?.historyId || '__dialog__') || isVideoAlreadyInLibrary}
                 >
-                  {savingVideoToAssetsHistoryId === (videoDialogState.details?.historyId || '__dialog__') ? 'Uploading...' : isVideoAlreadyInLibrary ? 'In Assets ✓' : 'Save to Assets'}
+                  {savingVideoToAssetsHistoryId === (videoDialogState.details?.historyId || '__dialog__') ? 'Uploading...' : isVideoAlreadyInLibrary ? 'In Assets âœ“' : 'Save to Assets'}
                 </button>
                 {videoDialogHistoryEntry && (
                   <button
@@ -6360,7 +6583,7 @@ export default function ToorGenPromptWorkbench() {
                               onClick={() => { void handleSaveFrameToLibrary(frame) }}
                               disabled={savingFrameId === frame.id || Boolean(frame.libraryUrl)}
                             >
-                              {savingFrameId === frame.id ? 'Saving...' : frame.libraryUrl ? 'In Library ✓' : 'To Library'}
+                              {savingFrameId === frame.id ? 'Saving...' : frame.libraryUrl ? 'In Library âœ“' : 'To Library'}
                             </button>
                           </div>
                         </div>
@@ -6438,7 +6661,7 @@ export default function ToorGenPromptWorkbench() {
                         <div className="lab-video-ref-rail-head">
                           <strong>Reference Assets</strong>
                           {wrongAssets && (
-                            <span className="lab-video-ref-rail-warn">⚠ This model expects images, not videos — check your references to avoid wasting credits.</span>
+                            <span className="lab-video-ref-rail-warn">âš  This model expects images, not videos â€” check your references to avoid wasting credits.</span>
                           )}
                         </div>
                         <div className="lab-video-ref-rail">
@@ -6547,6 +6770,11 @@ export default function ToorGenPromptWorkbench() {
               <strong>Reference Library</strong>
               <div className="lab-inline-actions">
                 <span className="lab-inline-note">{selectedReferenceLibraryUrls.length} selected</span>
+                {studioProjectId && importableLocalReferenceLibrary.length > 0 ? (
+                  <button type="button" className="lab-secondary-btn" onClick={() => { void handleImportLocalReferencesToProject() }}>
+                    Import Local ({importableLocalReferenceLibrary.length})
+                  </button>
+                ) : null}
                 <button type="button" className="lab-secondary-btn" onClick={() => referenceLibraryUploadInputRef.current?.click()}>
                   {isReferenceLibraryUploading ? 'Uploading...' : 'Upload'}
                 </button>
@@ -6578,6 +6806,12 @@ export default function ToorGenPromptWorkbench() {
               onChange={(event) => setReferenceLibraryQuery(event.target.value)}
               aria-label="Search reference library"
             />
+            
+            {studioProjectId ? (
+              <div className="lab-inline-note">Showing shared references for the active project.</div>
+            ) : (
+              <div className="lab-inline-note">No project selected. This is your local reference library.</div>
+            )}
 
             <div className="lab-library-grid">
               <button type="button" className="lab-library-plus-card" onClick={() => referenceLibraryUploadInputRef.current?.click()}>
@@ -6612,7 +6846,7 @@ export default function ToorGenPromptWorkbench() {
                             onMouseEnter={handleVideoCardHoverStart}
                             onMouseLeave={handleVideoCardHoverEnd}
                           />
-                          <span className="lab-library-play-badge" aria-hidden="true">▶</span>
+                          <span className="lab-library-play-badge" aria-hidden="true">â–¶</span>
                         </>
                       ) : isAudio ? (
                         <>
@@ -6973,7 +7207,7 @@ export default function ToorGenPromptWorkbench() {
                   setIsWorkflowPickerOpen(false)
                 }}
               >
-                <span className="lab-workflow-icon" aria-hidden="true">{WORKFLOW_GROUP_ICONS[tab.group] || '🧩'}</span>
+                <span className="lab-workflow-icon" aria-hidden="true">{WORKFLOW_GROUP_ICONS[tab.group] || 'WF'}</span>
                 <span className="lab-workflow-label">{tab.label}</span>
                 <span className="lab-history-meta">{tab.group}</span>
               </button>
@@ -7116,23 +7350,37 @@ export default function ToorGenPromptWorkbench() {
                 </button>
                 <button
                   type="button"
-                  className={`lab-secondary-btn${isDirectSubmitPanelVisible ? ' lab-view-mode-btn--active' : ''}`}
-                  title="Toggle Direct API submit panel"
-                  aria-label="Toggle Direct API submit panel"
-                  onClick={() => setIsDirectSubmitPanelVisible((current) => !current)}
+                  className={`lab-secondary-btn${isDirectSubmitPanelVisible && activeDirectPanelTab === 'story' ? ' lab-view-mode-btn--active' : ''}`}
+                  title="Open Story / Bible panel"
+                  aria-label="Open Story / Bible panel"
+                  onClick={() => {
+                    if (isDirectSubmitPanelVisible && activeDirectPanelTab === 'story') {
+                      setIsDirectSubmitPanelVisible(false)
+                      return
+                    }
+                    setActiveDirectPanelTab('story')
+                    setIsDirectSubmitPanelVisible(true)
+                  }}
                 >
-                  Direct submit to API
+                  Story / Bible
+                </button>
+                <button
+                  type="button"
+                  className="lab-secondary-btn lab-select-workflow-btn"
+                  data-workflow-picker-trigger="true"
+                  disabled={!hasConfiguredWorkflows}
+                  onClick={(event) => openWorkflowPicker('all', event.currentTarget)}
+                >
+                  Select Workflow
                 </button>
               </div>
             </div>
-            <p className="lab-subtitle">
-              {hasConfiguredWorkflows
-                ? 'Pick a workflow and build each run from the bottom workflow bar.'
-                : 'No workflows configured yet. We will add them one by one.'}
-            </p>
+            {!hasConfiguredWorkflows && (
+              <p className="lab-subtitle">No workflows configured yet. We will add them one by one.</p>
+            )}
           </div>
 
-          {/* ── Studio context selectors ── */}
+          {/* â”€â”€ Studio context selectors â”€â”€ */}
           <div className="lab-toolbar-studio-context">
             <select
               className="lab-select lab-select--compact"
@@ -7153,7 +7401,7 @@ export default function ToorGenPromptWorkbench() {
             >
               <option value="">All projects</option>
               {studioProjectsLoading
-                ? <option value="" disabled>Loading…</option>
+                ? <option value="" disabled>Loadingâ€¦</option>
                 : studioProjects.length === 0
                   ? <option value="" disabled>No projects</option>
                   : studioProjects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -7164,15 +7412,15 @@ export default function ToorGenPromptWorkbench() {
               onChange={(event) => setStudioActiveFolderId(event.target.value || null)}
               title="Filter by folder"
               aria-label="Filter by folder"
-              disabled={studioFolders.length === 0}
+              disabled={visibleStudioFolders.length === 0}
             >
               <option value="">All folders</option>
-              {studioFolders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+              {visibleStudioFolders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
             </select>
             <button
               type="button"
               className="lab-secondary-btn"
-              title="Manage Studio — org, projects, folders, collaborators"
+              title="Manage Studio â€” org, projects, folders, collaborators"
               onClick={() => setStudioAccountOpen(true)}
             >
               Studio
@@ -7182,7 +7430,7 @@ export default function ToorGenPromptWorkbench() {
 
         {!isBackendAvailable && (
           <div className="lab-backend-notice" role="status" aria-live="polite">
-            <span className="lab-backend-notice-dot" aria-hidden="true">●</span>
+            <span className="lab-backend-notice-dot" aria-hidden="true" />
             <span>{backendNotice || 'Back end server is not working. Please run it.'}</span>
           </div>
         )}
@@ -7194,11 +7442,21 @@ export default function ToorGenPromptWorkbench() {
         ref={labLayoutRef}
       >
         <main className="lab-main">
-          <section className="lab-card">
+          {MAIN_PANEL_DISABLED && (
+            <section className="lab-card">
+              <div className="lab-card-head">
+                <div>
+                  <h3 className="lab-card-title">Main Panel</h3>
+                  <div className="lab-inline-note">Main panel content temporarily disabled for composer performance isolation.</div>
+                </div>
+              </div>
+            </section>
+          )}
+          {!MAIN_PANEL_DISABLED && (
+          <section className="lab-card lab-main-panel">
             <div className="lab-card-head">
               <div>
-                <h3 className="lab-card-title">Generated Runs</h3>
-                <div className="lab-inline-note">{activeTab.label || 'No workflows configured.'}</div>
+                <h3 className="lab-card-title">Main Panel</h3>
               </div>
               <div className="lab-inline-actions">
                 <button
@@ -7279,11 +7537,7 @@ export default function ToorGenPromptWorkbench() {
               </div>
             </div>
 
-            {isDiagnoseShowAllHistory && (
-              <div className="lab-status">
-                Diagnose mode is active: showing all generations across projects/folders so you can bulk move and categorize them.
-              </div>
-            )}
+            <div className="lab-main-panel-body">
 
             {isRecoveryOpen && (
               <div className="lab-recovery-panel">
@@ -7291,7 +7545,7 @@ export default function ToorGenPromptWorkbench() {
                   <input
                     className="lab-input lab-recovery-input"
                     type="text"
-                    placeholder="Task ID (e.g. 7496346…)"
+                    placeholder="Task ID (e.g. 7496346â€¦)"
                     value={recoveryTaskId}
                     onChange={(e) => setRecoveryTaskId(e.target.value)}
                   />
@@ -7345,10 +7599,6 @@ export default function ToorGenPromptWorkbench() {
                   Enter the task ID from a generation that was in progress when the page refreshed. The result will appear here when polling completes.
                 </div>
               </div>
-            )}
-
-            {activeState.statusText && !/^Submitting generation request|^Generating.../i.test(activeState.statusText) && (
-              <div className="lab-status">{activeState.statusText}</div>
             )}
 
             {historyViewMode === 'cards' && filteredTabHistory.length === 0 && !(hasActiveOutputPreview && canRenderActiveOutputPreviewCard) && activePendingGenerations.length === 0 && (
@@ -7442,6 +7692,7 @@ export default function ToorGenPromptWorkbench() {
                       })}>
                         <video
                           src={outputPlaybackUrl}
+                          poster={thumbnailPosterCache.get(outputPlaybackUrl)}
                           data-fallback-playback-url=""
                           className="lab-history-thumb"
                           muted
@@ -7550,6 +7801,7 @@ export default function ToorGenPromptWorkbench() {
                           <button type="button" className="lab-history-video-visual" aria-label={`Open details for ${formatTimestamp(entry.completedAt)}`} onClick={() => openVideoDialog(displayUrl, dialogDetails)}>
                             <video
                               src={playbackUrl}
+                              poster={thumbnailPosterCache.get(playbackUrl)}
                               data-fallback-playback-url={fallbackPlaybackUrl}
                               className="lab-history-thumb"
                               muted
@@ -7735,7 +7987,7 @@ export default function ToorGenPromptWorkbench() {
                         setIsBulkMoveDialogOpen(true)
                       }}
                     >
-                      Move to Project / Folder…
+                      Move to Project / Folderâ€¦
                     </button>
                     <button
                       type="button"
@@ -7759,7 +8011,9 @@ export default function ToorGenPromptWorkbench() {
                 <ul className="lab-history-checklist">
                   {filteredTabHistory.map((entry) => {
                     const isChecked = selectedHistoryIds.has(entry.historyId)
-                    const thumb = entry.resultUrl || entry.firebaseVideoUrl || ''
+                    const sources = resolvePrimaryAndFallbackVideoSources(entry.firebaseVideoUrl || '', entry.resultUrl || '')
+                    const thumb = sources.primary
+                    const fallbackThumb = sources.fallback
                     const projectName = studioProjects.find((p) => p.id === entry.projectId)?.name ?? ''
                     return (
                       <li
@@ -7785,9 +8039,13 @@ export default function ToorGenPromptWorkbench() {
                         {thumb ? (
                           <video
                             src={getPlaybackUrl(thumb)}
+                            poster={thumbnailPosterCache.get(getPlaybackUrl(thumb))}
+                            data-fallback-playback-url={getPlaybackUrl(fallbackThumb)}
                             className="lab-history-list-thumb"
                             muted
                             playsInline
+                            preload="metadata"
+                            onError={handleHistoryVideoLoadError}
                           />
                         ) : (
                           <div className="lab-history-list-thumb lab-history-list-thumb--empty" />
@@ -7821,14 +8079,14 @@ export default function ToorGenPromptWorkbench() {
                     }}
                     aria-label="Bulk move project"
                   >
-                    <option value="">— None —</option>
+                    <option value="">â€” None â€”</option>
                     {studioProjects.map((p) => (
                       <option key={p.id} value={p.id}>{p.name}</option>
                     ))}
                   </select>
                   {bulkMoveTargetProjectId && (() => {
                     if (bulkMoveFoldersLoading) {
-                      return <div className="lab-inline-note">Loading folders…</div>
+                      return <div className="lab-inline-note">Loading foldersâ€¦</div>
                     }
                     if (bulkMoveFolderOptions.length === 0) return null
                     const targetProjectName = studioProjects.find((project) => project.id === bulkMoveTargetProjectId)?.name || 'Selected project'
@@ -7842,7 +8100,7 @@ export default function ToorGenPromptWorkbench() {
                           onChange={(e) => setBulkMoveTargetFolderId(e.target.value)}
                           aria-label="Bulk move folder"
                         >
-                          <option value="">— No folder —</option>
+                          <option value="">â€” No folder â€”</option>
                           {bulkMoveFolderOptions.map((folderOption) => (
                             <option key={folderOption.id} value={folderOption.id}>{folderOption.label}</option>
                           ))}
@@ -7867,7 +8125,7 @@ export default function ToorGenPromptWorkbench() {
                         void handleBulkMoveToProject(Array.from(selectedHistoryIds), bulkMoveTargetProjectId, bulkMoveTargetFolderId)
                       }}
                     >
-                      {isBulkMoving ? 'Moving…' : 'Assign'}
+                      {isBulkMoving ? 'Movingâ€¦' : 'Assign'}
                     </button>
                   </div>
                 </div>
@@ -7933,7 +8191,7 @@ export default function ToorGenPromptWorkbench() {
                     </div>
                     <div className="lab-history-video-meta">
                       <span className="lab-history-title">{selectedRailItem.title}</span>
-                      <span className="lab-history-meta">{selectedRailItem.provider} • {selectedRailItem.model}</span>
+                      <span className="lab-history-meta">{selectedRailItem.provider} â€¢ {selectedRailItem.model}</span>
                     </div>
                   </div>
                 ) : (
@@ -7963,6 +8221,7 @@ export default function ToorGenPromptWorkbench() {
                       ) : (
                         <video
                           src={getPlaybackUrl(item.url)}
+                          poster={thumbnailPosterCache.get(getPlaybackUrl(item.url))}
                           className="lab-history-rail-thumb"
                           muted
                           playsInline
@@ -7974,7 +8233,15 @@ export default function ToorGenPromptWorkbench() {
                 </div>
               </div>
             )}
+            </div>
+
+            <div className="lab-main-panel-statusbar" role="status" aria-live="polite">
+              {mainPanelStatusMessages.length > 0
+                ? mainPanelStatusMessages.join(' \u2022 ')
+                : 'Ready.'}
+            </div>
           </section>
+          )}
 
         </main>
 
@@ -7994,76 +8261,238 @@ export default function ToorGenPromptWorkbench() {
 
             <div className="lab-card-head">
               <div>
-                <h3 className="lab-card-title">Direct submit to API</h3>
-                <div className="lab-inline-note">Paste raw JSON and submit without composer-driven updates.</div>
+                <h3 className="lab-card-title">{activeDirectPanelTab === 'story' ? 'Story / Bible' : 'Direct submit to API'}</h3>
               </div>
-              <button
-                type="button"
-                className="lab-secondary-btn"
-                onClick={() => {
-                  setDirectRequestJson(JSON.stringify(previewRequest.body, null, 2))
-                  pushDirectSubmitFeed('Loaded current Request Preview JSON.')
-                }}
-              >
-                Load Current Preview
-              </button>
+              <div className="lab-direct-tab-switch" role="tablist" aria-label="Direct panel tabs">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeDirectPanelTab === 'story'}
+                  className={`lab-secondary-btn${activeDirectPanelTab === 'story' ? ' lab-view-mode-btn--active' : ''}`}
+                  onClick={() => setActiveDirectPanelTab('story')}
+                >
+                  Story
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeDirectPanelTab === 'direct'}
+                  className={`lab-secondary-btn${activeDirectPanelTab === 'direct' ? ' lab-view-mode-btn--active' : ''}`}
+                  onClick={() => setActiveDirectPanelTab('direct')}
+                >
+                  Direct API
+                </button>
+              </div>
             </div>
 
-            <textarea
-              className="lab-textarea lab-direct-json-input"
-              value={directRequestJson}
-              placeholder="Paste JSON here. Supports either { endpoint, body } or a body object for the current endpoint."
-              onChange={(event) => setDirectRequestJson(event.target.value)}
-              spellCheck={false}
-            />
+            {activeDirectPanelTab === 'direct' && (
+              <>
+                <button
+                  type="button"
+                  className="lab-secondary-btn"
+                  onClick={() => {
+                    setDirectRequestJson(JSON.stringify(previewRequest.body, null, 2))
+                    pushDirectSubmitFeed('Loaded current Request Preview JSON.')
+                  }}
+                >
+                  Load Current Preview
+                </button>
 
-            {directSubmitFeed.length > 0 && (
-              <div className="lab-direct-feed">
-                <div className="lab-direct-feed-head">
-                  <strong>Activity</strong>
+                <textarea
+                  className="lab-textarea lab-direct-json-input"
+                  value={directRequestJson}
+                  placeholder="Paste JSON here. Supports either { endpoint, body } or a body object for the current endpoint."
+                  onChange={(event) => setDirectRequestJson(event.target.value)}
+                  spellCheck={false}
+                />
+
+                {directSubmitFeed.length > 0 && (
+                  <div className="lab-direct-feed">
+                    <div className="lab-direct-feed-head">
+                      <strong>Activity</strong>
+                      <button
+                        type="button"
+                        className="lab-secondary-btn"
+                        onClick={() => setDirectSubmitFeed([])}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                    <div className="lab-direct-feed-list">
+                      {directSubmitFeed.map((item) => (
+                        <div key={item.id} className="lab-direct-feed-item">{item.text}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="lab-direct-panel-footer">
+                  <div className="lab-direct-panel-actions">
+                    <button
+                      type="button"
+                      className="lab-secondary-btn"
+                      onClick={handleSaveDirectPreset}
+                    >
+                      Save Preset
+                    </button>
+                    <button
+                      type="button"
+                      className="lab-secondary-btn"
+                      onClick={() => setIsDirectPresetDialogOpen(true)}
+                    >
+                      Load Template
+                    </button>
+                  </div>
                   <button
                     type="button"
-                    className="lab-secondary-btn"
-                    onClick={() => setDirectSubmitFeed([])}
+                    className="lab-primary-btn"
+                    disabled={isDirectSubmitBusy}
+                    onClick={() => void handleDirectRequestSubmit()}
                   >
-                    Clear
+                    {isDirectSubmitBusy ? 'Submitting...' : 'Submit JSON'}
                   </button>
                 </div>
-                <div className="lab-direct-feed-list">
-                  {directSubmitFeed.map((item) => (
-                    <div key={item.id} className="lab-direct-feed-item">{item.text}</div>
-                  ))}
+              </>
+            )}
+
+            {activeDirectPanelTab === 'story' && (
+              <div className="lab-story-panel">
+                <div className="lab-story-summary-card">
+                  <strong>{storyBibleData.title || 'Untitled story bible'}</strong>
+                  <div className="lab-inline-note">{storyBibleData.summary || 'No story summary saved yet.'}</div>
+                </div>
+
+                <div className="lab-story-chapter-list">
+                  {storyBibleData.chapters.length === 0 && (
+                    <div className="lab-empty-state">No chapters saved yet for this project.</div>
+                  )}
+                  {storyBibleData.chapters.map((chapter) => {
+                    const linkedFolderName = chapter.folderId
+                      ? (studioFolderNameById.get(chapter.folderId) || chapter.folderId)
+                      : 'Unassigned'
+                    const chapterEpisodes = chapter.episodeIds
+                      .map((episodeId) => storyEpisodesById.get(episodeId))
+                      .filter((episode): episode is StoryBibleEpisode => Boolean(episode))
+
+                    return (
+                      <article key={chapter.id} className="lab-story-chapter-card">
+                        <div className="lab-story-chapter-head">
+                          <strong>{chapter.title}</strong>
+                          <span className="lab-inline-note">Folder: {linkedFolderName}</span>
+                        </div>
+                        {chapter.summary && <div className="lab-inline-note">{chapter.summary}</div>}
+                        {chapterEpisodes.length > 0 && (
+                          <div className="lab-story-episode-list">
+                            {chapterEpisodes.map((episode) => (
+                              <div key={episode.id} className="lab-story-episode-item">
+                                <span>{episode.title}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </article>
+                    )
+                  })}
+                </div>
+
+                <div className="lab-direct-panel-footer">
+                  <span className="lab-inline-note">Story tab is read-only for now.</span>
+                  <button
+                    type="button"
+                    className="lab-primary-btn"
+                    onClick={() => setIsStoryBibleDialogOpen(true)}
+                  >
+                    Manage Story & Bible
+                  </button>
                 </div>
               </div>
             )}
+          </section>
+        )}
 
-            <div className="lab-direct-panel-footer">
-              <div className="lab-direct-panel-actions">
+        {isStoryBibleDialogOpen && (
+          <div className="lab-story-bible-dialog-backdrop" onClick={() => setIsStoryBibleDialogOpen(false)}>
+            <section className="lab-story-bible-dialog" onClick={(event) => event.stopPropagation()}>
+              <div className="lab-card-head">
+                <div>
+                  <h3 className="lab-card-title">Story & Bible Manager</h3>
+                  <div className="lab-inline-note">Dedicated storytelling workspace (read-only scaffold for now).</div>
+                </div>
                 <button
                   type="button"
                   className="lab-secondary-btn"
-                  onClick={handleSaveDirectPreset}
+                  onClick={() => setIsStoryBibleDialogOpen(false)}
                 >
-                  Save Preset
-                </button>
-                <button
-                  type="button"
-                  className="lab-secondary-btn"
-                  onClick={() => setIsDirectPresetDialogOpen(true)}
-                >
-                  Load Template
+                  Close
                 </button>
               </div>
-              <button
-                type="button"
-                className="lab-primary-btn"
-                disabled={isDirectSubmitBusy}
-                onClick={() => void handleDirectRequestSubmit()}
-              >
-                {isDirectSubmitBusy ? 'Submitting...' : 'Submit JSON'}
-              </button>
-            </div>
-          </section>
+
+              <div className="lab-story-bible-dialog-grid">
+                <section className="lab-story-bible-column">
+                  <h4 className="lab-story-bible-section-title">Episodes</h4>
+                  {storyBibleData.episodes.length === 0 && (
+                    <div className="lab-empty-state">No episodes saved yet.</div>
+                  )}
+                  {storyBibleData.episodes.map((episode) => (
+                    <article key={episode.id} className="lab-story-bible-item">
+                      <strong>{episode.title}</strong>
+                      {episode.section && <div className="lab-inline-note">Story section: {episode.section}</div>}
+                      {episode.scenarios.length > 0 && (
+                        <div className="lab-story-bible-sublist">
+                          <div className="lab-inline-note">Scenarios</div>
+                          {episode.scenarios.map((scenario, index) => (
+                            <div key={`${episode.id}-scenario-${index}`} className="lab-story-bible-subitem">{scenario}</div>
+                          ))}
+                        </div>
+                      )}
+                      {episode.dialogs.length > 0 && (
+                        <div className="lab-story-bible-sublist">
+                          <div className="lab-inline-note">Dialogs</div>
+                          {episode.dialogs.map((dialogLine, index) => (
+                            <div key={`${episode.id}-dialog-${index}`} className="lab-story-bible-subitem">{dialogLine}</div>
+                          ))}
+                        </div>
+                      )}
+                      {episode.characters.length > 0 && (
+                        <div className="lab-story-bible-sublist">
+                          <div className="lab-inline-note">Characters</div>
+                          {episode.characters.map((character, index) => (
+                            <div key={`${episode.id}-character-${index}`} className="lab-story-bible-subitem">{character}</div>
+                          ))}
+                        </div>
+                      )}
+                    </article>
+                  ))}
+                </section>
+
+                <section className="lab-story-bible-column">
+                  <h4 className="lab-story-bible-section-title">Chapters</h4>
+                  {storyBibleData.chapters.length === 0 && (
+                    <div className="lab-empty-state">No chapters saved yet.</div>
+                  )}
+                  {storyBibleData.chapters.map((chapter) => (
+                    <article key={chapter.id} className="lab-story-bible-item">
+                      <strong>{chapter.title}</strong>
+                      <div className="lab-inline-note">
+                        Linked folder: {chapter.folderId ? (studioFolderNameById.get(chapter.folderId) || chapter.folderId) : 'Unassigned'}
+                      </div>
+                      {chapter.summary && <div className="lab-inline-note">{chapter.summary}</div>}
+                      {chapter.episodeIds.length > 0 && (
+                        <div className="lab-story-bible-sublist">
+                          <div className="lab-inline-note">Episodes in this chapter</div>
+                          {chapter.episodeIds.map((episodeId) => (
+                            <div key={`${chapter.id}-${episodeId}`} className="lab-story-bible-subitem">
+                              {storyEpisodesById.get(episodeId)?.title || episodeId}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </article>
+                  ))}
+                </section>
+              </div>
+            </section>
+          </div>
         )}
 
         <aside className="lab-rail">
@@ -8079,21 +8508,26 @@ export default function ToorGenPromptWorkbench() {
             <span className="lab-rail-resizer-grip" aria-hidden="true">||</span>
           </div>
 
-          <section className={`lab-rail-card lab-rail-card--composer${isRequestPreviewExpanded ? ' is-scrollable' : ''}`}>
-            <div className="lab-rail-head">
-              <div className="lab-rail-title">
-                Composer
-                <span className={`lab-backend-state-dot${isBackendAvailable ? '' : ' lab-backend-state-dot--down'}`} aria-label={isBackendAvailable ? 'Backend online' : 'Backend offline'}>
-                  ●
-                </span>
-                {activeTab.label ? <span className="lab-active-workflow">({activeTab.label})</span> : null}
+          {COMPOSER_RAIL_DISABLED && (
+            <section className={`lab-rail-card lab-rail-card--composer${isRequestPreviewExpanded ? ' is-scrollable' : ''}`}>
+              <div className="lab-card-head">
+                <div>
+                  <h3 className="lab-card-title">Composer</h3>
+                  <div className="lab-inline-note">Composer content temporarily disabled. Resize handlers remain active for baseline testing.</div>
+                </div>
               </div>
-              <div className="lab-composer-head-actions">
+            </section>
+          )}
+          {!COMPOSER_RAIL_DISABLED && (
+          <section className={`lab-rail-card lab-rail-card--composer${isRequestPreviewExpanded ? ' is-scrollable' : ''}`}>
+            <section className="lab-composer-bar lab-composer-bar--rail">
+            <div className="lab-composer-head-actions">
+              <div className="lab-composer-head-controls-wrap">
                 <div className="lab-ref-mode-toggle" role="group" aria-label="Reference mode">
                   <button
                     type="button"
                     className={`lab-ref-mode-btn${composerRefMode === 'text' ? ' is-active' : ''}`}
-                    title="Text only – no references"
+                    title="Text only - no references"
                     onClick={() => setComposerRefMode('text')}
                   >
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
@@ -8127,81 +8561,198 @@ export default function ToorGenPromptWorkbench() {
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
                   </button>
                 </div>
-                <button
-                  type="button"
-                  className="lab-secondary-btn lab-select-workflow-btn"
-                  data-workflow-picker-trigger="true"
-                  disabled={!hasConfiguredWorkflows}
-                  onClick={(event) => openWorkflowPicker('all', event.currentTarget)}
-                >
-                  Select Workflow
-                </button>
+                {!PROMPT_INPUT_TEMP_DISABLED && (
+                  <div className="lab-refine-prompt-controls">
+                    {pendingRefinedPrompt ? (
+                      <>
+                        <button
+                          type="button"
+                          className="lab-refine-prompt-btn lab-refine-prompt-btn--keep"
+                          title="Keep previous prompt"
+                          onClick={() => {
+                            updateModeState(activeTab.id, (current) => ({ ...current, prompt: pendingRefinedPrompt.original }))
+                            setPendingRefinedPrompt(null)
+                          }}
+                        >Keep original</button>
+                        <button
+                          type="button"
+                          className="lab-refine-prompt-btn lab-refine-prompt-btn--apply"
+                          title="Apply refined prompt"
+                          onClick={() => {
+                            updateModeState(activeTab.id, (current) => ({ ...current, prompt: pendingRefinedPrompt.refined }))
+                            setPendingRefinedPrompt(null)
+                          }}
+                        >Apply refined</button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        className="lab-refine-prompt-btn"
+                        title="Refine prompt with AI"
+                        disabled={isRefiningPrompt || !activeState.prompt.trim()}
+                        onClick={handleRefinePrompt}
+                      >
+                        <span className="lab-refine-btn-icon" aria-hidden="true">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.8 3.7L18 8.5l-3 2.9.7 4.1L12 13.8l-3.7 1.7.7-4.1-3-2.9 4.2-1.8L12 3z"/></svg>
+                        </span>
+                        <span>{isRefiningPrompt ? 'Refining...' : 'Refine'}</span>
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
-            <section className="lab-composer-bar lab-composer-bar--rail">
+            <div
+              className={`lab-composer-refs${composerRefMode === 'text' ? ' is-collapsed' : ''}`}
+              style={{ height: `${composerRefsHeight}px` }}
+            >
+              {referenceFields.length === 0 ? (
+                <div className="lab-inline-note">No media references for this workflow.</div>
+              ) : (
+                (() => {
+                  const visibleFields = (composerRefMode === 'image'
+                    ? referenceFields.filter((f) => f.kind === 'image')
+                    : composerRefMode === 'audio'
+                      ? referenceFields.filter((f) => f.kind === 'audio')
+                      : referenceFields
+                  ).filter((f) => (activeState.mediaUrls[f.key] || '').trim())
+
+                  const previewFields = visibleFields
+                  const selectedPreviewField = previewFields.find((field) => field.key === composerPreviewFieldKey)
+                    || previewFields.find((field) => field.kind === 'video')
+                    || previewFields[0]
+                    || null
+                  const selectedPreviewUrl = selectedPreviewField ? (activeState.mediaUrls[selectedPreviewField.key] || '').trim() : ''
+                  const imageRailFields = visibleFields.filter((field) => field.kind === 'image')
+
+                  return (
+                    <div className="lab-composer-reference-stage-wrap">
+                      <div className="lab-reference-stage-shell">
+                        <button
+                          type="button"
+                          className="lab-reference-stage"
+                          onClick={() => openReferenceLibraryDialog()}
+                          aria-label="Upload or select references"
+                        >
+                          {selectedPreviewField && selectedPreviewUrl ? (
+                            selectedPreviewField.kind === 'video' ? (
+                              <video
+                                src={getPlaybackUrl(selectedPreviewUrl)}
+                                className="lab-reference-stage-media"
+                                muted
+                                playsInline
+                                preload="metadata"
+                              />
+                            ) : selectedPreviewField.kind === 'audio' ? (
+                              <div className="lab-reference-stage-media lab-reference-stage-media--audio" aria-hidden="true">
+                                <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                              </div>
+                            ) : (
+                              <img src={selectedPreviewUrl} alt={selectedPreviewField.label} className="lab-reference-stage-media" />
+                            )
+                          ) : (
+                            <div className="lab-reference-stage-empty">
+                              <div className="lab-reference-stage-empty-icon" aria-hidden="true">+</div>
+                              <div className="lab-reference-stage-empty-title">First Video Frame</div>
+                              <div className="lab-reference-stage-empty-copy">Click to upload or choose from assets library</div>
+                            </div>
+                          )}
+                        </button>
+
+                        <div className="lab-reference-stage-footer">
+                          <div className="lab-reference-image-rail">
+                            <button
+                              type="button"
+                              className="lab-reference-image-item lab-reference-image-item--add"
+                              aria-label="Add references"
+                              onClick={() => openReferenceLibraryDialog()}
+                            >
+                              <span className="lab-reference-image-item-plus" aria-hidden="true">+</span>
+                            </button>
+                            {imageRailFields.map((field, index) => {
+                              const value = (activeState.mediaUrls[field.key] || '').trim()
+                              if (!value) return null
+                              const isSelected = composerPreviewFieldKey === field.key || selectedPreviewField?.key === field.key
+                              return (
+                                <div
+                                  key={field.key}
+                                  className={`lab-reference-image-item${isSelected ? ' is-active' : ''}`}
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={() => {
+                                    setComposerPreviewFieldKey(field.key)
+                                    updateModeState(activeTab.id, (current) => ({
+                                      ...current,
+                                      selectedImageReferenceKey: field.key,
+                                    }))
+                                  }}
+                                  onKeyDown={(event) => {
+                                    if (event.key === 'Enter' || event.key === ' ') {
+                                      event.preventDefault()
+                                      setComposerPreviewFieldKey(field.key)
+                                      updateModeState(activeTab.id, (current) => ({
+                                        ...current,
+                                        selectedImageReferenceKey: field.key,
+                                      }))
+                                    }
+                                  }}
+                                >
+                                  <img src={value} alt={field.label} className="lab-reference-image-item-thumb" />
+                                  <span className="lab-reference-image-item-label">Image {index + 1}</span>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })()
+              )}
+            </div>
+
+            <div
+              className="lab-composer-splitter"
+              role="separator"
+              aria-label="Resize references and prompt"
+              aria-orientation="horizontal"
+              onMouseDown={handleComposerRefsResizeMouseDown}
+            >
+              <span className="lab-composer-splitter-grip" aria-hidden="true" />
+            </div>
+
             <div className="lab-composer-prompt">
-              <div className="lab-composer-prompt-head">
-                <div className="lab-composer-title">Prompt</div>
-                <div className="lab-refine-prompt-controls">
-                  {pendingRefinedPrompt ? (
-                    <>
-                      <button
-                        type="button"
-                        className="lab-refine-prompt-btn lab-refine-prompt-btn--keep"
-                        title="Keep previous prompt"
-                        onClick={() => {
-                          updateModeState(activeTab.id, (current) => ({ ...current, prompt: pendingRefinedPrompt.original }))
-                          setPendingRefinedPrompt(null)
-                        }}
-                      >Keep original</button>
-                      <button
-                        type="button"
-                        className="lab-refine-prompt-btn lab-refine-prompt-btn--apply"
-                        title="Apply refined prompt"
-                        onClick={() => {
-                          updateModeState(activeTab.id, (current) => ({ ...current, prompt: pendingRefinedPrompt.refined }))
-                          setPendingRefinedPrompt(null)
-                        }}
-                      >✦ Apply refined</button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      className="lab-refine-prompt-btn"
-                      title="Refine prompt with AI"
-                      disabled={isRefiningPrompt || !activeState.prompt.trim()}
-                      onClick={handleRefinePrompt}
-                    >
-                      {isRefiningPrompt ? 'Refining…' : '✦ Refine'}
-                    </button>
-                  )}
-                </div>
-              </div>
-              {pendingRefinedPrompt && (
+              {!PROMPT_INPUT_TEMP_DISABLED && pendingRefinedPrompt && (
                 <div className="lab-refine-preview">{pendingRefinedPrompt.refined}</div>
               )}
-              <ContentEditablePrompt
-                ref={promptTextareaRef}
-                className="lab-textarea lab-textarea--composer"
-                value={activeState.prompt}
-                placeholder={activeTab.promptPlaceholder}
-                resolvedReferences={resolvedMentionReferences}
-                onChange={(value, offset) => {
-                  handlePromptChange(value, offset)
-                }}
-                onClick={(event) => updatePromptMentionState(activeState.prompt, getCaretOffset(event.currentTarget))}
-                onKeyUp={(event) => {
-                  // Only update if it's a navigation key or if text didn't change (input handles text change)
-                  if (event.key.startsWith('Arrow') || event.key === 'Home' || event.key === 'End') {
-                    updatePromptMentionState(activeState.prompt, getCaretOffset(event.currentTarget))
-                  }
-                }}
-                onKeyDown={handlePromptMentionKeyDown}
-                onBlur={() => {
-                  window.setTimeout(() => setPromptMentionQuery(null), 120)
-                }}
-              />
-              {promptMentionOptions.length > 0 && (
+              {PROMPT_INPUT_TEMP_DISABLED ? (
+                <div className="lab-prompt-disabled-note">
+                  Prompt editor temporarily disabled for performance testing.
+                </div>
+              ) : (
+                <ContentEditablePrompt
+                  ref={promptTextareaRef}
+                  className="lab-textarea lab-textarea--composer"
+                  value={activeState.prompt}
+                  placeholder={activeTab.promptPlaceholder}
+                  resolvedReferences={resolvedMentionReferences}
+                  onChange={(value, offset) => {
+                    handlePromptChange(value, offset)
+                  }}
+                  onClick={(event) => updatePromptMentionState(activeState.prompt, getCaretOffset(event.currentTarget))}
+                  onKeyUp={(event) => {
+                    // Only update if it's a navigation key or if text didn't change (input handles text change)
+                    if (event.key.startsWith('Arrow') || event.key === 'Home' || event.key === 'End') {
+                      updatePromptMentionState(activeState.prompt, getCaretOffset(event.currentTarget))
+                    }
+                  }}
+                  onKeyDown={handlePromptMentionKeyDown}
+                  onBlur={() => {
+                    window.setTimeout(() => setPromptMentionQuery(null), 120)
+                  }}
+                />
+              )}
+              {!PROMPT_INPUT_TEMP_DISABLED && promptMentionOptions.length > 0 && (
                 <div className="lab-prompt-mention-list" aria-label="Reference mentions">
                   {promptMentionOptions.map((item, index) => (
                     <button
@@ -8226,196 +8777,77 @@ export default function ToorGenPromptWorkbench() {
               )}
             </div>
 
-            <div
-              className={`lab-composer-refs${composerRefMode === 'text' ? ' is-collapsed' : ''}`}
-            >
-              <div className="lab-composer-title">References</div>
-              {referenceFields.length === 0 ? (
-                <div className="lab-inline-note">No media references for this workflow.</div>
-              ) : (
-                <div className="lab-composer-ref-list">
-                  <div className="lab-composer-ref-item">
-                    <div className="lab-reference-thumb-strip">
-                      <button
-                        type="button"
-                        className="lab-reference-thumb-card lab-reference-add-card"
-                        onClick={() => openReferenceLibraryDialog()}
-                        aria-label="Add references"
-                      >
-                        <span className="lab-reference-add-label">+ Add</span>
-                      </button>
-                      {(() => {
-                        let imageIndex = 0
-                        let videoIndex = 0
-                        let audioIndex = 0
-                        const visibleFields = (composerRefMode === 'image'
-                          ? referenceFields.filter((f) => f.kind === 'image')
-                          : composerRefMode === 'audio'
-                            ? referenceFields.filter((f) => f.kind === 'audio')
-                          : referenceFields
-                        ).filter((f) => (activeState.mediaUrls[f.key] || '').trim())
-                        return visibleFields.map((field) => {
-                          const value = (activeState.mediaUrls[field.key] || '').trim()
-                          const isVideo = field.kind === 'video'
-                          const isAudio = field.kind === 'audio'
-                          const isMentioned = Boolean(value) && mentionedReferenceUrls.has(value)
-                          const isSelectableImage = (
-                            activeTab.id === IMAGE_SINGLE_REFERENCE_MODE_ID
-                            && field.kind === 'image'
-                            && Boolean(value)
-                          )
-                          const isSelectedImage = (
-                            activeTab.id === IMAGE_SINGLE_REFERENCE_MODE_ID
-                            && field.kind === 'image'
-                            && Boolean(value)
-                            && activeState.selectedImageReferenceKey === field.key
-                          )
-                          if (isVideo) {
-                            videoIndex += 1
-                          } else if (isAudio) {
-                            audioIndex += 1
-                          } else {
-                            imageIndex += 1
-                          }
-                          const orderLabel = isVideo ? `Video ${videoIndex}` : isAudio ? `Audio ${audioIndex}` : `Image ${imageIndex}`
-                          return (
-                            <div
-                              key={field.key}
-                              className={`lab-reference-thumb-card${isMentioned ? ' is-mentioned' : ''}${isSelectedImage ? ' is-selected' : ''}${isSelectableImage ? ' is-selectable' : ''}`}
-                              onMouseEnter={(e) => {
-                                if (!value) return
-                                if (isAudio) {
-                                  handleAudioCardHoverStart(e)
-                                  return
-                                }
-                                const rect = e.currentTarget.getBoundingClientRect()
-                                const top = rect.top - 160
-                                const left = rect.left + rect.width / 2 - 74
-                                if (refHoverFixedRef.current) {
-                                  refHoverFixedRef.current.style.top = `${top}px`
-                                  refHoverFixedRef.current.style.left = `${left}px`
-                                }
-                                setRefHoverPreview({ url: value, kind: isVideo ? 'video' : 'image' })
-                              }}
-                              onMouseLeave={(e) => {
-                                if (isAudio) {
-                                  handleAudioCardHoverEnd(e)
-                                  return
-                                }
-                                setRefHoverPreview(null)
-                              }}
-                              onClick={() => {
-                                if (activeTab.id !== IMAGE_SINGLE_REFERENCE_MODE_ID) return
-                                if (field.kind !== 'image') return
-                                if (!value) return
-                                updateModeState(activeTab.id, (current) => ({
-                                  ...current,
-                                  selectedImageReferenceKey: field.key,
-                                }))
-                              }}
-                            >
-                              {value ? (
-                                isVideo ? (
-                                  <>
-                                    <video
-                                      src={getPlaybackUrl(value)}
-                                      className="lab-reference-thumb"
-                                      muted
-                                      playsInline
-                                      preload="metadata"
-                                      onMouseEnter={handleVideoCardHoverStart}
-                                      onMouseLeave={handleVideoCardHoverEnd}
-                                    />
-                                    <span className="lab-reference-play-badge" aria-hidden="true">▶</span>
-                                  </>
-                                ) : isAudio ? (
-                                  <>
-                                    <div className="lab-reference-thumb lab-reference-thumb--audio" aria-hidden="true">
-                                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-                                    </div>
-                                    <audio src={value} className="lab-audio-hover-player" preload="metadata" />
-                                  </>
-                                ) : (
-                                  <img src={value} alt={field.label} className="lab-reference-thumb" />
-                                )
-                              ) : (
-                                <div className="lab-reference-thumb lab-reference-thumb--empty">Empty</div>
-                              )}
-                              <span className="lab-reference-order-badge">{orderLabel}</span>
-                              {isSelectedImage && (
-                                <span className="lab-reference-selected-badge">Selected</span>
-                              )}
-                              {isSelectableImage && !isSelectedImage && (
-                                <span className="lab-reference-selectable-badge">Choose</span>
-                              )}
-                              {isMentioned && (
-                                <span className="lab-reference-mentioned-badge" aria-label="Referenced in prompt">@</span>
-                              )}
-                              {isAudio && value ? (
-                                <button
-                                  type="button"
-                                  className="lab-reference-thumb-copy"
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    void handleCopyAudioLibraryUrl(field.key, value)
-                                  }}
-                                  title="Copy audio URL"
-                                >
-                                  {copiedAudioLibraryItemId === field.key ? 'Copied' : 'Copy'}
-                                </button>
-                              ) : null}
-                              {pendingRemoveRefKey === field.key ? (
-                                <div className="lab-ref-remove-confirm">
-                                  <span>Remove?</span>
-                                  <button
-                                    type="button"
-                                    className="lab-ref-remove-confirm-yes"
-                                    onClick={() => {
-                                      updateModeState(activeTab.id, (current) => ({
-                                        ...current,
-                                        mediaUrls: { ...current.mediaUrls, [field.key]: '' },
-                                        selectedImageReferenceKey: current.selectedImageReferenceKey === field.key
-                                          ? ''
-                                          : current.selectedImageReferenceKey,
-                                      }))
-                                      setPendingRemoveRefKey(null)
-                                    }}
-                                  >Yes</button>
-                                  <button
-                                    type="button"
-                                    className="lab-ref-remove-confirm-no"
-                                    onClick={() => setPendingRemoveRefKey(null)}
-                                  >No</button>
-                                </div>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className="lab-reference-thumb-remove"
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    setPendingRemoveRefKey(field.key)
-                                  }}
-                                  aria-label={`Remove ${field.label}`}
-                                >
-                                  ×
-                                </button>
-                              )}
-                            </div>
-                          )
-                        })
-                      })()}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
             <div className="lab-composer-actions">
               <div className="lab-composer-settings-grid">
                 <div className="lab-composer-run-row">
+                  <div className="lab-chip-select-wrap">
+                    <span className="lab-chip-icon" aria-hidden="true">◧</span>
+                    <select
+                      id="lab-ratio"
+                      className="lab-select lab-select--chip lab-select--chip-ratio"
+                      aria-label="Aspect ratio"
+                      value={activeWorkflowSettings.ratio}
+                      onChange={(event) => updateWorkflowSettings(activeTab.id, (current) => ({ ...current, ratio: event.target.value }))}
+                    >
+                      {RATIOS.map((entry) => (
+                        <option key={entry} value={entry}>{entry}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="lab-chip-select-wrap">
+                    <span className="lab-chip-icon" aria-hidden="true">◈</span>
+                    <select
+                      id="lab-resolution"
+                      className="lab-select lab-select--chip lab-select--chip-resolution"
+                      aria-label="Resolution"
+                      value={activeWorkflowSettings.resolution}
+                      onChange={(event) => updateWorkflowSettings(activeTab.id, (current) => ({ ...current, resolution: event.target.value }))}
+                    >
+                      {RESOLUTIONS.map((entry) => (
+                        <option key={entry} value={entry}>{entry}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="lab-chip-select-wrap">
+                    <span className="lab-chip-icon" aria-hidden="true">◷</span>
+                    <select
+                      id="lab-duration"
+                      className="lab-select lab-select--chip lab-select--chip-duration"
+                      aria-label="Duration"
+                      value={activeWorkflowSettings.duration}
+                      onChange={(event) => updateWorkflowSettings(activeTab.id, (current) => ({
+                        ...current,
+                        duration: normalizeDuration(Number(event.target.value)),
+                      }))}
+                    >
+                      {DURATION_OPTIONS.map((entry) => (
+                        <option key={entry} value={entry}>{entry}s</option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    className={`lab-audio-toggle${activeWorkflowSettings.generateAudio ? ' is-active' : ''}`}
+                    title={activeWorkflowSettings.generateAudio ? 'Audio on' : 'Audio off'}
+                    aria-label={activeWorkflowSettings.generateAudio ? 'Turn audio off' : 'Turn audio on'}
+                    onClick={() => updateWorkflowSettings(activeTab.id, (current) => ({
+                      ...current,
+                      generateAudio: !current.generateAudio,
+                    }))}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <polygon points="11 5 6 9 3 9 3 15 6 15 11 19 11 5" />
+                      <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div className="lab-composer-generate-row">
+                <div className="lab-chip-select-wrap lab-chip-select-wrap--model">
+                  <span className="lab-chip-icon" aria-hidden="true">▥</span>
                   <select
                     id="lab-provider-model"
-                    className="lab-select lab-select--chip lab-select--wide"
+                    className="lab-select lab-select--chip lab-select--chip-model"
                     aria-label="API and model"
                     value={selectedCombinedModelValue}
                     onChange={(event) => {
@@ -8434,65 +8866,17 @@ export default function ToorGenPromptWorkbench() {
                       <option key={entry.value} value={entry.value}>{entry.label}</option>
                     ))}
                   </select>
-                  <select
-                    id="lab-ratio"
-                    className="lab-select lab-select--chip"
-                    aria-label="Aspect ratio"
-                    value={activeWorkflowSettings.ratio}
-                    onChange={(event) => updateWorkflowSettings(activeTab.id, (current) => ({ ...current, ratio: event.target.value }))}
-                  >
-                    {RATIOS.map((entry) => (
-                      <option key={entry} value={entry}>{entry}</option>
-                    ))}
-                  </select>
-                  <select
-                    id="lab-resolution"
-                    className="lab-select lab-select--chip"
-                    aria-label="Resolution"
-                    value={activeWorkflowSettings.resolution}
-                    onChange={(event) => updateWorkflowSettings(activeTab.id, (current) => ({ ...current, resolution: event.target.value }))}
-                  >
-                    {RESOLUTIONS.map((entry) => (
-                      <option key={entry} value={entry}>{entry}</option>
-                    ))}
-                  </select>
-                  <select
-                    id="lab-duration"
-                    className="lab-select lab-select--chip"
-                    aria-label="Duration"
-                    value={activeWorkflowSettings.duration}
-                    onChange={(event) => updateWorkflowSettings(activeTab.id, (current) => ({
-                      ...current,
-                      duration: normalizeDuration(Number(event.target.value)),
-                    }))}
-                  >
-                    {DURATION_OPTIONS.map((entry) => (
-                      <option key={entry} value={entry}>{entry}s</option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    className={`lab-audio-toggle${activeWorkflowSettings.generateAudio ? ' is-active' : ''}`}
-                    title={activeWorkflowSettings.generateAudio ? 'Audio on' : 'Audio off'}
-                    aria-label={activeWorkflowSettings.generateAudio ? 'Turn audio off' : 'Turn audio on'}
-                    onClick={() => updateWorkflowSettings(activeTab.id, (current) => ({
-                      ...current,
-                      generateAudio: !current.generateAudio,
-                    }))}
-                  >
-                    <span aria-hidden="true">🔊</span>
-                  </button>
                 </div>
+                <button
+                  type="button"
+                  className="lab-primary-btn lab-primary-btn--composer"
+                  disabled={!canGenerate}
+                  title={studioActiveFolderId ? undefined : 'Select a folder before generating'}
+                  onClick={() => void handleGenerate(activeTab)}
+                >
+                  Generate
+                </button>
               </div>
-              <button
-                type="button"
-                className="lab-primary-btn lab-primary-btn--composer"
-                disabled={!canGenerate}
-                title={studioActiveFolderId ? undefined : 'Select a folder before generating'}
-                onClick={() => void handleGenerate(activeTab)}
-              >
-                Generate
-              </button>
               <div className="lab-composer-secondary-actions">
                 <button
                   type="button"
@@ -8544,6 +8928,20 @@ export default function ToorGenPromptWorkbench() {
                 >
                   {isRequestPreviewExpanded ? 'Hide Request Review' : 'Request Review'}
                 </button>
+                <button
+                  type="button"
+                  className={`lab-secondary-btn${isDirectSubmitPanelVisible && activeDirectPanelTab === 'direct' ? ' lab-view-mode-btn--active' : ''}`}
+                  onClick={() => {
+                    if (isDirectSubmitPanelVisible && activeDirectPanelTab === 'direct') {
+                      setIsDirectSubmitPanelVisible(false)
+                      return
+                    }
+                    setActiveDirectPanelTab('direct')
+                    setIsDirectSubmitPanelVisible(true)
+                  }}
+                >
+                  Direct submit to API
+                </button>
               </div>
             </div>
             {isRequestPreviewExpanded && (
@@ -8557,6 +8955,7 @@ export default function ToorGenPromptWorkbench() {
             )}
             </section>
           </section>
+          )}
         </aside>
       </div>
     </div>

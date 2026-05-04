@@ -24,8 +24,8 @@ import { ChatDock } from './features/communication/components/ChatDock'
 import { useChatDockState } from './features/communication/hooks/useChatDockState'
 import { buildThreadId, THREAD_EVERYONE } from './features/communication/hooks/useGlobalTeamChat'
 import { CHAT_DOCK_OPEN_EVENT, type ChatDockOpenDetail } from './features/communication/utils/chatDockEvents'
-import { acceptInvite, subscribePendingInvitesForRecipient, updateInviteStatus } from './lib/studioService'
-import type { StudioInvite } from './types/studio'
+import { acceptInvite, deleteStudioNotification, subscribeStudioNotifications, updateInviteStatus } from './lib/studioService'
+import type { StudioNotification } from './types/studio'
 
 function RouteLoadFailure({ routeLabel }: { routeLabel: string }) {
   return (
@@ -45,62 +45,83 @@ function withRouteBoundary(routeName: string, node: ReactNode) {
 
 function StudioInvitePrompt({ user, isAr }: { user: User | null, isAr: boolean }) {
   const { show, isOpen } = useDialog()
-  const [pendingInvites, setPendingInvites] = useState<StudioInvite[]>([])
-  const activeInviteIdRef = useRef<string | null>(null)
+  const [pendingNotifications, setPendingNotifications] = useState<StudioNotification[]>([])
+  const activeNotificationIdRef = useRef<string | null>(null)
 
   useEffect(() => {
-    activeInviteIdRef.current = null
-    setPendingInvites([])
+    activeNotificationIdRef.current = null
+    setPendingNotifications([])
 
     if (!user?.uid) return
 
-    return subscribePendingInvitesForRecipient({ uid: user.uid, email: user.email }, setPendingInvites)
-  }, [user?.email, user?.uid])
+    return subscribeStudioNotifications(user.uid, (notifications) => {
+      setPendingNotifications(notifications.filter((n) => !n.read))
+    })
+  }, [user?.uid])
 
   useEffect(() => {
-    if (!user || isOpen || activeInviteIdRef.current || pendingInvites.length === 0) {
+    if (!user || isOpen || activeNotificationIdRef.current || pendingNotifications.length === 0) {
       return
     }
 
-    const invite = pendingInvites[0]
-    activeInviteIdRef.current = invite.id
-    const projectCount = invite.targetProjectIds?.length ?? (invite.targetKind === 'project' ? 1 : 0)
-    const folderCount = invite.targetFolderRefs?.length ?? 0
+    const notification = pendingNotifications[0]
+    activeNotificationIdRef.current = notification.id
+    const isInviteNotification = notification.type === 'studio_invite'
+    const projectCount = notification.targetProjectIds?.length ?? 0
+    const folderCount = notification.targetFolderRefs?.length ?? 0
     const accessSummary = [
       projectCount > 0 ? (isAr ? `${projectCount} مشروع` : `${projectCount} project${projectCount === 1 ? '' : 's'}`) : '',
       folderCount > 0 ? (isAr ? `${folderCount} مجلد` : `${folderCount} folder${folderCount === 1 ? '' : 's'}`) : '',
     ].filter(Boolean).join(isAr ? ' و ' : ' and ')
 
     show({
-      title: isAr ? 'دعوة Studio' : 'Studio invitation',
+      title: isInviteNotification
+        ? (isAr ? 'دعوة Studio' : 'Studio invitation')
+        : (notification.title || (isAr ? 'إشعار Studio' : 'Studio notification')),
       message: (
         <div className="studio-invite-message">
-          <p>{isAr ? 'لديك دعوة جديدة داخل التطبيق.' : 'You have a new in-app Studio invitation.'}</p>
-          <p>{isAr ? `البريد المستهدف: ${invite.inviteeEmail}` : `Invite email: ${invite.inviteeEmail}`}</p>
-          <p>{isAr ? `نطاق الوصول: ${accessSummary || 'المنظمة فقط'}` : `Access scope: ${accessSummary || 'org only'}`}</p>
-          <p>{isAr ? 'هل تريد قبولها الآن؟' : 'Do you want to accept it now?'}</p>
+          {isInviteNotification ? (
+            <>
+              <p>{isAr ? 'لديك دعوة جديدة داخل التطبيق.' : 'You have a new in-app Studio invitation.'}</p>
+              <p>{isAr ? `البريد المستهدف: ${notification.inviteeEmail}` : `Invite email: ${notification.inviteeEmail}`}</p>
+              <p>{isAr ? `نطاق الوصول: ${accessSummary || 'المنظمة فقط'}` : `Access scope: ${accessSummary || 'org only'}`}</p>
+              <p>{isAr ? 'هل تريد قبولها الآن؟' : 'Do you want to accept it now?'}</p>
+            </>
+          ) : (
+            <p>{notification.message || (isAr ? 'لديك إشعار جديد.' : 'You have a new notification.')}</p>
+          )}
         </div>
       ),
-      confirmText: isAr ? 'قبول' : 'Accept',
-      cancelText: isAr ? 'رفض' : 'Reject',
+      confirmText: isInviteNotification ? (isAr ? 'قبول' : 'Accept') : (isAr ? 'حسنًا' : 'OK'),
+      cancelText: isInviteNotification ? (isAr ? 'رفض' : 'Reject') : (isAr ? 'إغلاق' : 'Dismiss'),
       onConfirm: async () => {
-        if (!user.email) return
-        await acceptInvite(invite, {
-          uid: user.uid,
-          displayName: user.displayName || '',
-          email: user.email || '',
-          photoUrl: user.photoURL || '',
-        })
-        activeInviteIdRef.current = null
-        setPendingInvites((current) => current.filter((item) => item.id !== invite.id))
+        if (isInviteNotification) {
+          if (!user.email || !notification.inviteId) return
+          const { getInviteById } = await import('./lib/studioService')
+          const invite = await getInviteById(notification.inviteId)
+          if (invite) {
+            await acceptInvite(invite, {
+              uid: user.uid,
+              displayName: user.displayName || '',
+              email: user.email || '',
+              photoUrl: user.photoURL || '',
+            })
+          }
+        }
+        await deleteStudioNotification(notification.id).catch(() => undefined)
+        activeNotificationIdRef.current = null
+        setPendingNotifications((current) => current.filter((item) => item.id !== notification.id))
       },
       onCancel: async () => {
-        await updateInviteStatus(invite.id, 'declined').catch(() => undefined)
-        activeInviteIdRef.current = null
-        setPendingInvites((current) => current.filter((item) => item.id !== invite.id))
+        if (isInviteNotification && notification.inviteId) {
+          await updateInviteStatus(notification.inviteId, 'declined').catch(() => undefined)
+        }
+        await deleteStudioNotification(notification.id).catch(() => undefined)
+        activeNotificationIdRef.current = null
+        setPendingNotifications((current) => current.filter((item) => item.id !== notification.id))
       },
     })
-  }, [isAr, isOpen, pendingInvites, show, user])
+  }, [isAr, isOpen, pendingNotifications, show, user])
 
   return null
 }
@@ -399,9 +420,9 @@ function App() {
     localStorage.setItem('quizAdminTheme', theme)
   }, [theme])
 
-  // Apply language direction
+  // Keep layout direction globally stable (no RTL/LTR flipping by language)
   useEffect(() => {
-    document.documentElement.setAttribute('dir', language === 'ar' ? 'rtl' : 'ltr')
+    document.documentElement.setAttribute('dir', 'ltr')
     document.documentElement.setAttribute('lang', language)
     localStorage.setItem('quizAdminLang', language)
   }, [language])

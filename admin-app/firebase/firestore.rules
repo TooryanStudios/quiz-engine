@@ -10,12 +10,6 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == ownerId;
     }
 
-    function isAppActiveUser() {
-      return isSignedIn()
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
-    }
-
     // Primary: custom `admin` claim set by the grantAdminClaim Cloud Function.
     // The email fallback is temporary for existing sessions that predate the
     // claim. Once the admin calls grantAdminClaim (done automatically by
@@ -567,7 +561,11 @@ service cloud.firestore {
 
       match /folders/{folderId} {
         allow read: if canReadStudioProject(
-          get(/databases/$(database)/documents/studio_projects/$(projectId)).data);
+          get(/databases/$(database)/documents/studio_projects/$(projectId)).data)
+          && (
+            isProjectOwnerOrEditor(projectId)
+            || request.auth.uid in resource.data.viewerUids
+          );
         allow create: if isProjectOwnerOrEditor(projectId)
           && request.resource.data.name is string
           && request.resource.data.name.size() >= 1
@@ -579,6 +577,51 @@ service cloud.firestore {
           && request.resource.data.name.size() <= 120;
         allow delete: if isProjectOwnerOrEditor(projectId);
       }
+
+      match /reference_library/{itemId} {
+        allow read: if canReadStudioProject(
+          get(/databases/$(database)/documents/studio_projects/$(projectId)).data);
+        allow create: if isProjectOwnerOrEditor(projectId)
+          && request.resource.data.projectId == projectId
+          && request.resource.data.kind is string
+          && request.resource.data.url is string
+          && request.resource.data.url.size() >= 1
+          && request.resource.data.name is string
+          && request.resource.data.name.size() >= 1
+          && request.resource.data.createdBy == request.auth.uid;
+        allow update: if isProjectOwnerOrEditor(projectId)
+          && request.resource.data.projectId == resource.data.projectId
+          && request.resource.data.kind == resource.data.kind
+          && request.resource.data.url == resource.data.url
+          && request.resource.data.createdBy == resource.data.createdBy;
+        allow delete: if isProjectOwnerOrEditor(projectId);
+      }
+    }
+
+    // ─── Studio: Notifications ───────────────────────────────────────────────
+    //
+    // studio_notifications/{notificationId}
+    //
+    // Lightweight notification documents keyed by recipientUid.
+    // Any authenticated user can receive one (no Studio eligibility required),
+    // so invites reach brand-new users before they join an org.
+
+    match /studio_notifications/{notificationId} {
+      // Recipient can always read their own notifications.
+      allow read: if isSignedIn() && resource.data.recipientUid == request.auth.uid;
+      // Any signed-in user can create a notification addressed to someone else
+      // (e.g. sender writes a notification for the invitee).
+      allow create: if isSignedIn()
+        && request.resource.data.recipientUid is string
+        && request.resource.data.recipientUid.size() > 0
+        && request.resource.data.createdBy == request.auth.uid;
+      // Only the recipient can mark it read.
+      allow update: if isSignedIn()
+        && resource.data.recipientUid == request.auth.uid
+        && request.resource.data.recipientUid == resource.data.recipientUid
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isSignedIn() && resource.data.recipientUid == request.auth.uid;
     }
 
     // ─── Studio: Invites ─────────────────────────────────────────────────────

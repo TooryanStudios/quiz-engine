@@ -126,6 +126,7 @@ export type StudioProject = {
 }
 
 export type ProjectRole = 'owner' | 'editor' | 'viewer'
+export type FolderAccessScope = 'all' | 'restricted'
 
 /**
  * Subcollection document at `studio_projects/{projectId}/members/{userId}`.
@@ -134,6 +135,8 @@ export type ProjectMember = {
   /** Firebase Auth UID — matches the document ID. */
   userId: string
   role: ProjectRole
+  /** Whether this member can see all project folders or only explicit ones. */
+  folderScope?: FolderAccessScope
   /** Denormalized display name. */
   displayName: string
   /** Denormalized email. */
@@ -192,6 +195,29 @@ export type StudioInvite = {
 // ─── Utility / client-side helpers ───────────────────────────────────────────
 
 /**
+ * Notification document stored at `studio_notifications/{notificationId}`.
+ * Mirrors the WorkHub notification pattern: keyed by recipientUid,
+ * single-field query, no composite index required.
+ */
+export type StudioNotification = {
+  id: string
+  recipientUid: string
+  createdBy: string
+  type: 'studio_invite' | 'studio_test'
+  inviteId?: string
+  inviteeEmail?: string
+  inviteeDisplayName?: string
+  title?: string
+  message?: string
+  /** Projects the invite grants access to */
+  targetProjectIds?: string[]
+  /** Folders the invite grants access to */
+  targetFolderRefs?: StudioInviteFolderAccess[]
+  read: boolean
+  createdAt: Timestamp
+}
+
+/**
  * Lightweight org summary used in dropdowns and navigation.
  */
 export type OrgSummary = Pick<StudioOrg, 'id' | 'name' | 'slug' | 'logoUrl' | 'plan'> & {
@@ -222,6 +248,8 @@ export type StudioFolder = {
   /** null means root-level folder. */
   parentId: string | null
   createdBy: string
+  /** Members who can read this folder when not owner/editor. */
+  viewerUids?: string[]
   /** Explicit allow-list for this folder. Empty means inherit/default visibility. */
   allowedMemberUids?: string[]
   /** Members hidden from this folder. */
@@ -229,6 +257,18 @@ export type StudioFolder = {
   createdAt: Timestamp
 }
 
-export type FolderSummary = Pick<StudioFolder, 'id' | 'projectId' | 'name' | 'parentId' | 'createdBy' | 'allowedMemberUids' | 'hiddenMemberUids'> & {
+export type FolderSummary = Pick<StudioFolder, 'id' | 'projectId' | 'name' | 'parentId' | 'createdBy' | 'viewerUids' | 'allowedMemberUids' | 'hiddenMemberUids'> & {
   createdAt: number
+}
+
+export type StudioReferenceAssetKind = 'image' | 'video' | 'audio'
+
+export type StudioReferenceAsset = {
+  id: string
+  projectId: string
+  kind: StudioReferenceAssetKind
+  url: string
+  name: string
+  createdBy: string
+  createdAt: Timestamp
 }
