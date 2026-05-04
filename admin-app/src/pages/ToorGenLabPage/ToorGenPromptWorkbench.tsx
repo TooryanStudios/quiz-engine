@@ -3,24 +3,15 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { collection, deleteDoc, doc, getDocs, limit, orderBy, query, serverTimestamp, setDoc } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
 import { auth, db, storage } from '../../lib/firebase'
-import { findUserByEmail, loadUserPrefs, saveUserPrefs } from '../../lib/adminRepo'
+import { loadUserPrefs, saveUserPrefs } from '../../lib/adminRepo'
 import {
-  addProjectMember,
-  createFolder,
-  createProject,
   deleteProjectReferenceLibraryItem,
-  deleteFolder,
-  deleteStudioProject,
   renameProjectReferenceLibraryItem,
-  removeProjectMember,
   saveProjectReferenceLibraryItem,
-  setFolderMemberVisibility,
   subscribeToProjectReferenceLibrary,
   subscribeToProjectFolders,
   subscribeToProjectMembers,
   subscribeToUserProjects,
-  updateFolder,
-  updateStudioProject,
 } from '../../lib/studioService'
 import { ContentEditablePrompt } from '../../components/ContentEditablePrompt/ContentEditablePrompt'
 import { getCaretOffset, setCaretOffset } from '../../components/ContentEditablePrompt/utils'
@@ -2876,10 +2867,9 @@ export default function ToorGenPromptWorkbench() {
   const [isRequestPreviewExpanded, setIsRequestPreviewExpanded] = useState<boolean>(false)
   const [isRefiningPrompt, setIsRefiningPrompt] = useState<boolean>(false)
   const [pendingRefinedPrompt, setPendingRefinedPrompt] = useState<{ original: string; refined: string } | null>(null)
-  const [refHoverPreview, setRefHoverPreview] = useState<{ url: string; kind: 'image' | 'video' } | null>(null)
+  const [refHoverPreview] = useState<{ url: string; kind: 'image' | 'video' } | null>(null)
   const refHoverFixedRef = useRef<HTMLDivElement | null>(null)
   const [isReferenceLibraryDialogOpen, setIsReferenceLibraryDialogOpen] = useState<boolean>(false)
-  const [pendingRemoveRefKey, setPendingRemoveRefKey] = useState<string | null>(null)
   const [libraryContextMenu, setLibraryContextMenu] = useState<{ x: number; y: number; item: MediaLibraryItem } | null>(null)
   const [libraryPreviewItem, setLibraryPreviewItem] = useState<MediaLibraryItem | null>(null)
   const [pendingLibraryDeleteItem, setPendingLibraryDeleteItem] = useState<MediaLibraryItem | null>(null)
@@ -2935,7 +2925,7 @@ export default function ToorGenPromptWorkbench() {
   const [studioFolders, setStudioFolders] = useState<FolderSummary[]>([])
   const [studioFoldersLoading, setStudioFoldersLoading] = useState<boolean>(false)
   const [studioAccountOpen, setStudioAccountOpen] = useState<boolean>(false)
-  const [studioPanelMessage, setStudioPanelMessage] = useState<string>('')
+  const [, setStudioPanelMessage] = useState<string>('')
   const [recoveryTaskId, setRecoveryTaskId] = useState<string>('')
   const [recoveryProvider, setRecoveryProvider] = useState<ProviderId>('atlas')
   const [recoveryModel, setRecoveryModel] = useState<string>('')
@@ -4287,11 +4277,6 @@ export default function ToorGenPromptWorkbench() {
   const resolvedMentionReferences = useMemo(
     () => (MENTION_RESOLUTION_TEMP_DISABLED ? [] : resolvePromptMentionReferences(deferredPrompt, mentionableReferences)),
     [deferredPrompt, mentionableReferences],
-  )
-
-  const mentionedReferenceUrls = useMemo(
-    () => new Set(resolvedMentionReferences.map((entry) => entry.url)),
-    [resolvedMentionReferences],
   )
 
   const referenceImageCount = useMemo(
@@ -6276,11 +6261,6 @@ export default function ToorGenPromptWorkbench() {
     return () => unsub()
   }, [studioProjectId])
 
-  const studioProjectName = useMemo(
-    () => studioProjects.find((item) => item.id === studioProjectId)?.name || null,
-    [studioProjectId, studioProjects],
-  )
-
   useEffect(() => {
     const visibleFolderIds = new Set(visibleStudioFolders.map((folder) => folder.id))
 
@@ -6423,7 +6403,6 @@ export default function ToorGenPromptWorkbench() {
             studioProjectsLoading={studioProjectsLoading}
             studioProjectId={studioProjectId}
             visibleStudioFolders={visibleStudioFolders}
-            studioFolders={studioFolders}
             studioFoldersLoading={studioFoldersLoading}
             studioMembers={studioMembers}
             currentMemberRole={currentStudioMemberRole}

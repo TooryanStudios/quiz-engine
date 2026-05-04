@@ -45,7 +45,6 @@ interface StudioDialogProps {
   studioProjectsLoading: boolean
   studioProjectId: string | null
   visibleStudioFolders: FolderSummary[]
-  studioFolders: FolderSummary[]
   studioFoldersLoading: boolean
   studioMembers: ProjectMember[]
   currentMemberRole: 'owner' | 'editor' | 'viewer' | null
@@ -60,7 +59,6 @@ export const StudioDialog = memo(function StudioDialog({
   studioProjectsLoading,
   studioProjectId,
   visibleStudioFolders,
-  studioFolders,
   studioFoldersLoading,
   studioMembers,
   onClose,

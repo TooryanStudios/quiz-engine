@@ -238,7 +238,7 @@ export function StudioProvider({
     membersUnsubRef.current?.()
     membersUnsubRef.current = null
 
-    if (!activeProjectId) {
+    if (!activeProjectId || !user) {
       setFolders([])
       setFoldersLoading(false)
       setProjectMembers([])
@@ -268,7 +268,7 @@ export function StudioProvider({
       membersUnsubRef.current?.()
       membersUnsubRef.current = null
     }
-  }, [activeProjectId, projects, user.uid])
+  }, [activeProjectId, projects, user])
 
   // Derived selectors
   const activeOrg = useMemo(
