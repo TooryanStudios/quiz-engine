@@ -32,8 +32,8 @@ export interface ProgressParams {
  * Render type information that can be included in renderer implementations
  */
 export interface RenderTypeInfo {
-  /** The type of rendering (ssr or lambda) */
-  type: "ssr" | "lambda";
+  /** The type of rendering (ssr, lambda, or browser) */
+  type: "ssr" | "lambda" | "browser";
   /** Entry point for the renderer */
   entryPoint: string;
 }

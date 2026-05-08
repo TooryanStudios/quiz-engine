@@ -45,6 +45,10 @@ type OpenFlowOptions = {
   replaceHistory?: boolean
 }
 
+type LoadProjectFlowsOptions = {
+  strictPreferredScope?: boolean
+}
+
 const readPersistedSelection = (): PersistedStudioSelection | null => {
   if (typeof window === 'undefined') return null
   const raw = window.localStorage.getItem(WORKFLOW_TEST_SELECTION_STORAGE_KEY)
@@ -172,6 +176,7 @@ export default function WorkflowBuilderTestPage() {
   const { flowId: routeFlowIdParam } = useParams<{ flowId?: string }>()
   const routeFlowId = routeFlowIdParam || ''
   const sampleWorkflow = useMemo(() => createWorkflowBuilderSampleWorkflow(), [])
+  const emptyWorkflow = useMemo<WorkflowBuilderDefinition>(() => ({ nodes: [], edges: [], viewport: undefined }), [])
   const [, setWorkflow] = useState<WorkflowBuilderDefinition>(sampleWorkflow)
   const [currentUser, setCurrentUser] = useState<User | null>(auth.currentUser)
   const [flowItems, setFlowItems] = useState<StudioProjectFlowCanvasSummary[]>([])
@@ -195,6 +200,8 @@ export default function WorkflowBuilderTestPage() {
   const [quickNavLoadedAt, setQuickNavLoadedAt] = useState(0)
   const quickNavRef = useRef<HTMLDivElement | null>(null)
   const routeResolveKeyRef = useRef('')
+  const flowLoadRequestSeqRef = useRef(0)
+  const latestFlowLoadProjectRef = useRef<string | null>(null)
   const authUid = currentUser?.uid || ''
 
   useEffect(() => {
@@ -237,6 +244,7 @@ export default function WorkflowBuilderTestPage() {
     setStudioActiveFolderId,
     studioFolders,
     studioFoldersLoading,
+    hasLoadedStudioSelection,
   } = useStudioProjectSelection({
     authUid,
     readLocalSelection: readPersistedSelection,
@@ -322,37 +330,70 @@ export default function WorkflowBuilderTestPage() {
     [flowScope, studioProjectId],
   )
 
+  const beginFlowTransition = useCallback(() => {
+    setIsFlowHydrating(true)
+    setActiveFlowScopeId(null)
+  }, [])
+
   const loadProjectFlows = useCallback(async (
     projectId: string,
     preferredScopeId?: string | null,
+    options?: LoadProjectFlowsOptions,
   ) => {
+    const requestSeq = flowLoadRequestSeqRef.current + 1
+    flowLoadRequestSeqRef.current = requestSeq
+    latestFlowLoadProjectRef.current = projectId
+
     setFlowsLoading(true)
     try {
       const items = await listProjectFlowCanvases(projectId)
+      if (flowLoadRequestSeqRef.current !== requestSeq || latestFlowLoadProjectRef.current !== projectId) {
+        return
+      }
+
       setFlowItems(items)
       setActiveFlowScopeId((current) => {
         if (preferredScopeId && items.some((item: StudioProjectFlowCanvasSummary) => item.scopeId === preferredScopeId)) {
           return preferredScopeId
         }
+
+        if (options?.strictPreferredScope && preferredScopeId) {
+          return null
+        }
+
         if (current && items.some((item: StudioProjectFlowCanvasSummary) => item.scopeId === current)) {
           return current
         }
         return items[0]?.scopeId || null
       })
       setManagerOpenScopeId((current) => {
+        if (preferredScopeId && items.some((item: StudioProjectFlowCanvasSummary) => item.scopeId === preferredScopeId)) {
+          return preferredScopeId
+        }
+
+        if (options?.strictPreferredScope && preferredScopeId) {
+          return null
+        }
+
         if (current && items.some((item: StudioProjectFlowCanvasSummary) => item.scopeId === current)) {
           return current
         }
         return items[0]?.scopeId || null
       })
     } catch (error) {
+      if (flowLoadRequestSeqRef.current !== requestSeq || latestFlowLoadProjectRef.current !== projectId) {
+        return
+      }
+
       const message = (error as Error)?.message || 'Could not load flows.'
       showErrorToastDeduped(message, `flows:${projectId}:${message}`)
       setFlowItems([])
       setActiveFlowScopeId(null)
       setManagerOpenScopeId(null)
     } finally {
-      setFlowsLoading(false)
+      if (flowLoadRequestSeqRef.current === requestSeq && latestFlowLoadProjectRef.current === projectId) {
+        setFlowsLoading(false)
+      }
     }
   }, [showErrorToastDeduped])
 
@@ -388,7 +429,13 @@ export default function WorkflowBuilderTestPage() {
   }, [authUid, showErrorToastDeduped, studioProjects])
 
   useEffect(() => {
+    if (!hasLoadedStudioSelection) {
+      return
+    }
+
     if (!studioProjectId) {
+      flowLoadRequestSeqRef.current += 1
+      latestFlowLoadProjectRef.current = null
       setFlowItems([])
       setActiveFlowScopeId(null)
       setManagerOpenScopeId(null)
@@ -397,11 +444,13 @@ export default function WorkflowBuilderTestPage() {
       return
     }
 
-    void loadProjectFlows(studioProjectId, routeFlowId || undefined)
-  }, [loadProjectFlows, routeFlowId, studioProjectId])
+    void loadProjectFlows(studioProjectId, routeFlowId || undefined, {
+      strictPreferredScope: Boolean(routeFlowId),
+    })
+  }, [hasLoadedStudioSelection, loadProjectFlows, routeFlowId, studioProjectId])
 
   useEffect(() => {
-    if (!routeFlowId || !authUid || studioProjectsLoading || studioProjects.length === 0) {
+    if (!hasLoadedStudioSelection || !routeFlowId || !authUid || studioProjectsLoading || studioProjects.length === 0) {
       return
     }
 
@@ -415,7 +464,9 @@ export default function WorkflowBuilderTestPage() {
       if (studioProjectId) {
         const existing = flowItems.find((item) => item.scopeId === routeFlowId)
         if (existing) {
+          beginFlowTransition()
           setActiveFlowScopeId(existing.scopeId)
+          setManagerOpenScopeId(existing.scopeId)
           setStudioActiveFolderId(existing.folderId || null)
           return
         }
@@ -427,9 +478,10 @@ export default function WorkflowBuilderTestPage() {
           const match = items.find((item: StudioProjectFlowCanvasSummary) => item.scopeId === routeFlowId)
           if (!match) continue
 
+          beginFlowTransition()
           setStudioProjectId(project.id)
           setStudioActiveFolderId(match.folderId || null)
-          await loadProjectFlows(project.id, match.scopeId)
+          await loadProjectFlows(project.id, match.scopeId, { strictPreferredScope: true })
           setActiveFlowScopeId(match.scopeId)
           setManagerOpenScopeId(match.scopeId)
           return
@@ -442,7 +494,9 @@ export default function WorkflowBuilderTestPage() {
     })()
   }, [
     authUid,
+    beginFlowTransition,
     flowItems,
+    hasLoadedStudioSelection,
     loadProjectFlows,
     routeFlowId,
     setStudioActiveFolderId,
@@ -471,7 +525,7 @@ export default function WorkflowBuilderTestPage() {
     flow: StudioProjectFlowCanvasSummary,
     options?: OpenFlowOptions,
   ) => {
-    setIsFlowHydrating(true)
+    beginFlowTransition()
     setStudioProjectId(projectId)
     setStudioActiveFolderId(flow.folderId || null)
     await loadProjectFlows(projectId, flow.scopeId)
@@ -484,7 +538,7 @@ export default function WorkflowBuilderTestPage() {
       setIsFlowManagerOpen(false)
       setIsQuickNavOpen(false)
     }
-  }, [buildFlowPath, loadProjectFlows, navigate, setStudioActiveFolderId, setStudioProjectId])
+  }, [beginFlowTransition, buildFlowPath, loadProjectFlows, navigate, setStudioActiveFolderId, setStudioProjectId])
 
   useEffect(() => {
     if (!selectedFlow) {
@@ -525,7 +579,7 @@ export default function WorkflowBuilderTestPage() {
   }, [authUid, studioFolders, studioProjectId])
 
   useEffect(() => {
-    if (!authUid || !studioProjectId || flowsLoading || flowItems.length > 0) {
+    if (!hasLoadedStudioSelection || routeFlowId || !authUid || !studioProjectId || flowsLoading ) {
       return
     }
 
@@ -558,18 +612,26 @@ export default function WorkflowBuilderTestPage() {
 
         const refreshed = await listProjectFlowCanvases(studioProjectId)
         const recoveredFlow = refreshed.find((item: StudioProjectFlowCanvasSummary) => item.scopeId === recoveredScopeId) || null
+        
+        if (recoveredFlow) {
+          try {
+            const { updateDoc, deleteField } = await import('firebase/firestore')
+            const updates: Record<string, ReturnType<typeof deleteField>> = {}
+            for (const field of LEGACY_WORKFLOW_FIELDS) {
+              updates[field] = deleteField()
+            }
+            await updateDoc(doc(db, 'users', authUid), updates)
+          } catch {
+            // keep going even if clean-up fails
+          }
+        }
+
         if (!recoveredFlow) {
           return
         }
 
         setCloudWriteBlocked(false)
-        await openFlow(studioProjectId, recoveredFlow, { closeOverlays: false })
-        setIsFlowManagerOpen(true)
-        setManagerMode('open')
-        showToastRef.current({
-          message: 'Recovered your previously saved canvas from Firebase. You can now open and move it.',
-          type: 'success',
-        })
+        await openFlow(studioProjectId, recoveredFlow)
       } catch (error) {
         if (isPermissionDeniedError(error)) {
           setCloudWriteBlocked(true)
@@ -583,8 +645,10 @@ export default function WorkflowBuilderTestPage() {
     createFlowDocument,
     flowItems.length,
     flowsLoading,
+    hasLoadedStudioSelection,
     legacyRecoveryAttemptKey,
     openFlow,
+    routeFlowId,
     showErrorToastDeduped,
     studioProjectId,
   ])
@@ -839,197 +903,33 @@ export default function WorkflowBuilderTestPage() {
     })
   }, [])
 
-  const topActionSlot = useMemo(() => (
-    <div className="workflow-builder-test-page__top-context-wrap">
-      <div className="workflow-builder-test-page__top-context">
-        <label className="workflow-builder-test-page__top-context-item">
-          <span>Project</span>
-          <select
-            value={studioProjectId || ''}
-            onChange={(event) => handleTopProjectSelect(event.target.value || null)}
-            disabled={isFlowHydrating || studioProjectsLoading || studioProjects.length === 0}
-          >
-            <option value="">Select project</option>
-            {studioProjects.map((project) => (
-              <option key={project.id} value={project.id}>{project.name}</option>
-            ))}
-          </select>
-        </label>
+  const isWorkspaceResolving = useMemo(() => {
+    if (!authUid) {
+      return false
+    }
 
-        <label className="workflow-builder-test-page__top-context-item">
-          <span>Folder</span>
-          <select
-            value={studioActiveFolderId || FLOW_ROOT_FOLDER_VALUE}
-            onChange={(event) => handleTopFolderSelect(event.target.value)}
-            disabled={isFlowHydrating || !studioProjectId || studioFoldersLoading}
-          >
-            <option value={FLOW_ROOT_FOLDER_VALUE}>Project root</option>
-            {studioFolders.map((folder) => (
-              <option key={folder.id} value={folder.id}>{folder.name}</option>
-            ))}
-          </select>
-        </label>
+    if (!hasLoadedStudioSelection || studioProjectsLoading) {
+      return true
+    }
 
-        <label className="workflow-builder-test-page__top-context-item">
-          <span>File</span>
-          <select
-            value={selectedFlow?.scopeId || ''}
-            onChange={(event) => handleTopFlowSelect(event.target.value || null)}
-            disabled={isFlowHydrating || !studioProjectId || flowItems.length === 0}
-          >
-            <option value="">Select flow</option>
-            {groupedFlowOptions.map((group) => (
-              <optgroup key={group.label} label={group.label}>
-                {group.flows.map((flow) => (
-                  <option key={flow.scopeId} value={flow.scopeId}>{flow.flowName}</option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-        </label>
+    if (!studioProjectId) {
+      return false
+    }
 
-        {isFlowHydrating ? (
-          <div className="workflow-builder-test-page__top-context-loading" role="status" aria-live="polite">
-            <Loader className="wf-spin" size={11} /> Loading flow...
-          </div>
-        ) : null}
-      </div>
-
-      <div className="workflow-builder-test-page__quick-nav" ref={quickNavRef}>
-        <button
-          type="button"
-          className="workflow-builder-test-page__quick-nav-trigger"
-          onClick={toggleQuickNav}
-          title="Open project/folder/flow navigator"
-          aria-label="Open project, folder, and flow navigator"
-        >
-          <Folders size={14} />
-        </button>
-
-        {isQuickNavOpen ? (
-          <div className="workflow-builder-test-page__quick-nav-menu" onClick={(event) => event.stopPropagation()}>
-            <div className="workflow-builder-test-page__quick-nav-head">
-              <strong>Flow navigator</strong>
-              <button type="button" onClick={() => { void loadQuickNavData() }} disabled={quickNavLoading}>
-                {quickNavLoading ? 'Refreshing...' : 'Refresh'}
-              </button>
-            </div>
-
-            <div className="workflow-builder-test-page__quick-nav-body">
-              {studioProjects.map((project) => {
-                const bundle = quickNavData[project.id] || { folders: [], flows: [] }
-                const flowsByFolderId = new Map<string | null, StudioProjectFlowCanvasSummary[]>()
-                bundle.flows.forEach((flow) => {
-                  const key = flow.folderId || null
-                  const list = flowsByFolderId.get(key) || []
-                  list.push(flow)
-                  flowsByFolderId.set(key, list)
-                })
-
-                const foldersByParent = new Map<string | null, FolderSummary[]>()
-                bundle.folders.forEach((folder) => {
-                  const key = folder.parentId || null
-                  const list = foldersByParent.get(key) || []
-                  list.push(folder)
-                  foldersByParent.set(key, list)
-                })
-
-                const renderFlowEntry = (flow: StudioProjectFlowCanvasSummary) => (
-                  <div key={flow.scopeId} className="workflow-builder-test-page__quick-nav-flow">
-                    <button
-                      type="button"
-                      onClick={() => { void openFlow(project.id, flow) }}
-                      title={flow.flowName}
-                    >
-                      <ChevronRight size={12} />
-                      <span>{flow.flowName}</span>
-                    </button>
-                    <a
-                      href={buildFlowPath(flow.scopeId)}
-                      onClick={(event) => {
-                        event.preventDefault()
-                        void openFlow(project.id, flow)
-                      }}
-                      title="Open flow URL"
-                    >
-                      <Link2 size={11} /> {buildFlowAbsoluteUrl(flow.scopeId)}
-                    </a>
-                  </div>
-                )
-
-                const renderFolderBranch = (parentId: string | null) => {
-                  const children = foldersByParent.get(parentId) || []
-                  return children.map((folder) => {
-                    const folderFlows = flowsByFolderId.get(folder.id) || []
-                    return (
-                      <div key={`folder-${folder.id}`} className="workflow-builder-test-page__quick-nav-folder-node">
-                        <strong className="workflow-builder-test-page__quick-nav-folder-title">{folder.name}</strong>
-                        <div className="workflow-builder-test-page__quick-nav-sublist">
-                          {folderFlows.map((flow) => renderFlowEntry(flow))}
-                          {renderFolderBranch(folder.id)}
-                        </div>
-                      </div>
-                    )
-                  })
-                }
-
-                const rootFlows = flowsByFolderId.get(null) || []
-
-                return (
-                  <section key={project.id} className="workflow-builder-test-page__quick-nav-project">
-                    <header>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setStudioProjectId(project.id)
-                          setStudioActiveFolderId(null)
-                        }}
-                      >
-                        {project.name}
-                      </button>
-                    </header>
-                    <div className="workflow-builder-test-page__quick-nav-tree">
-                      <div className="workflow-builder-test-page__quick-nav-folder-node">
-                        <strong className="workflow-builder-test-page__quick-nav-folder-title">Project root</strong>
-                        <div className="workflow-builder-test-page__quick-nav-sublist">
-                          {rootFlows.map((flow) => renderFlowEntry(flow))}
-                          {renderFolderBranch(null)}
-                        </div>
-                      </div>
-                    </div>
-                  </section>
-                )
-              })}
-            </div>
-          </div>
-        ) : null}
-      </div>
-    </div>
-  ), [
-    buildFlowAbsoluteUrl,
-    buildFlowPath,
-    flowItems,
-    groupedFlowOptions,
-    handleTopFlowSelect,
-    handleTopFolderSelect,
-    handleTopProjectSelect,
-    isFlowHydrating,
-    isQuickNavOpen,
-    loadQuickNavData,
-    openFlow,
-    quickNavData,
-    quickNavLoading,
-    selectedFlow?.scopeId,
-    studioActiveFolderId,
-    studioFolders,
-    studioFoldersLoading,
+    return flowsLoading || (flowItems.length > 0 && !selectedFlow)
+  }, [
+    authUid,
+    flowItems.length,
+    flowsLoading,
+    hasLoadedStudioSelection,
+    selectedFlow,
     studioProjectId,
-    setStudioActiveFolderId,
-    setStudioProjectId,
-    studioProjects,
     studioProjectsLoading,
-    toggleQuickNav,
   ])
+
+  
+  const topActionSlot = null;
+
 
   return (
     <div className="workflow-builder-test-page">
@@ -1225,6 +1125,8 @@ export default function WorkflowBuilderTestPage() {
       <div className="workflow-builder-test-page__canvas">
         {!authUid ? (
           <div className="workflow-builder-test-page__placeholder">Sign in to access Studio projects and folders.</div>
+        ) : !selectedFlow && isWorkspaceResolving ? (
+          <div className="workflow-builder-test-page__placeholder">Loading your flow workspace...</div>
         ) : !selectedFlow ? (
           <div className="workflow-builder-test-page__landing">
             <div className="workflow-builder-test-page__landing-head">
@@ -1274,13 +1176,13 @@ export default function WorkflowBuilderTestPage() {
           <WorkflowBuilderCanvas
             key={flowStorageKey}
             className="workflow-builder-canvas--fullscreen"
-            initialWorkflow={sampleWorkflow}
+            initialWorkflow={emptyWorkflow}
             storageKey={flowStorageKey}
             readRemoteWorkflow={readRemoteWorkflow}
             saveRemoteWorkflow={cloudWriteBlocked ? undefined : saveRemoteWorkflow}
             onWorkflowChange={setWorkflow}
             onNotify={handleNotify}
-            topActionSlot={topActionSlot}
+            /* topActionSlot removed for fullscreen */
             onRemoteLoadingChange={setIsFlowHydrating}
             onExecuteWorkflow={async () => {
               // handle execution

@@ -1,9 +1,11 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import '../reactvideoeditor/pro/styles.css';
 import '../reactvideoeditor/pro/styles.utilities.css';
 import './VideoEditorPage.css';
 
+import type { PlayerRef } from '@remotion/player';
 import { HttpRenderer } from '../reactvideoeditor/pro/utils/http-renderer';
+import { BrowserRenderer } from '../reactvideoeditor/pro/utils/browser-renderer';
 import { ReactVideoEditor } from '../reactvideoeditor/pro/components/react-video-editor';
 import { createPexelsVideoAdaptor } from '../reactvideoeditor/pro/adaptors/pexels-video-adaptor';
 import { createPexelsImageAdaptor } from '../reactvideoeditor/pro/adaptors/pexels-image-adaptor';
@@ -34,16 +36,19 @@ export default function VideoEditorPage() {
   const { overlays, aspectRatio, backgroundColor, isLoading, showModal, onConfirmLoad, onCancelLoad } = 
     useProjectStateFromUrl('projectId', PROJECT_ID);
 
-  // Since we're in Vite without the Next.js API, this might fail fetching /api/latest/ssr
-  // But installing components & setting the route was the core request.
-  const renderEndpoint = (import.meta.env.VITE_RVE_RENDER_ENDPOINT as string | undefined) || '/api/latest/ssr';
+  // External playerRef shared with BrowserRenderer so it can seek/capture frames.
+  const playerRef = useRef<PlayerRef | null>(null);
 
-  const ssrRenderer = React.useMemo(() => 
-    new HttpRenderer(renderEndpoint, {
-      type: 'ssr',
-      entryPoint: renderEndpoint
-    }), [renderEndpoint]
-  );
+  // Use BrowserRenderer by default (free, runs in the user's browser via FFmpeg.wasm).
+  // Set VITE_RVE_RENDER_ENDPOINT to override with an SSR render server.
+  const renderer = React.useMemo(() => {
+    const customEndpoint = import.meta.env.VITE_RVE_RENDER_ENDPOINT as string | undefined;
+    if (customEndpoint) {
+      return new HttpRenderer(customEndpoint, { type: 'ssr', entryPoint: customEndpoint });
+    }
+    return new BrowserRenderer(playerRef);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="rve-host w-full h-full fixed inset-0">
@@ -60,7 +65,8 @@ export default function VideoEditorPage() {
         defaultBackgroundColor={backgroundColor || undefined}
         isLoadingProject={isLoading}
         fps={30}
-        renderer={ssrRenderer}
+        playerRef={playerRef}
+        renderer={renderer}
         disabledPanels={[]}
         defaultTheme="dark"
         adaptors={{
