@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react-swc'
+import tailwindcss from '@tailwindcss/vite'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -93,10 +94,21 @@ const tinymceStaticMiddleware = {
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), tinymceStaticMiddleware],
+  plugins: [react(), tailwindcss(), tinymceStaticMiddleware],
   resolve: {
-    dedupe: ['react', 'react-dom'],
+    dedupe: [
+      'react',
+      'react-dom',
+      'remotion',
+      '@remotion/player',
+      '@remotion/renderer',
+      '@remotion/media-parser',
+      '@remotion/google-fonts',
+      '@remotion/streaming',
+      '@remotion/licensing',
+    ],
     alias: {
+      components: path.resolve(rootDir, 'src/components'),
       react: path.resolve(rootDir, 'node_modules/react'),
       'react-dom': path.resolve(rootDir, 'node_modules/react-dom'),
       'react/jsx-runtime': path.resolve(rootDir, 'node_modules/react/jsx-runtime.js'),
@@ -106,6 +118,10 @@ export default defineConfig({
   server: {
     port: 3000,
     strictPort: true,
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'credentialless',
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:8787',
@@ -123,6 +139,9 @@ export default defineConfig({
         secure: false,
       }
     }
+  },
+  optimizeDeps: {
+    exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util'],
   },
   build: {
     rollupOptions: {

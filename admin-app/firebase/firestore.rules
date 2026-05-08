@@ -580,7 +580,8 @@ service cloud.firestore {
 
       match /reference_library/{itemId} {
         allow read: if canReadStudioProject(
-          get(/databases/$(database)/documents/studio_projects/$(projectId)).data);
+          get(/databases/$(database)/documents/studio_projects/$(projectId)).data)
+          || (isStudioEligibleUser() && resource.data.createdBy == request.auth.uid);
         allow create: if isProjectOwnerOrEditor(projectId)
           && request.resource.data.projectId == projectId
           && request.resource.data.kind is string
@@ -670,6 +671,17 @@ service cloud.firestore {
                 && (resource.data.invitedBy == request.auth.uid
                     || isOrgAdminOrOwner(resource.data.orgId))));
       allow delete: if false;
+    }
+
+    // Workflow Builder Media Library — shared upload library for the canvas
+    match /workflow_builder_media/{mediaId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.keys().hasAll(['url', 'name', 'type', 'storagePath', 'mimeType', 'size'])
+        && request.resource.data.type in ['image', 'video'];
+      allow update: if isSignedIn()
+        && request.resource.data.type == resource.data.type;
+      allow delete: if isSignedIn();
     }
   }
 }

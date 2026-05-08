@@ -201,6 +201,7 @@ type ToorGenFlowCanvasProps = {
   onGenerate: (request: ToorGenGenerationRequest) => void
   onSendRawJson?: (rawJson: string) => Promise<void>
   onStateChange?: (state: ToorGenCanvasState) => void
+  surfaceMode?: 'full' | 'canvas-only'
 }
 
 type ToorGenCanvasContextValue = {
@@ -1569,7 +1570,9 @@ function ToorGenFlowCanvasInner(props: ToorGenFlowCanvasProps) {
     onGenerate,
     onSendRawJson,
     onStateChange,
+    surfaceMode = 'full',
   } = props
+  const isCanvasOnly = surfaceMode === 'canvas-only'
   const { getViewport, setViewport, screenToFlowPosition } = useReactFlow<ToorGenCanvasNode, ToorGenCanvasEdge>()
   const [collections, setCollections] = useState<ToorGenCollection[]>(() => loadCollections())
   const [activeCollectionId, setActiveCollectionId] = useState(() => {
@@ -2523,7 +2526,7 @@ function ToorGenFlowCanvasInner(props: ToorGenFlowCanvasProps) {
     connectedCounts,
   }), [patchNode, generateFromNode, copyGraphJson, disconnectHandle, chainFromOutput, model, mode, duration, aspectRatio, nodeStatuses, nodeTaskIds, nodeVideoUrls, nodeErrorMessages, nodeRequestedModels, nodeEffectiveModels, nodeProviderLabels, promptLengthByNodeId, copyJsonStatus, connectedCounts])
 
-  const storyboardDialog = storyboardDialogOpen && typeof document !== 'undefined' ? createPortal(
+  const storyboardDialog = !isCanvasOnly && storyboardDialogOpen && typeof document !== 'undefined' ? createPortal(
     <div
       className="tgfc-storyboard-backdrop"
       role="presentation"
@@ -2659,27 +2662,37 @@ function ToorGenFlowCanvasInner(props: ToorGenFlowCanvasProps) {
     </div>, document.body) : null
 
   return (
-    <section className="tgfc-shell">
-      <div className="tgfc-toolbar">
-        <select value={activeCollection.id} onChange={(event) => activateCollection(event.target.value)} aria-label="Collection">
-          {collections.map((collection) => <option key={collection.id} value={collection.id}>{collection.title}</option>)}
-        </select>
-        <input value={activeCollection.title} onChange={(event) => renameCollection(event.target.value)} aria-label="Collection title" />
-        <button type="button" onClick={addCollection}>New collection</button>
-        <button type="button" onClick={deleteCollection} disabled={collections.length <= 1}>Delete</button>
-        <span className="tgfc-toolbar-divider" />
-        <button type="button" onClick={() => addNode('prompt')}>Prompt</button>
-        <button type="button" onClick={() => addNode('image-reference')}>Image ref</button>
-        <button type="button" onClick={() => addNode('video-reference')}>Video ref</button>
-        <button type="button" onClick={() => addNode('audio-reference')}>Audio ref</button>
-        <button type="button" onClick={() => addNode('generation')}>Generation</button>
-        <button type="button" onClick={() => setStoryboardDialogOpen(true)}>Storyboard</button>
-        <span className="tgfc-toolbar-divider" />
-        <button type="button" className="tgfc-toolbar-bible-btn" onClick={openBibleDialog}>
-          Bible &amp; Defaults
-        </button>
-        <button type="button" className="tgfc-delete-selected-toolbar" onClick={requestDeleteSelected} disabled={selectedNodeIds.length === 0}>Delete selected</button>
-      </div>
+    <section className={`tgfc-shell${isCanvasOnly ? ' tgfc-shell--canvas-only' : ''}`}>
+      {isCanvasOnly ? (
+        <div className="tgfc-toolbar tgfc-toolbar--canvas-only" aria-label="Add nodes">
+          <button type="button" onClick={() => addNode('prompt')}>Prompt</button>
+          <button type="button" onClick={() => addNode('image-reference')}>Image</button>
+          <button type="button" onClick={() => addNode('video-reference')}>Video</button>
+          <button type="button" onClick={() => addNode('audio-reference')}>Audio</button>
+          <button type="button" onClick={() => addNode('generation')}>Generate</button>
+        </div>
+      ) : (
+        <div className="tgfc-toolbar">
+          <select value={activeCollection.id} onChange={(event) => activateCollection(event.target.value)} aria-label="Collection">
+            {collections.map((collection) => <option key={collection.id} value={collection.id}>{collection.title}</option>)}
+          </select>
+          <input value={activeCollection.title} onChange={(event) => renameCollection(event.target.value)} aria-label="Collection title" />
+          <button type="button" onClick={addCollection}>New collection</button>
+          <button type="button" onClick={deleteCollection} disabled={collections.length <= 1}>Delete</button>
+          <span className="tgfc-toolbar-divider" />
+          <button type="button" onClick={() => addNode('prompt')}>Prompt</button>
+          <button type="button" onClick={() => addNode('image-reference')}>Image ref</button>
+          <button type="button" onClick={() => addNode('video-reference')}>Video ref</button>
+          <button type="button" onClick={() => addNode('audio-reference')}>Audio ref</button>
+          <button type="button" onClick={() => addNode('generation')}>Generation</button>
+          <button type="button" onClick={() => setStoryboardDialogOpen(true)}>Storyboard</button>
+          <span className="tgfc-toolbar-divider" />
+          <button type="button" className="tgfc-toolbar-bible-btn" onClick={openBibleDialog}>
+            Bible &amp; Defaults
+          </button>
+          <button type="button" className="tgfc-delete-selected-toolbar" onClick={requestDeleteSelected} disabled={selectedNodeIds.length === 0}>Delete selected</button>
+        </div>
+      )}
 
       <ToorGenCanvasContext.Provider value={canvasContextValue}>
       <ReactFlow<ToorGenCanvasNode, ToorGenCanvasEdge>
@@ -2695,10 +2708,11 @@ function ToorGenFlowCanvasInner(props: ToorGenFlowCanvasProps) {
         onReconnectEnd={handleReconnectEnd}
         minZoom={0.18}
         maxZoom={2.2}
-        fitView={false}
-        zoomOnScroll
-        panOnScroll={false}
-        selectionOnDrag
+        fitView={isCanvasOnly}
+        zoomOnScroll={!isCanvasOnly}
+        panOnScroll={isCanvasOnly}
+        panOnDrag={true}
+        selectionOnDrag={false}
         deleteKeyCode={null}
         onSelectionChange={handleSelectionChange}
         onNodeClick={(_event, node) => {
@@ -2706,107 +2720,111 @@ function ToorGenFlowCanvasInner(props: ToorGenFlowCanvasProps) {
         }}
         onMoveEnd={handleMoveEnd}
       >
-        <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="#2a2e38" />
-        <Controls position="top-right" className="tgfc-controls" />
+        {isCanvasOnly ? null : <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="#2a2e38" />}
+        {isCanvasOnly ? null : <Controls position="top-right" className="tgfc-controls" />}
       </ReactFlow>
       </ToorGenCanvasContext.Provider>
 
       {storyboardDialog}
 
-      <ToorGenBibleDefaultsDialog
-        open={generationDefaultsOpen}
-        title={activeCollection.title || 'Collection'}
-        description="Shared references and defaults applied to every generation in this collection."
-        status={status}
-        availableCredits={availableCredits}
-        consumedCredits={consumedCredits}
-        creditsLoading={creditsLoading}
-        onRefreshCredits={() => void fetchAvailableCredits()}
-        draft={bibleDraft}
-        setDraft={setBibleDraft}
-        selectedVideoUrl={selectedVideoUrl}
-        isGenerating={isGenerating}
-        model={model}
-        mode={mode}
-        duration={duration}
-        aspectRatio={aspectRatio}
-        resumeTaskId={resumeTaskId}
-        onResumeTaskIdChange={onResumeTaskIdChange}
-        onResume={onResume}
-        onClose={cancelBibleDialog}
-        onSave={saveBibleDialog}
-        refFieldUploading={refFieldUploading}
-        refFieldUploadError={refFieldUploadError}
-        onUploadRefFile={async (slot, kind, file) => {
-          setRefFieldUploading(slot)
-          setRefFieldUploadError('')
-          try {
-            const url = kind === 'audio'
-              ? await uploadReferenceAudioToHost(file)
-              : await uploadReferenceImageToHost(file)
-            setRefUrl(slot, url)
-          } catch (err) {
-            setRefFieldUploadError(err instanceof Error ? err.message : 'Upload failed.')
-          } finally {
-            setRefFieldUploading(null)
-          }
-        }}
-        onRequestPick={(kind, slot) => {
-          setRefPickerQuery('')
-          setRefPickerOpen({ kind, slot })
-        }}
-        charPhotoUploading={charPhotoUploading}
-        onUploadCharacterPhoto={(cardId, file) => uploadCharacterPhoto(cardId, file, true)}
-        onRequestPickCharacterPhoto={(cardId) => {
-          setRefPickerQuery('')
-          setRefPickerOpen({ kind: 'image', slot: `char-photo:${cardId}` })
-        }}
-      />
+      {isCanvasOnly ? null : (
+        <ToorGenBibleDefaultsDialog
+          open={generationDefaultsOpen}
+          title={activeCollection.title || 'Collection'}
+          description="Shared references and defaults applied to every generation in this collection."
+          status={status}
+          availableCredits={availableCredits}
+          consumedCredits={consumedCredits}
+          creditsLoading={creditsLoading}
+          onRefreshCredits={() => void fetchAvailableCredits()}
+          draft={bibleDraft}
+          setDraft={setBibleDraft}
+          selectedVideoUrl={selectedVideoUrl}
+          isGenerating={isGenerating}
+          model={model}
+          mode={mode}
+          duration={duration}
+          aspectRatio={aspectRatio}
+          resumeTaskId={resumeTaskId}
+          onResumeTaskIdChange={onResumeTaskIdChange}
+          onResume={onResume}
+          onClose={cancelBibleDialog}
+          onSave={saveBibleDialog}
+          refFieldUploading={refFieldUploading}
+          refFieldUploadError={refFieldUploadError}
+          onUploadRefFile={async (slot, kind, file) => {
+            setRefFieldUploading(slot)
+            setRefFieldUploadError('')
+            try {
+              const url = kind === 'audio'
+                ? await uploadReferenceAudioToHost(file)
+                : await uploadReferenceImageToHost(file)
+              setRefUrl(slot, url)
+            } catch (err) {
+              setRefFieldUploadError(err instanceof Error ? err.message : 'Upload failed.')
+            } finally {
+              setRefFieldUploading(null)
+            }
+          }}
+          onRequestPick={(kind, slot) => {
+            setRefPickerQuery('')
+            setRefPickerOpen({ kind, slot })
+          }}
+          charPhotoUploading={charPhotoUploading}
+          onUploadCharacterPhoto={(cardId, file) => uploadCharacterPhoto(cardId, file, true)}
+          onRequestPickCharacterPhoto={(cardId) => {
+            setRefPickerQuery('')
+            setRefPickerOpen({ kind: 'image', slot: `char-photo:${cardId}` })
+          }}
+        />
+      )}
 
-      <aside className={`tgfc-floating-panel tgfc-preview-panel${jsonPanelOpen ? ' is-open' : ''}`}>
-        <button type="button" className="tgfc-panel-head tgfc-panel-head--toggle" onClick={() => setJsonPanelOpen((v) => !v)}>
-          <span>{jsonTargetGenerationNode ? `JSON • ${jsonTargetGenerationNode.data.title || 'Generation node'}` : 'Structured JSON'}</span>
-          <span className="tgfc-panel-toggle-icon">{jsonPanelOpen ? '▲' : '▼'}</span>
-          {taskId ? <strong title={taskId}>{taskId.slice(0, 10)}...</strong> : null}
-        </button>
-        {jsonPanelOpen ? (
-          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, gap: 6 }}>
-            {errorMessage ? <div className="tgfc-error">{errorMessage}</div> : null}
-            <div className="tgfc-json-actions">
-              <button type="button" className="tgfc-copy-json-btn" onClick={() => copyGraphJson()}>
-                {copyJsonStatus || 'Copy JSON'}
-              </button>
-              {onSendRawJson ? (
-                <button
-                  type="button"
-                  className="tgfc-send-json-btn"
-                  disabled={sendJsonStatus === 'Sending...'}
-                  onClick={() => {
-                    setSendJsonStatus('Sending...')
-                    void onSendRawJson(jsonEditorValue)
-                      .then(() => {
-                        setSendJsonStatus('Sent!')
-                        window.setTimeout(() => setSendJsonStatus(''), 2000)
-                      })
-                      .catch((err: Error) => {
-                        setSendJsonStatus(`Error: ${err.message.slice(0, 40)}`)
-                        window.setTimeout(() => setSendJsonStatus(''), 3000)
-                      })
-                  }}
-                >
-                  {sendJsonStatus || 'Send JSON'}
+      {isCanvasOnly ? null : (
+        <aside className={`tgfc-floating-panel tgfc-preview-panel${jsonPanelOpen ? ' is-open' : ''}`}>
+          <button type="button" className="tgfc-panel-head tgfc-panel-head--toggle" onClick={() => setJsonPanelOpen((v) => !v)}>
+            <span>{jsonTargetGenerationNode ? `JSON • ${jsonTargetGenerationNode.data.title || 'Generation node'}` : 'Structured JSON'}</span>
+            <span className="tgfc-panel-toggle-icon">{jsonPanelOpen ? '▲' : '▼'}</span>
+            {taskId ? <strong title={taskId}>{taskId.slice(0, 10)}...</strong> : null}
+          </button>
+          {jsonPanelOpen ? (
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, gap: 6 }}>
+              {errorMessage ? <div className="tgfc-error">{errorMessage}</div> : null}
+              <div className="tgfc-json-actions">
+                <button type="button" className="tgfc-copy-json-btn" onClick={() => copyGraphJson()}>
+                  {copyJsonStatus || 'Copy JSON'}
                 </button>
-              ) : null}
+                {onSendRawJson ? (
+                  <button
+                    type="button"
+                    className="tgfc-send-json-btn"
+                    disabled={sendJsonStatus === 'Sending...'}
+                    onClick={() => {
+                      setSendJsonStatus('Sending...')
+                      void onSendRawJson(jsonEditorValue)
+                        .then(() => {
+                          setSendJsonStatus('Sent!')
+                          window.setTimeout(() => setSendJsonStatus(''), 2000)
+                        })
+                        .catch((err: Error) => {
+                          setSendJsonStatus(`Error: ${err.message.slice(0, 40)}`)
+                          window.setTimeout(() => setSendJsonStatus(''), 3000)
+                        })
+                    }}
+                  >
+                    {sendJsonStatus || 'Send JSON'}
+                  </button>
+                ) : null}
+              </div>
+              <textarea
+                className="tgfc-json-textarea nodrag nowheel"
+                value={jsonEditorValue}
+                onChange={(e) => setJsonEditorValue(e.target.value)}
+                spellCheck={false}
+              />
             </div>
-            <textarea
-              className="tgfc-json-textarea nodrag nowheel"
-              value={jsonEditorValue}
-              onChange={(e) => setJsonEditorValue(e.target.value)}
-              spellCheck={false}
-            />
-          </div>
-        ) : null}
-      </aside>
+          ) : null}
+        </aside>
+      )}
 
       {pendingDeleteIds.length > 0 ? (
         <div className="tgfc-confirm-layer" role="dialog" aria-modal="true" aria-label="Delete selected nodes">

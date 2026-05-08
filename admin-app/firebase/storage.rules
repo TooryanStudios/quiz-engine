@@ -117,6 +117,13 @@ service firebase.storage {
       allow write: if request.resource.size < 80 * 1024 * 1024;
     }
 
+    // Workflow Builder generated outputs (video previews and persisted runs).
+    // Keep public read so generated videos remain playable in the builder UI.
+    match /workflow-builder/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.resource.size < 80 * 1024 * 1024;
+    }
+
     // Seedance reference images uploaded from ToorGen (public read so Seedance API can fetch them)
     match /seedance-references/{allPaths=**} {
       allow read: if true;

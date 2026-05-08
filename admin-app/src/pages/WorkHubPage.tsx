@@ -158,6 +158,7 @@ import { useWorkhubTaskFilter } from './workhub/hooks/useWorkhubTaskFilter'
 import { useWorkhubGlobalFinder } from './workhub/hooks/useWorkhubGlobalFinder'
 import { useWorkhubNotificationDerived } from './workhub/hooks/useWorkhubNotificationDerived'
 import { useWorkhubDashboardStats } from './workhub/hooks/useWorkhubDashboardStats'
+import { useWorkhubPipelineReport, type WorkhubPipelineReportGroupKey } from './workhub/hooks/useWorkhubPipelineReport'
 import type { WorkhubEntityFinderEntry } from './workhub/finderUtils'
 import {
   ATTACHMENT_REVIEW_STORAGE_KEY,
@@ -181,6 +182,7 @@ import { getTaskSelectionSnapshot, setTaskSelectionId, subscribeTaskSelection } 
 import type { WorkhubUserAccessDraft, WorkhubUserAccessMode, WorkhubUserWorkspaceDraft } from './workhub/accessTypes'
 import { shouldResetSelectedProjectAfterHydration } from './workhub/routeHydrationGuards'
 import { dispatchChatDockOpen } from '../features/communication/utils/chatDockEvents'
+import { resolveWorkhubNotificationPath } from '../features/communication/utils/workhubNotificationNavigation'
 
 const MASTER_EMAIL = import.meta.env.VITE_MASTER_EMAIL as string | undefined
 const WORKHUB_PHONE_MAX_WIDTH = 767
@@ -248,6 +250,23 @@ const DEFAULT_WORKHUB_FOLDER_NOTIFICATION_SETTINGS: WorkhubFolderNotificationSet
   taskCompleted: true,
   folderCompleted: true,
   delivery: 'in_app',
+}
+
+const DEFAULT_PIPELINE_REPORT_GROUP_SELECTION: Record<WorkhubPipelineReportGroupKey, boolean> = {
+  open_proposals: true,
+  closed_proposals: true,
+  submitted_proposals: true,
+  dropped_proposals: true,
+  running_projects: true,
+}
+
+function escapePipelineReportHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
 
 function normalizeFolderNotificationSettings(
@@ -1143,6 +1162,9 @@ export default function WorkHubPage() {
   const [isDataReloading, setIsDataReloading] = useState(false)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const [dashboardSummaryCollapsed, setDashboardSummaryCollapsed] = useState(false)
+  const [pipelineReportGroupSelection, setPipelineReportGroupSelection] = useState<Record<WorkhubPipelineReportGroupKey, boolean>>(
+    DEFAULT_PIPELINE_REPORT_GROUP_SELECTION,
+  )
   const [comments, setComments] = useState<WorkhubTaskComment[]>([])
   const [commentsFetchLimit, setCommentsFetchLimit] = useState(WORKHUB_DISCUSSION_PAGE_SIZE)
   const [commentsHasMoreOlder, setCommentsHasMoreOlder] = useState(false)
@@ -1270,6 +1292,10 @@ export default function WorkHubPage() {
   const [accessMemberUids, setAccessMemberUids] = useState<string[]>([])
   const [expandedProjectIds, setExpandedProjectIds] = useState<string[]>([])
   const [projectsGroupExpanded, setProjectsGroupExpanded] = useState(true)
+  const [linkedHighlightedProjectId, setLinkedHighlightedProjectId] = useState('')
+  const [linkedHighlightedDocumentId, setLinkedHighlightedDocumentId] = useState('')
+  const [linkedHighlightedMoodBoardId, setLinkedHighlightedMoodBoardId] = useState('')
+  const [linkedHighlightedTaskId, setLinkedHighlightedTaskId] = useState('')
   const [settingsProjectName, setSettingsProjectName] = useState('')
   const [settingsProjectDescription, setSettingsProjectDescription] = useState('')
   const [settingsProjectColor, setSettingsProjectColor] = useState(PROJECT_COLORS[0])
@@ -2210,7 +2236,6 @@ export default function WorkHubPage() {
     return true
   }, [])
   const {
-    handleNotificationClick,
     handleToggleNotificationMenu,
     handleToggleAccountMenu,
     handleOpenAccountSettings,
@@ -2246,8 +2271,10 @@ export default function WorkHubPage() {
     if (!item.read) {
       await markWorkhubNotificationRead(item.id).catch(() => undefined)
     }
-    await handleNotificationClick(item)
-  }, [handleNotificationClick])
+    setNotificationMenuOpen(false)
+    setAccountMenuOpen(false)
+    navigate(resolveWorkhubNotificationPath(item))
+  }, [navigate, setAccountMenuOpen, setNotificationMenuOpen])
   const {
     selectedTemplate: selectedCreateWorkspaceTemplate,
     templates: workspaceTemplateDefinitions,
@@ -3371,6 +3398,20 @@ export default function WorkHubPage() {
       showToast({ type: 'error', message: 'Could not copy task token.' })
     }
   }, [selectedTaskForContextMenu, showToast])
+
+  const copyProjectDeepLink = useCallback(async (projectId: string) => {
+    if (!projectId || projectId === '__workspace__') return
+    const project = projects.find((item) => item.id === projectId)
+    if (!project) return
+    const path = buildWorkhubPathname(project.workspaceId, project.id, 'dashboard')
+    const absoluteUrl = `${window.location.origin}${path}`
+    try {
+      await navigator.clipboard.writeText(absoluteUrl)
+      showToast({ type: 'success', message: 'Folder URL copied.' })
+    } catch {
+      showToast({ type: 'error', message: 'Could not copy folder URL.' })
+    }
+  }, [projects, showToast])
 
   const handleOpenLinkedChat = useCallback(() => {
     const selectedTask = selectedTaskIdSnapshot
@@ -4670,6 +4711,483 @@ export default function WorkHubPage() {
     unreadNotificationCount,
     pendingMembersCount: pendingMembers.length,
   })
+  const pipelineReport = useWorkhubPipelineReport({
+    projects: visibleWorkspaceProjects,
+    allClientById,
+    projectIntentById,
+    selectedWorkspaceTemplateId,
+    projectColorMeanings: selectedWorkspaceProjectColorMeanings,
+    isWorkspaceOverview: selectedProjectId === 'all',
+  })
+  const selectedPipelineReportGroupKeys = useMemo(() => new Set(
+    (Object.entries(pipelineReportGroupSelection) as Array<[WorkhubPipelineReportGroupKey, boolean]>)
+      .filter(([, checked]) => checked)
+      .map(([key]) => key),
+  ), [pipelineReportGroupSelection])
+  const selectedPipelineReportGroups = useMemo(
+    () => pipelineReport.groups.filter((group) => selectedPipelineReportGroupKeys.has(group.key)),
+    [pipelineReport.groups, selectedPipelineReportGroupKeys],
+  )
+  const selectedPipelineReportItemCount = useMemo(
+    () => selectedPipelineReportGroups.reduce((sum, group) => sum + group.items.length, 0),
+    [selectedPipelineReportGroups],
+  )
+  const selectedPipelineReportTotalLabel = useMemo(() => {
+    const totalsByCurrency: Record<string, number> = {}
+    selectedPipelineReportGroups.forEach((group) => {
+      Object.entries(group.totalAmountByCurrency).forEach(([currency, amount]) => {
+        addMonetaryTotal(totalsByCurrency, currency, amount)
+      })
+    })
+    return formatMonetaryTotalsByCurrency(totalsByCurrency)
+  }, [selectedPipelineReportGroups])
+  const selectedPipelineReportStatsByGroup = useMemo(() => {
+    const stats: Record<WorkhubPipelineReportGroupKey, number> = {
+      open_proposals: 0,
+      closed_proposals: 0,
+      submitted_proposals: 0,
+      dropped_proposals: 0,
+      running_projects: 0,
+    }
+    selectedPipelineReportGroups.forEach((group) => {
+      stats[group.key] = group.items.length
+    })
+    return stats
+  }, [selectedPipelineReportGroups])
+  const pipelineReportTitle = useMemo(
+    () => `${selectedWorkspaceTemplateId === 'finance' ? 'Finance pipeline report' : 'Proposals pipeline report'} - ${new Date().toISOString().slice(0, 10)}`,
+    [selectedWorkspaceTemplateId],
+  )
+  const pipelineReportAttribution = 'This report is created automatically via Tooryan Studios built-in software WorkHub.'
+  const pipelineReportOverallValueLabel = selectedWorkspaceTemplateId === 'finance'
+    ? 'Overall pipeline total value'
+    : 'Overall proposals total value'
+  const buildPipelineReportSnapshotMarkdown = useCallback((generatedAt: string) => (
+    [
+      `Generated at: ${generatedAt}`,
+      '',
+      '## Snapshot',
+      `- Open: ${selectedPipelineReportStatsByGroup.open_proposals}`,
+      `- Closed: ${selectedPipelineReportStatsByGroup.closed_proposals}`,
+      `- Submitted: ${selectedPipelineReportStatsByGroup.submitted_proposals}`,
+      `- Dropped: ${selectedPipelineReportStatsByGroup.dropped_proposals}`,
+      `- Running: ${selectedPipelineReportStatsByGroup.running_projects}`,
+      `- Total items: ${selectedPipelineReportItemCount}`,
+      `- ${pipelineReportOverallValueLabel}: **${selectedPipelineReportTotalLabel}**`,
+    ].join('\n')
+  ), [
+    pipelineReportOverallValueLabel,
+    selectedPipelineReportItemCount,
+    selectedPipelineReportStatsByGroup,
+    selectedPipelineReportTotalLabel,
+  ])
+  const handleCopyPipelineReportTable = useCallback(async () => {
+    if (!pipelineReport.available) return
+    if (selectedPipelineReportGroupKeys.size === 0) {
+      showToast({ type: 'warning', message: 'Select at least one group to include in the report.' })
+      return
+    }
+
+    const table = pipelineReport.buildMarkdownTable(selectedPipelineReportGroupKeys)
+    if (!table.trim()) {
+      showToast({ type: 'warning', message: 'No report rows available for the selected groups.' })
+      return
+    }
+
+    const generatedAt = new Date().toLocaleString('en-GB')
+    const reportContent = [
+      `# ${pipelineReportTitle}`,
+      '',
+      pipelineReportAttribution,
+      '',
+      buildPipelineReportSnapshotMarkdown(generatedAt),
+      '',
+      '## Details',
+      '',
+      table,
+    ].join('\n')
+
+    try {
+      await navigator.clipboard.writeText(reportContent)
+      showToast({ type: 'success', message: 'Pipeline report copied with statistics and table.' })
+    } catch {
+      showToast({ type: 'error', message: 'Could not copy the pipeline report.' })
+    }
+  }, [buildPipelineReportSnapshotMarkdown, pipelineReport, pipelineReportAttribution, pipelineReportTitle, selectedPipelineReportGroupKeys, showToast])
+  const handlePrintPipelineReport = useCallback(() => {
+    if (!pipelineReport.available) return
+    if (selectedPipelineReportGroupKeys.size === 0) {
+      showToast({ type: 'warning', message: 'Select at least one group to include in the report.' })
+      return
+    }
+    if (selectedPipelineReportItemCount === 0) {
+      showToast({ type: 'warning', message: 'No report rows available for the selected groups.' })
+      return
+    }
+
+    const generatedAt = new Date().toLocaleString('en-GB')
+    const printWindow = window.open('', '_blank', 'width=1200,height=900')
+    if (!printWindow) {
+      showToast({ type: 'error', message: 'Unable to open print window. Please allow popups and try again.' })
+      return
+    }
+
+    const rowsHtml = selectedPipelineReportGroups.map((group) => {
+      const groupRows = group.items.map((item) => `
+        <tr>
+          <td>${escapePipelineReportHtml(item.name)}</td>
+          <td>${escapePipelineReportHtml(item.clientName)}</td>
+          <td>${escapePipelineReportHtml(item.typeLabel)}</td>
+          <td>${escapePipelineReportHtml(item.statusLabel)}</td>
+          <td>${escapePipelineReportHtml(item.submissionDate)}</td>
+          <td>${escapePipelineReportHtml(item.submissionTime)}</td>
+          <td class="ltr">${escapePipelineReportHtml(formatMonetaryAmount(item.amount, item.currency))}</td>
+        </tr>
+      `).join('')
+      return `
+        <tr class="group-row"><td colspan="7">${escapePipelineReportHtml(group.label)}</td></tr>
+        ${groupRows}
+        <tr class="group-total-row">
+          <td><strong>${escapePipelineReportHtml(group.label)} total</strong></td>
+          <td><strong>${group.items.length}</strong></td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td class="ltr"><strong>${escapePipelineReportHtml(group.totalAmountLabel)}</strong></td>
+        </tr>
+      `
+    }).join('')
+
+    const html = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>${escapePipelineReportHtml(pipelineReportTitle)}</title>
+    <style>
+      :root { color-scheme: light; }
+      /* Force zero @page margins so the layout table fully controls all spacing */
+      @page { margin: 0; }
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: "Segoe UI", "Tahoma", sans-serif;
+        color: #142238;
+      }
+      /* ── Outer layout table ─────────────────────────────────────
+         thead/tfoot repeat on every printed page, providing top and
+         bottom margins. The single tbody row has empty side cells
+         that act as left/right margins.
+      ────────────────────────────────────────────────────────── */
+      .page-layout {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      .page-layout col.margin-col {
+        width: 8mm;
+      }
+      .page-layout > thead,
+      .page-layout > tfoot {
+        display: table-header-group;
+      }
+      .page-layout > tfoot {
+        display: table-footer-group;
+      }
+      .page-layout .margin-top td,
+      .page-layout .margin-bottom td,
+      .page-layout .margin-side {
+        border: none !important;
+        background: transparent !important;
+        padding: 0 !important;
+      }
+      .page-layout .margin-top td { height: 10mm; }
+      .page-layout .margin-bottom td { height: 8mm; }
+      .page-layout .margin-side { width: 8mm; }
+      .page-layout .content-cell {
+        border: none;
+        padding: 0;
+        vertical-align: top;
+      }
+      /* ── Content styles ─────────────────────────────────────── */
+      h1 {
+        margin: 0 0 8px;
+        font-size: 24px;
+      }
+      .meta {
+        margin: 0 0 14px;
+        color: #4c5f7f;
+        font-size: 12px;
+      }
+      .attribution {
+        margin: 0 0 10px;
+        color: #36557f;
+        font-size: 16px;
+        line-height: 1.35;
+        font-weight: 600;
+      }
+      .snapshot-grid {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 8px;
+        margin: 0 0 10px;
+      }
+      .snapshot-card {
+        border: 1px solid #dbe6fb;
+        border-radius: 8px;
+        padding: 8px 10px;
+        background: #f8fbff;
+      }
+      .snapshot-card strong {
+        display: block;
+        font-size: 18px;
+      }
+      .snapshot-card span {
+        color: #4a6288;
+        font-size: 12px;
+      }
+      .overall-value {
+        margin: 0 0 14px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 2px solid #8fb3ef;
+        background: #eef5ff;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .overall-value span {
+        font-size: 12px;
+        color: #34568a;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        font-weight: 700;
+      }
+      .overall-value strong {
+        font-size: 24px;
+        color: #0f2f66;
+      }
+      .data-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      .data-table th, .data-table td {
+        border: 1px solid #dce7fb;
+        padding: 7px 8px;
+        text-align: left;
+        vertical-align: top;
+      }
+      .data-table th {
+        background: #f2f7ff;
+        color: #213d6d;
+        font-weight: 700;
+      }
+      .data-table .group-row td {
+        background: #edf4ff;
+        color: #234478;
+        font-weight: 700;
+      }
+      .data-table .group-total-row td {
+        background: #f8fbff;
+      }
+      .ltr {
+        direction: ltr;
+        text-align: left;
+      }
+      @media print {
+        .data-table { page-break-inside: auto; }
+        .data-table tr { page-break-inside: avoid; page-break-after: auto; }
+        .data-table thead { display: table-header-group; }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Outer layout table: thead/tfoot = top/bottom margins per page; side cells = left/right margins -->
+    <table class="page-layout">
+      <colgroup>
+        <col class="margin-col" />
+        <col />
+        <col class="margin-col" />
+      </colgroup>
+      <thead>
+        <tr class="margin-top"><td colspan="3"></td></tr>
+      </thead>
+      <tfoot>
+        <tr class="margin-bottom"><td colspan="3"></td></tr>
+      </tfoot>
+      <tbody>
+        <tr>
+          <td class="margin-side"></td>
+          <td class="content-cell">
+            <h1>${escapePipelineReportHtml(pipelineReportTitle)}</h1>
+            <p class="attribution">${escapePipelineReportHtml(pipelineReportAttribution)}</p>
+            <p class="meta">Generated at: ${escapePipelineReportHtml(generatedAt)}</p>
+
+            <section aria-label="Snapshot">
+              <div class="snapshot-grid">
+                <div class="snapshot-card"><strong>${selectedPipelineReportStatsByGroup.open_proposals}</strong><span>Open</span></div>
+                <div class="snapshot-card"><strong>${selectedPipelineReportStatsByGroup.closed_proposals}</strong><span>Closed</span></div>
+                <div class="snapshot-card"><strong>${selectedPipelineReportStatsByGroup.submitted_proposals}</strong><span>Submitted</span></div>
+                <div class="snapshot-card"><strong>${selectedPipelineReportStatsByGroup.dropped_proposals}</strong><span>Dropped</span></div>
+                <div class="snapshot-card"><strong>${selectedPipelineReportStatsByGroup.running_projects}</strong><span>Running</span></div>
+              </div>
+              <div class="overall-value">
+                <span>${escapePipelineReportHtml(pipelineReportOverallValueLabel)} (${selectedPipelineReportItemCount} items)</span>
+                <strong>${escapePipelineReportHtml(selectedPipelineReportTotalLabel)}</strong>
+              </div>
+            </section>
+
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Client</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Submission date</th>
+                  <th>Submission time</th>
+                  <th>Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rowsHtml}
+              </tbody>
+            </table>
+          </td>
+          <td class="margin-side"></td>
+        </tr>
+      </tbody>
+    </table>
+  </body>
+</html>`
+
+    printWindow.document.open()
+    printWindow.document.write(html)
+    printWindow.document.close()
+
+    const triggerPrint = () => {
+      printWindow.focus()
+      printWindow.print()
+    }
+
+    if (printWindow.document.readyState === 'complete') {
+      triggerPrint()
+    } else {
+      printWindow.addEventListener('load', () => {
+        triggerPrint()
+      }, { once: true })
+    }
+  }, [
+    pipelineReport.available,
+    pipelineReportAttribution,
+    pipelineReportOverallValueLabel,
+    pipelineReportTitle,
+    selectedPipelineReportGroupKeys.size,
+    selectedPipelineReportGroups,
+    selectedPipelineReportItemCount,
+    selectedPipelineReportStatsByGroup,
+    selectedPipelineReportTotalLabel,
+    showToast,
+  ])
+  const handleCreatePipelineReportDocument = useCallback(async (projectId = '') => {
+    if (!selectedWorkspaceId || !currentUid) {
+      showToast({ type: 'warning', message: 'Select a workspace first.' })
+      return
+    }
+    if (!pipelineReport.available) {
+      showToast({ type: 'info', message: 'Report creation is available in Proposals & Leads and Finance workspace overviews.' })
+      return
+    }
+
+    const selectedGroups = selectedPipelineReportGroupKeys.size > 0
+      ? selectedPipelineReportGroupKeys
+      : new Set(Object.keys(DEFAULT_PIPELINE_REPORT_GROUP_SELECTION) as WorkhubPipelineReportGroupKey[])
+
+    const table = pipelineReport.buildMarkdownTable(selectedGroups)
+    if (!table.trim()) {
+      showToast({ type: 'warning', message: 'No report rows available for the selected groups.' })
+      return
+    }
+
+    const fallbackProjectId = projectId
+      || (selectedProjectId !== 'all' ? selectedProjectId : selectedNoteProject?.id || visibleWorkspaceProjects[0]?.id || '')
+    if (!fallbackProjectId) {
+      showToast({ type: 'warning', message: 'Create at least one folder/project first, then create the report.' })
+      return
+    }
+
+    const generatedAt = new Date().toLocaleString('en-GB')
+    const title = pipelineReportTitle
+    const body = [
+      `# ${title}`,
+      '',
+      pipelineReportAttribution,
+      '',
+      buildPipelineReportSnapshotMarkdown(generatedAt),
+      '',
+      '## Details',
+      '',
+      table,
+    ].join('\n')
+
+    setBusyKey('report:create')
+    try {
+      const documentId = await createWorkhubDocument({
+        workspaceId: selectedWorkspaceId,
+        projectId: fallbackProjectId,
+        type: 'document',
+        title,
+        body,
+        tabs: buildQuickDocumentTabs(body),
+        visibility: 'workspace',
+        memberUids: [],
+        notifyMode: 'none',
+        notifyUids: [],
+        createdBy: currentUid,
+      })
+
+      await createWorkhubActivity({
+        workspaceId: selectedWorkspaceId,
+        actorUid: currentUid,
+        entityType: 'document',
+        entityId: documentId,
+        action: 'create',
+        message: `Created report ${title}`,
+        visibility: 'workspace',
+        memberUids: [],
+      })
+
+      setSelectedProjectId(fallbackProjectId)
+      setSelectedNoteProjectId(fallbackProjectId)
+      setSelectedDocumentId(documentId)
+      setSelectedMoodBoardId('')
+      setSelectedTaskId('')
+      setActiveSection('notes')
+      showToast({ type: 'success', message: 'Report item created in Notes.' })
+    } catch {
+      showToast({ type: 'error', message: 'Could not create report item.' })
+    } finally {
+      setBusyKey('')
+    }
+  }, [
+    currentUid,
+    buildPipelineReportSnapshotMarkdown,
+    pipelineReport,
+    pipelineReportAttribution,
+    pipelineReportTitle,
+    selectedPipelineReportStatsByGroup,
+    selectedPipelineReportGroupKeys,
+    selectedPipelineReportItemCount,
+    selectedPipelineReportTotalLabel,
+    selectedWorkspaceId,
+    selectedWorkspaceTemplateId,
+    selectedProjectId,
+    selectedNoteProject?.id,
+    showToast,
+    visibleWorkspaceProjects,
+    setSelectedTaskId,
+  ])
   const workspaceDocuments = useMemo(
     () => {
       const items = documents.filter((item) => item.workspaceId === selectedWorkspaceId)
@@ -5837,10 +6355,84 @@ export default function WorkHubPage() {
   const prevSelectedEntityIdRef = useRef('')
   const prevActiveSectionRef = useRef(activeSection)
   const prevParsedKindRef = useRef(parsedWorkhubPath.kind)
+  const linkedHighlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isWorkspaceSelectionResolved = useMemo(() => {
     if (!selectedWorkspaceId) return false
     return visibleWorkspaces.some((item) => item.id === selectedWorkspaceId)
   }, [selectedWorkspaceId, visibleWorkspaces])
+
+  useEffect(() => {
+    return () => {
+      if (linkedHighlightTimerRef.current) {
+        clearTimeout(linkedHighlightTimerRef.current)
+        linkedHighlightTimerRef.current = null
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const hasLinkedMarker = params.get('chatLinked') === '1' || params.get('notif') === '1'
+    if (!hasLinkedMarker || !selectedEntityParam) return
+
+    if (linkedHighlightTimerRef.current) {
+      clearTimeout(linkedHighlightTimerRef.current)
+      linkedHighlightTimerRef.current = null
+    }
+
+    let nextProjectHighlightId = ''
+    let nextDocumentHighlightId = ''
+    let nextMoodBoardHighlightId = ''
+    let nextTaskHighlightId = ''
+
+    if (parsedWorkhubPath.kind === 'project') {
+      nextProjectHighlightId = selectedEntityParam
+    } else if (parsedWorkhubPath.kind === 'document') {
+      nextDocumentHighlightId = selectedEntityParam
+      const targetDocument = workspaceDocumentById[selectedEntityParam]
+      if (targetDocument?.projectId && visibleProjectIds.has(targetDocument.projectId)) {
+        nextProjectHighlightId = targetDocument.projectId
+      }
+    } else if (parsedWorkhubPath.kind === 'moodboard') {
+      nextMoodBoardHighlightId = selectedEntityParam
+      const targetBoard = workspaceMoodBoards.find((item) => item.id === selectedEntityParam)
+      if (targetBoard?.entityType === 'project' && targetBoard.entityId && visibleProjectIds.has(targetBoard.entityId)) {
+        nextProjectHighlightId = targetBoard.entityId
+      }
+    } else if (parsedWorkhubPath.kind === 'task') {
+      nextTaskHighlightId = selectedEntityParam
+      const targetTask = tasks.find((item) => item.id === selectedEntityParam)
+      if (targetTask?.projectId && visibleProjectIds.has(targetTask.projectId)) {
+        nextProjectHighlightId = targetTask.projectId
+      }
+    }
+
+    if (!nextProjectHighlightId && selectedProjectParam && selectedProjectParam !== 'all' && visibleProjectIds.has(selectedProjectParam)) {
+      nextProjectHighlightId = selectedProjectParam
+    }
+
+    setLinkedHighlightedProjectId(nextProjectHighlightId)
+    setLinkedHighlightedDocumentId(nextDocumentHighlightId)
+    setLinkedHighlightedMoodBoardId(nextMoodBoardHighlightId)
+    setLinkedHighlightedTaskId(nextTaskHighlightId)
+
+    linkedHighlightTimerRef.current = setTimeout(() => {
+      setLinkedHighlightedProjectId('')
+      setLinkedHighlightedDocumentId('')
+      setLinkedHighlightedMoodBoardId('')
+      setLinkedHighlightedTaskId('')
+      linkedHighlightTimerRef.current = null
+    }, 5200)
+  }, [
+    location.search,
+    parsedWorkhubPath.kind,
+    selectedEntityParam,
+    selectedProjectParam,
+    tasks,
+    visibleProjectIds,
+    workspaceDocumentById,
+    workspaceMoodBoards,
+  ])
 
   useEffect(() => {
     if (!selectedProject) {
@@ -6151,6 +6743,8 @@ export default function WorkHubPage() {
       setSelectedDocumentId(targetDocument.id)
       setSelectedMoodBoardId('')
       setActiveSection('notes')
+      setProjectsGroupExpanded(true)
+      setSidebarCollapsed(false)
       return
     }
 
@@ -6166,6 +6760,8 @@ export default function WorkHubPage() {
       setSelectedDocumentId('')
       setSelectedTaskId('')
       setActiveSection('moodboard')
+      setProjectsGroupExpanded(true)
+      setSidebarCollapsed(false)
       return
     }
 
@@ -6184,7 +6780,10 @@ export default function WorkHubPage() {
       setSelectedTaskId(targetTask.id)
       setSelectedDocumentId('')
       setSelectedMoodBoardId('')
+      setSelectedTaskStatusTab('all')
       setActiveSection('tasks')
+      setProjectsGroupExpanded(true)
+      setSidebarCollapsed(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -6235,6 +6834,19 @@ export default function WorkHubPage() {
     // activeSection='dashboard' (URL→state hasn't fired yet because workspaceMoodBoards
     // is still empty) and pushes a dashboard URL, causing a visible flicker on refresh.
     if (parsedWorkhubPath.kind === 'moodboard' && !workspaceMoodBoardsLoaded) return
+
+    // If the URL is pointing at a task entity in the active workspace but the task
+    // feed hasn't surfaced that item yet, keep URL authority and avoid canonicalizing
+    // to a dashboard/project route prematurely.
+    if (
+      parsedWorkhubPath.kind === 'task'
+      && !!selectedEntityParam
+      && !!selectedWorkspaceParam
+      && selectedWorkspaceId === selectedWorkspaceParam
+      && !tasks.some((item) => item.id === selectedEntityParam)
+    ) {
+      return
+    }
 
     // Guard: the URL kind just transitioned to 'project' in this render (React Router
     // defers navigate() via startTransition, so the URL change can land in a separate
@@ -9881,6 +10493,7 @@ export default function WorkHubPage() {
     selectedProjectPeriodLabel,
     selectedProjectSubmissionTimeLabel,
     selectedProjectEffectiveTaskStatuses,
+    linkedHighlightedTaskId,
     taskFilterBaseTasks,
     selectedTaskStatusTab,
     setSelectedTaskStatusTab,
@@ -10444,6 +11057,16 @@ export default function WorkHubPage() {
                       <>
                         <button
                           type="button"
+                          className="workhub-ghost-mini"
+                          onClick={() => { void handleCreatePipelineReportDocument() }}
+                          title="Create report item"
+                          aria-label="Create report item"
+                          disabled={!pipelineReport.available || !selectedWorkspaceId}
+                        >
+                          Report
+                        </button>
+                        <button
+                          type="button"
                           className="workhub-plus-btn"
                           onClick={(event) => handleProjectActionMenu('__workspace__', event)}
                           title="Create items"
@@ -10495,6 +11118,9 @@ export default function WorkHubPage() {
                         treeMetaDisplayMode={treeMetaDisplayMode}
                         showProjectColorDots={showProjectColorDots}
                         selectedProjectId={selectedProjectId}
+                        linkedHighlightedProjectId={linkedHighlightedProjectId}
+                        linkedHighlightedDocumentId={linkedHighlightedDocumentId}
+                        linkedHighlightedMoodBoardId={linkedHighlightedMoodBoardId}
                         expandedProjectIds={expandedProjectIds}
                         directTaskCountByProjectId={workspaceTaskCountByProjectId}
                         unreadCommentCountByProjectId={unreadCommentCountByProjectId}
@@ -10589,6 +11215,16 @@ export default function WorkHubPage() {
                         <div className="workhub-tree-overview-actions">
                           <button
                             type="button"
+                            className="workhub-ghost-mini"
+                            title="Create report item"
+                            aria-label="Create report item"
+                            onClick={() => { void handleCreatePipelineReportDocument() }}
+                            disabled={!pipelineReport.available || !selectedWorkspaceId}
+                          >
+                            Report
+                          </button>
+                          <button
+                            type="button"
                             className="workhub-plus-btn"
                             title="Create items"
                             aria-label="Create items"
@@ -10665,6 +11301,9 @@ export default function WorkHubPage() {
                                     treeMetaDisplayMode={treeMetaDisplayMode}
                                     showProjectColorDots={showProjectColorDots}
                                     selectedProjectId={selectedProjectId}
+                                    linkedHighlightedProjectId={linkedHighlightedProjectId}
+                                    linkedHighlightedDocumentId={linkedHighlightedDocumentId}
+                                    linkedHighlightedMoodBoardId={linkedHighlightedMoodBoardId}
                                     expandedProjectIds={expandedProjectIds}
                                     directTaskCountByProjectId={workspaceTreeTaskCountByProjectId}
                                     unreadCommentCountByProjectId={{}}
@@ -10737,6 +11376,9 @@ export default function WorkHubPage() {
                                 treeMetaDisplayMode={treeMetaDisplayMode}
                                 showProjectColorDots={showProjectColorDots}
                                 selectedProjectId={selectedProjectId}
+                                linkedHighlightedProjectId={linkedHighlightedProjectId}
+                                linkedHighlightedDocumentId={linkedHighlightedDocumentId}
+                                linkedHighlightedMoodBoardId={linkedHighlightedMoodBoardId}
                                 expandedProjectIds={expandedProjectIds}
                                 directTaskCountByProjectId={workspaceTaskCountByProjectId}
                                 unreadCommentCountByProjectId={unreadCommentCountByProjectId}
@@ -10790,6 +11432,9 @@ export default function WorkHubPage() {
                             treeMetaDisplayMode={treeMetaDisplayMode}
                             showProjectColorDots={showProjectColorDots}
                             selectedProjectId={selectedProjectId}
+                            linkedHighlightedProjectId={linkedHighlightedProjectId}
+                            linkedHighlightedDocumentId={linkedHighlightedDocumentId}
+                            linkedHighlightedMoodBoardId={linkedHighlightedMoodBoardId}
                             expandedProjectIds={expandedProjectIds}
                             directTaskCountByProjectId={workspaceTaskCountByProjectId}
                             unreadCommentCountByProjectId={unreadCommentCountByProjectId}
@@ -10838,6 +11483,9 @@ export default function WorkHubPage() {
                       treeMetaDisplayMode={treeMetaDisplayMode}
                       showProjectColorDots={showProjectColorDots}
                       selectedProjectId={selectedProjectId}
+                      linkedHighlightedProjectId={linkedHighlightedProjectId}
+                      linkedHighlightedDocumentId={linkedHighlightedDocumentId}
+                      linkedHighlightedMoodBoardId={linkedHighlightedMoodBoardId}
                       expandedProjectIds={expandedProjectIds}
                       directTaskCountByProjectId={workspaceTaskCountByProjectId}
                       unreadCommentCountByProjectId={unreadCommentCountByProjectId}
@@ -11295,6 +11943,119 @@ export default function WorkHubPage() {
                           ))}
                         </div>
                       </article>
+
+                      {pipelineReport.available && (
+                        <article className="workhub-overview-card workhub-overview-card-full">
+                          <div className="workhub-overview-head">
+                            <h3>{selectedWorkspaceTemplateId === 'finance' ? 'Finance pipeline report' : 'Proposals and tenders report'}</h3>
+                            <span>{selectedPipelineReportItemCount}/{pipelineReport.totalItems} items selected</span>
+                          </div>
+                          <p className="workhub-pipeline-report-note">
+                            Choose groups, then copy a full report or print/save as PDF from a clean HTML layout.
+                          </p>
+                          <div className="workhub-pipeline-report-filters">
+                            {pipelineReport.groups.map((group) => (
+                              <label key={group.key} className="workhub-pipeline-report-filter-chip">
+                                <input
+                                  type="checkbox"
+                                  checked={pipelineReportGroupSelection[group.key]}
+                                  onChange={(event) => {
+                                    const nextChecked = event.target.checked
+                                    setPipelineReportGroupSelection((current) => ({
+                                      ...current,
+                                      [group.key]: nextChecked,
+                                    }))
+                                  }}
+                                />
+                                <span>{group.label}</span>
+                                <strong>{group.items.length}</strong>
+                              </label>
+                            ))}
+                          </div>
+                          <div className="workhub-pipeline-report-summary">
+                            <span>{selectedPipelineReportItemCount} row{selectedPipelineReportItemCount === 1 ? '' : 's'} in selection</span>
+                            <strong>{selectedPipelineReportTotalLabel}</strong>
+                          </div>
+                          <div className="workhub-pipeline-report-total-emphasis">
+                            <span>{pipelineReportOverallValueLabel}</span>
+                            <strong>{selectedPipelineReportTotalLabel}</strong>
+                          </div>
+                          <div className="workhub-summary-strip">
+                            <div className="workhub-summary-tile"><strong>{selectedPipelineReportStatsByGroup.open_proposals}</strong><span>Open</span></div>
+                            <div className="workhub-summary-tile"><strong>{selectedPipelineReportStatsByGroup.closed_proposals}</strong><span>Closed</span></div>
+                            <div className="workhub-summary-tile"><strong>{selectedPipelineReportStatsByGroup.submitted_proposals}</strong><span>Submitted</span></div>
+                            <div className="workhub-summary-tile"><strong>{selectedPipelineReportStatsByGroup.dropped_proposals}</strong><span>Dropped</span></div>
+                            <div className="workhub-summary-tile"><strong>{selectedPipelineReportStatsByGroup.running_projects}</strong><span>Running</span></div>
+                          </div>
+                          <div className="workhub-home-actions">
+                            <button
+                              type="button"
+                              className="workhub-primary-btn"
+                              onClick={() => { void handleCopyPipelineReportTable() }}
+                              disabled={selectedPipelineReportGroupKeys.size === 0 || selectedPipelineReportItemCount === 0}
+                            >
+                              Copy report
+                            </button>
+                            <button
+                              type="button"
+                              className="workhub-ghost-btn"
+                              onClick={handlePrintPipelineReport}
+                              disabled={selectedPipelineReportGroupKeys.size === 0 || selectedPipelineReportItemCount === 0}
+                            >
+                              Print / PDF
+                            </button>
+                          </div>
+                          <div className="workhub-pipeline-report-table-wrap">
+                            <table className="workhub-pipeline-report-table">
+                              <thead>
+                                <tr>
+                                  <th>Name</th>
+                                  <th>Client</th>
+                                  <th>Type</th>
+                                  <th>Status</th>
+                                  <th>Submission date</th>
+                                  <th>Submission time</th>
+                                  <th>Amount</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {selectedPipelineReportGroups.map((group) => (
+                                  <Fragment key={group.key}>
+                                    <tr className="workhub-pipeline-report-group-row">
+                                      <td colSpan={7}>{group.label}</td>
+                                    </tr>
+                                    {group.items.map((item) => (
+                                      <tr key={item.id}>
+                                        <td dir="auto">{item.name}</td>
+                                        <td dir="auto">{item.clientName}</td>
+                                        <td>{item.typeLabel}</td>
+                                        <td>{item.statusLabel}</td>
+                                        <td className="workhub-ltr-token">{item.submissionDate}</td>
+                                        <td className="workhub-ltr-token">{item.submissionTime}</td>
+                                        <td className="workhub-ltr-token">{formatMonetaryAmount(item.amount, item.currency)}</td>
+                                      </tr>
+                                    ))}
+                                    <tr className="workhub-pipeline-report-total-row">
+                                      <td><strong>{group.label} total</strong></td>
+                                      <td><strong>{group.items.length}</strong></td>
+                                      <td />
+                                      <td />
+                                      <td />
+                                      <td />
+                                      <td className="workhub-ltr-token"><strong>{group.totalAmountLabel}</strong></td>
+                                    </tr>
+                                  </Fragment>
+                                ))}
+                                {selectedPipelineReportGroups.length === 0 && (
+                                  <tr>
+                                    <td colSpan={7} className="workhub-empty-state">No groups selected.</td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </article>
+                      )}
 
                       <article className="workhub-overview-card">
                         <div className="workhub-overview-head">
@@ -12107,8 +12868,12 @@ export default function WorkHubPage() {
             }
             openWorkspaceTypeCreateDialog(intent, projectId || '')
           }}
+          onCreateWorkspaceReport={(projectId) => {
+            void handleCreatePipelineReportDocument(projectId || '')
+          }}
           onRequestInlineRename={(projectId) => setPendingTreeInlineRename({ itemType: 'project', itemId: projectId })}
           onMoveProject={(projectId) => openProjectMoveDialog(projectId)}
+          onCopyProjectLink={(projectId) => { void copyProjectDeepLink(projectId) }}
           onDeleteProject={(projectId) => { void handleDeleteProjectFromTree(projectId) }}
           onOpenSettings={(projectId) => setProjectAccessDialogId(projectId)}
           moodBoardEnabled={selectedWorkspace?.moodBoardEnabled !== false}

@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { onAuthStateChanged } from 'firebase/auth'
 import { collection, doc, getDocs, limit, orderBy, query, serverTimestamp, setDoc } from 'firebase/firestore'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { useGenerationRunner } from '../../hooks/useGenerationRunner'
 import { auth, db, storage } from '../../lib/firebase'
+import { finalizeGeneratedVideoPersistence } from '../../lib/toorgen/generationPersistence'
 import './style.css'
 
 const CHATBOT_BASE = import.meta.env.VITE_CHATBOT_API_URL as string | undefined
@@ -198,6 +200,7 @@ export function ToorGenExtendPage() {
   const videoInputRef = useRef<HTMLInputElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const pollingCancelRef = useRef(false)
+  const { runGeneration } = useGenerationRunner({ apiBaseUrl: CHATBOT_BASE || '' })
 
   const buildReferenceAwarePrompt = () => {
     const userPrompt = prompt.trim()
@@ -290,17 +293,6 @@ export function ToorGenExtendPage() {
     return getDownloadURL(sRef)
   }
 
-  const uploadBlobToFirebase = async (blob: Blob, storagePath: string, contentType?: string): Promise<string> => {
-    const fileRef = storageRef(storage, storagePath)
-    if (contentType) {
-      await uploadBytes(fileRef, blob, { contentType })
-    } else {
-      await uploadBytes(fileRef, blob)
-    }
-    return getDownloadURL(fileRef)
-  }
-
-
   const setFinalResult = (sourceUrl: string, firebaseUrl?: string, thumbnailUrl?: string) => {
     const displayUrl = firebaseUrl || sourceUrl
     persistResultUrl(displayUrl)
@@ -314,57 +306,31 @@ export function ToorGenExtendPage() {
     return `${buildApiUrl('/api/video-proxy')}?url=${encodeURIComponent(url)}`
   }
 
-  const saveGeneratedVideoToFirebase = async (sourceUrl: string, taskId: string): Promise<{ firebaseUrl: string; thumbnailUrl: string }> => {
-    const proxyUrl = `${buildApiUrl('/api/video-proxy')}?url=${encodeURIComponent(sourceUrl)}`
-    const response = await fetch(proxyUrl)
-    if (!response.ok) {
-      throw new Error(`Failed to download generated video: HTTP ${response.status}`)
-    }
-    const videoBlob = await response.blob()
-    if (videoBlob.size > 50 * 1024 * 1024) {
-      throw new Error('Generated video is larger than the Firebase Storage limit (50MB).')
-    }
-    const basePath = `toorgen-extend/generated/${Date.now()}-${taskId}`
-    const firebaseUrl = await uploadBlobToFirebase(videoBlob, `${basePath}.mp4`, videoBlob.type || 'video/mp4')
+  const finalizeTaskResult = async (taskId: string, sourceUrl: string, statusPrefix: string) => {
+    const finalized = await finalizeGeneratedVideoPersistence<TaskHistoryEntry>({
+      sourceUrl,
+      storageBasePath: `toorgen-extend/generated/${Date.now()}-${taskId}`,
+      apiBaseUrl: CHATBOT_BASE || '',
+      captureThumbnail: true,
+      buildEntry: ({ completedAt, firebaseVideoUrl, thumbnailUrl }) => ({
+        taskId,
+        resultUrl: sourceUrl,
+        firebaseVideoUrl,
+        thumbnailUrl,
+        sourceVideoUrl: videoUrl,
+        prompt: prompt.trim(),
+        videoUrl,
+        imageUrl,
+        completedAt,
+      }),
+      persistEntry: saveTaskHistory,
+    })
 
-    let thumbnailUrl = ''
-    const videoObjectUrl = URL.createObjectURL(videoBlob)
-    try {
-      const video = document.createElement('video')
-      video.preload = 'metadata'
-      video.muted = true
-      video.playsInline = true
-      video.crossOrigin = 'anonymous'
-      video.src = videoObjectUrl
-      await new Promise<void>((resolve, reject) => {
-        video.onloadeddata = () => resolve()
-        video.onerror = () => reject(new Error('Thumbnail decoding failed.'))
-      })
-
-      const canvas = document.createElement('canvas')
-      canvas.width = Math.max(1, video.videoWidth || 1280)
-      canvas.height = Math.max(1, video.videoHeight || 720)
-      const context = canvas.getContext('2d')
-      if (!context) throw new Error('Could not create thumbnail canvas.')
-      context.drawImage(video, 0, 0, canvas.width, canvas.height)
-
-      const thumbnailBlob = await new Promise<Blob>((resolve, reject) => {
-        canvas.toBlob((blob) => {
-          if (!blob) {
-            reject(new Error('Thumbnail export failed.'))
-            return
-          }
-          resolve(blob)
-        }, 'image/jpeg', 0.92)
-      })
-      thumbnailUrl = await uploadBlobToFirebase(thumbnailBlob, `${basePath}.jpg`, 'image/jpeg')
-    } catch {
-      // Thumbnail generation is best-effort; keep the Firebase video URL even if this fails.
-    } finally {
-      URL.revokeObjectURL(videoObjectUrl)
-    }
-
-    return { firebaseUrl, thumbnailUrl }
+    setStatusText(finalized.storageSaveError
+      ? `${statusPrefix} Firebase save failed: ${finalized.storageSaveError}`
+      : `${statusPrefix} Saved to Firebase.`)
+    setFinalResult(sourceUrl, finalized.firebaseVideoUrl || undefined, finalized.thumbnailUrl || undefined)
+    setHistory(readTaskHistory())
   }
 
   const loadCachedTaskResult = (taskId: string) => {
@@ -485,7 +451,8 @@ export function ToorGenExtendPage() {
         const rawStatus = ((statusData?.data as any)?.status || statusData?.status || '').toString().toUpperCase()
         
         if (rawStatus.includes('SUCCESS') || rawStatus.includes('COMPLETE') || rawStatus.includes('DONE')) {
-          setStatusText(`Done! (took ~${attempts * 5}s). Saving the final video to Firebase...`)
+          const statusPrefix = `Done! (took ~${attempts * 5}s).`
+          setStatusText(`${statusPrefix} Saving the final video to Firebase...`)
           
           console.log("Success payload:", statusData)
           
@@ -500,32 +467,7 @@ export function ToorGenExtendPage() {
             statusData?.url
             
           if (resultUrl) {
-            let firebaseUrl = ''
-            let thumbnailUrl = ''
-            try {
-              const savedResult = await saveGeneratedVideoToFirebase(resultUrl as string, taskId)
-              firebaseUrl = savedResult.firebaseUrl
-              thumbnailUrl = savedResult.thumbnailUrl
-              setStatusText(`Done! (took ~${attempts * 5}s). Saved to Firebase.`)
-            } catch (saveErr) {
-              console.error('Firebase save failed:', saveErr)
-              const saveMessage = saveErr instanceof Error ? saveErr.message : String(saveErr)
-              setStatusText(`Done! (took ~${attempts * 5}s). Firebase save failed: ${saveMessage}`)
-            }
-
-            await saveTaskHistory({
-              taskId,
-              resultUrl: resultUrl as string,
-              firebaseVideoUrl: firebaseUrl,
-              thumbnailUrl,
-              sourceVideoUrl: videoUrl,
-              prompt: prompt.trim(),
-              videoUrl,
-              imageUrl,
-              completedAt: Date.now(),
-            })
-            setFinalResult(resultUrl as string, firebaseUrl || undefined, thumbnailUrl || undefined)
-            setHistory(readTaskHistory())
+            await finalizeTaskResult(taskId, resultUrl as string, statusPrefix)
           } else {
             throw new Error(`Success returned but no video URL found. Data: ${JSON.stringify(statusData)}`)
           }
@@ -547,6 +489,7 @@ export function ToorGenExtendPage() {
   }
 
   const submitGenerationPayload = async (payload: Record<string, unknown>) => {
+    pollingCancelRef.current = false
     setIsGenerating(true)
     setResultVideoUrl('')
     setFirebaseResultUrl('')
@@ -555,36 +498,43 @@ export function ToorGenExtendPage() {
     setStatusText('Submitting generation task...')
 
     try {
-      const res = await fetch(buildApiUrl('/api/seedance/generate'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+      const completed = await runGeneration({
+        endpoint: '/api/seedance/generate',
+        body: payload,
+        settings: {
+          provider: 'atlas',
+          model: typeof payload.model === 'string' && payload.model.trim() ? payload.model.trim() : 'seedance-2.0-fast',
+          ratio: typeof payload.aspect_ratio === 'string' && payload.aspect_ratio.trim() ? payload.aspect_ratio.trim() : '16:9',
+          duration: typeof payload.duration === 'number' ? payload.duration : 5,
+          resolution: typeof payload.resolution === 'string' && payload.resolution.trim() ? payload.resolution.trim() : '720',
+          generateAudio: Boolean(payload.generate_audio),
+        },
+      }, {
+        onQueued: ({ taskId }) => {
+          setResumeTaskId(taskId)
+          setStatusText('Task submitted. Polling status...')
+        },
+        onStatus: (nextStatus) => {
+          setStatusText(nextStatus)
+        },
+        shouldCancel: () => pollingCancelRef.current,
       })
 
-      let data: Record<string, unknown> = {}
-      try {
-        data = await res.json() as Record<string, unknown>
-      } catch {
-        throw new Error(`HTTP ${res.status}: Failed to parse JSON`)
+      if (!completed) {
+        setStatusText('Polling stopped.')
+        return
       }
 
-      if (!res.ok) throw new Error((data?.error as string) || `HTTP ${res.status}`)
-      
-      const taskId = (data?.data as any)?.task_id || (data?.data as any)?.id || data?.task_id || data?.id
-      if (!taskId) {
-        console.error('API Response Data:', data)
-        throw new Error('No task ID returned from API')
-      }
-
-      setStatusText(`Task submitted. Starting polling...`)
-      
-      // Start polling loop asynchronously
-      void runPolling(taskId)
-
+      const taskId = completed.taskId || `direct-${Date.now()}`
+      const elapsedSeconds = Math.max(1, Math.round((completed.receivedAt - completed.submittedAt) / 1000))
+      const statusPrefix = `Done! (took ~${elapsedSeconds}s).`
+      setStatusText(`${statusPrefix} Saving the final video to Firebase...`)
+      await finalizeTaskResult(taskId, completed.resultUrl, statusPrefix)
     } catch (err: any) {
       console.error(err)
       setStatusText(`Error: ${err.message}`)
       alert(`Error: ${err.message}`)
+    } finally {
       setIsGenerating(false)
     }
   }

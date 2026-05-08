@@ -53,6 +53,7 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
     selectedProjectPeriodLabel,
     selectedProjectSubmissionTimeLabel,
     selectedProjectEffectiveTaskStatuses,
+    linkedHighlightedTaskId,
     taskFilterBaseTasks,
     selectedTaskStatusTab,
     setSelectedTaskStatusTab,
@@ -325,6 +326,19 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
     () => visibleTasks.find((item: { id: string }) => item.id === selectedTaskId) || null,
     [selectedTaskId, visibleTasks],
   )
+
+  useEffect(() => {
+    if (!selectedTask) return
+    if (selectedTaskStatusTab !== 'all') {
+      setSelectedTaskStatusTab('all')
+    }
+    const selectedStatusId = selectedTask.status || ''
+    if (!selectedStatusId) return
+    setExpandedTaskStatusIds((current: string[]) => current.includes(selectedStatusId)
+      ? current
+      : [...current, selectedStatusId])
+  }, [selectedTask?.id, selectedTask?.status, selectedTaskStatusTab, setExpandedTaskStatusIds, setSelectedTaskStatusTab])
+
   const selectedTaskContextTrail = useMemo(() => {
     if (!selectedTask) return taskContextTrail
     const trail: Array<{ id: string; name: string }> = []
@@ -1313,6 +1327,7 @@ export const WorkhubTasksSection = memo(function WorkhubTasksSection(props: Work
                                   index={index}
                                   isChecked={selectedTaskIdSet.has(task.id)}
                                   isSelected={selectedTaskId === task.id}
+                                  isLinkedHighlight={linkedHighlightedTaskId === task.id}
                                   isDropTarget={dropTargetKey === task.id}
                                   isDragSource={dragTaskId === task.id}
                                   statusMenuOpen={openTaskStatusMenuId === task.id}

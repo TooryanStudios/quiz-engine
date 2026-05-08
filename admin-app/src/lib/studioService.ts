@@ -17,6 +17,7 @@ import {
   arrayRemove,
   arrayUnion,
   collection,
+  collectionGroup,
   deleteDoc,
   doc,
   getDoc,
@@ -51,6 +52,7 @@ import type {
   StudioNotification,
   StudioOrg,
   StudioProject,
+  StudioProjectNewLayoutConfig,
   StudioReferenceAsset,
   StudioReferenceAssetKind,
 } from '../types/studio'
@@ -81,6 +83,8 @@ const foldersCol = (projectId: string) =>
   collection(db, 'studio_projects', projectId, 'folders')
 const folderDoc = (projectId: string, folderId: string) =>
   doc(db, 'studio_projects', projectId, 'folders', folderId)
+const projectFlowCanvasDoc = (projectId: string, scopeId: string) =>
+  doc(db, 'studio_projects', projectId, 'flow_canvas', scopeId)
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -345,6 +349,87 @@ export async function getProject(projectId: string): Promise<StudioProject | nul
   const snap = await getDoc(projectDoc(projectId))
   if (!snap.exists()) return null
   return docData<StudioProject>(snap)
+}
+
+export function subscribeToProjectNewLayoutConfig(
+  projectId: string,
+  onResult: (config: StudioProjectNewLayoutConfig | null) => void,
+  onError?: (error: Error) => void,
+): Unsubscribe {
+  return onSnapshot(
+    projectDoc(projectId),
+    (snap) => {
+      if (!snap.exists()) {
+        onResult(null)
+        return
+      }
+
+      const data = snap.data() as StudioProject
+      onResult(data.toorGenNewLayoutConfig ?? null)
+    },
+    (err) => onError?.(err),
+  )
+}
+
+export async function saveProjectNewLayoutConfig(
+  projectId: string,
+  config: StudioProjectNewLayoutConfig,
+): Promise<void> {
+  await updateDoc(projectDoc(projectId), {
+    toorGenNewLayoutConfig: config,
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export type StudioProjectFlowCanvasPayload = {
+  nodes: unknown[]
+  edges: unknown[]
+}
+
+export async function loadProjectFlowCanvasState(
+  projectId: string,
+  scopeId: string,
+): Promise<StudioProjectFlowCanvasPayload | null> {
+  const snapshot = await getDoc(projectFlowCanvasDoc(projectId, scopeId))
+  if (!snapshot.exists()) {
+    return null
+  }
+
+  const data = snapshot.data() as {
+    workflow?: {
+      nodes?: unknown[]
+      edges?: unknown[]
+    }
+  }
+
+  return {
+    nodes: Array.isArray(data.workflow?.nodes) ? data.workflow.nodes : [],
+    edges: Array.isArray(data.workflow?.edges) ? data.workflow.edges : [],
+  }
+}
+
+export async function saveProjectFlowCanvasState(input: {
+  projectId: string
+  scopeId: string
+  folderId: string | null
+  folderPathIds: string[]
+  folderPathNames: string[]
+  updatedBy: string
+  workflow: StudioProjectFlowCanvasPayload
+}): Promise<void> {
+  await setDoc(projectFlowCanvasDoc(input.projectId, input.scopeId), {
+    version: 1,
+    scopeId: input.scopeId,
+    folderId: input.folderId,
+    folderPathIds: input.folderPathIds,
+    folderPathNames: input.folderPathNames,
+    updatedBy: input.updatedBy,
+    workflow: {
+      nodes: Array.isArray(input.workflow.nodes) ? input.workflow.nodes : [],
+      edges: Array.isArray(input.workflow.edges) ? input.workflow.edges : [],
+    },
+    updatedAt: serverTimestamp(),
+  }, { merge: true })
 }
 
 /**
@@ -848,6 +933,27 @@ export function subscribeToProjectReferenceLibrary(
 ): Unsubscribe {
   return onSnapshot(
     projectReferenceLibraryCol(projectId),
+    (snap) => {
+      const items = snap.docs
+        .map((docSnap) => docData<StudioReferenceAsset>(docSnap))
+        .sort((left, right) => {
+          const leftAt = left.createdAt instanceof Timestamp ? left.createdAt.toMillis() : 0
+          const rightAt = right.createdAt instanceof Timestamp ? right.createdAt.toMillis() : 0
+          return rightAt - leftAt
+        })
+      onData(items)
+    },
+    (err) => onError?.(err),
+  )
+}
+
+export function subscribeToUserReferenceLibrary(
+  userId: string,
+  onData: (items: StudioReferenceAsset[]) => void,
+  onError?: (error: Error) => void,
+): Unsubscribe {
+  return onSnapshot(
+    query(collectionGroup(db, 'reference_library'), where('createdBy', '==', userId)),
     (snap) => {
       const items = snap.docs
         .map((docSnap) => docData<StudioReferenceAsset>(docSnap))

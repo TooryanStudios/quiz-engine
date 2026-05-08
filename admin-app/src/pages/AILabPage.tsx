@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { OpenAIImageInternalTestPanel } from '../features/openaiImage/OpenAIImageInternalTestPanel';
 import { useToast } from '../lib/ToastContext';
 import { generateQuizQuestions } from '../lib/ai/quizQuestions';
 
@@ -243,6 +244,8 @@ Respond ONLY with a JSON object in this format:
           </div>
         </div>
       )}
+
+      <OpenAIImageInternalTestPanel />
 
       <style>{`
         @keyframes loading-bar {

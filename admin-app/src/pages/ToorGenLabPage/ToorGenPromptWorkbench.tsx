@@ -1,22 +1,32 @@
-﻿import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, startTransition, type KeyboardEvent, type MouseEvent, type SyntheticEvent } from 'react'
+﻿import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, startTransition, type KeyboardEvent, type MouseEvent, type PointerEvent, type SyntheticEvent } from 'react'
 import { onAuthStateChanged } from 'firebase/auth'
 import { collection, deleteDoc, doc, getDocs, limit, orderBy, query, serverTimestamp, setDoc } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
 import { auth, db, storage } from '../../lib/firebase'
-import { loadUserPrefs, saveUserPrefs } from '../../lib/adminRepo'
+import { saveUserPrefs } from '../../lib/adminRepo'
 import {
-  deleteProjectReferenceLibraryItem,
-  renameProjectReferenceLibraryItem,
-  saveProjectReferenceLibraryItem,
-  subscribeToProjectReferenceLibrary,
+  createFolder,
+  deleteFolder,
   subscribeToProjectFolders,
   subscribeToProjectMembers,
-  subscribeToUserProjects,
+  updateFolder,
 } from '../../lib/studioService'
 import { ContentEditablePrompt } from '../../components/ContentEditablePrompt/ContentEditablePrompt'
 import { getCaretOffset, setCaretOffset } from '../../components/ContentEditablePrompt/utils'
 import type { ResolvedMentionReference } from '../../components/ContentEditablePrompt/types'
-import type { FolderSummary, ProjectMember, ProjectSummary, StudioReferenceAsset } from '../../types/studio'
+import { resolveGenerationRequestSettings, useGenerationRunner } from '../../hooks/useGenerationRunner'
+import { useToorGenPromptWorkbenchState } from '../../hooks/useToorGenPromptWorkbenchState'
+import { useStudioProjectSelection, type PersistedStudioSelection } from '../../hooks/useStudioProjectSelection'
+import { useToorGenAssetsLibrary } from '../../hooks/useToorGenAssetsLibrary'
+import { buildToorGenRequest } from '../../lib/toorgen/generationRequestBuilder'
+import { finalizeGeneratedVideoPersistence, saveGeneratedVideoArtifactsToFirebase } from '../../lib/toorgen/generationPersistence'
+import {
+  pickPrimaryLibraryImageUrl,
+  resolveSelectedLibraryUrlsByKind,
+  type MediaKind,
+  type MediaLibraryItem,
+} from '../../lib/toorgen/referenceLibrary'
+import type { FolderSummary, ProjectMember } from '../../types/studio'
 import { StudioDialog } from './StudioDialog'
 import { MiniVideoPlaylist } from './MiniVideoPlaylist'
 import { MSEVideoSequencerPage } from '../MSEVideoSequencerPage'
@@ -28,7 +38,6 @@ const apiUrl = (path: string) => `${CHATBOT_BASE.replace(/\/$/, '')}${path}`
 
 const LOCAL_DRAFT_STORAGE_KEY = 'toorgen-prompt-lab-draft-v3'
 const LOCAL_HISTORY_STORAGE_KEY = 'toorgen-prompt-lab-history-v3'
-const SHARED_REFERENCE_LIBRARY_KEY = 'toorgen_reference_library_v1'
 const CAPTURED_VIDEO_FRAMES_KEY = 'toorgen_video_frames_v1'
 const STORY_BIBLE_STORAGE_KEY = 'toorgen_story_bible_v1'
 const DIRECT_REQUEST_PRESETS_KEY = 'toorgen_direct_request_presets_v1'
@@ -40,6 +49,7 @@ const STUDIO_ACTIVE_FOLDER_ID_KEY = 'studio:activeFolderId'
 const FIRESTORE_PENDING_TASKS_COLLECTION = 'toorgen_pending_tasks'
 const FIRESTORE_HISTORY_COLLECTION = 'toorgen_prompt_lab_generations'
 const MAX_HISTORY_ITEMS = 80
+const THUMBNAIL_POSTER_VERSION = 1
 const AUTO_REMOTE_COPY_RETRY_DELAY_MS = 5000
 const MAX_AUTO_REMOTE_COPY_RETRIES = 1
 const OVERLAY_AUTO_HIDE_IDLE_MS = 5000
@@ -50,9 +60,9 @@ const COMPOSER_RESIZE_TEMP_DISABLED = false
 const MAIN_PANEL_DISABLED = false
 const COMPOSER_RAIL_DISABLED = false
 const PERF_METRICS_LOGGER_ENABLED = true
+const UTILITY_SIDEBAR_WIDTH_PX = 72
 
 type ProviderId = 'byteplus' | 'atlas' | 'grok'
-type MediaKind = 'image' | 'video' | 'audio'
 
 type MediaField = {
   key: string
@@ -139,11 +149,15 @@ type WorkflowSettingsState = {
   generateAudio: boolean
 }
 
-type ContentItem =
-  | { type: 'text'; text: string }
-  | { type: 'image_url'; image_url: { url: string }; role: string }
-  | { type: 'video_url'; video_url: { url: string }; role: string }
-  | { type: 'audio_url'; audio_url: { url: string }; role: string }
+type SidebarTemplatePreset = {
+  id: string
+  label: string
+  summary: string
+  sourceTabId: string
+  badge: string
+  targetTabId?: string
+  refMode?: 'text' | 'image' | 'video'
+}
 
 type GenerationHistoryEntry = {
   historyId: string
@@ -162,6 +176,9 @@ type GenerationHistoryEntry = {
   requestPayload: Record<string, unknown>
   resultUrl: string
   firebaseVideoUrl: string
+  thumbnailPosterUrl: string
+  thumbnailPosterVersion: number
+  thumbnailPosterGeneratedAt: number
   storageSaveError: string
   submittedAt: number
   receivedAt: number
@@ -176,13 +193,18 @@ type GenerationHistoryEntry = {
   folderId: string
 }
 
-type MediaLibraryItem = {
-  id: string
-  kind: MediaKind
-  url: string
-  name: string
-  createdAt: number
-  projectId?: string
+type ThumbnailMigrationJobStatus = 'queued' | 'running' | 'success' | 'failed'
+
+type ThumbnailMigrationJob = {
+  historyId: string
+  label: string
+  status: ThumbnailMigrationJobStatus
+  attempts: number
+  error: string
+  targetVersion: number
+  currentVersion: number
+  generatedAt: number
+  updatedAt: number
 }
 
 type DirectRequestPreset = {
@@ -193,14 +215,49 @@ type DirectRequestPreset = {
 }
 
 type DirectPanelTab = 'story' | 'direct'
+type StoryBibleManagerTab = 'story' | 'scenes' | 'characters'
+
+type StoryBibleSceneDialog = {
+  id: string
+  shotLabel: string
+  text: string
+}
+
+type StoryBibleScene = {
+  id: string
+  folderId: string
+  title: string
+  category: string
+  discipline: string
+  durationSec: number
+  script: string
+  scenario: string
+  visualThumbnailUrl: string
+  visual: string
+  dialogs: StoryBibleSceneDialog[]
+  action: string
+  characterIds: string[]
+}
 
 type StoryBibleEpisode = {
   id: string
   title: string
   section: string
+  category: string
+  discipline: string
+  folderId: string
+  story: string
+  scenario: string
   scenarios: string[]
   dialogs: string[]
   characters: string[]
+}
+
+type StoryBibleCharacter = {
+  id: string
+  name: string
+  bio: string
+  imageUrl: string
 }
 
 type StoryBibleChapter = {
@@ -216,6 +273,8 @@ type StoryBibleData = {
   summary: string
   chapters: StoryBibleChapter[]
   episodes: StoryBibleEpisode[]
+  scenes: StoryBibleScene[]
+  characters: StoryBibleCharacter[]
 }
 
 type DraftModeState = {
@@ -1036,6 +1095,54 @@ const TABS: PromptTab[] = [
 
 const ACTIVE_TABS: PromptTab[] = TABS.filter((tab) => tab.id === VIDEO_PLUS_IMAGE_MODE_ID || tab.id === IMAGE_SINGLE_REFERENCE_MODE_ID)
 
+const SIDEBAR_TEMPLATE_PRESETS: SidebarTemplatePreset[] = [
+  {
+    id: 'prompt-template',
+    label: 'Prompt Template',
+    summary: 'Start with a clean text-first brief for a fresh generation.',
+    sourceTabId: 'text-to-video',
+    badge: 'Prompt',
+    targetTabId: VIDEO_PLUS_IMAGE_MODE_ID,
+    refMode: 'text',
+  },
+  {
+    id: 'extended-video',
+    label: 'Extended Video',
+    summary: 'Continue a source clip into the next beat or action.',
+    sourceTabId: 'video-edit-extend',
+    badge: 'Video',
+    targetTabId: VIDEO_PLUS_IMAGE_MODE_ID,
+    refMode: 'video',
+  },
+  {
+    id: 'image-reference-video',
+    label: 'Image Ref to Video',
+    summary: 'Use one direct image reference as the video anchor.',
+    sourceTabId: IMAGE_SINGLE_REFERENCE_MODE_ID,
+    badge: 'Image',
+    targetTabId: IMAGE_SINGLE_REFERENCE_MODE_ID,
+    refMode: 'image',
+  },
+  {
+    id: 'video-reference-video',
+    label: 'Video Ref to Video',
+    summary: 'Transform or restyle a clip while preserving motion context.',
+    sourceTabId: 'video-to-video',
+    badge: 'Video',
+    targetTabId: VIDEO_PLUS_IMAGE_MODE_ID,
+    refMode: 'video',
+  },
+  {
+    id: 'multi-image-video',
+    label: 'Multi Image Refs',
+    summary: 'Blend several reference images into one guided video output.',
+    sourceTabId: 'image-reference-multi',
+    badge: 'Multi Ref',
+    targetTabId: VIDEO_PLUS_IMAGE_MODE_ID,
+    refMode: 'image',
+  },
+]
+
 const FALLBACK_TAB: PromptTab = {
   id: 'workflow-empty',
   group: '',
@@ -1346,6 +1453,36 @@ const safeSetLocalStorage = (key: string, value: string) => {
   }
 }
 
+const readLocalStudioSelection = (): PersistedStudioSelection | null => {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  return {
+    projectId: window.localStorage.getItem(STUDIO_ACTIVE_PROJECT_ID_KEY),
+    folderId: window.localStorage.getItem(STUDIO_ACTIVE_FOLDER_ID_KEY),
+  }
+}
+
+const writeLocalStudioSelection = ({ projectId, folderId }: PersistedStudioSelection) => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  if (projectId) {
+    window.localStorage.setItem(STUDIO_ACTIVE_PROJECT_ID_KEY, projectId)
+  } else {
+    window.localStorage.removeItem(STUDIO_ACTIVE_PROJECT_ID_KEY)
+    window.localStorage.removeItem(STUDIO_ACTIVE_PROJECT_NAME_KEY)
+  }
+
+  if (folderId) {
+    window.localStorage.setItem(STUDIO_ACTIVE_FOLDER_ID_KEY, folderId)
+  } else {
+    window.localStorage.removeItem(STUDIO_ACTIVE_FOLDER_ID_KEY)
+  }
+}
+
 const readLabDraft = (): StoredDraftState | null => {
   if (typeof window === 'undefined') return null
   try {
@@ -1417,6 +1554,49 @@ const readLabDraft = (): StoredDraftState | null => {
   }
 }
 
+const createDefaultModeStateForTabId = (tabId: string): ModeRuntimeState => {
+  const tab = ACTIVE_TABS.find((item) => item.id === tabId) || FALLBACK_TAB
+  return createDefaultModeState(tab)
+}
+
+const mergeDraftModeState = (base: ModeRuntimeState, value: DraftModeState): ModeRuntimeState => ({
+  ...base,
+  prompt: value.prompt,
+  mediaUrls: filterMediaUrls(value.mediaUrls),
+  resultUrl: value.resultUrl,
+  strictReferences: value.strictReferences === true,
+  selectedVideoOptionIds: Array.isArray(value.selectedVideoOptionIds) ? value.selectedVideoOptionIds : [],
+  selectedImageReferenceKey: typeof value.selectedImageReferenceKey === 'string' ? value.selectedImageReferenceKey : '',
+})
+
+const mergeDraftWorkflowSettings = (
+  base: WorkflowSettingsState,
+  value: WorkflowSettingsState,
+): WorkflowSettingsState => ({
+  ...base,
+  provider: value.provider,
+  byteplusModel: value.byteplusModel,
+  atlasModel: value.atlasModel,
+  grokModel: value.grokModel,
+  ratio: value.ratio,
+  duration: normalizeDuration(value.duration),
+  resolution: value.resolution,
+  generateAudio: value.generateAudio,
+})
+
+const buildStoredModeState = (state: ModeRuntimeState): DraftModeState => ({
+  prompt: state.prompt,
+  mediaUrls: filterMediaUrls(state.mediaUrls),
+  resultUrl: state.resultUrl,
+  strictReferences: state.strictReferences,
+  selectedVideoOptionIds: state.selectedVideoOptionIds,
+  selectedImageReferenceKey: state.selectedImageReferenceKey,
+})
+
+const persistLabDraft = (draft: StoredDraftState) => {
+  safeSetLocalStorage(LOCAL_DRAFT_STORAGE_KEY, JSON.stringify(draft))
+}
+
 const parseHistoryEntry = (value: unknown): GenerationHistoryEntry | null => {
   if (!isRecord(value)) {
     return null
@@ -1465,6 +1645,9 @@ const parseHistoryEntry = (value: unknown): GenerationHistoryEntry | null => {
     requestPayload,
     resultUrl: value.resultUrl,
     firebaseVideoUrl: typeof value.firebaseVideoUrl === 'string' ? value.firebaseVideoUrl : '',
+    thumbnailPosterUrl: typeof value.thumbnailPosterUrl === 'string' ? value.thumbnailPosterUrl : '',
+    thumbnailPosterVersion: typeof value.thumbnailPosterVersion === 'number' ? value.thumbnailPosterVersion : 0,
+    thumbnailPosterGeneratedAt: typeof value.thumbnailPosterGeneratedAt === 'number' ? value.thumbnailPosterGeneratedAt : 0,
     storageSaveError: typeof value.storageSaveError === 'string' ? value.storageSaveError : '',
     submittedAt: typeof value.submittedAt === 'number' ? value.submittedAt : value.completedAt,
     receivedAt: typeof value.receivedAt === 'number' ? value.receivedAt : value.completedAt,
@@ -1515,72 +1698,6 @@ const readLocalHistory = (): GenerationHistoryEntry[] => {
     return []
   }
 }
-
-const parseMediaLibraryItem = (value: unknown): MediaLibraryItem | null => {
-  if (!isRecord(value)) {
-    return null
-  }
-  if (typeof value.url !== 'string') {
-    return null
-  }
-
-  const url = value.url.trim()
-  if (!url) {
-    return null
-  }
-
-  const inferredKind: MediaKind = /\.(mp4|webm|mov|m4v|mkv|avi|m3u8)(\?|#|$)/i.test(url) || /video/i.test(url)
-    ? 'video'
-    : 'image'
-  const kind: MediaKind = value.kind === 'image' || value.kind === 'video' || value.kind === 'audio'
-    ? value.kind
-    : inferredKind
-  const createdAt = typeof value.createdAt === 'number'
-    ? value.createdAt
-    : typeof value.lastUsedAt === 'number'
-      ? value.lastUsedAt
-      : Date.now()
-
-  return {
-    id: typeof value.id === 'string' && value.id.trim() ? value.id : `ref-${createdAt.toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-    kind,
-    url,
-    name: typeof value.name === 'string' && value.name.trim() ? value.name : `Reference ${kind}`,
-    createdAt,
-    projectId: typeof value.projectId === 'string' && value.projectId.trim() ? value.projectId.trim() : undefined,
-  }
-}
-
-const readLocalMediaLibrary = (): MediaLibraryItem[] => {
-  if (typeof window === 'undefined') return []
-  try {
-    const raw = window.localStorage.getItem(SHARED_REFERENCE_LIBRARY_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw) as unknown
-    if (!Array.isArray(parsed)) return []
-    return parsed
-      .map(parseMediaLibraryItem)
-      .filter((entry): entry is MediaLibraryItem => Boolean(entry))
-      .sort((left, right) => right.createdAt - left.createdAt)
-  } catch {
-    return []
-  }
-}
-
-const writeLocalMediaLibrary = (items: MediaLibraryItem[]) => {
-  safeSetLocalStorage(SHARED_REFERENCE_LIBRARY_KEY, JSON.stringify(items))
-}
-
-const toMediaLibraryItem = (item: StudioReferenceAsset): MediaLibraryItem => ({
-  id: item.id,
-  kind: item.kind,
-  url: item.url,
-  name: item.name,
-  createdAt: typeof (item.createdAt as { toMillis?: () => number } | undefined)?.toMillis === 'function'
-    ? (item.createdAt as { toMillis: () => number }).toMillis()
-    : Date.now(),
-  projectId: item.projectId,
-})
 
 const parseCapturedVideoFrame = (value: unknown): CapturedVideoFrame | null => {
   if (!isRecord(value)) return null
@@ -1786,49 +1903,6 @@ const getDirectPresetNameFromJson = (parsedRequest: unknown): string => {
   return `"model": "${model}",`
 }
 
-const initialDraft = readLabDraft()
-
-const initialModeStates = (() => {
-  const base = createDefaultModeStates()
-  if (!initialDraft?.modeStates) {
-    return base
-  }
-  Object.entries(initialDraft.modeStates).forEach(([tabId, value]) => {
-    if (!base[tabId]) return
-    base[tabId] = {
-      ...base[tabId],
-      prompt: value.prompt,
-      mediaUrls: filterMediaUrls(value.mediaUrls),
-      resultUrl: value.resultUrl,
-      strictReferences: value.strictReferences === true,
-      selectedVideoOptionIds: Array.isArray(value.selectedVideoOptionIds) ? value.selectedVideoOptionIds : [],
-      selectedImageReferenceKey: typeof value.selectedImageReferenceKey === 'string' ? value.selectedImageReferenceKey : '',
-    }
-  })
-  return base
-})()
-
-const initialWorkflowSettingsByTabId = (() => {
-  const base = createDefaultWorkflowSettingsByTabId()
-  if (!initialDraft?.workflowSettingsByTabId) {
-    return base
-  }
-  Object.entries(initialDraft.workflowSettingsByTabId).forEach(([tabId, value]) => {
-    if (!base[tabId]) return
-    base[tabId] = {
-      ...base[tabId],
-      provider: value.provider,
-      byteplusModel: value.byteplusModel,
-      atlasModel: value.atlasModel,
-      ratio: value.ratio,
-      duration: normalizeDuration(value.duration),
-      resolution: value.resolution,
-      generateAudio: value.generateAudio,
-    }
-  })
-  return base
-})()
-
 const extractUrlLike = (value: unknown): string => {
   if (typeof value === 'string' && value.trim()) {
     return value.trim()
@@ -2019,15 +2093,6 @@ const extractTaskId = (payload: unknown): string => {
   return firstNonEmptyString(payload.task_id, payload.id, nested?.task_id, nested?.id)
 }
 
-const normalizeProviderHint = (value: unknown): ProviderId | '' => {
-  if (typeof value !== 'string') return ''
-  const normalized = value.trim().toLowerCase()
-  if (normalized === 'atlas') return 'atlas'
-  if (normalized === 'grok') return 'grok'
-  if (normalized === 'byteplus') return 'byteplus'
-  return ''
-}
-
 const normalizeModelForProvider = (
   provider: ProviderId,
   value: unknown,
@@ -2061,20 +2126,100 @@ const normalizeModelForProvider = (
   return fallbackModel
 }
 
+const normalizeStoryBibleScene = (value: unknown, index: number, fallbackFolderId = ''): StoryBibleScene | null => {
+  if (!isRecord(value)) return null
+  const toList = (input: unknown): string[] => (Array.isArray(input) ? input.map((item) => String(item || '').trim()).filter(Boolean) : [])
+  const firstFromList = (input: unknown): string => (Array.isArray(input) ? String(input[0] || '').trim() : '')
+  const rawDuration = Number(value.durationSec ?? value.duration ?? 8)
+  const normalizeSceneDialog = (dialogValue: unknown, dialogIndex: number): StoryBibleSceneDialog | null => {
+    if (isRecord(dialogValue)) {
+      const text = firstNonEmptyString(dialogValue.text, dialogValue.dialog, dialogValue.value, '')
+      if (!text) return null
+      return {
+        id: firstNonEmptyString(dialogValue.id, `dialog-${dialogIndex + 1}`),
+        shotLabel: firstNonEmptyString(dialogValue.shotLabel, dialogValue.shot, `Shot ${dialogIndex + 1}`),
+        text,
+      }
+    }
+    const text = String(dialogValue || '').trim()
+    if (!text) return null
+    return {
+      id: `dialog-${dialogIndex + 1}`,
+      shotLabel: `Shot ${dialogIndex + 1}`,
+      text,
+    }
+  }
+  const dialogs = Array.isArray(value.dialogs)
+    ? value.dialogs
+      .map((dialogValue, dialogIndex) => normalizeSceneDialog(dialogValue, dialogIndex))
+      .filter((dialog): dialog is StoryBibleSceneDialog => Boolean(dialog))
+    : []
+  const legacyDialog = firstNonEmptyString(value.dialog, '')
+  if (dialogs.length === 0 && legacyDialog) {
+    dialogs.push({ id: 'dialog-1', shotLabel: 'Shot 1', text: legacyDialog })
+  }
+  return {
+    id: firstNonEmptyString(value.id, `scene-${index + 1}`),
+    folderId: firstNonEmptyString(value.folderId, value.chapterFolderId, value.linkedFolderId, fallbackFolderId, ''),
+    title: firstNonEmptyString(value.title, `Scene ${index + 1}`),
+    category: firstNonEmptyString(value.category, firstFromList(value.categories), ''),
+    discipline: firstNonEmptyString(value.discipline, firstFromList(value.disciplines), ''),
+    durationSec: Number.isFinite(rawDuration) ? Math.max(1, Math.min(180, Math.round(rawDuration))) : 8,
+    script: firstNonEmptyString(value.script, ''),
+    scenario: firstNonEmptyString(value.scenario, ''),
+    visualThumbnailUrl: firstNonEmptyString(value.visualThumbnailUrl, value.visualThumbUrl, value.thumbnailUrl, ''),
+    visual: firstNonEmptyString(value.visual, value.visuals, ''),
+    dialogs,
+    action: firstNonEmptyString(value.action, ''),
+    characterIds: toList(value.characterIds),
+  }
+}
+
 const normalizeStoryBibleEpisode = (value: unknown, index: number): StoryBibleEpisode | null => {
   if (!isRecord(value)) return null
   const id = firstNonEmptyString(value.id, `episode-${index + 1}`)
-  const title = firstNonEmptyString(value.title, `Episode ${index + 1}`)
+  const title = firstNonEmptyString(value.title, `Chapter ${index + 1}`)
   const section = firstNonEmptyString(value.section, value.storySection, '')
+  const category = firstNonEmptyString(value.category, Array.isArray(value.categories) ? String(value.categories[0] || '').trim() : '', '')
+  const discipline = firstNonEmptyString(value.discipline, Array.isArray(value.disciplines) ? String(value.disciplines[0] || '').trim() : '', '')
+  const story = firstNonEmptyString(value.story, value.summary, '')
+  const scenario = firstNonEmptyString(value.scenario, value.promptScenario, '')
+  const folderId = firstNonEmptyString(value.folderId, value.chapterFolderId, value.linkedFolderId, value.folder, '')
   const toList = (input: unknown): string[] => (Array.isArray(input) ? input.map((item) => String(item || '').trim()).filter(Boolean) : [])
   return {
     id,
     title,
     section,
+    category,
+    discipline,
+    folderId,
+    story,
+    scenario,
     scenarios: toList(value.scenarios),
     dialogs: toList(value.dialogs),
     characters: toList(value.characters),
   }
+}
+
+const ensureUniqueStoryBibleScenes = (scenes: StoryBibleScene[]): StoryBibleScene[] => {
+  const usedIds = new Set<string>()
+  return scenes.map((scene, index) => {
+    let nextId = scene.id || `scene-${index + 1}`
+    if (usedIds.has(nextId)) {
+      nextId = `${nextId}-${Math.random().toString(36).slice(2, 7)}`
+    }
+    usedIds.add(nextId)
+    return { ...scene, id: nextId }
+  })
+}
+
+const normalizeStoryBibleCharacter = (value: unknown, index: number): StoryBibleCharacter | null => {
+  if (!isRecord(value)) return null
+  const id = firstNonEmptyString(value.id, `character-${index + 1}`)
+  const name = firstNonEmptyString(value.name, `Character ${index + 1}`)
+  const bio = firstNonEmptyString(value.bio, value.summary, '')
+  const imageUrl = firstNonEmptyString(value.imageUrl, value.image, value.avatarUrl, '')
+  return { id, name, bio, imageUrl }
 }
 
 const normalizeStoryBibleChapter = (value: unknown, index: number): StoryBibleChapter | null => {
@@ -2082,7 +2227,7 @@ const normalizeStoryBibleChapter = (value: unknown, index: number): StoryBibleCh
   const id = firstNonEmptyString(value.id, `chapter-${index + 1}`)
   const title = firstNonEmptyString(value.title, `Chapter ${index + 1}`)
   const summary = firstNonEmptyString(value.summary, '')
-  const folderId = firstNonEmptyString(value.folderId, value.linkedFolderId, '')
+  const folderId = firstNonEmptyString(value.folderId, value.linkedFolderId, value.chapterFolderId, value.folder, '')
   const episodeIds = Array.isArray(value.episodeIds)
     ? value.episodeIds.map((item) => String(item || '').trim()).filter(Boolean)
     : []
@@ -2091,63 +2236,120 @@ const normalizeStoryBibleChapter = (value: unknown, index: number): StoryBibleCh
 
 const readStoryBibleData = (projectId: string | null): StoryBibleData => {
   if (typeof window === 'undefined') {
-    return { title: '', summary: '', chapters: [], episodes: [] }
+    return { title: '', summary: '', chapters: [], episodes: [], scenes: [], characters: [] }
   }
 
   const scopedKey = projectId ? `${STORY_BIBLE_STORAGE_KEY}:${projectId}` : STORY_BIBLE_STORAGE_KEY
-  const raw = window.localStorage.getItem(scopedKey) || window.localStorage.getItem(STORY_BIBLE_STORAGE_KEY)
+  const scopedRaw = window.localStorage.getItem(scopedKey)
+  const globalRaw = window.localStorage.getItem(STORY_BIBLE_STORAGE_KEY)
+  const raw = scopedRaw || globalRaw
   if (!raw) {
-    return { title: '', summary: '', chapters: [], episodes: [] }
+    return { title: '', summary: '', chapters: [], episodes: [], scenes: [], characters: [] }
+  }
+
+  const isEffectivelyEmptyPayload = (value: unknown): boolean => {
+    if (!isRecord(value)) return true
+    const title = firstNonEmptyString(value.title, '')
+    const summary = firstNonEmptyString(value.summary, '')
+    const chapters = Array.isArray(value.chapters) ? value.chapters.length : 0
+    const episodes = Array.isArray(value.episodes) ? value.episodes.length : 0
+    const scenes = Array.isArray(value.scenes) ? value.scenes.length : 0
+    const characters = Array.isArray(value.characters) ? value.characters.length : 0
+    return !title && !summary && chapters === 0 && episodes === 0 && scenes === 0 && characters === 0
   }
 
   try {
     const parsed = JSON.parse(raw) as unknown
-    if (!isRecord(parsed)) return { title: '', summary: '', chapters: [], episodes: [] }
-    const chapters = Array.isArray(parsed.chapters)
-      ? parsed.chapters
+    if (!isRecord(parsed)) return { title: '', summary: '', chapters: [], episodes: [], scenes: [], characters: [] }
+
+    // Recovery path: if a scoped key exists but is effectively empty, fall back to global data.
+    if (projectId && scopedRaw && globalRaw && raw === scopedRaw && isEffectivelyEmptyPayload(parsed)) {
+      try {
+        const globalParsed = JSON.parse(globalRaw) as unknown
+        if (isRecord(globalParsed) && !isEffectivelyEmptyPayload(globalParsed)) {
+          return readStoryBibleData(null)
+        }
+      } catch {
+        // ignore fallback parse errors
+      }
+    }
+    const rawChapterEntries = Array.isArray(parsed.chapters) ? parsed.chapters : []
+    const chapters = rawChapterEntries
         .map((entry, index) => normalizeStoryBibleChapter(entry, index))
         .filter((entry): entry is StoryBibleChapter => Boolean(entry))
-      : []
-    const episodes = Array.isArray(parsed.episodes)
+    const normalizedEpisodes = Array.isArray(parsed.episodes)
       ? parsed.episodes
         .map((entry, index) => normalizeStoryBibleEpisode(entry, index))
         .filter((entry): entry is StoryBibleEpisode => Boolean(entry))
+      : []
+    const legacyEpisodesFromChapters = rawChapterEntries
+      .map((entry, index) => normalizeStoryBibleEpisode(entry, index))
+      .filter((entry): entry is StoryBibleEpisode => Boolean(entry))
+    const episodeFolderById = new Map<string, string>()
+    chapters.forEach((chapter) => {
+      if (!chapter.folderId) return
+      chapter.episodeIds.forEach((episodeId) => {
+        if (!episodeId || episodeFolderById.has(episodeId)) return
+        episodeFolderById.set(episodeId, chapter.folderId)
+      })
+    })
+    const baseEpisodes = normalizedEpisodes.length > 0 ? normalizedEpisodes : legacyEpisodesFromChapters
+    const episodes = baseEpisodes.map((episode) => {
+      if (episode.folderId) return episode
+      const mappedFolderId = episodeFolderById.get(episode.id) || ''
+      return mappedFolderId ? { ...episode, folderId: mappedFolderId } : episode
+    })
+    const normalizedScenes = Array.isArray(parsed.scenes)
+      ? parsed.scenes
+        .map((entry, index) => normalizeStoryBibleScene(entry, index))
+        .filter((entry): entry is StoryBibleScene => Boolean(entry))
+      : []
+    const legacyScenesFromEpisodes = Array.isArray(parsed.episodes)
+      ? parsed.episodes.flatMap((episodeValue) => {
+        if (!isRecord(episodeValue)) return [] as StoryBibleScene[]
+        const episodeId = firstNonEmptyString(episodeValue.id, '')
+        const fallbackFolderId = firstNonEmptyString(
+          episodeValue.folderId,
+          episodeValue.chapterFolderId,
+          episodeValue.linkedFolderId,
+          episodeFolderById.get(episodeId) || '',
+        )
+        if (!Array.isArray(episodeValue.scenes)) return [] as StoryBibleScene[]
+        return episodeValue.scenes
+          .map((sceneValue, sceneIndex) => normalizeStoryBibleScene(sceneValue, sceneIndex, fallbackFolderId))
+          .filter((scene): scene is StoryBibleScene => Boolean(scene))
+      })
+      : []
+    const scenes = ensureUniqueStoryBibleScenes((normalizedScenes.length > 0 ? normalizedScenes : legacyScenesFromEpisodes).map((scene) => {
+      if (scene.folderId) return scene
+      return { ...scene, folderId: episodes[0]?.folderId || '' }
+    }))
+    const characters = Array.isArray(parsed.characters)
+      ? parsed.characters
+        .map((entry, index) => normalizeStoryBibleCharacter(entry, index))
+        .filter((entry): entry is StoryBibleCharacter => Boolean(entry))
       : []
     return {
       title: firstNonEmptyString(parsed.title, ''),
       summary: firstNonEmptyString(parsed.summary, ''),
       chapters,
       episodes,
+      scenes,
+      characters,
     }
   } catch {
-    return { title: '', summary: '', chapters: [], episodes: [] }
+    return { title: '', summary: '', chapters: [], episodes: [], scenes: [], characters: [] }
   }
 }
 
-const inferProviderForRequest = (
-  endpoint: string,
-  requestBody: Record<string, unknown>,
-  fallback: ProviderId,
-): ProviderId => {
-  const explicitProvider = normalizeProviderHint(
-    requestBody.providerHint ?? requestBody.provider ?? requestBody.provider_hint,
-  )
-  if (explicitProvider) {
-    return explicitProvider
+const writeStoryBibleData = (projectId: string | null, next: StoryBibleData): void => {
+  if (typeof window === 'undefined') return
+  const scopedKey = projectId ? `${STORY_BIBLE_STORAGE_KEY}:${projectId}` : STORY_BIBLE_STORAGE_KEY
+  try {
+    window.localStorage.setItem(scopedKey, JSON.stringify(next))
+  } catch {
+    // ignore local persistence failures
   }
-
-  const model = typeof requestBody.model === 'string' ? requestBody.model.trim().toLowerCase() : ''
-  if (model.includes('grok')) {
-    return 'grok'
-  }
-
-  if (endpoint.includes('/seedance')) {
-    return 'atlas'
-  }
-  if (endpoint.includes('/byteplus')) {
-    return 'byteplus'
-  }
-  return fallback
 }
 
 const extractStatusValue = (payload: unknown): string => {
@@ -2367,288 +2569,22 @@ const loadPendingTasksFromFirestore = async (uid: string): Promise<PersistedPend
   }
 }
 
-const buildByteplusContent = (
-  tab: PromptTab,
-  state: ModeRuntimeState,
-  mentionReferences: ResolvedMentionReference[],
-): ContentItem[] => {
-  const content: ContentItem[] = []
-  const mentionedImageRefs = mentionReferences.filter((entry) => entry.kind === 'image')
-  const mentionedVideoRefs = mentionReferences.filter((entry) => entry.kind === 'video')
-
-  if (state.prompt.trim()) {
-    content.push({ type: 'text', text: state.prompt.trim() })
-  }
-
-  if (mentionReferences.length > 0) {
-    const summary = mentionReferences
-      .map((entry) => `${entry.mention} => ${entry.name} (${entry.url})`)
-      .join('\n')
-    content.push({ type: 'text', text: `Reference aliases:\n${summary}` })
-  }
-
-  mentionedImageRefs.forEach((entry) => {
-    content.push({
-      type: 'image_url',
-      image_url: { url: entry.url },
-      role: entry.role,
-    })
-  })
-
-  mentionedVideoRefs.forEach((entry) => {
-    content.push({
-      type: 'video_url',
-      video_url: { url: entry.url },
-      role: entry.role,
-    })
-  })
-
-  for (const field of tab.fields) {
-    if (field.kind === 'audio') {
-      const url = state.mediaUrls[field.key]?.trim()
-      if (!url) continue
-      content.push({
-        type: 'audio_url',
-        audio_url: { url },
-        role: field.role || 'reference_audio',
-      })
-    }
-  }
-
-  return content
-}
-
-const resolveAtlasModelForMode = (
-  selectedModel: string,
-  requestMode: PromptTab['requestMode'],
-): string => {
-  const raw = (selectedModel || '').trim()
-  if (!raw) return 'bytedance/seedance-2.0-fast/text-to-video'
-  if (raw.includes('/')) return raw
-
-  const lower = raw.toLowerCase()
-  const isExplicitFast = lower.includes('fast')
-  const isSeedance20Family = (
-    lower === 'atlas-2.0'
-    || lower === 'seedance-2.0'
-    || lower.includes('dreamina-seedance-2-0')
-    || lower.includes('seedance-2.0')
-  )
-  const baseModel = isSeedance20Family && !isExplicitFast
-    ? 'bytedance/seedance-2.0'
-    : 'bytedance/seedance-2.0-fast'
-
-  const modeSuffix = requestMode === 'image-to-video'
-    ? 'image-to-video'
-    : (requestMode === 'reference-to-video' || requestMode === 'video-extension')
-      ? 'reference-to-video'
-      : 'text-to-video'
-
-  return `${baseModel}/${modeSuffix}`
-}
-
-const buildAtlasPayload = (
-  tab: PromptTab,
-  state: ModeRuntimeState,
-  settings: SharedSettings,
-  mentionReferences: ResolvedMentionReference[],
-): Record<string, unknown> => {
-  const atlasModel = resolveAtlasModelForMode(settings.model, tab.requestMode)
-  const effectiveReferenceFields = getEffectiveReferenceFields(tab.fields)
-
-  if (tab.id === IMAGE_SINGLE_REFERENCE_MODE_ID) {
-    const selectedImageFieldKey = state.selectedImageReferenceKey
-    const selectedImageUrl = selectedImageFieldKey
-      ? (state.mediaUrls[selectedImageFieldKey] || '').trim()
-      : ''
-    const fallbackImageUrl = effectiveReferenceFields
-      .filter((field) => field.kind === 'image')
-      .map((field) => (state.mediaUrls[field.key] || '').trim())
-      .find(Boolean) || ''
-    return {
-      model: atlasModel,
-      duration: settings.duration,
-      resolution: settings.resolution,
-      ratio: settings.ratio,
-      generate_audio: settings.generateAudio,
-      watermark: false,
-      return_last_frame: false,
-      image: selectedImageUrl || fallbackImageUrl,
-      prompt: state.prompt.trim(),
-    }
-  }
-
-  if (tab.id === VIDEO_PLUS_IMAGE_MODE_ID) {
-    const referenceImages = mentionReferences
-      .filter((ref) => ref.kind === 'image')
-      .map((ref) => ref.url)
-    const referenceVideos = mentionReferences
-      .filter((ref) => ref.kind === 'video')
-      .map((ref) => ref.url)
-
-    const validVideoOptions = VIDEO_WORKFLOW_OPTIONS.filter((option) => state.selectedVideoOptionIds.includes(option.id))
-    const optionInstructions = validVideoOptions.map((option) => option.instruction)
-    const strictReferenceInstruction = state.strictReferences
-      ? 'Strict reference lock: keep the exact same art style, look, mood, color logic, and identity traits from references with minimal deviation.'
-      : ''
-
-    const basePrompt = referenceImages.length === 1
-      ? state.prompt.trim().replace(/\breference images\b/gi, 'reference image')
-      : state.prompt.trim()
-
-    const promptControlLines = [
-      ...optionInstructions,
-      strictReferenceInstruction,
-    ].filter(Boolean)
-
-    const enrichedPrompt = promptControlLines.length > 0
-      ? `${basePrompt}\n\nReference controls:\n- ${promptControlLines.join('\n- ')}`
-      : basePrompt
-
-    return {
-      model: atlasModel,
-      duration: settings.duration,
-      resolution: settings.resolution,
-      ratio: settings.ratio,
-      generate_audio: settings.generateAudio,
-      watermark: false,
-      return_last_frame: false,
-      reference_images: referenceImages,
-      reference_videos: referenceVideos,
-      reference_images_label: referenceImages.length === 1 ? 'reference image' : 'reference images',
-      prompt: enrichedPrompt,
-      providerHint: 'atlas',
-    }
-  }
-
-  const imageUrls = mentionReferences
-    .filter((entry) => entry.kind === 'image')
-    .map((entry) => entry.url)
-
-  const videoUrls = mentionReferences
-    .filter((entry) => entry.kind === 'video')
-    .map((entry) => entry.url)
-
-  const audioUrls = effectiveReferenceFields
-    .filter((field) => field.kind === 'audio')
-    .map((field) => state.mediaUrls[field.key]?.trim() || '')
-    .filter(Boolean)
-
-  const body: Record<string, unknown> = {
-    prompt: state.prompt.trim(),
-    model: atlasModel,
-    providerHint: 'fast',
-    duration: settings.duration,
-    aspect_ratio: settings.ratio,
-    resolution: settings.resolution,
-    generate_audio: settings.generateAudio,
-    public: false,
-    mode: tab.requestMode,
-  }
-
-  if (imageUrls.length > 0) {
-    body.images = imageUrls
-  }
-
-  if (videoUrls.length > 0) {
-    body.reference_videos = videoUrls
-  }
-
-  if (audioUrls.length > 0) {
-    body.reference_audios = audioUrls
-  }
-
-  if (tab.primaryVideoKey) {
-    const primaryVideo = state.mediaUrls[tab.primaryVideoKey]?.trim() || ''
-    const sourceVideo = primaryVideo && videoUrls.includes(primaryVideo)
-      ? primaryVideo
-      : (videoUrls[0] || '')
-    if (sourceVideo && (tab.requestMode === 'reference-to-video' || tab.requestMode === 'video-extension')) {
-      body.videoUrl = sourceVideo
-      body.video_url = sourceVideo
-      body.source_video_url = sourceVideo
-      if (tab.requestMode === 'video-extension') {
-        body.extension_video_url = sourceVideo
-      }
-    }
-  }
-
-  if (tab.requestMode === 'image-to-video' && imageUrls[0]) {
-    body.image = imageUrls[0]
-    body.image_url = imageUrls[0]
-  }
-
-  if (mentionReferences.length > 0) {
-    body.mention_references = mentionReferences
-    body.reference_aliases = Object.fromEntries(
-      mentionReferences.map((entry) => [entry.mention, {
-        name: entry.name,
-        url: entry.url,
-        kind: entry.kind,
-        role: entry.role,
-      }]),
-    )
-  }
-
-  return body
-}
-
 const buildRequest = (
   tab: PromptTab,
   state: ModeRuntimeState,
   settings: SharedSettings,
   mentionReferences: ResolvedMentionReference[],
 ): { endpoint: string; body: Record<string, unknown> } => {
-  if (tab.id === VIDEO_PLUS_IMAGE_MODE_ID || tab.id === IMAGE_SINGLE_REFERENCE_MODE_ID) {
-    return {
-      endpoint: '/api/seedance/generate',
-      body: buildAtlasPayload(tab, state, settings, mentionReferences),
-    }
-  }
-
-  if (settings.provider === 'atlas') {
-    return {
-      endpoint: '/api/seedance/generate',
-      body: buildAtlasPayload(tab, state, settings, mentionReferences),
-    }
-  }
-
-  if (settings.provider === 'grok') {
-    const atlasPayload = buildAtlasPayload(tab, state, settings, mentionReferences)
-    const grokPayload: Record<string, unknown> = { ...atlasPayload, providerHint: 'grok' }
-    
-    // Grok expects image_urls array, not single image field
-    if (typeof grokPayload['image'] === 'string' && grokPayload['image'].trim()) {
-      grokPayload['image_urls'] = [grokPayload['image']]
-      delete grokPayload['image']
-    }
-    
-    return {
-      endpoint: '/api/seedance/generate',
-      body: grokPayload,
-    }
-  }
-
-  return {
-    endpoint: '/api/byteplus/generate',
-    body: {
-      model: settings.model,
-      ratio: settings.ratio,
-      duration: settings.duration,
-      resolution: settings.resolution,
-      generate_audio: settings.generateAudio,
-      mention_references: mentionReferences,
-      reference_aliases: Object.fromEntries(
-        mentionReferences.map((entry) => [entry.mention, {
-          name: entry.name,
-          url: entry.url,
-          kind: entry.kind,
-          role: entry.role,
-        }]),
-      ),
-      content: buildByteplusContent(tab, state, mentionReferences),
-    },
-  }
+  return buildToorGenRequest({
+    tab,
+    state,
+    settings,
+    mentionReferences,
+    getEffectiveReferenceFields,
+    combinedReferenceTabId: VIDEO_PLUS_IMAGE_MODE_ID,
+    singleImageTabId: IMAGE_SINGLE_REFERENCE_MODE_ID,
+    videoWorkflowOptions: VIDEO_WORKFLOW_OPTIONS,
+  })
 }
 
 const uploadFile = async (file: File, kind: MediaKind): Promise<string> => {
@@ -2669,46 +2605,17 @@ const uploadBlobToFirebase = async (blob: Blob, storagePath: string, contentType
   return getDownloadURL(reference)
 }
 
+const saveGeneratedVideoPosterToFirebase = async (historyId: string, dataUrl: string): Promise<string> => {
+  const posterBlob = await dataUrlToBlob(dataUrl)
+  return uploadBlobToFirebase(posterBlob, `toorgen-lab/generated/${historyId}-poster.jpg`, 'image/jpeg')
+}
+
 const saveGeneratedVideoToFirebase = async (sourceUrl: string, historyId: string): Promise<{ firebaseUrl: string }> => {
-  const normalizedSourceUrl = toPlayableVideoSourceUrl(resolveProxySourceUrl(sourceUrl))
-  if (!normalizedSourceUrl) {
-    throw new Error('No result URL was available for Firebase save.')
-  }
-  if (normalizedSourceUrl.includes('firebasestorage.googleapis.com')) {
-    return { firebaseUrl: normalizedSourceUrl }
-  }
-
-  let response: Response | null = null
-
-  if (shouldUseDirectPlaybackUrl(normalizedSourceUrl)) {
-    try {
-      const directResponse = await fetch(normalizedSourceUrl)
-      if (directResponse.ok) {
-        response = directResponse
-      }
-    } catch {
-      // Fall back to backend proxy below if direct browser fetch fails.
-    }
-  }
-
-  if (!response) {
-    const proxyUrl = `${apiUrl('/api/video-proxy')}?url=${encodeURIComponent(normalizedSourceUrl)}`
-    const proxyResponse = await fetch(proxyUrl)
-    if (!proxyResponse.ok) {
-      throw new Error(`Failed to download generated video: HTTP ${proxyResponse.status}`)
-    }
-    response = proxyResponse
-  }
-
-  const videoBlob = await response.blob()
-  if (videoBlob.size > 50 * 1024 * 1024) {
-    throw new Error('Generated video is larger than the Firebase Storage limit (50MB).')
-  }
-
-  const basePath = `toorgen-lab/generated/${historyId}`
-  const firebaseUrl = await uploadBlobToFirebase(videoBlob, `${basePath}.mp4`, videoBlob.type || 'video/mp4')
-
-  return { firebaseUrl }
+  return saveGeneratedVideoArtifactsToFirebase({
+    sourceUrl,
+    storageBasePath: `toorgen-lab/generated/${historyId}`,
+    apiBaseUrl: CHATBOT_BASE,
+  })
 }
 
 const readFirestoreHistory = async (uid: string): Promise<GenerationHistoryEntry[]> => {
@@ -2717,6 +2624,20 @@ const readFirestoreHistory = async (uid: string): Promise<GenerationHistoryEntry
     const historyQuery = query(historyRef, orderBy('completedAt', 'desc'), limit(MAX_HISTORY_ITEMS))
     const snap = await getDocs(historyQuery)
     return sortHistories(snap.docs.map((item) => parseHistoryEntry(item.data())).filter((entry): entry is GenerationHistoryEntry => Boolean(entry)))
+  } catch {
+    return []
+  }
+}
+
+const readAllFirestoreHistoryForThumbnailMigration = async (uid: string): Promise<GenerationHistoryEntry[]> => {
+  try {
+    const historyRef = collection(db, 'users', uid, FIRESTORE_HISTORY_COLLECTION)
+    const historyQuery = query(historyRef, orderBy('completedAt', 'desc'))
+    const snap = await getDocs(historyQuery)
+    return snap.docs
+      .map((item) => parseHistoryEntry(item.data()))
+      .filter((entry): entry is GenerationHistoryEntry => Boolean(entry))
+      .sort((left, right) => right.completedAt - left.completedAt)
   } catch {
     return []
   }
@@ -2743,6 +2664,9 @@ const saveHistoryToFirestore = async (entry: GenerationHistoryEntry) => {
     requestPayload: entry.requestPayload,
     resultUrl: entry.resultUrl,
     firebaseVideoUrl: entry.firebaseVideoUrl,
+    thumbnailPosterUrl: entry.thumbnailPosterUrl,
+    thumbnailPosterVersion: entry.thumbnailPosterVersion,
+    thumbnailPosterGeneratedAt: entry.thumbnailPosterGeneratedAt,
     storageSaveError: entry.storageSaveError,
     submittedAt: entry.submittedAt,
     receivedAt: entry.receivedAt,
@@ -2833,19 +2757,35 @@ const writeThumbToDB = async (url: string, dataUrl: string): Promise<void> => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function ToorGenPromptWorkbench() {
-  const [activeTabId, setActiveTabId] = useState<string>(initialDraft?.activeTabId ?? FALLBACK_TAB.id)
-  const [modeStates, setModeStates] = useState<Record<string, ModeRuntimeState>>(initialModeStates)
-  const [workflowSettingsByTabId, setWorkflowSettingsByTabId] = useState<Record<string, WorkflowSettingsState>>(initialWorkflowSettingsByTabId)
+  const {
+    activeTabId,
+    setActiveTabId,
+    modeStates,
+    setModeStates,
+    workflowSettingsByTabId,
+    updateModeState,
+    updateWorkflowSettings,
+  } = useToorGenPromptWorkbenchState({
+    fallbackTabId: FALLBACK_TAB.id,
+    readStoredDraft: readLabDraft,
+    createDefaultModeStates,
+    createDefaultWorkflowSettingsByTabId,
+    mergeStoredModeState: mergeDraftModeState,
+    mergeStoredWorkflowSettings: mergeDraftWorkflowSettings,
+    createDefaultModeState: createDefaultModeStateForTabId,
+    createDefaultWorkflowSettings,
+    buildStoredModeState,
+    persistDraft: persistLabDraft,
+  })
   const [history, setHistory] = useState<GenerationHistoryEntry[]>(() => readLocalHistory())
-  const [mediaLibrary, setMediaLibrary] = useState<MediaLibraryItem[]>(() => readLocalMediaLibrary())
-  const [localReferenceLibrarySnapshot, setLocalReferenceLibrarySnapshot] = useState<MediaLibraryItem[]>(() => readLocalMediaLibrary())
   const [authUid, setAuthUid] = useState<string>('')
   const [isBackendAvailable, setIsBackendAvailable] = useState<boolean>(true)
   const [backendNotice, setBackendNotice] = useState<string>('')
-  const [isBackendDialogOpen, setIsBackendDialogOpen] = useState<boolean>(false)
+
   const [videoDialogState, setVideoDialogState] = useState<VideoDialogState | null>(null)
   const [pendingGenerations, setPendingGenerations] = useState<PendingGeneration[]>([])
-  const [railWidth, setRailWidth] = useState<number>(500)
+  const [railWidth, setRailWidth] = useState<number>(280)
+  const [composerPanelWidthStatusPx, setComposerPanelWidthStatusPx] = useState<number | null>(null)
   const [directPanelWidth, setDirectPanelWidth] = useState<number>(360)
   const [historyViewMode, setHistoryViewMode] = useState<HistoryViewMode>('cards')
   const [isLikedOnlyFilter, setIsLikedOnlyFilter] = useState<boolean>(false)
@@ -2864,7 +2804,6 @@ export default function ToorGenPromptWorkbench() {
   const [isWorkflowPickerOpen, setIsWorkflowPickerOpen] = useState<boolean>(false)
   const [railPreviewSelectionId, setRailPreviewSelectionId] = useState<string>('')
   const [isPromptTemplateDialogOpen, setIsPromptTemplateDialogOpen] = useState<boolean>(false)
-  const [isRequestPreviewExpanded, setIsRequestPreviewExpanded] = useState<boolean>(false)
   const [isRefiningPrompt, setIsRefiningPrompt] = useState<boolean>(false)
   const [pendingRefinedPrompt, setPendingRefinedPrompt] = useState<{ original: string; refined: string } | null>(null)
   const [refHoverPreview] = useState<{ url: string; kind: 'image' | 'video' } | null>(null)
@@ -2873,10 +2812,6 @@ export default function ToorGenPromptWorkbench() {
   const [libraryContextMenu, setLibraryContextMenu] = useState<{ x: number; y: number; item: MediaLibraryItem } | null>(null)
   const [libraryPreviewItem, setLibraryPreviewItem] = useState<MediaLibraryItem | null>(null)
   const [pendingLibraryDeleteItem, setPendingLibraryDeleteItem] = useState<MediaLibraryItem | null>(null)
-  const [referenceLibraryFilter, setReferenceLibraryFilter] = useState<'all' | 'image' | 'video' | 'audio'>('all')
-  const [referenceLibraryQuery, setReferenceLibraryQuery] = useState<string>('')
-  const [selectedReferenceLibraryUrls, setSelectedReferenceLibraryUrls] = useState<string[]>([])
-  const [isReferenceLibraryUploading, setIsReferenceLibraryUploading] = useState<boolean>(false)
   const [promptMentionQuery, setPromptMentionQuery] = useState<string | null>(null)
   const [activePromptMentionIndex, setActivePromptMentionIndex] = useState<number>(0)
   const [directRequestJson, setDirectRequestJson] = useState<string>(() => readLocalDirectJsonDraft())
@@ -2897,6 +2832,20 @@ export default function ToorGenPromptWorkbench() {
   const [isCapturedFramesVisible, setIsCapturedFramesVisible] = useState<boolean>(false)
   const thumbnailPosterCacheRef = useRef(new Map<string, string>())
   const [thumbnailPosterCache, setThumbnailPosterCache] = useState<Map<string, string>>(new Map())
+  const [thumbnailMigrationHistory, setThumbnailMigrationHistory] = useState<GenerationHistoryEntry[]>([])
+  const [hasHydratedThumbnailPosterCache, setHasHydratedThumbnailPosterCache] = useState<boolean>(false)
+  const thumbnailMigrationQueueRef = useRef<string[]>([])
+  const thumbnailMigrationQueuedRef = useRef(new Set<string>())
+  const thumbnailMigrationAttemptedRef = useRef(new Set<string>())
+  const thumbnailMigrationRunningRef = useRef<boolean>(false)
+  const historyPosterMigrationQueueRef = useRef<string[]>([])
+  const historyPosterMigrationQueuedRef = useRef(new Set<string>())
+  const historyPosterMigrationAttemptedRef = useRef(new Set<string>())
+  const historyPosterMigrationForcedRef = useRef(new Set<string>())
+  const historyPosterMigrationRunningRef = useRef<boolean>(false)
+  const [thumbnailMigrationJobs, setThumbnailMigrationJobs] = useState<Record<string, ThumbnailMigrationJob>>({})
+  const [thumbnailMigrationProgress, setThumbnailMigrationProgress] = useState<{ completed: number; total: number; label: string } | null>(null)
+  const [isRebuildingVideoThumbnails, setIsRebuildingVideoThumbnails] = useState<boolean>(false)
   const [videoDialogNotice, setVideoDialogNotice] = useState<string>('')
   const [isVideoDownloading, setIsVideoDownloading] = useState<boolean>(false)
   const [savingVideoToAssetsHistoryId, setSavingVideoToAssetsHistoryId] = useState<string>('')
@@ -2909,21 +2858,24 @@ export default function ToorGenPromptWorkbench() {
   const [isDirectSubmitPanelVisible, setIsDirectSubmitPanelVisible] = useState<boolean>(false)
   const [activeDirectPanelTab, setActiveDirectPanelTab] = useState<DirectPanelTab>('story')
   const [isStoryBibleDialogOpen, setIsStoryBibleDialogOpen] = useState<boolean>(false)
+  const [storyBibleManagerTab, setStoryBibleManagerTab] = useState<StoryBibleManagerTab>('story')
+  const [storyBibleSelectedFolderId, setStoryBibleSelectedFolderId] = useState<string>('')
+  const [storyBibleSelectedChapterId, setStoryBibleSelectedChapterId] = useState<string>('')
+  const [storyBibleSelectedSceneId, setStoryBibleSelectedSceneId] = useState<string>('')
+  const [storyBibleCollapsedFolderIds, setStoryBibleCollapsedFolderIds] = useState<string[]>([])
+  const [storyBibleFolderMenuFolderId, setStoryBibleFolderMenuFolderId] = useState<string>('')
+  const [storyBibleSceneGearId, setStoryBibleSceneGearId] = useState<string>('')
+  const [storyBibleFolderBusy, setStoryBibleFolderBusy] = useState<boolean>(false)
+  const [pendingSceneThumbnailSceneId, setPendingSceneThumbnailSceneId] = useState<string>('')
+  const [storyBibleData, setStoryBibleData] = useState<StoryBibleData>(() => readStoryBibleData(null))
+  const [storyBibleLoadedProjectKey, setStoryBibleLoadedProjectKey] = useState<string>('__unloaded__')
+  const [referenceLibraryIntent, setReferenceLibraryIntent] = useState<'composer' | 'character' | 'scene-thumbnail'>('composer')
+  const [pendingCharacterImageId, setPendingCharacterImageId] = useState<string>('')
   const thumbnailCaptureInFlightRef = useRef<Set<string>>(new Set())
   const [isMseSequencerDialogOpen, setIsMseSequencerDialogOpen] = useState<boolean>(false)
   const [isMseSequencerDialogMinimized, setIsMseSequencerDialogMinimized] = useState<boolean>(false)
   const [isRecoveryOpen, setIsRecoveryOpen] = useState<boolean>(false)
-  const [studioProjectId, setStudioProjectId] = useState<string | null>(
-    () => localStorage.getItem(STUDIO_ACTIVE_PROJECT_ID_KEY),
-  )
-  const [studioProjects, setStudioProjects] = useState<ProjectSummary[]>([])
-  const [studioProjectsLoading, setStudioProjectsLoading] = useState<boolean>(true)
-  const [studioActiveFolderId, setStudioActiveFolderId] = useState<string | null>(
-    () => localStorage.getItem(STUDIO_ACTIVE_FOLDER_ID_KEY),
-  )
   const [studioMembers, setStudioMembers] = useState<ProjectMember[]>([])
-  const [studioFolders, setStudioFolders] = useState<FolderSummary[]>([])
-  const [studioFoldersLoading, setStudioFoldersLoading] = useState<boolean>(false)
   const [studioAccountOpen, setStudioAccountOpen] = useState<boolean>(false)
   const [, setStudioPanelMessage] = useState<string>('')
   const [recoveryTaskId, setRecoveryTaskId] = useState<string>('')
@@ -2931,8 +2883,104 @@ export default function ToorGenPromptWorkbench() {
   const [recoveryModel, setRecoveryModel] = useState<string>('')
   const [overlayHoverScopeId, setOverlayHoverScopeId] = useState<string>('')
   const [isOverlayIdle, setIsOverlayIdle] = useState<boolean>(false)
-  const [hasLoadedStudioSelection, setHasLoadedStudioSelection] = useState<boolean>(false)
   const libraryContextMenuRef = useRef<HTMLDivElement | null>(null)
+
+  const handleStudioSelectionPrefsLoaded = useCallback((prefs: {
+    toorGenComposerWidth?: number
+    toorGenDirectPanelWidth?: number
+    toorGenComposerRefsHeight?: number
+  } | null) => {
+    if (!prefs) return
+    const containerWidth = labLayoutRef.current?.getBoundingClientRect().width || window.innerWidth
+    const restoredDirectPanelWidth = typeof prefs.toorGenDirectPanelWidth === 'number'
+      ? Math.max(280, prefs.toorGenDirectPanelWidth)
+      : directPanelWidth
+
+    if (typeof prefs.toorGenComposerWidth === 'number') {
+      const availableWidth = Math.max(0, containerWidth - UTILITY_SIDEBAR_WIDTH_PX)
+      const maxRailWidth = Math.max(360, availableWidth - restoredDirectPanelWidth - 420)
+      const clampedRailWidth = Math.min(maxRailWidth, Math.max(236, prefs.toorGenComposerWidth))
+      setRailWidth(clampedRailWidth)
+    }
+    if (typeof prefs.toorGenDirectPanelWidth === 'number') {
+      setDirectPanelWidth(restoredDirectPanelWidth)
+    }
+    if (typeof prefs.toorGenComposerRefsHeight === 'number') {
+      setComposerRefsHeight(Math.max(170, Math.min(430, prefs.toorGenComposerRefsHeight)))
+    }
+  }, [directPanelWidth])
+
+  const {
+    studioProjectId,
+    setStudioProjectId,
+    studioProjects,
+    studioProjectsLoading,
+    studioActiveFolderId,
+    setStudioActiveFolderId,
+    studioFolders,
+    studioFoldersLoading,
+    hasLoadedStudioSelection,
+  } = useStudioProjectSelection({
+    authUid,
+    readLocalSelection: readLocalStudioSelection,
+    writeLocalSelection: writeLocalStudioSelection,
+    selectionPriority: 'user-prefs',
+    initialProjectsLoading: true,
+    onUserPrefsLoaded: handleStudioSelectionPrefsLoaded,
+    onProjectsError: (error) => {
+      console.error('[Studio] subscribeToUserProjects error:', error)
+      setStudioPanelMessage('Could not load projects.')
+    },
+  })
+
+  const {
+    mediaLibrary,
+    referenceLibraryMetadataItems,
+    mediaLibraryNameByUrl,
+    mediaLibraryKindByUrl,
+    referenceLibraryFilter,
+    setReferenceLibraryFilter,
+    referenceLibraryQuery,
+    setReferenceLibraryQuery,
+    selectedReferenceLibraryUrls,
+    isReferenceLibraryUploading,
+    hasSharedReferenceItems,
+    hasPersonalReferenceItems,
+    sharedReferenceUrlSet,
+    visibleReferenceLibraryItems,
+    hasMoreLibraryItems,
+    remainingReferenceLibraryItemsCount,
+    importableLocalReferenceLibrary,
+    appendToMediaLibrary,
+    uploadReferenceLibraryFiles,
+    importLocalReferencesToProject,
+    renameMediaLibraryItem,
+    removeMediaLibraryItem,
+    toggleReferenceLibrarySelection,
+    prepareReferenceLibrarySession,
+    resetReferenceLibrarySession,
+    loadMoreReferenceLibraryItems,
+  } = useToorGenAssetsLibrary({
+    authUid,
+    studioProjectId,
+    uploadFile,
+  })
+
+  const handleGenerationBackendAvailable = useCallback(() => {
+    setIsBackendAvailable(true)
+    setBackendNotice('')
+  }, [])
+
+  const handleGenerationBackendUnavailable = useCallback((message?: string) => {
+    setIsBackendAvailable(false)
+    setBackendNotice(message || 'Please run the back end server proxy, then try again.')
+  }, [])
+
+  const { runGeneration } = useGenerationRunner({
+    apiBaseUrl: CHATBOT_BASE,
+    onBackendAvailable: handleGenerationBackendAvailable,
+    onBackendUnavailable: handleGenerationBackendUnavailable,
+  })
 
   const cancelFlags = useRef<Record<string, boolean>>({})
   const labLayoutRef = useRef<HTMLDivElement | null>(null)
@@ -2941,8 +2989,12 @@ export default function ToorGenPromptWorkbench() {
   const isResizingComposerRefsRef = useRef<boolean>(false)
   const composerRefsStartYRef = useRef<number>(0)
   const composerRefsStartHeightRef = useRef<number>(248)
+  const liveComposerRefsHeightRef = useRef<number>(248)
+  const composerRefsLatestClientYRef = useRef<number>(0)
+  const composerRefsResizeRafRef = useRef<number | null>(null)
+  const lastRailResizeClientXRef = useRef<number>(0)
   const lastDirectResizeClientXRef = useRef<number>(0)
-  const liveRailWidthRef = useRef<number>(500)
+  const liveRailWidthRef = useRef<number>(280)
   const liveDirectPanelWidthRef = useRef<number>(360)
   const referenceLibraryUploadInputRef = useRef<HTMLInputElement | null>(null)
   const videoDialogPlayerRef = useRef<HTMLVideoElement | null>(null)
@@ -3006,12 +3058,16 @@ export default function ToorGenPromptWorkbench() {
 
   // Load thumbnail poster cache from IndexedDB on mount for instant display
   useEffect(() => {
-    void readAllThumbsFromDB().then((map) => {
-      if (map.size > 0) {
-        thumbnailPosterCacheRef.current = map
-        setThumbnailPosterCache(new Map(map))
-      }
-    })
+    void readAllThumbsFromDB()
+      .then((map) => {
+        if (map.size > 0) {
+          thumbnailPosterCacheRef.current = map
+          setThumbnailPosterCache(new Map(map))
+        }
+      })
+      .finally(() => {
+        setHasHydratedThumbnailPosterCache(true)
+      })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -3024,17 +3080,26 @@ export default function ToorGenPromptWorkbench() {
     })
   }, [])
 
-  const captureThumbnailForPlaybackUrl = useCallback(async (playbackUrl: string) => {
+  const captureThumbnailForPlaybackUrl = useCallback(async (playbackUrl: string, options?: { force?: boolean }): Promise<string | null> => {
     const url = (playbackUrl || '').trim()
-    if (!url || thumbnailPosterCacheRef.current.has(url) || thumbnailCaptureInFlightRef.current.has(url)) {
-      return
+    const force = options?.force === true
+    if (!url) {
+      return null
+    }
+    if (!force && thumbnailPosterCacheRef.current.has(url)) {
+      return thumbnailPosterCacheRef.current.get(url) || null
+    }
+    if (thumbnailCaptureInFlightRef.current.has(url)) {
+      return null
     }
     thumbnailCaptureInFlightRef.current.add(url)
+    let capturedDataUrl: string | null = null
 
     const video = document.createElement('video')
     video.muted = true
     video.playsInline = true
     video.preload = 'auto'
+    video.crossOrigin = 'anonymous'
     video.src = url
 
     await new Promise<void>((resolve) => {
@@ -3072,6 +3137,7 @@ export default function ToorGenPromptWorkbench() {
           if (dataUrl && dataUrl !== 'data:,') {
             void writeThumbToDB(url, dataUrl)
             addToThumbnailCache(url, dataUrl)
+            capturedDataUrl = dataUrl
           }
         } catch {
           // ignore draw failures
@@ -3093,7 +3159,366 @@ export default function ToorGenPromptWorkbench() {
     })
 
     thumbnailCaptureInFlightRef.current.delete(url)
+    return capturedDataUrl
   }, [addToThumbnailCache])
+
+  const getVideoPosterUrl = useCallback((playbackUrl: string, persistedPosterUrl?: string) => {
+    const persisted = (persistedPosterUrl || '').trim()
+    if (persisted) return persisted
+    return thumbnailPosterCache.get(playbackUrl)
+  }, [thumbnailPosterCache])
+
+  const buildThumbnailMigrationJobLabel = useCallback((entry: GenerationHistoryEntry) => {
+    const promptTitle = entry.prompt.trim().replace(/\s+/g, ' ')
+    if (promptTitle) {
+      return promptTitle.slice(0, 96)
+    }
+    return `${entry.tabLabel} • ${formatTimestamp(entry.completedAt)}`
+  }, [])
+
+  const updateThumbnailMigrationJob = useCallback((
+    entry: GenerationHistoryEntry,
+    buildNext: (current?: ThumbnailMigrationJob) => ThumbnailMigrationJob,
+  ) => {
+    setThumbnailMigrationJobs((current) => ({
+      ...current,
+      [entry.historyId]: buildNext(current[entry.historyId]),
+    }))
+  }, [])
+
+  const markThumbnailMigrationQueued = useCallback((entry: GenerationHistoryEntry) => {
+    updateThumbnailMigrationJob(entry, (current) => ({
+      historyId: entry.historyId,
+      label: buildThumbnailMigrationJobLabel(entry),
+      status: 'queued',
+      attempts: current?.attempts || 0,
+      error: '',
+      targetVersion: THUMBNAIL_POSTER_VERSION,
+      currentVersion: Math.max(current?.currentVersion || 0, entry.thumbnailPosterVersion),
+      generatedAt: Math.max(current?.generatedAt || 0, entry.thumbnailPosterGeneratedAt),
+      updatedAt: Date.now(),
+    }))
+  }, [buildThumbnailMigrationJobLabel, updateThumbnailMigrationJob])
+
+  const markThumbnailMigrationRunning = useCallback((entry: GenerationHistoryEntry) => {
+    updateThumbnailMigrationJob(entry, (current) => ({
+      historyId: entry.historyId,
+      label: buildThumbnailMigrationJobLabel(entry),
+      status: 'running',
+      attempts: (current?.attempts || 0) + 1,
+      error: '',
+      targetVersion: THUMBNAIL_POSTER_VERSION,
+      currentVersion: Math.max(current?.currentVersion || 0, entry.thumbnailPosterVersion),
+      generatedAt: Math.max(current?.generatedAt || 0, entry.thumbnailPosterGeneratedAt),
+      updatedAt: Date.now(),
+    }))
+  }, [buildThumbnailMigrationJobLabel, updateThumbnailMigrationJob])
+
+  const markThumbnailMigrationSuccess = useCallback((entry: GenerationHistoryEntry, generatedAt: number) => {
+    updateThumbnailMigrationJob(entry, (current) => ({
+      historyId: entry.historyId,
+      label: buildThumbnailMigrationJobLabel(entry),
+      status: 'success',
+      attempts: Math.max(current?.attempts || 0, 1),
+      error: '',
+      targetVersion: THUMBNAIL_POSTER_VERSION,
+      currentVersion: THUMBNAIL_POSTER_VERSION,
+      generatedAt,
+      updatedAt: Date.now(),
+    }))
+  }, [buildThumbnailMigrationJobLabel, updateThumbnailMigrationJob])
+
+  const markThumbnailMigrationFailed = useCallback((entry: GenerationHistoryEntry, error: string) => {
+    updateThumbnailMigrationJob(entry, (current) => ({
+      historyId: entry.historyId,
+      label: buildThumbnailMigrationJobLabel(entry),
+      status: 'failed',
+      attempts: Math.max(current?.attempts || 0, 1),
+      error,
+      targetVersion: THUMBNAIL_POSTER_VERSION,
+      currentVersion: Math.max(current?.currentVersion || 0, entry.thumbnailPosterVersion),
+      generatedAt: Math.max(current?.generatedAt || 0, entry.thumbnailPosterGeneratedAt),
+      updatedAt: Date.now(),
+    }))
+  }, [buildThumbnailMigrationJobLabel, updateThumbnailMigrationJob])
+
+  const syncHistoryEntryPoster = useCallback(async (entry: GenerationHistoryEntry, options?: { force?: boolean }) => {
+    const force = options?.force === true
+    const persistedPosterUrl = entry.thumbnailPosterUrl.trim()
+    if (persistedPosterUrl && entry.thumbnailPosterVersion >= THUMBNAIL_POSTER_VERSION && !force) {
+      return persistedPosterUrl
+    }
+
+    const sources = resolvePrimaryAndFallbackVideoSources(entry.firebaseVideoUrl || '', entry.resultUrl || '')
+    const playbackUrl = getPlaybackUrl(sources.primary)
+    if (!playbackUrl) {
+      throw new Error('No playable video source was available for this history item.')
+    }
+
+    let dataUrl = force ? '' : (thumbnailPosterCacheRef.current.get(playbackUrl) || '')
+    if (!dataUrl) {
+      dataUrl = (await captureThumbnailForPlaybackUrl(playbackUrl, { force })) || ''
+    }
+    if (!dataUrl) {
+      throw new Error('Could not capture a thumbnail frame from this video.')
+    }
+
+    const posterUrl = await saveGeneratedVideoPosterToFirebase(entry.historyId, dataUrl)
+    if (!posterUrl) {
+      throw new Error('Could not upload the generated poster to Firebase Storage.')
+    }
+
+    const generatedAt = Date.now()
+
+    const updatedEntry: GenerationHistoryEntry = {
+      ...entry,
+      thumbnailPosterUrl: posterUrl,
+      thumbnailPosterVersion: THUMBNAIL_POSTER_VERSION,
+      thumbnailPosterGeneratedAt: generatedAt,
+    }
+    setHistory((current) => {
+      const next = mergeHistories(current.filter((item) => item.historyId !== updatedEntry.historyId), [updatedEntry])
+      safeSetLocalStorage(LOCAL_HISTORY_STORAGE_KEY, JSON.stringify(next))
+      return next
+    })
+    setThumbnailMigrationHistory((current) => mergeHistories(current.filter((item) => item.historyId !== updatedEntry.historyId), [updatedEntry]))
+    await saveHistoryToFirestore(updatedEntry)
+    return posterUrl
+  }, [captureThumbnailForPlaybackUrl])
+
+  useEffect(() => {
+    let cancelled = false
+
+    if (!authUid) {
+      setThumbnailMigrationHistory([])
+      return () => {
+        cancelled = true
+      }
+    }
+
+    void (async () => {
+      const fullHistory = await readAllFirestoreHistoryForThumbnailMigration(authUid)
+      if (!cancelled) {
+        setThumbnailMigrationHistory(fullHistory)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [authUid])
+
+  const thumbnailMigrationCandidates = useMemo(() => {
+    const urls = new Set<string>()
+    const addCandidate = (rawUrl: string) => {
+      const playbackUrl = getPlaybackUrl(rawUrl)
+      if (!playbackUrl) return
+      urls.add(playbackUrl)
+    }
+
+    ;[history, thumbnailMigrationHistory].forEach((entries) => {
+      entries.forEach((entry) => {
+        const sources = resolvePrimaryAndFallbackVideoSources(entry.firebaseVideoUrl || '', entry.resultUrl || '')
+        if (sources.primary) addCandidate(sources.primary)
+        if (sources.fallback) addCandidate(sources.fallback)
+      })
+    })
+
+    referenceLibraryMetadataItems.forEach((item) => {
+      if (item.kind !== 'video') return
+      addCandidate(item.url)
+    })
+
+    return [...urls]
+  }, [history, referenceLibraryMetadataItems, thumbnailMigrationHistory])
+
+  const historyPosterMigrationCandidates = useMemo(() => {
+    const byId = new Map<string, GenerationHistoryEntry>()
+
+    ;[history, thumbnailMigrationHistory].forEach((entries) => {
+      entries.forEach((entry) => {
+        const sources = resolvePrimaryAndFallbackVideoSources(entry.firebaseVideoUrl || '', entry.resultUrl || '')
+        if (!sources.primary) return
+        const existing = byId.get(entry.historyId)
+        const isIncomingBetter = !existing
+          || entry.thumbnailPosterVersion > existing.thumbnailPosterVersion
+          || (
+            entry.thumbnailPosterVersion === existing.thumbnailPosterVersion
+            && entry.thumbnailPosterGeneratedAt > existing.thumbnailPosterGeneratedAt
+          )
+          || (!existing.thumbnailPosterUrl && Boolean(entry.thumbnailPosterUrl))
+        if (isIncomingBetter) {
+          byId.set(entry.historyId, entry)
+        }
+      })
+    })
+
+    return [...byId.values()]
+  }, [history, thumbnailMigrationHistory])
+
+  const thumbnailMigrationJobSummary = useMemo(() => (
+    Object.values(thumbnailMigrationJobs).reduce((summary, job) => {
+      summary[job.status] += 1
+      return summary
+    }, {
+      queued: 0,
+      running: 0,
+      success: 0,
+      failed: 0,
+    } as Record<ThumbnailMigrationJobStatus, number>)
+  ), [thumbnailMigrationJobs])
+
+  const runThumbnailMigrationQueue = useCallback(async () => {
+    if (thumbnailMigrationRunningRef.current) return
+    thumbnailMigrationRunningRef.current = true
+
+    try {
+      while (thumbnailMigrationQueueRef.current.length > 0) {
+        const nextUrl = thumbnailMigrationQueueRef.current.shift() || ''
+        if (!nextUrl) continue
+        thumbnailMigrationQueuedRef.current.delete(nextUrl)
+
+        await captureThumbnailForPlaybackUrl(nextUrl)
+
+        setThumbnailMigrationProgress((current) => {
+          if (!current || current.label !== 'Warming cached video thumbnails') return current
+          const completed = Math.min(current.total, current.completed + 1)
+          return completed >= current.total ? null : { ...current, completed }
+        })
+      }
+    } finally {
+      thumbnailMigrationRunningRef.current = false
+    }
+  }, [captureThumbnailForPlaybackUrl])
+
+  useEffect(() => {
+    if (!hasHydratedThumbnailPosterCache) return
+
+    const uncachedUrls = thumbnailMigrationCandidates.filter((url) => (
+      !thumbnailPosterCacheRef.current.has(url)
+      && !thumbnailMigrationAttemptedRef.current.has(url)
+      && !thumbnailMigrationQueuedRef.current.has(url)
+    ))
+
+    if (uncachedUrls.length === 0) return
+
+    uncachedUrls.forEach((url) => {
+      thumbnailMigrationAttemptedRef.current.add(url)
+      thumbnailMigrationQueuedRef.current.add(url)
+      thumbnailMigrationQueueRef.current.push(url)
+    })
+
+    setThumbnailMigrationProgress((current) => ({
+      completed: current?.label === 'Warming cached video thumbnails' ? current.completed : 0,
+      total: current?.label === 'Warming cached video thumbnails' ? current.total + uncachedUrls.length : uncachedUrls.length,
+      label: 'Warming cached video thumbnails',
+    }))
+
+    void runThumbnailMigrationQueue()
+  }, [hasHydratedThumbnailPosterCache, runThumbnailMigrationQueue, thumbnailMigrationCandidates])
+
+  const runHistoryPosterMigrationQueue = useCallback(async () => {
+    if (historyPosterMigrationRunningRef.current) return
+    historyPosterMigrationRunningRef.current = true
+
+    try {
+      while (historyPosterMigrationQueueRef.current.length > 0) {
+        const nextHistoryId = historyPosterMigrationQueueRef.current.shift() || ''
+        if (!nextHistoryId) continue
+        historyPosterMigrationQueuedRef.current.delete(nextHistoryId)
+
+        const entry = historyPosterMigrationCandidates.find((item) => item.historyId === nextHistoryId)
+        if (!entry) continue
+        const force = historyPosterMigrationForcedRef.current.delete(nextHistoryId)
+
+        markThumbnailMigrationRunning(entry)
+
+        try {
+          await syncHistoryEntryPoster(entry, { force })
+          markThumbnailMigrationSuccess(entry, Date.now())
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Unknown thumbnail migration error.'
+          markThumbnailMigrationFailed(entry, message)
+        }
+
+        setThumbnailMigrationProgress((current) => {
+          if (!current || current.label !== 'Saving history thumbnails to Firebase') return current
+          const completed = Math.min(current.total, current.completed + 1)
+          return completed >= current.total ? null : { ...current, completed }
+        })
+      }
+    } finally {
+      historyPosterMigrationRunningRef.current = false
+      setIsRebuildingVideoThumbnails(false)
+    }
+  }, [historyPosterMigrationCandidates, markThumbnailMigrationFailed, markThumbnailMigrationRunning, markThumbnailMigrationSuccess, syncHistoryEntryPoster])
+
+  useEffect(() => {
+    if (!hasHydratedThumbnailPosterCache) return
+
+    const pendingEntries = historyPosterMigrationCandidates.filter((entry) => (
+      (!entry.thumbnailPosterUrl.trim() || entry.thumbnailPosterVersion < THUMBNAIL_POSTER_VERSION)
+      && !historyPosterMigrationAttemptedRef.current.has(entry.historyId)
+      && !historyPosterMigrationQueuedRef.current.has(entry.historyId)
+    ))
+
+    if (pendingEntries.length === 0) return
+
+    pendingEntries.forEach((entry) => {
+      historyPosterMigrationAttemptedRef.current.add(entry.historyId)
+      historyPosterMigrationQueuedRef.current.add(entry.historyId)
+      historyPosterMigrationQueueRef.current.push(entry.historyId)
+      markThumbnailMigrationQueued(entry)
+    })
+
+    setThumbnailMigrationProgress((current) => {
+      if (current?.label === 'Saving history thumbnails to Firebase') {
+        return {
+          completed: current.completed,
+          total: current.total + pendingEntries.length,
+          label: current.label,
+        }
+      }
+      return {
+        completed: 0,
+        total: pendingEntries.length,
+        label: 'Saving history thumbnails to Firebase',
+      }
+    })
+
+    void runHistoryPosterMigrationQueue()
+  }, [hasHydratedThumbnailPosterCache, historyPosterMigrationCandidates, markThumbnailMigrationQueued, runHistoryPosterMigrationQueue])
+
+  const handleRebuildVideoThumbnails = useCallback(() => {
+    const allPlayableEntries = historyPosterMigrationCandidates.filter((entry) => {
+      const sources = resolvePrimaryAndFallbackVideoSources(entry.firebaseVideoUrl || '', entry.resultUrl || '')
+      return Boolean(sources.primary)
+    })
+
+    if (allPlayableEntries.length === 0) return
+
+    setIsRebuildingVideoThumbnails(true)
+    historyPosterMigrationQueueRef.current = []
+    historyPosterMigrationQueuedRef.current.clear()
+    historyPosterMigrationAttemptedRef.current.clear()
+    historyPosterMigrationForcedRef.current.clear()
+
+    allPlayableEntries.forEach((entry) => {
+      historyPosterMigrationAttemptedRef.current.add(entry.historyId)
+      historyPosterMigrationQueuedRef.current.add(entry.historyId)
+      historyPosterMigrationForcedRef.current.add(entry.historyId)
+      historyPosterMigrationQueueRef.current.push(entry.historyId)
+      markThumbnailMigrationQueued(entry)
+    })
+
+    setThumbnailMigrationProgress({
+      completed: 0,
+      total: allPlayableEntries.length,
+      label: 'Saving history thumbnails to Firebase',
+    })
+
+    void runHistoryPosterMigrationQueue()
+  }, [historyPosterMigrationCandidates, markThumbnailMigrationQueued, runHistoryPosterMigrationQueue])
 
   const handlePreloaderVideoMetadata = useCallback((event: SyntheticEvent<HTMLVideoElement>) => {
     const src = event.currentTarget.src
@@ -3119,6 +3544,27 @@ export default function ToorGenPromptWorkbench() {
       setComposerRefMode(nextRefMode)
     }
   }
+  const applySidebarTemplate = (preset: SidebarTemplatePreset) => {
+    const sourceTab = TABS.find((tab) => tab.id === preset.sourceTabId)
+    if (!sourceTab) return
+
+    const targetTabId = preset.targetTabId || activeTab.id
+    const nextPrompt = sourceTab.promptTemplate.trim() || sourceTab.examplePrompt.trim() || sourceTab.documentPrompt.trim()
+
+    if (targetTabId !== activeTab.id) {
+      switchComposerWorkflow(targetTabId, preset.refMode)
+    } else if (preset.refMode) {
+      setComposerRefMode(preset.refMode)
+    }
+
+    if (!nextPrompt) return
+
+    updateModeState(targetTabId, (current) => ({
+      ...current,
+      prompt: nextPrompt,
+      statusText: `Loaded ${preset.label} template.`,
+    }))
+  }
   const selectedCombinedModelValue = `${activeWorkflowSettings.provider}:${selectedModel}`
   const combinedModelOptions = COMBINED_MODEL_OPTIONS.some((option) => option.value === selectedCombinedModelValue)
     ? COMBINED_MODEL_OPTIONS
@@ -3140,34 +3586,6 @@ export default function ToorGenPromptWorkbench() {
     resolution: activeWorkflowSettings.resolution,
     generateAudio: activeWorkflowSettings.generateAudio,
   }
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      const storedModeStates = Object.fromEntries(
-        Object.entries(modeStates).map(([tabId, state]) => [
-          tabId,
-          {
-            prompt: state.prompt,
-            mediaUrls: filterMediaUrls(state.mediaUrls),
-            resultUrl: state.resultUrl,
-            strictReferences: state.strictReferences,
-            selectedVideoOptionIds: state.selectedVideoOptionIds,
-            selectedImageReferenceKey: state.selectedImageReferenceKey,
-          },
-        ]),
-      )
-
-      const nextDraft: StoredDraftState = {
-        activeTabId,
-        workflowSettingsByTabId,
-        modeStates: storedModeStates,
-      }
-
-      safeSetLocalStorage(LOCAL_DRAFT_STORAGE_KEY, JSON.stringify(nextDraft))
-    }, 1000)
-
-    return () => window.clearTimeout(timer)
-  }, [activeTabId, modeStates, workflowSettingsByTabId])
 
   useEffect(() => {
     safeSetLocalStorage(DIRECT_JSON_DRAFT_KEY, directRequestJson)
@@ -3233,63 +3651,30 @@ export default function ToorGenPromptWorkbench() {
   }, [])
 
   useEffect(() => {
-    if (studioProjectId) {
-      localStorage.setItem(STUDIO_ACTIVE_PROJECT_ID_KEY, studioProjectId)
-      const projectName = studioProjects.find((project) => project.id === studioProjectId)?.name
-      if (projectName) {
-        localStorage.setItem(STUDIO_ACTIVE_PROJECT_NAME_KEY, projectName)
-      }
+    if (!studioProjectId) {
+      localStorage.removeItem(STUDIO_ACTIVE_PROJECT_NAME_KEY)
+      return
+    }
+
+    const projectName = studioProjects.find((project) => project.id === studioProjectId)?.name
+    if (projectName) {
+      localStorage.setItem(STUDIO_ACTIVE_PROJECT_NAME_KEY, projectName)
     } else {
-      localStorage.removeItem(STUDIO_ACTIVE_PROJECT_ID_KEY)
       localStorage.removeItem(STUDIO_ACTIVE_PROJECT_NAME_KEY)
     }
   }, [studioProjectId, studioProjects])
 
   useEffect(() => {
-    if (studioActiveFolderId) {
-      localStorage.setItem(STUDIO_ACTIVE_FOLDER_ID_KEY, studioActiveFolderId)
-    } else {
-      localStorage.removeItem(STUDIO_ACTIVE_FOLDER_ID_KEY)
-    }
-  }, [studioActiveFolderId])
-
-  useEffect(() => {
-    setHasLoadedStudioSelection(false)
-    if (!authUid) {
-      setHasLoadedStudioSelection(true)
-      return
-    }
-
-    let cancelled = false
-    void loadUserPrefs(authUid)
-      .then((prefs) => {
-        if (cancelled || !prefs) return
-        if (prefs.activeProjectId !== undefined) {
-          setStudioProjectId(prefs.activeProjectId)
-        }
-        if (prefs.activeFolderId !== undefined) {
-          setStudioActiveFolderId(prefs.activeFolderId)
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setHasLoadedStudioSelection(true)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [authUid])
-
-  useEffect(() => {
     if (!authUid || !hasLoadedStudioSelection) return
     const timer = window.setTimeout(() => {
       void saveUserPrefs(authUid, {
-        activeProjectId: studioProjectId,
-        activeFolderId: studioActiveFolderId,
+        toorGenComposerWidth: railWidth,
+        toorGenDirectPanelWidth: directPanelWidth,
+        toorGenComposerRefsHeight: composerRefsHeight,
       })
-    }, 300)
+    }, 350)
     return () => window.clearTimeout(timer)
-  }, [authUid, studioProjectId, studioActiveFolderId, hasLoadedStudioSelection])
+  }, [authUid, railWidth, directPanelWidth, composerRefsHeight, hasLoadedStudioSelection])
 
   useEffect(() => {
     const node = libraryContextMenuRef.current
@@ -3304,29 +3689,6 @@ export default function ToorGenPromptWorkbench() {
     node.style.left = `${workflowPickerPosition.left}px`
     node.style.top = `${workflowPickerPosition.top}px`
   }, [isWorkflowPickerOpen, workflowPickerPosition])
-
-  const updateModeState = (
-    tabId: string,
-    updater: (current: ModeRuntimeState) => ModeRuntimeState,
-  ) => {
-    setModeStates((current) => {
-      const tab = ACTIVE_TABS.find((item) => item.id === tabId) || FALLBACK_TAB
-      return {
-        ...current,
-        [tabId]: updater(current[tabId] || createDefaultModeState(tab)),
-      }
-    })
-  }
-
-  const updateWorkflowSettings = (
-    tabId: string,
-    updater: (current: WorkflowSettingsState) => WorkflowSettingsState,
-  ) => {
-    setWorkflowSettingsByTabId((current) => ({
-      ...current,
-      [tabId]: updater(current[tabId] || createDefaultWorkflowSettings()),
-    }))
-  }
 
   const saveHistoryEntry = async (entry: GenerationHistoryEntry) => {
     let nextHistory: GenerationHistoryEntry[] = []
@@ -3388,8 +3750,7 @@ export default function ToorGenPromptWorkbench() {
 
   const markBackendDown = (message?: string) => {
     setIsBackendAvailable(false)
-    setBackendNotice(message || 'Back end server is not working. Please run it.')
-    setIsBackendDialogOpen(true)
+    setBackendNotice(message || 'Please run the back end server proxy, then try again.')
   }
 
   const openVideoDialog = (url: string, details?: VideoDialogState['details']) => {
@@ -3425,7 +3786,6 @@ export default function ToorGenPromptWorkbench() {
       if (response.ok) {
         setIsBackendAvailable(true)
         setBackendNotice('')
-        setIsBackendDialogOpen(false)
         return true
       }
       markBackendDown(`Back end server check failed (${response.status}). Please run it.`)
@@ -3434,35 +3794,6 @@ export default function ToorGenPromptWorkbench() {
       markBackendDown('Back end server is not working. Please run it.')
       return false
     }
-  }
-
-  const appendToMediaLibrary = async (kind: MediaKind, url: string, name: string) => {
-    if (!url.trim()) return
-    const nextEntry: MediaLibraryItem = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
-      kind,
-      url: url.trim(),
-      name: name.trim() || `${kind} upload`,
-      createdAt: Date.now(),
-      projectId: studioProjectId || undefined,
-    }
-
-    if (studioProjectId && auth.currentUser?.uid) {
-      await saveProjectReferenceLibraryItem(
-        studioProjectId,
-        nextEntry,
-        auth.currentUser.uid,
-      )
-      return
-    }
-
-    setMediaLibrary((current) => {
-      const deduped = [nextEntry, ...current.filter((item) => item.url !== nextEntry.url)]
-      const next = deduped.slice(0, 200)
-      writeLocalMediaLibrary(next)
-      setLocalReferenceLibrarySnapshot(next)
-      return next
-    })
   }
 
   const pollUntilDone = async (
@@ -3556,60 +3887,60 @@ export default function ToorGenPromptWorkbench() {
     const completedAt = Date.now()
     const historyId = buildHistoryId(tab.id, taskId, completedAt)
 
-    let firebaseVideoUrl = ''
-    let storageSaveError = ''
-
-    try {
-      const saved = await saveGeneratedVideoToFirebase(resultUrl, historyId)
-      firebaseVideoUrl = saved.firebaseUrl
-    } catch (error) {
-      storageSaveError = (error as Error).message
-    }
-
-    const entry: GenerationHistoryEntry = {
-      historyId,
-      taskId,
-      tabId: tab.id,
-      tabLabel: tab.label,
-      provider: requestSettings.provider,
-      model: requestSettings.model,
-      ratio: requestSettings.ratio,
-      duration: requestSettings.duration,
-      resolution: requestSettings.resolution,
-      generateAudio: requestSettings.generateAudio,
-      prompt: state.prompt.trim(),
-      mediaUrls: filterMediaUrls(state.mediaUrls),
-      requestEndpoint: request.endpoint,
-      requestPayload: request.body,
-      resultUrl,
-      firebaseVideoUrl,
-      storageSaveError,
-      submittedAt: timings.submittedAt,
-      receivedAt: timings.receivedAt,
-      generationMs: Math.max(0, timings.receivedAt - timings.submittedAt),
-      outputDimensions: estimateDimensions(requestSettings.ratio, requestSettings.resolution),
+    const finalized = await finalizeGeneratedVideoPersistence<GenerationHistoryEntry>({
+      sourceUrl: resultUrl,
+      storageBasePath: `toorgen-lab/generated/${historyId}`,
+      apiBaseUrl: CHATBOT_BASE,
       completedAt,
-      ownerUid: auth.currentUser?.uid || '',
-      isLiked: false,
-      projectId: studioProjectId || '',
-      folderId: studioActiveFolderId || '',
-    }
+      buildEntry: ({ completedAt: finalizedAt, firebaseVideoUrl, storageSaveError }) => ({
+        historyId,
+        taskId,
+        tabId: tab.id,
+        tabLabel: tab.label,
+        provider: requestSettings.provider,
+        model: requestSettings.model,
+        ratio: requestSettings.ratio,
+        duration: requestSettings.duration,
+        resolution: requestSettings.resolution,
+        generateAudio: requestSettings.generateAudio,
+        prompt: state.prompt.trim(),
+        mediaUrls: filterMediaUrls(state.mediaUrls),
+        requestEndpoint: request.endpoint,
+        requestPayload: request.body,
+        resultUrl,
+        firebaseVideoUrl,
+        thumbnailPosterUrl: '',
+        thumbnailPosterVersion: 0,
+        thumbnailPosterGeneratedAt: 0,
+        storageSaveError,
+        submittedAt: timings.submittedAt,
+        receivedAt: timings.receivedAt,
+        generationMs: Math.max(0, timings.receivedAt - timings.submittedAt),
+        outputDimensions: estimateDimensions(requestSettings.ratio, requestSettings.resolution),
+        completedAt: finalizedAt,
+        ownerUid: auth.currentUser?.uid || '',
+        isLiked: false,
+        projectId: studioProjectId || '',
+        folderId: studioActiveFolderId || '',
+      }),
+      persistEntry: saveHistoryEntry,
+    })
 
-    await saveHistoryEntry(entry)
+    void syncHistoryEntryPoster(finalized.entry).catch(() => {})
 
-    const savedStatus = storageSaveError
-      ? `Completed. History saved; Firebase copy failed: ${storageSaveError}. Using temporary source URL, which may expire.`
+    const savedStatus = finalized.storageSaveError
+      ? `Completed. History saved; Firebase copy failed: ${finalized.storageSaveError}. Using temporary source URL, which may expire.`
       : auth.currentUser?.uid
         ? 'Completed. Saved locally and synced to Firebase.'
         : 'Completed. Saved locally; Firebase sync will start after sign-in.'
 
     updateModeState(tab.id, (current) => ({
       ...current,
-      resultUrl: firebaseVideoUrl || resultUrl,
+      resultUrl: finalized.playbackUrl,
       statusText: savedStatus,
     }))
 
-    const playbackUrl = getPlaybackUrl(firebaseVideoUrl || resultUrl)
+    const playbackUrl = getPlaybackUrl(finalized.playbackUrl)
     if (playbackUrl) {
       void captureThumbnailForPlaybackUrl(playbackUrl)
     }
@@ -3619,15 +3950,6 @@ export default function ToorGenPromptWorkbench() {
     const completedAt = Date.now()
     const historyId = buildHistoryId(task.tabId, task.taskId, completedAt)
     const receivedAt = Date.now()
-
-    let firebaseVideoUrl = ''
-    let storageSaveError = ''
-    try {
-      const saved = await saveGeneratedVideoToFirebase(resultUrl, historyId)
-      firebaseVideoUrl = saved.firebaseUrl
-    } catch (error) {
-      storageSaveError = (error as Error).message
-    }
 
     const tab = ACTIVE_TABS.find((t) => t.id === task.tabId) || FALLBACK_TAB
     const tabState = modeStates[task.tabId] || createDefaultModeState(tab)
@@ -3659,46 +3981,56 @@ export default function ToorGenPromptWorkbench() {
       ? task.requestPayload
       : fallbackRequest.body
 
-    const entry: GenerationHistoryEntry = {
-      historyId,
-      taskId: task.taskId,
-      tabId: task.tabId,
-      tabLabel: tab.label,
-      provider: task.provider,
-      model: task.model,
-      ratio: task.ratio,
-      duration: task.duration,
-      resolution: task.resolution,
-      generateAudio: fallbackSettings.generateAudio,
-      prompt: recoveredPrompt,
-      mediaUrls: recoveredMediaUrls,
-      requestEndpoint: recoveredRequestEndpoint,
-      requestPayload: recoveredRequestPayload,
-      resultUrl,
-      firebaseVideoUrl,
-      storageSaveError,
-      submittedAt: task.createdAt,
-      receivedAt,
-      generationMs: Math.max(0, receivedAt - task.createdAt),
-      outputDimensions: estimateDimensions(task.ratio, task.resolution),
+    const finalized = await finalizeGeneratedVideoPersistence<GenerationHistoryEntry>({
+      sourceUrl: resultUrl,
+      storageBasePath: `toorgen-lab/generated/${historyId}`,
+      apiBaseUrl: CHATBOT_BASE,
       completedAt,
-      ownerUid: auth.currentUser?.uid || '',
-      isLiked: false,
-      projectId: studioProjectId || '',
-      folderId: studioActiveFolderId || '',
-    }
+      buildEntry: ({ completedAt: finalizedAt, firebaseVideoUrl, storageSaveError }) => ({
+        historyId,
+        taskId: task.taskId,
+        tabId: task.tabId,
+        tabLabel: tab.label,
+        provider: task.provider,
+        model: task.model,
+        ratio: task.ratio,
+        duration: task.duration,
+        resolution: task.resolution,
+        generateAudio: fallbackSettings.generateAudio,
+        prompt: recoveredPrompt,
+        mediaUrls: recoveredMediaUrls,
+        requestEndpoint: recoveredRequestEndpoint,
+        requestPayload: recoveredRequestPayload,
+        resultUrl,
+        firebaseVideoUrl,
+        thumbnailPosterUrl: '',
+        thumbnailPosterVersion: 0,
+        thumbnailPosterGeneratedAt: 0,
+        storageSaveError,
+        submittedAt: task.createdAt,
+        receivedAt,
+        generationMs: Math.max(0, receivedAt - task.createdAt),
+        outputDimensions: estimateDimensions(task.ratio, task.resolution),
+        completedAt: finalizedAt,
+        ownerUid: auth.currentUser?.uid || '',
+        isLiked: false,
+        projectId: studioProjectId || '',
+        folderId: studioActiveFolderId || '',
+      }),
+      persistEntry: saveHistoryEntry,
+    })
 
-    await saveHistoryEntry(entry)
+    void syncHistoryEntryPoster(finalized.entry).catch(() => {})
 
     updateModeState(task.tabId, (current) => ({
       ...current,
-      resultUrl: firebaseVideoUrl || resultUrl,
-      statusText: storageSaveError
-        ? `Recovered. History saved; Firebase copy failed: ${storageSaveError}`
+      resultUrl: finalized.playbackUrl,
+      statusText: finalized.storageSaveError
+        ? `Recovered. History saved; Firebase copy failed: ${finalized.storageSaveError}`
         : 'Recovered. Generation completed and saved to history.',
     }))
 
-    const playbackUrl = getPlaybackUrl(firebaseVideoUrl || resultUrl)
+    const playbackUrl = getPlaybackUrl(finalized.playbackUrl)
     if (playbackUrl) {
       void captureThumbnailForPlaybackUrl(playbackUrl)
     }
@@ -3854,18 +4186,8 @@ export default function ToorGenPromptWorkbench() {
 
     const requestId = `${tab.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     cancelFlags.current[requestId] = false
-    let submittedAt = 0
     let pendingTaskId = ''
     let shouldClearPendingTask = false
-
-    const backendReady = await checkBackendHealth()
-    if (!backendReady) {
-      updateModeState(tab.id, (current) => ({
-        ...current,
-        statusText: 'Back end server is not running. Start it before generating.',
-      }))
-      return
-    }
 
     const requestSettings: SharedSettings = {
       provider: activeWorkflowSettings.provider,
@@ -3878,104 +4200,66 @@ export default function ToorGenPromptWorkbench() {
     // Removed hardcoded provider overrides for specific modes so the UI dropdown selection is respected.
     
     const request = buildRequest(tab, effectiveState, requestSettings, resolvedMentionReferences)
-    const effectiveRequestProvider = inferProviderForRequest(request.endpoint, request.body, requestSettings.provider)
-    const effectiveRequestModel = typeof request.body.model === 'string' && request.body.model.trim()
-      ? request.body.model.trim()
-      : requestSettings.model
-    const effectiveRequestSettings: SharedSettings = {
-      ...requestSettings,
-      provider: effectiveRequestProvider,
-      model: effectiveRequestModel,
-    }
+    const effectiveRequestSettings = resolveGenerationRequestSettings(request.endpoint, request.body, requestSettings)
 
     setPendingGenerations((current) => ([
       {
         id: requestId,
         tabId: tab.id,
-        provider: effectiveRequestProvider,
-        model: effectiveRequestModel,
+        provider: effectiveRequestSettings.provider,
+        model: effectiveRequestSettings.model,
         createdAt: Date.now(),
       },
       ...current,
     ]))
 
     try {
-      submittedAt = Date.now()
-      const response = await fetch(apiUrl(request.endpoint), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(request.body),
+      const completedGeneration = await runGeneration({
+        endpoint: request.endpoint,
+        body: request.body,
+        settings: requestSettings,
+      }, {
+        onQueued: ({ taskId, submittedAt: nextSubmittedAt, settings }) => {
+          pendingTaskId = taskId
+          writePendingTask({
+            requestId,
+            taskId,
+            tabId: tab.id,
+            provider: settings.provider,
+            model: settings.model,
+            ratio: settings.ratio,
+            duration: settings.duration,
+            resolution: settings.resolution,
+            createdAt: nextSubmittedAt,
+            generateAudio: settings.generateAudio,
+            prompt: effectiveState.prompt.trim(),
+            mediaUrls: filterMediaUrls(state.mediaUrls),
+            requestEndpoint: request.endpoint,
+            requestPayload: request.body,
+          })
+          setPendingGenerations((current) => current.map((entry) => (
+            entry.id === requestId ? { ...entry, taskId } : entry
+          )))
+        },
+        onStatus: (statusText) => {
+          updateModeState(tab.id, (current) => ({
+            ...current,
+            statusText,
+          }))
+        },
+        shouldCancel: () => Boolean(cancelFlags.current[requestId]),
       })
 
-      const rawBody = await response.text()
-      const payload = parseJsonSafely(rawBody)
-
-      if (!response.ok) {
-        if (response.status >= 500) {
-          markBackendDown()
-        }
-        throw new Error(
-          firstNonEmptyString(
-            isRecord(payload) ? payload.error : undefined,
-            isRecord(payload) ? payload.message : undefined,
-            rawBody.trim().slice(0, 240),
-            `HTTP ${response.status}`,
-          ),
-        )
-      }
-
-      const taskId = extractTaskId(payload)
-      pendingTaskId = taskId
-      const directResultUrl = extractResultUrl(payload)
-
-      if (taskId) {
-        writePendingTask({
-          requestId,
-          taskId,
-          tabId: tab.id,
-          provider: effectiveRequestProvider,
-          model: effectiveRequestModel,
-          ratio: effectiveRequestSettings.ratio,
-          duration: effectiveRequestSettings.duration,
-          resolution: effectiveRequestSettings.resolution,
-          createdAt: submittedAt,
-          generateAudio: effectiveRequestSettings.generateAudio,
-          prompt: effectiveState.prompt.trim(),
-          mediaUrls: filterMediaUrls(state.mediaUrls),
-          requestEndpoint: request.endpoint,
-          requestPayload: request.body,
-        })
-        setPendingGenerations((current) => current.map((p) => p.id === requestId ? { ...p, taskId } : p))
-      }
-
-      const finalResultUrl = directResultUrl || (taskId
-        ? await pollUntilDone(
-          effectiveRequestProvider,
-          effectiveRequestModel,
-          taskId,
-          (statusText) => {
-            updateModeState(tab.id, (current) => ({
-              ...current,
-              statusText,
-            }))
-          },
-          () => Boolean(cancelFlags.current[requestId]),
-        )
-        : '')
-
-      if (finalResultUrl === null) {
+      if (!completedGeneration) {
         shouldClearPendingTask = true
         return
       }
 
-      if (!finalResultUrl) {
-        throw new Error(taskId ? 'Task finished without a result URL.' : 'No task ID or result URL was returned by the API.')
-      }
+      pendingTaskId = completedGeneration.taskId
 
-      const receivedAt = Date.now()
-      await finalizeCompletedRun(tab, effectiveState, request, effectiveRequestSettings, taskId, finalResultUrl, {
-        submittedAt,
-        receivedAt,
+      await finalizeCompletedRun(tab, effectiveState, request, completedGeneration.settings, completedGeneration.taskId, completedGeneration.resultUrl, {
+        submittedAt: completedGeneration.submittedAt,
+        receivedAt: completedGeneration.receivedAt,
       })
       shouldClearPendingTask = true
     } catch (error) {
@@ -4083,14 +4367,6 @@ export default function ToorGenPromptWorkbench() {
     [authUid, studioMembers, studioProjectId, studioProjects],
   )
 
-  const storyBibleData = useMemo(
-    () => readStoryBibleData(studioProjectId),
-    [studioProjectId],
-  )
-  const storyEpisodesById = useMemo(
-    () => new Map(storyBibleData.episodes.map((episode) => [episode.id, episode])),
-    [storyBibleData.episodes],
-  )
   const studioFolderNameById = useMemo(
     () => new Map(studioFolders.map((folder) => [folder.id, folder.name])),
     [studioFolders],
@@ -4112,6 +4388,41 @@ export default function ToorGenPromptWorkbench() {
       return allowedMemberUids.includes(authUid)
     })
   }, [authUid, currentStudioMemberRole, studioFolders])
+
+  useEffect(() => {
+    const projectKey = studioProjectId || '__global__'
+    setStoryBibleData(readStoryBibleData(studioProjectId))
+    setStoryBibleLoadedProjectKey(projectKey)
+  }, [studioProjectId])
+
+  useEffect(() => {
+    const projectKey = studioProjectId || '__global__'
+    if (storyBibleLoadedProjectKey !== projectKey) return
+    writeStoryBibleData(studioProjectId, storyBibleData)
+  }, [storyBibleData, storyBibleLoadedProjectKey, studioProjectId])
+
+  useEffect(() => {
+    if (visibleStudioFolders.length === 0) {
+      if (storyBibleSelectedFolderId) {
+        setStoryBibleSelectedFolderId('')
+      }
+      return
+    }
+    if (!storyBibleSelectedFolderId || !visibleStudioFolders.some((folder) => folder.id === storyBibleSelectedFolderId)) {
+      setStoryBibleSelectedFolderId(visibleStudioFolders[0].id)
+    }
+  }, [storyBibleSelectedFolderId, visibleStudioFolders])
+
+  useEffect(() => {
+    if (visibleStudioFolders.length === 0) {
+      if (storyBibleCollapsedFolderIds.length > 0) {
+        setStoryBibleCollapsedFolderIds([])
+      }
+      return
+    }
+    const validIds = new Set(visibleStudioFolders.map((folder) => folder.id))
+    setStoryBibleCollapsedFolderIds((current) => current.filter((id) => validIds.has(id)))
+  }, [storyBibleCollapsedFolderIds.length, visibleStudioFolders])
 
   const activeFolderScopeIds = useMemo(() => {
     if (!studioActiveFolderId) return null
@@ -4154,14 +4465,6 @@ export default function ToorGenPromptWorkbench() {
     [activeTab.fields, hasConfiguredWorkflows],
   )
 
-  const mediaLibraryNameByUrl = useMemo(() => (
-    new Map(mediaLibrary.map((item) => [item.url, item.name.trim() || `Reference ${item.kind}`]))
-  ), [mediaLibrary])
-
-  const mediaLibraryKindByUrl = useMemo(() => (
-    new Map(mediaLibrary.map((item) => [item.url, item.kind]))
-  ), [mediaLibrary])
-
   const cachedReferenceImageUrls = useMemo(() => {
     const urls = new Set<string>()
 
@@ -4174,15 +4477,8 @@ export default function ToorGenPromptWorkbench() {
       })
     })
 
-    mediaLibrary.forEach((item) => {
-      if (item.kind !== 'image') return
-      const trimmed = item.url.trim()
-      if (!trimmed) return
-      urls.add(trimmed)
-    })
-
     return Array.from(urls)
-  }, [mediaLibrary, modeStates])
+  }, [modeStates])
 
   const mentionableReferences = useMemo<MentionableReference[]>(() => {
     if (MENTION_RESOLUTION_TEMP_DISABLED) {
@@ -4496,6 +4792,10 @@ export default function ToorGenPromptWorkbench() {
   const mainPanelStatusMessages = useMemo(() => {
     const messages: string[] = []
 
+    if (composerPanelWidthStatusPx !== null) {
+      messages.push(`Composer width: ${Math.round(composerPanelWidthStatusPx)}px`)
+    }
+
     if (isDiagnoseShowAllHistory) {
       messages.push('Diagnose mode is active: showing all generations across projects/folders so you can bulk move and categorize them.')
     }
@@ -4505,7 +4805,7 @@ export default function ToorGenPromptWorkbench() {
     }
 
     return messages
-  }, [activeState.statusText, isDiagnoseShowAllHistory])
+  }, [activeState.statusText, composerPanelWidthStatusPx, isDiagnoseShowAllHistory])
 
   useEffect(() => {
     if (!PERF_METRICS_LOGGER_ENABLED) return
@@ -4561,21 +4861,13 @@ export default function ToorGenPromptWorkbench() {
     }
   }, [activePendingGenerations.length, refreshGeneratedRuns])
 
-  const previewRequestJson = useMemo(
-    () => JSON.stringify(previewRequest.body, null, 2),
-    [previewRequest.body],
-  )
-
   useEffect(() => {
     const isTabChanged = lastDirectJsonTabIdRef.current !== activeTab.id
     if (isTabChanged) {
       lastDirectJsonTabIdRef.current = activeTab.id
       setDirectSubmitFeed([])
     }
-    if (directRequestJson !== previewRequestJson) {
-      setDirectRequestJson(previewRequestJson)
-    }
-  }, [activeTab.id, directRequestJson, previewRequestJson])
+  }, [activeTab.id])
 
   const historyRailItems = useMemo(() => [
     ...activePendingGenerations.map((entry) => ({
@@ -4586,6 +4878,7 @@ export default function ToorGenPromptWorkbench() {
       model: entry.model,
       timestamp: entry.createdAt,
       details: undefined,
+      posterUrl: '',
       isPending: true,
     })),
     ...filteredTabHistory.map((entry) => {
@@ -4616,6 +4909,7 @@ export default function ToorGenPromptWorkbench() {
           receivedAt: entry.receivedAt,
           generationMs: entry.generationMs,
         },
+        posterUrl: entry.thumbnailPosterUrl,
         isPending: false,
       }
     }).filter((entry) => Boolean(entry.url)),
@@ -4627,19 +4921,101 @@ export default function ToorGenPromptWorkbench() {
     () => historyRailItems.find((item) => item.id === railPreviewSelectionId) || historyRailItems[0] || null,
     [historyRailItems, railPreviewSelectionId],
   )
-  const filteredReferenceLibrary = mediaLibrary
-    .filter((item) => referenceLibraryFilter === 'all' || item.kind === referenceLibraryFilter)
-    .filter((item) => {
-      const query = referenceLibraryQuery.trim().toLowerCase()
-      if (!query) return true
-      return `${item.name} ${item.url}`.toLowerCase().includes(query)
+  const selectedStoryFolderId = storyBibleSelectedFolderId || visibleStudioFolders[0]?.id || ''
+  const selectedFolderStory = useMemo(
+    () => storyBibleData.chapters.find((chapter) => chapter.folderId === selectedStoryFolderId) || null,
+    [selectedStoryFolderId, storyBibleData.chapters],
+  )
+  const folderChapters = useMemo(
+    () => {
+      const linkedEpisodeIds = new Set(
+        storyBibleData.chapters
+          .filter((chapter) => chapter.folderId === selectedStoryFolderId)
+          .flatMap((chapter) => chapter.episodeIds),
+      )
+      return storyBibleData.episodes.filter((episode) => (
+        episode.folderId === selectedStoryFolderId || linkedEpisodeIds.has(episode.id)
+      ))
+    },
+    [selectedStoryFolderId, storyBibleData.chapters, storyBibleData.episodes],
+  )
+  const selectedFolderChapter = useMemo(
+    () => folderChapters.find((episode) => episode.id === storyBibleSelectedChapterId) || folderChapters[0] || null,
+    [folderChapters, storyBibleSelectedChapterId],
+  )
+  useEffect(() => {
+    if (folderChapters.length === 0) {
+      if (storyBibleSelectedChapterId) {
+        setStoryBibleSelectedChapterId('')
+      }
+      return
+    }
+    if (!storyBibleSelectedChapterId || !folderChapters.some((chapter) => chapter.id === storyBibleSelectedChapterId)) {
+      setStoryBibleSelectedChapterId(folderChapters[0].id)
+    }
+  }, [folderChapters, storyBibleSelectedChapterId])
+  const allProjectScenes = useMemo(() => (
+    storyBibleData.scenes.map((scene) => ({
+      folderId: scene.folderId,
+      folderName: studioFolderNameById.get(scene.folderId) || scene.folderId || 'Unassigned',
+      scene,
+    }))
+  ), [storyBibleData.scenes, studioFolderNameById])
+  const scenesInSelectedFolder = useMemo(
+    () => allProjectScenes.filter((entry) => entry.folderId === selectedStoryFolderId),
+    [allProjectScenes, selectedStoryFolderId],
+  )
+  const scenesByFolderId = useMemo(() => {
+    const map = new Map<string, Array<{ folderId: string; folderName: string; scene: StoryBibleScene }>>()
+    allProjectScenes.forEach((entry) => {
+      const current = map.get(entry.folderId)
+      if (current) {
+        current.push(entry)
+      } else {
+        map.set(entry.folderId, [entry])
+      }
     })
-
-  const importableLocalReferenceLibrary = useMemo(() => {
-    if (!studioProjectId) return [] as MediaLibraryItem[]
-    const existingUrls = new Set(mediaLibrary.map((item) => item.url))
-    return localReferenceLibrarySnapshot.filter((item) => !existingUrls.has(item.url))
-  }, [localReferenceLibrarySnapshot, mediaLibrary, studioProjectId])
+    return map
+  }, [allProjectScenes])
+  const selectedProjectScene = useMemo(
+    () => scenesInSelectedFolder.find((entry) => entry.scene.id === storyBibleSelectedSceneId) || scenesInSelectedFolder[0] || null,
+    [scenesInSelectedFolder, storyBibleSelectedSceneId],
+  )
+  useEffect(() => {
+    if (scenesInSelectedFolder.length === 0) {
+      if (storyBibleSelectedSceneId) setStoryBibleSelectedSceneId('')
+      return
+    }
+    if (!storyBibleSelectedSceneId || !scenesInSelectedFolder.some((entry) => entry.scene.id === storyBibleSelectedSceneId)) {
+      setStoryBibleSelectedSceneId(scenesInSelectedFolder[0].scene.id)
+    }
+  }, [scenesInSelectedFolder, storyBibleSelectedSceneId])
+  const folderRuntimeSec = useMemo(
+    () => allProjectScenes
+      .filter((entry) => entry.folderId === selectedStoryFolderId)
+      .reduce((sum, entry) => sum + Math.max(0, Number(entry.scene.durationSec) || 0), 0),
+    [allProjectScenes, selectedStoryFolderId],
+  )
+  const projectCharacters = useMemo(
+    () => storyBibleData.characters,
+    [storyBibleData.characters],
+  )
+  const selectedUtilityProject = useMemo(
+    () => studioProjects.find((project) => project.id === studioProjectId) || null,
+    [studioProjectId, studioProjects],
+  )
+  const sidebarTemplatePresets = useMemo(
+    () => SIDEBAR_TEMPLATE_PRESETS.reduce<Array<SidebarTemplatePreset & { workflowLabel: string }>>((list, preset) => {
+      const sourceTab = TABS.find((tab) => tab.id === preset.sourceTabId)
+      if (!sourceTab) return list
+      list.push({
+        ...preset,
+        workflowLabel: sourceTab.label,
+      })
+      return list
+    }, []),
+    [],
+  )
 
   const promptMentionOptions = useMemo(() => {
     if (MENTION_RESOLUTION_TEMP_DISABLED) return []
@@ -4659,22 +5035,377 @@ export default function ToorGenPromptWorkbench() {
     setActivePromptMentionIndex((current) => Math.min(current, promptMentionOptions.length - 1))
   }, [promptMentionOptions])
 
-  const toggleReferenceLibrarySelection = (url: string) => {
-    setSelectedReferenceLibraryUrls((current) => (
-      current.includes(url)
-        ? current.filter((value) => value !== url)
-        : [url, ...current]
+  const updateFolderStorySummary = (folderId: string, summary: string) => {
+    if (!folderId) return
+    setStoryBibleData((current) => {
+      const nextChapters = [...current.chapters]
+      const index = nextChapters.findIndex((chapter) => chapter.folderId === folderId)
+      if (index >= 0) {
+        nextChapters[index] = {
+          ...nextChapters[index],
+          summary,
+          title: nextChapters[index].title || (studioFolderNameById.get(folderId) || 'Folder story'),
+        }
+      } else {
+        nextChapters.push({
+          id: `chapter-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+          title: studioFolderNameById.get(folderId) || 'Folder story',
+          summary,
+          folderId,
+          episodeIds: [],
+        })
+      }
+      return { ...current, chapters: nextChapters }
+    })
+  }
+
+  const updateChapterField = (episodeId: string, key: 'title' | 'story' | 'scenario' | 'category' | 'discipline', value: string) => {
+    setStoryBibleData((current) => ({
+      ...current,
+      episodes: current.episodes.map((episode) => (
+        episode.id === episodeId ? { ...episode, [key]: value } : episode
+      )),
+    }))
+  }
+
+  const addChapterForFolder = (folderId: string) => {
+    if (!folderId) return
+    const nextId = `episode-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+    setStoryBibleSelectedChapterId(nextId)
+    setStoryBibleData((current) => {
+      const nextEpisodes: StoryBibleEpisode[] = [
+        ...current.episodes,
+        {
+          id: nextId,
+          title: `Chapter ${current.episodes.filter((episode) => episode.folderId === folderId).length + 1}`,
+          section: '',
+          category: '',
+          discipline: '',
+          folderId,
+          story: '',
+          scenario: '',
+          scenarios: [],
+          dialogs: [],
+          characters: [],
+        },
+      ]
+      const chapterIndex = current.chapters.findIndex((chapter) => chapter.folderId === folderId)
+      const nextChapters = [...current.chapters]
+      if (chapterIndex >= 0) {
+        nextChapters[chapterIndex] = {
+          ...nextChapters[chapterIndex],
+          episodeIds: Array.from(new Set([...nextChapters[chapterIndex].episodeIds, nextId])),
+        }
+      } else {
+        nextChapters.push({
+          id: `chapter-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+          title: studioFolderNameById.get(folderId) || 'Folder story',
+          summary: '',
+          folderId,
+          episodeIds: [nextId],
+        })
+      }
+      return { ...current, episodes: nextEpisodes, chapters: nextChapters }
+    })
+  }
+
+  const renameChapter = (episodeId: string) => {
+    const existing = storyBibleData.episodes.find((episode) => episode.id === episodeId)
+    if (!existing) return
+    const nextName = window.prompt('Rename chapter:', existing.title)
+    if (nextName === null) return
+    const trimmed = nextName.trim()
+    if (!trimmed || trimmed === existing.title) return
+    setStoryBibleData((current) => ({
+      ...current,
+      episodes: current.episodes.map((episode) => (
+        episode.id === episodeId ? { ...episode, title: trimmed } : episode
+      )),
+    }))
+  }
+
+  const removeChapter = (episodeId: string) => {
+    if (!window.confirm('Remove this chapter? This action cannot be undone.')) return
+    setStoryBibleData((current) => ({
+      ...current,
+      episodes: current.episodes.filter((episode) => episode.id !== episodeId),
+      chapters: current.chapters.map((chapter) => ({
+        ...chapter,
+        episodeIds: chapter.episodeIds.filter((id) => id !== episodeId),
+      })),
+    }))
+  }
+
+  const addSceneForFolder = (folderId: string) => {
+    if (!folderId) return
+    const nextSceneId = `scene-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+    setStoryBibleSelectedFolderId(folderId)
+    setStoryBibleSelectedSceneId(nextSceneId)
+    if (storyBibleManagerTab !== 'scenes') {
+      setStoryBibleManagerTab('scenes')
+    }
+    setStoryBibleData((current) => ({
+      ...current,
+      scenes: [
+        ...current.scenes,
+        {
+          id: nextSceneId,
+          folderId,
+          title: `Scene ${current.scenes.filter((scene) => scene.folderId === folderId).length + 1}`,
+          category: '',
+          discipline: '',
+          durationSec: 8,
+          script: '',
+          scenario: '',
+          visualThumbnailUrl: '',
+          visual: '',
+          dialogs: [],
+          action: '',
+          characterIds: [],
+        },
+      ],
+    }))
+  }
+
+  const toggleStoryBibleFolderCollapsed = (folderId: string) => {
+    setStoryBibleCollapsedFolderIds((current) => (
+      current.includes(folderId)
+        ? current.filter((id) => id !== folderId)
+        : [...current, folderId]
     ))
   }
 
-  const openReferenceLibraryDialog = () => {
-    const selectedByKind = referenceFields
-      .map((field) => activeState.mediaUrls[field.key] || '')
-      .filter(Boolean)
-    setLocalReferenceLibrarySnapshot(readLocalMediaLibrary())
-    setReferenceLibraryFilter('all')
-    setReferenceLibraryQuery('')
-    setSelectedReferenceLibraryUrls(selectedByKind)
+  const updateSceneField = (
+    sceneId: string,
+    key: keyof Pick<StoryBibleScene, 'title' | 'category' | 'discipline' | 'durationSec' | 'script' | 'scenario' | 'visualThumbnailUrl' | 'visual' | 'action' | 'folderId'>,
+    value: string | number,
+  ) => {
+    setStoryBibleData((current) => ({
+      ...current,
+      scenes: current.scenes.map((scene) => {
+        if (scene.id !== sceneId) return scene
+        if (key === 'durationSec') {
+          const nextDuration = Number(value)
+          return { ...scene, durationSec: Number.isFinite(nextDuration) ? Math.max(1, Math.min(180, Math.round(nextDuration))) : scene.durationSec }
+        }
+        return { ...scene, [key]: String(value) }
+      }),
+    }))
+  }
+
+  const addSceneDialog = (sceneId: string) => {
+    setStoryBibleData((current) => ({
+      ...current,
+      scenes: current.scenes.map((scene) => {
+        if (scene.id !== sceneId) return scene
+        const nextIndex = scene.dialogs.length + 1
+        return {
+          ...scene,
+          dialogs: [
+            ...scene.dialogs,
+            {
+              id: `dialog-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+              shotLabel: `Shot ${nextIndex}`,
+              text: '',
+            },
+          ],
+        }
+      }),
+    }))
+  }
+
+  const updateSceneDialogField = (
+    sceneId: string,
+    dialogId: string,
+    key: keyof StoryBibleSceneDialog,
+    value: string,
+  ) => {
+    setStoryBibleData((current) => ({
+      ...current,
+      scenes: current.scenes.map((scene) => {
+        if (scene.id !== sceneId) return scene
+        return {
+          ...scene,
+          dialogs: scene.dialogs.map((dialog) => (
+            dialog.id === dialogId ? { ...dialog, [key]: value } : dialog
+          )),
+        }
+      }),
+    }))
+  }
+
+  const removeSceneDialog = (sceneId: string, dialogId: string) => {
+    if (!window.confirm('Remove this shot dialog?')) return
+    setStoryBibleData((current) => ({
+      ...current,
+      scenes: current.scenes.map((scene) => (
+        scene.id === sceneId
+          ? { ...scene, dialogs: scene.dialogs.filter((dialog) => dialog.id !== dialogId) }
+          : scene
+      )),
+    }))
+  }
+
+  const toggleSceneCharacter = (sceneId: string, characterId: string) => {
+    setStoryBibleData((current) => ({
+      ...current,
+      scenes: current.scenes.map((scene) => {
+        if (scene.id !== sceneId) return scene
+        const exists = scene.characterIds.includes(characterId)
+        return {
+          ...scene,
+          characterIds: exists
+            ? scene.characterIds.filter((id) => id !== characterId)
+            : [...scene.characterIds, characterId],
+        }
+      }),
+    }))
+  }
+
+  const removeScene = (sceneId: string) => {
+    if (!window.confirm('Remove this scene? This action cannot be undone.')) return
+    setStoryBibleData((current) => ({
+      ...current,
+      scenes: current.scenes.filter((scene) => scene.id !== sceneId),
+    }))
+  }
+
+  const moveSceneInFolder = (folderId: string, sceneId: string, direction: -1 | 1) => {
+    setStoryBibleData((current) => ({
+      ...current,
+      scenes: (() => {
+        const folderSceneIndexes = current.scenes
+          .map((scene, index) => ({ scene, index }))
+          .filter((entry) => entry.scene.folderId === folderId)
+        const fromPos = folderSceneIndexes.findIndex((entry) => entry.scene.id === sceneId)
+        if (fromPos < 0) return current.scenes
+        const toPos = fromPos + direction
+        if (toPos < 0 || toPos >= folderSceneIndexes.length) return current.scenes
+        const nextScenes = [...current.scenes]
+        const fromIndex = folderSceneIndexes[fromPos].index
+        const toIndex = folderSceneIndexes[toPos].index
+        const temp = nextScenes[fromIndex]
+        nextScenes[fromIndex] = nextScenes[toIndex]
+        nextScenes[toIndex] = temp
+        return nextScenes
+      })(),
+    }))
+  }
+
+  const addCharacterForProject = () => {
+    setStoryBibleData((current) => ({
+      ...current,
+      characters: [
+        ...current.characters,
+        {
+          id: `character-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+          name: `Character ${current.characters.length + 1}`,
+          bio: '',
+          imageUrl: '',
+        },
+      ],
+    }))
+  }
+
+  const updateCharacterField = (characterId: string, key: 'name' | 'bio', value: string) => {
+    setStoryBibleData((current) => ({
+      ...current,
+      characters: current.characters.map((character) => (
+        character.id === characterId ? { ...character, [key]: value } : character
+      )),
+    }))
+  }
+
+  const removeCharacter = (characterId: string) => {
+    if (!window.confirm('Remove this character? This action cannot be undone.')) return
+    setStoryBibleData((current) => ({
+      ...current,
+      characters: current.characters.filter((character) => character.id !== characterId),
+    }))
+  }
+
+  const createStoryBibleFolder = async () => {
+    if (!studioProjectId || !auth.currentUser) return
+    const nextName = window.prompt('Folder name:')
+    if (!nextName) return
+    const name = nextName.trim()
+    if (!name) return
+    setStoryBibleFolderBusy(true)
+    try {
+      await createFolder({ projectId: studioProjectId, name, parentId: null }, auth.currentUser.uid)
+      setStudioPanelMessage('Folder created.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not create folder.'
+      setStudioPanelMessage(message)
+    } finally {
+      setStoryBibleFolderBusy(false)
+    }
+  }
+
+  const renameStoryBibleFolder = async (folderId: string, oldName: string) => {
+    if (!studioProjectId) return
+    const nextName = window.prompt('Rename folder:', oldName)
+    if (nextName === null) return
+    const name = nextName.trim()
+    if (!name || name === oldName) return
+    setStoryBibleFolderBusy(true)
+    try {
+      await updateFolder(studioProjectId, folderId, name)
+      setStudioPanelMessage('Folder renamed.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not rename folder.'
+      setStudioPanelMessage(message)
+    } finally {
+      setStoryBibleFolderBusy(false)
+      setStoryBibleFolderMenuFolderId('')
+    }
+  }
+
+  const deleteStoryBibleFolder = async (folderId: string, folderName: string) => {
+    if (!studioProjectId) return
+    if (!window.confirm(`Delete folder "${folderName}"? This action cannot be undone.`)) return
+    setStoryBibleFolderBusy(true)
+    try {
+      await deleteFolder(studioProjectId, folderId)
+      setStoryBibleData((current) => ({
+        ...current,
+        chapters: current.chapters.filter((chapter) => chapter.folderId !== folderId),
+        episodes: current.episodes.filter((episode) => episode.folderId !== folderId),
+        scenes: current.scenes.filter((scene) => scene.folderId !== folderId),
+      }))
+      setStudioPanelMessage('Folder deleted.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not delete folder.'
+      setStudioPanelMessage(message)
+    } finally {
+      setStoryBibleFolderBusy(false)
+      setStoryBibleFolderMenuFolderId('')
+    }
+  }
+
+  const openReferenceLibraryDialog = (intent: 'composer' | 'character' | 'scene-thumbnail' = 'composer', characterId = '', sceneId = '') => {
+    const selectedByKind = intent === 'composer'
+      ? referenceFields
+        .map((field) => activeState.mediaUrls[field.key] || '')
+        .filter(Boolean)
+      : intent === 'character' && characterId
+        ? storyBibleData.characters
+          .filter((character) => character.id === characterId)
+          .map((character) => character.imageUrl)
+          .filter(Boolean)
+        : intent === 'scene-thumbnail' && sceneId
+        ? storyBibleData.scenes
+          .filter((s) => s.id === sceneId)
+          .map((s) => s.visualThumbnailUrl)
+          .filter(Boolean)
+        : []
+    prepareReferenceLibrarySession({
+      selectedUrls: selectedByKind,
+      filter: intent === 'character' || intent === 'scene-thumbnail' ? 'image' : 'all',
+    })
+    setReferenceLibraryIntent(intent)
+    setPendingCharacterImageId(characterId)
+    setPendingSceneThumbnailSceneId(sceneId)
     setLibraryContextMenu(null)
     setPendingLibraryDeleteItem(null)
     setIsReferenceLibraryDialogOpen(true)
@@ -4682,49 +5413,22 @@ export default function ToorGenPromptWorkbench() {
 
   const closeReferenceLibraryDialog = () => {
     setIsReferenceLibraryDialogOpen(false)
+    resetReferenceLibrarySession()
+    setReferenceLibraryIntent('composer')
+    setPendingCharacterImageId('')
+    setPendingSceneThumbnailSceneId('')
     setLibraryContextMenu(null)
     setPendingLibraryDeleteItem(null)
   }
   
   const handleImportLocalReferencesToProject = async () => {
-    if (!studioProjectId || !auth.currentUser || importableLocalReferenceLibrary.length === 0) return
+    if (!studioProjectId || importableLocalReferenceLibrary.length === 0) return
     try {
-      for (const item of importableLocalReferenceLibrary) {
-        await saveProjectReferenceLibraryItem(
-          studioProjectId,
-          {
-            id: item.id,
-            kind: item.kind,
-            url: item.url,
-            name: item.name,
-            createdAt: item.createdAt,
-          },
-          auth.currentUser.uid,
-        )
-      }
-      setStudioPanelMessage(`Imported ${importableLocalReferenceLibrary.length} local reference${importableLocalReferenceLibrary.length === 1 ? '' : 's'} into this project.`)
+      const importedCount = await importLocalReferencesToProject()
+      setStudioPanelMessage(`Imported ${importedCount} local reference${importedCount === 1 ? '' : 's'} into this project.`)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
       setStudioPanelMessage(`Could not import local references: ${message}`)
-    }
-  }
-
-  const renameMediaLibraryItem = (id: string, name: string) => {
-    const nextName = name.trim() || 'Reference asset'
-    setMediaLibrary((current) => {
-      const next = current.map((item) => (
-        item.id === id
-          ? { ...item, name: name.trim() || `Reference ${item.kind}` }
-          : item
-      ))
-      if (!studioProjectId) {
-        writeLocalMediaLibrary(next)
-        setLocalReferenceLibrarySnapshot(next)
-      }
-      return next
-    })
-    if (studioProjectId) {
-      void renameProjectReferenceLibraryItem(studioProjectId, id, nextName)
     }
   }
 
@@ -4734,19 +5438,8 @@ export default function ToorGenPromptWorkbench() {
     setLibraryContextMenu({ x: event.clientX, y: event.clientY, item })
   }
 
-  const removeMediaLibraryItem = (item: MediaLibraryItem) => {
-    setMediaLibrary((current) => {
-      const next = current.filter((entry) => entry.id !== item.id)
-      if (!studioProjectId) {
-        writeLocalMediaLibrary(next)
-        setLocalReferenceLibrarySnapshot(next)
-      }
-      return next
-    })
-    if (studioProjectId) {
-      void deleteProjectReferenceLibraryItem(studioProjectId, item.id)
-    }
-    setSelectedReferenceLibraryUrls((current) => current.filter((url) => url !== item.url))
+  const handleRemoveMediaLibraryItem = (item: MediaLibraryItem) => {
+    removeMediaLibraryItem(item)
     setModeStates((current) => {
       const nextEntries = Object.entries(current).map(([tabId, state]) => {
         let changed = false
@@ -4777,22 +5470,35 @@ export default function ToorGenPromptWorkbench() {
   }
 
   const applyReferenceLibrarySelection = () => {
-    const availableByKind: Record<'image' | 'video' | 'audio', string[]> = {
-      image: [],
-      video: [],
-      audio: [],
+    if (referenceLibraryIntent === 'character') {
+      const selectedImage = pickPrimaryLibraryImageUrl(selectedReferenceLibraryUrls, mediaLibraryKindByUrl)
+      if (pendingCharacterImageId && selectedImage) {
+        setStoryBibleData((current) => ({
+          ...current,
+          characters: current.characters.map((entry) => (
+            entry.id === pendingCharacterImageId ? { ...entry, imageUrl: selectedImage } : entry
+          )),
+        }))
+      }
+      closeReferenceLibraryDialog()
+      return
     }
-    const resolveSelectedKind = (url: string): MediaKind => {
-      const mapped = mediaLibraryKindByUrl.get(url)
-      if (mapped === 'image' || mapped === 'video' || mapped === 'audio') return mapped
-      if (/\.(mp3|wav|m4a|aac|ogg|flac)(\?|#|$)/i.test(url) || /audio/i.test(url)) return 'audio'
-      if (/\.(mp4|webm|mov|m4v|mkv|avi|m3u8)(\?|#|$)/i.test(url) || /video/i.test(url)) return 'video'
-      return 'image'
+
+    if (referenceLibraryIntent === 'scene-thumbnail') {
+      const selectedImage = pickPrimaryLibraryImageUrl(selectedReferenceLibraryUrls, mediaLibraryKindByUrl)
+      if (pendingSceneThumbnailSceneId && selectedImage) {
+        setStoryBibleData((current) => ({
+          ...current,
+          scenes: current.scenes.map((s) => (
+            s.id === pendingSceneThumbnailSceneId ? { ...s, visualThumbnailUrl: selectedImage } : s
+          )),
+        }))
+      }
+      closeReferenceLibraryDialog()
+      return
     }
-    selectedReferenceLibraryUrls.forEach((url) => {
-      const kind = resolveSelectedKind(url)
-      availableByKind[kind].push(url)
-    })
+
+    const availableByKind = resolveSelectedLibraryUrlsByKind(selectedReferenceLibraryUrls, mediaLibraryKindByUrl)
 
     const singleVideoMode = composerRefMode === 'video'
     const extraVideoSelections = singleVideoMode ? Math.max(0, availableByKind.video.length - 1) : 0
@@ -4819,14 +5525,25 @@ export default function ToorGenPromptWorkbench() {
           })
           slotsByKind.video = firstVideoKey ? [firstVideoKey] : []
         }
+
+        const uniqueSelected = new Set(availableByKind[kind])
+        
+        slotsByKind[kind].forEach((key) => {
+          const val = (nextMediaUrls[key] || '').trim()
+          if (val && !uniqueSelected.has(val)) {
+            nextMediaUrls[key] = ''
+          }
+        })
+
+        const emptySlots = slotsByKind[kind].filter((key) => !(nextMediaUrls[key] || '').trim())
+        
         const existingValues = new Set(
           slotsByKind[kind]
             .map((key) => (nextMediaUrls[key] || '').trim())
             .filter(Boolean),
         )
-        const emptySlots = slotsByKind[kind].filter((key) => !(nextMediaUrls[key] || '').trim())
-        const uniqueSelected = Array.from(new Set(availableByKind[kind]))
-        const candidates = uniqueSelected.filter((url) => !existingValues.has(url))
+        
+        const candidates = availableByKind[kind].filter((url) => !existingValues.has(url))
         candidates.forEach((url) => {
           const targetKey = emptySlots.shift()
           if (!targetKey) {
@@ -4852,27 +5569,7 @@ export default function ToorGenPromptWorkbench() {
   }
 
   const handleReferenceLibraryUpload = async (files: FileList | null) => {
-    if (!files || files.length === 0) return
-    setIsReferenceLibraryUploading(true)
-    const selectedFiles = Array.from(files)
-    const uploadedUrls: string[] = []
-    try {
-      for (const file of selectedFiles) {
-        const kind: MediaKind = file.type.startsWith('video/')
-          ? 'video'
-          : file.type.startsWith('audio/') || /\.(mp3|wav)$/i.test(file.name)
-            ? 'audio'
-            : 'image'
-        const url = await uploadFile(file, kind)
-        await appendToMediaLibrary(kind, url, file.name)
-        uploadedUrls.push(url)
-      }
-      if (uploadedUrls.length > 0) {
-        setSelectedReferenceLibraryUrls((current) => Array.from(new Set([...uploadedUrls, ...current])))
-      }
-    } finally {
-      setIsReferenceLibraryUploading(false)
-    }
+    await uploadReferenceLibraryFiles(files)
   }
 
   const handleDirectRequestSubmit = async () => {
@@ -5120,14 +5817,16 @@ export default function ToorGenPromptWorkbench() {
   }
 
   const clampRailWidth = useCallback((nextWidth: number, containerWidth: number): number => {
+    const adjustedContainerWidth = Math.max(0, containerWidth - UTILITY_SIDEBAR_WIDTH_PX)
     const min = 236
-    const max = Math.max(360, containerWidth - directPanelWidth - 420)
+    const max = Math.max(360, adjustedContainerWidth - directPanelWidth - 420)
     return Math.min(max, Math.max(min, nextWidth))
   }, [directPanelWidth])
 
   const clampDirectPanelWidth = useCallback((nextWidth: number, containerWidth: number): number => {
+    const adjustedContainerWidth = Math.max(0, containerWidth - UTILITY_SIDEBAR_WIDTH_PX)
     const min = 280
-    const max = Math.max(380, containerWidth - railWidth - 420)
+    const max = Math.max(380, adjustedContainerWidth - railWidth - 420)
     return Math.min(max, Math.max(min, nextWidth))
   }, [railWidth])
 
@@ -5140,15 +5839,26 @@ export default function ToorGenPromptWorkbench() {
     }
     event.preventDefault()
     isResizingRailRef.current = true
+    lastRailResizeClientXRef.current = event.clientX
+    liveRailWidthRef.current = railWidth
+    setComposerPanelWidthStatusPx(liveRailWidthRef.current)
   }
 
   const adjustRailByStep = (delta: number) => {
     const container = labLayoutRef.current
     if (!container) {
-      setRailWidth((current) => Math.max(236, current + delta))
+      setRailWidth((current) => {
+        const next = Math.max(236, current + delta)
+        setComposerPanelWidthStatusPx(next)
+        return next
+      })
       return
     }
-    setRailWidth((current) => clampRailWidth(current + delta, container.getBoundingClientRect().width))
+    setRailWidth((current) => {
+      const next = clampRailWidth(current + delta, container.getBoundingClientRect().width)
+      setComposerPanelWidthStatusPx(next)
+      return next
+    })
   }
 
   const handleRailHandleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -5200,33 +5910,59 @@ export default function ToorGenPromptWorkbench() {
     }
   }
 
-  const handleComposerRefsResizeMouseDown = (event: MouseEvent<HTMLDivElement>) => {
+  const handleComposerRefsResizePointerDown = (event: PointerEvent<HTMLDivElement>) => {
     event.preventDefault()
     isResizingComposerRefsRef.current = true
     composerRefsStartYRef.current = event.clientY
+    composerRefsLatestClientYRef.current = event.clientY
     composerRefsStartHeightRef.current = composerRefsHeight
+    liveComposerRefsHeightRef.current = composerRefsHeight
+    labLayoutRef.current?.classList.add('is-resizing-composer-refs')
+    document.body.classList.add('is-resizing-composer-refs')
   }
 
   useEffect(() => {
-    const handleMouseMove = (event: globalThis.MouseEvent) => {
+    const handlePointerMove = (event: globalThis.PointerEvent) => {
       if (!isResizingComposerRefsRef.current) return
-      const deltaY = event.clientY - composerRefsStartYRef.current
-      const nextHeight = Math.max(170, Math.min(430, composerRefsStartHeightRef.current + deltaY))
-      setComposerRefsHeight(nextHeight)
+      composerRefsLatestClientYRef.current = event.clientY
+      if (composerRefsResizeRafRef.current !== null) return
+      composerRefsResizeRafRef.current = window.requestAnimationFrame(() => {
+        composerRefsResizeRafRef.current = null
+        const deltaY = composerRefsLatestClientYRef.current - composerRefsStartYRef.current
+        const nextHeight = Math.max(170, Math.min(430, composerRefsStartHeightRef.current + deltaY))
+        liveComposerRefsHeightRef.current = nextHeight
+        labLayoutRef.current?.style.setProperty('--lab-composer-refs-height', `${nextHeight}px`)
+      })
     }
 
     const stopResizing = () => {
+      if (composerRefsResizeRafRef.current !== null) {
+        window.cancelAnimationFrame(composerRefsResizeRafRef.current)
+        composerRefsResizeRafRef.current = null
+      }
+      if (isResizingComposerRefsRef.current) {
+        setComposerRefsHeight(liveComposerRefsHeightRef.current)
+      }
       isResizingComposerRefsRef.current = false
+      labLayoutRef.current?.classList.remove('is-resizing-composer-refs')
+      document.body.classList.remove('is-resizing-composer-refs')
     }
 
-    window.addEventListener('mousemove', handleMouseMove)
-    window.addEventListener('mouseup', stopResizing)
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', stopResizing)
+    window.addEventListener('pointercancel', stopResizing)
 
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseup', stopResizing)
+      if (composerRefsResizeRafRef.current !== null) {
+        window.cancelAnimationFrame(composerRefsResizeRafRef.current)
+        composerRefsResizeRafRef.current = null
+      }
+      document.body.classList.remove('is-resizing-composer-refs')
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', stopResizing)
+      window.removeEventListener('pointercancel', stopResizing)
     }
-  }, [composerRefsHeight])
+  }, [])
 
   useEffect(() => {
     if (COMPOSER_RESIZE_TEMP_DISABLED) {
@@ -5254,8 +5990,13 @@ export default function ToorGenPromptWorkbench() {
         return
       }
 
+      const deltaX = event.clientX - lastRailResizeClientXRef.current
+      if (!deltaX) {
+        return
+      }
+      lastRailResizeClientXRef.current = event.clientX
       const rect = container.getBoundingClientRect()
-      const next = clampRailWidth(event.clientX - rect.left, rect.width)
+      const next = clampRailWidth(liveRailWidthRef.current + deltaX, rect.width)
       liveRailWidthRef.current = next
       container.style.setProperty('--lab-rail-width', `${next}px`)
     }
@@ -5263,6 +6004,7 @@ export default function ToorGenPromptWorkbench() {
     const stopResizing = () => {
       if (isResizingRailRef.current) {
         setRailWidth(liveRailWidthRef.current)
+        setComposerPanelWidthStatusPx(liveRailWidthRef.current)
       }
       if (isResizingDirectPanelRef.current) {
         setDirectPanelWidth(liveDirectPanelWidthRef.current)
@@ -5285,9 +6027,11 @@ export default function ToorGenPromptWorkbench() {
     if (!container) return
     liveRailWidthRef.current = railWidth
     liveDirectPanelWidthRef.current = directPanelWidth
+    liveComposerRefsHeightRef.current = composerRefsHeight
     container.style.setProperty('--lab-rail-width', `${railWidth}px`)
     container.style.setProperty('--lab-direct-width', `${directPanelWidth}px`)
-  }, [directPanelWidth, railWidth])
+    container.style.setProperty('--lab-composer-refs-height', `${composerRefsHeight}px`)
+  }, [composerRefsHeight, directPanelWidth, railWidth])
 
   useEffect(() => {
     if (!isWorkflowPickerOpen) {
@@ -6174,63 +6918,10 @@ export default function ToorGenPromptWorkbench() {
   }
 
   useEffect(() => {
-    if (!authUid) {
-      setStudioProjects([])
-      setStudioProjectsLoading(false)
-      return
-    }
-
-    setStudioProjectsLoading(true)
-    const unsub = subscribeToUserProjects(
-      authUid,
-      (next) => {
-        setStudioProjects(next)
-        setStudioProjectsLoading(false)
-        setStudioProjectId((current) => {
-          const resolved = current && next.some((project) => project.id === current) ? current : null
-          if (resolved) {
-            const project = next.find((item) => item.id === resolved)
-            if (project?.name) localStorage.setItem(STUDIO_ACTIVE_PROJECT_NAME_KEY, project.name)
-            localStorage.setItem(STUDIO_ACTIVE_PROJECT_ID_KEY, resolved)
-          } else {
-            localStorage.removeItem(STUDIO_ACTIVE_PROJECT_ID_KEY)
-            localStorage.removeItem(STUDIO_ACTIVE_PROJECT_NAME_KEY)
-          }
-          return resolved
-        })
-      },
-      (err) => {
-        console.error('[Studio] subscribeToUserProjects error:', err)
-        setStudioProjectsLoading(false)
-        setStudioPanelMessage('Could not load projects.')
-      },
-    )
-
-    return unsub
-  }, [authUid])
-
-  useEffect(() => {
     if (!studioProjectId) {
-      setStudioFolders([])
-      setStudioFoldersLoading(false)
       setStudioMembers([])
       return
     }
-
-    setStudioFoldersLoading(true)
-    const projectRole = studioProjects.find((item) => item.id === studioProjectId)?.role || null
-    const unsubFolders = subscribeToProjectFolders(
-      studioProjectId,
-      { userId: authUid, role: projectRole },
-      (folders) => {
-        setStudioFolders(folders)
-        setStudioFoldersLoading(false)
-      },
-      () => {
-        setStudioFolders([])
-        setStudioFoldersLoading(false)
-      },
-    )
 
     const unsubMembers = subscribeToProjectMembers(
       studioProjectId,
@@ -6241,24 +6932,8 @@ export default function ToorGenPromptWorkbench() {
     )
 
     return () => {
-      unsubFolders()
       unsubMembers()
     }
-  }, [authUid, studioProjectId, studioProjects])
-
-  useEffect(() => {
-    if (!studioProjectId) {
-      setMediaLibrary(readLocalMediaLibrary())
-      return
-    }
-
-    const unsub = subscribeToProjectReferenceLibrary(
-      studioProjectId,
-      (items) => setMediaLibrary(items.map(toMediaLibraryItem)),
-      () => setMediaLibrary([]),
-    )
-
-    return () => unsub()
   }, [studioProjectId])
 
   useEffect(() => {
@@ -6355,21 +7030,16 @@ export default function ToorGenPromptWorkbench() {
 
   const handleProjectSelect = (id: string | null) => {
     setStudioProjectId(id)
-    setStudioActiveFolderId(null)
     if (id) {
       const name = studioProjects.find((p) => p.id === id)?.name || ''
-      localStorage.setItem(STUDIO_ACTIVE_PROJECT_ID_KEY, id)
       if (name) localStorage.setItem(STUDIO_ACTIVE_PROJECT_NAME_KEY, name)
     } else {
-      localStorage.removeItem(STUDIO_ACTIVE_PROJECT_ID_KEY)
       localStorage.removeItem(STUDIO_ACTIVE_PROJECT_NAME_KEY)
     }
   }
 
   const handleProjectCreated = (projectId: string, projectName: string) => {
     setStudioProjectId(projectId)
-    setStudioActiveFolderId(null)
-    localStorage.setItem(STUDIO_ACTIVE_PROJECT_ID_KEY, projectId)
     localStorage.setItem(STUDIO_ACTIVE_PROJECT_NAME_KEY, projectName)
   }
 
@@ -6726,27 +7396,13 @@ export default function ToorGenPromptWorkbench() {
         </div>
       )}
 
-      {isBackendDialogOpen && (
-        <div className="lab-backend-dialog" role="alertdialog" aria-live="assertive" aria-label="Backend server warning">
-          <div className="lab-backend-dialog-title">Back end server is not working</div>
-          <div className="lab-backend-dialog-copy">Please run the back end server proxy, then try again.</div>
-          <div className="lab-inline-actions lab-inline-actions--compact">
-            <button
-              type="button"
-              className="lab-secondary-btn"
-              onClick={() => setIsBackendDialogOpen(false)}
-            >
-              Dismiss
-            </button>
-          </div>
-        </div>
-      )}
+
 
       {isReferenceLibraryDialogOpen && (
         <div className="lab-library-dialog-backdrop" role="dialog" aria-modal="true" aria-label="Reference library" onClick={() => closeReferenceLibraryDialog()}>
           <div className="lab-library-dialog" onClick={(event) => event.stopPropagation()}>
             <div className="lab-library-dialog-head">
-              <strong>Reference Library</strong>
+              <strong>{referenceLibraryIntent === 'character' ? 'Assets Browser' : 'Reference Library'}</strong>
               <div className="lab-inline-actions">
                 <span className="lab-inline-note">{selectedReferenceLibraryUrls.length} selected</span>
                 {studioProjectId && importableLocalReferenceLibrary.length > 0 ? (
@@ -6787,81 +7443,103 @@ export default function ToorGenPromptWorkbench() {
             />
             
             {studioProjectId ? (
-              <div className="lab-inline-note">Showing shared references for the active project.</div>
+              <div className="lab-inline-note">
+                {hasSharedReferenceItems && hasPersonalReferenceItems
+                  ? 'Showing active project assets plus your uploaded assets from all projects.'
+                  : hasSharedReferenceItems
+                    ? 'Showing shared references for the active project.'
+                    : hasPersonalReferenceItems
+                      ? 'No shared assets yet. Showing your uploaded assets from all projects.'
+                      : 'No assets found for this project yet.'}
+              </div>
             ) : (
-              <div className="lab-inline-note">No project selected. This is your local reference library.</div>
+              <div className="lab-inline-note">No project selected. Showing your personal asset library.</div>
             )}
 
-            <div className="lab-library-grid">
-              <button type="button" className="lab-library-plus-card" onClick={() => referenceLibraryUploadInputRef.current?.click()}>
-                +
-              </button>
-              {filteredReferenceLibrary.map((item) => {
-                const isSelected = selectedReferenceLibraryUrls.includes(item.url)
-                const isVideo = item.kind === 'video'
-                const isAudio = item.kind === 'audio'
-                return (
-                  <div
-                    key={item.id}
-                    className={`lab-library-item${isSelected ? ' is-selected' : ''}${isVideo ? ' is-video' : ''}${isAudio ? ' is-audio' : ''}`}
-                  >
-                    <button
-                      type="button"
-                      className="lab-library-item-select"
-                      onClick={() => toggleReferenceLibrarySelection(item.url)}
-                      onContextMenu={(event) => openLibraryContextMenu(event, item)}
-                      onMouseEnter={isAudio ? handleAudioCardHoverStart : undefined}
-                      onMouseLeave={isAudio ? handleAudioCardHoverEnd : undefined}
+            <div className="lab-library-dialog-scroll">
+              <div className="lab-library-grid">
+                <button type="button" className="lab-library-plus-card" onClick={() => referenceLibraryUploadInputRef.current?.click()}>
+                  +
+                </button>
+                {visibleReferenceLibraryItems.map((item) => {
+                  const isSelected = selectedReferenceLibraryUrls.includes(item.url)
+                  const isVideo = item.kind === 'video'
+                  const isAudio = item.kind === 'audio'
+                  const isProjectSharedAsset = !studioProjectId || sharedReferenceUrlSet.has(item.url)
+                  return (
+                    <div
+                      key={item.id}
+                      className={`lab-library-item${isSelected ? ' is-selected' : ''}${isVideo ? ' is-video' : ''}${isAudio ? ' is-audio' : ''}`}
                     >
-                      {isVideo ? (
-                        <>
-                          <video
-                            src={getPlaybackUrl(item.url)}
-                            className="lab-library-thumb"
-                            muted
-                            playsInline
-                            preload="metadata"
-                            onLoadedMetadata={handleVideoThumbReady}
-                            onMouseEnter={handleVideoCardHoverStart}
-                            onMouseLeave={handleVideoCardHoverEnd}
-                          />
-                          <span className="lab-library-play-badge" aria-hidden="true">â–¶</span>
-                        </>
-                      ) : isAudio ? (
-                        <>
-                          <div className="lab-library-thumb lab-library-thumb--audio" aria-hidden="true">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-                          </div>
-                          <audio src={item.url} className="lab-audio-hover-player" preload="metadata" />
-                        </>
-                      ) : (
-                        <img src={item.url} alt={item.name} className="lab-library-thumb" />
-                      )}
-                    </button>
-                    <div className="lab-library-item-foot">
-                      <input
-                        className="lab-library-item-name"
-                        value={item.name}
-                        onChange={(event) => renameMediaLibraryItem(item.id, event.target.value)}
-                        aria-label="Asset name"
-                      />
-                      {isAudio ? (
-                        <button
-                          type="button"
-                          className="lab-library-copy-url-btn"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            void handleCopyAudioLibraryUrl(item.id, item.url)
-                          }}
-                          title="Copy audio URL"
-                        >
-                          {copiedAudioLibraryItemId === item.id ? 'Copied' : 'Copy URL'}
-                        </button>
-                      ) : null}
+                      <button
+                        type="button"
+                        className="lab-library-item-select"
+                        onClick={() => toggleReferenceLibrarySelection(item.url)}
+                        onContextMenu={isProjectSharedAsset ? (event) => openLibraryContextMenu(event, item) : undefined}
+                        onMouseEnter={isAudio ? handleAudioCardHoverStart : undefined}
+                        onMouseLeave={isAudio ? handleAudioCardHoverEnd : undefined}
+                      >
+                        {isVideo ? (
+                          <>
+                            <video
+                              src={getPlaybackUrl(item.url)}
+                              className="lab-library-thumb"
+                              muted
+                              playsInline
+                              preload="metadata"
+                              onLoadedMetadata={handleVideoThumbReady}
+                              onMouseEnter={handleVideoCardHoverStart}
+                              onMouseLeave={handleVideoCardHoverEnd}
+                            />
+                            <span className="lab-library-play-badge" aria-hidden="true">&#9654;</span>
+                          </>
+                        ) : isAudio ? (
+                          <>
+                            <div className="lab-library-thumb lab-library-thumb--audio" aria-hidden="true">
+                              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                            </div>
+                            <audio src={item.url} className="lab-audio-hover-player" preload="metadata" />
+                          </>
+                        ) : (
+                          <img src={item.url} alt={item.name} className="lab-library-thumb" />
+                        )}
+                      </button>
+                      <div className="lab-library-item-foot">
+                        <input
+                          className="lab-library-item-name"
+                          value={item.name}
+                          onChange={isProjectSharedAsset ? (event) => renameMediaLibraryItem(item.id, event.target.value) : undefined}
+                          readOnly={!isProjectSharedAsset}
+                          aria-label="Asset name"
+                        />
+                        {isAudio ? (
+                          <button
+                            type="button"
+                            className="lab-library-copy-url-btn"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              void handleCopyAudioLibraryUrl(item.id, item.url)
+                            }}
+                            title="Copy audio URL"
+                          >
+                            {copiedAudioLibraryItemId === item.id ? 'Copied' : 'Copy URL'}
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
+
+              {hasMoreLibraryItems && (
+                <button
+                  type="button"
+                  className="lab-secondary-btn lab-library-load-more-btn"
+                  onClick={() => loadMoreReferenceLibraryItems()}
+                >
+                  Load More ({remainingReferenceLibraryItemsCount} remaining)
+                </button>
+              )}
             </div>
 
             <input
@@ -6883,7 +7561,7 @@ export default function ToorGenPromptWorkbench() {
                 Cancel
               </button>
               <button type="button" className="lab-primary-btn" onClick={applyReferenceLibrarySelection}>
-                Confirm {selectedReferenceLibraryUrls.length > 0 ? `(${selectedReferenceLibraryUrls.length})` : ''}
+                {referenceLibraryIntent === 'character' ? 'Attach Image' : 'Confirm'} {selectedReferenceLibraryUrls.length > 0 ? `(${selectedReferenceLibraryUrls.length})` : ''}
               </button>
             </div>
 
@@ -6951,7 +7629,7 @@ export default function ToorGenPromptWorkbench() {
                 type="button"
                 className="lab-primary-btn"
                 onClick={() => {
-                  removeMediaLibraryItem(pendingLibraryDeleteItem)
+                  handleRemoveMediaLibraryItem(pendingLibraryDeleteItem)
                   setPendingLibraryDeleteItem(null)
                 }}
               >
@@ -7345,6 +8023,15 @@ export default function ToorGenPromptWorkbench() {
                 </button>
                 <button
                   type="button"
+                  className={`lab-secondary-btn${isStoryBibleDialogOpen ? ' lab-view-mode-btn--active' : ''}`}
+                  title="Open Story & Bible Manager"
+                  aria-label="Open Story & Bible Manager"
+                  onClick={() => setIsStoryBibleDialogOpen(true)}
+                >
+                  Story & Bible Manager
+                </button>
+                <button
+                  type="button"
                   className="lab-secondary-btn lab-select-workflow-btn"
                   data-workflow-picker-trigger="true"
                   disabled={!hasConfiguredWorkflows}
@@ -7367,11 +8054,12 @@ export default function ToorGenPromptWorkbench() {
               onChange={(event) => {
                 const nextId = event.target.value || null
                 setStudioProjectId(nextId)
-                setStudioActiveFolderId(null)
                 if (nextId) {
-                  localStorage.setItem(STUDIO_ACTIVE_PROJECT_ID_KEY, nextId)
+                  const projectName = studioProjects.find((project) => project.id === nextId)?.name || ''
+                  if (projectName) {
+                    localStorage.setItem(STUDIO_ACTIVE_PROJECT_NAME_KEY, projectName)
+                  }
                 } else {
-                  localStorage.removeItem(STUDIO_ACTIVE_PROJECT_ID_KEY)
                   localStorage.removeItem(STUDIO_ACTIVE_PROJECT_NAME_KEY)
                 }
               }}
@@ -7410,7 +8098,7 @@ export default function ToorGenPromptWorkbench() {
         {!isBackendAvailable && (
           <div className="lab-backend-notice" role="status" aria-live="polite">
             <span className="lab-backend-notice-dot" aria-hidden="true" />
-            <span>{backendNotice || 'Back end server is not working. Please run it.'}</span>
+            <span>{backendNotice || 'Please run the back end server proxy, then try again.'}</span>
           </div>
         )}
 
@@ -7420,6 +8108,212 @@ export default function ToorGenPromptWorkbench() {
         className={`lab-layout${isDirectSubmitPanelVisible ? '' : ' lab-layout--direct-hidden'}`}
         ref={labLayoutRef}
       >
+        <aside className="lab-utility-sidebar" aria-label="Workspace navigation">
+          <div className="lab-utility-recents-anchor">
+            <button
+              type="button"
+              className="lab-utility-btn lab-utility-btn--top"
+              aria-label="Open projects"
+              title="Projects"
+            >
+              <span className="lab-utility-icon" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+              </span>
+            </button>
+            <section className="lab-utility-recents-flyout" role="dialog" aria-label="Projects">
+              <div className="lab-utility-recents-head">Projects</div>
+              <div className="lab-utility-flyout-note">
+                {selectedUtilityProject
+                  ? `${selectedUtilityProject.name} - ${visibleStudioFolders.length} folder${visibleStudioFolders.length === 1 ? '' : 's'}`
+                  : 'Choose a project and then narrow into folders.'}
+              </div>
+              <div className="lab-utility-project-tabs" role="group" aria-label="Studio projects">
+                {studioProjectsLoading ? (
+                  <div className="lab-utility-recents-empty">Loading Studio projects...</div>
+                ) : studioProjects.length === 0 ? (
+                  <div className="lab-utility-recents-empty">No Studio projects yet.</div>
+                ) : studioProjects.map((project) => (
+                  <button
+                    key={project.id}
+                    type="button"
+                    role="button"
+                    className={`lab-utility-project-tab${studioProjectId === project.id ? ' is-active' : ''}`}
+                    onClick={() => handleProjectSelect(project.id)}
+                  >
+                    {project.name}
+                  </button>
+                ))}
+              </div>
+              <div className="lab-utility-recents-list">
+                {!selectedUtilityProject && !studioProjectsLoading && studioProjects.length > 0 && (
+                  <div className="lab-utility-recents-empty">Select a project to view folders.</div>
+                )}
+                {selectedUtilityProject && (
+                  <button
+                    type="button"
+                    className={`lab-utility-folder-item${studioActiveFolderId ? '' : ' is-active'}`}
+                    onClick={() => {
+                      setStudioActiveFolderId(null)
+                      setHistoryViewMode('list')
+                      setHistoryDisplayLimit((current) => Math.max(current, 20))
+                    }}
+                  >
+                    <span className="lab-utility-folder-copy">
+                      <strong>All Folders</strong>
+                      <span>Project-wide scope</span>
+                    </span>
+                  </button>
+                )}
+                {selectedUtilityProject && studioFoldersLoading && (
+                  <div className="lab-utility-recents-empty">Loading folders...</div>
+                )}
+                {selectedUtilityProject && !studioFoldersLoading && visibleStudioFolders.length === 0 && (
+                  <div className="lab-utility-recents-empty">No folders found in this project.</div>
+                )}
+                {visibleStudioFolders.map((folder) => (
+                  <button
+                    key={folder.id}
+                    type="button"
+                    className={`lab-utility-folder-item${studioActiveFolderId === folder.id ? ' is-active' : ''}`}
+                    onClick={() => {
+                      setStudioActiveFolderId(folder.id)
+                      setHistoryViewMode('list')
+                      setHistoryDisplayLimit((current) => Math.max(current, 20))
+                    }}
+                  >
+                    <span className="lab-utility-folder-copy">
+                      <strong>{folder.name}</strong>
+                      <span>{studioActiveFolderId === folder.id ? 'Active folder' : 'Switch folder scope'}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="lab-utility-recents-view-all"
+                onClick={() => setStudioAccountOpen(true)}
+              >
+                Open Studio Manager
+              </button>
+            </section>
+          </div>
+
+          <nav className="lab-utility-nav" aria-label="Sections">
+            <button type="button" className="lab-utility-btn">
+              <span className="lab-utility-icon" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg>
+              </span>
+              <span>Apps</span>
+            </button>
+            <div className="lab-utility-recents-anchor">
+              <button type="button" className="lab-utility-btn" aria-label="Open templates" title="Templates">
+                <span className="lab-utility-icon" aria-hidden="true">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 5h16"/><path d="M4 12h10"/><path d="M4 19h16"/></svg>
+                </span>
+                <span>Templates</span>
+              </button>
+              <section className="lab-utility-recents-flyout" role="dialog" aria-label="Templates">
+                <div className="lab-utility-recents-head">Templates</div>
+                <div className="lab-utility-flyout-note">Quick workflow-style starting points for AI generation.</div>
+                <div className="lab-utility-recents-list">
+                  {sidebarTemplatePresets.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      className="lab-utility-template-item"
+                      onClick={() => applySidebarTemplate(preset)}
+                    >
+                      <span className="lab-utility-template-copy">
+                        <strong>{preset.label}</strong>
+                        <span>{preset.summary}</span>
+                      </span>
+                      <span className="lab-utility-template-tag" aria-label={`Uses ${preset.workflowLabel}`}>
+                        {preset.badge}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  className="lab-utility-recents-view-all"
+                  onClick={(event) => openWorkflowPicker('all', event.currentTarget)}
+                >
+                  Browse All Workflows
+                </button>
+              </section>
+            </div>
+            <button
+              type="button"
+              className="lab-utility-btn"
+              onClick={() => setIsWorkflowPickerOpen(true)}
+            >
+              <span className="lab-utility-icon" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="11" cy="18" r="2"/></svg>
+              </span>
+              <span>Custom</span>
+            </button>
+            <button
+              type="button"
+              className="lab-utility-btn"
+              onClick={() => {
+                setActiveDirectPanelTab('direct')
+                setIsDirectSubmitPanelVisible(true)
+              }}
+            >
+              <span className="lab-utility-icon" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              </span>
+              <span>Chat</span>
+            </button>
+            <button
+              type="button"
+              className="lab-utility-btn lab-utility-btn--active"
+              onClick={() => {
+                setHistoryViewMode('list')
+                setHistoryDisplayLimit((current) => Math.max(current, 20))
+              }}
+            >
+              <span className="lab-utility-icon" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 16 14"/></svg>
+              </span>
+              <span>Recents</span>
+            </button>
+            <button type="button" className="lab-utility-btn" onClick={() => setIsStoryBibleDialogOpen(true)}>
+              <span className="lab-utility-icon" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/><path d="M3 20c0-2.6 2.2-4.7 5-4.7s5 2.1 5 4.7"/><path d="M11 20c0-2.6 2.2-4.7 5-4.7s5 2.1 5 4.7"/></svg>
+              </span>
+              <span>Characters</span>
+            </button>
+          </nav>
+
+          <div className="lab-utility-bottom">
+            <button
+              type="button"
+              className="lab-utility-btn"
+              onClick={() => setStudioAccountOpen(true)}
+            >
+              <span className="lab-utility-icon" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
+              </span>
+              <span>Dashboard</span>
+            </button>
+            <button
+              type="button"
+              className="lab-utility-profile"
+              onClick={() => setStudioAccountOpen(true)}
+              title="Open profile and studio settings"
+            >
+              {auth.currentUser?.photoURL ? (
+                <img src={auth.currentUser.photoURL} alt="Profile" className="lab-utility-profile-image" />
+              ) : (
+                <span className="lab-utility-profile-fallback" aria-hidden="true">
+                  {(auth.currentUser?.displayName || auth.currentUser?.email || 'U').charAt(0).toUpperCase()}
+                </span>
+              )}
+            </button>
+          </div>
+        </aside>
+
         <main className="lab-main">
           {MAIN_PANEL_DISABLED && (
             <section className="lab-card">
@@ -7436,6 +8330,16 @@ export default function ToorGenPromptWorkbench() {
             <div className="lab-card-head">
               <div>
                 <h3 className="lab-card-title">Main Panel</h3>
+                {thumbnailMigrationProgress ? (
+                  <div className="lab-inline-note" role="status" aria-live="polite">
+                    {thumbnailMigrationProgress.label} {thumbnailMigrationProgress.completed}/{thumbnailMigrationProgress.total}
+                  </div>
+                ) : null}
+                {thumbnailMigrationJobSummary.failed > 0 ? (
+                  <div className="lab-inline-note" role="status" aria-live="polite">
+                    Thumbnail rebuild failures: {thumbnailMigrationJobSummary.failed}. Use Rebuild Thumbnails to retry all.
+                  </div>
+                ) : null}
               </div>
               <div className="lab-inline-actions">
                 <button
@@ -7497,6 +8401,14 @@ export default function ToorGenPromptWorkbench() {
                   disabled={isRefreshingRuns}
                 >
                   {isRefreshingRuns ? 'Refreshing...' : 'Refresh'}
+                </button>
+                <button
+                  type="button"
+                  className="lab-secondary-btn"
+                  onClick={handleRebuildVideoThumbnails}
+                  disabled={isRebuildingVideoThumbnails}
+                >
+                  {isRebuildingVideoThumbnails ? 'Rebuilding Thumbs...' : 'Rebuild Thumbnails'}
                 </button>
                 <div className="lab-sync-badge">{authUid ? 'Firebase on' : 'Local only'}</div>
                 <button
@@ -7671,7 +8583,7 @@ export default function ToorGenPromptWorkbench() {
                       })}>
                         <video
                           src={outputPlaybackUrl}
-                          poster={thumbnailPosterCache.get(outputPlaybackUrl)}
+                          poster={getVideoPosterUrl(outputPlaybackUrl, latestTabHistory?.thumbnailPosterUrl)}
                           data-fallback-playback-url=""
                           className="lab-history-thumb"
                           muted
@@ -7780,7 +8692,7 @@ export default function ToorGenPromptWorkbench() {
                           <button type="button" className="lab-history-video-visual" aria-label={`Open details for ${formatTimestamp(entry.completedAt)}`} onClick={() => openVideoDialog(displayUrl, dialogDetails)}>
                             <video
                               src={playbackUrl}
-                              poster={thumbnailPosterCache.get(playbackUrl)}
+                              poster={getVideoPosterUrl(playbackUrl, entry.thumbnailPosterUrl)}
                               data-fallback-playback-url={fallbackPlaybackUrl}
                               className="lab-history-thumb"
                               muted
@@ -8018,7 +8930,7 @@ export default function ToorGenPromptWorkbench() {
                         {thumb ? (
                           <video
                             src={getPlaybackUrl(thumb)}
-                            poster={thumbnailPosterCache.get(getPlaybackUrl(thumb))}
+                            poster={getVideoPosterUrl(getPlaybackUrl(thumb), entry.thumbnailPosterUrl)}
                             data-fallback-playback-url={getPlaybackUrl(fallbackThumb)}
                             className="lab-history-list-thumb"
                             muted
@@ -8200,7 +9112,7 @@ export default function ToorGenPromptWorkbench() {
                       ) : (
                         <video
                           src={getPlaybackUrl(item.url)}
-                          poster={thumbnailPosterCache.get(getPlaybackUrl(item.url))}
+                          poster={getVideoPosterUrl(getPlaybackUrl(item.url), item.posterUrl)}
                           className="lab-history-rail-thumb"
                           muted
                           playsInline
@@ -8242,11 +9154,9 @@ export default function ToorGenPromptWorkbench() {
               <div>
                 <h3 className="lab-card-title">{activeDirectPanelTab === 'story' ? 'Story / Bible' : 'Direct submit to API'}</h3>
               </div>
-              <div className="lab-direct-tab-switch" role="tablist" aria-label="Direct panel tabs">
+              <div className="lab-direct-tab-switch" aria-label="Direct panel tabs">
                 <button
                   type="button"
-                  role="tab"
-                  aria-selected={activeDirectPanelTab === 'story'}
                   className={`lab-secondary-btn${activeDirectPanelTab === 'story' ? ' lab-view-mode-btn--active' : ''}`}
                   onClick={() => setActiveDirectPanelTab('story')}
                 >
@@ -8254,8 +9164,6 @@ export default function ToorGenPromptWorkbench() {
                 </button>
                 <button
                   type="button"
-                  role="tab"
-                  aria-selected={activeDirectPanelTab === 'direct'}
                   className={`lab-secondary-btn${activeDirectPanelTab === 'direct' ? ' lab-view-mode-btn--active' : ''}`}
                   onClick={() => setActiveDirectPanelTab('direct')}
                 >
@@ -8284,6 +9192,34 @@ export default function ToorGenPromptWorkbench() {
                   onChange={(event) => setDirectRequestJson(event.target.value)}
                   spellCheck={false}
                 />
+
+                <div className="lab-composer-request-preview" role="region" aria-label="Request preview">
+                  <div className="lab-composer-request-preview-head">
+                    <strong>Final Request Body</strong>
+                    <div className="lab-composer-request-preview-actions">
+                      <button
+                        type="button"
+                        className="lab-secondary-btn"
+                        onClick={() => {
+                          setDirectRequestJson(JSON.stringify(previewRequest, null, 2))
+                          pushDirectSubmitFeed('Loaded full request payload.')
+                        }}
+                        title="Load Full Request (including endpoint & settings)"
+                      >
+                        [+] Full Request
+                      </button>
+                      <button
+                        type="button"
+                        className="lab-secondary-btn"
+                        onClick={() => setDirectRequestJson(JSON.stringify(previewRequest.body, null, 2))}
+                        title="Reload from current composer state"
+                      >
+                        ↺ Reload
+                      </button>
+                    </div>
+                  </div>
+                  <pre className="lab-preview lab-composer-request-preview-code">{JSON.stringify(previewRequest.body, null, 2)}</pre>
+                </div>
 
                 {directSubmitFeed.length > 0 && (
                   <div className="lab-direct-feed">
@@ -8338,26 +9274,24 @@ export default function ToorGenPromptWorkbench() {
               <div className="lab-story-panel">
                 <div className="lab-story-summary-card">
                   <strong>{storyBibleData.title || 'Untitled story bible'}</strong>
-                  <div className="lab-inline-note">{storyBibleData.summary || 'No story summary saved yet.'}</div>
+                  <div className="lab-inline-note">{storyBibleData.summary || 'No project-level story summary saved yet.'}</div>
                 </div>
 
                 <div className="lab-story-chapter-list">
                   {storyBibleData.chapters.length === 0 && (
-                    <div className="lab-empty-state">No chapters saved yet for this project.</div>
+                    <div className="lab-empty-state">No folder episodes saved yet for this project.</div>
                   )}
                   {storyBibleData.chapters.map((chapter) => {
                     const linkedFolderName = chapter.folderId
                       ? (studioFolderNameById.get(chapter.folderId) || chapter.folderId)
                       : 'Unassigned'
-                    const chapterEpisodes = chapter.episodeIds
-                      .map((episodeId) => storyEpisodesById.get(episodeId))
-                      .filter((episode): episode is StoryBibleEpisode => Boolean(episode))
+                    const chapterEpisodes = storyBibleData.episodes.filter((episode) => chapter.episodeIds.includes(episode.id))
 
                     return (
                       <article key={chapter.id} className="lab-story-chapter-card">
                         <div className="lab-story-chapter-head">
-                          <strong>{chapter.title}</strong>
-                          <span className="lab-inline-note">Folder: {linkedFolderName}</span>
+                          <strong>{linkedFolderName}</strong>
+                          <span className="lab-inline-note">Episode folder</span>
                         </div>
                         {chapter.summary && <div className="lab-inline-note">{chapter.summary}</div>}
                         {chapterEpisodes.length > 0 && (
@@ -8393,10 +9327,7 @@ export default function ToorGenPromptWorkbench() {
           <div className="lab-story-bible-dialog-backdrop" onClick={() => setIsStoryBibleDialogOpen(false)}>
             <section className="lab-story-bible-dialog" onClick={(event) => event.stopPropagation()}>
               <div className="lab-card-head">
-                <div>
-                  <h3 className="lab-card-title">Story & Bible Manager</h3>
-                  <div className="lab-inline-note">Dedicated storytelling workspace (read-only scaffold for now).</div>
-                </div>
+                <h3 className="lab-card-title">Story & Bible Manager</h3>
                 <button
                   type="button"
                   className="lab-secondary-btn"
@@ -8406,70 +9337,463 @@ export default function ToorGenPromptWorkbench() {
                 </button>
               </div>
 
-              <div className="lab-story-bible-dialog-grid">
-                <section className="lab-story-bible-column">
-                  <h4 className="lab-story-bible-section-title">Episodes</h4>
-                  {storyBibleData.episodes.length === 0 && (
-                    <div className="lab-empty-state">No episodes saved yet.</div>
-                  )}
-                  {storyBibleData.episodes.map((episode) => (
-                    <article key={episode.id} className="lab-story-bible-item">
-                      <strong>{episode.title}</strong>
-                      {episode.section && <div className="lab-inline-note">Story section: {episode.section}</div>}
-                      {episode.scenarios.length > 0 && (
-                        <div className="lab-story-bible-sublist">
-                          <div className="lab-inline-note">Scenarios</div>
-                          {episode.scenarios.map((scenario, index) => (
-                            <div key={`${episode.id}-scenario-${index}`} className="lab-story-bible-subitem">{scenario}</div>
-                          ))}
-                        </div>
-                      )}
-                      {episode.dialogs.length > 0 && (
-                        <div className="lab-story-bible-sublist">
-                          <div className="lab-inline-note">Dialogs</div>
-                          {episode.dialogs.map((dialogLine, index) => (
-                            <div key={`${episode.id}-dialog-${index}`} className="lab-story-bible-subitem">{dialogLine}</div>
-                          ))}
-                        </div>
-                      )}
-                      {episode.characters.length > 0 && (
-                        <div className="lab-story-bible-sublist">
-                          <div className="lab-inline-note">Characters</div>
-                          {episode.characters.map((character, index) => (
-                            <div key={`${episode.id}-character-${index}`} className="lab-story-bible-subitem">{character}</div>
-                          ))}
-                        </div>
-                      )}
-                    </article>
-                  ))}
-                </section>
+              <div className="lab-story-bible-project-picker" aria-label="Choose project for Story and Bible manager">
+                {studioProjects.length === 0 && (
+                  <div className="lab-empty-state">No Studio projects available.</div>
+                )}
+                {studioProjects.map((project) => (
+                  <button
+                    key={`story-bible-project-${project.id}`}
+                    type="button"
+                    className={`lab-secondary-btn${studioProjectId === project.id ? ' lab-view-mode-btn--active' : ''}`}
+                    onClick={() => setStudioProjectId(project.id)}
+                  >
+                    {project.name}
+                  </button>
+                ))}
+              </div>
 
-                <section className="lab-story-bible-column">
-                  <h4 className="lab-story-bible-section-title">Chapters</h4>
-                  {storyBibleData.chapters.length === 0 && (
-                    <div className="lab-empty-state">No chapters saved yet.</div>
-                  )}
-                  {storyBibleData.chapters.map((chapter) => (
-                    <article key={chapter.id} className="lab-story-bible-item">
-                      <strong>{chapter.title}</strong>
-                      <div className="lab-inline-note">
-                        Linked folder: {chapter.folderId ? (studioFolderNameById.get(chapter.folderId) || chapter.folderId) : 'Unassigned'}
-                      </div>
-                      {chapter.summary && <div className="lab-inline-note">{chapter.summary}</div>}
-                      {chapter.episodeIds.length > 0 && (
-                        <div className="lab-story-bible-sublist">
-                          <div className="lab-inline-note">Episodes in this chapter</div>
-                          {chapter.episodeIds.map((episodeId) => (
-                            <div key={`${chapter.id}-${episodeId}`} className="lab-story-bible-subitem">
-                              {storyEpisodesById.get(episodeId)?.title || episodeId}
+              <div className="lab-story-bible-editor-layout">
+                  <aside className="lab-story-bible-folder-rail">
+                    <div className="lab-story-bible-folder-rail-head">
+                      <h4 className="lab-story-bible-section-title">Project folders</h4>
+                      <button
+                        type="button"
+                        className="lab-secondary-btn"
+                        onClick={() => { void createStoryBibleFolder() }}
+                        disabled={storyBibleFolderBusy}
+                        title="Create folder"
+                      >
+                        +
+                      </button>
+                    </div>
+                    {visibleStudioFolders.length === 0 && (
+                      <div className="lab-empty-state">No folders found in this project.</div>
+                    )}
+                    {visibleStudioFolders.map((folder) => (
+                      <div key={folder.id} className="lab-story-folder-item-wrap">
+                        <button
+                          type="button"
+                          className="lab-story-folder-collapse"
+                          onClick={() => toggleStoryBibleFolderCollapsed(folder.id)}
+                          title={storyBibleCollapsedFolderIds.includes(folder.id) ? 'Expand folder scenes' : 'Collapse folder scenes'}
+                          aria-label={storyBibleCollapsedFolderIds.includes(folder.id) ? `Expand ${folder.name}` : `Collapse ${folder.name}`}
+                        >
+                          {storyBibleCollapsedFolderIds.includes(folder.id) ? '▸' : '▾'}
+                        </button>
+                        <button
+                          type="button"
+                          className={`lab-story-folder-btn${selectedStoryFolderId === folder.id ? ' is-active' : ''}`}
+                          onClick={() => setStoryBibleSelectedFolderId(folder.id)}
+                        >
+                          <span className="lab-story-tree-label"><span className="lab-story-tree-icon" aria-hidden="true">📁</span>{folder.name}</span>
+                        </button>
+                        <div className={`lab-story-folder-tree${storyBibleCollapsedFolderIds.includes(folder.id) ? ' is-collapsed' : ''}`}>
+                          {(scenesByFolderId.get(folder.id) || []).length === 0 && (
+                            <div className="lab-inline-note">No scenes in this folder.</div>
+                          )}
+                          {(scenesByFolderId.get(folder.id) || []).map((entry) => (
+                            <div key={`${folder.id}-${entry.scene.id}`} className="lab-story-folder-scene-item-wrap">
+                              <button
+                                type="button"
+                                className={`lab-story-folder-scene-item${storyBibleSelectedSceneId === entry.scene.id ? ' is-active' : ''}`}
+                                onClick={() => {
+                                  setStoryBibleSelectedFolderId(folder.id)
+                                  setStoryBibleSelectedSceneId(entry.scene.id)
+                                  setStoryBibleManagerTab('scenes')
+                                  setStoryBibleSceneGearId('')
+                                }}
+                              >
+                                <span className="lab-story-tree-label"><span className="lab-story-tree-icon" aria-hidden="true">🎬</span>{entry.scene.title}</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="lab-story-scene-gear"
+                                onClick={() => setStoryBibleSceneGearId((cur) => cur === entry.scene.id ? '' : entry.scene.id)}
+                                title="Scene settings"
+                                aria-label={`Settings for ${entry.scene.title}`}
+                              >
+                                ⚙
+                              </button>
+                              {storyBibleSceneGearId === entry.scene.id && (
+                                <div className="lab-story-scene-settings">
+                                  <input
+                                    className="lab-input"
+                                    value={entry.scene.title}
+                                    placeholder="Scene title"
+                                    onChange={(event) => updateSceneField(entry.scene.id, 'title', event.target.value)}
+                                  />
+                                  <div className="lab-story-scene-settings-row">
+                                    <input
+                                      className="lab-input"
+                                      value={entry.scene.category}
+                                      placeholder="Category"
+                                      onChange={(event) => updateSceneField(entry.scene.id, 'category', event.target.value)}
+                                    />
+                                    <input
+                                      className="lab-input"
+                                      value={entry.scene.discipline}
+                                      placeholder="Discipline"
+                                      onChange={(event) => updateSceneField(entry.scene.id, 'discipline', event.target.value)}
+                                    />
+                                  </div>
+                                  <div className="lab-story-scene-settings-row">
+                                    <input
+                                      className="lab-input"
+                                      type="number"
+                                      min={1}
+                                      max={600}
+                                      defaultValue={entry.scene.durationSec}
+                                      placeholder="sec"
+                                      title="Duration (sec) — press Enter to apply"
+                                      onKeyDown={(event) => {
+                                        if (event.key === 'Enter') {
+                                          updateSceneField(entry.scene.id, 'durationSec', Number((event.target as HTMLInputElement).value || 8))
+                                          ;(event.target as HTMLInputElement).blur()
+                                        }
+                                      }}
+                                    />
+                                    <button type="button" className="lab-secondary-btn" onClick={() => moveSceneInFolder(entry.scene.folderId, entry.scene.id, -1)} title="Move up">↑</button>
+                                    <button type="button" className="lab-secondary-btn" onClick={() => moveSceneInFolder(entry.scene.folderId, entry.scene.id, 1)} title="Move down">↓</button>
+                                    <button type="button" className="lab-secondary-btn lab-danger-btn" onClick={() => { removeScene(entry.scene.id); setStoryBibleSceneGearId('') }} title="Delete scene">✕</button>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
-                      )}
-                    </article>
-                  ))}
-                </section>
-              </div>
+                        <button
+                          type="button"
+                          className="lab-story-folder-gear"
+                          onClick={() => setStoryBibleFolderMenuFolderId((current) => current === folder.id ? '' : folder.id)}
+                          title="Folder settings"
+                          aria-label={`Folder settings for ${folder.name}`}
+                        >
+                          ⚙
+                        </button>
+                        <button
+                          type="button"
+                          className="lab-story-folder-add-scene-btn"
+                          onClick={() => { addSceneForFolder(folder.id) }}
+                          title="Add scene to folder"
+                          aria-label={`Add scene to ${folder.name}`}
+                        >
+                          +
+                        </button>
+                        {storyBibleFolderMenuFolderId === folder.id && (
+                          <div className="lab-story-folder-gear-menu">
+                            <button
+                              type="button"
+                              className="lab-secondary-btn"
+                              onClick={() => { void renameStoryBibleFolder(folder.id, folder.name) }}
+                              disabled={storyBibleFolderBusy}
+                            >
+                              Rename
+                            </button>
+                            <button
+                              type="button"
+                              className="lab-secondary-btn"
+                              onClick={() => { void deleteStoryBibleFolder(folder.id, folder.name) }}
+                              disabled={storyBibleFolderBusy}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </aside>
+
+                  <section className="lab-story-bible-editor-main">
+                    <div className="lab-story-bible-tab-row" aria-label="Story manager tabs">
+                      <button
+                        type="button"
+                        className={`lab-secondary-btn${storyBibleManagerTab === 'story' ? ' lab-view-mode-btn--active' : ''}`}
+                        onClick={() => setStoryBibleManagerTab('story')}
+                      >
+                        Story
+                      </button>
+                      <button
+                        type="button"
+                        className={`lab-secondary-btn${storyBibleManagerTab === 'scenes' ? ' lab-view-mode-btn--active' : ''}`}
+                        onClick={() => setStoryBibleManagerTab('scenes')}
+                      >
+                        Scenes
+                      </button>
+                      <button
+                        type="button"
+                        className={`lab-secondary-btn${storyBibleManagerTab === 'characters' ? ' lab-view-mode-btn--active' : ''}`}
+                        onClick={() => setStoryBibleManagerTab('characters')}
+                      >
+                        Characters
+                      </button>
+                    </div>
+
+                    <div className="lab-story-bible-editor-panel">
+                      {storyBibleManagerTab === 'characters' ? (
+                        <div className="lab-story-bible-form-grid">
+                          <div className="lab-inline-actions">
+                            <button
+                              type="button"
+                              className="lab-secondary-btn"
+                              onClick={addCharacterForProject}
+                            >
+                              Add Character
+                            </button>
+                          </div>
+                          {projectCharacters.length === 0 && (
+                            <div className="lab-empty-state">No project characters yet.</div>
+                          )}
+                          <div className="lab-story-character-list">
+                          {projectCharacters.map((character) => (
+                            <article key={character.id} className="lab-story-bible-character-card">
+                              <div className="lab-story-bible-character-media">
+                                {character.imageUrl ? (
+                                  <img src={character.imageUrl} alt={character.name} className="lab-story-bible-character-image" />
+                                ) : (
+                                  <div className="lab-story-bible-character-image lab-story-bible-character-image--empty">No image</div>
+                                )}
+                                <button
+                                  type="button"
+                                  className="lab-secondary-btn"
+                                  onClick={() => openReferenceLibraryDialog('character', character.id)}
+                                >
+                                  Choose from Assets / Upload
+                                </button>
+                              </div>
+                              <div className="lab-story-bible-character-fields">
+                                <input
+                                  className="lab-input"
+                                  value={character.name}
+                                  placeholder="Character name"
+                                  onChange={(event) => updateCharacterField(character.id, 'name', event.target.value)}
+                                />
+                                <textarea
+                                  className="lab-textarea"
+                                  value={character.bio}
+                                  placeholder="Character bio"
+                                  onChange={(event) => updateCharacterField(character.id, 'bio', event.target.value)}
+                                />
+                                <button
+                                  type="button"
+                                  className="lab-secondary-btn"
+                                  onClick={() => removeCharacter(character.id)}
+                                >
+                                  Remove Character
+                                </button>
+                              </div>
+                            </article>
+                          ))}
+                          </div>
+                        </div>
+                      ) : !selectedStoryFolderId ? (
+                        <div className="lab-empty-state">Pick a project folder to start editing Story & Bible content.</div>
+                      ) : storyBibleManagerTab === 'story' ? (
+                        <div className="lab-story-bible-form-grid">
+                          <label className="lab-field-label" htmlFor="lab-folder-story-summary">
+                            Episode Story ({studioFolderNameById.get(selectedStoryFolderId) || selectedStoryFolderId})
+                          </label>
+                          <textarea
+                            id="lab-folder-story-summary"
+                            className="lab-textarea"
+                            value={selectedFolderStory?.summary || ''}
+                            placeholder="Write the core story arc for this folder episode..."
+                            onChange={(event) => updateFolderStorySummary(selectedStoryFolderId, event.target.value)}
+                          />
+                          <div className="lab-inline-note">Episode runtime: {folderRuntimeSec}s</div>
+                          <div className="lab-story-chapter-toolbar">
+                            <button
+                              type="button"
+                              className="lab-secondary-btn"
+                              onClick={() => addChapterForFolder(selectedStoryFolderId)}
+                            >
+                              Add Chapter
+                            </button>
+                            <div className="lab-story-chapter-tabs" aria-label="Episode chapters">
+                              {folderChapters.map((episode) => (
+                                <button
+                                  key={episode.id}
+                                  type="button"
+                                  className={`lab-secondary-btn lab-story-chapter-tab${selectedFolderChapter?.id === episode.id ? ' lab-view-mode-btn--active is-active' : ''}`}
+                                  onClick={() => setStoryBibleSelectedChapterId(episode.id)}
+                                  title={episode.title}
+                                >
+                                  {episode.title}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          {folderChapters.length === 0 && (
+                            <div className="lab-empty-state">No chapters in this folder episode yet.</div>
+                          )}
+                          {selectedFolderChapter && (
+                            <article key={selectedFolderChapter.id} className="lab-story-bible-item">
+                              <div className="lab-inline-actions">
+                                <input
+                                  className="lab-input"
+                                  value={selectedFolderChapter.title}
+                                  onChange={(event) => updateChapterField(selectedFolderChapter.id, 'title', event.target.value)}
+                                  placeholder="Chapter title"
+                                />
+                                <button
+                                  type="button"
+                                  className="lab-secondary-btn"
+                                  onClick={() => renameChapter(selectedFolderChapter.id)}
+                                >
+                                  Rename
+                                </button>
+                                <button
+                                  type="button"
+                                  className="lab-secondary-btn"
+                                  onClick={() => removeChapter(selectedFolderChapter.id)}
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                              <label className="lab-field-label">Chapter Story</label>
+                              <textarea
+                                className="lab-textarea"
+                                value={selectedFolderChapter.story}
+                                placeholder="Chapter story for this folder episode"
+                                onChange={(event) => updateChapterField(selectedFolderChapter.id, 'story', event.target.value)}
+                              />
+                              <div className="lab-story-scene-settings-row">
+                                <input
+                                  className="lab-input"
+                                  value={selectedFolderChapter.category}
+                                  placeholder="Category"
+                                  onChange={(event) => updateChapterField(selectedFolderChapter.id, 'category', event.target.value)}
+                                />
+                                <input
+                                  className="lab-input"
+                                  value={selectedFolderChapter.discipline}
+                                  placeholder="Discipline"
+                                  onChange={(event) => updateChapterField(selectedFolderChapter.id, 'discipline', event.target.value)}
+                                />
+                              </div>
+                              <label className="lab-field-label">Chapter Scenario</label>
+                              <textarea
+                                className="lab-textarea"
+                                value={selectedFolderChapter.scenario}
+                                placeholder="Scenario details"
+                                onChange={(event) => updateChapterField(selectedFolderChapter.id, 'scenario', event.target.value)}
+                              />
+                            </article>
+                          )}
+                        </div>
+                      ) : storyBibleManagerTab === 'scenes' ? (
+                        <>
+                          {!selectedProjectScene ? (
+                            <div className="lab-empty-state">Select a scene from the folder tree to edit.</div>
+                          ) : (
+                            <div className="lab-story-scene-editor">
+                              <div className="lab-story-scene-thumb-row">
+                                {selectedProjectScene.scene.visualThumbnailUrl && (
+                                  <img
+                                    src={selectedProjectScene.scene.visualThumbnailUrl}
+                                    alt={selectedProjectScene.scene.title}
+                                    className="lab-story-scene-thumb"
+                                  />
+                                )}
+                                <button
+                                  type="button"
+                                  className="lab-secondary-btn"
+                                  onClick={() => openReferenceLibraryDialog('scene-thumbnail', '', selectedProjectScene.scene.id)}
+                                >
+                                  {selectedProjectScene.scene.visualThumbnailUrl ? 'Change Thumbnail' : 'Pick Thumbnail from Assets'}
+                                </button>
+                                {selectedProjectScene.scene.visualThumbnailUrl && (
+                                  <button
+                                    type="button"
+                                    className="lab-secondary-btn"
+                                    onClick={() => updateSceneField(selectedProjectScene.scene.id, 'visualThumbnailUrl', '')}
+                                  >
+                                    Clear
+                                  </button>
+                                )}
+                              </div>
+
+                              <label className="lab-field-label">Script</label>
+                              <textarea
+                                className="lab-textarea lab-textarea--script-primary"
+                                value={selectedProjectScene.scene.script}
+                                placeholder="Script"
+                                onChange={(event) => updateSceneField(selectedProjectScene.scene.id, 'script', event.target.value)}
+                              />
+
+                              <div className="lab-story-scene-settings-row">
+                                <input
+                                  className="lab-input"
+                                  value={selectedProjectScene.scene.category}
+                                  placeholder="Category"
+                                  onChange={(event) => updateSceneField(selectedProjectScene.scene.id, 'category', event.target.value)}
+                                />
+                                <input
+                                  className="lab-input"
+                                  value={selectedProjectScene.scene.discipline}
+                                  placeholder="Discipline"
+                                  onChange={(event) => updateSceneField(selectedProjectScene.scene.id, 'discipline', event.target.value)}
+                                />
+                              </div>
+
+                              <div className="lab-story-scene-dialogs-head">
+                                <span>Shot dialogs ({selectedProjectScene.scene.dialogs.length})</span>
+                                <button
+                                  type="button"
+                                  className="lab-secondary-btn"
+                                  onClick={() => addSceneDialog(selectedProjectScene.scene.id)}
+                                >
+                                  + Dialog
+                                </button>
+                              </div>
+                              {selectedProjectScene.scene.dialogs.map((dialog) => (
+                                <div key={dialog.id} className="lab-story-scene-dialog-row">
+                                  <input
+                                    className="lab-input"
+                                    value={dialog.shotLabel}
+                                    placeholder="Shot label"
+                                    onChange={(event) => updateSceneDialogField(selectedProjectScene.scene.id, dialog.id, 'shotLabel', event.target.value)}
+                                  />
+                                  <textarea
+                                    className="lab-textarea"
+                                    value={dialog.text}
+                                    placeholder="Dialog text"
+                                    onChange={(event) => updateSceneDialogField(selectedProjectScene.scene.id, dialog.id, 'text', event.target.value)}
+                                  />
+                                  <button
+                                    type="button"
+                                    className="lab-secondary-btn"
+                                    onClick={() => removeSceneDialog(selectedProjectScene.scene.id, dialog.id)}
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              ))}
+
+                              {projectCharacters.length > 0 && (
+                                <>
+                                  <label className="lab-field-label">Characters in scene</label>
+                                  <div className="lab-story-scene-character-grid">
+                                    {projectCharacters.map((character) => (
+                                      <label key={`${selectedProjectScene.scene.id}-${character.id}`} className="lab-story-scene-character-pill">
+                                        <input
+                                          type="checkbox"
+                                          checked={selectedProjectScene.scene.characterIds.includes(character.id)}
+                                          onChange={() => toggleSceneCharacter(selectedProjectScene.scene.id, character.id)}
+                                        />
+                                        <span>{character.name}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      ) : null}
+                    </div>
+                  </section>
+                </div>
             </section>
           </div>
         )}
@@ -8488,7 +9812,7 @@ export default function ToorGenPromptWorkbench() {
           </div>
 
           {COMPOSER_RAIL_DISABLED && (
-            <section className={`lab-rail-card lab-rail-card--composer${isRequestPreviewExpanded ? ' is-scrollable' : ''}`}>
+            <section className="lab-rail-card lab-rail-card--composer">
               <div className="lab-card-head">
                 <div>
                   <h3 className="lab-card-title">Composer</h3>
@@ -8498,7 +9822,7 @@ export default function ToorGenPromptWorkbench() {
             </section>
           )}
           {!COMPOSER_RAIL_DISABLED && (
-          <section className={`lab-rail-card lab-rail-card--composer${isRequestPreviewExpanded ? ' is-scrollable' : ''}`}>
+          <section className="lab-rail-card lab-rail-card--composer">
             <section className="lab-composer-bar lab-composer-bar--rail">
             <div className="lab-composer-head-actions">
               <div className="lab-composer-head-controls-wrap">
@@ -8583,7 +9907,6 @@ export default function ToorGenPromptWorkbench() {
             </div>
             <div
               className={`lab-composer-refs${composerRefMode === 'text' ? ' is-collapsed' : ''}`}
-              style={{ height: `${composerRefsHeight}px` }}
             >
               {referenceFields.length === 0 ? (
                 <div className="lab-inline-note">No media references for this workflow.</div>
@@ -8656,28 +9979,37 @@ export default function ToorGenPromptWorkbench() {
                                 <div
                                   key={field.key}
                                   className={`lab-reference-image-item${isSelected ? ' is-active' : ''}`}
-                                  role="button"
-                                  tabIndex={0}
-                                  onClick={() => {
-                                    setComposerPreviewFieldKey(field.key)
-                                    updateModeState(activeTab.id, (current) => ({
-                                      ...current,
-                                      selectedImageReferenceKey: field.key,
-                                    }))
-                                  }}
-                                  onKeyDown={(event) => {
-                                    if (event.key === 'Enter' || event.key === ' ') {
-                                      event.preventDefault()
+                                >
+                                  <button
+                                    type="button"
+                                    className="lab-reference-image-item-select"
+                                    aria-label={`Select ${field.label}`}
+                                    onClick={() => {
                                       setComposerPreviewFieldKey(field.key)
                                       updateModeState(activeTab.id, (current) => ({
                                         ...current,
                                         selectedImageReferenceKey: field.key,
                                       }))
-                                    }
-                                  }}
-                                >
-                                  <img src={value} alt={field.label} className="lab-reference-image-item-thumb" />
-                                  <span className="lab-reference-image-item-label">Image {index + 1}</span>
+                                    }}
+                                  >
+                                    <img src={value} alt={field.label} className="lab-reference-image-item-thumb" />
+                                    <span className="lab-reference-image-item-label">Image {index + 1}</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="lab-reference-image-item-remove"
+                                    aria-label={`Remove ${field.label}`}
+                                    title={`Remove ${field.label}`}
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      updateModeState(activeTab.id, (current) => ({
+                                        ...current,
+                                        mediaUrls: { ...current.mediaUrls, [field.key]: '' },
+                                      }))
+                                    }}
+                                  >
+                                    ×
+                                  </button>
                                 </div>
                               )
                             })}
@@ -8695,7 +10027,7 @@ export default function ToorGenPromptWorkbench() {
               role="separator"
               aria-label="Resize references and prompt"
               aria-orientation="horizontal"
-              onMouseDown={handleComposerRefsResizeMouseDown}
+              onPointerDown={handleComposerRefsResizePointerDown}
             >
               <span className="lab-composer-splitter-grip" aria-hidden="true" />
             </div>
@@ -8902,13 +10234,6 @@ export default function ToorGenPromptWorkbench() {
                 </button>
                 <button
                   type="button"
-                  className="lab-secondary-btn"
-                  onClick={() => setIsRequestPreviewExpanded((current) => !current)}
-                >
-                  {isRequestPreviewExpanded ? 'Hide Request Review' : 'Request Review'}
-                </button>
-                <button
-                  type="button"
                   className={`lab-secondary-btn${isDirectSubmitPanelVisible && activeDirectPanelTab === 'direct' ? ' lab-view-mode-btn--active' : ''}`}
                   onClick={() => {
                     if (isDirectSubmitPanelVisible && activeDirectPanelTab === 'direct') {
@@ -8923,15 +10248,6 @@ export default function ToorGenPromptWorkbench() {
                 </button>
               </div>
             </div>
-            {isRequestPreviewExpanded && (
-              <div className="lab-composer-request-preview" role="region" aria-label="Request preview">
-                <div className="lab-composer-request-preview-head">
-                  <strong>Final Request Body</strong>
-                  <span className="lab-inline-note">This exact JSON body is submitted to the API.</span>
-                </div>
-                <pre className="lab-preview lab-composer-request-preview-code">{JSON.stringify(previewRequest.body, null, 2)}</pre>
-              </div>
-            )}
             </section>
           </section>
           )}

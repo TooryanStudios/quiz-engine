@@ -1,0 +1,59 @@
+/* VideoEditorPage scoped styles — intentionally minimal.
+   The editor ships its own Tailwind-generated utility classes and theme tokens.
+   Do NOT add global resets here; they will override the editor's own button/input styling. */
+
+.rve-host {
+    /* Neutral dark shell (remove blue cast from the editor chrome). */
+    --background: hsl(0 0% 8%);
+    --surface: hsl(0 0% 10%);
+    --surface-elevated: hsl(0 0% 12%);
+    --card: hsl(0 0% 12%);
+    --popover: hsl(0 0% 10%);
+
+    /* Unified outline/border system for clearer panel separation. */
+    --border: hsl(0 0% 18%);
+    --input: hsl(0 0% 14%);
+    --ring: hsl(0 0% 62%);
+
+    /* Sidebar palette (wide panel + controls). */
+    --sidebar: hsl(0 0% 9%);
+    --sidebar-foreground: hsl(0 0% 90%);
+    --sidebar-accent: hsl(0 0% 14%);
+    --sidebar-accent-foreground: hsl(0 0% 94%);
+    --sidebar-border: hsl(0 0% 18%);
+
+    /* Keep timeline rows and muted surfaces in the same dark family. */
+    --muted: hsl(0 0% 11%);
+    --timeline-row: hsl(0 0% 11%);
+
+    /* Neutral primary tokens (blue accents remain explicit where intentionally used). */
+    --primary: hsl(0 0% 60%);
+    --primary-foreground: hsl(0 0% 100%);
+    --accent: hsl(0 0% 34%);
+    --accent-foreground: hsl(0 0% 96%);
+
+    --primary-100: hsl(0 0% 93%);
+    --primary-200: hsl(0 0% 87%);
+    --primary-300: hsl(0 0% 78%);
+    --primary-400: hsl(0 0% 67%);
+    --primary-500: hsl(0 0% 58%);
+    --primary-600: hsl(0 0% 50%);
+    --primary-700: hsl(0 0% 42%);
+
+    --sidebar-primary: hsl(0 0% 58%);
+    --sidebar-primary-foreground: hsl(0 0% 100%);
+    --sidebar-ring: hsl(0 0% 62%);
+}
+
+/* Slightly darker icon rail than the main sidebar panel, matching reference hierarchy. */
+.rve-host .sidebar-icon-rail {
+    background-color: hsl(0 0% 7%);
+    border-color: var(--sidebar-border);
+}
+
+/* Keep panel outlines consistent across timeline/header/sidebar shells. */
+.rve-host .timeline-container,
+.rve-host [data-sidebar="sidebar"],
+.rve-host [data-sidebar="content"] {
+    border-color: var(--border);
+}

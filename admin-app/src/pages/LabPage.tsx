@@ -1,4 +1,6 @@
 import type { User } from 'firebase/auth'
+import { useLocation } from 'react-router-dom'
+import LabNewLayoutPage from './LabNewLayoutPage'
 import { StudioProvider } from './StudioPage/StudioContext'
 import ToorGenPromptWorkbench from './ToorGenLabPage/ToorGenPromptWorkbench'
 import './LabPage.css'
@@ -8,6 +10,13 @@ type LabPageProps = {
 }
 
 function LabPageInner() {
+  const location = useLocation()
+  const isNewLayoutPage = location.pathname === '/lab/newlayout' || location.pathname.startsWith('/lab/newlayout/')
+
+  if (isNewLayoutPage) {
+    return <LabNewLayoutPage />
+  }
+
   return (
     <div className="lab-standalone-shell">
       <ToorGenPromptWorkbench />

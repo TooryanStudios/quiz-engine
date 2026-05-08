@@ -2118,6 +2118,11 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         border-color: transparent;
         box-shadow: inset 2px 0 0 #4f74bd;
       }
+      .workhub-tree-doc-subitem.is-linked-highlight {
+        background: #e9f2ff;
+        border-color: #8fb2e6;
+        box-shadow: inset 3px 0 0 #2f65c8;
+      }
       .workhub-tree-doc-subitem.is-drop-target {
         background: #e8f2ff;
         border-color: #7da7df;
@@ -2324,6 +2329,11 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       .workhub-tree-node-wrap.is-root > .workhub-tree-node {
         padding: 4px 7px;
         min-height: 32px;
+      }
+      .workhub-tree-node.is-linked-highlight {
+        background: #e9f2ff;
+        border-color: #8fb2e6;
+        box-shadow: inset 3px 0 0 #2f65c8;
       }
       .workhub-tree-drag-handle {
         border: 1px solid transparent;
@@ -6782,6 +6792,109 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         color: #5d7095;
         font-size: 0.76rem;
         font-weight: 700;
+      }
+      .workhub-pipeline-report-note {
+        margin: 0;
+        color: #5d7095;
+        font-size: 0.76rem;
+      }
+      .workhub-pipeline-report-filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .workhub-pipeline-report-filter-chip {
+        border: 1px solid #d4e3ff;
+        border-radius: 999px;
+        background: #f3f8ff;
+        color: #2a436f;
+        min-height: 28px;
+        padding: 0 10px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.72rem;
+        font-weight: 600;
+      }
+      .workhub-pipeline-report-filter-chip input {
+        margin: 0;
+      }
+      .workhub-pipeline-report-filter-chip strong {
+        font-size: 0.7rem;
+        color: #1f3763;
+        background: #e2ecff;
+        border-radius: 999px;
+        min-width: 20px;
+        text-align: center;
+        padding: 1px 6px;
+      }
+      .workhub-pipeline-report-summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 0.74rem;
+        color: #557099;
+      }
+      .workhub-pipeline-report-summary strong {
+        color: #1c3e79;
+      }
+      .workhub-pipeline-report-total-emphasis {
+        border: 2px solid #9dbcf3;
+        border-radius: 10px;
+        background: #eef5ff;
+        padding: 8px 10px;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .workhub-pipeline-report-total-emphasis span {
+        color: #325889;
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        font-weight: 700;
+      }
+      .workhub-pipeline-report-total-emphasis strong {
+        color: #113267;
+        font-size: 1rem;
+      }
+      .workhub-pipeline-report-table-wrap {
+        border: 1px solid #deebff;
+        border-radius: 9px;
+        background: #fff;
+        overflow: auto;
+        max-height: 320px;
+      }
+      .workhub-pipeline-report-table {
+        width: 100%;
+        min-width: 720px;
+        border-collapse: collapse;
+      }
+      .workhub-pipeline-report-table th,
+      .workhub-pipeline-report-table td {
+        border-bottom: 1px solid #edf3ff;
+        padding: 6px 8px;
+        text-align: left;
+        font-size: 0.72rem;
+        vertical-align: top;
+      }
+      .workhub-pipeline-report-table th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: #f5f9ff;
+        color: #27467c;
+        font-weight: 700;
+      }
+      .workhub-pipeline-report-group-row td {
+        background: #eef5ff;
+        color: #294678;
+        font-weight: 700;
+      }
+      .workhub-pipeline-report-total-row td {
+        background: #f8fbff;
       }
       .workhub-overview-status-list {
         display: flex;
@@ -11787,6 +11900,17 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       .workhub-select-all-head input {
         margin: 0;
       }
+      @keyframes workhub-linked-task-pulse {
+        0% {
+          box-shadow: inset 3px 0 0 #c28411, 0 0 0 0 rgba(213, 140, 24, 0.34);
+        }
+        65% {
+          box-shadow: inset 3px 0 0 #c28411, 0 0 0 7px rgba(213, 140, 24, 0);
+        }
+        100% {
+          box-shadow: inset 3px 0 0 #c28411, 0 0 0 0 rgba(213, 140, 24, 0);
+        }
+      }
       .workhub-task-row {
         cursor: pointer;
         transition: background-color 0.08s ease, border-color 0.08s ease;
@@ -11814,6 +11938,20 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         border-color: #8ea4c8;
         box-shadow: inset 3px 0 0 #4f74bd;
         transition: none;
+      }
+      .workhub-task-row.is-linked-highlight {
+        background: #fff5de;
+        border-color: #e3c06f;
+        box-shadow: inset 3px 0 0 #c28411;
+        animation: workhub-linked-task-pulse 1.15s ease-out 2;
+      }
+      .workhub-task-row.is-selected.is-linked-highlight {
+        background: #ffecc6;
+        border-color: #d8aa47;
+        box-shadow: inset 3px 0 0 #ac730d;
+      }
+      .workhub-task-row.is-linked-highlight .workhub-task-row-title strong {
+        color: #5f3e08;
       }
       .workhub-task-row.is-checked {
         background: #e7eef9;
@@ -11912,6 +12050,19 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         box-shadow: inset 2px 0 0 #4f74bd;
         transition: none;
       }
+      .workhub-task-sections.task-view-cards .workhub-task-row.is-linked-highlight,
+      .workhub-task-sections.task-view-grid .workhub-task-row.is-linked-highlight {
+        background: linear-gradient(180deg, #fff7e7 0%, #fff0d1 100%);
+        border-color: #e0b969;
+        box-shadow: inset 2px 0 0 #bc7f10, 0 4px 12px rgba(145, 94, 14, 0.18);
+        animation: workhub-linked-task-pulse 1.15s ease-out 2;
+      }
+      .workhub-task-sections.task-view-cards .workhub-task-row.is-selected.is-linked-highlight,
+      .workhub-task-sections.task-view-grid .workhub-task-row.is-selected.is-linked-highlight {
+        background: linear-gradient(180deg, #ffefce 0%, #ffe5b9 100%);
+        border-color: #d3a149;
+        box-shadow: inset 2px 0 0 #a46b0b, 0 4px 12px rgba(138, 86, 10, 0.2);
+      }
       .workhub-task-sections.task-view-grid .workhub-task-row:hover .workhub-task-row-title strong {
         color: #1f3451;
       }
@@ -11925,6 +12076,13 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       .workhub-task-sections.task-view-cards .workhub-task-row:first-child,
       .workhub-task-sections.task-view-grid .workhub-task-row:first-child {
         border-top: 1px solid #d9e3f6;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .workhub-task-row.is-linked-highlight,
+        .workhub-task-sections.task-view-cards .workhub-task-row.is-linked-highlight,
+        .workhub-task-sections.task-view-grid .workhub-task-row.is-linked-highlight {
+          animation: none;
+        }
       }
       .workhub-task-sections.task-view-cards .workhub-task-row-grid,
       .workhub-task-sections.task-view-grid .workhub-task-row-grid {
@@ -17622,6 +17780,11 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
           background: #fcfdff;
           box-shadow: none;
         }
+        .workhub-tree-doc-subitem.is-linked-highlight {
+          background: #e3efff;
+          border-color: #7ea2da;
+          box-shadow: inset 3px 0 0 #2f63c8;
+        }
         .workhub-tree-node {
           min-height: 40px;
           padding: 8px 10px;
@@ -17649,6 +17812,15 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
           min-height: 34px;
           padding-top: 6px;
           padding-bottom: 6px;
+        }
+        .workhub-tree-node.is-linked-highlight,
+        .workhub-tree-node-wrap.is-root:nth-child(odd) > .workhub-tree-node.is-linked-highlight,
+        .workhub-tree-node-wrap.is-root:nth-child(even) > .workhub-tree-node.is-linked-highlight,
+        .workhub-tree-node-wrap.is-nested:nth-child(odd) > .workhub-tree-node.is-linked-highlight,
+        .workhub-tree-node-wrap.is-nested:nth-child(even) > .workhub-tree-node.is-linked-highlight {
+          background: linear-gradient(90deg, #e3efff 0%, #f3f8ff 100%);
+          border-color: #7ea2da;
+          box-shadow: inset 4px 0 0 #2f63c8, 0 0 0 1px rgba(47, 99, 200, 0.2);
         }
         .workhub-tree-node.is-active,
         .workhub-tree-node-wrap.is-root:nth-child(odd) > .workhub-tree-node.is-active,

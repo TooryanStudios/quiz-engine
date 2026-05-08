@@ -24,9 +24,11 @@ export const ProjectActionMenu = memo(function ProjectActionMenu(props: {
   onCreateDocument: (projectId?: string) => void
   onCreateNote: (projectId?: string) => void
   onCreateTemplateEntity: (intent: WorkhubTemplateCreationIntent, projectId?: string) => void
+  onCreateWorkspaceReport?: (projectId?: string) => void
   onOpenSettings: (projectId: string) => void
   onRequestInlineRename?: (projectId: string) => void
   onMoveProject?: (projectId: string) => void
+  onCopyProjectLink?: (projectId: string) => void
   onDeleteProject?: (projectId: string) => void
   onOpenMoodBoard: (entityType: 'workspace' | 'project', entityId: string) => void
   onOpenFlowProjectLab: (entityType: 'workspace' | 'project', entityId: string) => void
@@ -201,6 +203,15 @@ export const ProjectActionMenu = memo(function ProjectActionMenu(props: {
       <button
         type="button"
         className="workhub-tree-item-context-menu-btn"
+        disabled={!props.canCreateTopCategory || !props.onCreateWorkspaceReport}
+        onClick={() => { props.onClose(); props.onCreateWorkspaceReport?.(targetProjectId || '') }}
+      >
+        📊 Create report
+      </button>
+
+      <button
+        type="button"
+        className="workhub-tree-item-context-menu-btn"
         disabled={!props.canCreateTopCategory}
         onClick={() => { props.onClose(); props.onCreateTask(targetProjectId || '') }}
       >
@@ -253,7 +264,7 @@ export const ProjectActionMenu = memo(function ProjectActionMenu(props: {
         📁 New folder    F
       </button>
 
-      {!isWorkspaceTarget && (!!props.onRequestInlineRename || !!props.onMoveProject || props.canManageProject || !!props.onDeleteProject) && (
+      {!isWorkspaceTarget && (!!props.onRequestInlineRename || !!props.onMoveProject || !!props.onCopyProjectLink || props.canManageProject || !!props.onDeleteProject) && (
         <>
           <div className="workhub-tree-item-context-menu-separator" />
           <div className={`workhub-tree-item-context-submenu-wrap${openSubmenuLeft ? ' opens-left' : ''}`}>
@@ -277,6 +288,15 @@ export const ProjectActionMenu = memo(function ProjectActionMenu(props: {
                   onClick={() => { props.onClose(); props.onMoveProject?.(props.projectId || '') }}
                 >
                   ↔ Move folder...    M
+                </button>
+              )}
+              {!!props.onCopyProjectLink && (
+                <button
+                  type="button"
+                  className="workhub-tree-item-context-menu-btn"
+                  onClick={() => { props.onClose(); props.onCopyProjectLink?.(props.projectId || '') }}
+                >
+                  🔗 Copy folder URL
                 </button>
               )}
               {props.canManageProject && (

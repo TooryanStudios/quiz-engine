@@ -1,4 +1,4 @@
-import { useRef, useMemo, useState, useEffect } from 'react'
+import { Fragment, useRef, useMemo, useState, useEffect } from 'react'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { useNavigate } from 'react-router-dom'
 import { auth, storage } from '../../../lib/firebase'
@@ -217,6 +217,50 @@ async function buildFileSignature(file: File): Promise<string> {
 type MessagesPageViewProps = {
   embedded?: boolean
   live?: boolean
+  isAr?: boolean
+  defaultTargetPath?: string
+  defaultTargetTaskId?: string
+  defaultTargetLabel?: string
+  projectTargetPath?: string
+  projectTargetLabel?: string
+  requestedThreadId?: string
+  requestKey?: number
+}
+
+function toAbsoluteHttpUrl(rawUrl: string): string | null {
+  const trimmed = rawUrl.trim()
+  if (!trimmed) return null
+  if (/^https?:\/\//i.test(trimmed)) return trimmed
+  if (/^www\./i.test(trimmed)) return `https://${trimmed}`
+  return null
+}
+
+function splitMessageTextByUrls(value: string): Array<{ type: 'text' | 'link'; value: string; href?: string }> {
+  const urlRegex = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi
+  const parts: Array<{ type: 'text' | 'link'; value: string; href?: string }> = []
+  let lastIndex = 0
+  let match: RegExpExecArray | null = null
+
+  while ((match = urlRegex.exec(value)) !== null) {
+    const start = match.index
+    const end = start + match[0].length
+    if (start > lastIndex) {
+      parts.push({ type: 'text', value: value.slice(lastIndex, start) })
+    }
+    const href = toAbsoluteHttpUrl(match[0])
+    if (href) {
+      parts.push({ type: 'link', value: match[0], href })
+    } else {
+      parts.push({ type: 'text', value: match[0] })
+    }
+    lastIndex = end
+  }
+
+  if (lastIndex < value.length) {
+    parts.push({ type: 'text', value: value.slice(lastIndex) })
+  }
+
+  return parts
 }
 
 function getChatDateLabel(timestamp: unknown): string {
@@ -233,7 +277,16 @@ function getChatDateLabel(timestamp: unknown): string {
   return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-export function MessagesPageView({ embedded = false, live = true }: MessagesPageViewProps) {
+export function MessagesPageView({
+  embedded = false,
+  live = true,
+  isAr = false,
+  defaultTargetPath,
+  defaultTargetTaskId,
+  defaultTargetLabel,
+  projectTargetPath,
+  projectTargetLabel,
+}: MessagesPageViewProps) {
   const navigate = useNavigate()
   const currentUser = auth.currentUser
   const layoutRef = useRef<HTMLDivElement>(null)
@@ -287,6 +340,26 @@ export function MessagesPageView({ embedded = false, live = true }: MessagesPage
   const [priorityFilter, setPriorityFilter] = useState<'all' | 'normal' | 'high'>('all')
   const [filterHasImage, setFilterHasImage] = useState(false)
   const [filterHasLink, setFilterHasLink] = useState(false)
+  const [includeActiveLink, setIncludeActiveLink] = useState(false)
+
+  const normalizedDefaultTargetPath = (defaultTargetPath || '').trim()
+  const normalizedDefaultTargetTaskId = (defaultTargetTaskId || '').trim()
+  const normalizedDefaultTargetLabel = (defaultTargetLabel || '').trim()
+  const normalizedProjectTargetPath = (projectTargetPath || '').trim()
+  const normalizedProjectTargetLabel = (projectTargetLabel || '').trim()
+  const hasDefaultTarget = normalizedDefaultTargetPath.length > 0
+  const hasProjectTarget = normalizedProjectTargetPath.length > 0
+  const linkedTargetPath = hasDefaultTarget
+    ? normalizedDefaultTargetPath
+    : (hasProjectTarget ? normalizedProjectTargetPath : '')
+  const linkedTargetTaskId = hasDefaultTarget ? normalizedDefaultTargetTaskId : ''
+  const linkedTargetLabel = hasDefaultTarget
+    ? (normalizedDefaultTargetLabel || 'Active task')
+    : (hasProjectTarget ? (normalizedProjectTargetLabel || 'Active folder') : '')
+
+  useEffect(() => {
+    setIncludeActiveLink(Boolean(linkedTargetPath))
+  }, [linkedTargetPath])
 
   const chatUser = useMemo(() => {
     if (!currentUser) return null
@@ -736,6 +809,12 @@ export function MessagesPageView({ embedded = false, live = true }: MessagesPage
       recipientUids: selectedRecipientUids.length > 0 ? selectedRecipientUids : undefined,
       priority: selectedPriority,
       replyToActivityId: replyingToMessageId || undefined,
+      ...(includeActiveLink && linkedTargetPath
+        ? {
+            targetPath: linkedTargetPath,
+            ...(linkedTargetTaskId ? { targetTaskId: linkedTargetTaskId } : {}),
+          }
+        : {}),
     }
     let sent = true
     if (uploadedImageUrls.length === 0) {
@@ -872,8 +951,17 @@ export function MessagesPageView({ embedded = false, live = true }: MessagesPage
 
     setSendError('')
     const recognition = new ctor()
+    const preferredLanguage = (() => {
+      if (/[\u0600-\u06FF]/.test(draft)) return 'ar-SA'
+      if (isAr) return 'ar-SA'
+      const browserPref = [navigator.language, ...(navigator.languages || [])]
+        .map((value) => (value || '').toLowerCase())
+        .find((value) => value.startsWith('ar') || value.startsWith('en'))
+      if (browserPref?.startsWith('ar')) return 'ar-SA'
+      return 'en-US'
+    })()
     voiceBaseDraftRef.current = draft.trim()
-    recognition.lang = 'en-US'
+    recognition.lang = preferredLanguage
     recognition.interimResults = true
     recognition.continuous = true
     recognition.maxAlternatives = 1
@@ -903,6 +991,7 @@ export function MessagesPageView({ embedded = false, live = true }: MessagesPage
 
     speechRecognitionRef.current = recognition
     try {
+      inputRef.current?.focus()
       recognition.start()
       setIsRecordingVoice(true)
     } catch {
@@ -1408,7 +1497,25 @@ export function MessagesPageView({ embedded = false, live = true }: MessagesPage
                             </span>
                           </div>
                         )}
-                        {!!item.text && <p>{item.text}</p>}
+                        {!!item.text && (
+                          <p>
+                            {splitMessageTextByUrls(item.text).map((part, idx) => (
+                              part.type === 'link' && part.href
+                                ? (
+                                  <a
+                                    key={`${item.id}_link_${idx}`}
+                                    href={part.href}
+                                    className="shell-chat-inline-link"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  >
+                                    {part.value}
+                                  </a>
+                                )
+                                : <Fragment key={`${item.id}_text_${idx}`}>{part.value}</Fragment>
+                            ))}
+                          </p>
+                        )}
                         {!!item.imageUrl && (
                           <img
                             src={item.imageUrl}
@@ -1679,6 +1786,23 @@ export function MessagesPageView({ embedded = false, live = true }: MessagesPage
           >
             Very high
           </button>
+          <button
+            type="button"
+            className={`shell-chat-link-current-btn${includeActiveLink ? ' is-active' : ''}`}
+            disabled={!linkedTargetPath}
+            onClick={() => {
+              if (!linkedTargetPath) return
+              setIncludeActiveLink((current) => !current)
+            }}
+            title={linkedTargetPath ? (includeActiveLink ? 'Do not attach active item link' : 'Attach active item link') : 'No active item link available'}
+          >
+            {includeActiveLink ? '🔗 Link on' : '🔗 Link off'}
+          </button>
+          {linkedTargetPath && (
+            <span className="shell-chat-priority-label" title={linkedTargetPath}>
+              {linkedTargetLabel}
+            </span>
+          )}
         </div>
 
         {pendingImages.length > 0 && (

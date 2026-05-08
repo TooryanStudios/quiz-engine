@@ -50,7 +50,7 @@ export function Dialog() {
         {/* Dialog Box */}
         <div
           style={{
-            backgroundColor: 'var(--bg-surface)',
+            backgroundColor: 'var(--bg-surface, #1b1f27)',
             borderRadius: '16px',
             border: '1px solid var(--border-strong)',
             boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)',
@@ -77,7 +77,7 @@ export function Dialog() {
               <button
                 onClick={handleCancel}
                 style={{
-                  background: 'transparent',
+                  background: 'rgba(255,255,255,0.06)',
                   border: 'none',
                   color: 'var(--text-mid)',
                   cursor: 'pointer',
@@ -96,7 +96,7 @@ export function Dialog() {
                   e.currentTarget.style.color = 'var(--text-bright)'
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent'
+                  e.currentTarget.style.background = 'rgba(255,255,255,0.06)'
                   e.currentTarget.style.color = 'var(--text-mid)'
                 }}
                 title="إغلاق"

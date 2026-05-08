@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent, type SyntheticEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent, type SyntheticEvent } from 'react'
 import {
   BookMarked,
   FolderOpen,
@@ -201,6 +201,7 @@ export function MSEVideoSequencerPage({
   const [assetsTab, setAssetsTab] = useState<'generated' | 'library'>('generated')
   const [assetsVisibleCount, setAssetsVisibleCount] = useState(12)
   const [assetsPanelSelected, setAssetsPanelSelected] = useState<Set<string>>(new Set())
+  const [assetHealthByUrl, setAssetHealthByUrl] = useState<Record<string, 'checking' | 'ok' | 'bad'>>({})
   const [timelineZoom, setTimelineZoom] = useState(1)
   const [crossfadeEnabled, setCrossfadeEnabled] = useState(true)
   const [markers, setMarkers] = useState<TimelineMarker[]>([])
@@ -343,6 +344,64 @@ export function MSEVideoSequencerPage({
   const rulerTicks = useMemo(() => computeRulerTicks(timelineTotalDurationSec), [timelineTotalDurationSec])
 
   const allAssetsForTab = assetsTab === 'generated' ? generatedVideos : libraryVideos
+  const healthyAssetsForTab = useMemo(
+    () => allAssetsForTab.filter((item) => assetHealthByUrl[item.url.trim()] !== 'bad'),
+    [allAssetsForTab, assetHealthByUrl],
+  )
+
+  const validateAssetUrl = useCallback(async (url: string): Promise<boolean> => {
+    const trimmed = url.trim()
+    if (!trimmed) return false
+
+    return new Promise<boolean>((resolve) => {
+      const element = document.createElement('video')
+      let done = false
+      const finish = (ok: boolean) => {
+        if (done) return
+        done = true
+        element.removeEventListener('loadedmetadata', onLoadedMetadata)
+        element.removeEventListener('error', onError)
+        element.removeAttribute('src')
+        try { element.load() } catch { /* ignore */ }
+        resolve(ok)
+      }
+      const onLoadedMetadata = () => finish(true)
+      const onError = () => finish(false)
+
+      element.preload = 'metadata'
+      element.muted = true
+      element.playsInline = true
+      element.addEventListener('loadedmetadata', onLoadedMetadata, { once: true })
+      element.addEventListener('error', onError, { once: true })
+      element.src = trimmed
+      element.load()
+      window.setTimeout(() => finish(false), 8000)
+    })
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    const visibleUrls = allAssetsForTab
+      .slice(0, assetsVisibleCount)
+      .map((item) => item.url.trim())
+      .filter(Boolean)
+    const queue = visibleUrls.filter((url) => !assetHealthByUrl[url])
+    if (queue.length === 0) return
+
+    void (async () => {
+      for (const url of queue) {
+        if (cancelled) return
+        setAssetHealthByUrl((current) => ({ ...current, [url]: 'checking' }))
+        const ok = await validateAssetUrl(url)
+        if (cancelled) return
+        setAssetHealthByUrl((current) => ({ ...current, [url]: ok ? 'ok' : 'bad' }))
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [allAssetsForTab, assetHealthByUrl, assetsVisibleCount, validateAssetUrl])
 
   useEffect(() => {
     setAppliedConfig({
@@ -465,6 +524,43 @@ export function MSEVideoSequencerPage({
 
     setSaveStatus('Clips appended to timeline.')
   }
+
+  const addUrlsAfterValidation = useCallback(async (urls: string[]) => {
+    const cleaned = Array.from(new Set(urls.map((url) => url.trim()).filter(Boolean)))
+    if (cleaned.length === 0) return
+
+    const valid: string[] = []
+    const invalid: string[] = []
+
+    for (const url of cleaned) {
+      const knownStatus = assetHealthByUrl[url]
+      if (knownStatus === 'bad') {
+        invalid.push(url)
+        continue
+      }
+      if (knownStatus === 'ok') {
+        valid.push(url)
+        continue
+      }
+      setAssetHealthByUrl((current) => ({ ...current, [url]: 'checking' }))
+      const ok = await validateAssetUrl(url)
+      setAssetHealthByUrl((current) => ({ ...current, [url]: ok ? 'ok' : 'bad' }))
+      if (ok) valid.push(url)
+      else invalid.push(url)
+    }
+
+    if (valid.length > 0) {
+      addAllSegmentUrls(valid)
+    }
+
+    if (invalid.length > 0 && valid.length > 0) {
+      setSaveStatus(`Added ${valid.length} clip${valid.length !== 1 ? 's' : ''}. Skipped ${invalid.length} unavailable source${invalid.length !== 1 ? 's' : ''}.`)
+      return
+    }
+    if (invalid.length > 0) {
+      setSaveStatus(`No clips were added. ${invalid.length} selected source${invalid.length !== 1 ? 's are' : ' is'} unavailable.`)
+    }
+  }, [assetHealthByUrl, validateAssetUrl])
 
   const removeTimelineClip = (index: number) => {
     const next = parsedSegments.filter((_, itemIndex) => itemIndex !== index)
@@ -810,14 +906,31 @@ export function MSEVideoSequencerPage({
     setAssetDropIndex(index)
   }
 
-  const handleTrackAssetDrop = (event: DragEvent<HTMLElement>, index: number) => {
+  const handleTrackAssetDrop = async (event: DragEvent<HTMLElement>, index: number) => {
     event.preventDefault()
     const url = event.dataTransfer.getData('application/mse-asset-url')
     if (!url) return
+    const normalized = url.trim()
+    if (!normalized) return
+
+    const knownStatus = assetHealthByUrl[normalized]
+    let isValid = knownStatus === 'ok'
+    if (knownStatus !== 'ok') {
+      setAssetHealthByUrl((current) => ({ ...current, [normalized]: 'checking' }))
+      isValid = await validateAssetUrl(normalized)
+      setAssetHealthByUrl((current) => ({ ...current, [normalized]: isValid ? 'ok' : 'bad' }))
+    }
+
+    if (!isValid) {
+      setSaveStatus('Dropped clip is unavailable and was not added.')
+      setAssetDropIndex(null)
+      return
+    }
+
     setAssetDropIndex(null)
     // Insert at the drop position
     const next = [...parsedSegments]
-    next.splice(index, 0, url)
+    next.splice(index, 0, normalized)
     setSegmentsInput(next.join('\n'))
     // Shift trim/duration maps
     setClipTrimByIndex((current) => {
@@ -844,7 +957,7 @@ export function MSEVideoSequencerPage({
     const url = event.dataTransfer.getData('application/mse-asset-url')
     if (!url) return
     setAssetDropIndex(null)
-    addAllSegmentUrls([url])
+    void addUrlsAfterValidation([url])
   }
 
   const handleTrackEndAssetDragOver = (event: DragEvent<HTMLDivElement>) => {
@@ -952,7 +1065,7 @@ export function MSEVideoSequencerPage({
                   </button>
                 </div>
                 <div className="mse-assets-grid" role="list">
-                  {allAssetsForTab.slice(0, assetsVisibleCount).map((item) => {
+                  {healthyAssetsForTab.slice(0, assetsVisibleCount).map((item) => {
                     const isSelected = assetsPanelSelected.has(item.url)
                     return (
                       <article
@@ -987,17 +1100,17 @@ export function MSEVideoSequencerPage({
                       </article>
                     )
                   })}
-                  {allAssetsForTab.length === 0 && (
+                  {healthyAssetsForTab.length === 0 && (
                     <p className="mse-source-empty">No clips available.</p>
                   )}
                 </div>
-                {assetsVisibleCount < allAssetsForTab.length && (
+                {assetsVisibleCount < healthyAssetsForTab.length && (
                   <button
                     type="button"
                     className="mse-action-btn is-small"
                     onClick={() => setAssetsVisibleCount((c) => c + 12)}
                   >
-                    Load More ({allAssetsForTab.length - assetsVisibleCount} more)
+                    Load More ({healthyAssetsForTab.length - assetsVisibleCount} more)
                   </button>
                 )}
                 {assetsPanelSelected.size > 0 && (
@@ -1005,7 +1118,7 @@ export function MSEVideoSequencerPage({
                     type="button"
                     className="mse-action-btn"
                     onClick={() => {
-                      addAllSegmentUrls([...assetsPanelSelected])
+                      void addUrlsAfterValidation([...assetsPanelSelected])
                       setAssetsPanelSelected(new Set())
                     }}
                   >

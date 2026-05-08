@@ -1,4 +1,10 @@
 import type { QuizQuestion } from '../types/quiz';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 
 /**
  * Common date threshold for "new" content (14 days)

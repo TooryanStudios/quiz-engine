@@ -198,6 +198,18 @@ export interface UserProfile {
   slidePanelLayout?: 'left' | 'bottom'
   /** Editor slide panel enabled toggle */
   slidePanelEnabled?: boolean
+  /** ToorGen layout: composer rail width */
+  toorGenComposerWidth?: number
+  /** ToorGen layout: direct panel width */
+  toorGenDirectPanelWidth?: number
+  /** ToorGen layout: composer refs splitter position */
+  toorGenComposerRefsHeight?: number
+  /** ToorGen Dockview preview layout state */
+  toorGenDockviewLayoutState?: string
+  /** ToorGen Dockview preview named layout presets */
+  toorGenDockviewLayoutPresets?: string
+  /** ToorGen Dockview preview admin-only tab ids */
+  toorGenDockviewAdminOnlyTabs?: string
   /** Cumulative gameplay points earned */
   points?: number
   /** Wallet credits from entitlements/{uid}.creditsRemaining */
@@ -316,7 +328,7 @@ export async function setUserStatus(uid: string, status: 'pending' | 'active' | 
 /** Save user preference + gameplay identity fields to Firestore. */
 export async function saveUserPrefs(
   uid: string,
-  prefs: Partial<Pick<UserProfile, 'language' | 'theme' | 'activeOrgId' | 'activeProjectId' | 'activeFolderId' | 'gameDisplayName' | 'gameAvatar' | 'slidePanelLayout' | 'slidePanelEnabled'>>
+  prefs: Partial<Pick<UserProfile, 'language' | 'theme' | 'activeOrgId' | 'activeProjectId' | 'activeFolderId' | 'gameDisplayName' | 'gameAvatar' | 'slidePanelLayout' | 'slidePanelEnabled' | 'toorGenComposerWidth' | 'toorGenDirectPanelWidth' | 'toorGenComposerRefsHeight' | 'toorGenDockviewLayoutState' | 'toorGenDockviewLayoutPresets' | 'toorGenDockviewAdminOnlyTabs'>>
 ): Promise<void> {
   await setDoc(doc(db, 'users', uid), prefs, { merge: true })
 }
@@ -324,7 +336,7 @@ export async function saveUserPrefs(
 /** One-shot load of user preference fields on login. Returns null when no doc exists yet. */
 export async function loadUserPrefs(
   uid: string
-): Promise<Pick<UserProfile, 'language' | 'theme' | 'activeOrgId' | 'activeProjectId' | 'activeFolderId' | 'gameDisplayName' | 'gameAvatar' | 'slidePanelLayout' | 'slidePanelEnabled'> | null> {
+): Promise<Pick<UserProfile, 'language' | 'theme' | 'activeOrgId' | 'activeProjectId' | 'activeFolderId' | 'gameDisplayName' | 'gameAvatar' | 'slidePanelLayout' | 'slidePanelEnabled' | 'toorGenComposerWidth' | 'toorGenDirectPanelWidth' | 'toorGenComposerRefsHeight' | 'toorGenDockviewLayoutState' | 'toorGenDockviewLayoutPresets' | 'toorGenDockviewAdminOnlyTabs'> | null> {
   try {
     const snap = await getDoc(doc(db, 'users', uid))
     if (!snap.exists()) return null
@@ -339,6 +351,12 @@ export async function loadUserPrefs(
       gameAvatar: d.gameAvatar ?? undefined,
       slidePanelLayout: d.slidePanelLayout ?? undefined,
       slidePanelEnabled: typeof d.slidePanelEnabled === 'boolean' ? d.slidePanelEnabled : undefined,
+      toorGenComposerWidth: typeof d.toorGenComposerWidth === 'number' ? d.toorGenComposerWidth : undefined,
+      toorGenDirectPanelWidth: typeof d.toorGenDirectPanelWidth === 'number' ? d.toorGenDirectPanelWidth : undefined,
+      toorGenComposerRefsHeight: typeof d.toorGenComposerRefsHeight === 'number' ? d.toorGenComposerRefsHeight : undefined,
+      toorGenDockviewLayoutState: typeof d.toorGenDockviewLayoutState === 'string' ? d.toorGenDockviewLayoutState : undefined,
+      toorGenDockviewLayoutPresets: typeof d.toorGenDockviewLayoutPresets === 'string' ? d.toorGenDockviewLayoutPresets : undefined,
+      toorGenDockviewAdminOnlyTabs: typeof d.toorGenDockviewAdminOnlyTabs === 'string' ? d.toorGenDockviewAdminOnlyTabs : undefined,
     }
   } catch { return null }
 }

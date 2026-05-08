@@ -21,6 +21,8 @@ export type MSEVideoSequencerProps = {
   loop?: boolean
   crossfadeEnabled?: boolean
   onTimeUpdate?: (currentTime: number, duration: number) => void
+  className?: string
+  style?: React.CSSProperties
 }
 
 export const DEFAULT_MIME_CODEC = 'video/mp4; codecs="avc1.42E01E, mp4a.40.2"'
@@ -37,6 +39,21 @@ function asErrorMessage(error: unknown) {
   return typeof error === 'string' ? error : 'Unknown media pipeline error.'
 }
 
+function isAbortLikeError(error: unknown) {
+  if (error instanceof DOMException && error.name === 'AbortError') {
+    return true
+  }
+  if (error instanceof Error) {
+    const text = `${error.name} ${error.message}`.toLowerCase()
+    return text.includes('abort') || text.includes('signal is aborted')
+  }
+  if (typeof error === 'string') {
+    const text = error.toLowerCase()
+    return text.includes('abort') || text.includes('signal is aborted')
+  }
+  return false
+}
+
 function isPlainMp4Url(url: string) {
   return /\.mp4(\?|#|$)/i.test(url) && !/\.m4s(\?|#|$)/i.test(url)
 }
@@ -51,6 +68,8 @@ export const MSEVideoSequencer = React.forwardRef<MSEVideoSequencerHandle, MSEVi
   loop = false,
   crossfadeEnabled = true,
   onTimeUpdate,
+  className,
+  style: _style,
 }, ref) => {
   const videoPrimaryRef = useRef<HTMLVideoElement | null>(null)
   const videoSecondaryRef = useRef<HTMLVideoElement | null>(null)
@@ -273,18 +292,24 @@ export const MSEVideoSequencer = React.forwardRef<MSEVideoSequencerHandle, MSEVi
         element.load()
       }
 
-      const waitForCanPlay = (element: HTMLVideoElement) => new Promise<void>((resolve) => {
+      const waitForCanPlay = (element: HTMLVideoElement) => new Promise<void>((resolve, reject) => {
         if (element.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
           resolve()
           return
         }
         const onReady = () => {
           element.removeEventListener('canplay', onReady)
-          element.removeEventListener('error', onReady)
+          element.removeEventListener('error', onError)
           resolve()
         }
+        const onError = () => {
+          element.removeEventListener('canplay', onReady)
+          element.removeEventListener('error', onError)
+          const mediaError = element.error
+          reject(new Error(mediaError?.message || 'Could not load clip source.'))
+        }
         element.addEventListener('canplay', onReady, { once: true })
-        element.addEventListener('error', onReady, { once: true })
+        element.addEventListener('error', onError, { once: true })
       })
 
       const loadClip = async (element: HTMLVideoElement, clipUrl: string) => {
@@ -324,7 +349,14 @@ export const MSEVideoSequencer = React.forwardRef<MSEVideoSequencerHandle, MSEVi
         setStatus(`Loading clip ${targetIndex + 1}/${clipsCount} (MP4 queue mode)`)
         setPlayRequired(false)
 
-        await loadClip(targetVideo, clipUrl)
+        try {
+          await loadClip(targetVideo, clipUrl)
+        } catch (loadError) {
+          setPlayRequired(false)
+          setStatus(`Clip ${targetIndex + 1}/${clipsCount} failed to load`)
+          setError(`Clip source is unavailable. ${asErrorMessage(loadError)}`)
+          return
+        }
 
         const clipStart = getClipStart(targetIndex)
         if (clipStart > 0) {
@@ -475,7 +507,11 @@ export const MSEVideoSequencer = React.forwardRef<MSEVideoSequencerHandle, MSEVi
         element.addEventListener('ended', handleEnded)
       })
 
-      void moveToClip(0, autoPlay)
+      void moveToClip(0, autoPlay).catch((startupError) => {
+        if (!active) return
+        setStatus('Error')
+        setError(`Could not start sequencer: ${asErrorMessage(startupError)}`)
+      })
 
       return () => {
         active = false
@@ -570,6 +606,10 @@ export const MSEVideoSequencer = React.forwardRef<MSEVideoSequencerHandle, MSEVi
           setPlayRequired(true)
         }
       } catch (pipelineError) {
+        if (cancelledRef.current || isAbortLikeError(pipelineError)) {
+          setStatus('Idle')
+          return
+        }
         const message = asErrorMessage(pipelineError)
         setStatus('Error')
         setError(message)
@@ -642,13 +682,14 @@ export const MSEVideoSequencer = React.forwardRef<MSEVideoSequencerHandle, MSEVi
   }
 
   return (
-    <section className="mse-video-sequencer" aria-live="polite">
+    <section className={`mse-video-sequencer ${className || ''}`} aria-live="polite">
       <div className={`mse-video-stack${!crossfadeEnabled ? ' is-no-crossfade' : ''}`}>
         <video
           ref={videoPrimaryRef}
           className={`mse-video mse-video-layer${visibleVideoSlot === 0 ? ' is-visible' : ''}`}
           playsInline
           preload="auto"
+          crossOrigin="anonymous"
           loop={!usesMp4QueueMode && loop}
         />
         <video
@@ -656,6 +697,7 @@ export const MSEVideoSequencer = React.forwardRef<MSEVideoSequencerHandle, MSEVi
           className={`mse-video mse-video-layer${visibleVideoSlot === 1 ? ' is-visible' : ''}`}
           playsInline
           preload="auto"
+          crossOrigin="anonymous"
           loop={false}
         />
       </div>

@@ -883,7 +883,13 @@ const playNotificationAlert = () => {
   }
 }
 
-export default function ToorGenPage() {
+type ToorGenPageProps = {
+  embedded?: boolean
+  forcedStudioMode?: 'simple' | 'flow'
+  hideNavigationLinks?: boolean
+}
+
+export default function ToorGenPage({ embedded = false, forcedStudioMode, hideNavigationLinks = false }: ToorGenPageProps = {}) {
   const navigate = useNavigate()
   const [prompt, setPrompt] = useState('')
   const [duration, setDuration] = useState<number>(5)
@@ -913,6 +919,10 @@ export default function ToorGenPage() {
   const [consumedCredits, setConsumedCredits] = useState<number | null>(null)
   const [activeSidebarView, setActiveSidebarView] = useState<'generations' | 'folders'>('generations')
   const [studioMode, setStudioMode] = useState<'simple' | 'flow'>(() => {
+    if (forcedStudioMode) {
+      return forcedStudioMode
+    }
+
     try {
       return localStorage.getItem(STUDIO_MODE_KEY) === 'flow' ? 'flow' : 'simple'
     } catch {
@@ -1010,6 +1020,14 @@ export default function ToorGenPage() {
   const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false)
   const [enhancedPromptCandidate, setEnhancedPromptCandidate] = useState('')
   const [enhancementOriginalPrompt, setEnhancementOriginalPrompt] = useState('')
+
+  useEffect(() => {
+    if (!forcedStudioMode || studioMode === forcedStudioMode) {
+      return
+    }
+
+    setStudioMode(forcedStudioMode)
+  }, [forcedStudioMode, studioMode])
 
   const queueItemsRef = useRef(queueItems)
   const pollingTimersRef = useRef<Record<string, number>>({})
@@ -1125,6 +1143,10 @@ export default function ToorGenPage() {
   }, [seedanceModel])
 
   useEffect(() => {
+    if (forcedStudioMode) {
+      return
+    }
+
     try {
       localStorage.setItem(VIEW_MODE_KEY, shotViewMode)
       localStorage.setItem(QUALITY_PREF_KEY, qualityPreset)
@@ -1141,7 +1163,7 @@ export default function ToorGenPage() {
     } catch {
       // Ignore localStorage failures.
     }
-  }, [shotViewMode, qualityPreset, includeAudio, studioMode, referenceImageUrl, referenceVideoUrl, referenceAudioUrl, referenceImageThumbs, extensionVideoUrl])
+  }, [shotViewMode, qualityPreset, includeAudio, studioMode, referenceImageUrl, referenceVideoUrl, referenceAudioUrl, referenceImageThumbs, extensionVideoUrl, forcedStudioMode])
 
   useEffect(() => {
     try {
@@ -3260,8 +3282,51 @@ export default function ToorGenPage() {
   const referenceLibrarySelectedCount = selectedReferenceLibraryUrls.length
   const pendingReferenceLibraryDeleteLabel = (pendingReferenceLibraryDelete?.sourcePrompt || `this reference ${pendingReferenceLibraryDelete?.mediaKind || 'item'}`).trim().slice(0, 120)
 
+  const flowCanvas = (
+    <ToorGenFlowCanvas
+      prompt={prompt}
+      onPromptChange={handlePromptChange}
+      duration={duration}
+      onDurationChange={handleDurationChange}
+      aspectRatio={aspectRatio}
+      onAspectRatioChange={handleAspectRatioChange}
+      mode={mode}
+      onModeChange={handleModeChange}
+      model={seedanceModel}
+      onModelChange={handleModelChange}
+      status={status}
+      isGenerating={isGenerating}
+      consumedCredits={consumedCredits}
+      selectedVideoUrl={selectedVideoUrl}
+      errorMessage={errorMessage}
+      nodeStatuses={nodeStatuses}
+      nodeTaskIds={nodeTaskIds}
+      nodeVideoUrls={nodeVideoUrls}
+      nodeErrorMessages={nodeErrorMessages}
+      nodeRequestedModels={nodeRequestedModels}
+      nodeEffectiveModels={nodeEffectiveModels}
+      nodeProviderLabels={nodeProviderLabels}
+      taskId={taskId}
+      resumeTaskId={resumeTaskId}
+      onResumeTaskIdChange={setResumeTaskId}
+      onResume={handleResume}
+      onGenerate={(request) => { void handleGenerate(request) }}
+      onSendRawJson={async (rawJson: string) => {
+        let parsed: unknown
+        try { parsed = JSON.parse(rawJson) } catch { throw new Error('Invalid JSON') }
+        const response = await fetch(buildApiUrl('/api/seedance/generate'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(parsed),
+        })
+        const payload = await response.json().catch(() => ({}))
+        if (!response.ok) throw new Error((payload as Record<string, unknown>)?.error as string || `HTTP ${response.status}`)
+      }}
+    />
+  )
+
   return (
-    <div className={`tg-shell${studioMode === 'simple' ? ' tg-shell--no-sidebar' : ''}`}>
+    <div className={`tg-shell${studioMode === 'simple' ? ' tg-shell--no-sidebar' : ''}${embedded ? ' tg-shell--embedded' : ''}`}>
       <aside className="tg-sidebar">
         <div className="tg-sidebar-head">
           <div>
@@ -3289,36 +3354,42 @@ export default function ToorGenPage() {
         </div>
 
         <div className="tg-sidebar-actions">
-          <div className="tg-studio-mode-switch" role="group" aria-label="Studio mode">
-            <button
-              type="button"
-              className={studioMode === 'simple' ? 'is-active' : ''}
-              onClick={() => setStudioMode('simple')}
-            >
-              Simple
-            </button>
-            <button
-              type="button"
-              className={studioMode === 'flow' ? 'is-active' : ''}
-              onClick={() => setStudioMode('flow')}
-            >
-              Flow
-            </button>
-          </div>
-          <button
-            type="button"
-            className="tg-sidebar-refresh-btn"
-            onClick={() => navigate('/lab')}
-          >
-            Open lab
-          </button>
-          <button
-            type="button"
-            className="tg-sidebar-refresh-btn"
-            onClick={() => navigate('/toorgen/extend')}
-          >
-            Open extend
-          </button>
+          {!forcedStudioMode ? (
+            <div className="tg-studio-mode-switch" role="group" aria-label="Studio mode">
+              <button
+                type="button"
+                className={studioMode === 'simple' ? 'is-active' : ''}
+                onClick={() => setStudioMode('simple')}
+              >
+                Simple
+              </button>
+              <button
+                type="button"
+                className={studioMode === 'flow' ? 'is-active' : ''}
+                onClick={() => setStudioMode('flow')}
+              >
+                Flow
+              </button>
+            </div>
+          ) : null}
+          {!hideNavigationLinks ? (
+            <>
+              <button
+                type="button"
+                className="tg-sidebar-refresh-btn"
+                onClick={() => navigate('/lab')}
+              >
+                Open lab
+              </button>
+              <button
+                type="button"
+                className="tg-sidebar-refresh-btn"
+                onClick={() => navigate('/toorgen/extend')}
+              >
+                Open extend
+              </button>
+            </>
+          ) : null}
           <button type="button" className="tg-sidebar-refresh-btn" onClick={handleRefreshQueue} disabled={isRefreshingQueue}>
             {isRefreshingQueue ? 'Refreshing...' : 'Refresh queue'}
           </button>
@@ -3519,46 +3590,7 @@ export default function ToorGenPage() {
 
       {studioMode === 'flow' ? (
         <main className="tg-main tg-main--canvas-only">
-          <ToorGenFlowCanvas
-            prompt={prompt}
-            onPromptChange={handlePromptChange}
-            duration={duration}
-            onDurationChange={handleDurationChange}
-            aspectRatio={aspectRatio}
-            onAspectRatioChange={handleAspectRatioChange}
-            mode={mode}
-            onModeChange={handleModeChange}
-            model={seedanceModel}
-            onModelChange={handleModelChange}
-            status={status}
-            isGenerating={isGenerating}
-            consumedCredits={consumedCredits}
-            selectedVideoUrl={selectedVideoUrl}
-            errorMessage={errorMessage}
-            nodeStatuses={nodeStatuses}
-            nodeTaskIds={nodeTaskIds}
-            nodeVideoUrls={nodeVideoUrls}
-            nodeErrorMessages={nodeErrorMessages}
-            nodeRequestedModels={nodeRequestedModels}
-            nodeEffectiveModels={nodeEffectiveModels}
-            nodeProviderLabels={nodeProviderLabels}
-            taskId={taskId}
-            resumeTaskId={resumeTaskId}
-            onResumeTaskIdChange={setResumeTaskId}
-            onResume={handleResume}
-            onGenerate={(request) => { void handleGenerate(request) }}
-            onSendRawJson={async (rawJson: string) => {
-              let parsed: unknown
-              try { parsed = JSON.parse(rawJson) } catch { throw new Error('Invalid JSON') }
-              const response = await fetch(buildApiUrl('/api/seedance/generate'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(parsed),
-              })
-              const payload = await response.json().catch(() => ({}))
-              if (!response.ok) throw new Error((payload as Record<string, unknown>)?.error as string || `HTTP ${response.status}`)
-            }}
-          />
+          {flowCanvas}
         </main>
       ) : (
       <main className="tg-main tg-main--simple">

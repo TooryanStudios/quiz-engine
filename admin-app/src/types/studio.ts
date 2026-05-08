@@ -94,6 +94,12 @@ export type ProjectVisibility =
 
 export type ProjectStatus = 'active' | 'archived' | 'draft'
 
+export type StudioProjectNewLayoutConfig = {
+  version: 1
+  adminOnlyPanelIds: string[]
+  masterAdminCanCloseTabs: boolean
+}
+
 /**
  * Top-level project document stored at `studio_projects/{projectId}`.
  * Projects are scoped to one org via `orgId`.
@@ -121,6 +127,8 @@ export type StudioProject = {
    * read without requiring a subcollection lookup at rule-evaluation time.
    */
   memberUids: string[]
+  /** Shared ToorGen Dockview policy for project-scoped admin tabs and close behavior. */
+  toorGenNewLayoutConfig?: StudioProjectNewLayoutConfig
   createdAt: Timestamp
   updatedAt: Timestamp
 }

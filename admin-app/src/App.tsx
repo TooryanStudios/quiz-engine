@@ -17,7 +17,6 @@ import { Dialog } from './components/Dialog'
 import { MSEVideoSequencer } from './components/MSEVideoSequencer'
 import { VFXContainer } from './components/VFXContainer'
 import { LoginPage } from './pages/LoginPage'
-import logoImg from './assets/QYan_logo_300x164.jpg'
 import { communicationFeatureFlags } from './features/communication/config'
 import { InAppNotificationCenter } from './features/communication/components/InAppNotificationCenter'
 import { ChatDock } from './features/communication/components/ChatDock'
@@ -29,7 +28,7 @@ import type { StudioNotification } from './types/studio'
 
 function RouteLoadFailure({ routeLabel }: { routeLabel: string }) {
   return (
-    <div style={{ padding: '1rem', color: 'var(--text-mid)' }}>
+    <div className="app-route-load-failure">
       Could not load {routeLabel}. Please refresh the page.
     </div>
   )
@@ -169,6 +168,7 @@ const MasterAdminPage = createLazyRoute('MasterAdminPage', () => import('./pages
 const VoiceLabPage    = createLazyRoute('VoiceLabPage', () => import('./pages/VoiceLabPage'), 'VoiceLabPage')
 const AILabPage       = createLazyRoute('AILabPage', () => import('./pages/AILabPage'))
 const CoverGenLabPage = createLazyRoute('CoverGenLabPage', () => import('./pages/CoverGenLabPage'))
+const WorkflowBuilderTestPage = createLazyRoute('WorkflowBuilderTestPage', () => import('./pages/WorkflowBuilderTestPage'))
 const ToorGenPage = createLazyRoute('ToorGenPage', () => import('./pages/ToorGenPage'))
 const ToorGenExtendPage = createLazyRoute('ToorGenExtendPage', () => import('./pages/ToorGenExtendPage'))
 const LabPage = createLazyRoute('LabPage', () => import('./pages/LabPage'), 'LabPage')
@@ -177,6 +177,7 @@ const GameEmbedPage   = createLazyRoute('GameEmbedPage', () => import('./pages/G
 const ScannerPage     = createLazyRoute('ScannerPage', () => import('./scanner/ScannerPage'), 'ScannerPage')
 const ScannerDesktopPage = createLazyRoute('ScannerDesktopPage', () => import('./scanner/ScannerDesktopPage'), 'ScannerDesktopPage')
 const StudioPage = createLazyRoute('StudioPage', () => import('./pages/StudioPage/StudioPage'), 'StudioPage')
+const VidPlayerPage = createLazyRoute('VidPlayerPage', () => import('./pages/VidPlayerPage'), 'VidPlayerPage')
 
 const MASTER_EMAIL = import.meta.env.VITE_MASTER_EMAIL as string | undefined
 const MASTER_PATH  = import.meta.env.VITE_MASTER_PATH  as string | undefined
@@ -244,6 +245,14 @@ function RequireAdmin({ user, children }: { user: User | null; children: ReactEl
   return children
 }
 
+function AppBrandMark() {
+  return (
+    <div className="app-loading-brand" aria-label="QYan Gaming">
+      Q<span>Yan</span> Gaming
+    </div>
+  )
+}
+
 function AppLoadingScreen({
   variant = 'default',
   note,
@@ -266,12 +275,14 @@ function AppLoadingScreen({
 
   return (
     <div className="app-loading-screen">
-      <img src={logoImg} alt="QYan" className="app-loading-logo" />
+      <AppBrandMark />
       <div className="app-loading-spinner" />
       {note ? <p className="app-loading-note">{note}</p> : null}
     </div>
   )
 }
+
+import VideoEditorPage from './pages/VideoEditorPage';
 
 function App() {
   const redirectPendingKey = 'qyan:authRedirectPending'
@@ -407,12 +418,19 @@ function App() {
   const isMasterPage  = MASTER_PATH ? location.pathname.startsWith(MASTER_PATH) : false
   const isWorkHubPage = location.pathname === '/workhub' || location.pathname.startsWith('/workhub/')
   const isLabPage = location.pathname === '/lab' || location.pathname.startsWith('/lab/')
+  const isCanvasPage = location.pathname === '/canvas'
+    || location.pathname.startsWith('/canvas/')
+    || location.pathname === '/workflow-builder-test'
+    || location.pathname.startsWith('/workflow-builder-test/')
   const isToorGenPage = location.pathname === '/toorgen' || location.pathname.startsWith('/toorgen/')
+  const isVidEditPage = location.pathname.toLowerCase() === '/videdit' || location.pathname.toLowerCase().startsWith('/videdit/')
+  const isVidPlayerPage = location.pathname === '/vidplayer' || location.pathname.startsWith('/vidplayer/')
   const isScannerPage = location.pathname === '/scanner' || location.pathname.startsWith('/scanner/')
   const isScannerDesktopPage = location.pathname === '/scanner/desktop' || location.pathname.startsWith('/scanner/desktop/')
   const isEmbeddedPreview = location.pathname.startsWith('/preview/') && new URLSearchParams(location.search).get('embedded') === '1'
   const isGameEmbed = location.pathname.startsWith('/embed') || location.pathname.startsWith('/play')
   const allowUnauthedLocalPlayTest = isLocalDevHost && isLocalPlayTestPath
+  const allowUnauthedLocalCanvas = isLocalDevHost && isCanvasPage
 
   // Apply theme to document element
   useEffect(() => {
@@ -447,6 +465,7 @@ function App() {
     else if (path.startsWith('/voice-lab')) nextTitle = 'Voice Lab'
     else if (path.startsWith('/ai-lab')) nextTitle = 'AI Lab'
     else if (path.startsWith('/cover-gen-lab')) nextTitle = 'Cover Generator'
+    else if (path.startsWith('/canvas') || path.startsWith('/workflow-builder-test')) nextTitle = 'Canvas'
     else if (path.startsWith('/game-modes')) nextTitle = 'Game Modes'
     else if (path.startsWith('/play-test')) nextTitle = 'Play Test'
     else if (path.startsWith('/scanner')) nextTitle = 'Scanner'
@@ -628,7 +647,7 @@ function App() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
-  if (user === undefined && !allowUnauthedLocalPlayTest && (isLoginPage || isWorkHubPage || isMasterPage || isLabPage)) {
+  if (user === undefined && !allowUnauthedLocalPlayTest && !allowUnauthedLocalCanvas && (isLoginPage || isWorkHubPage || isMasterPage || isLabPage || isCanvasPage)) {
     if (isLoginPage) {
       return (
         <ToastProvider>
@@ -651,6 +670,8 @@ function App() {
           ? (isAr ? 'جارٍ تجهيز مساحة العمل…' : 'Preparing your workspace…')
           : isLabPage
             ? (isAr ? 'جارٍ تجهيز المختبر…' : 'Preparing Lab…')
+          : isCanvasPage
+            ? (isAr ? 'جارٍ تجهيز اللوحة…' : 'Preparing Canvas…')
           : (isAr ? 'جارٍ التحقق من جلسة الدخول…' : 'Checking your session…')}
       />
     )
@@ -700,6 +721,33 @@ function App() {
     )
   }
 
+  // ── Standalone Canvas — full-screen workflow builder shell ──
+  if (isCanvasPage) {
+    return (
+      <ToastProvider>
+        <DialogProvider>
+          <div className="master-admin-standalone workflow-builder-standalone">
+            <ErrorBoundary>
+              <Suspense fallback={
+                <AppLoadingScreen
+                  variant="default"
+                  note={isAr ? 'جارٍ تحميل اللوحة…' : 'Loading Canvas…'}
+                />
+              }>
+                {allowUnauthedLocalCanvas ? (
+                  <WorkflowBuilderTestPage />
+                ) : (
+                  <RequireAdmin user={user ?? null}><WorkflowBuilderTestPage /></RequireAdmin>
+                )}
+              </Suspense>
+            </ErrorBoundary>
+            <Dialog />
+          </div>
+        </DialogProvider>
+      </ToastProvider>
+    )
+  }
+
   // ── Standalone Master Admin — no sidebar, no shell chrome ──
   if (isMasterPage) {
     return (
@@ -707,10 +755,7 @@ function App() {
         <DialogProvider>
           <div className="master-admin-standalone">
             <Suspense fallback={
-              <div className="app-loading-screen">
-                <img src={logoImg} alt="QYan" className="app-loading-logo" />
-                <div className="app-loading-spinner" />
-              </div>
+              <AppLoadingScreen />
             }>
               <Routes>
                 <Route path={MASTER_PATH ? `${MASTER_PATH}/*` : '__disabled__'} element={<RequireAdmin user={user ?? null}><MasterAdminPage /></RequireAdmin>} />
@@ -826,11 +871,33 @@ function App() {
     )
   }
 
+  // ── Standalone VidPlayer — local dev tool, no sidebar, no auth ──
+  if (isVidEditPage) {
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={<div className="app-loading-screen" />}>
+          <VideoEditorPage />
+        </Suspense>
+      </ErrorBoundary>
+    )
+  }
+
+  // ── Standalone VidPlayer — local dev tool, no sidebar, no auth ──
+  if (isVidPlayerPage) {
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={<div className="app-loading-screen" />}>
+          <VidPlayerPage />
+        </Suspense>
+      </ErrorBoundary>
+    )
+  }
+
   // ── Standalone Scanner — no sidebar, no app chrome ──
   if (isScannerPage) {
     return (
       <ErrorBoundary>
-        <Suspense fallback={<div style={{ background: '#0a0a0a', height: '100vh' }} />}>
+        <Suspense fallback={<div className="app-scanner-fallback" />}>
           {isScannerDesktopPage ? <ScannerDesktopPage /> : <ScannerPage />}
         </Suspense>
       </ErrorBoundary>
@@ -857,10 +924,7 @@ function App() {
             <div className="master-admin-standalone embedded-preview-shell">
               <ErrorBoundary>
                 <Suspense fallback={
-                  <div className="app-loading-screen">
-                    <img src={logoImg} alt="QYan" className="app-loading-logo" />
-                    <div className="app-loading-spinner" />
-                  </div>
+                  <AppLoadingScreen />
                 }>
                   <Routes>
                     <Route path="/preview" element={<QuizPreviewPage />} />
@@ -886,10 +950,7 @@ function App() {
             <div className="master-admin-standalone embedded-preview-shell">
               <ErrorBoundary>
                 <Suspense fallback={
-                  <div className="app-loading-screen">
-                    <img src={logoImg} alt="QYan" className="app-loading-logo" />
-                    <div className="app-loading-spinner" />
-                  </div>
+                  <AppLoadingScreen />
                 }>
                   <Routes>
                     <Route path="/embed/:gameId" element={<GameEmbedPage />} />
@@ -908,6 +969,7 @@ function App() {
 
   const appRoutes = (
     <Routes>
+      <Route path="/vidEdit" element={withRouteBoundary('videdit', <VideoEditorPage />)} />
       <Route path="/" element={withRouteBoundary('home', <Navigate to="/dashboard" replace />)} />
       <Route path="/login" element={withRouteBoundary('login', <LoginPage />)} />
       <Route path="/dashboard" element={withRouteBoundary('dashboard', <DashboardPage />)} />
@@ -936,6 +998,8 @@ function App() {
       <Route path="/voice-lab" element={withRouteBoundary('voice-lab', <RequireAdmin user={user ?? null}><VoiceLabPage /></RequireAdmin>)} />
       <Route path="/ai-lab" element={withRouteBoundary('ai-lab', <RequireAdmin user={user ?? null}><AILabPage /></RequireAdmin>)} />
       <Route path="/cover-gen-lab" element={withRouteBoundary('cover-gen-lab', <RequireAdmin user={user ?? null}><CoverGenLabPage /></RequireAdmin>)} />
+      <Route path="/canvas" element={withRouteBoundary('canvas', allowUnauthedLocalCanvas ? <WorkflowBuilderTestPage /> : <RequireAdmin user={user ?? null}><WorkflowBuilderTestPage /></RequireAdmin>)} />
+      <Route path="/workflow-builder-test" element={withRouteBoundary('workflow-builder-test', allowUnauthedLocalCanvas ? <WorkflowBuilderTestPage /> : <RequireAdmin user={user ?? null}><WorkflowBuilderTestPage /></RequireAdmin>)} />
       <Route path="/billing" element={withRouteBoundary('billing', <RequireAuth user={user}><BillingPage /></RequireAuth>)} />
       <Route path="/profile" element={withRouteBoundary('profile', <RequireAuth user={user}><ProfilePage /></RequireAuth>)} />
     </Routes>
@@ -1092,10 +1156,7 @@ function App() {
             <main className="login-main">
               <ErrorBoundary>
                 <Suspense fallback={
-                  <div className="app-loading-screen">
-                    <img src={logoImg} alt="QYan" className="app-loading-logo" />
-                    <div className="app-loading-spinner" />
-                  </div>
+                  <AppLoadingScreen />
                 }>
                   {appRoutes}
                 </Suspense>
@@ -1216,7 +1277,7 @@ function App() {
                             `mobile-nav-link${(end ? location.pathname === to : location.pathname.startsWith(to)) ? ' active' : ''}`
                           }
                         >
-                          <span className="mobile-nav-link-row" style={{ justifyContent: 'flex-start' }}>
+                          <span className="mobile-nav-link-row mobile-nav-link-row--start">
                             <span className="mobile-nav-link-icon">{icon}</span>
                             <span className="mobile-nav-link-label">{label}</span>
                           </span>
@@ -1240,7 +1301,7 @@ function App() {
                             `mobile-nav-link${(end ? location.pathname === to : location.pathname.startsWith(to)) ? ' active' : ''}`
                           }
                         >
-                          <span className="mobile-nav-link-row" style={{ justifyContent: 'flex-start' }}>
+                          <span className="mobile-nav-link-row mobile-nav-link-row--start">
                             <span className="mobile-nav-link-icon">{icon}</span>
                             <span className="mobile-nav-link-label">{label}</span>
                           </span>
@@ -1281,10 +1342,7 @@ function App() {
             <main className={`mobile-shell-main mobile-route-${mobileRouteKey}`} data-scrollable="true" onScroll={handleMobileMainScroll}>
               <ErrorBoundary>
                 <Suspense fallback={
-                  <div className="app-loading-screen">
-                    <img src={logoImg} alt="QYan" className="app-loading-logo" />
-                    <div className="app-loading-spinner" />
-                  </div>
+                  <AppLoadingScreen />
                 }>
                   {appRoutes}
                 </Suspense>
@@ -1310,7 +1368,7 @@ function App() {
           <div className={`admin-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
             <aside className="admin-sidebar">
               <div className="sidebar-header">
-                <h1 className="sidebar-brand" onClick={() => navigate('/dashboard')} style={{ cursor: 'pointer' }}>Q<span>Yan</span> Gaming</h1>
+                <h1 className="sidebar-brand sidebar-brand--clickable" onClick={() => navigate('/dashboard')}>Q<span>Yan</span> Gaming</h1>
                 {user ? (
                   <button
                     className="sidebar-collapse-btn"
@@ -1439,10 +1497,7 @@ function App() {
             <main className="admin-main" data-scrollable="true">
               <ErrorBoundary>
                 <Suspense fallback={
-                  <div className="app-loading-screen">
-                    <img src={logoImg} alt="QYan" className="app-loading-logo" />
-                    <div className="app-loading-spinner" />
-                  </div>
+                  <AppLoadingScreen />
                 }>
                   {appRoutes}
                 </Suspense>

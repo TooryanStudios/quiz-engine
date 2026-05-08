@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { MessagesPageView } from '../pages/MessagesPage'
 import '../communication.css'
 
@@ -24,12 +24,21 @@ interface ChatDockProps {
 
 export function ChatDock({
   open,
+  isAr,
   onClose,
   layout = 'drawer',
   floatingSide = 'right',
+  defaultTargetPath,
+  defaultTargetTaskId,
+  defaultTargetLabel,
+  projectTargetPath,
+  projectTargetLabel,
+  requestedThreadId,
+  requestKey,
 }: ChatDockProps) {
   const isFloating = layout === 'floating'
   const [isWarm, setIsWarm] = useState(open)
+  const dockRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
     if (open) {
@@ -39,6 +48,20 @@ export function ChatDock({
     const timer = window.setTimeout(() => setIsWarm(false), CHAT_DOCK_KEEP_ALIVE_MS)
     return () => window.clearTimeout(timer)
   }, [open])
+
+  useEffect(() => {
+    if (!open || !isFloating) return
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null
+      if (!target) return
+      if (dockRef.current?.contains(target)) return
+      onClose()
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    return () => document.removeEventListener('pointerdown', handlePointerDown)
+  }, [isFloating, onClose, open])
 
   const isLive = open || isWarm
 
@@ -53,6 +76,7 @@ export function ChatDock({
         />
       )}
       <aside
+        ref={dockRef}
         className={`shell-chat-dock${isFloating ? ' is-floating' : ''}${isFloating && floatingSide === 'left' ? ' is-floating-left' : ''}${open ? ' is-open' : ' is-closed'}`}
         role="dialog"
         aria-label="Messages"
@@ -67,7 +91,18 @@ export function ChatDock({
         >
           x
         </button>
-        <MessagesPageView embedded live={isLive} />
+        <MessagesPageView
+          embedded
+          live={isLive}
+          isAr={isAr}
+          defaultTargetPath={defaultTargetPath}
+          defaultTargetTaskId={defaultTargetTaskId}
+          defaultTargetLabel={defaultTargetLabel}
+          projectTargetPath={projectTargetPath}
+          projectTargetLabel={projectTargetLabel}
+          requestedThreadId={requestedThreadId}
+          requestKey={requestKey}
+        />
       </aside>
     </>
   )

@@ -3,54 +3,54 @@
   font-weight: 400;
 
   /* ── Light theme (default) ── */
-  --bg-page:        #f1f5f9;
+  --bg-page:        #f5f5f5;
   --bg-surface:     #ffffff;
-  --bg-deep:        #f8fafc;
-  --bg-input:       #f1f5f9;
-  --border:         #e2e8f0;
-  --border-mid:     #cbd5e1;
-  --border-strong:  #94a3b8;
-  --border-subtle:  #e2e8f0;  /* Added missing variable */
+  --bg-deep:        #f3f4f6;
+  --bg-input:       #f3f4f6;
+  --border:         #e5e7eb;
+  --border-mid:     #d1d5db;
+  --border-strong:  #9ca3af;
+  --border-subtle:  #e5e7eb;  /* Added missing variable */
 
   /* Missing card properties */
   --bg-card:        #ffffff;
-  --bg-hover:       #f1f5f9;
+  --bg-hover:       #f3f4f6;
   --shadow-sm:      0 1px 2px 0 rgb(0 0 0 / 0.05);
   --shadow-md:      0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
 
-  --text:           #1e293b;
-  --text-bright:    #0f172a;
-  --text-mid:       #475569;
-  --text-dim:       #64748b;
-  --text-muted:     #94a3b8;
-  --text-faint:     #94a3b8;
-  --accent:         #2563eb;
+  --text:           #1f2937;
+  --text-bright:    #111827;
+  --text-mid:       #4b5563;
+  --text-dim:       #6b7280;
+  --text-muted:     #9ca3af;
+  --text-faint:     #9ca3af;
+  --accent:         #6b7280;
   --play-btn:       #16a34a;
 }
 
 /* ── Dark theme ── */
 [data-theme="dark"] {
-  --bg-page:        #020617;
-  --bg-surface:     #111827;
-  --bg-deep:        #0f172a;
-  --bg-input:       #0b1220;
-  --border:         #1f2937;
-  --border-mid:     #1e293b;
-  --border-strong:  #334155;
-  --border-subtle:  #1f2937;  /* Added missing variable */
+  --bg-page:        #0f0f10;
+  --bg-surface:     #171717;
+  --bg-deep:        #111111;
+  --bg-input:       #1f1f1f;
+  --border:         #2a2a2a;
+  --border-mid:     #343434;
+  --border-strong:  #4b5563;
+  --border-subtle:  #2a2a2a;  /* Added missing variable */
 
-  --bg-card:        #0f172a;
-  --bg-hover:       #1e293b;
+  --bg-card:        #151515;
+  --bg-hover:       #242424;
   --shadow-sm:      0 1px 2px 0 rgb(0 0 0 / 0.5);
   --shadow-md:      0 4px 6px -1px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.5);
 
-  --text:           #e2e8f0;
-  --text-bright:    #f1f5f9;
-  --text-mid:       #cbd5e1;
-  --text-dim:       #94a3b8;
-  --text-muted:     #64748b;
-  --text-faint:     #4b5563;
-  --accent:         #2563eb;
+  --text:           #e5e7eb;
+  --text-bright:    #f3f4f6;
+  --text-mid:       #d1d5db;
+  --text-dim:       #9ca3af;
+  --text-muted:     #6b7280;
+  --text-faint:     #52525b;
+  --accent:         #6b7280;
   --play-btn:       #16a34a;
 }
 
@@ -109,14 +109,9 @@ textarea::placeholder {
   position: relative;
 }
 
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-mid) transparent;
-}
-
 *::-webkit-scrollbar {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
 }
 
 .workhub-doc-ai-tools-content {
@@ -125,18 +120,18 @@ textarea::placeholder {
   gap: 6px;
 }
 *::-webkit-scrollbar-track {
-  background: transparent;
+  background: rgba(8, 12, 18, 0.18);
 }
 
 *::-webkit-scrollbar-thumb {
-  background: var(--border-mid);
+  background: rgba(78, 89, 106, 0.88);
   border-radius: 999px;
-  border: 2px solid transparent;
+  border: 1px solid rgba(8, 12, 18, 0.24);
   background-clip: padding-box;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: var(--border-strong);
+  background: rgba(102, 116, 138, 0.96);
   background-clip: padding-box;
 }
 .workhub-doc-ai-meta-row {
@@ -286,6 +281,7 @@ p {
   justify-content: center;
   background: transparent;
   border-bottom: 1px solid #e2e9f6;
+  -webkit-user-select: none;
   user-select: none;
   touch-action: none;
   transition: background 0.15s;
