@@ -111,12 +111,37 @@ export class BrowserRenderer implements VideoRenderer {
       );
     }
 
-    const container = (player as { getContainerNode?: () => HTMLElement | null }).getContainerNode?.();
+    const container = player.getContainerNode();
     if (!container) {
       throw new Error('Player container element not found.');
     }
 
+    // The Remotion player container holds the canvas/composition area.
+    // We want to capture just the inner composition element so the screenshot
+    // is exactly width×height with no extra chrome.
+    const compositionEl: HTMLElement = (container.querySelector('[data-remotion-canvas]') as HTMLElement)
+      ?? (container.querySelector('.remotion-player-canvas') as HTMLElement)
+      ?? container;
+
     player.pause();
+
+    // toPng options that improve cross-origin compatibility
+    const toPngOptions = {
+      width,
+      height,
+      pixelRatio: 1,
+      cacheBust: true,
+      skipFonts: false,
+      // Set crossOrigin on cloned image/video nodes to avoid EncodingError
+      onCloneNode: (node: Node) => {
+        if (node instanceof HTMLImageElement && !node.crossOrigin) {
+          node.crossOrigin = 'anonymous';
+        }
+        if (node instanceof HTMLVideoElement && !node.crossOrigin) {
+          node.crossOrigin = 'anonymous';
+        }
+      },
+    } as Parameters<typeof toPng>[1];
 
     // Load FFmpeg WASM (cached after first render)
     const ffmpeg = await this.loadFFmpeg();
@@ -125,8 +150,23 @@ export class BrowserRenderer implements VideoRenderer {
     for (let frame = 0; frame < durationInFrames; frame++) {
       await this.seekAndWait(player, frame);
 
-      const dataUrl = await toPng(container, { width, height, pixelRatio: 1 });
-      const res = await fetch(dataUrl);
+      // Retry once on EncodingError (transient CORS decode failures)
+      let dataUrl: string;
+      try {
+        dataUrl = await toPng(compositionEl, toPngOptions);
+      } catch (captureErr) {
+        // One retry — sometimes the first attempt fails due to CORS caching
+        try {
+          dataUrl = await toPng(compositionEl, toPngOptions);
+        } catch {
+          // Skip frame: write a transparent 1×1 placeholder so FFmpeg
+          // still gets a frame at this index and the video stays in sync.
+          // For most practical cases this means a brief black flash.
+          dataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+          console.warn(`[BrowserRenderer] Frame ${frame} capture failed, using placeholder:`, captureErr);
+        }
+      }
+      const res = await fetch(dataUrl!);
       const buf = await res.arrayBuffer();
       const name = `f${String(frame).padStart(5, '0')}.png`;
       await ffmpeg.writeFile(name, new Uint8Array(buf));

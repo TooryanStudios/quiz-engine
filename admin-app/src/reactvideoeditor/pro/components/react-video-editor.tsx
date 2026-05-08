@@ -59,11 +59,13 @@ export const ReactVideoEditor: React.FC<ReactVideoEditorProps> = ({
   onSaving,
   onSaved,
   isPlayerOnly = false,
+  playerRef: externalPlayerRef,
   ...providerProps
 }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [lastSaveTime, setLastSaveTime] = useState<number | null>(null);
-  const playerRef = useRef<PlayerRef>(null);
+  const internalPlayerRef = useRef<PlayerRef>(null);
+  const playerRef = (externalPlayerRef as React.RefObject<PlayerRef | null> | undefined) ?? internalPlayerRef;
 
   const handleSaving = (saving: boolean) => {
     setIsSaving(saving);
