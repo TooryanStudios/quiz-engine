@@ -13,6 +13,8 @@
     "responseHeader": [
       "Content-Type",
       "Content-Length",
+      "Content-Range",
+      "Accept-Ranges",
       "Cache-Control",
       "x-goog-meta-*"
     ],
