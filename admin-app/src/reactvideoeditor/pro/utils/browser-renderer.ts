@@ -68,9 +68,15 @@ export class BrowserRenderer implements VideoRenderer {
     if (this.ffmpegInstance) return this.ffmpegInstance;
     if (!this.ffmpegLoadPromise) {
       const ffmpeg = new FFmpeg();
+      
+      // Use variables/concatenation to bypass Vite's static asset plugin 
+      // preventing it from catching the /public folder references at build time.
+      const coreFile = 'ffmpeg-core.js';
+      const wasmFile = 'ffmpeg-core.wasm';
+
       this.ffmpegLoadPromise = ffmpeg.load({
-        coreURL: '/ffmpeg-core.js',
-        wasmURL: '/ffmpeg-core.wasm',
+        coreURL: `/${coreFile}`,
+        wasmURL: `/${wasmFile}`,
       }).then(() => {
         this.ffmpegInstance = ffmpeg;
       });
