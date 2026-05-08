@@ -97,7 +97,11 @@ export const WorkflowBuilderInspector = memo(function WorkflowBuilderInspector({
   const providerVideoUrl = (node.data.generatedSourceVideoUrl || '').trim()
   // Prefer firebase URL (stable), fall back to provider URL (may expire)
   const lastResultUrl = (firebaseVideoUrl || node.data.generatedVideoUrl || providerVideoUrl || '').trim()
-  const videoSources = [firebaseVideoUrl, node.data.generatedVideoUrl, providerVideoUrl].filter((u): u is string => Boolean(u?.trim()))
+  const videoSources = Array.from(new Set(
+    [firebaseVideoUrl, node.data.generatedVideoUrl, providerVideoUrl]
+      .filter((u): u is string => Boolean(u?.trim()))
+      .map((u) => u.trim()),
+  ))
 
   const openUrl = (url: string) => {
     if (!url.trim()) return
@@ -203,8 +207,8 @@ export const WorkflowBuilderInspector = memo(function WorkflowBuilderInspector({
           {videoSources.length > 0 ? (
             <div className="workflow-builder-canvas__inspector-video">
               <video key={videoSources[0]} controls playsInline preload="metadata">
-                {videoSources.map((src) => (
-                  <source key={src} src={src} />
+                {videoSources.map((src, index) => (
+                  <source key={`${index}-${src}`} src={src} />
                 ))}
               </video>
             </div>

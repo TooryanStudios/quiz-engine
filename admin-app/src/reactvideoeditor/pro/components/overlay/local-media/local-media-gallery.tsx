@@ -1,8 +1,8 @@
-import React, { useState, useRef, useMemo, useCallback } from "react";
+import React, { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import { useLocalMedia } from "../../../contexts/local-media-context";
 import { formatBytes, formatDuration } from "../../../utils/general/format-utils";
 import { Button } from "../../ui/button";
-import { Loader2, Upload, Trash2, Music } from "lucide-react";
+import { Loader2, Upload, Trash2, Music, AlertCircle, Pencil, Check, X, Film, Volume2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -12,6 +12,7 @@ import {
 } from "../../ui/dialog";
 import { UnifiedTabs } from "../shared/unified-tabs";
 import { setCurrentNewItemDragData, setCurrentNewItemDragType } from "../../advanced-timeline/hooks/use-new-item-drag";
+import { useAssetsLibrary, assetLibraryItemToFile } from "../../../hooks/use-assets-library";
 
 /**
  * User Media Gallery Component
@@ -28,43 +29,98 @@ export function LocalMediaGallery({
 }: {
   onSelectMedia?: (mediaFile: any) => void;
 }) {
-  const { localMediaFiles, addMediaFile, removeMediaFile, isLoading } =
+  const { localMediaFiles, addMediaFile, removeMediaFile, renameMediaFile, isLoading } =
     useLocalMedia();
   const [activeTab, setActiveTab] = useState("all");
   const [selectedFile, setSelectedFile] = useState<any>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const renameInputRef = useRef<HTMLInputElement>(null);
+  const videoPreviewRefById = useRef<Map<string, HTMLVideoElement>>(new Map());
+  const [hoveredVideoId, setHoveredVideoId] = useState<string | null>(null);
+  const [videoMetaBySrc, setVideoMetaBySrc] = useState<Record<string, { duration: number }>>({});
+  const [unplayableVideoBySrc, setUnplayableVideoBySrc] = useState<Record<string, boolean>>({});
+  const pendingVideoMetaSrcRef = useRef<Set<string>>(new Set());
+  const [brokenThumbnailById, setBrokenThumbnailById] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (renamingId && renameInputRef.current) {
+      renameInputRef.current.focus();
+      renameInputRef.current.select();
+    }
+  }, [renamingId]);
+
+  // Firebase + lab-local assets library
+  const { items: libraryItems, error: libraryError } = useAssetsLibrary();
+  const libraryFiles = useMemo(() => libraryItems.map(assetLibraryItemToFile), [libraryItems]);
+
+  // Uploads section should include both local uploads and saved assets-library items.
+  const uploadsFiles = useMemo(() => {
+    const byKey = new Map<string, any>();
+
+    libraryFiles.forEach((file) => {
+      byKey.set(`${file.type}:${file.path}`, file);
+    });
+
+    localMediaFiles.forEach((file) => {
+      const key = `${file.type}:${file.path}`;
+      if (!byKey.has(key)) {
+        byKey.set(key, file);
+      }
+    });
+
+    return Array.from(byKey.values());
+  }, [libraryFiles, localMediaFiles]);
+
+  useEffect(() => {
+    const currentIds = new Set(uploadsFiles.map((file) => String(file.id)));
+    setBrokenThumbnailById((current) => {
+      let hasChange = false;
+      const next: Record<string, boolean> = {};
+      Object.entries(current).forEach(([id, value]) => {
+        if (currentIds.has(id)) {
+          next[id] = value;
+        } else {
+          hasChange = true;
+        }
+      });
+      return hasChange ? next : current;
+    });
+  }, [uploadsFiles]);
 
   // Create source results for the tabs - memoized to prevent recalculation
   const sourceResults = useMemo(() => [
     {
       adaptorName: "image",
       adaptorDisplayName: "Images",
-      itemCount: localMediaFiles.filter(file => file.type === "image").length,
-      totalCount: localMediaFiles.filter(file => file.type === "image").length,
+      itemCount: uploadsFiles.filter(file => file.type === "image").length,
+      totalCount: uploadsFiles.filter(file => file.type === "image").length,
     },
     {
       adaptorName: "video",
       adaptorDisplayName: "Videos",
-      itemCount: localMediaFiles.filter(file => file.type === "video").length,
-      totalCount: localMediaFiles.filter(file => file.type === "video").length,
+      itemCount: uploadsFiles.filter(file => file.type === "video").length,
+      totalCount: uploadsFiles.filter(file => file.type === "video").length,
     },
     {
       adaptorName: "audio",
       adaptorDisplayName: "Audio",
-      itemCount: localMediaFiles.filter(file => file.type === "audio").length,
-      totalCount: localMediaFiles.filter(file => file.type === "audio").length,
+      itemCount: uploadsFiles.filter(file => file.type === "audio").length,
+      totalCount: uploadsFiles.filter(file => file.type === "audio").length,
     },
-  ], [localMediaFiles]);
+  ], [uploadsFiles]);
 
   // Filter media files based on active tab - memoized to prevent recalculation
   const filteredMedia = useMemo(() => {
-    return localMediaFiles.filter((file) => {
+    return uploadsFiles.filter((file) => {
       if (activeTab === "all") return true;
       return file.type === activeTab;
     });
-  }, [localMediaFiles, activeTab]);
+  }, [uploadsFiles, activeTab]);
 
   // Handle file upload - memoized to prevent recreation
   const handleFileUpload = useCallback(async (
@@ -88,6 +144,63 @@ export function LocalMediaGallery({
   // Handle upload button click - memoized to prevent recreation
   const handleUploadClick = useCallback(() => {
     fileInputRef.current?.click();
+  }, []);
+
+  // Handle drag-and-drop file uploads from OS
+  const handleDropZoneDragOver = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes('Files')) {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDraggingOver(true);
+    }
+  }, []);
+
+  const handleDropZoneDragLeave = useCallback((e: React.DragEvent) => {
+    // Only clear if leaving the whole container
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDraggingOver(false);
+    }
+  }, []);
+
+  const handleDropZoneDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+    const files = Array.from(e.dataTransfer.files).filter(f =>
+      /^(image|video|audio)\//i.test(f.type)
+    );
+    if (files.length === 0) {
+      setUploadError('Only image, video, or audio files are supported.');
+      return;
+    }
+    setUploadError(null);
+    for (const file of files) {
+      try {
+        await addMediaFile(file);
+      } catch {
+        setUploadError(`Failed to upload "${file.name}". Please try again.`);
+      }
+    }
+  }, [addMediaFile]);
+
+  // Inline rename handlers
+  const startRename = useCallback((file: any, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRenamingId(file.id);
+    setRenameValue(file.name);
+  }, []);
+
+  const commitRename = useCallback(() => {
+    if (renamingId && renameValue.trim()) {
+      renameMediaFile?.(renamingId, renameValue.trim());
+    }
+    setRenamingId(null);
+    setRenameValue("");
+  }, [renamingId, renameValue, renameMediaFile]);
+
+  const cancelRename = useCallback(() => {
+    setRenamingId(null);
+    setRenameValue("");
   }, []);
 
   // Handle media selection - memoized to prevent recreation
@@ -117,13 +230,13 @@ export function LocalMediaGallery({
     const timelineType = file.type; // video, image, or audio
     
     // Convert file path to proper src URL for timeline
-    // Handle both server paths and blob URLs
+    // Handle blob URLs, external URLs (Firebase Storage / CDN), and local server paths
     let mediaSrc: string;
-    if (file.path.startsWith('blob:')) {
-      // Direct blob URL - use as-is
+    if (file.path.startsWith('blob:') || /^https?:\/\//i.test(file.path)) {
+      // Blob URL or external URL — use as-is
       mediaSrc = file.path;
     } else {
-      // Server path - convert to use the API route for better content-type handling
+      // Local server path — route through the local-media serve API
       const apiPath = file.path.startsWith('/') ? file.path.substring(1) : file.path;
       mediaSrc = `/api/latest/local-media/serve/${apiPath}`;
     }
@@ -213,6 +326,140 @@ export function LocalMediaGallery({
     setCurrentNewItemDragData(null);
   }, []);
 
+  const resolveMediaPreviewPath = useCallback((file: any) => {
+    if (typeof file.path !== 'string') {
+      return '';
+    }
+    if (file.path.startsWith('blob:') || /^https?:\/\//i.test(file.path)) {
+      return file.path;
+    }
+    const apiPath = file.path.startsWith('/') ? file.path.substring(1) : file.path;
+    return `/api/latest/local-media/serve/${apiPath}`;
+  }, []);
+
+  const resolveFileThumbnail = useCallback((file: any) => {
+    const explicit = typeof file.thumbnailUrl === 'string' && file.thumbnailUrl.trim()
+      ? file.thumbnailUrl.trim()
+      : typeof file.thumbnail === 'string' && file.thumbnail.trim()
+        ? file.thumbnail.trim()
+        : '';
+    if (explicit) {
+      return explicit;
+    }
+    if (file.type === "image") {
+      return resolveMediaPreviewPath(file);
+    }
+    return '';
+  }, [resolveMediaPreviewPath]);
+
+  useEffect(() => {
+    const videoFiles = uploadsFiles.filter((file) => file.type === "video");
+    videoFiles.forEach((file) => {
+      const previewSrc = resolveMediaPreviewPath(file);
+      if (!previewSrc || pendingVideoMetaSrcRef.current.has(previewSrc)) {
+        return;
+      }
+
+      pendingVideoMetaSrcRef.current.add(previewSrc);
+      const probe = document.createElement("video");
+      probe.preload = "metadata";
+      probe.muted = true;
+      probe.playsInline = true;
+
+      probe.onloadedmetadata = () => {
+        const rawDuration = Number.isFinite(probe.duration) ? probe.duration : 0;
+        setVideoMetaBySrc((current) => ({
+          ...current,
+          [previewSrc]: {
+            duration: rawDuration > 0 ? rawDuration : 0,
+          },
+        }));
+      };
+
+      probe.onerror = () => {
+        // Do not immediately mark unplayable here.
+        // Metadata probe failures can be transient (network/concurrency) and
+        // should not hard-fail the card before the real player is attempted.
+      };
+
+      probe.src = previewSrc;
+    });
+  }, [uploadsFiles, resolveMediaPreviewPath]);
+
+  const stopVideoPreview = useCallback((videoElement?: HTMLVideoElement | null) => {
+    if (!videoElement) {
+      return;
+    }
+    videoElement.pause();
+    try {
+      videoElement.currentTime = 0;
+    } catch {
+      // Some streams may reject explicit seeks.
+    }
+    videoElement.muted = true;
+  }, []);
+
+  useEffect(() => () => {
+    videoPreviewRefById.current.forEach((videoElement) => {
+      stopVideoPreview(videoElement);
+    });
+    videoPreviewRefById.current.clear();
+  }, [stopVideoPreview]);
+
+  const handleVideoMouseEnter = useCallback((file: any) => {
+    if (file.type !== "video") {
+      return;
+    }
+
+    const previewSrc = resolveMediaPreviewPath(file);
+    if (!previewSrc) {
+      return;
+    }
+
+    if (unplayableVideoBySrc[previewSrc] === true) {
+      return;
+    }
+
+    const fileId = String(file.id);
+    setHoveredVideoId(fileId);
+
+    const videoElement = videoPreviewRefById.current.get(fileId);
+    if (!videoElement) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        videoElement.currentTime = 0;
+      } catch {
+        // ignore seek failures
+      }
+
+      try {
+        videoElement.muted = false;
+        videoElement.volume = 1;
+        await videoElement.play();
+      } catch {
+        try {
+          // Browser autoplay policies may block unmuted playback without gesture.
+          videoElement.muted = true;
+          await videoElement.play();
+        } catch {
+          // Keep card static if playback is blocked.
+        }
+      }
+    })();
+  }, [resolveMediaPreviewPath, unplayableVideoBySrc]);
+
+  const handleVideoMouseLeave = useCallback((file: any) => {
+    if (file.type !== "video") {
+      return;
+    }
+    const fileId = String(file.id);
+    setHoveredVideoId((current) => (current === fileId ? null : current));
+    stopVideoPreview(videoPreviewRefById.current.get(fileId));
+  }, [stopVideoPreview]);
+
   // Render preview content based on file type
   const renderPreviewContent = () => {
     if (!selectedFile) return null;
@@ -256,7 +503,7 @@ export function LocalMediaGallery({
                   : `${window.location.origin}${selectedFile.path}`
               }
               controls
-              className="w-[280px] max-w-full"
+              className="w-70 max-w-full"
               controlsList="nodownload"
             />
           </div>
@@ -278,31 +525,130 @@ export function LocalMediaGallery({
         className="relative group/item border rounded-md overflow-hidden cursor-pointer 
           hover:border-primary transition-all 
           bg-card shadow-sm hover:shadow-md"
-        onClick={() => handleMediaSelect(file)}
+        onClick={() => {
+          if (file.type === "video") {
+            const previewSrc = resolveMediaPreviewPath(file);
+            if (previewSrc && unplayableVideoBySrc[previewSrc] === true) {
+              setUploadError(`Cannot preview \"${file.name}\" because this video file is not playable.`);
+              return;
+            }
+          }
+          handleMediaSelect(file);
+        }}
+        onMouseEnter={() => handleVideoMouseEnter(file)}
+        onMouseLeave={() => handleVideoMouseLeave(file)}
         draggable={true}
         onDragStart={handleDragStart(file)}
         onDragEnd={handleDragEnd}
       >
+        {(() => {
+          const previewSrc = file.type === "video" ? resolveMediaPreviewPath(file) : "";
+          const thumbnailSrc = resolveFileThumbnail(file);
+          const previewMetadata = previewSrc ? videoMetaBySrc[previewSrc] : undefined;
+          const resolvedDuration = previewMetadata?.duration && previewMetadata.duration > 0
+            ? previewMetadata.duration
+            : (typeof file.duration === "number" && file.duration > 0 ? file.duration : 0);
+          const durationLabel = resolvedDuration > 0 ? formatDuration(resolvedDuration) : "N/A";
+          const isPlayable = previewSrc ? unplayableVideoBySrc[previewSrc] !== true : true;
+          const fileId = String(file.id);
+          const hasBrokenThumbnail = brokenThumbnailById[fileId] === true;
+          const isHoveredVideo = hoveredVideoId === fileId;
+          const showVideoLayer = isHoveredVideo || !thumbnailSrc || hasBrokenThumbnail;
+
+          return (
+            <>
         {/* Thumbnail */}
         <div className="aspect-video relative">
           {file.type === "image" && (
             <img
-              src={file.thumbnail || `/api/latest/local-media/serve/${file.path.startsWith('/') ? file.path.substring(1) : file.path}`}
+              src={thumbnailSrc}
               alt={file.name}
               className="absolute inset-0 w-full h-full object-cover bg-card"
               draggable={false}
+              loading="lazy"
+              decoding="async"
             />
           )}
           {file.type === "video" && (
             <>
-              <img
-                src={file.thumbnail}
-                alt={file.name}
-                className="absolute inset-0 w-full h-full object-cover bg-card"
-                draggable={false}
+              <video
+                ref={(videoElement) => {
+                  if (videoElement) {
+                    videoPreviewRefById.current.set(fileId, videoElement);
+                  } else {
+                    videoPreviewRefById.current.delete(fileId);
+                  }
+                }}
+                src={previewSrc}
+                className={`absolute inset-0 w-full h-full object-cover bg-card transition-opacity duration-150 ${showVideoLayer ? 'opacity-100' : 'opacity-0'}`}
+                muted
+                playsInline
+                preload={showVideoLayer ? "metadata" : "none"}
+                onLoadedMetadata={(event) => {
+                  setUnplayableVideoBySrc((current) => {
+                    if (!previewSrc || !current[previewSrc]) {
+                      return current;
+                    }
+                    const next = { ...current };
+                    delete next[previewSrc];
+                    return next;
+                  });
+                  if (showVideoLayer) {
+                    // Force a seek so browsers paint the first frame as a thumbnail.
+                    try {
+                      event.currentTarget.currentTime = 0.01;
+                    } catch {
+                      // ignore seek failures for unsupported streams
+                    }
+                  }
+                }}
+                onError={() => {
+                  if (!previewSrc) {
+                    return;
+                  }
+                  setUnplayableVideoBySrc((current) => ({
+                    ...current,
+                    [previewSrc]: true,
+                  }));
+                }}
               />
+              {thumbnailSrc && !hasBrokenThumbnail ? (
+                <img
+                  src={thumbnailSrc}
+                  alt={file.name}
+                  className={`absolute inset-0 w-full h-full object-cover bg-card transition-opacity duration-150 ${isHoveredVideo ? 'opacity-0' : 'opacity-100'}`}
+                  draggable={false}
+                  loading="lazy"
+                  decoding="async"
+                  onError={() => {
+                    setBrokenThumbnailById((current) => ({
+                      ...current,
+                      [fileId]: true,
+                    }));
+                  }}
+                />
+              ) : null}
+
+              <div className="absolute top-1.5 left-1.5 bg-black/75 text-foreground text-xs px-1.5 py-0.5 rounded-md inline-flex items-center gap-1">
+                <Film className="w-3 h-3" />
+                <span>Video</span>
+              </div>
+
+              {isHoveredVideo ? (
+                <div className="absolute top-1.5 right-1.5 bg-black/75 text-foreground text-xs px-1.5 py-0.5 rounded-md inline-flex items-center gap-1">
+                  <Volume2 className="w-3 h-3" />
+                  <span>Preview</span>
+                </div>
+              ) : null}
+
+              {!isPlayable ? (
+                <div className="absolute bottom-1.5 left-1.5 bg-destructive text-destructive-foreground text-xs px-1.5 py-0.5 rounded-md">
+                  Unplayable
+                </div>
+              ) : null}
+
               <div className="absolute bottom-1.5 right-1.5 bg-black/75 text-foreground text-xs px-1.5 py-0.5 rounded-md">
-                {formatDuration(file.duration)}
+                {durationLabel}
               </div>
             </>
           )}
@@ -312,68 +658,145 @@ export function LocalMediaGallery({
             </div>
           )}
         </div>
+            </>
+          );
+        })()}
 
         {/* Media info */}
-        <div className="p-2.5">
-          <p className="text-sm font-extralight truncate text-foreground">
-            {file.name}
-          </p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {formatBytes(file.size)}
-          </p>
+        <div className="p-2.5" onClick={(e) => e.stopPropagation()}>
+          {!file._isAssetLibraryItem && renamingId === file.id ? (
+            <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+              <input
+                ref={renameInputRef}
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitRename();
+                  if (e.key === 'Escape') cancelRename();
+                }}
+                placeholder="Rename file"
+                title="Rename file"
+                aria-label="Rename file"
+                className="text-xs bg-transparent border-b border-primary outline-none flex-1 min-w-0"
+                onClick={(e) => e.stopPropagation()}
+              />
+              <button title="Save name" aria-label="Save name" onClick={commitRename} className="text-primary hover:text-primary/80 shrink-0"><Check className="w-3 h-3" /></button>
+              <button title="Cancel rename" aria-label="Cancel rename" onClick={cancelRename} className="text-muted-foreground hover:text-foreground shrink-0"><X className="w-3 h-3" /></button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 group/name">
+              <p
+                className="text-sm font-extralight truncate text-foreground flex-1 min-w-0"
+                title={!file._isAssetLibraryItem ? 'Click to rename' : file.name}
+                onClick={!file._isAssetLibraryItem ? (e) => startRename(file, e) : undefined}
+              >
+                {file.name}
+              </p>
+              {!file._isAssetLibraryItem && (
+                <Pencil
+                  className="w-3 h-3 text-muted-foreground opacity-0 group-hover/name:opacity-60 hover:opacity-100! cursor-pointer shrink-0"
+                  onClick={(e) => startRename(file, e)}
+                />
+              )}
+            </div>
+          )}
+          {!file._isAssetLibraryItem && (
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {formatBytes(file.size)}
+            </p>
+          )}
         </div>
 
-        {/* Delete button */}
-        <button
-          className="absolute top-2 right-2 bg-destructive
-            text-destructive-foreground p-1.5 rounded-full opacity-0 group-hover/item:opacity-100 transition-all duration-200 
-            shadow-sm hover:shadow-md transform hover:scale-105"
-          onClick={(e) => {
-            e.stopPropagation();
-            removeMediaFile(file.id);
-          }}
-          title="Delete media"
-        >
-          <Trash2 className="w-3.5 h-3.5" />
-        </button>
+        {/* Delete button — only for local uploads, not library assets */}
+        {!file._isAssetLibraryItem && (
+          <button
+            className="absolute top-2 right-2 bg-destructive
+              text-destructive-foreground p-1.5 rounded-full opacity-0 group-hover/item:opacity-100 transition-all duration-200 
+              shadow-sm hover:shadow-md transform hover:scale-105"
+            onClick={(e) => {
+              e.stopPropagation();
+              removeMediaFile(file.id);
+            }}
+            title="Delete media"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
     );
-  }, [handleMediaSelect, removeMediaFile, handleDragStart, handleDragEnd]);
+  }, [
+    handleMediaSelect,
+    removeMediaFile,
+    handleDragStart,
+    handleDragEnd,
+    resolveMediaPreviewPath,
+    resolveFileThumbnail,
+    hoveredVideoId,
+    handleVideoMouseEnter,
+    handleVideoMouseLeave,
+    videoMetaBySrc,
+    unplayableVideoBySrc,
+    brokenThumbnailById,
+    setUploadError,
+  ]);
 
   return (
-    <div className="h-full flex flex-col">
+    <div
+      className={`h-full flex flex-col relative ${isDraggingOver ? 'ring-2 ring-primary ring-inset rounded-md' : ''}`}
+      onDragOver={handleDropZoneDragOver}
+      onDragLeave={handleDropZoneDragLeave}
+      onDrop={handleDropZoneDrop}
+    >
+      {/* Drag-over overlay */}
+      {isDraggingOver && (
+        <div className="absolute inset-0 z-10 bg-primary/10 rounded-md flex flex-col items-center justify-center pointer-events-none">
+          <Upload className="w-8 h-8 text-primary mb-2" />
+          <p className="text-sm font-medium text-primary">Drop files to upload</p>
+        </div>
+      )}
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-sm font-extralight">Saved Uploads</h2>
         <div>
-          <Button
-            variant="default"
-            size="sm"
-            className="gap-1"
-            onClick={handleUploadClick}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Upload className="w-4 h-4" />
-            )}
-            Upload
-          </Button>
-          <input
-            ref={fileInputRef}
-            id="file-upload"
-            type="file"
-            className="hidden"
-            onChange={handleFileUpload}
-            accept="image/*,video/*,audio/*"
-            disabled={isLoading}
-          />
+          <>
+            <Button
+              variant="default"
+              size="sm"
+              className="gap-1"
+              onClick={handleUploadClick}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Upload className="w-4 h-4" />
+              )}
+              Upload
+            </Button>
+            <input
+              ref={fileInputRef}
+              id="file-upload"
+              type="file"
+              className="hidden"
+              title="Upload media file"
+              aria-label="Upload media file"
+              onChange={handleFileUpload}
+              accept="image/*,video/*,audio/*"
+              disabled={isLoading}
+            />
+          </>
         </div>
       </div>
 
       {uploadError && (
         <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-2 rounded mb-4">
           {uploadError}
+        </div>
+      )}
+
+      {libraryError && (
+        <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-2 rounded mb-4 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>{libraryError}</span>
         </div>
       )}
 
@@ -392,6 +815,7 @@ export function LocalMediaGallery({
               <p>Loading media files...</p>
             </div>
           ) : filteredMedia.length === 0 ? (
+            /* ── Uploads tab – empty ── */
             <div className="h-full flex flex-col font-extralight items-center justify-center py-8 text-muted-foreground text-center">
               <Upload className="h-8 w-8 mb-2" />
               <p className="text-sm text-center">No media files</p>
@@ -421,7 +845,10 @@ export function LocalMediaGallery({
           <DialogHeader>
             <DialogTitle>{selectedFile?.name}</DialogTitle>
             <DialogDescription>
-              {selectedFile?.type} • {formatBytes(selectedFile?.size)}
+              {selectedFile?.type}
+              {!selectedFile?._isAssetLibraryItem && selectedFile?.size
+                ? ` • ${formatBytes(selectedFile.size)}`
+                : null}
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-center">{renderPreviewContent()}</div>

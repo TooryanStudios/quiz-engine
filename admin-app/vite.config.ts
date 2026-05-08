@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react-swc'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'node:path'
@@ -93,7 +93,11 @@ const tinymceStaticMiddleware = {
 }
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
+  const enableCrossOriginIsolation = String(env.VITE_ENABLE_CROSS_ORIGIN_ISOLATION || '').trim() === '1'
+
+  return {
   plugins: [react(), tailwindcss(), tinymceStaticMiddleware],
   resolve: {
     dedupe: [
@@ -118,10 +122,6 @@ export default defineConfig({
   server: {
     port: 3000,
     strictPort: true,
-    headers: {
-      'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Embedder-Policy': 'credentialless',
-    },
     proxy: {
       '/api': {
         target: 'http://localhost:8787',
@@ -159,4 +159,5 @@ export default defineConfig({
     },
     assetsInlineLimit: 4096,
   },
+  }
 })

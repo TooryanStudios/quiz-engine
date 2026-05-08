@@ -232,11 +232,13 @@ const buildAtlasPayload = ({
     const attachedReferences = collectAttachedReferenceUrls(effectiveReferenceFields, state.mediaUrls)
     const referenceImages = mentionedReferenceImages.length > 0 ? mentionedReferenceImages : attachedReferences.imageUrls
     const referenceVideos = mentionedReferenceVideos.length > 0 ? mentionedReferenceVideos : attachedReferences.videoUrls
-    const effectiveMode: RequestMode = referenceVideos.length > 0
-      ? 'reference-to-video'
-      : referenceImages.length > 0
-        ? 'image-to-video'
-        : 'text-to-video'
+    const effectiveMode: RequestMode = tab.requestMode === 'reference-to-video' || tab.requestMode === 'image-to-video'
+      ? tab.requestMode
+      : referenceVideos.length > 0
+        ? 'reference-to-video'
+        : referenceImages.length > 0
+          ? 'image-to-video'
+          : 'text-to-video'
     const atlasModelForReferenceSet = resolveAtlasModelForMode(settings.model, effectiveMode)
 
     const validVideoOptions = (videoWorkflowOptions || []).filter((option) => (state.selectedVideoOptionIds || []).includes(option.id))

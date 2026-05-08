@@ -581,7 +581,7 @@ service cloud.firestore {
       match /reference_library/{itemId} {
         allow read: if canReadStudioProject(
           get(/databases/$(database)/documents/studio_projects/$(projectId)).data)
-          || (isStudioEligibleUser() && resource.data.createdBy == request.auth.uid);
+          || (isSignedIn() && resource.data.createdBy == request.auth.uid);
         allow create: if isProjectOwnerOrEditor(projectId)
           && request.resource.data.projectId == projectId
           && request.resource.data.kind is string
@@ -597,6 +597,27 @@ service cloud.firestore {
           && request.resource.data.createdBy == resource.data.createdBy;
         allow delete: if isProjectOwnerOrEditor(projectId);
       }
+
+      match /flow_canvas/{scopeId} {
+        allow read: if canReadStudioProject(
+          get(/databases/$(database)/documents/studio_projects/$(projectId)).data);
+        allow create, update, delete: if isProjectOwnerOrEditor(projectId);
+      }
+    }
+
+    // Explicit creator read path for collectionGroup(reference_library) queries.
+    // This keeps user-owned asset-library reads resilient when query planning
+    // cannot prove the project-visibility branch above.
+    match /studio_projects/{projectId}/reference_library/{itemId} {
+      allow read: if isSignedIn() && resource.data.createdBy == request.auth.uid;
+    }
+
+    // Catch-all creator read path for any collectionGroup(reference_library)
+    // query. If legacy or alternative paths exist with the same collection
+    // name, this prevents false permission-denied failures for
+    // where('createdBy', '==', uid) reads.
+    match /{path=**}/reference_library/{itemId} {
+      allow read: if isSignedIn() && resource.data.createdBy == request.auth.uid;
     }
 
     // ─── Studio: Notifications ───────────────────────────────────────────────

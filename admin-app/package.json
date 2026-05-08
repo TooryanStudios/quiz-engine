@@ -50,6 +50,7 @@
     "@radix-ui/react-toggle": "^1.1.10",
     "@radix-ui/react-toggle-group": "^1.1.11",
     "@radix-ui/react-tooltip": "^1.2.8",
+    "@remotion/bundler": "4.0.458",
     "@remotion/google-fonts": "^4.0.458",
     "@remotion/media-parser": "^4.0.458",
     "@remotion/player": "^4.0.458",

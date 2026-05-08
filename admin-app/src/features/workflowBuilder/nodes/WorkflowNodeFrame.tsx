@@ -1,10 +1,38 @@
 import { Fragment, useState, useEffect, type ReactNode } from 'react'
 import { Handle, NodeResizeControl, Position } from '@xyflow/react'
-import { ChevronDown, ChevronRight, GripVertical, type LucideIcon } from 'lucide-react'
+import {
+  AlignLeft, Activity, ChevronDown, ChevronRight, Film, GripVertical,
+  Image, Images, Palette, ScrollText, Sparkles, Zap, Video, type LucideIcon,
+} from 'lucide-react'
 import { useWorkflowBuilderCanvasContext } from '../WorkflowBuilderCanvasContext'
 import type { WorkflowBuilderNodeKind, WorkflowBuilderNodeSocket } from '../types'
 
 const RESIZABLE_KINDS = new Set(['generate', 'gen_text_to_video', 'gen_image_to_video', 'gen_video_to_video', 'gen_images_to_video', 'gen_image', 'video_extend'])
+
+const SOCKET_ICONS: Record<string, LucideIcon> = {
+  prompt: AlignLeft,
+  'out-prompt': AlignLeft,
+  style: Palette,
+  reference: Image,
+  'in-refs': Image,
+  rules: ScrollText,
+  video: Film,
+  physics: Activity,
+  result: Zap,
+  'out-video': Film,
+  'out-images': Images,
+  'in-video': Video,
+  'in-image': Image,
+}
+
+function getSocketIcon(socketId: string): LucideIcon {
+  const direct = SOCKET_ICONS[socketId]
+  if (direct) return direct
+  if (socketId.startsWith('video')) return Film
+  if (socketId.startsWith('image')) return Image
+  if (socketId.includes('ref')) return Image
+  return Sparkles
+}
 
 type WorkflowNodeFrameProps = {
   nodeId?: string
@@ -20,6 +48,7 @@ type WorkflowNodeFrameProps = {
   children?: ReactNode
   footer?: ReactNode
   bodyClassName?: string
+  className?: string
   initialCollapsed?: boolean
   hideHeader?: boolean
   hideSocketLabels?: boolean
@@ -30,35 +59,28 @@ function renderSockets(
   sockets: readonly WorkflowBuilderNodeSocket[] | undefined,
   direction: 'input' | 'output',
   isConnectable: boolean,
-  hideSocketLabels?: boolean,
 ) {
   if (!sockets?.length) return null
 
-  return sockets.map((socket) => (
-    <Fragment key={`${direction}-${socket.id}`}>
-      {(() => {
-        const top = typeof socket.topPercent === 'number' ? `${socket.topPercent}%` : undefined
-        const slotClass = socket.slot > 0 ? ` workflow-builder-node__handle--slot-${socket.slot}` : ''
-        return (
-      <Handle
-        id={socket.id}
-        type={direction === 'input' ? 'target' : 'source'}
-        position={direction === 'input' ? Position.Left : Position.Right}
-        isConnectable={isConnectable}
-        style={top ? { top } : undefined}
-        className={`workflow-builder-node__handle workflow-builder-node__handle--${direction}${slotClass}`}
-      />
-        )
-      })()}
-      {!hideSocketLabels && (
-        <span
-          className={`workflow-builder-node__socket-label workflow-builder-node__socket-label--${direction} workflow-builder-node__socket-label--slot-${socket.slot}`}
+  return sockets.map((socket) => {
+    const top = typeof socket.topPercent === 'number' ? `${socket.topPercent}%` : undefined
+    const slotClass = socket.slot > 0 ? ` workflow-builder-node__handle--slot-${socket.slot}` : ''
+    const SocketIcon = getSocketIcon(socket.id)
+    return (
+      <Fragment key={`${direction}-${socket.id}`}>
+        <Handle
+          id={socket.id}
+          type={direction === 'input' ? 'target' : 'source'}
+          position={direction === 'input' ? Position.Left : Position.Right}
+          isConnectable={isConnectable}
+          style={top ? { top } : undefined}
+          className={`workflow-builder-node__handle workflow-builder-node__handle--${direction}${slotClass}`}
         >
-          {socket.label}
-        </span>
-      )}
-    </Fragment>
-  ))
+          <SocketIcon size={30} />
+        </Handle>
+      </Fragment>
+    )
+  })
 }
 
 export function WorkflowNodeFrame({
@@ -66,17 +88,15 @@ export function WorkflowNodeFrame({
   kind,
   title,
   icon: Icon,
-  metaLine,
-  required,
   isConnectable,
   inputSockets,
   outputSockets,
   children,
   footer,
   bodyClassName,
+  className,
   initialCollapsed,
   hideHeader,
-  hideSocketLabels,
   fullBleed,
 }: WorkflowNodeFrameProps) {
   const { updateNodeData } = useWorkflowBuilderCanvasContext()
@@ -89,20 +109,20 @@ export function WorkflowNodeFrame({
   const isResizable = RESIZABLE_KINDS.has(kind)
 
   return (
-    <div className={`workflow-builder-node workflow-builder-node--${kind} ${isCollapsed ? 'workflow-builder-node--collapsed' : ''} ${fullBleed ? 'workflow-builder-node--full-bleed' : ''}`}>
+    <div className={`workflow-builder-node workflow-builder-node--${kind} ${isCollapsed ? 'workflow-builder-node--collapsed' : ''} ${fullBleed ? 'workflow-builder-node--full-bleed' : ''} ${className || ''}`}>
       {isResizable && (
         <NodeResizeControl
           minWidth={240}
           minHeight={180}
-          keepAspectRatio={true}
+          keepAspectRatio={false}
           className="workflow-builder-node__resize-handle"
           position="bottom-right"
         >
           <GripVertical size={12} />
         </NodeResizeControl>
       )}
-      {renderSockets(inputSockets, 'input', isConnectable, hideSocketLabels)}
-      {renderSockets(outputSockets, 'output', isConnectable, hideSocketLabels)}
+      {renderSockets(inputSockets, 'input', isConnectable)}
+      {renderSockets(outputSockets, 'output', isConnectable)}
 
       {!hideHeader && (
         <div className="workflow-builder-node__header">
@@ -126,9 +146,7 @@ export function WorkflowNodeFrame({
 
       {!isCollapsed && (
         <>
-          {metaLine ? <div className="workflow-builder-node__meta">{metaLine}</div> : null}
           {children ? <div className={bodyClassNames}>{children}</div> : null}
-          {required ? <div className="workflow-builder-node__required">Required</div> : null}
           {footer ? <div className="workflow-builder-node__footer">{footer}</div> : null}
         </>
       )}

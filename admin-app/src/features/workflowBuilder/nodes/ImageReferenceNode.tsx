@@ -28,7 +28,7 @@ function RefNameInput({ name, onCommit }: { name: string; onCommit: (v: string) 
 }
 
 export const ImageReferenceNode = memo(function ImageReferenceNode({ id, data, isConnectable, selected }: WorkflowBuilderNodeProps) {
-  const { patchNode } = useWorkflowBuilderNode(id)
+  const { patchNode, isInViewport } = useWorkflowBuilderNode(id)
   const items: ReferenceItem[] = data.referenceItems ?? []
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pendingDeleteItemId, setPendingDeleteItemId] = useState<string | null>(null)
@@ -84,7 +84,7 @@ export const ImageReferenceNode = memo(function ImageReferenceNode({ id, data, i
             <div key={item.id} className="workflow-builder-node__ref-cell">
               <div className="workflow-builder-node__ref-thumb">
                 {item.url ? (
-                  <img src={item.url} alt={item.name} loading="lazy" />
+                  <img src={isInViewport ? item.url : undefined} alt={item.name} loading="lazy" />
                 ) : (
                   <span className="workflow-builder-node__ref-thumb-empty">
                     <Images size={18} />

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { Edge, Node, NodeProps } from '@xyflow/react'
 
 export type WorkflowBuilderNoticeType = 'success' | 'error' | 'info' | 'warning'
@@ -56,6 +57,15 @@ export type WorkflowBuilderNodeData = {
   extendMode?: 'before' | 'after'
   generatedImageUrl?: string
   upscaleMode?: '2x' | '4x'
+  genModel?: string
+  genRatio?: string
+  genDuration?: number
+  genResolution?: string
+  genAudio?: boolean
+  genInputMode?: 'reference' | 'image'
+  isPromptSocketConnected?: boolean
+  genQueue?: unknown[]
+  uploading?: boolean
 }
 
 export type WorkflowBuilderNode = Node<WorkflowBuilderNodeData, WorkflowBuilderNodeKind>
@@ -65,6 +75,11 @@ export type WorkflowBuilderEdge = Edge
 export type WorkflowBuilderDefinition = {
   nodes: WorkflowBuilderNode[]
   edges: WorkflowBuilderEdge[]
+  viewport?: {
+    x: number
+    y: number
+    zoom: number
+  }
 }
 
 export type WorkflowBuilderNotice = {
@@ -84,6 +99,8 @@ export type WorkflowBuilderCanvasProps = {
   onExecuteWorkflow?: (workflow: WorkflowBuilderDefinition) => void | Promise<void>
   onExecuteNode?: (node: WorkflowBuilderNode, workflow: WorkflowBuilderDefinition) => void | Promise<void>
   onNotify?: (notice: WorkflowBuilderNotice) => void
+  topActionSlot?: ReactNode
+  onRemoteLoadingChange?: (isLoading: boolean) => void
 }
 
 export type WorkflowBuilderLibraryItem = {

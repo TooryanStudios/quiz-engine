@@ -2610,11 +2610,12 @@ const saveGeneratedVideoPosterToFirebase = async (historyId: string, dataUrl: st
   return uploadBlobToFirebase(posterBlob, `toorgen-lab/generated/${historyId}-poster.jpg`, 'image/jpeg')
 }
 
-const saveGeneratedVideoToFirebase = async (sourceUrl: string, historyId: string): Promise<{ firebaseUrl: string }> => {
+const saveGeneratedVideoToFirebase = async (sourceUrl: string, historyId: string): Promise<{ firebaseUrl: string; thumbnailUrl: string }> => {
   return saveGeneratedVideoArtifactsToFirebase({
     sourceUrl,
     storageBasePath: `toorgen-lab/generated/${historyId}`,
     apiBaseUrl: CHATBOT_BASE,
+    captureThumbnail: true,
   })
 }
 
@@ -6616,7 +6617,7 @@ export default function ToorGenPromptWorkbench() {
     setSavingVideoToAssetsHistoryId(saveKey)
     try {
       const saved = await saveGeneratedVideoToFirebase(playableSourceUrl, nextHistoryId)
-      await appendToMediaLibrary('video', saved.firebaseUrl, title || 'generated video')
+      await appendToMediaLibrary('video', saved.firebaseUrl, title || 'generated video', saved.thumbnailUrl)
 
       if (historyId) {
         let updatedEntry: GenerationHistoryEntry | null = null
@@ -8127,7 +8128,7 @@ export default function ToorGenPromptWorkbench() {
                   ? `${selectedUtilityProject.name} - ${visibleStudioFolders.length} folder${visibleStudioFolders.length === 1 ? '' : 's'}`
                   : 'Choose a project and then narrow into folders.'}
               </div>
-              <div className="lab-utility-project-tabs" role="group" aria-label="Studio projects">
+              <div className="lab-utility-project-tabs" role="tablist" aria-label="Studio projects">
                 {studioProjectsLoading ? (
                   <div className="lab-utility-recents-empty">Loading Studio projects...</div>
                 ) : studioProjects.length === 0 ? (
@@ -8136,7 +8137,8 @@ export default function ToorGenPromptWorkbench() {
                   <button
                     key={project.id}
                     type="button"
-                    role="button"
+                    role="tab"
+                    aria-selected={studioProjectId === project.id ? 'true' : 'false'}
                     className={`lab-utility-project-tab${studioProjectId === project.id ? ' is-active' : ''}`}
                     onClick={() => handleProjectSelect(project.id)}
                   >
@@ -9196,7 +9198,7 @@ export default function ToorGenPromptWorkbench() {
                 <div className="lab-composer-request-preview" role="region" aria-label="Request preview">
                   <div className="lab-composer-request-preview-head">
                     <strong>Final Request Body</strong>
-                    <div className="lab-composer-request-preview-actions">
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
                       <button
                         type="button"
                         className="lab-secondary-btn"

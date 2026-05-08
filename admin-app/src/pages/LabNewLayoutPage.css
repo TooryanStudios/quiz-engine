@@ -577,6 +577,83 @@
   display: none;
 }
 
+.lab-newlayout-flow-manager {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.5rem 0.65rem 0.55rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.28);
+  background: linear-gradient(180deg, rgba(12, 17, 29, 0.97) 0%, rgba(8, 12, 21, 0.98) 100%);
+}
+
+.lab-newlayout-flow-manager-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: end;
+}
+
+.lab-newlayout-flow-manager-row--secondary {
+  grid-template-columns: minmax(0, 1.6fr) auto minmax(0, 1fr) auto;
+}
+
+.lab-newlayout-flow-manager-field {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.lab-newlayout-flow-manager-field--wide {
+  min-width: 0;
+}
+
+.lab-newlayout-flow-manager-field > span {
+  color: rgba(178, 178, 178, 0.68);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.lab-newlayout-flow-manager-field select,
+.lab-newlayout-flow-manager-field input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.45rem 0.58rem;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(16, 22, 36, 0.9);
+  color: rgba(233, 243, 255, 0.94);
+  font-size: 0.74rem;
+}
+
+.lab-newlayout-flow-manager-field select:disabled,
+.lab-newlayout-flow-manager-field input:disabled {
+  opacity: 0.6;
+}
+
+.lab-newlayout-flow-manager-btn {
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 8px;
+  background: rgba(25, 35, 55, 0.88);
+  color: rgba(226, 232, 240, 0.95);
+  padding: 0.44rem 0.66rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.lab-newlayout-flow-manager-btn:disabled {
+  opacity: 0.54;
+  cursor: not-allowed;
+}
+
+.lab-newlayout-flow-manager-btn:not(:disabled):hover {
+  border-color: rgba(191, 219, 254, 0.45);
+  background: rgba(34, 47, 73, 0.92);
+}
+
 .lab-newlayout-flow-scope-banner {
   flex: 0 0 auto;
   display: flex;

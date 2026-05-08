@@ -39,7 +39,6 @@ export const PromptNode = memo(function PromptNode({ id, data, isConnectable, se
           onChange={(e) => setLocalText(e.target.value)}
           onBlur={() => patchNode({ promptText: localText })}
           placeholder="Enter prompt..."
-          style={{ width: '100%', height: '100%', minHeight: '60px', resize: 'none', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px', fontSize: '0.97rem', fontFamily: 'inherit', lineHeight: '1.55' }}
         />
       </WorkflowNodeFrame>
     </>

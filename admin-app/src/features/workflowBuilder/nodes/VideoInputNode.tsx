@@ -7,7 +7,7 @@ import type { WorkflowBuilderNodeProps } from '../types'
 const OUTPUT_SOCKETS = [{ id: 'out-video', label: 'Video', slot: 1 }] as const
 
 export const VideoInputNode = memo(function VideoInputNode({ id, data, isConnectable }: WorkflowBuilderNodeProps) {
-  const { patchNode } = useWorkflowBuilderNode(id)
+  const { patchNode, isInViewport } = useWorkflowBuilderNode(id)
   const [localUrl, setLocalUrl] = useState((data.videoUrl as string | undefined) || '')
 
   useEffect(() => {
@@ -25,23 +25,26 @@ export const VideoInputNode = memo(function VideoInputNode({ id, data, isConnect
       outputSockets={OUTPUT_SOCKETS}
       initialCollapsed={data.collapsed}
     >
-      <div className="workflow-builder-node__video-input-body">
+      <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
         <input
+          className="nodrag"
           type="text"
           placeholder="Paste video URL..."
           value={localUrl}
           onChange={(e) => setLocalUrl(e.target.value)}
           onBlur={() => patchNode({ videoUrl: localUrl.trim() })}
-          className="workflow-builder-node__video-input-field"
+          style={{ width: '100%', padding: '5px 8px', fontSize: '0.8rem', border: '1px solid #cbd5e1', borderRadius: '6px', boxSizing: 'border-box' }}
         />
-        {localUrl ? (
+        {localUrl && isInViewport ? (
           <video
             src={localUrl}
             controls
             playsInline
             preload="metadata"
-            className="workflow-builder-node__video-input-preview"
+            style={{ width: '100%', borderRadius: '6px', maxHeight: '140px', objectFit: 'contain', background: '#000' }}
           />
+        ) : localUrl ? (
+          <div className="workflow-builder-node__preview--video-placeholder">Preview paused while offscreen</div>
         ) : (
           <div className="workflow-builder-node__preview--video-placeholder">No video linked yet</div>
         )}

@@ -204,7 +204,7 @@ export function useToorGenAssetsLibrary({
     setSelectedReferenceLibraryUrls(trimUniqueUrls(selectedUrls))
   }, [mediaLibraryKindByUrl, mediaLibraryNameByUrl, studioProjectId])
 
-  const appendToMediaLibrary = useCallback(async (kind: MediaKind, url: string, name: string) => {
+  const appendToMediaLibrary = useCallback(async (kind: MediaKind, url: string, name: string, thumbnailUrl?: string) => {
     const normalizedUrl = url.trim()
     if (!normalizedUrl) {
       return
@@ -214,6 +214,7 @@ export function useToorGenAssetsLibrary({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
       kind,
       url: normalizedUrl,
+      thumbnailUrl: (thumbnailUrl || '').trim() || undefined,
       name: name.trim() || `${kind} upload`,
       createdAt: Date.now(),
       projectId: studioProjectId || undefined,
@@ -275,6 +276,7 @@ export function useToorGenAssetsLibrary({
           id: item.id,
           kind: item.kind,
           url: item.url,
+          thumbnailUrl: item.thumbnailUrl,
           name: item.name,
           createdAt: item.createdAt,
         },

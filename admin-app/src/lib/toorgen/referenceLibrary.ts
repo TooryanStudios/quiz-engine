@@ -10,6 +10,7 @@ export type MediaLibraryItem = {
   id: string
   kind: MediaKind
   url: string
+  thumbnailUrl?: string
   name: string
   createdAt: number
   projectId?: string
@@ -58,6 +59,7 @@ export const parseMediaLibraryItem = (value: unknown): MediaLibraryItem | null =
     id: typeof value.id === 'string' && value.id.trim() ? value.id : `ref-${createdAt.toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     kind,
     url,
+    thumbnailUrl: typeof value.thumbnailUrl === 'string' && value.thumbnailUrl.trim() ? value.thumbnailUrl.trim() : undefined,
     name: typeof value.name === 'string' && value.name.trim() ? value.name : `Reference ${kind}`,
     createdAt,
     projectId: typeof value.projectId === 'string' && value.projectId.trim() ? value.projectId.trim() : undefined,
@@ -104,9 +106,20 @@ export const mergeMediaLibraryItems = (...lists: MediaLibraryItem[][]): MediaLib
   lists.forEach((items) => {
     items.forEach((item) => {
       const existing = byUrl.get(item.url)
-      if (!existing || item.createdAt > existing.createdAt) {
+      if (!existing) {
         byUrl.set(item.url, item)
+        return
       }
+
+      const pickIncoming = item.createdAt >= existing.createdAt
+      const preferred = pickIncoming ? item : existing
+      const fallback = pickIncoming ? existing : item
+
+      byUrl.set(item.url, {
+        ...preferred,
+        thumbnailUrl: preferred.thumbnailUrl || fallback.thumbnailUrl,
+        projectId: preferred.projectId || fallback.projectId,
+      })
     })
   })
 
@@ -134,6 +147,7 @@ export const toMediaLibraryItem = (item: StudioReferenceAsset): MediaLibraryItem
   id: item.id,
   kind: item.kind,
   url: item.url,
+  thumbnailUrl: typeof item.thumbnailUrl === 'string' && item.thumbnailUrl.trim() ? item.thumbnailUrl.trim() : undefined,
   name: item.name,
   createdAt: typeof (item.createdAt as { toMillis?: () => number } | undefined)?.toMillis === 'function'
     ? (item.createdAt as { toMillis: () => number }).toMillis()

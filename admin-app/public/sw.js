@@ -1,5 +1,5 @@
-const CACHE_NAME = 'qyan-v5'
-const RUNTIME_CACHE = 'qyan-runtime-v5'
+const CACHE_NAME = 'qyan-v6'
+const RUNTIME_CACHE = 'qyan-runtime-v6'
 
 // Assets to cache on install
 const PRECACHE_ASSETS = [
@@ -37,6 +37,10 @@ self.addEventListener('fetch', (event) => {
 
   // Skip non-GET requests
   if (request.method !== 'GET') return
+
+  // Never proxy cross-origin requests through this SW.
+  // This avoids cache-mode incompatibilities on media/CDN responses.
+  if (url.origin !== self.location.origin) return
 
   // Browser-internal cache probes can fail for cross-origin requests when SW intercepts.
   // Let the browser handle these directly.
@@ -84,12 +88,6 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // Avoid SW caching/proxying for cross-origin media and CDN assets.
-  // This prevents cache-mode incompatibilities and keeps video playback stable.
-  if (url.origin !== self.location.origin && (request.destination === 'video' || request.destination === 'audio' || request.destination === 'track')) {
-    return
-  }
-
   // Source maps: never cache.
   if (/\.map$/i.test(url.pathname)) return
 
@@ -112,23 +110,6 @@ self.addEventListener('fetch', (event) => {
         })
       )
     )
-    return
-  }
-
-  // Skip Firebase and external API requests
-  if (
-    url.hostname.includes('firebaseapp.com') ||
-    url.hostname.includes('googleapis.com') ||
-    url.hostname.includes('firebasestorage.googleapis.com') ||
-    url.hostname.includes('google.com')
-  ) {
-    return
-  }
-
-  // Skip all CloudFront CDN responses (e.g. Seedance-generated video/image assets).
-  // These are cross-origin streaming responses that Chrome cannot cache via the SW
-  // cache layer, causing net::ERR_CACHE_OPERATION_NOT_SUPPORTED in the console.
-  if (url.hostname.endsWith('.cloudfront.net')) {
     return
   }
 

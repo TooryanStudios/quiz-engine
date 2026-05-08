@@ -10,6 +10,7 @@ export enum OverlayType {
   STICKER = "sticker",
   TEMPLATE = "TEMPLATE",
   SETTINGS = "settings",
+  USER = "user",
 }
 // Base overlay properties
 type BaseOverlay = {

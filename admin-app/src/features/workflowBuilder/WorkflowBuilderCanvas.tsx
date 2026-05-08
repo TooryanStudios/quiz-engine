@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import {
   addEdge,
+  applyEdgeChanges,
   Background,
   BackgroundVariant,
   ConnectionMode,
@@ -8,12 +9,15 @@ import {
   Panel,
   ReactFlow,
   ReactFlowProvider,
+  reconnectEdge,
   useEdgesState,
   useNodesState,
   useReactFlow,
   type Connection,
+  type EdgeChange,
+  type HandleType,
 } from '@xyflow/react'
-import { Maximize2, Minus, Play, Plus, Save, Upload } from 'lucide-react'
+import { Loader, Maximize2, Minus, Play, Plus, Save, Upload } from 'lucide-react'
 import { onAuthStateChanged } from 'firebase/auth'
 import { collection, deleteDoc, doc, getDocs, serverTimestamp, setDoc } from 'firebase/firestore'
 import { WorkflowBuilderCanvasContext } from './WorkflowBuilderCanvasContext'
@@ -25,7 +29,8 @@ import { useGenerationRunner, type GenerationProvider } from '../../hooks/useGen
 import { useLabNewLayoutStore } from '../../pages/LabNewLayout/useLabNewLayoutStore'
 import { buildToorGenRequest, type ToorGenMediaField, type ToorGenMentionReference } from '../../lib/toorgen/generationRequestBuilder'
 import { finalizeGeneratedVideoPersistence, saveGeneratedVideoArtifactsToFirebase } from '../../lib/toorgen/generationPersistence'
-import { auth, db } from '../../lib/firebase'
+import { auth, db, storage } from '../../lib/firebase'
+import { getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage'
 import type {
   WorkflowBuilderCanvasProps,
   WorkflowBuilderDefinition,
@@ -89,6 +94,37 @@ type WorkflowGenerationHistoryEntry = {
   submittedAt: number
   receivedAt: number
   completedAt: number
+}
+
+type ReconnectContextMenuState = {
+  edgeId: string
+  handleType: HandleType
+  clientX: number
+  clientY: number
+  previewAnchorNodeId: string
+  originalEdge: WorkflowBuilderEdge
+  originalConnection: {
+    source: string
+    sourceHandle: string | null
+    target: string
+    targetHandle: string | null
+  }
+}
+
+const REROUTE_PREVIEW_NODE_SIZE = 28
+const REROUTE_PREVIEW_TARGET_HANDLE_Y = REROUTE_PREVIEW_NODE_SIZE / 2
+
+const extractPointerClient = (event: MouseEvent | TouchEvent): { clientX: number; clientY: number } => {
+  if ('touches' in event) {
+    const touch = event.touches[0] || event.changedTouches[0]
+    if (touch) {
+      return { clientX: touch.clientX, clientY: touch.clientY }
+    }
+  }
+  return {
+    clientX: (event as MouseEvent).clientX,
+    clientY: (event as MouseEvent).clientY,
+  }
 }
 
 const firstNonEmptyString = (...values: unknown[]): string => {
@@ -230,6 +266,8 @@ function WorkflowBuilderCanvasInner({
   onExecuteWorkflow,
   onExecuteNode,
   onNotify,
+  topActionSlot,
+  onRemoteLoadingChange,
 }: WorkflowBuilderCanvasProps) {
   const reactFlow = useReactFlow<WorkflowBuilderNode, WorkflowBuilderEdge>()
   const serializedInitialWorkflow = useMemo(
@@ -240,34 +278,44 @@ function WorkflowBuilderCanvasInner({
     () => sanitizeWorkflow(JSON.parse(serializedInitialWorkflow) as WorkflowBuilderDefinition),
     [serializedInitialWorkflow],
   )
+  const hasCloudRead = Boolean(readRemoteWorkflow)
+  const hasCloudWrite = Boolean(saveRemoteWorkflow)
   const reactFlowWrapperRef = useRef<HTMLDivElement | null>(null)
+  const reconnectMenuRef = useRef<HTMLDivElement | null>(null)
+  const suppressNextPaneClickRef = useRef(false)
 
   // Read from localStorage once synchronously at component initialization.
   // Using a ref with undefined sentinel so this runs only on the very first render
   // (safe in React strict mode — refs survive the double-mount).
   const storedWorkflowRef = useRef<WorkflowBuilderDefinition | null | undefined>(undefined)
   if (storedWorkflowRef.current === undefined) {
-    try {
-      const raw = window.localStorage.getItem(storageKey)
-      if (raw) {
-        const saved = sanitizeWorkflow(JSON.parse(raw) as WorkflowBuilderDefinition)
-        if (saved.nodes.length > 0 || saved.edges.length > 0) {
-          storedWorkflowRef.current = saved
+    if (hasCloudRead) {
+      storedWorkflowRef.current = null
+    } else {
+      try {
+        const raw = window.localStorage.getItem(storageKey)
+        if (raw) {
+          const saved = sanitizeWorkflow(JSON.parse(raw) as WorkflowBuilderDefinition)
+          if (saved.nodes.length > 0 || saved.edges.length > 0) {
+            storedWorkflowRef.current = saved
+          } else {
+            storedWorkflowRef.current = null
+          }
         } else {
           storedWorkflowRef.current = null
         }
-      } else {
+      } catch {
         storedWorkflowRef.current = null
       }
-    } catch {
-      storedWorkflowRef.current = null
     }
   }
   const loadedFromStorage = storedWorkflowRef.current !== null
-  const effectiveInitialWorkflow = storedWorkflowRef.current ?? parsedInitialWorkflow
+  const effectiveInitialWorkflow: WorkflowBuilderDefinition = hasCloudRead
+    ? { nodes: [], edges: [], viewport: undefined }
+    : (storedWorkflowRef.current ?? parsedInitialWorkflow)
 
   const [nodes, setNodes, onNodesChange] = useNodesState<WorkflowBuilderNode>(effectiveInitialWorkflow.nodes)
-  const [edges, setEdges, onEdgesChange] = useEdgesState<WorkflowBuilderEdge>(effectiveInitialWorkflow.edges)
+  const [edges, setEdges] = useEdgesState<WorkflowBuilderEdge>(effectiveInitialWorkflow.edges)
 
   // Refs so callbacks that read nodes/edges can be stable (never recreated on drag events)
   const nodesRef = useRef(nodes)
@@ -277,10 +325,25 @@ function WorkflowBuilderCanvasInner({
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
+  const [reconnectContextMenu, setReconnectContextMenu] = useState<ReconnectContextMenuState | null>(null)
+  const [isCreateNodeSubmenuOpen, setIsCreateNodeSubmenuOpen] = useState(false)
   const [isExecuting, setIsExecuting] = useState(false)
+  const [isRemoteLoading, setIsRemoteLoading] = useState(Boolean(readRemoteWorkflow))
   const [executingNodeIds, setExecutingNodeIds] = useState<Set<string>>(() => new Set())
+  const [visibleNodeIds, setVisibleNodeIds] = useState<Set<string>>(() => new Set(effectiveInitialWorkflow.nodes.map((node) => node.id)))
+  const [, setUploadingImageNodeIds] = useState<Set<string>>(() => new Set())
   const resumedTaskIdsRef = useRef(new Set<string>())
   const repairAttemptedNodeIdsRef = useRef(new Set<string>())
+  const reconnectInteractionRef = useRef<{ edgeId: string; handleType: 'source' | 'target'; didReconnect: boolean } | null>(null)
+  const lastViewportRef = useRef(
+    effectiveInitialWorkflow.viewport
+      ? {
+          x: effectiveInitialWorkflow.viewport.x,
+          y: effectiveInitialWorkflow.viewport.y,
+          zoom: effectiveInitialWorkflow.viewport.zoom,
+        }
+      : { x: 0, y: 0, zoom: 1 },
+  )
   const hasRemoteHydratedRef = useRef<boolean>(!readRemoteWorkflow)
   const remoteSaveTimerRef = useRef<number | null>(null)
   const localSaveTimerRef = useRef<number | null>(null)
@@ -295,6 +358,10 @@ function WorkflowBuilderCanvasInner({
   useEffect(() => {
     notifyRef.current = notify
   }, [notify])
+
+  useEffect(() => {
+    onRemoteLoadingChange?.(isRemoteLoading)
+  }, [isRemoteLoading, onRemoteLoadingChange])
 
   const updateNodeData = useCallback((nodeId: string, data: Partial<WorkflowBuilderNodeData>) => {
     setNodes((current) => current.map((node) => (
@@ -472,14 +539,91 @@ function WorkflowBuilderCanvasInner({
     if (loadedFromStorage) return
     setNodes(parsedInitialWorkflow.nodes)
     setEdges(parsedInitialWorkflow.edges)
+    if (parsedInitialWorkflow.viewport) {
+      const nextViewport = {
+        x: parsedInitialWorkflow.viewport.x,
+        y: parsedInitialWorkflow.viewport.y,
+        zoom: parsedInitialWorkflow.viewport.zoom,
+      }
+      lastViewportRef.current = nextViewport
+      window.setTimeout(() => {
+        void reactFlow.setViewport(nextViewport, { duration: 0 })
+      }, 0)
+    }
     setSelectedNodeId((current) => (
       current && parsedInitialWorkflow.nodes.some((node) => node.id === current) ? current : null
     ))
-  }, [loadedFromStorage, parsedInitialWorkflow, setEdges, setNodes])
+  }, [loadedFromStorage, parsedInitialWorkflow, reactFlow, setEdges, setNodes])
 
-  // Autosave to localStorage whenever the canvas changes.
+  const recomputeVisibleNodes = useCallback((viewportArg?: { x: number; y: number; zoom: number }) => {
+    const frame = reactFlowWrapperRef.current
+    if (!frame || nodesRef.current.length === 0) {
+      setVisibleNodeIds(new Set())
+      return
+    }
+
+    const viewport = viewportArg ?? reactFlow.getViewport()
+    const frameWidth = frame.clientWidth
+    const frameHeight = frame.clientHeight
+    if (frameWidth <= 0 || frameHeight <= 0) {
+      return
+    }
+
+    const margin = 220
+    const worldLeft = (-viewport.x) / viewport.zoom - margin
+    const worldTop = (-viewport.y) / viewport.zoom - margin
+    const worldRight = (frameWidth - viewport.x) / viewport.zoom + margin
+    const worldBottom = (frameHeight - viewport.y) / viewport.zoom + margin
+
+    const nextVisibleIds = new Set<string>()
+    for (const node of nodesRef.current) {
+      const nodeWidth = Number(node.width ?? node.measured?.width ?? 280)
+      const nodeHeight = Number(node.height ?? node.measured?.height ?? 220)
+      const left = node.position.x
+      const top = node.position.y
+      const right = left + nodeWidth
+      const bottom = top + nodeHeight
+      const intersects = right >= worldLeft && left <= worldRight && bottom >= worldTop && top <= worldBottom
+      if (intersects) {
+        nextVisibleIds.add(node.id)
+      }
+    }
+
+    setVisibleNodeIds((current) => {
+      if (current.size === nextVisibleIds.size) {
+        let identical = true
+        for (const id of current) {
+          if (!nextVisibleIds.has(id)) {
+            identical = false
+            break
+          }
+        }
+        if (identical) {
+          return current
+        }
+      }
+      return nextVisibleIds
+    })
+  }, [reactFlow])
+
+  useEffect(() => {
+    recomputeVisibleNodes(lastViewportRef.current)
+  }, [nodes, recomputeVisibleNodes])
+
+  useEffect(() => {
+    const handleResize = () => {
+      recomputeVisibleNodes(lastViewportRef.current)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => {
+      window.removeEventListener('resize', handleResize)
+    }
+  }, [recomputeVisibleNodes])
+
+  // Autosave to localStorage whenever the canvas changes (local-only mode).
   // Debounced to keep node dragging responsive in heavy layouts.
   useEffect(() => {
+    if (hasCloudWrite) return
     if (nodes.length === 0 && edges.length === 0) return
 
     if (localSaveTimerRef.current !== null) {
@@ -488,7 +632,9 @@ function WorkflowBuilderCanvasInner({
 
     localSaveTimerRef.current = window.setTimeout(() => {
       try {
-        window.localStorage.setItem(storageKey, JSON.stringify({ nodes, edges }))
+        const currentViewport = reactFlow.getViewport()
+        lastViewportRef.current = currentViewport
+        window.localStorage.setItem(storageKey, JSON.stringify({ nodes, edges, viewport: currentViewport }))
       } catch {
         // storage unavailable — ignore
       }
@@ -500,25 +646,80 @@ function WorkflowBuilderCanvasInner({
         localSaveTimerRef.current = null
       }
     }
-  }, [nodes, edges, storageKey])
+  }, [edges, hasCloudWrite, nodes, reactFlow, storageKey])
 
   useEffect(() => {
-    onWorkflowChange?.({ nodes, edges })
-  }, [edges, nodes, onWorkflowChange])
+    const currentViewport = reactFlow.getViewport()
+    lastViewportRef.current = currentViewport
+    onWorkflowChange?.({ nodes, edges, viewport: currentViewport })
+  }, [edges, nodes, onWorkflowChange, reactFlow])
 
   useEffect(() => {
     let cancelled = false
 
     if (!readRemoteWorkflow) {
       hasRemoteHydratedRef.current = true
+      setIsRemoteLoading(false)
       return
     }
 
     hasRemoteHydratedRef.current = false
+    setIsRemoteLoading(true)
 
     void readRemoteWorkflow()
       .then((remoteWorkflow) => {
-        if (cancelled || !remoteWorkflow) {
+        if (cancelled) {
+          return
+        }
+
+        if (!remoteWorkflow) {
+          // One-time migration path: if cloud is empty but legacy local state exists,
+          // hydrate from local and push it to cloud.
+          if (!saveRemoteWorkflow) return
+          try {
+            const rawLocal = window.localStorage.getItem(storageKey)
+            if (!rawLocal) return
+            const localWorkflow = sanitizeWorkflow(JSON.parse(rawLocal) as WorkflowBuilderDefinition)
+            if (localWorkflow.nodes.length === 0 && localWorkflow.edges.length === 0) return
+
+            setNodes(localWorkflow.nodes)
+            setEdges(localWorkflow.edges)
+            if (localWorkflow.viewport) {
+              const nextViewport = {
+                x: localWorkflow.viewport.x,
+                y: localWorkflow.viewport.y,
+                zoom: localWorkflow.viewport.zoom,
+              }
+              lastViewportRef.current = nextViewport
+              window.setTimeout(() => {
+                void reactFlow.setViewport(nextViewport, { duration: 0 })
+                recomputeVisibleNodes(nextViewport)
+              }, 0)
+            } else {
+              window.setTimeout(() => {
+                void reactFlow.fitView({ padding: 0.18, duration: 0 })
+                const fittedViewport = reactFlow.getViewport()
+                lastViewportRef.current = fittedViewport
+                recomputeVisibleNodes(fittedViewport)
+              }, 0)
+            }
+            setSelectedNodeId(null)
+            setSelectedEdgeId(null)
+
+            void saveRemoteWorkflow(localWorkflow)
+              .then(() => {
+                try {
+                  window.localStorage.removeItem(storageKey)
+                } catch {
+                  // non-critical
+                }
+              })
+              .catch(() => {
+                // keep local copy if cloud migration fails
+              })
+          } catch {
+            // ignore malformed local payloads
+          }
           return
         }
 
@@ -529,6 +730,25 @@ function WorkflowBuilderCanvasInner({
 
         setNodes(nextWorkflow.nodes)
         setEdges(nextWorkflow.edges)
+        if (nextWorkflow.viewport) {
+          const nextViewport = {
+            x: nextWorkflow.viewport.x,
+            y: nextWorkflow.viewport.y,
+            zoom: nextWorkflow.viewport.zoom,
+          }
+          lastViewportRef.current = nextViewport
+          window.setTimeout(() => {
+            void reactFlow.setViewport(nextViewport, { duration: 0 })
+            recomputeVisibleNodes(nextViewport)
+          }, 0)
+        } else {
+          window.setTimeout(() => {
+            void reactFlow.fitView({ padding: 0.18, duration: 0 })
+            const fittedViewport = reactFlow.getViewport()
+            lastViewportRef.current = fittedViewport
+            recomputeVisibleNodes(fittedViewport)
+          }, 0)
+        }
         setSelectedNodeId(null)
         setSelectedEdgeId(null)
       })
@@ -539,18 +759,18 @@ function WorkflowBuilderCanvasInner({
 
         hasShownRemoteLoadErrorRef.current = true
         // Keep cloud read failures silent during automatic hydration.
-        // Local storage fallback still loads the canvas state.
       })
       .finally(() => {
         if (!cancelled) {
           hasRemoteHydratedRef.current = true
+          setIsRemoteLoading(false)
         }
       })
 
     return () => {
       cancelled = true
     }
-  }, [readRemoteWorkflow, setEdges, setNodes])
+  }, [readRemoteWorkflow, recomputeVisibleNodes, reactFlow, saveRemoteWorkflow, setEdges, setNodes, storageKey])
 
   useEffect(() => {
     if (!saveRemoteWorkflow || !hasRemoteHydratedRef.current) {
@@ -566,7 +786,9 @@ function WorkflowBuilderCanvasInner({
     }
 
     remoteSaveTimerRef.current = window.setTimeout(() => {
-      void saveRemoteWorkflow({ nodes, edges })
+      const currentViewport = reactFlow.getViewport()
+      lastViewportRef.current = currentViewport
+      void saveRemoteWorkflow({ nodes, edges, viewport: currentViewport })
         .then(() => {
           hasShownRemoteSaveErrorRef.current = false
         })
@@ -576,7 +798,7 @@ function WorkflowBuilderCanvasInner({
           }
 
           hasShownRemoteSaveErrorRef.current = true
-          notifyRef.current('Could not sync flow state to cloud. Local save is still active.', 'warning')
+          notifyRef.current('Could not sync flow state to cloud. Changes will retry automatically.', 'warning')
         })
     }, 700)
 
@@ -586,7 +808,7 @@ function WorkflowBuilderCanvasInner({
         remoteSaveTimerRef.current = null
       }
     }
-  }, [edges, nodes, saveRemoteWorkflow])
+  }, [edges, nodes, reactFlow, saveRemoteWorkflow])
 
   useEffect(() => {
     return () => {
@@ -612,6 +834,55 @@ function WorkflowBuilderCanvasInner({
     [edges, selectedEdgeId],
   )
 
+  const syncPromptSocketConnectionFromEdges = useCallback((nextEdges: WorkflowBuilderEdge[]) => {
+    const nodeById = new Map(nodesRef.current.map((node) => [node.id, node]))
+    const promptConnectedTargets = new Set<string>()
+
+    nextEdges.forEach((edge) => {
+      const targetNode = nodeById.get(edge.target)
+      if (!targetNode || !GENERATION_NODE_KINDS.has(targetNode.type as WorkflowBuilderNodeKind)) return
+
+      const sourceNode = nodeById.get(edge.source)
+      const sourceLooksPromptOutput = sourceNode?.type === 'prompt' && (!edge.sourceHandle || edge.sourceHandle === 'out-prompt')
+      const targetsPromptHandle = edge.targetHandle === 'prompt'
+      const implicitPromptLink = !edge.targetHandle && sourceLooksPromptOutput
+
+      if (targetsPromptHandle || implicitPromptLink) {
+        promptConnectedTargets.add(edge.target)
+      }
+    })
+
+    setNodes((current) => {
+      let changed = false
+      const next = current.map((node) => {
+        if (!GENERATION_NODE_KINDS.has(node.type as WorkflowBuilderNodeKind)) return node
+        const isPromptSocketConnected = promptConnectedTargets.has(node.id)
+        if (Boolean(node.data.isPromptSocketConnected) === isPromptSocketConnected) return node
+        changed = true
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            isPromptSocketConnected,
+          },
+        }
+      })
+      return changed ? next : current
+    })
+  }, [setNodes])
+
+  useEffect(() => {
+    syncPromptSocketConnectionFromEdges(edges)
+  }, [edges, syncPromptSocketConnectionFromEdges])
+
+  const onEdgesChange = useCallback((changes: EdgeChange<WorkflowBuilderEdge>[]) => {
+    setEdges((current) => {
+      const next = applyEdgeChanges(changes, current)
+      syncPromptSocketConnectionFromEdges(next)
+      return next
+    })
+  }, [setEdges, syncPromptSocketConnectionFromEdges])
+
   // Resolve source/target node labels for the selected edge
   const selectedEdgeInfo = useMemo(() => {
     if (!selectedEdge) return null
@@ -629,15 +900,67 @@ function WorkflowBuilderCanvasInner({
   const resolvePromptForGenerateNode = useCallback((nodeId: string): string => {
     const currentNodes = nodesRef.current
     const currentEdges = edgesRef.current
+    const nodeById = new Map(currentNodes.map((node) => [node.id, node]))
     const targetNode = currentNodes.find((node) => node.id === nodeId)
     const isExtend = Boolean(targetNode?.data.extendMode) || targetNode?.type === 'video_extend'
 
-    const linkedPrompts = currentEdges
-      .filter((edge) => edge.target === nodeId)
-      .map((edge) => currentNodes.find((node) => node.id === edge.source))
-      .filter((node) => node?.type === 'prompt')
-      .map((node) => node?.data.promptText?.trim() || '')
-      .filter(Boolean)
+    const incomingByTarget = new Map<string, WorkflowBuilderEdge[]>()
+    currentEdges.forEach((edge) => {
+      const incoming = incomingByTarget.get(edge.target) || []
+      incoming.push(edge)
+      incomingByTarget.set(edge.target, incoming)
+    })
+
+    const linkedPromptSet = new Set<string>()
+    const rerouteQueue: string[] = []
+
+    const isPromptFeedEdgeToGenerate = (edge: WorkflowBuilderEdge): boolean => {
+      if (edge.target !== nodeId) return false
+      if (edge.targetHandle === 'prompt') return true
+      const sourceNode = nodeById.get(edge.source)
+      const sourceLooksPromptOutput = sourceNode?.type === 'prompt' && (!edge.sourceHandle || edge.sourceHandle === 'out-prompt')
+      return !edge.targetHandle && sourceLooksPromptOutput
+    }
+
+    currentEdges
+      .filter((edge) => isPromptFeedEdgeToGenerate(edge))
+      .forEach((edge) => {
+        const sourceNode = nodeById.get(edge.source)
+        if (!sourceNode) return
+        if (sourceNode.type === 'prompt') {
+          const prompt = (sourceNode.data.promptText || '').trim()
+          if (prompt) linkedPromptSet.add(prompt)
+          return
+        }
+        if (sourceNode.type === 'reroute') {
+          rerouteQueue.push(sourceNode.id)
+        }
+      })
+
+    const visitedReroutes = new Set<string>()
+    while (rerouteQueue.length > 0) {
+      const rerouteId = rerouteQueue.pop() || ''
+      if (!rerouteId || visitedReroutes.has(rerouteId)) continue
+      visitedReroutes.add(rerouteId)
+
+      const incoming = incomingByTarget.get(rerouteId) || []
+      incoming.forEach((edge) => {
+        const sourceNode = nodeById.get(edge.source)
+        if (!sourceNode) return
+
+        if (sourceNode.type === 'prompt') {
+          const prompt = (sourceNode.data.promptText || '').trim()
+          if (prompt) linkedPromptSet.add(prompt)
+          return
+        }
+
+        if (sourceNode.type === 'reroute') {
+          rerouteQueue.push(sourceNode.id)
+        }
+      })
+    }
+
+    const linkedPrompts = Array.from(linkedPromptSet)
 
     const inlinePrompt = (targetNode?.data.promptText as string | undefined)?.trim() || ''
     const linkedPrompt = linkedPrompts.join('\n')
@@ -809,6 +1132,12 @@ function WorkflowBuilderCanvasInner({
     const isVideoExtendNode = targetNode?.type === 'video_extend' || Boolean(targetNode?.data.extendMode)
 
     const refs = resolveReferencesForGenerateNode(nodeId)
+    const selectedInputMode = (targetNode?.data.genInputMode as 'reference' | 'image' | undefined) || 'reference'
+    const requestMode = isVideoExtendNode
+      ? 'reference-to-video'
+      : selectedInputMode === 'image'
+        ? 'image-to-video'
+        : 'reference-to-video'
     const imageOnlyFields = refs.fields.filter((field) => field.kind === 'image')
     const imageOnlyMediaUrls = Object.fromEntries(
       Object.entries(refs.mediaUrls).filter(([key]) => key.startsWith('ref_image_')),
@@ -822,14 +1151,14 @@ function WorkflowBuilderCanvasInner({
     const hasReferences = refs.hasReferences
     const tabId = isImagesToVideoNode
       ? 'workflow-images-to-video'
-      : hasReferences
-        ? 'workflow-generate-reference'
-        : 'workflow-generate'
+      : selectedInputMode === 'image'
+        ? 'workflow-image-to-video'
+        : 'workflow-reference-to-video'
 
     const request = buildToorGenRequest({
       tab: {
         id: tabId,
-        requestMode: (isImagesToVideoNode || isVideoExtendNode || hasReferences) ? 'reference-to-video' : 'text-to-video',
+        requestMode,
         fields: effectiveFields,
       },
       state: {
@@ -838,7 +1167,7 @@ function WorkflowBuilderCanvasInner({
       },
       settings: baseSettings,
       mentionReferences: effectiveMentions,
-      combinedReferenceTabId: (hasReferences || isImagesToVideoNode) ? tabId : undefined,
+      combinedReferenceTabId: hasReferences || isImagesToVideoNode ? tabId : undefined,
     })
 
     const body = request.body as Record<string, unknown>
@@ -886,11 +1215,11 @@ function WorkflowBuilderCanvasInner({
     const prompt = resolvePromptForGenerateNode(selectedNode.id)
     const baseSettings = {
       provider: 'atlas' as const,
-      model: 'seedance-2.0-fast',
-      ratio: '16:9',
-      duration: 5,
-      resolution: '720p',
-      generateAudio: true,
+      model: (selectedNode.data.genModel as string | undefined) || 'seedance-2.0-fast',
+      ratio: (selectedNode.data.genRatio as string | undefined) || '16:9',
+      duration: (selectedNode.data.genDuration as number | undefined) || 5,
+      resolution: (selectedNode.data.genResolution as string | undefined) || '720p',
+      generateAudio: selectedNode.data.genAudio !== false,
     }
     try {
       const req = buildWorkflowGenerateRequest(selectedNode.id, prompt, baseSettings)
@@ -1081,20 +1410,24 @@ function WorkflowBuilderCanvasInner({
   }, [nodes, repairGeneratedVideoPersistence])
 
   const onConnect = useCallback((connection: Connection) => {
-    setEdges((current) => addEdge({
-      ...connection,
-      markerEnd: {
-        type: MarkerType.ArrowClosed,
-        width: 18,
-        height: 18,
-        color: '#64748b',
-      },
-      style: {
-        stroke: '#64748b',
-        strokeWidth: 1.8,
-      },
-    }, current))
-  }, [setEdges])
+    setEdges((current) => {
+      const next = addEdge({
+        ...connection,
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          width: 18,
+          height: 18,
+          color: '#64748b',
+        },
+        style: {
+          stroke: '#64748b',
+          strokeWidth: 1.8,
+        },
+      }, current)
+      syncPromptSocketConnectionFromEdges(next)
+      return next
+    })
+  }, [setEdges, syncPromptSocketConnectionFromEdges])
 
   const isValidConnection = useCallback((connection: Connection | WorkflowBuilderEdge) => {
     if (!connection.source || !connection.target) return false
@@ -1147,31 +1480,324 @@ function WorkflowBuilderCanvasInner({
     return true
   }, [])
 
+  const onReconnect = useCallback((oldEdge: WorkflowBuilderEdge, connection: Connection) => {
+    if (!isValidConnection(connection)) return
+    if (reconnectInteractionRef.current && reconnectInteractionRef.current.edgeId === oldEdge.id) {
+      reconnectInteractionRef.current.didReconnect = true
+    }
+    setEdges((current) => {
+      const next = reconnectEdge(oldEdge, connection, current)
+      syncPromptSocketConnectionFromEdges(next)
+      return next
+    })
+    setSelectedEdgeId(oldEdge.id)
+    setSelectedNodeId(null)
+  }, [isValidConnection, setEdges, syncPromptSocketConnectionFromEdges])
+
+  const onReconnectStart = useCallback((
+    _event: unknown,
+    edge: WorkflowBuilderEdge,
+    handleType: HandleType,
+  ) => {
+    reconnectInteractionRef.current = {
+      edgeId: edge.id,
+      handleType,
+      didReconnect: false,
+    }
+    setReconnectContextMenu(null)
+    setIsCreateNodeSubmenuOpen(false)
+  }, [])
+
+  const handleReconnectContextDisconnect = useCallback((edgeId: string) => {
+    const menu = reconnectContextMenu
+    if (!menu || menu.edgeId !== edgeId) {
+      setEdges((current) => {
+        const next = current.filter((entry) => entry.id !== edgeId)
+        syncPromptSocketConnectionFromEdges(next)
+        return next
+      })
+      setSelectedEdgeId((current) => (current === edgeId ? null : current))
+      notify('Connection removed.', 'info')
+      return
+    }
+
+    setEdges((current) => {
+      const next = current.filter((entry) => entry.id !== edgeId)
+      syncPromptSocketConnectionFromEdges(next)
+      return next
+    })
+    setNodes((current) => current.filter((node) => node.id !== menu.previewAnchorNodeId))
+    setSelectedEdgeId((current) => (current === edgeId ? null : current))
+    setReconnectContextMenu(null)
+    setIsCreateNodeSubmenuOpen(false)
+    notify('Connection removed.', 'info')
+  }, [notify, reconnectContextMenu, setEdges, setNodes, syncPromptSocketConnectionFromEdges])
+
+  const closeReconnectContextMenu = useCallback(() => {
+    const menu = reconnectContextMenu
+    if (!menu) return
+
+    setEdges((current) => {
+      const hasEdge = current.some((entry) => entry.id === menu.edgeId)
+      let next: WorkflowBuilderEdge[]
+      if (hasEdge) {
+        next = current.map((entry) => (
+          entry.id === menu.edgeId
+            ? {
+                ...entry,
+                source: menu.originalConnection.source,
+                sourceHandle: menu.originalConnection.sourceHandle,
+                target: menu.originalConnection.target,
+                targetHandle: menu.originalConnection.targetHandle,
+              }
+            : entry
+        ))
+      } else {
+        next = current.concat({
+          ...menu.originalEdge,
+          source: menu.originalConnection.source,
+          sourceHandle: menu.originalConnection.sourceHandle,
+          target: menu.originalConnection.target,
+          targetHandle: menu.originalConnection.targetHandle,
+        })
+      }
+      syncPromptSocketConnectionFromEdges(next)
+      return next
+    })
+
+    setNodes((current) => current.filter((node) => node.id !== menu.previewAnchorNodeId))
+    setReconnectContextMenu(null)
+    setIsCreateNodeSubmenuOpen(false)
+  }, [reconnectContextMenu, setEdges, setNodes, syncPromptSocketConnectionFromEdges])
+
+  const handleReconnectContextCreateNode = useCallback((kind: WorkflowBuilderNodeKind) => {
+    const menu = reconnectContextMenu
+    if (!menu) return
+
+    const position = reactFlow.screenToFlowPosition({ x: menu.clientX, y: menu.clientY })
+    const newNode = createWorkflowNode(kind, position)
+
+    setEdges((current) => {
+      const hasEdge = current.some((entry) => entry.id === menu.edgeId)
+      let next: WorkflowBuilderEdge[]
+      if (hasEdge) {
+        next = current.map((entry) => (
+          entry.id === menu.edgeId
+            ? {
+                ...entry,
+                source: menu.originalConnection.source,
+                sourceHandle: menu.originalConnection.sourceHandle,
+                target: newNode.id,
+                targetHandle: 'prompt',
+              }
+            : entry
+        ))
+      } else {
+        next = current.concat({
+          ...menu.originalEdge,
+          source: menu.originalConnection.source,
+          sourceHandle: menu.originalConnection.sourceHandle,
+          target: newNode.id,
+          targetHandle: 'prompt',
+        })
+      }
+      syncPromptSocketConnectionFromEdges(next)
+      return next
+    })
+
+    setNodes((current) => current.filter((node) => node.id !== menu.previewAnchorNodeId).concat(newNode))
+    setSelectedNodeId(newNode.id)
+    setSelectedEdgeId(menu.edgeId)
+    setReconnectContextMenu(null)
+    setIsCreateNodeSubmenuOpen(false)
+    notify('Node created and connected.', 'success')
+  }, [notify, reactFlow, reconnectContextMenu, setEdges, setNodes, syncPromptSocketConnectionFromEdges])
+
+  const onReconnectEnd = useCallback((
+    event: MouseEvent | TouchEvent,
+    edge: WorkflowBuilderEdge,
+    handleType: HandleType,
+  ) => {
+    const interaction = reconnectInteractionRef.current
+    reconnectInteractionRef.current = null
+
+    if (!interaction || interaction.edgeId !== edge.id || interaction.didReconnect) return
+
+    if (handleType === 'target') {
+      setEdges((current) => {
+        const next = current.filter((entry) => entry.id !== edge.id)
+        syncPromptSocketConnectionFromEdges(next)
+        return next
+      })
+      setSelectedEdgeId((current) => (current === edge.id ? null : current))
+      return
+    }
+
+    const pointer = extractPointerClient(event)
+    const frameRect = reactFlowWrapperRef.current?.getBoundingClientRect()
+    const clientX = frameRect ? pointer.clientX - frameRect.left : pointer.clientX
+    const clientY = frameRect ? pointer.clientY - frameRect.top : pointer.clientY
+    const previewPositionRaw = reactFlow.screenToFlowPosition({ x: pointer.clientX, y: pointer.clientY })
+    const previewPosition = {
+      x: previewPositionRaw.x,
+      y: previewPositionRaw.y - REROUTE_PREVIEW_TARGET_HANDLE_Y,
+    }
+    const previewAnchorNodeId = `reconnect-preview-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+    const previewAnchorBase = createWorkflowNode('reroute', previewPosition)
+    const previewAnchorNode: WorkflowBuilderNode = {
+      ...previewAnchorBase,
+      id: previewAnchorNodeId,
+      style: {
+        ...(previewAnchorBase.style ?? {}),
+        opacity: 0,
+        pointerEvents: 'none',
+      },
+      draggable: false,
+      selectable: false,
+      connectable: false,
+    }
+
+    setNodes((current) => current.concat(previewAnchorNode))
+    setEdges((current) => {
+      const next = reconnectEdge(edge, {
+        source: edge.source,
+        sourceHandle: edge.sourceHandle ?? null,
+        target: previewAnchorNodeId,
+        targetHandle: 'in',
+      }, current)
+      syncPromptSocketConnectionFromEdges(next)
+      return next
+    })
+
+    suppressNextPaneClickRef.current = true
+
+    setReconnectContextMenu({
+      edgeId: edge.id,
+      handleType,
+      clientX,
+      clientY,
+      previewAnchorNodeId,
+      originalEdge: edge,
+      originalConnection: {
+        source: edge.source,
+        sourceHandle: edge.sourceHandle ?? null,
+        target: edge.target,
+        targetHandle: edge.targetHandle ?? null,
+      },
+    })
+    setIsCreateNodeSubmenuOpen(false)
+  }, [reactFlow, setEdges, setNodes, syncPromptSocketConnectionFromEdges])
+
+  useEffect(() => {
+    if (!reconnectContextMenu) return
+
+    if (reconnectMenuRef.current) {
+      reconnectMenuRef.current.style.left = `${reconnectContextMenu.clientX}px`
+      reconnectMenuRef.current.style.top = `${reconnectContextMenu.clientY}px`
+    }
+
+    const close = () => closeReconnectContextMenu()
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close()
+    }
+
+    window.addEventListener('pointerdown', close)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('pointerdown', close)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [closeReconnectContextMenu, reconnectContextMenu])
+
+  useEffect(() => {
+    if (!reconnectContextMenu) {
+      setIsCreateNodeSubmenuOpen(false)
+    }
+  }, [reconnectContextMenu])
+
+  const stableNodeTypes = useMemo(() => workflowNodeTypes, [])
+
   const onDragOver = useCallback((event: ReactDragEvent<HTMLDivElement>) => {
     event.preventDefault()
-    event.dataTransfer.dropEffect = 'move'
+    const hasFiles = Array.from(event.dataTransfer.items).some(
+      (item) => item.kind === 'file' && item.type.startsWith('image/')
+    )
+    event.dataTransfer.dropEffect = hasFiles ? 'copy' : 'move'
+  }, [])
+
+  const uploadImageToFirebase = useCallback(async (file: File, nodeId: string, itemId: string): Promise<string> => {
+    const uid = auth.currentUser?.uid || 'anon'
+    const ext = file.name.split('.').pop() || 'jpg'
+    const path = `workflow-builder/image-refs/${uid}/${nodeId}/${itemId}.${ext}`
+    const ref = storageRef(storage, path)
+    await new Promise<void>((resolve, reject) => {
+      const task = uploadBytesResumable(ref, file, { contentType: file.type })
+      task.on('state_changed', null, reject, () => resolve())
+    })
+    return getDownloadURL(ref)
   }, [])
 
   const onDrop = useCallback((event: ReactDragEvent<HTMLDivElement>) => {
     event.preventDefault()
 
+    // Handle node-library palette drops
     const kind = event.dataTransfer.getData('application/workflow-builder-node') as WorkflowBuilderNodeKind
-    if (!kind) {
+    if (kind) {
+      const position = reactFlow.screenToFlowPosition({ x: event.clientX, y: event.clientY })
+      setNodes((current) => current.concat(createWorkflowNode(kind, position)))
       return
     }
 
-    const bounds = reactFlowWrapperRef.current?.getBoundingClientRect()
-    if (!bounds) {
-      return
+    // Handle image file drops from the OS / browser
+    const imageFiles = Array.from(event.dataTransfer.files).filter((f) => f.type.startsWith('image/'))
+    if (imageFiles.length === 0) return
+
+    const position = reactFlow.screenToFlowPosition({ x: event.clientX, y: event.clientY })
+    const nodeId = `image_reference-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+
+    // Build placeholder items so the node appears immediately
+    const placeholderItems = imageFiles.map((f, i) => ({
+      id: `${nodeId}-img-${i}`,
+      url: '',
+      name: f.name.replace(/\.[^.]+$/, ''),
+    }))
+
+    const newNode: WorkflowBuilderNode = {
+      id: nodeId,
+      type: 'image_reference',
+      position,
+      data: {
+        label: imageFiles.length === 1 ? imageFiles[0].name.replace(/\.[^.]+$/, '') : 'Image Reference',
+        description: 'Dropped image assets',
+        referenceItems: placeholderItems,
+        uploading: true,
+      },
     }
 
-    const position = reactFlow.screenToFlowPosition({
-      x: event.clientX,
-      y: event.clientY,
+    setNodes((current) => current.concat(newNode))
+    setUploadingImageNodeIds((prev) => { const next = new Set(prev); next.add(nodeId); return next })
+
+    // Upload all images then patch the node with real URLs
+    void Promise.all(
+      imageFiles.map(async (file, i) => {
+        const itemId = `${nodeId}-img-${i}`
+        try {
+          const url = await uploadImageToFirebase(file, nodeId, itemId)
+          return { id: itemId, url, name: file.name.replace(/\.[^.]+$/, '') }
+        } catch {
+          return { id: itemId, url: '', name: file.name.replace(/\.[^.]+$/, '') }
+        }
+      }),
+    ).then((items) => {
+      setNodes((current) => current.map((n) =>
+        n.id === nodeId
+          ? { ...n, data: { ...n.data, referenceItems: items, uploading: false } }
+          : n,
+      ))
+      setUploadingImageNodeIds((prev) => { const next = new Set(prev); next.delete(nodeId); return next })
+      notifyRef.current(`${items.length} image${items.length > 1 ? 's' : ''} uploaded.`, 'success')
     })
-
-    setNodes((current) => current.concat(createWorkflowNode(kind, position)))
-  }, [reactFlow, setNodes])
+  }, [reactFlow, setNodes, uploadImageToFirebase])
 
   const executeNode = useCallback(async (nodeId: string) => {
     const node = nodesRef.current.find((entry) => entry.id === nodeId)
@@ -1194,11 +1820,11 @@ function WorkflowBuilderCanvasInner({
         const prompt = resolvePromptForGenerateNode(nodeId)
         const baseSettings = {
           provider: 'atlas' as const,
-          model: 'seedance-2.0-fast',
-          ratio: '16:9',
-          duration: 5,
-          resolution: '720p',
-          generateAudio: true,
+          model: (node.data.genModel as string | undefined) || 'seedance-2.0-fast',
+          ratio: (node.data.genRatio as string | undefined) || '16:9',
+          duration: (node.data.genDuration as number | undefined) || 5,
+          resolution: (node.data.genResolution as string | undefined) || '720p',
+          generateAudio: node.data.genAudio !== false,
         }
         const request = buildWorkflowGenerateRequest(nodeId, prompt, baseSettings)
 
@@ -1365,18 +1991,167 @@ function WorkflowBuilderCanvasInner({
     runGeneration,
     updateNodeData,
     writePendingTask,
+    addLabHistoryItem,
+    updateLabHistoryItem,
+  ])
+
+  // Patch a single queue item inside a node's genQueue array
+  const patchQueueItem = useCallback((nodeId: string, queueItemId: string, patch: Record<string, unknown>) => {
+    setNodes((current) => current.map((n) => {
+      if (n.id !== nodeId) return n
+      const queue: unknown[] = Array.isArray(n.data.genQueue) ? (n.data.genQueue as unknown[]) : []
+      return {
+        ...n,
+        data: {
+          ...n.data,
+          genQueue: queue.map((item) => {
+            const qi = item as Record<string, unknown>
+            return qi.id === queueItemId ? { ...qi, ...patch } : qi
+          }),
+        },
+      }
+    }))
+  }, [setNodes])
+
+  const executeQueueItem = useCallback(async (nodeId: string, item: { id: string; prompt: string; genModel?: string; genRatio?: string; genDuration?: number; genResolution?: string; genAudio?: boolean }) => {
+    const queueItemId = item.id
+
+    const prompt = item.prompt || ''
+    const baseSettings = {
+      provider: 'atlas' as const,
+      model: item.genModel || 'seedance-2.0-fast',
+      ratio: item.genRatio || '16:9',
+      duration: item.genDuration || 5,
+      resolution: item.genResolution || '720p',
+      generateAudio: item.genAudio !== false,
+    }
+
+    const request = buildWorkflowGenerateRequest(nodeId, prompt, baseSettings)
+    const requestId = `${nodeId}-${queueItemId}-${Date.now()}`
+
+    patchQueueItem(nodeId, queueItemId, { status: 'running', statusText: 'Submitting…' })
+
+    const labHistoryId = requestId
+    addLabHistoryItem({
+      id: labHistoryId,
+      timestamp: Date.now(),
+      prompt,
+      model: baseSettings.model,
+      provider: baseSettings.provider,
+      ratio: baseSettings.ratio,
+      resolution: baseSettings.resolution,
+      duration: baseSettings.duration,
+      generateAudio: baseSettings.generateAudio,
+      requestEndpoint: request.endpoint,
+      requestPayload: request.body,
+      sourceLabel: 'Workflow Builder Queue',
+      status: 'queued',
+    })
+
+    try {
+      const completedGeneration = await runGeneration({
+        endpoint: request.endpoint,
+        body: request.body,
+        settings: baseSettings,
+      }, {
+        onQueued: ({ taskId, submittedAt, settings }) => {
+          updateLabHistoryItem(labHistoryId, { status: 'running', taskId, submittedAt, provider: settings.provider, model: settings.model, ratio: settings.ratio, resolution: settings.resolution, duration: settings.duration, generateAudio: settings.generateAudio })
+          writePendingTask({ requestId, nodeId, taskId, provider: settings.provider, model: settings.model, ratio: settings.ratio, duration: settings.duration, resolution: settings.resolution, generateAudio: settings.generateAudio, createdAt: submittedAt, prompt, requestEndpoint: request.endpoint, requestPayload: request.body })
+          patchQueueItem(nodeId, queueItemId, { taskId, statusText: `Queued: ${taskId}` })
+        },
+        onStatus: (statusText) => {
+          patchQueueItem(nodeId, queueItemId, { statusText })
+        },
+      })
+
+      if (!completedGeneration) {
+        updateLabHistoryItem(labHistoryId, { status: 'failed', errorMessage: 'Generation cancelled or failed.', completedAt: Date.now() })
+        removePendingTask(requestId)
+        patchQueueItem(nodeId, queueItemId, { status: 'error', errorMessage: 'Cancelled or failed.', completedAt: new Date().toISOString() })
+        return
+      }
+
+      updateLabHistoryItem(labHistoryId, { status: 'success', resultUrl: completedGeneration.resultUrl, taskId: completedGeneration.taskId, submittedAt: completedGeneration.submittedAt, receivedAt: completedGeneration.receivedAt, completedAt: completedGeneration.receivedAt, provider: completedGeneration.settings.provider, model: completedGeneration.settings.model, ratio: completedGeneration.settings.ratio, resolution: completedGeneration.settings.resolution, duration: completedGeneration.settings.duration, generateAudio: completedGeneration.settings.generateAudio })
+
+      // Persist to Firebase
+      const completedAt = Date.now()
+      const historyId = `${nodeId}-${completedGeneration.taskId || completedAt}`
+      const finalized = await finalizeGeneratedVideoPersistence<WorkflowGenerationHistoryEntry>({
+        sourceUrl: completedGeneration.resultUrl,
+        storageBasePath: `workflow-builder/generated/${historyId}`,
+        apiBaseUrl: CHATBOT_BASE,
+        completedAt,
+        buildEntry: ({ completedAt: finalizedAt, firebaseVideoUrl, storageSaveError }) => ({
+          historyId,
+          nodeId,
+          taskId: completedGeneration.taskId,
+          provider: completedGeneration.settings.provider,
+          model: completedGeneration.settings.model,
+          ratio: completedGeneration.settings.ratio,
+          duration: completedGeneration.settings.duration,
+          resolution: completedGeneration.settings.resolution,
+          generateAudio: completedGeneration.settings.generateAudio,
+          prompt,
+          requestEndpoint: request.endpoint,
+          requestPayload: request.body,
+          resultUrl: completedGeneration.resultUrl,
+          firebaseVideoUrl,
+          storageSaveError,
+          submittedAt: completedGeneration.submittedAt,
+          receivedAt: completedGeneration.receivedAt,
+          completedAt: finalizedAt,
+        }),
+        persistEntry: saveGenerationHistoryEntry,
+      })
+
+      removePendingTask(requestId)
+      patchQueueItem(nodeId, queueItemId, {
+        status: 'done',
+        videoUrl: finalized.playbackUrl,
+        firebaseVideoUrl: finalized.firebaseVideoUrl,
+        sourceVideoUrl: completedGeneration.resultUrl,
+        statusText: finalized.storageSaveError ? 'Done (provider link)' : 'Done',
+        completedAt: new Date().toISOString(),
+      })
+      notify('Video generation completed.', 'success')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Generation failed.'
+      const isTerminal = isFailureStatus(message.toLowerCase()) || message.toLowerCase().includes('generation failed')
+      if (isTerminal) removePendingTask(requestId)
+      updateLabHistoryItem(labHistoryId, { status: 'failed', errorMessage: message, completedAt: Date.now() })
+      patchQueueItem(nodeId, queueItemId, { status: 'error', errorMessage: message, completedAt: new Date().toISOString() })
+      notify(message, 'error')
+    }
+  }, [
+    addLabHistoryItem,
+    buildWorkflowGenerateRequest,
+    notify,
+    patchQueueItem,
+    removePendingTask,
+    runGeneration,
+    saveGenerationHistoryEntry,
+    updateLabHistoryItem,
+    writePendingTask,
   ])
 
   const removeNode = useCallback((nodeId: string) => {
     setNodes((current) => current.filter((node) => node.id !== nodeId))
-    setEdges((current) => current.filter((edge) => edge.source !== nodeId && edge.target !== nodeId))
+    setEdges((current) => {
+      const next = current.filter((edge) => edge.source !== nodeId && edge.target !== nodeId)
+      syncPromptSocketConnectionFromEdges(next)
+      return next
+    })
     setSelectedNodeId((current) => (current === nodeId ? null : current))
-  }, [setEdges, setNodes])
+  }, [setEdges, setNodes, syncPromptSocketConnectionFromEdges])
 
   const removeEdge = useCallback((edgeId: string) => {
-    setEdges((current) => current.filter((edge) => edge.id !== edgeId))
+    setEdges((current) => {
+      const next = current.filter((edge) => edge.id !== edgeId)
+      syncPromptSocketConnectionFromEdges(next)
+      return next
+    })
     setSelectedEdgeId((current) => (current === edgeId ? null : current))
-  }, [setEdges])
+  }, [setEdges, syncPromptSocketConnectionFromEdges])
 
   const retryFirebaseSaveForNode = useCallback(async (nodeId: string) => {
     const node = nodes.find((entry) => entry.id === nodeId)
@@ -1398,39 +2173,60 @@ function WorkflowBuilderCanvasInner({
       return
     }
 
-    try {
-      window.localStorage.setItem(storageKey, JSON.stringify({ nodes, edges }))
-      notify('Workflow saved to browser storage.', 'success')
-    } catch {
-      notify('Could not save the workflow to browser storage.', 'error')
-    }
+    const currentViewport = reactFlow.getViewport()
+    lastViewportRef.current = currentViewport
 
-    if (!saveRemoteWorkflow) {
+    if (saveRemoteWorkflow) {
+      try {
+        await saveRemoteWorkflow({ nodes, edges, viewport: currentViewport })
+        notify('Workflow saved to cloud storage.', 'success')
+      } catch {
+        notify('Could not save the workflow to cloud storage.', 'error')
+      }
       return
     }
 
     try {
-      await saveRemoteWorkflow({ nodes, edges })
+      window.localStorage.setItem(storageKey, JSON.stringify({ nodes, edges, viewport: currentViewport }))
+      notify('Workflow saved to browser storage.', 'success')
     } catch {
-      notify('Cloud save failed. Local save still succeeded.', 'warning')
+      notify('Could not save the workflow to browser storage.', 'error')
     }
-  }, [edges, nodes, notify, saveRemoteWorkflow, storageKey])
+  }, [edges, nodes, notify, reactFlow, saveRemoteWorkflow, storageKey])
 
   const loadWorkflow = useCallback(async () => {
     if (readRemoteWorkflow) {
+      setIsRemoteLoading(true)
       try {
         const remoteWorkflow = await readRemoteWorkflow()
         if (remoteWorkflow) {
           const nextWorkflow = sanitizeWorkflow(remoteWorkflow)
           setNodes(nextWorkflow.nodes)
           setEdges(nextWorkflow.edges)
+          if (nextWorkflow.viewport) {
+            const nextViewport = {
+              x: nextWorkflow.viewport.x,
+              y: nextWorkflow.viewport.y,
+              zoom: nextWorkflow.viewport.zoom,
+            }
+            lastViewportRef.current = nextViewport
+            window.setTimeout(() => {
+              void reactFlow.setViewport(nextViewport, { duration: 0 })
+              recomputeVisibleNodes(nextViewport)
+            }, 0)
+          }
           setSelectedNodeId(null)
           setSelectedEdgeId(null)
           notify('Workflow loaded from cloud storage.', 'success')
           return
         }
+        notify('No saved cloud workflow was found for this scope.', 'warning')
+        return
       } catch {
-        notify('Cloud load failed. Attempting local load.', 'warning')
+        notify('Cloud load failed.', 'error')
+        return
+      } finally {
+        setIsRemoteLoading(false)
       }
     }
 
@@ -1444,12 +2240,24 @@ function WorkflowBuilderCanvasInner({
       const nextWorkflow = sanitizeWorkflow(JSON.parse(raw) as WorkflowBuilderDefinition)
       setNodes(nextWorkflow.nodes)
       setEdges(nextWorkflow.edges)
+      if (nextWorkflow.viewport) {
+        const nextViewport = {
+          x: nextWorkflow.viewport.x,
+          y: nextWorkflow.viewport.y,
+          zoom: nextWorkflow.viewport.zoom,
+        }
+        lastViewportRef.current = nextViewport
+        window.setTimeout(() => {
+          void reactFlow.setViewport(nextViewport, { duration: 0 })
+          recomputeVisibleNodes(nextViewport)
+        }, 0)
+      }
       setSelectedNodeId(null)
       notify('Workflow loaded from browser storage.', 'success')
     } catch {
       notify('There was an error loading the saved workflow.', 'error')
     }
-  }, [notify, readRemoteWorkflow, setEdges, setNodes, storageKey])
+  }, [notify, readRemoteWorkflow, reactFlow, recomputeVisibleNodes, setEdges, setNodes, storageKey])
 
   const executeWorkflow = useCallback(async () => {
     if (nodes.length === 0) {
@@ -1492,8 +2300,10 @@ function WorkflowBuilderCanvasInner({
   const canvasContextValue = useMemo(() => ({
     updateNodeData,
     executeNode,
+    executeQueueItem,
     isNodeExecuting: (nodeId: string) => executingNodeIds.has(nodeId),
-  }), [executeNode, executingNodeIds, updateNodeData])
+    isNodeInViewport: (nodeId: string) => visibleNodeIds.has(nodeId),
+  }), [executeNode, executeQueueItem, executingNodeIds, updateNodeData, visibleNodeIds])
 
   const canvasClassName = [
     'workflow-builder-canvas', 
@@ -1533,14 +2343,40 @@ function WorkflowBuilderCanvasInner({
                 if (isInteractive) return
                 updateNodeData(node.id, { collapsed: !node.data.collapsed })
               }}
-              onEdgeClick={(_event: ReactMouseEvent, edge) => { setSelectedEdgeId(edge.id); setSelectedNodeId(null) }}
-              onPaneClick={() => { setSelectedNodeId(null); setSelectedEdgeId(null) }}
-              nodeTypes={workflowNodeTypes}
-              fitView
+              onEdgeClick={(event: ReactMouseEvent, edge) => {
+                if (event.altKey) {
+                  removeEdge(edge.id)
+                  return
+                }
+                setSelectedEdgeId(edge.id)
+                setSelectedNodeId(null)
+              }}
+              onEdgeDoubleClick={(_event: ReactMouseEvent, edge) => {
+                removeEdge(edge.id)
+              }}
+              onReconnect={onReconnect}
+              onReconnectStart={onReconnectStart}
+              onReconnectEnd={onReconnectEnd}
+              onMoveEnd={(_event, viewport) => {
+                lastViewportRef.current = viewport
+                recomputeVisibleNodes(viewport)
+              }}
+              onPaneClick={() => {
+                if (suppressNextPaneClickRef.current) {
+                  suppressNextPaneClickRef.current = false
+                  return
+                }
+                setSelectedNodeId(null)
+                setSelectedEdgeId(null)
+                closeReconnectContextMenu()
+              }}
+              nodeTypes={stableNodeTypes}
+              fitView={!hasCloudRead && !effectiveInitialWorkflow.viewport}
               fitViewOptions={{ padding: 0.18 }}
               snapToGrid
               snapGrid={[16, 16]}
               minZoom={0.08}
+              maxZoom={5.0}
               defaultEdgeOptions={{
                 markerEnd: {
                   type: MarkerType.ArrowClosed,
@@ -1554,9 +2390,10 @@ function WorkflowBuilderCanvasInner({
                 },
               }}
               edgesFocusable
-              edgesReconnectable={false}
+              edgesReconnectable
+              proOptions={{ hideAttribution: true }}
             >
-              <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} color="#d8e0ea" />
+              <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} color="#2a2a2a" />
               <Panel position="bottom-right">
                 <div className="workflow-builder-canvas__zoom-bar">
                   <button type="button" className="workflow-builder-canvas__zoom-btn" onClick={() => reactFlow.zoomIn({ duration: 150 })} title="Zoom in"><Plus size={14} /></button>
@@ -1567,6 +2404,7 @@ function WorkflowBuilderCanvasInner({
               </Panel>
               <Panel position="top-right">
                 <div className="workflow-builder-canvas__action-row">
+                  {topActionSlot ? <div className="workflow-builder-canvas__action-slot">{topActionSlot}</div> : null}
                   {showPersistenceControls ? (
                     <>
                       <button type="button" className="workflow-builder-canvas__action-btn workflow-builder-canvas__action-btn--secondary" onClick={() => { void saveWorkflow() }}>
@@ -1586,6 +2424,60 @@ function WorkflowBuilderCanvasInner({
                 </div>
               </Panel>
             </ReactFlow>
+            {isRemoteLoading ? (
+              <div className="workflow-builder-canvas__remote-loading" role="status" aria-live="polite">
+                <div className="workflow-builder-canvas__remote-loading-card">
+                  <Loader className="wf-spin" size={18} />
+                  <span>Loading flow...</span>
+                </div>
+              </div>
+            ) : null}
+            {reconnectContextMenu ? (
+              <div
+                ref={reconnectMenuRef}
+                className="workflow-builder-canvas__reconnect-menu"
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  className="workflow-builder-canvas__reconnect-menu-item"
+                  onClick={() => handleReconnectContextDisconnect(reconnectContextMenu.edgeId)}
+                >
+                  Disconnect
+                </button>
+                <div
+                  className="workflow-builder-canvas__reconnect-menu-submenu-wrap"
+                  onPointerEnter={() => setIsCreateNodeSubmenuOpen(true)}
+                  onPointerLeave={() => setIsCreateNodeSubmenuOpen(false)}
+                >
+                  <button
+                    type="button"
+                    className="workflow-builder-canvas__reconnect-menu-item workflow-builder-canvas__reconnect-menu-item--submenu"
+                    onClick={() => setIsCreateNodeSubmenuOpen((current) => !current)}
+                  >
+                    Create node
+                  </button>
+                  {isCreateNodeSubmenuOpen ? (
+                    <div className="workflow-builder-canvas__reconnect-submenu">
+                      <button
+                        type="button"
+                        className="workflow-builder-canvas__reconnect-menu-item"
+                        onClick={() => handleReconnectContextCreateNode('generate')}
+                      >
+                        Generate
+                      </button>
+                      <button
+                        type="button"
+                        className="workflow-builder-canvas__reconnect-menu-item"
+                        onClick={() => handleReconnectContextCreateNode('gen_text_to_video')}
+                      >
+                        Text to Video
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
           </WorkflowBuilderCanvasContext.Provider>
         </div>
       </div>

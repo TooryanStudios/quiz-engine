@@ -30,7 +30,7 @@ function arraysEqual(a: string[], b: string[]) {
 export const VideoConnectorNode = memo(function VideoConnectorNode({ id, data, isConnectable }: WorkflowBuilderNodeProps) {
   const edges = useEdges()
   const nodes = useNodes() as WorkflowBuilderNode[]
-  const { patchNode } = useWorkflowBuilderNode(id)
+  const { patchNode, isInViewport } = useWorkflowBuilderNode(id)
   const [manualUrls, setManualUrls] = useState<string[]>(() => data.videoSequenceUrls || ['', ''])
   const [loopSequence, setLoopSequence] = useState(Boolean(data.videoConnectorLoop))
   const [activeIndex, setActiveIndex] = useState(0)
@@ -271,20 +271,20 @@ export const VideoConnectorNode = memo(function VideoConnectorNode({ id, data, i
           <div className="workflow-builder-video-connector__viewport">
             <video
               ref={videoRef0}
-              src={url0}
+              src={isInViewport ? url0 : undefined}
               controls={activePlayer === 0}
               playsInline
-              preload="auto"
+              preload={isInViewport ? 'auto' : 'none'}
               muted={activePlayer !== 0}
               onEnded={() => onVideoEnded(0)}
               className={`workflow-builder-video-connector__video ${activePlayer === 0 ? 'is-active' : 'is-inactive'}`}
             />
             <video
               ref={videoRef1}
-              src={url1}
+              src={isInViewport ? url1 : undefined}
               controls={activePlayer === 1}
               playsInline
-              preload="auto"
+              preload={isInViewport ? 'auto' : 'none'}
               muted={activePlayer !== 1}
               onEnded={() => onVideoEnded(1)}
               className={`workflow-builder-video-connector__video ${activePlayer === 1 ? 'is-active' : 'is-inactive'}`}

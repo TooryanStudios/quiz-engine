@@ -31,12 +31,6 @@ const toApiUrl = (apiBaseUrl: string, path: string) => {
   return base ? `${base}${path}` : path
 }
 
-const shouldUseDirectPlaybackUrl = (sourceUrl: string): boolean => {
-  const lower = sourceUrl.toLowerCase()
-  if (lower.includes('volces.com') && lower.includes('x-tos-signature=')) return true
-  return false
-}
-
 const resolveProxySourceUrl = (url: string): string => {
   const trimmed = url.trim()
   if (!trimmed) return ''
@@ -72,28 +66,15 @@ const downloadVideoBlob = async (
     throw new Error('No result URL was available for Firebase save.')
   }
 
-  let response: Response | null = null
-  if (shouldUseDirectPlaybackUrl(normalizedSourceUrl)) {
-    try {
-      const directResponse = await fetch(normalizedSourceUrl)
-      if (directResponse.ok) {
-        response = directResponse
-      }
-    } catch {
-      // Fall back to backend proxy below if direct browser fetch fails.
-    }
+  // Always use the backend proxy — direct browser fetches fail for cross-origin
+  // provider CDN URLs (Volcengine TOS, etc.) due to missing CORS headers.
+  const proxyUrl = `${toApiUrl(apiBaseUrl, '/api/video-proxy')}?url=${encodeURIComponent(normalizedSourceUrl)}`
+  const proxyResponse = await fetch(proxyUrl)
+  if (!proxyResponse.ok) {
+    throw new Error(`Failed to download generated video: HTTP ${proxyResponse.status}`)
   }
 
-  if (!response) {
-    const proxyUrl = `${toApiUrl(apiBaseUrl, '/api/video-proxy')}?url=${encodeURIComponent(normalizedSourceUrl)}`
-    const proxyResponse = await fetch(proxyUrl)
-    if (!proxyResponse.ok) {
-      throw new Error(`Failed to download generated video: HTTP ${proxyResponse.status}`)
-    }
-    response = proxyResponse
-  }
-
-  const videoBlob = await response.blob()
+  const videoBlob = await proxyResponse.blob()
   if (videoBlob.size > MAX_VIDEO_BYTES) {
     throw new Error('Generated video is larger than the Firebase Storage limit (50MB).')
   }

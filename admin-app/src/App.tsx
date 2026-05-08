@@ -193,7 +193,7 @@ type NavItem = {
   end?: boolean
 }
 
-function getNav(isAr: boolean) {
+function getNav(isAr: boolean, isMasterUser: boolean) {
   const nav: NavItem[] = [
     { to: '/dashboard',        icon: '🏠', label: isAr ? 'الرئيسية' : 'Dashboard', end: true },
     { to: '/editor',           icon: '✏️',  label: isAr ? 'محرر الأسئلة' : 'Challenge Editor' },
@@ -204,10 +204,26 @@ function getNav(isAr: boolean) {
     { to: '/studio',           icon: '🏢', label: isAr ? 'الاستوديو' : 'Studio' },
     { to: '/lab',              icon: '🧪', label: isAr ? 'المختبر' : 'Lab' },
     { to: '/toorgen',          icon: '🎬', label: isAr ? 'تورجن' : 'ToorGen' },
+    { to: '/vidEdit',          icon: '🎞️', label: isAr ? 'محرر الفيديو' : 'Video Editor' },
+    { to: '/canvas',           icon: '🧠', label: isAr ? 'كانفس' : 'Canvas' },
+    { to: '/workflow-builder-test', icon: '🧩', label: isAr ? 'اختبار منشئ التدفق' : 'Workflow Builder Test' },
+    { to: '/toorgen/extend',   icon: '🧪', label: isAr ? 'تورجن المتقدم' : 'ToorGen Extend' },
+    { to: '/scanner',          icon: '📷', label: isAr ? 'الماسح' : 'Scanner' },
+    { to: '/scanner/desktop',  icon: '🖥️', label: isAr ? 'الماسح المكتبي' : 'Scanner Desktop' },
+    { to: '/vidplayer',        icon: '▶️', label: isAr ? 'مشغل الفيديو' : 'Vid Player' },
+    { to: '/play-test',        icon: '🕹️', label: isAr ? 'اختبار اللعب' : 'Play Test' },
     ...(communicationFeatureFlags.messagesPage ? [{ to: '/messages', icon: '💬', label: isAr ? 'الرسائل' : 'Messages' }] : []),
     ...(communicationFeatureFlags.adHocTasksPage ? [{ to: '/ops-tasks', icon: '🧾', label: isAr ? 'مهام التشغيل' : 'Ops Tasks' }] : []),
     { to: '/billing',          icon: '💳', label: isAr ? 'الاشتراك' : 'Billing' },
     { to: '/profile',          icon: '👤', label: isAr ? 'الملف الشخصي' : 'Profile' },
+    ...(isMasterUser
+      ? [
+          { to: '/game-modes', icon: '🧩', label: isAr ? 'أوضاع اللعب' : 'Game Modes' },
+          { to: '/voice-lab', icon: '🎙️', label: isAr ? 'مختبر الصوت' : 'Voice Lab' },
+          { to: '/ai-lab', icon: '🤖', label: isAr ? 'مختبر الذكاء' : 'AI Lab' },
+          { to: '/cover-gen-lab', icon: '🖼️', label: isAr ? 'مختبر الغلاف' : 'Cover Lab' },
+        ]
+      : []),
   ]
   return nav
 }
@@ -228,6 +244,7 @@ function RequireAuth({
   children: ReactElement
   loadingFallback?: ReactElement
 }) {
+  const location = useLocation()
   if (user === undefined) {
     return loadingFallback || (
       <div className="app-loading-screen">
@@ -235,12 +252,19 @@ function RequireAuth({
       </div>
     )
   }
-  if (!user) return <Navigate to="/dashboard" replace />
+  if (!user) {
+    const returnTo = `${location.pathname}${location.search}`
+    return <Navigate to={`/login?returnTo=${encodeURIComponent(returnTo)}`} replace state={{ returnTo }} />
+  }
   return children
 }
 
 function RequireAdmin({ user, children }: { user: User | null; children: ReactElement }) {
-  if (!user) return <Navigate to="/login" replace />
+  const location = useLocation()
+  if (!user) {
+    const returnTo = `${location.pathname}${location.search}`
+    return <Navigate to={`/login?returnTo=${encodeURIComponent(returnTo)}`} replace state={{ returnTo }} />
+  }
   if (!MASTER_EMAIL || user.email !== MASTER_EMAIL) return <Navigate to="/dashboard" replace />
   return children
 }
@@ -299,11 +323,12 @@ function App() {
   const navigate = useNavigate()
   const location = useLocation()
   const isLocalDevHost = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
+  const allowUnauthedLocalPlayTest = false
+  const allowUnauthedLocalCanvas = false
   const enableMSESequencerDemo = import.meta.env.VITE_ENABLE_MSE_SEQUENCER_DEMO === '1'
     || (import.meta.env.DEV
       && typeof window !== 'undefined'
       && new URLSearchParams(window.location.search).get('mseDemo') === '1')
-  const isLocalPlayTestPath = location.pathname === '/play-test' || location.pathname.startsWith('/play-test/')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [burgerOpen, setBurgerOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
@@ -376,6 +401,7 @@ function App() {
     return () => window.removeEventListener(CHAT_DOCK_OPEN_EVENT, handleDockOpenRequest as EventListener)
   }, [openChatDock])
   const handleSignOut = useCallback(() => {
+    const returnTo = `${location.pathname}${location.search}`
     // Check if user is in editor with unsaved changes
     const isInEditor = location.pathname === '/editor' || location.pathname === '/mini-game-editor'
     const editorState = sessionStorage.getItem('qyan:editorState')
@@ -403,9 +429,9 @@ function App() {
     markSignOut()
     localStorage.removeItem('qyan:session')
     void signOut(auth).then(() => {
-      navigate('/dashboard')
+      navigate(`/login?returnTo=${encodeURIComponent(returnTo)}`, { replace: true, state: { signedOut: true, returnTo } })
     })
-  }, [location.pathname, navigate])
+  }, [location.pathname, location.search, navigate])
   const handleGuestSignIn = useCallback(() => {
     const returnTo = `${location.pathname}${location.search}`
     navigate('/login', { state: { returnTo } })
@@ -429,8 +455,6 @@ function App() {
   const isScannerDesktopPage = location.pathname === '/scanner/desktop' || location.pathname.startsWith('/scanner/desktop/')
   const isEmbeddedPreview = location.pathname.startsWith('/preview/') && new URLSearchParams(location.search).get('embedded') === '1'
   const isGameEmbed = location.pathname.startsWith('/embed') || location.pathname.startsWith('/play')
-  const allowUnauthedLocalPlayTest = isLocalDevHost && isLocalPlayTestPath
-  const allowUnauthedLocalCanvas = isLocalDevHost && isCanvasPage
 
   // Apply theme to document element
   useEffect(() => {
@@ -515,7 +539,10 @@ function App() {
 
       // Keep initial navigation fast; never block UI on network calls.
       if (u && window.location.pathname === '/login') {
-        navigate('/dashboard', { replace: true })
+        const params = new URLSearchParams(window.location.search)
+        const queryReturnTo = params.get('returnTo') || ''
+        const safeReturnTo = queryReturnTo.startsWith('/') ? queryReturnTo : '/dashboard'
+        navigate(safeReturnTo, { replace: true })
       }
 
       // Ensure admin claim in background (master only), without delaying render.
@@ -569,21 +596,13 @@ function App() {
       }
     })
     return () => { clearTimeout(authTimeout); unsub() }
-  }, [allowUnauthedLocalPlayTest, isLocalDevHost, navigate])
+  }, [isLocalDevHost, navigate])
 
   // Real-time blocked-user enforcement: sign out immediately if status becomes 'blocked'
   useEffect(() => {
     if (!user) return
     const unsub = subscribeUserDoc(user.uid, (profile) => {
       const runtimeStatus = ((profile as { status?: string } | null)?.status || '').toLowerCase()
-      if (runtimeStatus === 'pending') {
-        localStorage.setItem(accessDeniedReasonKey, 'pending')
-        void signOut(auth)
-      }
-      if (runtimeStatus === 'rejected') {
-        localStorage.setItem(accessDeniedReasonKey, 'rejected')
-        void signOut(auth)
-      }
       if (runtimeStatus === 'blocked' || runtimeStatus === 'deleted' || runtimeStatus === 'suspended') {
         localStorage.setItem(accessDeniedReasonKey, 'blocked')
         void signOut(auth)
@@ -647,7 +666,7 @@ function App() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
-  if (user === undefined && !allowUnauthedLocalPlayTest && !allowUnauthedLocalCanvas && (isLoginPage || isWorkHubPage || isMasterPage || isLabPage || isCanvasPage)) {
+  if (user === undefined && (isLoginPage || isWorkHubPage || isMasterPage || isLabPage || isCanvasPage || isVidEditPage || isVidPlayerPage || isScannerPage || isEmbeddedPreview || isGameEmbed)) {
     if (isLoginPage) {
       return (
         <ToastProvider>
@@ -690,28 +709,7 @@ function App() {
                   note={isAr ? 'جارٍ تحميل المختبر…' : 'Loading Lab…'}
                 />
               }>
-                {user ? (
-                  <LabPage user={user} />
-                ) : (
-                  <div className="lab-auth-shell">
-                    <div className="lab-auth-card">
-                      <h1>{isAr ? 'مختبر تورجن المستقل' : 'Standalone Lab'}</h1>
-                      <p>
-                        {isAr
-                          ? 'أنشئ حسابك، ثم ابدأ فوراً بإنشاء المؤسسة، المشاريع، والمجلدات داخل المختبر.'
-                          : 'Create your account, then immediately start building your organization, projects, and folders in Lab.'}
-                      </p>
-                      <div className="lab-auth-actions">
-                        <button type="button" className="btn" onClick={handleGuestSignIn}>
-                          {isAr ? 'إنشاء حساب / تسجيل الدخول' : 'Sign up / Sign in'}
-                        </button>
-                        <button type="button" className="btn ghost" onClick={() => navigate('/toorgen')}>
-                          {isAr ? 'الانتقال إلى تورجن' : 'Go to ToorGen'}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
+                <RequireAuth user={user}><LabPage user={user as User} /></RequireAuth>
               </Suspense>
             </ErrorBoundary>
             <Dialog />
@@ -734,11 +732,7 @@ function App() {
                   note={isAr ? 'جارٍ تحميل اللوحة…' : 'Loading Canvas…'}
                 />
               }>
-                {allowUnauthedLocalCanvas ? (
-                  <WorkflowBuilderTestPage />
-                ) : (
-                  <RequireAdmin user={user ?? null}><WorkflowBuilderTestPage /></RequireAdmin>
-                )}
+                <RequireAdmin user={user ?? null}><WorkflowBuilderTestPage /></RequireAdmin>
               </Suspense>
             </ErrorBoundary>
             <Dialog />
@@ -876,7 +870,7 @@ function App() {
     return (
       <ErrorBoundary>
         <Suspense fallback={<div className="app-loading-screen" />}>
-          <VideoEditorPage />
+          <RequireAuth user={user}><VideoEditorPage /></RequireAuth>
         </Suspense>
       </ErrorBoundary>
     )
@@ -887,7 +881,7 @@ function App() {
     return (
       <ErrorBoundary>
         <Suspense fallback={<div className="app-loading-screen" />}>
-          <VidPlayerPage />
+          <RequireAuth user={user}><VidPlayerPage /></RequireAuth>
         </Suspense>
       </ErrorBoundary>
     )
@@ -898,7 +892,7 @@ function App() {
     return (
       <ErrorBoundary>
         <Suspense fallback={<div className="app-scanner-fallback" />}>
-          {isScannerDesktopPage ? <ScannerDesktopPage /> : <ScannerPage />}
+          <RequireAuth user={user}>{isScannerDesktopPage ? <ScannerDesktopPage /> : <ScannerPage />}</RequireAuth>
         </Suspense>
       </ErrorBoundary>
     )
@@ -927,8 +921,8 @@ function App() {
                   <AppLoadingScreen />
                 }>
                   <Routes>
-                    <Route path="/preview" element={<QuizPreviewPage />} />
-                    <Route path="/preview/:id" element={<QuizPreviewPage />} />
+                    <Route path="/preview" element={<RequireAuth user={user}><QuizPreviewPage /></RequireAuth>} />
+                    <Route path="/preview/:id" element={<RequireAuth user={user}><QuizPreviewPage /></RequireAuth>} />
                   </Routes>
                 </Suspense>
               </ErrorBoundary>
@@ -953,9 +947,9 @@ function App() {
                   <AppLoadingScreen />
                 }>
                   <Routes>
-                    <Route path="/embed/:gameId" element={<GameEmbedPage />} />
-                    <Route path="/play" element={<GameEmbedPage />} />
-                    <Route path="/play/:gameId" element={<GameEmbedPage />} />
+                    <Route path="/embed/:gameId" element={<RequireAuth user={user}><GameEmbedPage /></RequireAuth>} />
+                    <Route path="/play" element={<RequireAuth user={user}><GameEmbedPage /></RequireAuth>} />
+                    <Route path="/play/:gameId" element={<RequireAuth user={user}><GameEmbedPage /></RequireAuth>} />
                   </Routes>
                 </Suspense>
               </ErrorBoundary>
@@ -969,21 +963,21 @@ function App() {
 
   const appRoutes = (
     <Routes>
-      <Route path="/vidEdit" element={withRouteBoundary('videdit', <VideoEditorPage />)} />
+      <Route path="/vidEdit" element={withRouteBoundary('videdit', <RequireAuth user={user}><VideoEditorPage /></RequireAuth>)} />
       <Route path="/" element={withRouteBoundary('home', <Navigate to="/dashboard" replace />)} />
       <Route path="/login" element={withRouteBoundary('login', <LoginPage />)} />
-      <Route path="/dashboard" element={withRouteBoundary('dashboard', <DashboardPage />)} />
-      <Route path="/editor" element={withRouteBoundary('editor', <QuizEditorPage />)} />
-      <Route path="/editor/:id" element={withRouteBoundary('editor-id', <QuizEditorPage />)} />
-      <Route path="/mini-game-editor" element={withRouteBoundary('mini-game-editor', <QuizEditorPage />)} />
-      <Route path="/mini-game-editor/:id" element={withRouteBoundary('mini-game-editor-id', <QuizEditorPage />)} />
+      <Route path="/dashboard" element={withRouteBoundary('dashboard', <RequireAuth user={user}><DashboardPage /></RequireAuth>)} />
+      <Route path="/editor" element={withRouteBoundary('editor', <RequireAuth user={user}><QuizEditorPage /></RequireAuth>)} />
+      <Route path="/editor/:id" element={withRouteBoundary('editor-id', <RequireAuth user={user}><QuizEditorPage /></RequireAuth>)} />
+      <Route path="/mini-game-editor" element={withRouteBoundary('mini-game-editor', <RequireAuth user={user}><QuizEditorPage /></RequireAuth>)} />
+      <Route path="/mini-game-editor/:id" element={withRouteBoundary('mini-game-editor-id', <RequireAuth user={user}><QuizEditorPage /></RequireAuth>)} />
       <Route path="/game-modes" element={withRouteBoundary('game-modes', <RequireAdmin user={user ?? null}><GameModesPage /></RequireAdmin>)} />
-      <Route path="/play-test" element={withRouteBoundary('play-test', allowUnauthedLocalPlayTest ? <PlayTestPage /> : <RequireAdmin user={user ?? null}><PlayTestPage /></RequireAdmin>)} />
-      <Route path="/play-test/:gameId" element={withRouteBoundary('play-test-game', allowUnauthedLocalPlayTest ? <PlayTestPage /> : <RequireAdmin user={user ?? null}><PlayTestPage /></RequireAdmin>)} />
-      <Route path="/play" element={withRouteBoundary('play', <GameEmbedPage />)} />
-      <Route path="/play/:gameId" element={withRouteBoundary('play-game', <GameEmbedPage />)} />
-      <Route path="/preview" element={withRouteBoundary('preview', <QuizPreviewPage />)} />
-      <Route path="/preview/:id" element={withRouteBoundary('preview-id', <QuizPreviewPage />)} />
+      <Route path="/play-test" element={withRouteBoundary('play-test', allowUnauthedLocalPlayTest ? <RequireAuth user={user}><PlayTestPage /></RequireAuth> : <RequireAdmin user={user ?? null}><PlayTestPage /></RequireAdmin>)} />
+      <Route path="/play-test/:gameId" element={withRouteBoundary('play-test-game', allowUnauthedLocalPlayTest ? <RequireAuth user={user}><PlayTestPage /></RequireAuth> : <RequireAdmin user={user ?? null}><PlayTestPage /></RequireAdmin>)} />
+      <Route path="/play" element={withRouteBoundary('play', <RequireAuth user={user}><GameEmbedPage /></RequireAuth>)} />
+      <Route path="/play/:gameId" element={withRouteBoundary('play-game', <RequireAuth user={user}><GameEmbedPage /></RequireAuth>)} />
+      <Route path="/preview" element={withRouteBoundary('preview', <RequireAuth user={user}><QuizPreviewPage /></RequireAuth>)} />
+      <Route path="/preview/:id" element={withRouteBoundary('preview-id', <RequireAuth user={user}><QuizPreviewPage /></RequireAuth>)} />
       <Route path="/packs" element={withRouteBoundary('packs', <RequireAuth user={user}><PacksPage /></RequireAuth>)} />
       <Route path="/my-quizzes" element={withRouteBoundary('my-quizzes', <RequireAuth user={user}><MyQuizzesPage /></RequireAuth>)} />
       <Route path="/workhub/*" element={withRouteBoundary('workhub', <RequireAuth user={user} loadingFallback={<AppLoadingScreen variant="workhub" note={isAr ? 'جارٍ تحميل WorkHub…' : 'Loading WorkHub…'} />}><WorkHubRoutePage /></RequireAuth>)} />
@@ -998,14 +992,17 @@ function App() {
       <Route path="/voice-lab" element={withRouteBoundary('voice-lab', <RequireAdmin user={user ?? null}><VoiceLabPage /></RequireAdmin>)} />
       <Route path="/ai-lab" element={withRouteBoundary('ai-lab', <RequireAdmin user={user ?? null}><AILabPage /></RequireAdmin>)} />
       <Route path="/cover-gen-lab" element={withRouteBoundary('cover-gen-lab', <RequireAdmin user={user ?? null}><CoverGenLabPage /></RequireAdmin>)} />
-      <Route path="/canvas" element={withRouteBoundary('canvas', allowUnauthedLocalCanvas ? <WorkflowBuilderTestPage /> : <RequireAdmin user={user ?? null}><WorkflowBuilderTestPage /></RequireAdmin>)} />
-      <Route path="/workflow-builder-test" element={withRouteBoundary('workflow-builder-test', allowUnauthedLocalCanvas ? <WorkflowBuilderTestPage /> : <RequireAdmin user={user ?? null}><WorkflowBuilderTestPage /></RequireAdmin>)} />
+      <Route path="/canvas" element={withRouteBoundary('canvas', allowUnauthedLocalCanvas ? <RequireAuth user={user}><WorkflowBuilderTestPage /></RequireAuth> : <RequireAdmin user={user ?? null}><WorkflowBuilderTestPage /></RequireAdmin>)} />
+      <Route path="/canvas/f/:flowId" element={withRouteBoundary('canvas-flow', allowUnauthedLocalCanvas ? <RequireAuth user={user}><WorkflowBuilderTestPage /></RequireAuth> : <RequireAdmin user={user ?? null}><WorkflowBuilderTestPage /></RequireAdmin>)} />
+      <Route path="/workflow-builder-test" element={withRouteBoundary('workflow-builder-test', allowUnauthedLocalCanvas ? <RequireAuth user={user}><WorkflowBuilderTestPage /></RequireAuth> : <RequireAdmin user={user ?? null}><WorkflowBuilderTestPage /></RequireAdmin>)} />
+      <Route path="/workflow-builder-test/f/:flowId" element={withRouteBoundary('workflow-builder-test-flow', allowUnauthedLocalCanvas ? <RequireAuth user={user}><WorkflowBuilderTestPage /></RequireAuth> : <RequireAdmin user={user ?? null}><WorkflowBuilderTestPage /></RequireAdmin>)} />
       <Route path="/billing" element={withRouteBoundary('billing', <RequireAuth user={user}><BillingPage /></RequireAuth>)} />
       <Route path="/profile" element={withRouteBoundary('profile', <RequireAuth user={user}><ProfilePage /></RequireAuth>)} />
     </Routes>
   )
 
-  const navItems = getNav(isAr)
+  const isMasterUser = !!(user && MASTER_EMAIL && user.email === MASTER_EMAIL)
+  const navItems = getNav(isAr, isMasterUser)
   const navLookup = new Map(navItems.map((item) => [item.to, item]))
   const pickNavItems = (targets: string[]): NavItem[] => {
     const selected: NavItem[] = []
@@ -1390,7 +1387,7 @@ function App() {
 
               {user && (
                 <nav className="sidebar-nav-desktop">
-                  {getNav(isAr).map(({ to, icon, label, end }) => {
+                  {navItems.map(({ to, icon, label, end }) => {
                     const resolvedTo =
                       to === '/editor'
                         ? (sessionStorage.getItem('lastEditorPath') || to)
@@ -1414,35 +1411,6 @@ function App() {
 
                   {user.email === MASTER_EMAIL && MASTER_PATH && (
                     <>
-                      <NavLink
-                        to="/game-modes"
-                        className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
-                      >
-                        <span className="nav-icon">🧩</span>
-                        <span className="nav-label">{isAr ? 'أوضاع اللعب' : 'Game Modes'}</span>
-                      </NavLink>
-                      <NavLink
-                        to="/voice-lab"
-                        className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
-                        style={{ marginTop: '1rem', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}
-                      >
-                        <span className="nav-icon">🎙️</span>
-                        <span className="nav-label">{isAr ? 'مختبر الصوت' : 'Voice Lab'}</span>
-                      </NavLink>
-                      <NavLink
-                        to="/ai-lab"
-                        className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
-                      >
-                        <span className="nav-icon">🤖</span>
-                        <span className="nav-label">{isAr ? 'مختبر الذكاء' : 'AI Lab'}</span>
-                      </NavLink>
-                      <NavLink
-                        to="/cover-gen-lab"
-                        className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
-                      >
-                        <span className="nav-icon">🖼️</span>
-                        <span className="nav-label">{isAr ? 'مختبر الغلاف' : 'Cover Lab'}</span>
-                      </NavLink>
                       <NavLink
                         to={`${MASTER_PATH}/dashboard`}
                         className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}

@@ -1,7 +1,7 @@
 import { useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { signInWithPopup, signInWithRedirect } from 'firebase/auth'
-import { auth, authReady, googleProvider } from '../lib/firebase'
+import { auth, authReady, getAuthPersistenceMode, googleProvider } from '../lib/firebase'
 import { useToast } from '../lib/ToastContext'
 
 export const AUTH_REDIRECT_PENDING_KEY = 'qyan:authRedirectPending'
@@ -36,6 +36,38 @@ export function useGoogleSignIn() {
 
     onStart?.()
 
+    if (!isStandalone) {
+      await authReady
+      if (getAuthPersistenceMode() !== 'memory') {
+        try {
+          showToast({ message: 'جارٍ التحويل إلى تسجيل الدخول عبر Google…', type: 'info', durationMs: 3000 })
+          localStorage.setItem(AUTH_REDIRECT_PENDING_KEY, String(Date.now()))
+          await signInWithRedirect(auth, googleProvider)
+          return
+        } catch (err) {
+          hideToast()
+          const code = typeof err === 'object' && err !== null && 'code' in err
+            ? String((err as { code?: string }).code)
+            : ''
+
+          let message = 'فشل تسجيل الدخول. حاول مرة أخرى.'
+          if (code === 'auth/unauthorized-domain') {
+            message = isLocalDevHost
+              ? 'Localhost غير مضاف في Firebase Authorized Domains. أضف localhost و 127.0.0.1 من Firebase Console.'
+              : 'هذا الدومين غير مصرح به في Firebase Authentication. أضفه إلى Authorized domains.'
+          } else if (err instanceof Error) {
+            message = err.message
+          }
+
+          if (onError) onError(message)
+          else showToast({ message, type: 'error' })
+          return
+        } finally {
+          onEnd?.()
+        }
+      }
+    }
+
     // Always try signInWithPopup first (including PWA standalone mode).
     // signInWithRedirect is NOT used as primary for standalone PWA because on iOS the
     // standalone WKWebView has isolated localStorage from Safari — the redirect completes
@@ -51,7 +83,6 @@ export function useGoogleSignIn() {
     }, 4000)
 
     try {
-      await authReady
       await signInWithPopup(auth, googleProvider)
 
       if (hintTimer) {
@@ -73,7 +104,7 @@ export function useGoogleSignIn() {
         ? String((err as { code?: string }).code)
         : ''
 
-      if (code === 'auth/popup-blocked' || code === 'auth/cancelled-popup-request') {
+      if (code === 'auth/popup-blocked' || code === 'auth/cancelled-popup-request' || code === 'auth/popup-closed-by-user') {
         if (isStandalone) {
           // Redirect from standalone PWA is broken on iOS (isolated WKWebView storage).
           if (onError) onError('تعذّر فتح نافذة تسجيل الدخول. افتح التطبيق في متصفحك وسجّل الدخول أولاً.')

@@ -17,9 +17,13 @@ import type {
 import { loadUserPrefs, saveUserPrefs } from '../lib/adminRepo'
 import {
   loadProjectFlowCanvasState,
+  moveProjectFlowCanvas,
+  renameProjectFlowCanvas,
   saveProjectFlowCanvasState,
   saveProjectNewLayoutConfig,
+  subscribeToProjectFlowCanvases,
   subscribeToProjectNewLayoutConfig,
+  type StudioProjectFlowCanvasSummary,
 } from '../lib/studioService'
 import { LabNewLayoutComposerPanel } from './LabNewLayout/LabNewLayoutComposerPanel'
 import { LabNewLayoutDirectApiPanel } from './LabNewLayout/LabNewLayoutDirectApiPanel'
@@ -55,6 +59,41 @@ type PanelSuggestionParams = {
 
 type WorkspaceHomeInnerParams = {
   copy: string
+}
+
+const FLOW_ROOT_FOLDER_VALUE = '__root__'
+
+function resolveFolderPath(folderId: string | null, folders: FolderSummary[]) {
+  if (!folderId) {
+    return {
+      ids: [] as string[],
+      names: [] as string[],
+    }
+  }
+
+  const folderById = new Map<string, FolderSummary>(folders.map((folder) => [folder.id, folder]))
+  const ids: string[] = []
+  const names: string[] = []
+  let cursorId: string | null = folderId
+  const guard = new Set<string>()
+
+  while (cursorId) {
+    if (guard.has(cursorId)) {
+      break
+    }
+
+    guard.add(cursorId)
+    const current = folderById.get(cursorId)
+    if (!current) {
+      break
+    }
+
+    ids.unshift(current.id)
+    names.unshift(current.name)
+    cursorId = current.parentId || null
+  }
+
+  return { ids, names }
 }
 
 const panelSuggestions: Record<string, Omit<PanelSuggestionParams, 'label' | 'position'>> = {
@@ -574,9 +613,18 @@ function FlowPanel(props: IDockviewPanelProps<PanelSuggestionParams>) {
     studioProjects,
     studioFolders,
     studioActiveFolderId,
+    setStudioProjectId,
+    setStudioActiveFolderId,
   } = useLabNewLayoutData()
   const sampleWorkflow = useMemo(() => createWorkflowBuilderSampleWorkflow(), [])
   const [isPanelActive, setIsPanelActive] = useState<boolean>(props.api.isActive)
+  const [flowsLoading, setFlowsLoading] = useState(false)
+  const [flowItems, setFlowItems] = useState<StudioProjectFlowCanvasSummary[]>([])
+  const [activeFlowScopeId, setActiveFlowScopeId] = useState<string | null>(null)
+  const [draftFlowName, setDraftFlowName] = useState('')
+  const [moveTargetFolderId, setMoveTargetFolderId] = useState<string | null>(null)
+  const [isRenamingFlow, setIsRenamingFlow] = useState(false)
+  const [isMovingFlow, setIsMovingFlow] = useState(false)
 
   useEffect(() => {
     const disposable = props.api.onDidActiveChange(() => {
@@ -589,38 +637,63 @@ function FlowPanel(props: IDockviewPanelProps<PanelSuggestionParams>) {
     }
   }, [props.api])
 
-  const selectedFolderPath = useMemo(() => {
-    if (!studioActiveFolderId) {
-      return {
-        ids: [] as string[],
-        names: [] as string[],
-      }
+  const selectedFolderPath = useMemo(
+    () => resolveFolderPath(studioActiveFolderId, studioFolders),
+    [studioActiveFolderId, studioFolders],
+  )
+
+  useEffect(() => {
+    if (!studioProjectId) {
+      setFlowItems([])
+      setActiveFlowScopeId(null)
+      setFlowsLoading(false)
+      return
     }
 
-    const folderById = new Map<string, FolderSummary>(studioFolders.map((folder) => [folder.id, folder]))
-    const ids: string[] = []
-    const names: string[] = []
-    let cursorId: string | null = studioActiveFolderId
-    const guard = new Set<string>()
+    setFlowsLoading(true)
+    const unsubscribe = subscribeToProjectFlowCanvases(
+      studioProjectId,
+      (items) => {
+        setFlowItems(items)
+        setFlowsLoading(false)
+      },
+      (error) => {
+        setFlowsLoading(false)
+        showToast({
+          message: error.message || 'Could not load project flows.',
+          type: 'error',
+        })
+      },
+    )
 
-    while (cursorId) {
-      if (guard.has(cursorId)) {
-        break
-      }
+    return () => unsubscribe()
+  }, [showToast, studioProjectId])
 
-      guard.add(cursorId)
-      const current = folderById.get(cursorId)
-      if (!current) {
-        break
-      }
+  const folderScopedFlows = useMemo(() => {
+    const normalizedFolderId = studioActiveFolderId || null
+    return flowItems.filter((item) => (item.folderId || null) === normalizedFolderId)
+  }, [flowItems, studioActiveFolderId])
 
-      ids.unshift(current.id)
-      names.unshift(current.name)
-      cursorId = current.parentId || null
+  useEffect(() => {
+    if (folderScopedFlows.length === 0) {
+      setActiveFlowScopeId(null)
+      return
     }
 
-    return { ids, names }
-  }, [studioActiveFolderId, studioFolders])
+    if (!activeFlowScopeId || !folderScopedFlows.some((item) => item.scopeId === activeFlowScopeId)) {
+      setActiveFlowScopeId(folderScopedFlows[0].scopeId)
+    }
+  }, [activeFlowScopeId, folderScopedFlows])
+
+  const selectedFlow = useMemo(
+    () => flowItems.find((item) => item.scopeId === activeFlowScopeId) || null,
+    [activeFlowScopeId, flowItems],
+  )
+
+  useEffect(() => {
+    setDraftFlowName(selectedFlow?.flowName || '')
+    setMoveTargetFolderId(selectedFlow?.folderId || studioActiveFolderId || null)
+  }, [selectedFlow?.flowName, selectedFlow?.folderId, studioActiveFolderId])
 
   const selectedProjectName = useMemo(
     () => studioProjects.find((project) => project.id === studioProjectId)?.name || '',
@@ -631,23 +704,83 @@ function FlowPanel(props: IDockviewPanelProps<PanelSuggestionParams>) {
     [studioActiveFolderId, studioFolders],
   )
 
-  const flowScope = useMemo(() => {
-    if (!studioProjectId) {
-      return 'global'
-    }
+  const flowScope = useMemo(() => activeFlowScopeId || '', [activeFlowScopeId])
 
-    const folderPathPart = selectedFolderPath.ids.length > 0
-      ? selectedFolderPath.ids.join('__')
-      : '__root'
-    return `project-${studioProjectId}:folderpath-${folderPathPart}`
-  }, [selectedFolderPath.ids, studioProjectId])
+  const effectiveFlowFolderId = selectedFlow?.folderId ?? studioActiveFolderId
+  const effectiveFlowFolderPath = useMemo(
+    () => resolveFolderPath(effectiveFlowFolderId, studioFolders),
+    [effectiveFlowFolderId, studioFolders],
+  )
 
   const flowStorageKey = useMemo(() => (
-    `lab-newlayout-flow-canvas-v2:${flowScope}`
-  ), [flowScope])
+    `lab-newlayout-flow-canvas-v3:${studioProjectId || 'no-project'}:${flowScope || 'no-flow'}`
+  ), [flowScope, studioProjectId])
+
+  const createFlow = useCallback(async () => {
+    if (!studioProjectId) {
+      showToast({ message: 'Select a project before creating a flow.', type: 'warning' })
+      return
+    }
+
+    const scopeId = `flow-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const folderPath = resolveFolderPath(studioActiveFolderId, studioFolders)
+    const flowName = `Untitled Flow ${folderScopedFlows.length + 1}`
+
+    await saveProjectFlowCanvasState({
+      projectId: studioProjectId,
+      scopeId,
+      flowName,
+      folderId: studioActiveFolderId,
+      folderPathIds: folderPath.ids,
+      folderPathNames: folderPath.names,
+      updatedBy: authUid || 'anonymous',
+      workflow: {
+        nodes: sampleWorkflow.nodes as unknown[],
+        edges: sampleWorkflow.edges as unknown[],
+      },
+    })
+
+    setActiveFlowScopeId(scopeId)
+    setDraftFlowName(flowName)
+    showToast({ message: 'Flow created.', type: 'success' })
+  }, [authUid, folderScopedFlows.length, sampleWorkflow.edges, sampleWorkflow.nodes, showToast, studioActiveFolderId, studioFolders, studioProjectId])
+
+  const renameFlow = useCallback(async () => {
+    if (!studioProjectId || !activeFlowScopeId) return
+    const normalizedName = draftFlowName.trim() || 'Untitled Flow'
+
+    setIsRenamingFlow(true)
+    try {
+      await renameProjectFlowCanvas(studioProjectId, activeFlowScopeId, normalizedName)
+      setDraftFlowName(normalizedName)
+      showToast({ message: 'Flow renamed.', type: 'success' })
+    } finally {
+      setIsRenamingFlow(false)
+    }
+  }, [activeFlowScopeId, draftFlowName, showToast, studioProjectId])
+
+  const moveFlow = useCallback(async () => {
+    if (!studioProjectId || !activeFlowScopeId) return
+
+    setIsMovingFlow(true)
+    try {
+      const folderPath = resolveFolderPath(moveTargetFolderId, studioFolders)
+      await moveProjectFlowCanvas({
+        projectId: studioProjectId,
+        scopeId: activeFlowScopeId,
+        folderId: moveTargetFolderId,
+        folderPathIds: folderPath.ids,
+        folderPathNames: folderPath.names,
+      })
+      setStudioActiveFolderId(moveTargetFolderId)
+      showToast({ message: 'Flow moved.', type: 'success' })
+    } finally {
+      setIsMovingFlow(false)
+    }
+  }, [activeFlowScopeId, moveTargetFolderId, setStudioActiveFolderId, showToast, studioFolders, studioProjectId])
 
   const readRemoteWorkflow = useCallback(async (): Promise<WorkflowBuilderDefinition | null> => {
-    if (!studioProjectId) {
+    if (!studioProjectId || !flowScope) {
       return null
     }
 
@@ -663,23 +796,24 @@ function FlowPanel(props: IDockviewPanelProps<PanelSuggestionParams>) {
   }, [flowScope, studioProjectId])
 
   const saveRemoteWorkflow = useCallback(async (workflow: WorkflowBuilderDefinition) => {
-    if (!studioProjectId) {
+    if (!studioProjectId || !flowScope) {
       return
     }
 
     await saveProjectFlowCanvasState({
       projectId: studioProjectId,
       scopeId: flowScope,
-      folderId: studioActiveFolderId,
-      folderPathIds: selectedFolderPath.ids,
-      folderPathNames: selectedFolderPath.names,
+      flowName: (selectedFlow?.flowName || draftFlowName || '').trim() || 'Untitled Flow',
+      folderId: effectiveFlowFolderId || null,
+      folderPathIds: effectiveFlowFolderPath.ids,
+      folderPathNames: effectiveFlowFolderPath.names,
       updatedBy: authUid || 'anonymous',
       workflow: {
         nodes: workflow.nodes as unknown[],
         edges: workflow.edges as unknown[],
       },
     })
-  }, [authUid, flowScope, selectedFolderPath.ids, selectedFolderPath.names, studioActiveFolderId, studioProjectId])
+  }, [authUid, draftFlowName, effectiveFlowFolderId, effectiveFlowFolderPath.ids, effectiveFlowFolderPath.names, flowScope, selectedFlow?.flowName, studioProjectId])
 
   const handleNotify = useCallback((notice: WorkflowBuilderNotice) => {
     showToast({ message: notice.message, type: notice.type || 'info' })
@@ -687,18 +821,137 @@ function FlowPanel(props: IDockviewPanelProps<PanelSuggestionParams>) {
 
   return (
     <div className="lab-newlayout-panel lab-newlayout-panel--flow">
-      <div className="lab-newlayout-flow-scope-banner">
-        <strong>Flow Scope:</strong>{' '}
-        {selectedProjectName || 'No project'} / {(selectedFolderPath.names.join(' / ') || selectedFolderName || 'No folder')}
+      <div className="lab-newlayout-flow-manager">
+        <div className="lab-newlayout-flow-manager-row">
+          <label className="lab-newlayout-flow-manager-field">
+            <span>Project</span>
+            <select
+              value={studioProjectId || ''}
+              onChange={(event) => {
+                const nextProjectId = event.target.value || null
+                setStudioProjectId(nextProjectId)
+                setStudioActiveFolderId(null)
+                setActiveFlowScopeId(null)
+              }}
+            >
+              <option value="">Select project</option>
+              {studioProjects.map((project) => (
+                <option key={project.id} value={project.id}>{project.name}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="lab-newlayout-flow-manager-field">
+            <span>Folder</span>
+            <select
+              value={studioActiveFolderId || FLOW_ROOT_FOLDER_VALUE}
+              onChange={(event) => {
+                const nextFolderId = event.target.value === FLOW_ROOT_FOLDER_VALUE ? null : event.target.value
+                setStudioActiveFolderId(nextFolderId)
+                setActiveFlowScopeId(null)
+              }}
+              disabled={!studioProjectId}
+            >
+              <option value={FLOW_ROOT_FOLDER_VALUE}>Project root</option>
+              {studioFolders.map((folder) => (
+                <option key={folder.id} value={folder.id}>{folder.name}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="lab-newlayout-flow-manager-field">
+            <span>Flow</span>
+            <select
+              value={activeFlowScopeId || ''}
+              onChange={(event) => setActiveFlowScopeId(event.target.value || null)}
+              disabled={!studioProjectId || folderScopedFlows.length === 0}
+            >
+              <option value="">{flowsLoading ? 'Loading flows…' : 'Select flow'}</option>
+              {folderScopedFlows.map((flow) => (
+                <option key={flow.scopeId} value={flow.scopeId}>{flow.flowName}</option>
+              ))}
+            </select>
+          </label>
+
+          <button
+            type="button"
+            className="lab-newlayout-flow-manager-btn"
+            disabled={!studioProjectId}
+            onClick={() => { void createFlow() }}
+          >
+            New Flow
+          </button>
+        </div>
+
+        <div className="lab-newlayout-flow-manager-row lab-newlayout-flow-manager-row--secondary">
+          <label className="lab-newlayout-flow-manager-field lab-newlayout-flow-manager-field--wide">
+            <span>Rename flow</span>
+            <input
+              type="text"
+              value={draftFlowName}
+              onChange={(event) => setDraftFlowName(event.target.value)}
+              placeholder="Flow name"
+              disabled={!selectedFlow}
+            />
+          </label>
+
+          <button
+            type="button"
+            className="lab-newlayout-flow-manager-btn"
+            disabled={!selectedFlow || isRenamingFlow}
+            onClick={() => { void renameFlow() }}
+          >
+            {isRenamingFlow ? 'Renaming…' : 'Rename'}
+          </button>
+
+          <label className="lab-newlayout-flow-manager-field">
+            <span>Move to folder</span>
+            <select
+              value={moveTargetFolderId || FLOW_ROOT_FOLDER_VALUE}
+              onChange={(event) => setMoveTargetFolderId(event.target.value === FLOW_ROOT_FOLDER_VALUE ? null : event.target.value)}
+              disabled={!selectedFlow}
+            >
+              <option value={FLOW_ROOT_FOLDER_VALUE}>Project root</option>
+              {studioFolders.map((folder) => (
+                <option key={folder.id} value={folder.id}>{folder.name}</option>
+              ))}
+            </select>
+          </label>
+
+          <button
+            type="button"
+            className="lab-newlayout-flow-manager-btn"
+            disabled={!selectedFlow || isMovingFlow}
+            onClick={() => { void moveFlow() }}
+          >
+            {isMovingFlow ? 'Moving…' : 'Move'}
+          </button>
+        </div>
+
+        <div className="lab-newlayout-flow-scope-banner">
+          <strong>Location:</strong>{' '}
+          {selectedProjectName || 'No project'} / {(selectedFolderPath.names.join(' / ') || selectedFolderName || 'Project root')}
+          <span>·</span>
+          <strong>Flow:</strong> {selectedFlow?.flowName || 'None selected'}
+        </div>
       </div>
-      {isPanelActive ? (
+
+      {!studioProjectId ? (
+        <div className="lab-newlayout-flow-inactive-placeholder">
+          Select a project to access workflow flows.
+        </div>
+      ) : !selectedFlow ? (
+        <div className="lab-newlayout-flow-inactive-placeholder">
+          No flow found in this folder. Create one from the top bar.
+        </div>
+      ) : isPanelActive ? (
         <WorkflowBuilderCanvas
           key={flowStorageKey}
           className="workflow-builder-canvas--fullscreen"
           initialWorkflow={sampleWorkflow}
           storageKey={flowStorageKey}
-          readRemoteWorkflow={readRemoteWorkflow}
-          saveRemoteWorkflow={saveRemoteWorkflow}
+          readRemoteWorkflow={flowScope ? readRemoteWorkflow : undefined}
+          saveRemoteWorkflow={flowScope ? saveRemoteWorkflow : undefined}
           onNotify={handleNotify}
           onExecuteWorkflow={async () => { /* handled by canvas */ }}
         />

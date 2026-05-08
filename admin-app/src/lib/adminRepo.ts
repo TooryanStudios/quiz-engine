@@ -377,7 +377,8 @@ export async function recordUserActivity(uid: string, profile: {
         displayName: profile.displayName,
         photoURL: profile.photoURL,
         platform: profile.platform,
-        status: existing?.status || 'pending',
+        // Default to active so first-time Google sign-in does not get auto-logged-out.
+        status: existing?.status || 'active',
         signInCount: increment(1),
         lastSeen: serverTimestamp(),
         // Keep as "last known account creation time" string from Auth metadata.

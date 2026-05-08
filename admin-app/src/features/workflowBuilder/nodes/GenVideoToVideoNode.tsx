@@ -13,7 +13,7 @@ const INPUT_SOCKETS = [
 const OUTPUT_SOCKETS = [{ id: 'out-video', label: 'Video', slot: 2 }] as const
 
 export const GenVideoToVideoNode = memo(function GenVideoToVideoNode({ id, data, isConnectable }: WorkflowBuilderNodeProps) {
-  const { patchNode, executeNode, isExecuting } = useWorkflowBuilderNode(id)
+  const { patchNode, executeNode, isExecuting, isInViewport } = useWorkflowBuilderNode(id)
   const showProviderFallbackBadge = Boolean(data.generationStorageError && data.generatedSourceVideoUrl?.trim())
   const videoSources = useMemo(
     () => [
@@ -55,7 +55,7 @@ export const GenVideoToVideoNode = memo(function GenVideoToVideoNode({ id, data,
         {showProviderFallbackBadge ? (
           <div className="workflow-builder-node__status-badge">Provider Link Active</div>
         ) : null}
-        {activeVideoSrc ? (
+        {activeVideoSrc && isInViewport ? (
           <video
             src={activeVideoSrc}
             controls
@@ -68,6 +68,8 @@ export const GenVideoToVideoNode = memo(function GenVideoToVideoNode({ id, data,
               }
             }}
           />
+        ) : activeVideoSrc ? (
+          <div className="workflow-builder-node__preview--video-placeholder">Preview paused while offscreen</div>
         ) : (
           <div className="workflow-builder-node__preview--video-placeholder">No video generated yet</div>
         )}

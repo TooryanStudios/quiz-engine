@@ -1,7 +1,7 @@
 import { signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged } from 'firebase/auth'
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { auth, authReady, googleProvider } from '../lib/firebase'
+import { auth, authReady, getAuthPersistenceMode, googleProvider } from '../lib/firebase'
 import { useToast } from '../lib/ToastContext'
 import { BUILD_NUMBER, BUILD_TIME_UTC } from '../buildInfo'
 
@@ -12,6 +12,13 @@ const TAGLINES = [
   'اجعل التعلم ممتعاً 🎓',
 ]
 
+function buildUnauthorizedDomainMessage(hostname: string, authDomain: string, isLocalDevHost: boolean): string {
+  if (isLocalDevHost) {
+    return `Google sign-in is blocked for this host. Add localhost and 127.0.0.1 in Firebase Authentication > Settings > Authorized domains. Current host: ${hostname}. Auth domain: ${authDomain || 'N/A'}.`
+  }
+  return `Google sign-in is blocked for this domain. Add ${hostname} in Firebase Authentication > Settings > Authorized domains. Auth domain: ${authDomain || 'N/A'}.`
+}
+
 export function LoginPage() {
   const redirectPendingKey = 'qyan:authRedirectPending'
   const accessDeniedReasonKey = 'qyan:accessDeniedReason'
@@ -19,6 +26,8 @@ export function LoginPage() {
   const location = useLocation()
   const { showToast, hideToast } = useToast()
   const isLocalDevHost = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
+  const currentHost = typeof window !== 'undefined' ? window.location.hostname : ''
+  const currentAuthDomain = String((auth as unknown as { config?: { authDomain?: string } }).config?.authDomain || '')
   const isStandalonePwa = typeof window !== 'undefined' && (
     window.matchMedia('(display-mode: standalone)').matches
     || window.matchMedia('(display-mode: fullscreen)').matches
@@ -29,11 +38,32 @@ export function LoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [theme, setTheme] = useState<'dark'|'light'>('dark')
+  const [authDiag, setAuthDiag] = useState<{
+    mode: string
+    redirectPending: boolean
+    redirectPendingAgeMs: number
+    redirectResult: 'idle' | 'ok' | 'none' | 'error'
+    authState: 'idle' | 'user' | 'none'
+    navigation: 'idle' | 'started' | 'done'
+    lastCode: string
+    lastMessage: string
+  }>({
+    mode: 'unknown',
+    redirectPending: false,
+    redirectPendingAgeMs: 0,
+    redirectResult: 'idle',
+    authState: 'idle',
+    navigation: 'idle',
+    lastCode: '',
+    lastMessage: '',
+  })
   const wasSignedOut = !!(location.state as { signedOut?: boolean } | null)?.signedOut
   const [showBanner, setShowBanner] = useState(wasSignedOut)
   const [tagIdx, setTagIdx] = useState(0)
   const hasNavigatedRef = useRef(false)
-  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo
+  const searchParams = new URLSearchParams(location.search)
+  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo || searchParams.get('returnTo')
+  const shouldShowLocalDomainHint = isLocalDevHost && /(authorized domains|localhost|مصرح|الدومين)/i.test(error)
 
   useEffect(() => {
     const deniedReason = localStorage.getItem(accessDeniedReasonKey)
@@ -63,13 +93,18 @@ export function LoginPage() {
     const navigateToDashboard = () => {
       if (cancelled || hasNavigatedRef.current) return
       hasNavigatedRef.current = true
+      setAuthDiag((prev) => ({ ...prev, navigation: 'started' }))
       localStorage.removeItem(redirectPendingKey)
       navigate(getPostLoginPath(), { replace: true })
+      setAuthDiag((prev) => ({ ...prev, navigation: 'done' }))
     }
 
     const unsub = onAuthStateChanged(auth, (user) => {
       if (user) {
+        setAuthDiag((prev) => ({ ...prev, authState: 'user' }))
         navigateToDashboard()
+      } else {
+        setAuthDiag((prev) => ({ ...prev, authState: 'none' }))
       }
     })
 
@@ -77,17 +112,28 @@ export function LoginPage() {
     // redirecting back to the app. We must consume the result on load.
     const redirectStartedAt = Number(localStorage.getItem(redirectPendingKey) || '0')
     const redirectStillPending = redirectStartedAt > 0 && Date.now() - redirectStartedAt < 60000
+    setAuthDiag((prev) => ({
+      ...prev,
+      mode: getAuthPersistenceMode(),
+      redirectPending: redirectStillPending,
+      redirectPendingAgeMs: redirectStartedAt > 0 ? Date.now() - redirectStartedAt : 0,
+    }))
 
     void (async () => {
       try {
         await authReady
+        setAuthDiag((prev) => ({ ...prev, mode: getAuthPersistenceMode() }))
         if (redirectStillPending) setLoading(true)
         const result = await getRedirectResult(auth)
         if (cancelled) return
         
         if (result?.user) {
+          setAuthDiag((prev) => ({ ...prev, redirectResult: 'ok' }))
           navigateToDashboard()
         } else {
+          localStorage.removeItem(redirectPendingKey)
+          setAuthDiag((prev) => ({ ...prev, redirectPending: false, redirectPendingAgeMs: 0 }))
+          setAuthDiag((prev) => ({ ...prev, redirectResult: 'none' }))
           const currentUser = auth.currentUser
           if (currentUser) {
             navigateToDashboard()
@@ -99,13 +145,11 @@ export function LoginPage() {
         const code = typeof err === 'object' && err !== null && 'code' in err
           ? String((err as { code?: string }).code)
           : ''
+        const message = err instanceof Error ? err.message : 'Redirect error'
+        setAuthDiag((prev) => ({ ...prev, redirectResult: 'error', lastCode: code, lastMessage: message }))
 
         if (code === 'auth/unauthorized-domain') {
-          setError(
-            isLocalDevHost
-              ? 'Localhost غير مضاف في Firebase Authorized Domains. أضف localhost و 127.0.0.1 من Firebase Console > Authentication > Settings > Authorized domains.'
-              : 'هذا الدومين غير مصرح به في Firebase Authentication. أضفه إلى Authorized domains.'
-          )
+          setError(buildUnauthorizedDomainMessage(currentHost, currentAuthDomain, isLocalDevHost))
           return
         }
 
@@ -140,23 +184,20 @@ export function LoginPage() {
   const handleGoogleLogin = async () => {
     setError('')
     setLoading(true)
+    if (getAuthPersistenceMode() === 'memory') {
+      localStorage.removeItem(redirectPendingKey)
+      setAuthDiag((prev) => ({ ...prev, redirectPending: false, redirectPendingAgeMs: 0 }))
+    }
+    setAuthDiag((prev) => ({ ...prev, mode: getAuthPersistenceMode(), lastCode: '', lastMessage: '' }))
 
-    // Always use signInWithPopup as primary (even in standalone PWA / iOS).
-    // signInWithRedirect is NOT used as primary because:
-    //   - On iOS, the standalone PWA (WKWebView) has isolated localStorage from Safari
-    //     browser. Redirect completes in Safari's session; the PWA never sees the auth
-    //     state → infinite sign-in loop.
-    //   - On Android Chrome PWA, redirect leaves the standalone context unreliably.
-    // Popup stays within the session and returns the credential via postMessage, which
-    // works in all modern PWA implementations (tested Chrome Custom Tab on Android, and
-    // Safari new-tab popup on iOS 14.3+).
+    // In all modes, try popup first for immediate user feedback.
     const hintTimer = setTimeout(() => {
       showToast({ message: 'إذا لم تفتح نافذة جوجل، يرجى التأكد من السماح بالنوافذ المنبثقة (Pop-ups) للموقع أو الانتظار قليلاً.', type: 'info', durationMs: 10000 })
     }, 4000)
 
     try {
-      await authReady
       await signInWithPopup(auth, googleProvider)
+      setAuthDiag((prev) => ({ ...prev, redirectResult: 'ok', authState: 'user' }))
       clearTimeout(hintTimer)
       hideToast()
       navigate(getPostLoginPath(), { replace: true })
@@ -165,40 +206,29 @@ export function LoginPage() {
       hideToast()
       const code = typeof err === 'object' && err !== null && 'code' in err
         ? String((err as { code?: string }).code) : ''
-      if (code === 'auth/popup-blocked' || code === 'auth/cancelled-popup-request') {
+      
+      if (code === 'auth/popup-blocked' || code === 'auth/cancelled-popup-request' || code === 'auth/popup-closed-by-user') {
+        setAuthDiag((prev) => ({ ...prev, lastCode: code, lastMessage: 'popup-blocked-or-closed' }))
+        
         if (isStandalonePwa) {
-          // Redirect from standalone PWA is broken on iOS (isolated WKWebView storage).
-          // Direct the user to sign in via their browser first.
           setError('تعذّر فتح نافذة تسجيل الدخول. افتح التطبيق في متصفحك (Safari/Chrome) وسجّل الدخول، ثم أعد تشغيل التطبيق من الشاشة الرئيسية.')
-        } else {
-          showToast({ message: 'Popup was blocked. Redirecting…', type: 'info', durationMs: 3000 })
-          localStorage.setItem(redirectPendingKey, String(Date.now()))
-          await signInWithRedirect(auth, googleProvider)
+          return
         }
+        
+        // Fallback to redirect
+        showToast({ message: 'جارٍ التحويل إلى تسجيل الدخول عبر Google…', type: 'info', durationMs: 3000 })
+        localStorage.setItem(redirectPendingKey, String(Date.now()))
+        await signInWithRedirect(auth, googleProvider)
         return
       }
-      if (code === 'auth/operation-not-supported-in-this-environment') {
-        if (isStandalonePwa) {
-          setError('تعذّر فتح نافذة تسجيل الدخول. افتح التطبيق في متصفحك وسجّل الدخول أولاً، ثم أعد تشغيل التطبيق.')
-        } else {
-          showToast({ message: 'سيتم التحويل إلى تسجيل الدخول الآمن…', type: 'info', durationMs: 2500 })
-          localStorage.setItem(redirectPendingKey, String(Date.now()))
-          await signInWithRedirect(auth, googleProvider)
-        }
-        return
-      }
+
       if (code === 'auth/unauthorized-domain') {
-        setError(
-          isLocalDevHost
-            ? 'Localhost غير مضاف في Firebase Authorized Domains. أضف localhost و 127.0.0.1 من Firebase Console > Authentication > Settings > Authorized domains.'
-            : 'هذا الدومين غير مصرح به في Firebase Authentication. أضفه إلى Authorized domains.'
-        )
+        setAuthDiag((prev) => ({ ...prev, lastCode: code, lastMessage: 'unauthorized-domain' }))
+        setError(buildUnauthorizedDomainMessage(currentHost, currentAuthDomain, isLocalDevHost))
         return
       }
-      if (code === 'auth/popup-closed-by-user') {
-        setError('تم إغلاق نافذة تسجيل الدخول. حاول مجدداً.')
-        return
-      }
+      
+      setAuthDiag((prev) => ({ ...prev, lastCode: code, lastMessage: err instanceof Error ? err.message : 'failed' }))
       if (err instanceof Error) setError(err.message)
       else setError('فشل تسجيل الدخول. حاول مرة أخرى.')
     } finally {
@@ -245,9 +275,25 @@ export function LoginPage() {
           <div className="lp-banner-ok">✓ تم تسجيل الخروج بنجاح</div>
         )}
 
-        {isLocalDevHost && (
+        {shouldShowLocalDomainHint && (
           <div className="lp-banner-warn">
             Local preview: if the Google dialog closes immediately, add localhost and 127.0.0.1 to Firebase Authorized Domains.
+          </div>
+        )}
+
+        {isLocalDevHost && (
+          <div className="lp-authdiag" role="status" aria-live="polite">
+            <div className="lp-authdiag-title">Auth diagnostics</div>
+            <div className="lp-authdiag-grid">
+              <div><span>Mode</span><strong>{authDiag.mode}</strong></div>
+              <div><span>Redirect pending</span><strong>{authDiag.redirectPending ? 'yes' : 'no'}</strong></div>
+              <div><span>Pending age</span><strong>{Math.round(authDiag.redirectPendingAgeMs / 1000)}s</strong></div>
+              <div><span>Redirect result</span><strong>{authDiag.redirectResult}</strong></div>
+              <div><span>Auth state</span><strong>{authDiag.authState}</strong></div>
+              <div><span>Navigation</span><strong>{authDiag.navigation}</strong></div>
+              <div><span>Last code</span><strong>{authDiag.lastCode || '-'}</strong></div>
+              <div><span>Last message</span><strong>{authDiag.lastMessage || '-'}</strong></div>
+            </div>
           </div>
         )}
 
@@ -267,7 +313,7 @@ export function LoginPage() {
             </>
           ) : (
             <>
-              <svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{flexShrink:0}}>
+              <svg className="lp-google-icon" width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                 <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
                 <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
                 <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
@@ -487,6 +533,7 @@ export function LoginPage() {
           cursor: pointer;
           transition: background 0.4s ease, border-color 0.4s ease, color 0.4s ease, transform 0.15s;
         }
+        .lp-google-icon { flex-shrink: 0; }
         .lp-google-btn:hover:not(:disabled) {
           background: rgba(255,255,255,0.12);
           border-color: rgba(124,58,237,0.6);
@@ -524,6 +571,47 @@ export function LoginPage() {
         .lp-theme-btn.active { opacity: 1; border-color: rgba(167,139,250,0.7); }
         .lp-theme-btn:hover { opacity: 0.8; }
 
+        .lp-authdiag {
+          width: 100%;
+          border: 1px solid rgba(148, 163, 184, 0.35);
+          background: rgba(15, 23, 42, 0.35);
+          border-radius: 10px;
+          padding: 10px;
+          margin-top: -4px;
+        }
+        .lp-authdiag-title {
+          font-size: 12px;
+          font-weight: 700;
+          color: #cbd5e1;
+          margin-bottom: 8px;
+          text-align: left;
+        }
+        .lp-authdiag-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 6px 10px;
+          font-size: 11px;
+        }
+        .lp-authdiag-grid div {
+          display: flex;
+          justify-content: space-between;
+          gap: 8px;
+          border-bottom: 1px dashed rgba(148, 163, 184, 0.25);
+          padding-bottom: 3px;
+        }
+        .lp-authdiag-grid span {
+          color: #94a3b8;
+        }
+        .lp-authdiag-grid strong {
+          color: #e2e8f0;
+          font-weight: 700;
+          max-width: 145px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          text-align: right;
+        }
+
         .lp-build-stamp {
           position: fixed;
           bottom: 12px;
@@ -553,6 +641,10 @@ export function LoginPage() {
         .lp-bg--light .lp-theme-btn.active { border-color: rgba(124,58,237,0.5); }
         .lp-bg--light .lp-banner-ok { background: rgba(16,185,129,0.1); }
         .lp-bg--light .lp-banner-warn { background: rgba(245,158,11,0.08); color: #92400e; }
+        .lp-bg--light .lp-authdiag { background: rgba(124,58,237,0.05); border-color: rgba(124,58,237,0.25); }
+        .lp-bg--light .lp-authdiag-title { color: #4c1d95; }
+        .lp-bg--light .lp-authdiag-grid span { color: #6d28d9; }
+        .lp-bg--light .lp-authdiag-grid strong { color: #1f2937; }
         .lp-bg--light .lp-error { background: rgba(239,68,68,0.08); }
       `}</style>
     </div>

@@ -276,6 +276,7 @@ export type StudioReferenceAsset = {
   projectId: string
   kind: StudioReferenceAssetKind
   url: string
+  thumbnailUrl?: string
   name: string
   createdBy: string
   createdAt: Timestamp

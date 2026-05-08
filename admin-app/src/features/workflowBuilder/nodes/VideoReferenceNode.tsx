@@ -28,7 +28,7 @@ function RefNameInput({ name, onCommit }: { name: string; onCommit: (v: string) 
 }
 
 export const VideoReferenceNode = memo(function VideoReferenceNode({ id, data, isConnectable, selected }: WorkflowBuilderNodeProps) {
-  const { patchNode } = useWorkflowBuilderNode(id)
+  const { patchNode, isInViewport } = useWorkflowBuilderNode(id)
   const items: ReferenceItem[] = data.referenceItems ?? []
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pendingDeleteItemId, setPendingDeleteItemId] = useState<string | null>(null)
@@ -83,7 +83,7 @@ export const VideoReferenceNode = memo(function VideoReferenceNode({ id, data, i
             <div key={item.id} className="workflow-builder-node__ref-cell">
               <div className="workflow-builder-node__ref-thumb workflow-builder-node__ref-thumb--video">
                 {item.url ? (
-                  <video src={item.url} preload="none" muted playsInline />
+                  <video src={isInViewport ? item.url : undefined} preload="none" muted playsInline />
                 ) : (
                   <span className="workflow-builder-node__ref-thumb-empty">
                     <Film size={18} />

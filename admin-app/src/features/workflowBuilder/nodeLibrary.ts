@@ -54,34 +54,19 @@ export const WORKFLOW_LIBRARY_ITEMS: WorkflowBuilderLibraryItem[] = [
 
 export const sanitizeWorkflow = (value?: WorkflowBuilderDefinition | null): WorkflowBuilderDefinition => ({
   nodes: Array.isArray(value?.nodes) ? value.nodes : [],
-  edges: normalizeWorkflowEdges(Array.isArray(value?.edges) ? value.edges : [], Array.isArray(value?.nodes) ? value.nodes : []),
+  edges: Array.isArray(value?.edges) ? value.edges : [],
+  viewport:
+    value?.viewport
+    && Number.isFinite(value.viewport.x)
+    && Number.isFinite(value.viewport.y)
+    && Number.isFinite(value.viewport.zoom)
+      ? {
+          x: value.viewport.x,
+          y: value.viewport.y,
+          zoom: value.viewport.zoom,
+        }
+      : undefined,
 })
-
-function normalizeWorkflowEdges(edges: WorkflowBuilderDefinition['edges'], nodes: WorkflowBuilderDefinition['nodes']) {
-  if (edges.length === 0 || nodes.length === 0) {
-    return edges
-  }
-
-  const nodeById = new Map(nodes.map((node) => [node.id, node]))
-
-  return edges.map((edge) => {
-    const targetNode = nodeById.get(edge.target)
-    if (!targetNode || targetNode.type !== 'generate') {
-      return edge
-    }
-
-    const isExtendGenerate = Boolean(targetNode.data?.extendMode)
-    if (isExtendGenerate && edge.targetHandle === 'style') {
-      return { ...edge, targetHandle: 'video' }
-    }
-
-    if (!isExtendGenerate && edge.targetHandle === 'video') {
-      return { ...edge, targetHandle: 'style' }
-    }
-
-    return edge
-  })
-}
 
 export const buildDefaultNodeData = (kind: WorkflowBuilderNodeKind): WorkflowBuilderNodeData => {
   switch (kind) {
@@ -125,9 +110,15 @@ export const buildDefaultNodeData = (kind: WorkflowBuilderNodeKind): WorkflowBui
       return {
         label: 'Generate',
         description: 'Combine prompt, style, references, and constraints into one result',
-        generateEngine: 'internal',
-        generateQuality: 'balanced',
-        generateTarget: 'image',
+        generateEngine: 'seedance',
+        generateQuality: 'high',
+        generateTarget: 'video',
+        genModel: 'seedance-2.0-fast',
+        genDuration: 5,
+        genResolution: '720p',
+        genRatio: '16:9',
+        genAudio: true,
+        genInputMode: 'reference',
       }
     case 'gen_text_to_video':
       return {
@@ -136,6 +127,12 @@ export const buildDefaultNodeData = (kind: WorkflowBuilderNodeKind): WorkflowBui
         generateEngine: 'seedance',
         generateQuality: 'high',
         generateTarget: 'video',
+        genModel: 'seedance-2.0-fast',
+        genDuration: 5,
+        genResolution: '720p',
+        genRatio: '16:9',
+        genAudio: true,
+        genInputMode: 'reference',
       }
     case 'gen_image_to_video':
       return {
@@ -144,6 +141,12 @@ export const buildDefaultNodeData = (kind: WorkflowBuilderNodeKind): WorkflowBui
         generateEngine: 'seedance',
         generateQuality: 'high',
         generateTarget: 'video',
+        genModel: 'seedance-2.0-fast',
+        genDuration: 5,
+        genResolution: '720p',
+        genRatio: '16:9',
+        genAudio: true,
+        genInputMode: 'image',
       }
     case 'gen_video_to_video':
       return {
@@ -152,6 +155,12 @@ export const buildDefaultNodeData = (kind: WorkflowBuilderNodeKind): WorkflowBui
         generateEngine: 'seedance',
         generateQuality: 'high',
         generateTarget: 'video',
+        genModel: 'seedance-2.0-fast',
+        genDuration: 5,
+        genResolution: '720p',
+        genRatio: '16:9',
+        genAudio: true,
+        genInputMode: 'reference',
       }
     case 'gen_images_to_video':
       return {
@@ -160,6 +169,12 @@ export const buildDefaultNodeData = (kind: WorkflowBuilderNodeKind): WorkflowBui
         generateEngine: 'seedance',
         generateQuality: 'high',
         generateTarget: 'video',
+        genModel: 'seedance-2.0-fast',
+        genDuration: 5,
+        genResolution: '720p',
+        genRatio: '16:9',
+        genAudio: true,
+        genInputMode: 'reference',
       }
     case 'prompt':
       return {
@@ -205,6 +220,12 @@ export const buildDefaultNodeData = (kind: WorkflowBuilderNodeKind): WorkflowBui
         generateEngine: 'seedance',
         generateQuality: 'high',
         generateTarget: 'image',
+        genModel: 'seedance-2.0-fast',
+        genDuration: 5,
+        genResolution: '720p',
+        genRatio: '16:9',
+        genAudio: false,
+        genInputMode: 'reference',
       }
     case 'upscale':
       return {
@@ -219,6 +240,12 @@ export const buildDefaultNodeData = (kind: WorkflowBuilderNodeKind): WorkflowBui
         generateEngine: 'seedance',
         generateQuality: 'high',
         generateTarget: 'video',
+        genModel: 'seedance-2.0-fast',
+        genDuration: 5,
+        genResolution: '720p',
+        genRatio: '16:9',
+        genAudio: true,
+        genInputMode: 'reference',
         extendMode: 'after',
         promptText: '',
       }

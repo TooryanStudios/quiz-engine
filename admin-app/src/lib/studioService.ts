@@ -386,6 +386,51 @@ export type StudioProjectFlowCanvasPayload = {
   edges: unknown[]
 }
 
+export type StudioProjectFlowCanvasSummary = {
+  scopeId: string
+  flowName: string
+  folderId: string | null
+  folderPathIds: string[]
+  folderPathNames: string[]
+  updatedBy: string
+  updatedAt: number
+}
+
+export function subscribeToProjectFlowCanvases(
+  projectId: string,
+  onResult: (items: StudioProjectFlowCanvasSummary[]) => void,
+  onError?: (error: Error) => void,
+): Unsubscribe {
+  const q = query(collection(db, 'studio_projects', projectId, 'flow_canvas'), orderBy('updatedAt', 'desc'))
+  return onSnapshot(
+    q,
+    (snap) => {
+      const items = snap.docs.map((docSnap) => {
+        const data = docSnap.data() as {
+          flowName?: string
+          folderId?: string | null
+          folderPathIds?: string[]
+          folderPathNames?: string[]
+          updatedBy?: string
+          updatedAt?: Timestamp
+        }
+
+        return {
+          scopeId: docSnap.id,
+          flowName: (data.flowName || '').trim() || 'Untitled Flow',
+          folderId: typeof data.folderId === 'string' && data.folderId.trim() ? data.folderId : null,
+          folderPathIds: Array.isArray(data.folderPathIds) ? data.folderPathIds : [],
+          folderPathNames: Array.isArray(data.folderPathNames) ? data.folderPathNames : [],
+          updatedBy: typeof data.updatedBy === 'string' ? data.updatedBy : '',
+          updatedAt: data.updatedAt instanceof Timestamp ? data.updatedAt.toMillis() : 0,
+        } as StudioProjectFlowCanvasSummary
+      })
+      onResult(items)
+    },
+    (err) => onError?.(err),
+  )
+}
+
 export async function loadProjectFlowCanvasState(
   projectId: string,
   scopeId: string,
@@ -411,6 +456,7 @@ export async function loadProjectFlowCanvasState(
 export async function saveProjectFlowCanvasState(input: {
   projectId: string
   scopeId: string
+  flowName?: string
   folderId: string | null
   folderPathIds: string[]
   folderPathNames: string[]
@@ -420,6 +466,7 @@ export async function saveProjectFlowCanvasState(input: {
   await setDoc(projectFlowCanvasDoc(input.projectId, input.scopeId), {
     version: 1,
     scopeId: input.scopeId,
+    ...(typeof input.flowName === 'string' ? { flowName: input.flowName.trim() || 'Untitled Flow' } : {}),
     folderId: input.folderId,
     folderPathIds: input.folderPathIds,
     folderPathNames: input.folderPathNames,
@@ -430,6 +477,32 @@ export async function saveProjectFlowCanvasState(input: {
     },
     updatedAt: serverTimestamp(),
   }, { merge: true })
+}
+
+export async function renameProjectFlowCanvas(
+  projectId: string,
+  scopeId: string,
+  flowName: string,
+): Promise<void> {
+  await updateDoc(projectFlowCanvasDoc(projectId, scopeId), {
+    flowName: flowName.trim() || 'Untitled Flow',
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function moveProjectFlowCanvas(input: {
+  projectId: string
+  scopeId: string
+  folderId: string | null
+  folderPathIds: string[]
+  folderPathNames: string[]
+}): Promise<void> {
+  await updateDoc(projectFlowCanvasDoc(input.projectId, input.scopeId), {
+    folderId: input.folderId,
+    folderPathIds: input.folderPathIds,
+    folderPathNames: input.folderPathNames,
+    updatedAt: serverTimestamp(),
+  })
 }
 
 /**
@@ -970,16 +1043,33 @@ export function subscribeToUserReferenceLibrary(
 
 export async function saveProjectReferenceLibraryItem(
   projectId: string,
-  item: { id: string; kind: StudioReferenceAssetKind; url: string; name: string; createdAt: number },
+  item: { id: string; kind: StudioReferenceAssetKind; url: string; thumbnailUrl?: string; name: string; createdAt: number },
   createdBy: string,
 ): Promise<void> {
+  const thumbnailUrl = (item.thumbnailUrl || '').trim()
   await setDoc(projectReferenceLibraryDoc(projectId, item.id), {
     projectId,
     kind: item.kind,
     url: item.url,
+    ...(thumbnailUrl ? { thumbnailUrl } : {}),
     name: item.name,
     createdBy,
     createdAt: Timestamp.fromMillis(item.createdAt),
+  })
+}
+
+export async function backfillProjectReferenceLibraryItemThumbnail(
+  projectId: string,
+  itemId: string,
+  thumbnailUrl: string,
+): Promise<void> {
+  const normalizedThumbnailUrl = thumbnailUrl.trim()
+  if (!normalizedThumbnailUrl) {
+    return
+  }
+
+  await updateDoc(projectReferenceLibraryDoc(projectId, itemId), {
+    thumbnailUrl: normalizedThumbnailUrl,
   })
 }
 

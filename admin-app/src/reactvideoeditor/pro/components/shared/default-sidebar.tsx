@@ -10,7 +10,10 @@ import {
   Layout,
   ChevronsLeft,
   Settings,
+  LogIn,
 } from "lucide-react";
+import { onAuthStateChanged, type User } from "firebase/auth";
+import { auth } from "../../../../lib/firebase";
 
 // Import OverlayType directly from types to avoid export issues
 import { OverlayType } from "../../types";
@@ -29,6 +32,7 @@ import { LocalMediaPanel } from "../overlay/local-media/local-media-panel";
 import { StickersPanel } from "../overlay/stickers/stickers-panel";
 import { TemplateOverlayPanel } from "../overlay/templates/template-overlay-panel";
 import { SettingsPanel } from "../settings/settings-panel";
+import { UserPanel } from "../settings/user-panel";
 
 // Import UI components directly
 import {
@@ -70,6 +74,14 @@ interface DefaultSidebarProps {
  *
  * @component
  */
+function useCurrentUser() {
+  const [user, setUser] = React.useState<User | null>(null);
+  React.useEffect(() => {
+    return onAuthStateChanged(auth, setUser);
+  }, []);
+  return user;
+}
+
 export const DefaultSidebar: React.FC<DefaultSidebarProps> = ({
   logo,
   disabledPanels = [],
@@ -77,6 +89,7 @@ export const DefaultSidebar: React.FC<DefaultSidebarProps> = ({
 }) => {
   const { activePanel, setActivePanel, setIsOpen } = useEditorSidebar();
   const { setSelectedOverlayId, selectedOverlayId, overlays } = useEditorContext();
+  const currentUser = useCurrentUser();
 
   // Get the selected overlay to check its type
   const selectedOverlay = selectedOverlayId !== null 
@@ -106,6 +119,8 @@ export const DefaultSidebar: React.FC<DefaultSidebarProps> = ({
         return "Templates";
       case OverlayType.SETTINGS:
         return "Settings";
+      case OverlayType.USER:
+        return "User Profile";
       default:
         return "Unknown";
     }
@@ -194,6 +209,8 @@ export const DefaultSidebar: React.FC<DefaultSidebarProps> = ({
         return <TemplateOverlayPanel />;
       case OverlayType.SETTINGS:
         return <SettingsPanel />;
+      case OverlayType.USER:
+        return <UserPanel />;
       default:
         return null;
     }
@@ -237,8 +254,12 @@ export const DefaultSidebar: React.FC<DefaultSidebarProps> = ({
                   <TooltipTrigger asChild>
                     <SidebarMenuButton
                       onClick={() => {
-                        setActivePanel(item.panel);
-                        setIsOpen(true);
+                        if (activePanel === item.panel) {
+                          setIsOpen(false);
+                        } else {
+                          setActivePanel(item.panel);
+                          setIsOpen(true);
+                        }
                       }}
                       size="lg"
                       className="flex flex-col items-center gap-2 px-1.5 py-2.5"
@@ -266,14 +287,71 @@ export const DefaultSidebar: React.FC<DefaultSidebarProps> = ({
         </SidebarContent>
         <SidebarFooter className="border-t border-border  ">
           <SidebarMenu>
+            {/* User avatar / sign-in button */}
+            <div className="flex items-center justify-center pb-1">
+              <TooltipProvider delayDuration={0}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (currentUser) {
+                          if (activePanel === OverlayType.USER) {
+                            setIsOpen(false);
+                          } else {
+                            setActivePanel(OverlayType.USER);
+                            setIsOpen(true);
+                          }
+                        } else {
+                          window.location.href = `/login?returnTo=${encodeURIComponent(window.location.pathname)}`;
+                        }
+                      }}
+                      className={`flex flex-col items-center gap-1 px-1.5 py-1.5 rounded-md w-full hover:bg-sidebar-accent transition-colors ${
+                        activePanel === OverlayType.USER ? "bg-sidebar-accent shadow-sm ring-1 ring-border/50 text-foreground" : "text-muted-foreground hover:text-foreground"
+                      }`}
+                      title={currentUser ? (currentUser.displayName ?? currentUser.email ?? 'Account') : 'Sign in'}
+                    >
+                      {currentUser?.photoURL ? (
+                        <img
+                          src={currentUser.photoURL}
+                          alt={currentUser.displayName ?? 'User'}
+                          className="h-6 w-6 rounded-full object-cover ring-1 ring-border"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : currentUser ? (
+                        <div className="h-6 w-6 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-[10px] font-semibold ring-1 ring-border">
+                          {(currentUser.displayName ?? currentUser.email ?? '?')[0].toUpperCase()}
+                        </div>
+                      ) : (
+                        <LogIn className="h-4 w-4 text-muted-foreground" strokeWidth={1.25} />
+                      )}
+                      {showIconTitles && (
+                        <span className="text-[8px] leading-none text-muted-foreground truncate max-w-11">
+                          {currentUser ? (currentUser.displayName?.split(' ')[0] ?? 'Account') : 'Sign in'}
+                        </span>
+                      )}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">
+                    {currentUser
+                      ? `${currentUser.displayName ?? currentUser.email ?? 'Account'} — click to open account`
+                      : 'Sign in to access your library'}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
             <div className="flex items-center justify-center">
               <TooltipProvider delayDuration={0}>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <SidebarMenuButton
                       onClick={() => {
-                        setActivePanel(OverlayType.SETTINGS);
-                        setIsOpen(true);
+                        if (activePanel === OverlayType.SETTINGS) {
+                          setIsOpen(false);
+                        } else {
+                          setActivePanel(OverlayType.SETTINGS);
+                          setIsOpen(true);
+                        }
                       }}
                       size="lg"
                       className="flex flex-col items-center gap-2 px-1.5 py-2.5"

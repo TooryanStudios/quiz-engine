@@ -25,6 +25,20 @@ export const LocalMediaPanel: React.FC = () => {
    * Memoized to prevent recreation on every frame update
    */
   const handleAddToTimeline = useCallback((file: any) => {
+    // Blob URLs are only valid in the browser tab that created them — they cannot
+    // be loaded by the server-side renderer. Warn the user and abort.
+    if (
+      typeof file.path === 'string' &&
+      file.path.startsWith('blob:') &&
+      !file._isAssetLibraryItem
+    ) {
+      alert(
+        'This file was stored locally in your browser and cannot be rendered server-side.\n\n' +
+        'Please remove it and re-upload — the upload server must be running for files to render correctly.'
+      );
+      return;
+    }
+
     const canvasDimensions = getAspectRatioDimensions();
     
     // Note: Local media files don't currently store dimension information
@@ -41,13 +55,13 @@ export const LocalMediaPanel: React.FC = () => {
       'top'
     );
 
-    // Handle both server paths and blob URLs
+    // Handle blob URLs, external URLs (Firebase Storage / CDN), and local server paths
     let mediaSrc: string;
-    if (file.path.startsWith('blob:')) {
-      // Direct blob URL - use as-is
+    if (file.path.startsWith('blob:') || /^https?:\/\//i.test(file.path)) {
+      // Blob URL or external URL — use as-is
       mediaSrc = file.path;
     } else {
-      // Server path - convert to use the API route for better content-type handling
+      // Local server path — route through the local-media serve API
       const apiPath = file.path.startsWith('/') ? file.path.substring(1) : file.path;
       mediaSrc = `/api/latest/local-media/serve/${apiPath}`;
     }

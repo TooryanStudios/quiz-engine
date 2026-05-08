@@ -90,6 +90,22 @@ export const VideoLayerContent: React.FC<VideoLayerContentProps> = ({
   }, [videoSrc]);
 
   useEffect(() => {
+    const isCrossOriginRemote = /^https?:\/\//i.test(resolvedVideoSrc)
+      && (() => {
+        try {
+          return new URL(resolvedVideoSrc).origin !== window.location.origin
+        } catch {
+          return false
+        }
+      })()
+
+    if (isCrossOriginRemote) {
+      // Avoid extra preload probes for cross-origin sources; these can trigger
+      // cache operation errors in some browser/SW combinations.
+      setVideoLoadState("ready")
+      return
+    }
+
     const handle = delayRender("Loading video");
     let disposed = false;
 
@@ -333,6 +349,7 @@ export const VideoLayerContent: React.FC<VideoLayerContentProps> = ({
           {videoLoadState === "ready" && (
             <Video
               src={resolvedVideoSrc}
+              crossOrigin="anonymous"
               trimBefore={startFromFrames}
               style={{ 
                 ...videoStyle,
@@ -368,6 +385,7 @@ export const VideoLayerContent: React.FC<VideoLayerContentProps> = ({
       {videoLoadState === "ready" && (
         <Video
           src={resolvedVideoSrc}
+          crossOrigin="anonymous"
           trimBefore={startFromFrames}
           style={videoStyle}
           volume={overlay.styles.volume ?? 1}

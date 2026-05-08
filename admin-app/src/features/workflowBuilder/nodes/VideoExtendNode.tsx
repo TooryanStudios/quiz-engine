@@ -14,7 +14,7 @@ const INPUT_SOCKETS = [
 const OUTPUT_SOCKETS = [{ id: 'result', label: 'Result', slot: 2 }] as const
 
 export const VideoExtendNode = memo(function VideoExtendNode({ id, data, isConnectable }: WorkflowBuilderNodeProps) {
-  const { patchNode, executeNode, isExecuting } = useWorkflowBuilderNode(id)
+  const { patchNode, executeNode, isExecuting, isInViewport } = useWorkflowBuilderNode(id)
   const extendMode = data.extendMode ?? 'after'
 
   const videoSources = useMemo(
@@ -62,7 +62,7 @@ export const VideoExtendNode = memo(function VideoExtendNode({ id, data, isConne
         {showProviderFallbackBadge ? (
           <div className="workflow-builder-node__status-badge">Provider Link Active</div>
         ) : null}
-        {hasGeneratedVideo ? (
+        {hasGeneratedVideo && isInViewport ? (
           <video
             src={activeVideoSrc}
             controls
@@ -75,18 +75,29 @@ export const VideoExtendNode = memo(function VideoExtendNode({ id, data, isConne
               }
             }}
           />
+        ) : hasGeneratedVideo ? (
+          <div className="workflow-builder-node__preview--video-placeholder">Preview paused while offscreen</div>
         ) : (
            <div className="workflow-builder-node__preview--video-placeholder">No video generated yet</div>
         )}
       </div>
 
-      <div className="workflow-builder-node__settings workflow-builder-node__settings--extend-mode">
+      <div className="workflow-builder-node__settings" style={{ flexDirection: 'row', display: 'flex', gap: '8px', padding: '12px' }}>
         {(['before', 'after'] as const).map((mode) => (
           <button
             key={mode}
             type="button"
             className={`workflow-builder-node__tab-btn nodrag${extendMode === mode ? ' workflow-builder-node__tab-btn--active' : ''}`}
             onClick={() => patchNode({ extendMode: mode })}
+            style={{
+              flex: 1,
+              padding: '6px',
+              borderRadius: '6px',
+              border: '1px solid #cbd5e1',
+              background: extendMode === mode ? '#e2e8f0' : 'transparent',
+              fontWeight: extendMode === mode ? 'bold' : 'normal',
+              cursor: 'pointer',
+            }}
           >
             Extend {mode.charAt(0).toUpperCase() + mode.slice(1)}
           </button>

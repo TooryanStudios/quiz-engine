@@ -18,6 +18,7 @@ interface LocalMediaContextType {
   localMediaFiles: LocalMediaFile[];
   addMediaFile: (file: File) => Promise<LocalMediaFile | void>;
   removeMediaFile: (id: string) => Promise<void>;
+  renameMediaFile: (id: string, newName: string) => void;
   clearMediaFiles: () => Promise<void>;
   isLoading: boolean;
 }
@@ -133,6 +134,18 @@ export const LocalMediaProvider: React.FC<{ children: React.ReactNode }> = ({
   /**
    * Remove a media file by ID
    */
+  /**
+   * Rename a media file (updates display name in state only)
+   */
+  const renameMediaFile = useCallback((id: string, newName: string) => {
+    setLocalMediaFiles((prev) =>
+      prev.map((file) => (file.id === id ? { ...file, name: newName } : file))
+    );
+  }, []);
+
+  /**
+   * Remove a media file by ID
+   */
   const removeMediaFile = useCallback(
     async (id: string): Promise<void> => {
       try {
@@ -179,6 +192,7 @@ export const LocalMediaProvider: React.FC<{ children: React.ReactNode }> = ({
     localMediaFiles,
     addMediaFile,
     removeMediaFile,
+    renameMediaFile,
     clearMediaFiles,
     isLoading,
   };

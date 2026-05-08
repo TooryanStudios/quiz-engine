@@ -12,7 +12,7 @@ const INPUT_SOCKETS = [
 const OUTPUT_SOCKETS = [{ id: 'out-image', label: 'Image', slot: 2 }] as const
 
 export const GenImageNode = memo(function GenImageNode({ id, data, isConnectable }: WorkflowBuilderNodeProps) {
-  const { patchNode, executeNode, isExecuting } = useWorkflowBuilderNode(id)
+  const { patchNode, executeNode, isExecuting, isInViewport } = useWorkflowBuilderNode(id)
   const imageSources = useMemo(
     () => [data.generatedImageUrl?.trim() || ''].filter(Boolean),
     [data.generatedImageUrl],
@@ -46,12 +46,14 @@ export const GenImageNode = memo(function GenImageNode({ id, data, isConnectable
       initialCollapsed={data.collapsed}
     >
       <div className="workflow-builder-node__preview--image">
-        {activeImageSrc ? (
+        {activeImageSrc && isInViewport ? (
           <img
             src={activeImageSrc}
             alt="Generated"
             onError={() => setActiveImageSrc('')}
           />
+        ) : activeImageSrc ? (
+          <div className="workflow-builder-node__preview--image-placeholder">Preview paused while offscreen</div>
         ) : (
           <div className="workflow-builder-node__preview--image-placeholder">No image generated yet</div>
         )}

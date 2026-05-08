@@ -80,6 +80,21 @@ export const VideoLayerContent: React.FC<VideoLayerContentProps> = ({
   }
 
   useEffect(() => {
+    const isCrossOriginRemote = /^https?:\/\//i.test(videoSrc)
+      && (() => {
+        try {
+          return new URL(videoSrc).origin !== window.location.origin
+        } catch {
+          return false
+        }
+      })()
+
+    if (isCrossOriginRemote) {
+      // Avoid extra preload probes for cross-origin sources; these can trigger
+      // cache operation errors in some browser/SW combinations.
+      return
+    }
+
     const handle = delayRender("Loading video");
 
     // Create a video element to preload the video
@@ -296,6 +311,7 @@ export const VideoLayerContent: React.FC<VideoLayerContentProps> = ({
           {/* Hidden video that feeds frames to canvas */}
           <Html5Video
             src={videoSrc}
+            crossOrigin="anonymous"
             trimBefore={startFromFrames}
             style={{ 
               ...videoStyle,
@@ -329,6 +345,7 @@ export const VideoLayerContent: React.FC<VideoLayerContentProps> = ({
     <div style={containerStyle}>
       <Html5Video
         src={videoSrc}
+        crossOrigin="anonymous"
         trimBefore={startFromFrames}
         style={videoStyle}
         volume={overlay.styles.volume ?? 1}
