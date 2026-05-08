@@ -79,3 +79,7 @@ Add one line after each successful release.
 ```text
 WorkHub v.010 | 2026-04-16 | <commit-sha> | <short notes>
 ```
+
+## Release Log
+
+WorkHub v.014 | 2026-05-09 | de4d42a | uploads library in video editor, video thumbnails, hover autoplay, Firestore collectionGroup rules fix
