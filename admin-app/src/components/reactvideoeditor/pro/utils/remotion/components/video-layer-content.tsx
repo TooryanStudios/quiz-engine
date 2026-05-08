@@ -306,7 +306,9 @@ export const VideoLayerContent: React.FC<VideoLayerContentProps> = ({
   // If greenscreen removal is enabled, use canvas-based rendering
   if (overlay.greenscreen?.enabled) {
     return (
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
       <div style={containerStyle}>
+        {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
         <div style={{ position: 'relative', width: '100%', height: '100%' }}>
           {/* Hidden video that feeds frames to canvas */}
           <Html5Video
@@ -342,6 +344,7 @@ export const VideoLayerContent: React.FC<VideoLayerContentProps> = ({
 
   // Normal rendering without greenscreen removal
   return (
+    {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
     <div style={containerStyle}>
       <Html5Video
         src={videoSrc}

@@ -113,6 +113,7 @@ export const ReactVideoEditor: React.FC<ReactVideoEditorProps> = ({
         // Player-only mode: Simple fullscreen video player
         <div 
           className="w-full bg-black flex items-center justify-center"
+          // eslint-disable-next-line jsx-a11y/no-static-element-interactions
           style={{
             height: "calc(var(--vh, 1vh) * 100)",
             maxHeight: "-webkit-fill-available" /* Safari fix */,

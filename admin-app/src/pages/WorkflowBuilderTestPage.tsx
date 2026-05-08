@@ -928,7 +928,206 @@ export default function WorkflowBuilderTestPage() {
   ])
 
   
-  const topActionSlot = null;
+  const topActionSlot = useMemo(() => (
+    <div className="workflow-builder-test-page__top-context-wrap">
+      <div className="workflow-builder-test-page__top-context">
+        <label className="workflow-builder-test-page__top-context-item">
+          <span>Project</span>
+          <select
+            value={studioProjectId || ''}
+            onChange={(event) => handleTopProjectSelect(event.target.value || null)}
+            disabled={isFlowHydrating || studioProjectsLoading || studioProjects.length === 0}
+          >
+            <option value="">{studioProjectsLoading ? 'Loading projects...' : 'Select project'}</option>
+            {studioProjects.map((project) => (
+              <option key={project.id} value={project.id}>{project.name}</option>
+            ))}
+          </select>
+        </label>
+
+        <label className="workflow-builder-test-page__top-context-item">
+          <span>Folder</span>
+          <select
+            value={studioActiveFolderId || FLOW_ROOT_FOLDER_VALUE}
+            onChange={(event) => handleTopFolderSelect(event.target.value)}
+            disabled={isFlowHydrating || !studioProjectId || studioFoldersLoading}
+          >
+            <option value={FLOW_ROOT_FOLDER_VALUE}>Project root</option>
+            {studioFolders.map((folder) => (
+              <option key={folder.id} value={folder.id}>{folder.name}</option>
+            ))}
+          </select>
+        </label>
+
+        <label className="workflow-builder-test-page__top-context-item">
+          <span>File</span>
+          <select
+            value={selectedFlow?.scopeId || ''}
+            onChange={(event) => handleTopFlowSelect(event.target.value || null)}
+            disabled={isFlowHydrating || !studioProjectId || flowItems.length === 0}
+          >
+            <option value="">{flowsLoading ? 'Loading flows...' : 'Select flow'}</option>
+            {groupedFlowOptions.map((group) => (
+              <optgroup key={group.label} label={group.label}>
+                {group.flows.map((flow) => (
+                  <option key={flow.scopeId} value={flow.scopeId}>{flow.flowName}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </label>
+
+        {isFlowHydrating ? (
+          <div className="workflow-builder-test-page__top-context-loading" role="status" aria-live="polite">
+            <Loader className="wf-spin" size={11} /> Loading flow...
+          </div>
+        ) : null}
+      </div>
+
+      <div className="workflow-builder-test-page__quick-nav" ref={quickNavRef}>
+        <button
+          type="button"
+          className="workflow-builder-test-page__quick-nav-trigger"
+          onClick={toggleQuickNav}
+          title="Open project/folder/flow navigator"
+          aria-label="Open project, folder, and flow navigator"
+        >
+          <Folders size={14} />
+        </button>
+
+        {isQuickNavOpen ? (
+          <div className="workflow-builder-test-page__quick-nav-menu" onClick={(event) => event.stopPropagation()}>
+            <div className="workflow-builder-test-page__quick-nav-head">
+              <strong>Flow navigator</strong>
+              <button type="button" onClick={() => { void loadQuickNavData() }} disabled={quickNavLoading}>
+                {quickNavLoading ? 'Refreshing...' : 'Refresh'}
+              </button>
+            </div>
+
+            <div className="workflow-builder-test-page__quick-nav-body">
+              {quickNavLoading ? (
+                <div style={{ textAlign: 'center', padding: '1rem', color: '#94a3b8' }}>
+                  <Loader className="wf-spin" size={16} />
+                </div>
+              ) : null}
+
+              {Object.entries(quickNavData).map(([projectId, bundle]) => {
+                const project = studioProjects.find((p) => p.id === projectId)
+                if (!project) return null
+
+                const flowsByFolderId = new Map<string | null, StudioProjectFlowCanvasSummary[]>()
+                bundle.flows.forEach((flow) => {
+                  const key = flow.folderId || null
+                  const list = flowsByFolderId.get(key) || []
+                  list.push(flow)
+                  flowsByFolderId.set(key, list)
+                })
+
+                const foldersByParent = new Map<string | null, FolderSummary[]>()
+                bundle.folders.forEach((folder) => {
+                  const key = folder.parentId || null
+                  const list = foldersByParent.get(key) || []
+                  list.push(folder)
+                  foldersByParent.set(key, list)
+                })
+
+                const renderFlowEntry = (flow: StudioProjectFlowCanvasSummary) => (
+                  <div key={flow.scopeId} className="workflow-builder-test-page__quick-nav-flow">
+                    <button
+                      type="button"
+                      onClick={() => { void openFlow(project.id, flow) }}
+                      title={flow.flowName}
+                    >
+                      <ChevronRight size={12} />
+                      <span>{flow.flowName}</span>
+                    </button>
+                    <a
+                      href={buildFlowPath(flow.scopeId)}
+                      onClick={(event) => {
+                        event.preventDefault()
+                        void openFlow(project.id, flow)
+                      }}
+                      title="Open flow URL"
+                    >
+                      <Link2 size={11} /> {buildFlowAbsoluteUrl(flow.scopeId)}
+                    </a>
+                  </div>
+                )
+
+                const renderFolderBranch = (parentId: string | null) => {
+                  const children = foldersByParent.get(parentId) || []
+                  return children.map((folder) => {
+                    const folderFlows = flowsByFolderId.get(folder.id) || []
+                    return (
+                      <div key={`folder-${folder.id}`} className="workflow-builder-test-page__quick-nav-folder-node">
+                        <strong className="workflow-builder-test-page__quick-nav-folder-title">{folder.name}</strong>
+                        <div className="workflow-builder-test-page__quick-nav-sublist">
+                          {folderFlows.map((flow) => renderFlowEntry(flow))}
+                          {renderFolderBranch(folder.id)}
+                        </div>
+                      </div>
+                    )
+                  })
+                }
+
+                const rootFlows = flowsByFolderId.get(null) || []
+
+                return (
+                  <section key={project.id} className="workflow-builder-test-page__quick-nav-project">
+                    <header>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setStudioProjectId(project.id)
+                          setStudioActiveFolderId(null)
+                        }}
+                      >
+                        {project.name}
+                      </button>
+                    </header>
+                    <div className="workflow-builder-test-page__quick-nav-tree">
+                      <div className="workflow-builder-test-page__quick-nav-folder-node">
+                        <strong className="workflow-builder-test-page__quick-nav-folder-title">Project root</strong>
+                        <div className="workflow-builder-test-page__quick-nav-sublist">
+                          {rootFlows.map((flow) => renderFlowEntry(flow))}
+                          {renderFolderBranch(null)}
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+                )
+              })}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  ), [
+    buildFlowAbsoluteUrl,
+    buildFlowPath,
+    flowItems,
+    flowsLoading,
+    groupedFlowOptions,
+    handleTopFlowSelect,
+    handleTopFolderSelect,
+    handleTopProjectSelect,
+    isFlowHydrating,
+    isQuickNavOpen,
+    loadQuickNavData,
+    openFlow,
+    quickNavData,
+    quickNavLoading,
+    selectedFlow?.scopeId,
+    studioActiveFolderId,
+    studioFolders,
+    studioFoldersLoading,
+    studioProjectId,
+    setStudioActiveFolderId,
+    setStudioProjectId,
+    studioProjects,
+    studioProjectsLoading,
+    toggleQuickNav,
+  ])
 
 
   return (
@@ -1182,7 +1381,7 @@ export default function WorkflowBuilderTestPage() {
             saveRemoteWorkflow={cloudWriteBlocked ? undefined : saveRemoteWorkflow}
             onWorkflowChange={setWorkflow}
             onNotify={handleNotify}
-            /* topActionSlot removed for fullscreen */
+            topActionSlot={topActionSlot}
             onRemoteLoadingChange={setIsFlowHydrating}
             onExecuteWorkflow={async () => {
               // handle execution

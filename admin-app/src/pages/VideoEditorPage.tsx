@@ -77,7 +77,7 @@ export default function VideoEditorPage() {
         sidebarWidth="clamp(350px, 25vw, 500px)"        
         sidebarIconWidth="57.6px"
         showIconTitles={false}
-        sidebarLogo={<span style={{ fontSize: 13, fontWeight: 700, letterSpacing: 1, color: 'inherit' }}>Q<span style={{ opacity: 0.6 }}>Yan</span></span>}
+        sidebarLogo={<span className="rve-sidebar-logo">Q<span className="rve-sidebar-logo-accent">Yan</span></span>}
       />
     </div>
   );

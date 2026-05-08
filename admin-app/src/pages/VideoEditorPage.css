@@ -46,6 +46,17 @@
 }
 
 /* Slightly darker icon rail than the main sidebar panel, matching reference hierarchy. */
+.rve-sidebar-logo {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: inherit;
+}
+
+.rve-sidebar-logo-accent {
+    opacity: 0.6;
+}
+
 .rve-host .sidebar-icon-rail {
     background-color: hsl(0 0% 7%);
     border-color: var(--sidebar-border);

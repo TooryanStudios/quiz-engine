@@ -1,4 +1,5 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg';
+import { toBlobURL } from '@ffmpeg/util';
 import { toPng } from 'html-to-image';
 import type { PlayerRef } from '@remotion/player';
 import type React from 'react';
@@ -36,6 +37,7 @@ export class BrowserRenderer implements VideoRenderer {
   private readonly jobs = new Map<string, RenderJob>();
   private ffmpegInstance: FFmpeg | null = null;
   private ffmpegLoadPromise: Promise<void> | null = null;
+  private ffmpegBlobUrls: { coreURL: string; wasmURL: string } | null = null;
 
   readonly renderType: RenderTypeInfo = { type: 'browser', entryPoint: '' };
 
@@ -68,16 +70,21 @@ export class BrowserRenderer implements VideoRenderer {
     if (this.ffmpegInstance) return this.ffmpegInstance;
     if (!this.ffmpegLoadPromise) {
       const ffmpeg = new FFmpeg();
-      
-      // Use variables/concatenation to bypass Vite's static asset plugin 
-      // preventing it from catching the /public folder references at build time.
-      const coreFile = 'ffmpeg-core.js';
-      const wasmFile = 'ffmpeg-core.wasm';
+      const baseUrl = import.meta.env.BASE_URL || '/';
+      const coreAssetUrl = new URL('ffmpeg-core.js', window.location.origin + baseUrl).toString();
+      const wasmAssetUrl = new URL('ffmpeg-core.wasm', window.location.origin + baseUrl).toString();
 
-      this.ffmpegLoadPromise = ffmpeg.load({
-        coreURL: `/${coreFile}`,
-        wasmURL: `/${wasmFile}`,
-      }).then(() => {
+      this.ffmpegLoadPromise = (async () => {
+        this.ffmpegBlobUrls ??= {
+          coreURL: await toBlobURL(coreAssetUrl, 'text/javascript'),
+          wasmURL: await toBlobURL(wasmAssetUrl, 'application/wasm'),
+        };
+
+        await ffmpeg.load({
+          coreURL: this.ffmpegBlobUrls.coreURL,
+          wasmURL: this.ffmpegBlobUrls.wasmURL,
+        });
+      })().then(() => {
         this.ffmpegInstance = ffmpeg;
       });
     }
