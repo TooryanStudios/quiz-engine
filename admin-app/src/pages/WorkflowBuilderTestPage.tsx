@@ -331,16 +331,16 @@ export default function WorkflowBuilderTestPage() {
       const items = await listProjectFlowCanvases(projectId)
       setFlowItems(items)
       setActiveFlowScopeId((current) => {
-        if (preferredScopeId && items.some((item) => item.scopeId === preferredScopeId)) {
+        if (preferredScopeId && items.some((item: StudioProjectFlowCanvasSummary) => item.scopeId === preferredScopeId)) {
           return preferredScopeId
         }
-        if (current && items.some((item) => item.scopeId === current)) {
+        if (current && items.some((item: StudioProjectFlowCanvasSummary) => item.scopeId === current)) {
           return current
         }
         return items[0]?.scopeId || null
       })
       setManagerOpenScopeId((current) => {
-        if (current && items.some((item) => item.scopeId === current)) {
+        if (current && items.some((item: StudioProjectFlowCanvasSummary) => item.scopeId === current)) {
           return current
         }
         return items[0]?.scopeId || null
@@ -424,7 +424,7 @@ export default function WorkflowBuilderTestPage() {
       for (const project of studioProjects) {
         try {
           const items = await listProjectFlowCanvases(project.id)
-          const match = items.find((item) => item.scopeId === routeFlowId)
+          const match = items.find((item: StudioProjectFlowCanvasSummary) => item.scopeId === routeFlowId)
           if (!match) continue
 
           setStudioProjectId(project.id)
@@ -557,7 +557,7 @@ export default function WorkflowBuilderTestPage() {
         }
 
         const refreshed = await listProjectFlowCanvases(studioProjectId)
-        const recoveredFlow = refreshed.find((item) => item.scopeId === recoveredScopeId) || null
+        const recoveredFlow = refreshed.find((item: StudioProjectFlowCanvasSummary) => item.scopeId === recoveredScopeId) || null
         if (!recoveredFlow) {
           return
         }
@@ -679,7 +679,7 @@ export default function WorkflowBuilderTestPage() {
       }
 
       const items = await listProjectFlowCanvases(studioProjectId)
-      const createdFlow = items.find((item) => item.scopeId === scopeId) || null
+      const createdFlow = items.find((item: StudioProjectFlowCanvasSummary) => item.scopeId === scopeId) || null
       if (!createdFlow) {
         return
       }

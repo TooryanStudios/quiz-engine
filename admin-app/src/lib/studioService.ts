@@ -384,6 +384,7 @@ export async function saveProjectNewLayoutConfig(
 export type StudioProjectFlowCanvasPayload = {
   nodes: unknown[]
   edges: unknown[]
+  viewport?: { x: number; y: number; zoom: number }
 }
 
 export type StudioProjectFlowCanvasSummary = {
@@ -444,12 +445,14 @@ export async function loadProjectFlowCanvasState(
     workflow?: {
       nodes?: unknown[]
       edges?: unknown[]
+      viewport?: { x: number; y: number; zoom: number }
     }
   }
 
   return {
     nodes: Array.isArray(data.workflow?.nodes) ? data.workflow.nodes : [],
     edges: Array.isArray(data.workflow?.edges) ? data.workflow.edges : [],
+    ...(data.workflow?.viewport ? { viewport: data.workflow.viewport } : {}),
   }
 }
 
@@ -474,9 +477,61 @@ export async function saveProjectFlowCanvasState(input: {
     workflow: {
       nodes: Array.isArray(input.workflow.nodes) ? input.workflow.nodes : [],
       edges: Array.isArray(input.workflow.edges) ? input.workflow.edges : [],
+      ...(input.workflow.viewport ? { viewport: input.workflow.viewport } : {}),
     },
     updatedAt: serverTimestamp(),
   }, { merge: true })
+}
+
+export async function listProjectFlowCanvases(
+  projectId: string,
+): Promise<StudioProjectFlowCanvasSummary[]> {
+  const q = query(collection(db, 'studio_projects', projectId, 'flow_canvas'), orderBy('updatedAt', 'desc'))
+  const snap = await getDocs(q)
+  return snap.docs.map((docSnap) => {
+    const data = docSnap.data() as {
+      flowName?: string
+      folderId?: string | null
+      folderPathIds?: string[]
+      folderPathNames?: string[]
+      updatedBy?: string
+      updatedAt?: Timestamp
+    }
+    return {
+      scopeId: docSnap.id,
+      flowName: (data.flowName || '').trim() || 'Untitled Flow',
+      folderId: typeof data.folderId === 'string' && data.folderId.trim() ? data.folderId : null,
+      folderPathIds: Array.isArray(data.folderPathIds) ? data.folderPathIds : [],
+      folderPathNames: Array.isArray(data.folderPathNames) ? data.folderPathNames : [],
+      updatedBy: typeof data.updatedBy === 'string' ? data.updatedBy : '',
+      updatedAt: data.updatedAt instanceof Timestamp ? data.updatedAt.toMillis() : 0,
+    } as StudioProjectFlowCanvasSummary
+  })
+}
+
+export async function listProjectFolders(
+  projectId: string,
+  access: { userId: string; role: ProjectRole | null },
+): Promise<FolderSummary[]> {
+  const canReadAllFolders = access.role === 'owner' || access.role === 'editor'
+  const q = canReadAllFolders
+    ? query(foldersCol(projectId), orderBy('createdAt'))
+    : query(foldersCol(projectId), where('viewerUids', 'array-contains', access.userId))
+  const snap = await getDocs(q)
+  return snap.docs.map((d) => {
+    const data = d.data() as StudioFolder
+    return {
+      id: d.id,
+      projectId: data.projectId,
+      name: data.name,
+      parentId: data.parentId,
+      createdBy: data.createdBy,
+      viewerUids: Array.isArray(data.viewerUids) ? data.viewerUids : [],
+      allowedMemberUids: Array.isArray(data.allowedMemberUids) ? data.allowedMemberUids : [],
+      hiddenMemberUids: Array.isArray(data.hiddenMemberUids) ? data.hiddenMemberUids : [],
+      createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : Date.now(),
+    } as FolderSummary
+  }).sort((left, right) => left.createdAt - right.createdAt)
 }
 
 export async function renameProjectFlowCanvas(
