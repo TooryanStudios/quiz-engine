@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Overlay, AspectRatio } from "../types";
+import { DEFAULT_OVERLAYS } from "@qyan/platform-constants";
 import { hasAutosave, clearAutosave } from "../utils/general/indexdb-helper";
-import { DEFAULT_OVERLAYS } from "../../../constants";
 
 /**
  * Custom hook to load project state (overlays) from API via URL parameter.

@@ -65,6 +65,7 @@ export type WorkflowBuilderNodeData = {
   genInputMode?: 'reference' | 'image'
   isPromptSocketConnected?: boolean
   genQueue?: unknown[]
+  genTopHeight?: number
   uploading?: boolean
 }
 

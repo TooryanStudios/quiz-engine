@@ -83,6 +83,8 @@ export const Timeline = forwardRef<TimelineRef, TimelineProps>(({
   aspectRatio,
   onAspectRatioChange,
   showAspectRatioControls = false,
+  canvasZoom,
+  onCanvasZoomChange,
   collapsed = false,
   onCollapseChange,
   gapRemovalEnabled: externalGapRemovalEnabled,
@@ -508,6 +510,8 @@ export const Timeline = forwardRef<TimelineRef, TimelineProps>(({
         aspectRatio={aspectRatio}
         onAspectRatioChange={onAspectRatioChange}
         showAspectRatioControls={showAspectRatioControls}
+        canvasZoom={canvasZoom}
+        onCanvasZoomChange={onCanvasZoomChange}
         isCollapsed={collapsed}
         onToggleCollapse={() => onCollapseChange?.(!collapsed)}
         gapRemovalEnabled={gapRemovalEnabled}

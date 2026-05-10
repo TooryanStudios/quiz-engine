@@ -10,6 +10,9 @@ document.documentElement.dir = 'ltr'
 
 const CHUNK_RELOAD_KEY = 'quiz-admin:chunk-reload-once'
 const DEV_SW_RESET_RELOAD_KEY = 'quiz-admin:dev-sw-reset-reload-once'
+const PROD_SW_SCHEMA_KEY = 'quiz-admin:sw-schema-version'
+const PROD_SW_RESET_RELOAD_KEY = 'quiz-admin:prod-sw-reset-reload-once'
+const SW_SCHEMA_VERSION = '2026-05-10-v5'
 
 function shouldRecoverChunkError(reason: unknown): boolean {
   const text = typeof reason === 'string'
@@ -38,6 +41,12 @@ window.addEventListener('load', () => {
     || window.location.hostname === '127.0.0.1'
     || window.location.hostname === '[::1]'
 
+  const clearAllCaches = async () => {
+    if (!('caches' in window)) return
+    const cacheNames = await caches.keys()
+    await Promise.all(cacheNames.map((name) => caches.delete(name)))
+  }
+
   // Service workers in dev can cache stale modules and cause UI/runtime drift.
   // Aggressively unregister all SWs and clear ALL caches on localhost.
   if ((isDev || isLocalhost) && 'serviceWorker' in navigator) {
@@ -61,6 +70,28 @@ window.addEventListener('load', () => {
       })
     })
     return
+  }
+
+  if ('serviceWorker' in navigator) {
+    const previousSchemaVersion = localStorage.getItem(PROD_SW_SCHEMA_KEY)
+    if (previousSchemaVersion !== SW_SCHEMA_VERSION) {
+      void navigator.serviceWorker.getRegistrations().then((registrations) => {
+        void Promise.all(registrations.map((registration) => registration.unregister())).then(async () => {
+          await clearAllCaches()
+          localStorage.setItem(PROD_SW_SCHEMA_KEY, SW_SCHEMA_VERSION)
+
+          if (navigator.serviceWorker.controller && sessionStorage.getItem(PROD_SW_RESET_RELOAD_KEY) !== '1') {
+            sessionStorage.setItem(PROD_SW_RESET_RELOAD_KEY, '1')
+            window.location.reload()
+          } else {
+            sessionStorage.removeItem(PROD_SW_RESET_RELOAD_KEY)
+          }
+        })
+      })
+      return
+    }
+
+    sessionStorage.removeItem(PROD_SW_RESET_RELOAD_KEY)
   }
 
   sessionStorage.removeItem(DEV_SW_RESET_RELOAD_KEY)

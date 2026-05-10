@@ -56,6 +56,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     playerRef: contextPlayerRef, // Get playerRef from context
     showAlignmentGuides,
     backgroundColor,
+    canvasZoom,
   } = context;
 
   // Use external playerRef if provided, otherwise use context playerRef
@@ -205,25 +206,32 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         /* Editor mode: Grid background container */
         <div
           onPointerDown={handleEditorBackgroundPointerDown}
-          className="z-0 video-container relative w-full h-full select-none
+          className={`z-0 video-container relative w-full h-full select-none
           bg-[hsl(0_0%_14%)]
           bg-[linear-gradient(to_right,#73737340_1px,transparent_1px),linear-gradient(to_bottom,#73737340_1px,transparent_1px)]
           bg-size-[32px_32px] 
-          shadow-lg"
+          shadow-lg ${canvasZoom !== 'fit' ? 'overflow-auto' : 'overflow-hidden'}`}
         >
           {/* Player wrapper with centering */}
           <div
-            className="z-10 absolute inset-2 sm:inset-4 flex items-center justify-center"
+            className={`z-10 ${canvasZoom === 'fit' ? 'absolute inset-2 sm:inset-4 flex items-center justify-center' : 'flex items-center justify-center min-h-full min-w-full p-4'}`}
             onPointerDown={handleEditorBackgroundPointerDown}
           >
             <div
               className="relative mx-2 sm:mx-0"
-              style={{
-                width: Math.min(playerDimensions.width, compositionWidth),
-                height: Math.min(playerDimensions.height, compositionHeight),
-                maxWidth: "100%",
-                maxHeight: "100%",
-              }}
+              style={
+                canvasZoom === 'fit'
+                  ? {
+                      width: Math.min(playerDimensions.width, compositionWidth),
+                      height: Math.min(playerDimensions.height, compositionHeight),
+                      maxWidth: "100%",
+                      maxHeight: "100%",
+                    }
+                  : {
+                      width: canvasZoom === '100%' ? compositionWidth : compositionWidth * 0.5,
+                      height: canvasZoom === '100%' ? compositionHeight : compositionHeight * 0.5,
+                    }
+              }
             >
               <Player
                 ref={playerRef}

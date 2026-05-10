@@ -560,6 +560,10 @@ export async function moveProjectFlowCanvas(input: {
   })
 }
 
+export async function deleteProjectFlowCanvas(projectId: string, scopeId: string): Promise<void> {
+  await deleteDoc(projectFlowCanvasDoc(projectId, scopeId))
+}
+
 /**
  * Subscribe to all projects within an org that are visible to a given user.
  * Covers:
@@ -1098,12 +1102,24 @@ export function subscribeToUserReferenceLibrary(
 
 export async function saveProjectReferenceLibraryItem(
   projectId: string,
-  item: { id: string; kind: StudioReferenceAssetKind; url: string; thumbnailUrl?: string; name: string; createdAt: number },
+  item: {
+    id: string
+    kind: StudioReferenceAssetKind
+    url: string
+    thumbnailUrl?: string
+    name: string
+    createdAt: number
+    folderId?: string | null
+  },
   createdBy: string,
 ): Promise<void> {
   const thumbnailUrl = (item.thumbnailUrl || '').trim()
+  const normalizedFolderId = typeof item.folderId === 'string' && item.folderId.trim()
+    ? item.folderId.trim()
+    : null
   await setDoc(projectReferenceLibraryDoc(projectId, item.id), {
     projectId,
+    ...(normalizedFolderId ? { folderId: normalizedFolderId } : {}),
     kind: item.kind,
     url: item.url,
     ...(thumbnailUrl ? { thumbnailUrl } : {}),

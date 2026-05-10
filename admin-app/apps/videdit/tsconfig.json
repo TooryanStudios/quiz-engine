@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.app.json",
+  "compilerOptions": {
+    "baseUrl": "../../",
+    "forceConsistentCasingInFileNames": true,
+    "paths": {
+      "components/*": ["src/components/*"]
+    },
+    "tsBuildInfoFile": "../../node_modules/.tmp/tsconfig.videdit.tsbuildinfo"
+  },
+  "include": ["src", "../../src", "../../vite.config.ts"]
+}

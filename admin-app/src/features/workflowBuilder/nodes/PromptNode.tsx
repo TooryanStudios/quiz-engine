@@ -3,6 +3,7 @@ import { NodeResizer } from '@xyflow/react'
 import { Type } from 'lucide-react'
 import { useWorkflowBuilderNode } from '../WorkflowBuilderCanvasContext'
 import { WorkflowNodeFrame } from './WorkflowNodeFrame'
+import { PromptRefineButton } from './PromptRefineButton'
 import type { WorkflowBuilderNodeProps } from '../types'
 
 const INPUT_SOCKETS = [{ id: 'in-refs', label: 'Refs', slot: 2 }] as const
@@ -33,6 +34,15 @@ export const PromptNode = memo(function PromptNode({ id, data, isConnectable, se
         bodyClassName="workflow-builder-node__body--prompt"
         initialCollapsed={data.collapsed}
       >
+        <div className="workflow-builder-node__prompt-toolbar nodrag">
+          <PromptRefineButton
+            prompt={localText}
+            onApply={(refined) => {
+              setLocalText(refined)
+              patchNode({ promptText: refined })
+            }}
+          />
+        </div>
         <textarea
           className="workflow-builder-node__prompt-textarea nodrag"
           value={localText}

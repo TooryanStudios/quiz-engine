@@ -361,6 +361,33 @@ export async function loadUserPrefs(
   } catch { return null }
 }
 
+// ── Global app-level defaults (master-admin only) ─────────────────────────────
+
+const APP_SETTINGS_DEFAULT_LAYOUT_DOC = 'platform_settings/lab_newlayout_default_layout'
+
+/** Persist the master-admin chosen default Dockview layout for /lab/newlayout. */
+export async function saveDefaultLabNewLayout(payload: string, savedByUid: string): Promise<void> {
+  await setDoc(
+    doc(db, APP_SETTINGS_DEFAULT_LAYOUT_DOC),
+    {
+      layout: payload,
+      savedByUid,
+      savedAt: serverTimestamp(),
+    },
+    { merge: true },
+  )
+}
+
+/** Read the global default Dockview layout, or null if not set / not readable. */
+export async function loadDefaultLabNewLayout(): Promise<string | null> {
+  try {
+    const snap = await getDoc(doc(db, APP_SETTINGS_DEFAULT_LAYOUT_DOC))
+    if (!snap.exists()) return null
+    const data = snap.data()
+    return typeof data.layout === 'string' ? data.layout : null
+  } catch { return null }
+}
+
 // ── User activity recording ───────────────────────────────────────────────────
 
 export async function recordUserActivity(uid: string, profile: {

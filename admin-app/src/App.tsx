@@ -269,6 +269,35 @@ function RequireAdmin({ user, children }: { user: User | null; children: ReactEl
   return children
 }
 
+function StandaloneDevRedirect({
+  origin,
+  fallbackLabel,
+}: {
+  origin: string
+  fallbackLabel: string
+}) {
+  const location = useLocation()
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const normalizedOrigin = origin.replace(/\/$/, '')
+    const target = `${normalizedOrigin}/${location.search}${location.hash}`.replace(/\/(?=[?#])/, '')
+    window.location.replace(target)
+  }, [location.hash, location.search, origin])
+
+  return (
+    <div className="app-loading-screen">
+      <AppBrandMark />
+      <div className="app-loading-spinner" />
+      <p className="app-loading-note">Opening {fallbackLabel}…</p>
+      <p className="app-loading-note">
+        If the redirect does not happen automatically, <a href={`${origin.replace(/\/$/, '')}/${location.search}${location.hash}`.replace(/\/(?=[?#])/, '')}>open it here</a>.
+      </p>
+    </div>
+  )
+}
+
 function AppBrandMark() {
   return (
     <div className="app-loading-brand" aria-label="QYan Gaming">
@@ -323,6 +352,8 @@ function App() {
   const navigate = useNavigate()
   const location = useLocation()
   const isLocalDevHost = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
+  const standaloneVidEditOrigin = (import.meta.env.VITE_VIDEDIT_DEV_ORIGIN as string | undefined)?.trim() || 'http://localhost:3001'
+  const useStandaloneVidEdit = import.meta.env.DEV && isLocalDevHost && Boolean(standaloneVidEditOrigin)
   const allowUnauthedLocalPlayTest = false
   const allowUnauthedLocalCanvas = false
   const enableMSESequencerDemo = import.meta.env.VITE_ENABLE_MSE_SEQUENCER_DEMO === '1'
@@ -870,7 +901,11 @@ function App() {
     return (
       <ErrorBoundary>
         <Suspense fallback={<div className="app-loading-screen" />}>
-          <RequireAuth user={user}><VideoEditorPage /></RequireAuth>
+          <RequireAuth user={user}>
+            {useStandaloneVidEdit
+              ? <StandaloneDevRedirect origin={standaloneVidEditOrigin} fallbackLabel="Video Editor" />
+              : <VideoEditorPage />}
+          </RequireAuth>
         </Suspense>
       </ErrorBoundary>
     )
@@ -963,7 +998,7 @@ function App() {
 
   const appRoutes = (
     <Routes>
-      <Route path="/vidEdit" element={withRouteBoundary('videdit', <RequireAuth user={user}><VideoEditorPage /></RequireAuth>)} />
+      <Route path="/vidEdit" element={withRouteBoundary('videdit', <RequireAuth user={user}>{useStandaloneVidEdit ? <StandaloneDevRedirect origin={standaloneVidEditOrigin} fallbackLabel="Video Editor" /> : <VideoEditorPage />}</RequireAuth>)} />
       <Route path="/" element={withRouteBoundary('home', <Navigate to="/dashboard" replace />)} />
       <Route path="/login" element={withRouteBoundary('login', <LoginPage />)} />
       <Route path="/dashboard" element={withRouteBoundary('dashboard', <RequireAuth user={user}><DashboardPage /></RequireAuth>)} />

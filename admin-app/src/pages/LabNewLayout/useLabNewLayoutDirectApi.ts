@@ -1,18 +1,38 @@
-import { useCallback, useMemo, useState } from 'react'
-import { composerModelChip } from './useLabNewLayoutComposer'
-import { useLabNewLayoutStore } from './useLabNewLayoutStore'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useGenerationRunner } from '../../hooks/useGenerationRunner'
+import { firebaseConfig } from '../../lib/firebase'
+import { playGenerationFailureSound, playGenerationSuccessSound } from './generationSounds'
+import { useLabNewLayoutData } from './useLabNewLayoutWorkspace'
+import { useLabNewLayoutStore } from './useLabNewLayoutStore'
+
+const DEFAULT_COMPOSER_MODEL_ID = 'bytedance/seedance-2.0-fast'
 
 const CHATBOT_BASE = (import.meta.env.VITE_CHATBOT_API_URL as string | undefined) || ''
 
+const isFirebaseDownloadUrl = (value: string): boolean => {
+  if (!value.trim()) {
+    return false
+  }
+
+  try {
+    const parsed = new URL(value)
+    return parsed.hostname.toLowerCase() === 'firebasestorage.googleapis.com'
+      && parsed.pathname.includes('/o/')
+      && parsed.searchParams.get('alt') === 'media'
+  } catch {
+    return false
+  }
+}
+
 export const directApiInitialJson = JSON.stringify({
-  endpoint: '/api/generate-video',
+  endpoint: '/api/seedance/generate',
   body: {
     prompt: 'Create a cinematic scene with a calm camera move and continuity-safe references.',
     ratio: '16:9',
     resolution: '480p',
-    duration: '15s',
-    model: composerModelChip,
+    duration: 15,
+    model: DEFAULT_COMPOSER_MODEL_ID,
+    generate_audio: true,
   },
 }, null, 2)
 
@@ -20,8 +40,9 @@ const directApiPreviewBody = {
   prompt: 'Create a cinematic scene with a calm camera move and continuity-safe references.',
   ratio: '16:9',
   resolution: '480p',
-  duration: '15s',
-  model: composerModelChip,
+  duration: 15,
+  model: DEFAULT_COMPOSER_MODEL_ID,
+  generate_audio: true,
   references: ['character-ref', 'lighting-ref'],
 }
 
@@ -42,17 +63,112 @@ const readBooleanValue = (value: unknown, fallback: boolean) => (
   typeof value === 'boolean' ? value : fallback
 )
 
+function resolveArchiveFailureNotice(error: unknown): { signature: string; message: string } {
+  const rawMessage = error instanceof Error ? error.message : 'Failed to archive video to Firebase.'
+  const normalized = rawMessage.toLowerCase()
+
+  if (normalized.includes('firebase admin credentials are not configured')) {
+    return {
+      signature: 'firebase-admin-credentials-missing',
+      message: 'Automatic Firebase archiving is unavailable because backend Firebase admin credentials are not configured.',
+    }
+  }
+
+  if (
+    normalized.includes('service unavailable')
+    || normalized.includes('failed to fetch')
+    || normalized.includes('networkerror')
+    || normalized.includes('cannot reach local api backend')
+  ) {
+    return {
+      signature: 'archive-service-unavailable',
+      message: 'Automatic Firebase archiving is temporarily unavailable. Generation output is still available in History.',
+    }
+  }
+
+  return {
+    signature: `archive-failure:${normalized.slice(0, 120)}`,
+    message: 'Automatic Firebase archiving failed. Generation output is still available in History.',
+  }
+}
+
+let lastDirectApiArchiveFailureSignature: string | null = null
+
+function createClientUniqueId(prefix: string): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${prefix}-${crypto.randomUUID()}`
+  }
+
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
 export function useLabNewLayoutDirectApi() {
+  const { studioProjectId, studioActiveFolderId } = useLabNewLayoutData()
   const currentComposerPreview = useLabNewLayoutStore((state) => state.currentComposerPreview)
+  const requestComposerPreviewRefresh = useLabNewLayoutStore((state) => state.requestComposerPreviewRefresh)
   const addHistoryItem = useLabNewLayoutStore((state) => state.addHistoryItem)
   const updateHistoryItem = useLabNewLayoutStore((state) => state.updateHistoryItem)
+  const history = useLabNewLayoutStore((state) => state.history)
+  const resumedHistoryIdsRef = useRef<Set<string>>(new Set())
 
-  const [isGenerating, setIsGenerating] = useState(false)
   const [generationStatus, setGenerationStatus] = useState<string>('')
 
   const runner = useGenerationRunner({
     apiBaseUrl: CHATBOT_BASE,
   })
+
+  const archiveVideoToFirebase = useCallback(async (
+    sourceUrl: string,
+    name: string,
+    projectId: string,
+    folderId: string | null,
+  ): Promise<string | null> => {
+    const normalizedSourceUrl = sourceUrl.trim()
+    if (!normalizedSourceUrl || isFirebaseDownloadUrl(normalizedSourceUrl)) {
+      return normalizedSourceUrl || null
+    }
+
+    if (!projectId.trim()) {
+      return null
+    }
+
+    const folderPathSegment = folderId ? `folders/${folderId}` : 'project'
+    const storagePathPrefix = `lab-generated-videos/projects/${projectId}/${folderPathSegment}`
+
+    try {
+      const response = await fetch('/api/lab/references/upload-by-url', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          url: normalizedSourceUrl,
+          name,
+          kind: 'video',
+          storagePathPrefix,
+          firebaseConfig,
+          mimeType: 'video/mp4',
+        }),
+      })
+
+      const payload = await response.json().catch(() => null) as { error?: string; saved?: { firebaseUrl?: string } } | null
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Failed to archive video to Firebase.')
+      }
+
+      lastDirectApiArchiveFailureSignature = null
+
+      return payload?.saved?.firebaseUrl || null
+    } catch (error) {
+      const failureNotice = resolveArchiveFailureNotice(error)
+      if (lastDirectApiArchiveFailureSignature !== failureNotice.signature) {
+        lastDirectApiArchiveFailureSignature = failureNotice.signature
+        setGenerationStatus(failureNotice.message)
+        console.warn('Lab direct API archive to Firebase failed:', error)
+      }
+      return null
+    }
+  }, [])
 
   const defaultPreviewStr = useMemo(() => {
     return currentComposerPreview 
@@ -61,6 +177,118 @@ export function useLabNewLayoutDirectApi() {
   }, [currentComposerPreview])
 
   const [directRequestJson, setDirectRequestJson] = useState(defaultPreviewStr)
+
+  useEffect(() => {
+    const inFlightDirectApiEntries = history.filter((entry) => (
+      entry.sourceLabel === 'Direct API'
+      && (entry.status === 'queued' || entry.status === 'running')
+      && typeof entry.taskId === 'string'
+      && entry.taskId.trim().length > 0
+    ))
+
+    if (!inFlightDirectApiEntries.length) {
+      return
+    }
+
+    let isCancelled = false
+
+    inFlightDirectApiEntries.forEach((entry) => {
+      if (resumedHistoryIdsRef.current.has(entry.id)) {
+        return
+      }
+
+      resumedHistoryIdsRef.current.add(entry.id)
+
+      void (async () => {
+        try {
+          updateHistoryItem(entry.id, {
+            status: 'running',
+            errorMessage: '',
+          })
+
+          const resumedResult = await runner.resumeGenerationTask({
+            taskId: entry.taskId || '',
+            settings: {
+              provider: (entry.provider === 'atlas' || entry.provider === 'grok' || entry.provider === 'byteplus')
+                ? entry.provider
+                : 'atlas',
+              model: entry.model || DEFAULT_COMPOSER_MODEL_ID,
+              ratio: entry.ratio || '16:9',
+              duration: typeof entry.duration === 'number' ? entry.duration : 15,
+              resolution: entry.resolution || '480p',
+              generateAudio: entry.generateAudio !== false,
+            },
+          }, {
+            shouldCancel: () => isCancelled,
+          })
+
+          if (!resumedResult || isCancelled) {
+            return
+          }
+
+          updateHistoryItem(entry.id, {
+            status: 'success',
+            resultUrl: resumedResult.resultUrl,
+            taskId: resumedResult.taskId,
+            receivedAt: resumedResult.receivedAt,
+            completedAt: resumedResult.receivedAt,
+            provider: resumedResult.settings.provider,
+            model: resumedResult.settings.model,
+            ratio: resumedResult.settings.ratio,
+            resolution: resumedResult.settings.resolution,
+            duration: resumedResult.settings.duration,
+            generateAudio: resumedResult.settings.generateAudio,
+            errorMessage: '',
+          })
+          playGenerationSuccessSound()
+
+          const archiveProjectId = (entry.projectId || studioProjectId || '').trim()
+          const archiveFolderId = (entry.folderId || studioActiveFolderId || '').trim() || null
+          void (async () => {
+            const archivedUrl = await archiveVideoToFirebase(
+              resumedResult.resultUrl,
+              `direct-api-recovery-${entry.id}-${Date.now()}`,
+              archiveProjectId,
+              archiveFolderId,
+            )
+
+            if (archivedUrl && archivedUrl !== resumedResult.resultUrl) {
+              updateHistoryItem(entry.id, { resultUrl: archivedUrl })
+            }
+          })()
+        } catch (error) {
+          if (isCancelled) {
+            return
+          }
+          const errorMessage = error instanceof Error ? error.message : 'Recovery failed.'
+          const lowerError = errorMessage.toLowerCase()
+          const transientConnectivityError = lowerError.includes('cannot reach local api backend')
+            || lowerError.includes('back end server is not working')
+            || lowerError.includes('networkerror')
+            || lowerError.includes('failed to fetch')
+
+          if (transientConnectivityError) {
+            updateHistoryItem(entry.id, {
+              status: 'running',
+              errorMessage: `Recovery paused: ${errorMessage}`,
+            })
+            return
+          }
+
+          updateHistoryItem(entry.id, {
+            status: 'failed',
+            errorMessage,
+            completedAt: Date.now(),
+          })
+          playGenerationFailureSound()
+        }
+      })()
+    })
+
+    return () => {
+      isCancelled = true
+    }
+  }, [archiveVideoToFirebase, history, runner, studioActiveFolderId, studioProjectId, updateHistoryItem])
 
   const finalRequestBodyPreview = useMemo(() => {
     if (currentComposerPreview) {
@@ -87,7 +315,11 @@ export function useLabNewLayoutDirectApi() {
     )
   }
 
-  const submitDirectJson = useCallback(async () => {
+  const reloadComposerPreview = useCallback(() => {
+    requestComposerPreviewRefresh()
+  }, [requestComposerPreviewRefresh])
+
+  const submitDirectJson = useCallback(() => {
     let parsed: Record<string, unknown>
     try {
       parsed = JSON.parse(directRequestJson)
@@ -96,8 +328,7 @@ export function useLabNewLayoutDirectApi() {
       return
     }
 
-    setIsGenerating(true)
-    setGenerationStatus('Preparing request...')
+    setGenerationStatus('')
 
     const endpoint = typeof parsed.endpoint === 'string' ? parsed.endpoint : '/api/v1/model/generateVideo'
     const body = typeof parsed.body === 'object' && parsed.body ? parsed.body as Record<string, unknown> : parsed
@@ -120,10 +351,10 @@ export function useLabNewLayoutDirectApi() {
         ratio: typeof body.ratio === 'string' ? body.ratio : '16:9',
         duration: readDurationValue(body.duration, 15),
         resolution: typeof body.resolution === 'string' ? body.resolution : '480p',
-        generateAudio: readBooleanValue(body.generate_audio ?? body.generateAudio, false),
+        generateAudio: readBooleanValue(body.generate_audio ?? body.generateAudio, true),
       }
     }
-    const historyId = Date.now().toString()
+    const historyId = createClientUniqueId('direct-api-history')
 
     addHistoryItem({
       id: historyId,
@@ -139,12 +370,14 @@ export function useLabNewLayoutDirectApi() {
       requestPayload: request.body,
       sourceLabel: 'Direct API',
       status: 'queued',
+      projectId: studioProjectId || undefined,
+      folderId: studioActiveFolderId || undefined,
     })
 
-    try {
-      const result = await runner.runGeneration(request, {
+    void (async () => {
+      try {
+        const result = await runner.runGeneration(request, {
         onQueued: ({ taskId, submittedAt, settings }) => {
-          setGenerationStatus('Queued...')
           updateHistoryItem(historyId, {
             status: 'running',
             taskId,
@@ -157,46 +390,61 @@ export function useLabNewLayoutDirectApi() {
             generateAudio: settings.generateAudio,
           })
         },
-        onStatus: (statusText) => {
-          setGenerationStatus(statusText)
-        }
-      })
-
-      if (result) {
-        setGenerationStatus('Completed!')
-        updateHistoryItem(historyId, {
-          status: 'success',
-          resultUrl: result.resultUrl,
-          taskId: result.taskId,
-          submittedAt: result.submittedAt,
-          receivedAt: result.receivedAt,
-          completedAt: result.receivedAt,
-          provider: result.settings.provider,
-          model: result.settings.model,
-          ratio: result.settings.ratio,
-          resolution: result.settings.resolution,
-          duration: result.settings.duration,
-          generateAudio: result.settings.generateAudio,
+          onStatus: () => {
+            // Progress is intentionally shown in History Gallery cards.
+          },
         })
+
+        if (result) {
+          updateHistoryItem(historyId, {
+            status: 'success',
+            resultUrl: result.resultUrl,
+            taskId: result.taskId,
+            submittedAt: result.submittedAt,
+            receivedAt: result.receivedAt,
+            completedAt: result.receivedAt,
+            provider: result.settings.provider,
+            model: result.settings.model,
+            ratio: result.settings.ratio,
+            resolution: result.settings.resolution,
+            duration: result.settings.duration,
+            generateAudio: result.settings.generateAudio,
+          })
+          playGenerationSuccessSound()
+
+          const archiveProjectId = (studioProjectId || '').trim()
+          const archiveFolderId = (studioActiveFolderId || '').trim() || null
+          void (async () => {
+            const archivedUrl = await archiveVideoToFirebase(
+              result.resultUrl,
+              `direct-api-${historyId}-${Date.now()}`,
+              archiveProjectId,
+              archiveFolderId,
+            )
+
+            if (archivedUrl && archivedUrl !== result.resultUrl) {
+              updateHistoryItem(historyId, { resultUrl: archivedUrl })
+            }
+          })()
+        }
+      } catch (error) {
+        console.error(error)
+        const errorMessage = error instanceof Error ? error.message : 'Generation failed.'
+        setGenerationStatus(errorMessage)
+        playGenerationFailureSound()
+        updateHistoryItem(historyId, { status: 'failed', errorMessage, completedAt: Date.now() })
       }
-    } catch (error) {
-      console.error(error)
-      const errorMessage = error instanceof Error ? error.message : 'Generation failed.'
-      setGenerationStatus(errorMessage)
-      updateHistoryItem(historyId, { status: 'failed', errorMessage, completedAt: Date.now() })
-    } finally {
-      setIsGenerating(false)
-    }
-  }, [addHistoryItem, directRequestJson, runner, updateHistoryItem])
+    })()
+  }, [addHistoryItem, archiveVideoToFirebase, directRequestJson, runner, studioActiveFolderId, studioProjectId, updateHistoryItem])
 
   return {
     directRequestJson,
     finalRequestBodyPreview,
     resetDirectRequestJson,
+    reloadComposerPreview,
     loadFullRequestJson,
     setDirectRequestJson,
     submitDirectJson,
-    isGenerating,
     generationStatus,
   }
 }

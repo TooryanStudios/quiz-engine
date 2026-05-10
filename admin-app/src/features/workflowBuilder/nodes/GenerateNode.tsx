@@ -1,8 +1,9 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react'
-import { useEdges, useReactFlow } from '@xyflow/react'
-import { CheckCircle, Clock, Copy, ExternalLink, Loader, Sparkles, XCircle } from 'lucide-react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Handle, Position, useEdges, useReactFlow } from '@xyflow/react'
+import { CheckCircle, Clock, Copy, ExternalLink, Film, Loader, Sparkles, XCircle } from 'lucide-react'
 import { useWorkflowBuilderNode } from '../WorkflowBuilderCanvasContext'
 import { WorkflowNodeFrame } from './WorkflowNodeFrame'
+import { PromptRefineButton } from './PromptRefineButton'
 import type { WorkflowBuilderNodeProps } from '../types'
 
 const INPUT_SOCKETS = [
@@ -74,6 +75,7 @@ function useGenerateNode(nodeId: string, data: WorkflowBuilderNodeProps['data'])
     setAudio: (value: boolean) => patchNode({ genAudio: value }),
     setInputMode: (value: 'reference' | 'image') => patchNode({ genInputMode: value }),
     setExtendMode: (value: 'before' | 'after') => patchNode({ extendMode: value }),
+    setTopHeight: (value: number) => patchNode({ genTopHeight: value }),
   }
 }
 
@@ -90,9 +92,14 @@ function QueueThumbStatus({ status }: { status: QueueItem['status'] }) {
   return <span className="workflow-builder-node__queue-thumb-status workflow-builder-node__queue-thumb-status--queued"><Clock className="wf-pulse" size={10} /></span>
 }
 
-function GenerationListItem({ item, isActive, onClick }: { item: QueueItem; isActive: boolean; onClick: () => void }) {
+function GenerationListItem({ item, isActive, onClick, isConnectable }: { item: QueueItem; isActive: boolean; onClick: () => void; isConnectable: boolean }) {
   const time = item.timestamp ? new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'
-  const videoSrc = item.videoUrl || item.firebaseVideoUrl || item.sourceVideoUrl || ''
+  const rawVideoSrc = item.videoUrl || item.firebaseVideoUrl || item.sourceVideoUrl || ''
+  // Append a media fragment so browsers paint the first frame as a thumbnail
+  // even when only metadata is preloaded (Firebase Storage URLs already include a query string).
+  const videoSrc = rawVideoSrc
+    ? `${rawVideoSrc}${rawVideoSrc.includes('#') ? '' : '#t=0.1'}`
+    : ''
   const label = item.prompt ? (item.prompt.length > 60 ? item.prompt.slice(0, 60) + '…' : item.prompt) : `Run at ${time}`
   const meta = [item.genModel, item.genDuration ? `${item.genDuration}s` : null].filter(Boolean).join(' · ')
 
@@ -147,6 +154,27 @@ function GenerationListItem({ item, isActive, onClick }: { item: QueueItem; isAc
           {item.status === 'queued' && !displayUrl && <Clock size={14} className="wf-pulse wf-gen-list-item__badge--queued" />}
         </div>
       </div>
+      {displayUrl ? (
+        <Handle
+          id={`video-history-${item.id}`}
+          type="source"
+          position={Position.Right}
+          isConnectable={isConnectable}
+          className="workflow-builder-node__handle workflow-builder-node__handle--output wf-gen-list-item__handle"
+        >
+          <Film size={30} />
+        </Handle>
+      ) : (
+        <Handle
+          id={`video-history-${item.id}`}
+          type="source"
+          position={Position.Right}
+          isConnectable={false}
+          className="workflow-builder-node__handle workflow-builder-node__handle--output wf-gen-list-item__handle wf-gen-list-item__handle--inactive"
+        >
+          <Film size={30} />
+        </Handle>
+      )}
     </div>
   )
 }
@@ -290,6 +318,32 @@ export const GenerateNode = memo(function GenerateNode({ id, data, isConnectable
   const genAudio = data.genAudio !== false
   const genInputMode = (data.genInputMode as 'reference' | 'image' | undefined) || 'reference'
 
+  // Resizable top section (prompt + video preview). Drag the divider to adjust.
+  const persistedTopHeight = (data.genTopHeight as number | undefined)
+  const [topHeight, setTopHeight] = useState<number>(persistedTopHeight ?? 360)
+  useEffect(() => {
+    if (typeof persistedTopHeight === 'number') setTopHeight(persistedTopHeight)
+  }, [persistedTopHeight])
+  const dragRef = useRef<{ startY: number; startHeight: number } | null>(null)
+  const handleDividerPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.stopPropagation()
+    e.preventDefault()
+    const target = e.currentTarget
+    target.setPointerCapture(e.pointerId)
+    dragRef.current = { startY: e.clientY, startHeight: topHeight }
+  }, [topHeight])
+  const handleDividerPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragRef.current) return
+    const next = Math.max(180, Math.min(900, dragRef.current.startHeight + (e.clientY - dragRef.current.startY)))
+    setTopHeight(next)
+  }, [])
+  const handleDividerPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragRef.current) return
+    e.currentTarget.releasePointerCapture(e.pointerId)
+    dragRef.current = null
+    state.setTopHeight(topHeight)
+  }, [state, topHeight])
+
   return (
     <WorkflowNodeFrame
       nodeId={id}
@@ -321,7 +375,10 @@ export const GenerateNode = memo(function GenerateNode({ id, data, isConnectable
         </div>
       )}
 
-      <div className="workflow-builder-node__gen-cols">
+      <div
+        className="workflow-builder-node__gen-cols"
+        style={{ height: `${topHeight}px`, minHeight: `${topHeight}px` }}
+      >
         <div className="workflow-builder-node__gen-col">
           <div className="workflow-builder-node__prompt-status-container" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
             <div 
@@ -348,6 +405,16 @@ export const GenerateNode = memo(function GenerateNode({ id, data, isConnectable
                 Clear
               </button>
             )}
+            <div style={{ marginLeft: 'auto' }}>
+              <PromptRefineButton
+                prompt={localPrompt}
+                disabled={isPromptSocketConnected}
+                onApply={(refined) => {
+                  setLocalPrompt(refined)
+                  state.setPrompt(refined)
+                }}
+              />
+            </div>
           </div>
           <textarea
             className="workflow-builder-node__prompt-input nodrag"
@@ -389,6 +456,19 @@ export const GenerateNode = memo(function GenerateNode({ id, data, isConnectable
         </div>
       </div>
 
+      <div
+        className="workflow-builder-node__gen-divider nodrag"
+        onPointerDown={handleDividerPointerDown}
+        onPointerMove={handleDividerPointerMove}
+        onPointerUp={handleDividerPointerUp}
+        onPointerCancel={handleDividerPointerUp}
+        title="Drag to resize the top section"
+        role="separator"
+        aria-orientation="horizontal"
+      >
+        <span className="workflow-builder-node__gen-divider-grip" />
+      </div>
+
       {genQueue.length > 0 && (
         <div className="wf-gen-list nodrag">
           <div className="wf-gen-list__header">
@@ -401,6 +481,7 @@ export const GenerateNode = memo(function GenerateNode({ id, data, isConnectable
                 key={item.id}
                 item={item}
                 isActive={item.id === activeQueueId}
+                isConnectable={isConnectable}
                 onClick={() => handleThumbClick({ id: item.id, src: item.videoUrl || item.firebaseVideoUrl || item.sourceVideoUrl || '', status: item.status, title: item.statusText || item.prompt || item.status })}
               />
             ))}

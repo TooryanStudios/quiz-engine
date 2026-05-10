@@ -1,8 +1,13 @@
 {
   "compilerOptions": {
     "baseUrl": ".",
+    "forceConsistentCasingInFileNames": true,
     "paths": {
-      "components/*": ["src/components/*"]
+      "components/*": ["src/components/*"],
+      "@qyan/api-client/http-renderer": ["packages/api-client/src/http-renderer.ts"],
+      "@qyan/firebase-client": ["packages/firebase-client/src/index.ts"],
+      "@qyan/platform-constants": ["packages/platform-constants/src/index.ts"],
+      "@qyan/shared-types": ["packages/shared-types/src/index.ts"]
     },
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
     "target": "ES2022",

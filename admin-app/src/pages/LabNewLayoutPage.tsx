@@ -14,15 +14,15 @@ import type {
   IDockviewPanelProps,
   ReactContextMenuItemConfig,
 } from 'dockview-react'
-import { loadUserPrefs, saveUserPrefs } from '../lib/adminRepo'
+import { loadUserPrefs, saveUserPrefs, saveDefaultLabNewLayout, loadDefaultLabNewLayout } from '../lib/adminRepo'
 import {
+  deleteProjectReferenceLibraryItem,
   loadProjectFlowCanvasState,
   moveProjectFlowCanvas,
   renameProjectFlowCanvas,
   saveProjectFlowCanvasState,
-  saveProjectNewLayoutConfig,
+  saveProjectReferenceLibraryItem,
   subscribeToProjectFlowCanvases,
-  subscribeToProjectNewLayoutConfig,
   type StudioProjectFlowCanvasSummary,
 } from '../lib/studioService'
 import { LabNewLayoutComposerPanel } from './LabNewLayout/LabNewLayoutComposerPanel'
@@ -31,17 +31,21 @@ import { LabNewLayoutExplorerEdgePanel } from './LabNewLayout/LabNewLayoutExplor
 import { LabNewLayoutUiSettingsContext } from './LabNewLayout/LabNewLayoutUiSettingsContext'
 import { LabNewLayoutUiSettingsEdgePanel } from './LabNewLayout/LabNewLayoutUiSettingsEdgePanel'
 import { LabNewLayoutUserSettingsEdgePanel } from './LabNewLayout/LabNewLayoutUserSettingsEdgePanel'
+import { useGenerationRunner, type GenerationProvider, type GenerationRequestSettings } from '../hooks/useGenerationRunner'
 import { useLabNewLayoutHistoryGallery, type LabNewLayoutGalleryHistoryEntry } from './LabNewLayout/useLabNewLayoutHistoryGallery'
 import { useLabNewLayoutStore } from './LabNewLayout/useLabNewLayoutStore'
-import { auth } from '../lib/firebase'
+import { calculateUrlExpiry, calculateGenerationMetrics, getExpiryStatusLabel, getExpiryStatusClass, formatModelName } from './LabNewLayout/utils/urlExpiryUtils'
+import { auth, firebaseConfig, storage } from '../lib/firebase'
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { LabNewLayoutDataContext, useLabNewLayoutData, useLabNewLayoutWorkspace } from './LabNewLayout/useLabNewLayoutWorkspace'
+import type { StoryBibleScene } from './LabNewLayout/useLabNewLayoutWorkspace'
 import {
   WorkflowBuilderCanvas,
   createWorkflowBuilderSampleWorkflow,
   type WorkflowBuilderDefinition,
   type WorkflowBuilderNotice,
 } from '../features/workflowBuilder'
-import type { FolderSummary } from '../types/studio'
+import type { FolderSummary, StudioReferenceAsset } from '../types/studio'
 import { useToast } from '../lib/ToastContext'
 import 'dockview-react/dist/styles/dockview.css'
 import './LabNewLayoutPage.css'
@@ -57,11 +61,60 @@ type PanelSuggestionParams = {
   phase?: string
 }
 
-type WorkspaceHomeInnerParams = {
-  copy: string
+const FLOW_ROOT_FOLDER_VALUE = '__root__'
+const CHATBOT_BASE = (import.meta.env.VITE_CHATBOT_API_URL as string | undefined) || ''
+
+const normalizeRecoveryProvider = (provider: string | undefined): GenerationProvider => (
+  (() => {
+    const normalized = (provider || '').trim().toLowerCase()
+    if (!normalized) return 'atlas' as const
+    if (normalized === 'atlas' || normalized.includes('atlas') || normalized.includes('seedance')) return 'atlas' as const
+    if (normalized === 'grok' || normalized.includes('grok')) return 'grok' as const
+    if (normalized === 'byteplus' || normalized.includes('byteplus') || normalized.includes('byte-plus')) return 'byteplus' as const
+    return 'atlas' as const
+  })()
+)
+
+const resolveRecoveryModel = (entry: LabNewLayoutGalleryHistoryEntry, provider: GenerationProvider): string => {
+  const payloadModel = entry.requestPayload && typeof entry.requestPayload.model === 'string'
+    ? entry.requestPayload.model.trim()
+    : ''
+  const sourceModel = (payloadModel || entry.model || '').trim()
+  const lower = sourceModel.toLowerCase()
+
+  if (provider === 'byteplus') {
+    return sourceModel || 'byteplus'
+  }
+
+  if (!sourceModel) {
+    return 'bytedance/seedance-2.0-fast'
+  }
+  if (sourceModel.includes('/')) {
+    return sourceModel
+  }
+  if (lower.includes('seedance-2.0-fast') || lower.includes('atlas cloud 2.0 fast')) {
+    return 'bytedance/seedance-2.0-fast'
+  }
+  if (lower.includes('seedance-2.0') || lower.includes('atlas cloud 2.0')) {
+    return 'bytedance/seedance-2.0'
+  }
+  if (lower.includes('seedance-1.5')) {
+    return 'bytedance/seedance-1.5-i2v'
+  }
+  if (lower.startsWith('seedance-')) {
+    return `bytedance/${lower}`
+  }
+  return 'bytedance/seedance-2.0-fast'
 }
 
-const FLOW_ROOT_FOLDER_VALUE = '__root__'
+const buildRecoverySettings = (entry: LabNewLayoutGalleryHistoryEntry): GenerationRequestSettings => ({
+  provider: normalizeRecoveryProvider(entry.provider),
+  model: resolveRecoveryModel(entry, normalizeRecoveryProvider(entry.provider)),
+  ratio: entry.ratio || '16:9',
+  duration: typeof entry.duration === 'number' ? entry.duration : 15,
+  resolution: entry.resolution || '480p',
+  generateAudio: entry.generateAudio !== false,
+})
 
 function resolveFolderPath(folderId: string | null, folders: FolderSummary[]) {
   if (!folderId) {
@@ -496,55 +549,559 @@ function PlaceholderPanel(props: IDockviewPanelProps<PanelSuggestionParams>) {
   return <div className="lab-newlayout-placeholder-panel">{props.params.label ?? props.api.title}</div>
 }
 
-function WorkspaceHomeInnerPanel(props: IDockviewPanelProps<WorkspaceHomeInnerParams>) {
-  // PERF TEST: content stubbed
-  return <div className="lab-newlayout-placeholder-panel">{props.params.copy}</div>
+function WorkspaceHomeMetricCard({
+  label,
+  value,
+  detail,
+}: {
+  label: string
+  value: string | number
+  detail: string
+}) {
+  return (
+    <article className="lab-newlayout-workspace-home-metric-card">
+      <div className="lab-newlayout-workspace-home-metric-label">{label}</div>
+      <div className="lab-newlayout-workspace-home-metric-value">{value}</div>
+      <p className="lab-newlayout-workspace-home-metric-detail">{detail}</p>
+    </article>
+  )
 }
 
-const workspaceHomeInnerComponents = {
-  workspaceHomeInner: WorkspaceHomeInnerPanel,
+type DraftSceneItem = {
+  id: string
+  title: string
+  text: string
+  durationSec: number
+  folderId: string
 }
 
 function WorkspaceHomePanel(props: IDockviewPanelProps<PanelSuggestionParams>) {
-  const initializedRef = useRef(false)
+  const setComposerReuseSeed = useLabNewLayoutStore((state) => state.setComposerReuseSeed)
+  const { showToast } = useToast()
+  const {
+    studioProjectId,
+    studioProjects,
+    studioProjectsLoading,
+    studioFolders,
+    studioFoldersLoading,
+    studioActiveFolderId,
+    storyBibleData,
+    updateStoryBibleData,
+  } = useLabNewLayoutData()
+  const [isConfigDialogOpen, setConfigDialogOpen] = useState(false)
+  const [draftStoryText, setDraftStoryText] = useState('')
+  const [draftScenes, setDraftScenes] = useState<DraftSceneItem[]>([])
+  const [selectedDraftSceneId, setSelectedDraftSceneId] = useState<string | null>(null)
+  const [renamingSceneId, setRenamingSceneId] = useState<string | null>(null)
 
-  const handleReady = (event: DockviewReadyEvent) => {
-    if (initializedRef.current) {
+  const selectedProject = useMemo(
+    () => studioProjects.find((project) => project.id === studioProjectId) || null,
+    [studioProjectId, studioProjects],
+  )
+  const selectedFolder = useMemo(
+    () => studioFolders.find((folder) => folder.id === studioActiveFolderId) || null,
+    [studioActiveFolderId, studioFolders],
+  )
+  const selectedFolderPath = useMemo(
+    () => resolveFolderPath(studioActiveFolderId, studioFolders),
+    [studioActiveFolderId, studioFolders],
+  )
+  const scenesInFolder = useMemo(() => {
+    if (!studioActiveFolderId) {
+      return storyBibleData.scenes.length
+    }
+
+    return storyBibleData.scenes.filter((scene) => scene.folderId === studioActiveFolderId).length
+  }, [storyBibleData.scenes, studioActiveFolderId])
+  const episodesInFolder = useMemo(() => {
+    if (!studioActiveFolderId) {
+      return storyBibleData.episodes.length
+    }
+
+    return storyBibleData.episodes.filter((episode) => episode.folderId === studioActiveFolderId).length
+  }, [storyBibleData.episodes, studioActiveFolderId])
+  const recentChapters = useMemo(() => {
+    if (!studioActiveFolderId) {
+      return storyBibleData.chapters.slice(0, 5)
+    }
+
+    return storyBibleData.chapters.filter((chapter) => chapter.folderId === studioActiveFolderId).slice(0, 5)
+  }, [storyBibleData.chapters, studioActiveFolderId])
+  const scopedScenes = useMemo(() => {
+    if (!studioActiveFolderId) {
+      return storyBibleData.scenes
+    }
+
+    return storyBibleData.scenes.filter((scene) => scene.folderId === studioActiveFolderId)
+  }, [storyBibleData.scenes, studioActiveFolderId])
+  const scopedStorySummary = useMemo(() => {
+    if (!studioActiveFolderId) {
+      return storyBibleData.summary
+    }
+
+    return storyBibleData.folderSummaries[studioActiveFolderId] || ''
+  }, [storyBibleData.folderSummaries, storyBibleData.summary, studioActiveFolderId])
+  const homeTitle = props.params.label ?? props.api.title
+  const selectedDraftScene = useMemo(
+    () => draftScenes.find((scene) => scene.id === selectedDraftSceneId) || null,
+    [draftScenes, selectedDraftSceneId],
+  )
+
+  const openConfigDialog = useCallback(() => {
+    setDraftStoryText(scopedStorySummary)
+    const nextDraftScenes = scopedScenes.map((scene) => ({
+      id: scene.id,
+      title: scene.title || scene.id,
+      text: scene.scenario || scene.visual || scene.action || scene.script || '',
+      durationSec: scene.durationSec,
+      folderId: scene.folderId,
+    }))
+    setDraftScenes(nextDraftScenes)
+    setSelectedDraftSceneId(nextDraftScenes[0]?.id || null)
+    setRenamingSceneId(null)
+    setConfigDialogOpen(true)
+  }, [scopedScenes, scopedStorySummary])
+
+  const updateDraftSceneText = useCallback((sceneId: string, text: string) => {
+    setDraftScenes((current) => current.map((scene) => (
+      scene.id === sceneId
+        ? { ...scene, text }
+        : scene
+    )))
+  }, [])
+
+  const updateDraftSceneTitle = useCallback((sceneId: string, title: string) => {
+    setDraftScenes((current) => current.map((scene) => (
+      scene.id === sceneId
+        ? { ...scene, title }
+        : scene
+    )))
+  }, [])
+
+  const handleAddScene = useCallback(() => {
+    const nextId = `scene-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+    const nextScene: DraftSceneItem = {
+      id: nextId,
+      title: `Scene ${draftScenes.length + 1}`,
+      text: '',
+      durationSec: 8,
+      folderId: studioActiveFolderId || '',
+    }
+    setDraftScenes((current) => [...current, nextScene])
+    setSelectedDraftSceneId(nextId)
+    setRenamingSceneId(nextId)
+  }, [draftScenes.length, studioActiveFolderId])
+
+  const handleRemoveSelectedScene = useCallback(() => {
+    if (!selectedDraftScene) return
+    const approved = typeof window === 'undefined'
+      ? true
+      : window.confirm(`Remove "${selectedDraftScene.title || selectedDraftScene.id}"?`)
+    if (!approved) return
+
+    setDraftScenes((current) => {
+      const nextScenes = current.filter((scene) => scene.id !== selectedDraftScene.id)
+      setSelectedDraftSceneId((currentSelectedId) => {
+        if (currentSelectedId !== selectedDraftScene.id) {
+          return currentSelectedId
+        }
+        return nextScenes[0]?.id || null
+      })
+      return nextScenes
+    })
+    setRenamingSceneId(null)
+  }, [selectedDraftScene])
+
+  const handleSaveConfig = useCallback(() => {
+    updateStoryBibleData((current) => {
+      const normalizedStory = draftStoryText.trim()
+      const normalizedDraftScenes: StoryBibleScene[] = draftScenes.map((scene, index) => {
+        const nextText = scene.text.trim()
+        const safeTitle = scene.title.trim() || `Scene ${index + 1}`
+        return {
+          id: scene.id,
+          folderId: studioActiveFolderId || scene.folderId || '',
+          title: safeTitle,
+          durationSec: scene.durationSec || 8,
+          category: '',
+          discipline: '',
+          script: '',
+          scenario: nextText,
+          visualThumbnailUrl: '',
+          visual: nextText,
+          action: '',
+          characterIds: [],
+        }
+      })
+
+      const nextScenes = current.scenes.filter((scene) => {
+        if (!studioActiveFolderId) {
+          return false
+        }
+        return scene.folderId !== studioActiveFolderId
+      }).concat(normalizedDraftScenes)
+
+      if (!studioActiveFolderId) {
+        return {
+          ...current,
+          summary: normalizedStory,
+          scenes: nextScenes,
+        }
+      }
+
+      return {
+        ...current,
+        folderSummaries: {
+          ...current.folderSummaries,
+          [studioActiveFolderId]: normalizedStory,
+        },
+        scenes: nextScenes,
+      }
+    })
+    setConfigDialogOpen(false)
+  }, [draftScenes, draftStoryText, studioActiveFolderId, updateStoryBibleData])
+
+  const resolveSceneText = useCallback((scene: StoryBibleScene) => {
+    return (scene.scenario || scene.visual || scene.action || scene.script || '').trim()
+  }, [])
+
+  const handleCopySceneText = useCallback(async (scene: StoryBibleScene) => {
+    const text = resolveSceneText(scene)
+    if (!text) {
+      showToast({ message: 'Scene has no text to copy', type: 'info' })
       return
     }
 
-    initializedRef.current = true
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text)
+        showToast({ message: 'Scene text copied', type: 'success' })
+        return
+      }
+      throw new Error('Clipboard API unavailable')
+    } catch {
+      showToast({ message: 'Could not copy scene text', type: 'error' })
+    }
+  }, [resolveSceneText, showToast])
 
-    const tabOne = event.api.addPanel({
-      id: `${props.api.id}-tab-1`,
-      component: 'workspaceHomeInner',
-      title: 'Tab 1',
-      params: {
-        copy: 'Workspace Home subdivision panel 1.',
-      },
-    })
+  const handleSendSceneToComposer = useCallback((scene: StoryBibleScene) => {
+    const text = resolveSceneText(scene)
+    if (!text) {
+      showToast({ message: 'Scene has no text to send', type: 'info' })
+      return
+    }
 
-    event.api.addPanel({
-      id: `${props.api.id}-tab-2`,
-      component: 'workspaceHomeInner',
-      title: 'Tab 2',
-      position: {
-        referencePanel: tabOne,
-        direction: 'below',
-      },
-      params: {
-        copy: 'Workspace Home subdivision panel 2.',
-      },
+    setComposerReuseSeed({
+      id: `scene-prompt-${scene.id}-${Date.now()}`,
+      prompt: text,
     })
-  }
+    showToast({ message: 'Scene text sent to Composer prompt', type: 'success' })
+  }, [resolveSceneText, setComposerReuseSeed, showToast])
+
+  const handlePasteSceneText = useCallback(async (scene: StoryBibleScene) => {
+    try {
+      if (typeof navigator === 'undefined' || !navigator.clipboard || !navigator.clipboard.readText) {
+        throw new Error('Clipboard API unavailable')
+      }
+
+      const pastedText = await navigator.clipboard.readText()
+      if (!pastedText.trim()) {
+        showToast({ message: 'Clipboard is empty', type: 'info' })
+        return
+      }
+
+      updateStoryBibleData((current) => ({
+        ...current,
+        scenes: current.scenes.map((candidate) => (
+          candidate.id === scene.id
+            ? {
+                ...candidate,
+                scenario: pastedText,
+                visual: pastedText,
+              }
+            : candidate
+        )),
+      }))
+
+      showToast({ message: 'Scene text replaced from clipboard', type: 'success' })
+    } catch {
+      showToast({ message: 'Could not read clipboard text', type: 'error' })
+    }
+  }, [showToast, updateStoryBibleData])
+
+  const configDialog = isConfigDialogOpen && typeof document !== 'undefined'
+    ? createPortal(
+      <div className="lab-newlayout-workspace-home-config-backdrop" onClick={() => setConfigDialogOpen(false)}>
+        <div
+          className="lab-newlayout-workspace-home-config-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Configure story and scenes"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="lab-newlayout-workspace-home-config-head">
+            <div>
+              <div className="lab-newlayout-history-pane-title">Configure Story + Scenes</div>
+              <p className="lab-newlayout-workspace-home-copy lab-newlayout-workspace-home-copy--muted">
+                Scope: {selectedFolderPath.names.join(' / ') || selectedFolder?.name || 'Project root'}
+              </p>
+            </div>
+          </div>
+
+          <div className="lab-newlayout-workspace-home-config-body">
+            <label className="lab-newlayout-workspace-home-config-field">
+              <span>Story Summary</span>
+              <textarea
+                value={draftStoryText}
+                onChange={(event) => setDraftStoryText(event.target.value)}
+                placeholder="Paste story summary text for this scope"
+              />
+            </label>
+
+            <div className="lab-newlayout-workspace-home-config-scene-shell">
+              <aside className="lab-newlayout-workspace-home-config-scene-nav" aria-label="Scene list">
+                <div className="lab-newlayout-workspace-home-config-scene-nav-head">
+                  <span>Scenes</span>
+                  <div className="lab-newlayout-workspace-home-config-scene-nav-actions">
+                    <button type="button" className="lab-newlayout-history-toolbar-btn" onClick={handleAddScene}>Add</button>
+                    <button
+                      type="button"
+                      className="lab-newlayout-history-toolbar-btn"
+                      onClick={handleRemoveSelectedScene}
+                      disabled={!selectedDraftScene}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+
+                <div className="lab-newlayout-workspace-home-config-scene-nav-list">
+                  {draftScenes.length > 0 ? draftScenes.map((scene) => (
+                    renamingSceneId === scene.id ? (
+                      <div
+                        key={scene.id}
+                        className={`lab-newlayout-workspace-home-config-scene-item${scene.id === selectedDraftSceneId ? ' is-active' : ''}`}
+                      >
+                        <input
+                          type="text"
+                          value={scene.title}
+                          autoFocus
+                          aria-label="Rename scene"
+                          onChange={(event) => updateDraftSceneTitle(scene.id, event.target.value)}
+                          onBlur={() => setRenamingSceneId(null)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault()
+                              setRenamingSceneId(null)
+                            }
+                            if (event.key === 'Escape') {
+                              event.preventDefault()
+                              setRenamingSceneId(null)
+                            }
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <button
+                        key={scene.id}
+                        type="button"
+                        className={`lab-newlayout-workspace-home-config-scene-item${scene.id === selectedDraftSceneId ? ' is-active' : ''}`}
+                        onClick={() => {
+                          setSelectedDraftSceneId(scene.id)
+                          setRenamingSceneId(null)
+                        }}
+                        onDoubleClick={() => {
+                          setSelectedDraftSceneId(scene.id)
+                          setRenamingSceneId(scene.id)
+                        }}
+                      >
+                        <span>{scene.title || scene.id}</span>
+                      </button>
+                    )
+                  )) : (
+                    <p className="lab-newlayout-workspace-home-copy lab-newlayout-workspace-home-copy--muted">
+                      No scenes yet.
+                    </p>
+                  )}
+                </div>
+              </aside>
+
+              <div className="lab-newlayout-workspace-home-config-scene-editor">
+                {selectedDraftScene ? (
+                  <label className="lab-newlayout-workspace-home-config-field">
+                    <span>{selectedDraftScene.title || selectedDraftScene.id}</span>
+                    <textarea
+                      value={selectedDraftScene.text}
+                      onChange={(event) => updateDraftSceneText(selectedDraftScene.id, event.target.value)}
+                      placeholder="Paste scene text"
+                    />
+                  </label>
+                ) : (
+                  <p className="lab-newlayout-workspace-home-copy lab-newlayout-workspace-home-copy--muted">
+                    Select a scene from the left list.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="lab-newlayout-workspace-home-config-actions">
+            <button type="button" className="lab-newlayout-history-toolbar-btn" onClick={() => setConfigDialogOpen(false)}>
+              Cancel
+            </button>
+            <button type="button" className="lab-newlayout-history-toolbar-btn" onClick={handleSaveConfig}>
+              Save
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body,
+    )
+    : null
 
   return (
     <div className="lab-newlayout-panel lab-newlayout-panel--workspace-home">
-      <DockviewReact
-        components={workspaceHomeInnerComponents}
-        onReady={handleReady}
-        className="dockview-theme-abyss lab-newlayout-workspace-home-dockview"
-      />
+      <div className="lab-newlayout-workspace-home-shell">
+        <div className="lab-newlayout-history-top-fixed">
+          <div className="lab-newlayout-history-toolbar">
+            <div className="lab-newlayout-history-toolbar-stats">
+              <span className="lab-newlayout-history-stat">{homeTitle}</span>
+              <span className="lab-newlayout-history-toolbar-note">
+                {selectedProject ? selectedProject.name : (studioProjectsLoading ? 'Loading projects…' : 'No project selected')}
+              </span>
+              {selectedFolder || selectedFolderPath.names.length > 0 ? (
+                <span className="lab-newlayout-history-toolbar-note">
+                  {selectedFolderPath.names.join(' / ') || selectedFolder?.name || 'Project root'}
+                </span>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        <div className="lab-newlayout-workspace-home-layout">
+          <section className="lab-newlayout-history-section lab-newlayout-workspace-home-section">
+            <div className="lab-newlayout-history-pane-kicker">Current Context</div>
+            <div className="lab-newlayout-workspace-home-hero">
+              <div>
+                <div className="lab-newlayout-history-pane-title">
+                  {selectedProject?.name || 'Select a project to restore the workspace view'}
+                </div>
+                <p className="lab-newlayout-workspace-home-copy">
+                  {selectedProject?.description || 'Workspace Home keeps the main project context, story summary, and quick counts visible when you leave Flow focus mode.'}
+                </p>
+              </div>
+              <div className="lab-newlayout-workspace-home-pill">
+                {selectedFolderPath.names.join(' / ') || selectedFolder?.name || 'Project root'}
+              </div>
+            </div>
+            <div className="lab-newlayout-workspace-home-metrics">
+              <WorkspaceHomeMetricCard
+                label="Folders"
+                value={studioFolders.length}
+                detail={studioFoldersLoading ? 'Loading folder tree…' : 'Accessible folders in the current project.'}
+              />
+              <WorkspaceHomeMetricCard
+                label="Chapters"
+                value={recentChapters.length > 0 ? recentChapters.length : storyBibleData.chapters.length}
+                detail={studioActiveFolderId ? 'Visible in the selected folder.' : 'Available in the project story bible.'}
+              />
+              <WorkspaceHomeMetricCard
+                label="Episodes"
+                value={episodesInFolder}
+                detail={studioActiveFolderId ? 'Episodes scoped to this folder.' : 'Episodes available across the project.'}
+              />
+              <WorkspaceHomeMetricCard
+                label="Scenes"
+                value={scenesInFolder}
+                detail={studioActiveFolderId ? 'Scenes scoped to this folder.' : 'Scenes available across the project.'}
+              />
+            </div>
+          </section>
+
+          <section className="lab-newlayout-history-section lab-newlayout-workspace-home-section">
+            <div className="lab-newlayout-workspace-home-section-head">
+              <div className="lab-newlayout-history-pane-kicker">Story Snapshot</div>
+              <button type="button" className="lab-newlayout-history-toolbar-btn" onClick={openConfigDialog}>
+                Configure Story + Scenes
+              </button>
+            </div>
+            <div className="lab-newlayout-workspace-home-columns">
+              <div className="lab-newlayout-workspace-home-card">
+                <div className="lab-newlayout-history-pane-title">Story</div>
+                <p className="lab-newlayout-workspace-home-copy">
+                  {storyBibleData.title || 'No story title yet.'}
+                </p>
+                <p className="lab-newlayout-workspace-home-copy lab-newlayout-workspace-home-copy--muted">
+                  {scopedStorySummary || 'Use Configure Story + Scenes to paste summary text for this scope.'}
+                </p>
+              </div>
+
+              <div className="lab-newlayout-workspace-home-card">
+                <div className="lab-newlayout-history-pane-title">Recent Chapters</div>
+                {recentChapters.length > 0 ? (
+                  <div className="lab-newlayout-workspace-home-list">
+                    {recentChapters.map((chapter) => (
+                      <div key={chapter.id} className="lab-newlayout-workspace-home-list-item">
+                        <strong>{chapter.title || chapter.id}</strong>
+                        <span>{chapter.summary || 'No chapter summary yet.'}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="lab-newlayout-workspace-home-copy lab-newlayout-workspace-home-copy--muted">
+                    No chapters in the current scope.
+                  </p>
+                )}
+              </div>
+            </div>
+          </section>
+
+          <section className="lab-newlayout-history-section lab-newlayout-workspace-home-section">
+            <div className="lab-newlayout-history-pane-kicker">Scene Queue</div>
+            {scopedScenes.length > 0 ? (
+              <div className="lab-newlayout-workspace-home-scene-grid">
+                {scopedScenes.map((scene) => (
+                  <article key={scene.id} className="lab-newlayout-workspace-home-scene-card">
+                    <div className="lab-newlayout-workspace-home-scene-head">
+                      <strong>{scene.title || scene.id}</strong>
+                      <span>{scene.durationSec}s</span>
+                    </div>
+                    <p>{scene.visual || scene.action || scene.scenario || 'No scene detail yet.'}</p>
+                    <div className="lab-newlayout-workspace-home-scene-actions">
+                      <button
+                        type="button"
+                        className="lab-newlayout-history-toolbar-btn"
+                        onClick={() => { void handleCopySceneText(scene) }}
+                      >
+                        Copy Text
+                      </button>
+                      <button
+                        type="button"
+                        className="lab-newlayout-history-toolbar-btn"
+                        onClick={() => { void handlePasteSceneText(scene) }}
+                      >
+                        Paste Text
+                      </button>
+                      <button
+                        type="button"
+                        className="lab-newlayout-history-toolbar-btn"
+                        onClick={() => handleSendSceneToComposer(scene)}
+                      >
+                        Send to Composer
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="lab-newlayout-workspace-home-copy lab-newlayout-workspace-home-copy--muted">
+                No scenes available in the current scope.
+              </p>
+            )}
+          </section>
+        </div>
+      </div>
+      {configDialog}
     </div>
   )
 }
@@ -964,39 +1521,473 @@ function FlowPanel(props: IDockviewPanelProps<PanelSuggestionParams>) {
   )
 }
 
-const GALLERY_PAGE_SIZE = 6
+const GALLERY_PAGE_SIZE = 30
+
+const LIKED_HISTORY_LOCAL_KEY = 'lab-newlayout-liked-history-ids-v1'
+const LIKED_REFERENCES_LOCAL_KEY = 'lab-newlayout-liked-reference-urls-v1'
+const DOWNLOADED_HISTORY_LOCAL_KEY = 'lab-newlayout-downloaded-video-urls-v1'
+const DOWNLOADED_HISTORY_COUNTER_LOCAL_KEY = 'lab-newlayout-downloaded-video-counter-v1'
+const LAB_NEWLAYOUT_HISTORY_REF_MIME = 'application/x-lab-newlayout-reference'
+
+type DragReferencePayload = {
+  url: string
+  kind: 'image' | 'video'
+  name: string
+  fromHistory?: boolean
+}
+
+function inferReferenceMediaKindFromUrl(url: string): 'image' | 'video' | 'audio' {
+  const normalizedInput = url.trim().toLowerCase()
+  let normalized = normalizedInput
+  try {
+    normalized = decodeURIComponent(normalizedInput)
+  } catch {
+    // use raw URL when decoding fails
+  }
+  if (/(\.mp4|\.webm|\.mov|\.m4v|\.avi|\.mkv)(\?|#|$)/.test(normalized)) {
+    return 'video'
+  }
+  if (/(\.mp3|\.wav|\.ogg|\.m4a|\.aac|\.flac)(\?|#|$)/.test(normalized)) {
+    return 'audio'
+  }
+  return 'image'
+}
+
+function inferReferenceKindFromUrl(url: string): 'image' | 'video' {
+  return inferReferenceMediaKindFromUrl(url) === 'video' ? 'video' : 'image'
+}
+
+const toApiUrl = (apiBaseUrl: string, path: string): string => {
+  const base = (apiBaseUrl || '').trim().replace(/\/$/, '')
+  return base ? `${base}${path}` : path
+}
+
+const resolveProxySourceUrl = (url: string): string => {
+  const trimmed = url.trim()
+  if (!trimmed) return ''
+  try {
+    const fallbackOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
+    const parsed = new URL(trimmed, fallbackOrigin)
+    if (!parsed.pathname.endsWith('/api/video-proxy')) {
+      return trimmed
+    }
+    const original = parsed.searchParams.get('url') || ''
+    return original.trim() || trimmed
+  } catch {
+    return trimmed
+  }
+}
+
+const shouldBypassVideoProxy = (sourceUrl: string): boolean => {
+  try {
+    const fallbackOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
+    const parsed = new URL(sourceUrl, fallbackOrigin)
+    if (parsed.origin === fallbackOrigin) {
+      return false
+    }
+    return parsed.searchParams.has('token')
+      || parsed.searchParams.has('X-Amz-Algorithm')
+      || parsed.searchParams.has('X-Amz-Signature')
+      || parsed.searchParams.has('X-Tos-Algorithm')
+      || parsed.searchParams.has('X-Tos-Signature')
+      || parsed.searchParams.has('signature')
+      || parsed.searchParams.has('expires')
+  } catch {
+    return false
+  }
+}
+
+const buildVideoProxyUrl = (sourceUrl: string): string => {
+  const normalizedSourceUrl = resolveProxySourceUrl(sourceUrl)
+  if (!normalizedSourceUrl) return ''
+  if (shouldBypassVideoProxy(normalizedSourceUrl)) return ''
+  return `${toApiUrl(CHATBOT_BASE, '/api/video-proxy')}?url=${encodeURIComponent(normalizedSourceUrl)}`
+}
+
+const shouldPreferProxyForPreview = (resolution: string | null | undefined): boolean => {
+  const normalized = (resolution || '').trim().toLowerCase()
+  return normalized.includes('1080') || normalized.includes('full')
+}
+
+const sanitizeFileNameSegment = (value: string, fallback: string): string => {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/["'`]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+
+  return normalized || fallback
+}
+
+const summarizePromptForFileName = (prompt: string): string => {
+  const words = prompt
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 7)
+    .join('-')
+  return sanitizeFileNameSegment(words, 'prompt')
+}
+
+const extractSceneNameFromPayload = (payload: Record<string, unknown> | null): string => {
+  if (!payload) return ''
+  const keys = ['sceneName', 'sceneTitle', 'scene', 'activeSceneName', 'activeSceneTitle'] as const
+  for (const key of keys) {
+    const value = payload[key]
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim()
+    }
+  }
+  return ''
+}
+
+const readAndIncrementDownloadCounter = (): number => {
+  if (typeof window === 'undefined') return 1
+  try {
+    const raw = window.localStorage.getItem(DOWNLOADED_HISTORY_COUNTER_LOCAL_KEY)
+    const previous = raw ? Number(raw) : 0
+    const safePrevious = Number.isFinite(previous) && previous > 0 ? Math.floor(previous) : 0
+    const next = safePrevious + 1
+    window.localStorage.setItem(DOWNLOADED_HISTORY_COUNTER_LOCAL_KEY, String(next))
+    return next
+  } catch {
+    return Math.floor(Date.now() / 1000)
+  }
+}
+
+const detectDownloadExtension = (sourceUrl: string): string => {
+  try {
+    const parsed = new URL(sourceUrl, window.location.origin)
+    const pathParts = decodeURIComponent(parsed.pathname).split('/').filter(Boolean)
+    const lastPathPart = pathParts[pathParts.length - 1] || ''
+    const extension = (lastPathPart.match(/\.([a-z0-9]{2,5})$/i)?.[1] || '').toLowerCase()
+    if (extension) {
+      return extension
+    }
+  } catch {
+    // ignore URL parse errors
+  }
+  return 'mp4'
+}
+
+const buildDownloadFileName = (
+  entry: LabNewLayoutGalleryHistoryEntry,
+  sourceUrl: string,
+  context: {
+    projectName: string
+    folderName: string
+    sceneName: string
+    prefix: string
+  },
+): string => {
+  const projectSegment = sanitizeFileNameSegment(context.projectName, 'project')
+  const folderSegment = sanitizeFileNameSegment(context.folderName, 'folder')
+  const sceneSegment = sanitizeFileNameSegment(context.sceneName, 'scene')
+  const prefixSegment = sanitizeFileNameSegment(context.prefix, 'video')
+  const promptSegment = summarizePromptForFileName(entry.prompt)
+  const counter = String(readAndIncrementDownloadCounter()).padStart(4, '0')
+  const extension = detectDownloadExtension(sourceUrl)
+
+  return `${projectSegment}-${folderSegment}-${sceneSegment}-${prefixSegment}-${promptSegment}-${counter}.${extension}`
+}
+
+const triggerDownload = (href: string, fileName: string) => {
+  const anchor = document.createElement('a')
+  anchor.href = href
+  anchor.download = fileName
+  anchor.rel = 'noreferrer'
+  anchor.target = '_self'
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+}
+
+const downloadVideoToFile = async (sourceUrl: string, fileName: string): Promise<void> => {
+  const normalizedSourceUrl = resolveProxySourceUrl(sourceUrl)
+  if (!normalizedSourceUrl) {
+    throw new Error('No video URL was available to download.')
+  }
+
+  const proxyUrl = buildVideoProxyUrl(normalizedSourceUrl)
+  const response = await fetch(proxyUrl)
+  if (!response.ok) {
+    throw new Error(`Failed to download video (HTTP ${response.status}).`)
+  }
+
+  const blob = await response.blob()
+  const objectUrl = URL.createObjectURL(blob)
+  try {
+    triggerDownload(objectUrl, fileName)
+  } finally {
+    URL.revokeObjectURL(objectUrl)
+  }
+}
+
+function buildHistoryReferencePayload(entry: LabNewLayoutGalleryHistoryEntry): DragReferencePayload | null {
+  const mediaUrl = (entry.resultUrl || Object.values(entry.mediaUrls)[0] || '').trim()
+  if (!mediaUrl) return null
+
+  const matchedMediaKey = Object.entries(entry.mediaUrls).find(([, url]) => url === mediaUrl)?.[0] || ''
+  const kind: 'image' | 'video' = entry.resultUrl && mediaUrl === entry.resultUrl
+    ? 'video'
+    : matchedMediaKey.startsWith('video')
+      ? 'video'
+      : matchedMediaKey.startsWith('image')
+        ? 'image'
+        : inferReferenceKindFromUrl(mediaUrl)
+
+  return {
+    url: mediaUrl,
+    kind,
+    name: entry.model || `History ${kind}`,
+    fromHistory: true,
+  }
+}
+
+function readHistoryReferencePayload(dataTransfer: DataTransfer): DragReferencePayload | null {
+  const raw = dataTransfer.getData(LAB_NEWLAYOUT_HISTORY_REF_MIME)
+  if (!raw) return null
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<DragReferencePayload>
+    if (!parsed || typeof parsed.url !== 'string') return null
+    const url = parsed.url.trim()
+    if (!url) return null
+    const kind: 'image' | 'video' = parsed.kind === 'video' ? 'video' : 'image'
+    const name = typeof parsed.name === 'string' && parsed.name.trim() ? parsed.name.trim() : `History ${kind}`
+    const fromHistory = parsed.fromHistory === true
+    return { url, kind, name, fromHistory }
+  } catch {
+    return null
+  }
+}
+
+const readLikedHistoryIds = (): Set<string> => {
+  if (typeof window === 'undefined') return new Set()
+  try {
+    const raw = window.localStorage.getItem(LIKED_HISTORY_LOCAL_KEY)
+    if (!raw) return new Set()
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) {
+      return new Set(parsed.filter((value): value is string => typeof value === 'string'))
+    }
+  } catch {
+    // ignore parse errors
+  }
+  return new Set()
+}
+
+const writeLikedHistoryIds = (ids: Set<string>): void => {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(LIKED_HISTORY_LOCAL_KEY, JSON.stringify(Array.from(ids)))
+  } catch {
+    // ignore quota errors
+  }
+}
+
+function useLikedHistoryIds() {
+  const [likedIds, setLikedIds] = useState<Set<string>>(() => readLikedHistoryIds())
+
+  const toggle = useCallback((id: string) => {
+    setLikedIds((current) => {
+      const next = new Set(current)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      writeLikedHistoryIds(next)
+      return next
+    })
+  }, [])
+
+  return { likedIds, toggle }
+}
+
+const readDownloadedHistoryUrls = (): Set<string> => {
+  if (typeof window === 'undefined') return new Set()
+  try {
+    const raw = window.localStorage.getItem(DOWNLOADED_HISTORY_LOCAL_KEY)
+    if (!raw) return new Set()
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) {
+      return new Set(parsed.filter((value): value is string => typeof value === 'string' && value.trim().length > 0))
+    }
+  } catch {
+    // ignore parse errors
+  }
+  return new Set()
+}
+
+const writeDownloadedHistoryUrls = (urls: Set<string>): void => {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(DOWNLOADED_HISTORY_LOCAL_KEY, JSON.stringify(Array.from(urls)))
+  } catch {
+    // ignore quota errors
+  }
+}
+
+function useDownloadedHistoryUrls() {
+  const [downloadedUrls, setDownloadedUrls] = useState<Set<string>>(() => readDownloadedHistoryUrls())
+
+  const markDownloaded = useCallback((url: string) => {
+    const normalized = url.trim()
+    if (!normalized) return
+    setDownloadedUrls((current) => {
+      if (current.has(normalized)) return current
+      const next = new Set(current)
+      next.add(normalized)
+      writeDownloadedHistoryUrls(next)
+      return next
+    })
+  }, [])
+
+  const isDownloaded = useCallback((url: string) => downloadedUrls.has(url.trim()), [downloadedUrls])
+
+  return { markDownloaded, isDownloaded }
+}
 
 type GalleryCardProps = {
   entry: LabNewLayoutGalleryHistoryEntry
   onClick: () => void
+  isLiked: boolean
+  onToggleLike: (id: string) => void
+  isDownloaded: boolean
+  onDownloadVideo?: (entry: LabNewLayoutGalleryHistoryEntry, sourceUrl: string) => void
+  onReuse?: (entry: LabNewLayoutGalleryHistoryEntry) => void
+  onMoveToFirebase?: (entry: LabNewLayoutGalleryHistoryEntry) => void
+  isMovingToFirebase?: boolean
+  onExtendBefore?: (entry: LabNewLayoutGalleryHistoryEntry) => void
+  onExtendAfter?: (entry: LabNewLayoutGalleryHistoryEntry) => void
+  onDelete?: (id: string) => void
 }
 
-function GalleryCard({ entry, onClick }: GalleryCardProps) {
+function ExpiryBadgeForCard({ entry }: { entry: LabNewLayoutGalleryHistoryEntry }) {
+  if (!entry.submittedAt) return null
+  const expiryInfo = calculateUrlExpiry(entry.submittedAt)
+  return (
+    <span className={`lab-newlayout-history-gallery-expiry-badge-label ${getExpiryStatusClass(expiryInfo)}`}>
+      {getExpiryStatusLabel(expiryInfo)}
+    </span>
+  )
+}
+
+function GalleryCard({
+  entry,
+  onClick,
+  isLiked,
+  onToggleLike,
+  isDownloaded,
+  onDownloadVideo,
+  onReuse,
+  onMoveToFirebase,
+  isMovingToFirebase,
+  onExtendBefore,
+  onExtendAfter,
+  onDelete,
+}: GalleryCardProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  const idleTimerRef = useRef<number | null>(null)
   const [isHovered, setIsHovered] = useState(false)
+  const [isOverlayIdleHidden, setIsOverlayIdleHidden] = useState(false)
   const [posterHidden, setPosterHidden] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [failedPlaybackSource, setFailedPlaybackSource] = useState('')
   const mediaUrl = entry.resultUrl || Object.values(entry.mediaUrls)[0] || ''
+  const normalizedMediaUrl = useMemo(() => resolveProxySourceUrl(mediaUrl), [mediaUrl])
+  const proxyMediaUrl = useMemo(() => buildVideoProxyUrl(normalizedMediaUrl), [normalizedMediaUrl])
+  const playbackUrl = useMemo(() => {
+    if (!normalizedMediaUrl) return ''
+    const prefersProxy = shouldPreferProxyForPreview(entry.resolution)
+    const primaryUrl = prefersProxy ? (proxyMediaUrl || normalizedMediaUrl) : normalizedMediaUrl
+    const secondaryUrl = prefersProxy ? normalizedMediaUrl : (proxyMediaUrl || normalizedMediaUrl)
+    if (failedPlaybackSource === normalizedMediaUrl) {
+      return secondaryUrl
+    }
+    return primaryUrl
+  }, [entry.resolution, failedPlaybackSource, normalizedMediaUrl, proxyMediaUrl])
+  const isInProgress = entry.status === 'queued' || entry.status === 'running'
+  const galleryErrorInfo = useMemo(() => {
+    if (entry.status !== 'failed') return null
+    const msg = (entry.errorMessage ?? '').toLowerCase()
+    if (msg.includes('sensitive') || msg.includes('inappropriate audio') || msg.includes('audio content') || msg.includes('output audio')) {
+      return { kind: 'sensitive-audio' as const, label: 'Sensitive audio', icon: '\u{1F507}' }
+    }
+    if (msg.includes('credit') || msg.includes('quota') || msg.includes('balance') || msg.includes('insufficient') || msg.includes('limit exceeded') || msg.includes('no credit')) {
+      return { kind: 'no-credit' as const, label: 'No credits', icon: '\u26A0\uFE0F' }
+    }
+    return { kind: 'generic' as const, label: 'Generation failed', icon: '\u26A0\uFE0F' }
+  }, [entry.status, entry.errorMessage])
+  const isReferenceUploading = Boolean(isMovingToFirebase)
+  const isReferenceUploaded = entry.status === 'success' && Boolean(entry.resultUrl) && entry.resultUrl.includes('firebasestorage')
+  const hasReferenceStatus = isReferenceUploading || isReferenceUploaded
+  const dragPayload = useMemo(() => buildHistoryReferencePayload(entry), [entry])
+
+  const clearIdleTimer = useCallback(() => {
+    if (idleTimerRef.current !== null) {
+      window.clearTimeout(idleTimerRef.current)
+      idleTimerRef.current = null
+    }
+  }, [])
+
+  const scheduleIdleOverlayHide = useCallback(() => {
+    clearIdleTimer()
+    setIsOverlayIdleHidden(false)
+    if (typeof window === 'undefined') return
+    idleTimerRef.current = window.setTimeout(() => {
+      setIsOverlayIdleHidden(true)
+    }, 2200)
+  }, [clearIdleTimer])
+
+  useEffect(() => () => clearIdleTimer(), [clearIdleTimer])
+
+  const showActionOverlays = isHovered && !isOverlayIdleHidden
 
   const hoverHandlers = {
     onMouseEnter: () => {
       setIsHovered(true)
+      scheduleIdleOverlayHide()
       if (videoRef.current && mediaUrl) {
+        videoRef.current.muted = false
         videoRef.current.play().catch(() => { /* silent */ })
       }
     },
+    onMouseMove: () => {
+      if (isHovered) {
+        scheduleIdleOverlayHide()
+      }
+    },
     onMouseLeave: () => {
+      clearIdleTimer()
       setIsHovered(false)
+      setIsOverlayIdleHidden(false)
+      setConfirmingDelete(false)
       if (videoRef.current) {
         videoRef.current.pause()
         videoRef.current.currentTime = 0
+        videoRef.current.muted = true
         setPosterHidden(false)
       }
     },
   }
 
+  const handleDragStart = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    if (!dragPayload) return
+    event.dataTransfer.effectAllowed = 'copy'
+    event.dataTransfer.setData(LAB_NEWLAYOUT_HISTORY_REF_MIME, JSON.stringify(dragPayload))
+    event.dataTransfer.setData('text/uri-list', dragPayload.url)
+    event.dataTransfer.setData('text/plain', dragPayload.url)
+  }, [dragPayload])
+
   return (
     <div
-      className={`lab-newlayout-history-gallery-card${mediaUrl ? ' is-clickable' : ''}`}
+      className={`lab-newlayout-history-gallery-card${mediaUrl ? ' is-clickable' : ''}${dragPayload ? ' is-draggable' : ''}${hasReferenceStatus ? ' has-reference-status' : ''}${isInProgress ? ' is-in-progress' : ''}${isHovered && isOverlayIdleHidden ? ' is-overlay-idle-hidden' : ''}`}
+      draggable={Boolean(dragPayload)}
+      onDragStart={handleDragStart}
       {...hoverHandlers}
     >
       <div className="lab-newlayout-history-gallery-media">
@@ -1011,34 +2002,192 @@ function GalleryCard({ entry, onClick }: GalleryCardProps) {
           <video
             ref={videoRef}
             className="lab-newlayout-history-gallery-preview"
-            src={mediaUrl}
-            muted
+            src={playbackUrl}
             playsInline
-            preload="metadata"
+            preload="auto"
             onPlay={() => setPosterHidden(true)}
             onPause={() => setPosterHidden(false)}
+            onError={() => {
+              if (!normalizedMediaUrl || !proxyMediaUrl || failedPlaybackSource === normalizedMediaUrl) return
+              setFailedPlaybackSource(normalizedMediaUrl)
+            }}
+            onContextMenu={(event) => {
+              if (!onDownloadVideo || entry.status !== 'success') return
+              event.preventDefault()
+              event.stopPropagation()
+              onDownloadVideo(entry, playbackUrl || mediaUrl)
+            }}
           />
         ) : (
           <div className="lab-newlayout-history-gallery-preview" />
         )}
+        {galleryErrorInfo ? (
+          <div className={`lab-newlayout-history-gallery-error-overlay lab-newlayout-history-gallery-error-overlay--${galleryErrorInfo.kind}`}>
+            <div className="lab-newlayout-history-gallery-error-chip" title={entry.errorMessage ?? undefined}>
+              <span className="lab-newlayout-history-gallery-error-icon" aria-hidden="true">{galleryErrorInfo.icon}</span>
+              <span className="lab-newlayout-history-gallery-error-label">{galleryErrorInfo.label}</span>
+            </div>
+          </div>
+        ) : null}
+        {isInProgress ? (
+          <div className="lab-newlayout-history-gallery-running-overlay" role="status" aria-live="polite">
+            <div className="lab-newlayout-history-gallery-running-indicator">
+              <span className="lab-newlayout-history-gallery-running-spinner" aria-hidden="true" />
+              Running
+            </div>
+          </div>
+        ) : null}
+        {isInProgress ? (
+          <div className="lab-newlayout-history-gallery-progress" aria-hidden="true">
+            <div className="lab-newlayout-history-gallery-progress-bar" />
+          </div>
+        ) : null}
       </div>
-      <div className="lab-newlayout-history-gallery-badges">
-        <span className={`lab-newlayout-history-gallery-badge lab-newlayout-history-gallery-badge--${entry.status}`}>
-          {entry.status}
-        </span>
-      </div>
-      <div className={`lab-newlayout-history-gallery-hover-info${isHovered ? ' is-visible' : ''}`}>
-        <div className="lab-newlayout-history-gallery-hover-copy">
-          <strong>{entry.model || 'Unknown model'}</strong>
-          <span>{entry.prompt.length > 80 ? `${entry.prompt.slice(0, 80)}…` : entry.prompt}</span>
+      {entry.status !== 'success' ? (
+        <div className="lab-newlayout-history-gallery-badges">
+          <span className={`lab-newlayout-history-gallery-badge lab-newlayout-history-gallery-badge--${entry.status}`}>
+            {isInProgress ? <span className="lab-newlayout-history-gallery-badge-live-dot" aria-hidden="true" /> : null}
+            {entry.status}
+          </span>
         </div>
-        <div className="lab-newlayout-history-gallery-hover-chips">
-          {entry.ratio ? <span>{entry.ratio}</span> : null}
-          {entry.duration != null ? <span>{entry.duration}s</span> : null}
-          {entry.sourceLabel ? <span>{entry.sourceLabel}</span> : null}
+      ) : null}
+      {entry.status === 'success' && entry.resultUrl && entry.submittedAt && !entry.resultUrl.includes('firebasestorage') && !showActionOverlays ? (
+        <div className="lab-newlayout-history-gallery-expiry-badge">
+          <ExpiryBadgeForCard entry={entry} />
         </div>
-        {mediaUrl ? <div className="lab-newlayout-history-gallery-clickhint">Click to open</div> : null}
-      </div>
+      ) : null}
+      {entry.status === 'success' && hasReferenceStatus ? (
+        <div
+          className={`lab-newlayout-history-gallery-reference-status${isReferenceUploading ? ' is-uploading' : ' is-uploaded'}`}
+          aria-label={isReferenceUploading ? 'Uploading to references' : 'Saved to references'}
+          title={isReferenceUploading ? 'Uploading to references' : 'Saved to references'}
+        >
+          {isReferenceUploading ? <span className="lab-newlayout-history-gallery-reference-status-dot" aria-hidden="true" /> : null}
+          <span>{isReferenceUploading ? 'Uploading...' : 'Referenced'}</span>
+        </div>
+      ) : null}
+      {onDownloadVideo && showActionOverlays && entry.status === 'success' && mediaUrl && !confirmingDelete ? (
+        <button
+          type="button"
+          className={`lab-newlayout-history-gallery-download-btn${isDownloaded ? ' is-downloaded' : ''}`}
+          onClick={(event) => {
+            event.stopPropagation()
+            onDownloadVideo(entry, playbackUrl || mediaUrl)
+          }}
+          aria-label={isDownloaded ? 'Downloaded (click to download again)' : 'Download video'}
+          title={isDownloaded ? 'Downloaded (click to download again)' : 'Download video'}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+        </button>
+      ) : null}
+      {showActionOverlays || isLiked ? (
+        <button
+          type="button"
+          className={`lab-newlayout-history-gallery-like-mini${isLiked ? ' is-liked' : ''}${!showActionOverlays && isLiked ? ' is-persistent' : ''}`}
+          onClick={(event) => {
+            event.stopPropagation()
+            onToggleLike(entry.id)
+          }}
+          aria-label={isLiked ? 'Unlike' : 'Like'}
+          title={isLiked ? 'Unlike' : 'Like'}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill={isLiked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+          </svg>
+        </button>
+      ) : null}
+      {onDelete && (showActionOverlays || confirmingDelete) ? (
+        confirmingDelete ? (
+          <div className="lab-newlayout-history-gallery-delete-confirm">
+            <span>Delete?</span>
+            <button
+              type="button"
+              className="lab-newlayout-history-gallery-delete-yes"
+              onClick={(event) => { event.stopPropagation(); onDelete(entry.id) }}
+            >
+              Yes
+            </button>
+            <button
+              type="button"
+              className="lab-newlayout-history-gallery-delete-no"
+              onClick={(event) => { event.stopPropagation(); setConfirmingDelete(false) }}
+            >
+              No
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="lab-newlayout-history-gallery-delete-btn"
+            onClick={(event) => { event.stopPropagation(); setConfirmingDelete(true) }}
+            aria-label="Delete generation"
+            title="Delete"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+              <path d="M10 11v6M14 11v6" />
+              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+            </svg>
+          </button>
+        )
+      ) : null}
+      {onReuse && showActionOverlays && !confirmingDelete ? (
+        <button
+          type="button"
+          className="lab-newlayout-history-gallery-reuse-btn"
+          onClick={(event) => { event.stopPropagation(); onReuse(entry) }}
+          aria-label="Reuse generation settings"
+          title="Reuse"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+            <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+            <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+            <path d="M3 16v3a2 2 0 0 0 2 2h3" />
+            <path d="M8 12h8" />
+            <path d="M12 8l4 4-4 4" />
+          </svg>
+        </button>
+      ) : null}
+      {onMoveToFirebase
+        && showActionOverlays
+        && !confirmingDelete
+        && entry.status === 'success'
+        && !!entry.resultUrl ? (
+          <button
+            type="button"
+            className="lab-newlayout-history-gallery-move-btn"
+            onClick={(event) => { event.stopPropagation(); onMoveToFirebase(entry) }}
+            aria-label="Save to project references"
+            title="Save to project references"
+            disabled={Boolean(isMovingToFirebase)}
+          >
+            {isMovingToFirebase ? '...' : 'Ref'}
+          </button>
+        ) : null}
+      {(onExtendBefore || onExtendAfter) && showActionOverlays && !confirmingDelete ? (
+        <div className="lab-newlayout-history-gallery-extend-actions">
+          <button
+            type="button"
+            className="lab-newlayout-history-gallery-extend-btn"
+            onClick={(event) => { event.stopPropagation(); onExtendBefore?.(entry) }}
+          >
+            Extend Before
+          </button>
+          <button
+            type="button"
+            className="lab-newlayout-history-gallery-extend-btn"
+            onClick={(event) => { event.stopPropagation(); onExtendAfter?.(entry) }}
+          >
+            Extend After
+          </button>
+        </div>
+      ) : null}
       {mediaUrl ? (
         <button
           type="button"
@@ -1052,15 +2201,894 @@ function GalleryCard({ entry, onClick }: GalleryCardProps) {
 }
 
 function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestionParams>) {
-  const { authUid } = useLabNewLayoutData()
+  const {
+    authUid,
+    studioProjectId,
+    studioActiveFolderId,
+    studioProjects,
+    studioFolders,
+    storyBibleData,
+    projectReferenceLibraryItems,
+  } = useLabNewLayoutData()
   const { entries, isLoading, refresh } = useLabNewLayoutHistoryGallery({ authUid })
-  const [page, setPage] = useState(1)
+  const [firebaseMovedUrls, setFirebaseMovedUrls] = useState<Record<string, string>>({})
+  const [movingToFirebaseIds, setMovingToFirebaseIds] = useState<Record<string, boolean>>({})
+  const [visibleEntryCount, setVisibleEntryCount] = useState(GALLERY_PAGE_SIZE)
   const [selectedEntry, setSelectedEntry] = useState<LabNewLayoutGalleryHistoryEntry | null>(null)
-  const totalPages = Math.max(1, Math.ceil(entries.length / GALLERY_PAGE_SIZE))
-  const pageEntries = entries.slice((page - 1) * GALLERY_PAGE_SIZE, page * GALLERY_PAGE_SIZE)
+  const [isJsonExpanded, setIsJsonExpanded] = useState(false)
+  const [activeExtendTab, setActiveExtendTab] = useState<'before' | 'after'>('after')
+  const [isSubmittingExtendReference, setIsSubmittingExtendReference] = useState(false)
+  const [isRecoveringTask, setIsRecoveringTask] = useState(false)
+  const [resubmittingIds, setResubmittingIds] = useState<Record<string, boolean>>({})
+  const lightboxVideoRef = useRef<HTMLVideoElement | null>(null)
+  const [failedLightboxSource, setFailedLightboxSource] = useState('')
+  const runner = useGenerationRunner({ apiBaseUrl: CHATBOT_BASE })
+  const { likedIds, toggle: toggleLiked } = useLikedHistoryIds()
+  const { markDownloaded, isDownloaded } = useDownloadedHistoryUrls()
+  const effectiveEntries = useMemo(() => (
+    entries.map((entry) => {
+      const movedUrl = firebaseMovedUrls[entry.id]
+      return movedUrl
+        ? { ...entry, resultUrl: movedUrl }
+        : entry
+    })
+  ), [entries, firebaseMovedUrls])
+  const visibleEntries = useMemo(
+    () => effectiveEntries.slice(0, visibleEntryCount),
+    [effectiveEntries, visibleEntryCount],
+  )
+  const hasMoreEntries = effectiveEntries.length > visibleEntryCount
   const title = props.params.label ?? props.api.title
+  const downloadNamingContext = useMemo(() => {
+    const projectName = studioProjects.find((project) => project.id === studioProjectId)?.name || 'project'
+    const folderPath = resolveFolderPath(studioActiveFolderId || null, studioFolders)
+    const folderName = folderPath.names.length > 0 ? folderPath.names.join('-') : 'folder'
+    const firstScopedScene = studioActiveFolderId
+      ? storyBibleData.scenes.find((scene) => scene.folderId === studioActiveFolderId)
+      : storyBibleData.scenes[0]
+    const sceneName = firstScopedScene?.title || firstScopedScene?.id || 'scene'
+    return {
+      projectName,
+      folderName,
+      sceneName,
+      prefix: 'video',
+    }
+  }, [storyBibleData.scenes, studioActiveFolderId, studioFolders, studioProjectId, studioProjects])
 
-  const handleClose = useCallback(() => setSelectedEntry(null), [])
+  const lightboxSourceUrl = useMemo(() => {
+    if (!selectedEntry) return ''
+    return resolveProxySourceUrl(selectedEntry.resultUrl || Object.values(selectedEntry.mediaUrls)[0] || '')
+  }, [selectedEntry])
+
+  const lightboxProxyUrl = useMemo(() => buildVideoProxyUrl(lightboxSourceUrl), [lightboxSourceUrl])
+
+  const lightboxVideoSrc = useMemo(() => {
+    if (!selectedEntry || !lightboxSourceUrl) return ''
+    const prefersProxy = shouldPreferProxyForPreview(selectedEntry.resolution)
+    const primaryUrl = prefersProxy ? (lightboxProxyUrl || lightboxSourceUrl) : lightboxSourceUrl
+    const secondaryUrl = prefersProxy ? lightboxSourceUrl : (lightboxProxyUrl || lightboxSourceUrl)
+    if (failedLightboxSource === lightboxSourceUrl) {
+      return secondaryUrl
+    }
+    return primaryUrl
+  }, [failedLightboxSource, lightboxProxyUrl, lightboxSourceUrl, selectedEntry])
+
+  const lightboxStorageLabel = useMemo(() => {
+    if (!selectedEntry?.resultUrl) return 'Provider link'
+    if (selectedEntry.resultUrl.includes('firebasestorage.googleapis.com')) {
+      return 'Firebase Storage (History)'
+    }
+    return 'Provider temporary link'
+  }, [selectedEntry])
+
+  const lightboxIsReferenced = useMemo(() => {
+    if (!selectedEntry?.resultUrl) return false
+    return projectReferenceLibraryItems.some((item) => item.url === selectedEntry.resultUrl)
+  }, [projectReferenceLibraryItems, selectedEntry?.resultUrl])
+  const lightboxIsReferencing = Boolean(selectedEntry && movingToFirebaseIds[selectedEntry.id])
+
+  const handleOpenLightboxVideoLink = useCallback(() => {
+    if (!lightboxSourceUrl || typeof window === 'undefined') return
+    window.open(lightboxSourceUrl, '_blank', 'noopener,noreferrer')
+  }, [lightboxSourceUrl])
+
+  const handleClose = useCallback(() => {
+    setSelectedEntry(null)
+    setIsJsonExpanded(false)
+    setActiveExtendTab('after')
+    setIsSubmittingExtendReference(false)
+  }, [])
+
+  const lightboxIsLiked = selectedEntry ? likedIds.has(selectedEntry.id) : false
+
+  const referenceMedia = useMemo(() => {
+    if (!selectedEntry) return [] as Array<{ key: string; url: string; kind: 'image' | 'video' | 'audio' }>
+    const primary = selectedEntry.resultUrl
+    const seenUrls = new Set<string>()
+    return Object.entries(selectedEntry.mediaUrls)
+      .filter(([, url]) => url && url !== primary)
+      .filter(([, url]) => {
+        const normalized = url.trim()
+        if (!normalized || seenUrls.has(normalized)) return false
+        seenUrls.add(normalized)
+        return true
+      })
+      .map(([key, url]) => {
+        const kind: 'image' | 'video' | 'audio' = key.startsWith('image')
+          ? 'image'
+          : key.startsWith('video')
+            ? 'video'
+            : key.startsWith('audio')
+              ? 'audio'
+              : inferReferenceMediaKindFromUrl(url)
+        return { key, url, kind }
+      })
+  }, [selectedEntry])
+
+  const requestJsonText = useMemo(() => {
+    if (!selectedEntry) return ''
+    const payload = selectedEntry.requestPayload && Object.keys(selectedEntry.requestPayload).length > 0
+      ? selectedEntry.requestPayload
+      : {
+          model: selectedEntry.model,
+          provider: selectedEntry.provider,
+          prompt: selectedEntry.prompt,
+          ratio: selectedEntry.ratio,
+          resolution: selectedEntry.resolution,
+          duration: selectedEntry.duration,
+          generateAudio: selectedEntry.generateAudio,
+        }
+    try {
+      return JSON.stringify(payload, null, 2)
+    } catch {
+      return ''
+    }
+  }, [selectedEntry])
+
+  const handleCopyJson = useCallback(() => {
+    if (!requestJsonText) return
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(requestJsonText).catch(() => undefined)
+    }
+  }, [requestJsonText])
+
+  const setComposerReuseSeed = useLabNewLayoutStore((state) => state.setComposerReuseSeed)
+  const addComposerReference = useLabNewLayoutStore((state) => state.addComposerReference)
+  const composerReferences = useLabNewLayoutStore((state) => state.composerReferences)
+  const addHistoryItem = useLabNewLayoutStore((state) => state.addHistoryItem)
+  const removeHistoryItem = useLabNewLayoutStore((state) => state.removeHistoryItem)
+  const updateHistoryItem = useLabNewLayoutStore((state) => state.updateHistoryItem)
+  const { showToast: showReuseToast } = useToast()
+
+  useEffect(() => {
+    setVisibleEntryCount((current) => Math.min(Math.max(current, GALLERY_PAGE_SIZE), Math.max(effectiveEntries.length, GALLERY_PAGE_SIZE)))
+  }, [effectiveEntries.length])
+
+  const handleLoadMoreEntries = useCallback(() => {
+    setVisibleEntryCount((current) => current + GALLERY_PAGE_SIZE)
+  }, [])
+
+  const seedReferences = useMemo(() => {
+    if (!selectedEntry) return [] as { id: string; url: string; kind: 'image' | 'video' | 'audio'; name: string }[]
+    const seenUrls = new Set<string>()
+    return Object.entries(selectedEntry.mediaUrls)
+      .filter(([, url]) => Boolean(url) && url !== selectedEntry.resultUrl)
+      .filter(([, url]) => {
+        const normalized = url.trim()
+        if (!normalized || seenUrls.has(normalized)) return false
+        seenUrls.add(normalized)
+        return true
+      })
+      .map(([key, url]) => {
+        const kind: 'image' | 'video' | 'audio' = key.startsWith('video')
+          ? 'video'
+          : key.startsWith('audio')
+            ? 'audio'
+            : 'image'
+        return { id: `${selectedEntry.id}-${key}`, url, kind, name: key }
+      })
+  }, [selectedEntry])
+
+  const handleCopyPrompt = useCallback(() => {
+    if (!selectedEntry?.prompt) return
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(selectedEntry.prompt).then(
+        () => showReuseToast({ message: 'Prompt copied to clipboard', type: 'success' }),
+        () => showReuseToast({ message: 'Failed to copy prompt', type: 'error' }),
+      )
+    }
+  }, [selectedEntry, showReuseToast])
+
+  const buildSeed = useCallback((mode: 'all' | 'prompt' | 'references') => {
+    if (!selectedEntry) return null
+    const seedId = `${selectedEntry.id}-${mode}-${Date.now()}`
+    if (mode === 'prompt') {
+      return { id: seedId, prompt: selectedEntry.prompt }
+    }
+    if (mode === 'references') {
+      return { id: seedId, references: seedReferences }
+    }
+    return {
+      id: seedId,
+      prompt: selectedEntry.prompt,
+      references: seedReferences,
+      ratio: selectedEntry.ratio || undefined,
+      resolution: selectedEntry.resolution || undefined,
+      duration: selectedEntry.duration ?? undefined,
+      generateAudio: selectedEntry.generateAudio ?? undefined,
+      model: selectedEntry.model || undefined,
+      provider: selectedEntry.provider || undefined,
+    }
+  }, [selectedEntry, seedReferences])
+
+  const uploadReferenceVideoToFirebase = useCallback(async (sourceUrl: string, tabMode: 'before' | 'after') => {
+    if (!studioProjectId) {
+      showReuseToast({ message: 'Select a Studio project first', type: 'warning' })
+      return null
+    }
+
+    const targetFolderId = studioActiveFolderId || null
+    const folderPathSegment = targetFolderId ? `folders/${targetFolderId}` : 'project'
+    const storagePathPrefix = `lab-generated-videos/projects/${studioProjectId}/${folderPathSegment}`
+    const response = await fetch('/api/lab/references/upload-by-url', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        url: sourceUrl,
+        name: `${tabMode}-extend-${Date.now()}`,
+        kind: 'video',
+        storagePathPrefix,
+        firebaseConfig,
+        mimeType: 'video/mp4',
+      }),
+    })
+
+    const payload = await response.json().catch(() => null) as { error?: string; saved?: { firebaseUrl?: string } } | null
+    if (!response.ok) {
+      throw new Error(payload?.error || 'Failed to upload current video to Firebase.')
+    }
+
+    return payload?.saved?.firebaseUrl || null
+  }, [showReuseToast, studioActiveFolderId, studioProjectId])
+
+  const archiveHistoryVideoToFirebase = useCallback(async (
+    entry: LabNewLayoutGalleryHistoryEntry,
+    options: { silent?: boolean; showAlreadyArchivedMessage?: boolean } = {},
+  ): Promise<string | null> => {
+    const silent = options.silent === true
+    const showAlreadyArchivedMessage = options.showAlreadyArchivedMessage !== false
+    const sourceUrl = (entry.resultUrl || '').trim()
+    if (!sourceUrl) {
+      if (!silent) {
+        showReuseToast({ message: 'No generated video URL found for this card.', type: 'warning' })
+      }
+      return null
+    }
+
+    if (sourceUrl.includes('firebasestorage')) {
+      if (!silent && showAlreadyArchivedMessage) {
+        showReuseToast({ message: 'This video is already in Firebase.', type: 'info' })
+      }
+      return sourceUrl
+    }
+
+    const targetProjectId = (entry.projectId || studioProjectId || '').trim()
+    if (!targetProjectId) {
+      if (!silent) {
+        showReuseToast({ message: 'Select a Studio project first.', type: 'warning' })
+      }
+      return null
+    }
+
+    const targetFolderId = (entry.folderId || studioActiveFolderId || '').trim() || null
+    const folderPathSegment = targetFolderId ? `folders/${targetFolderId}` : 'project'
+    const storagePathPrefix = `lab-generated-videos/projects/${targetProjectId}/${folderPathSegment}`
+
+    setMovingToFirebaseIds((current) => ({ ...current, [entry.id]: true }))
+
+    try {
+      const response = await fetch('/api/lab/references/upload-by-url', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          url: sourceUrl,
+          name: `history-${entry.id}-${Date.now()}`,
+          kind: 'video',
+          storagePathPrefix,
+          firebaseConfig,
+          mimeType: 'video/mp4',
+        }),
+      })
+
+      const payload = await response.json().catch(() => null) as { error?: string; saved?: { firebaseUrl?: string } } | null
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Failed to archive video to Firebase.')
+      }
+
+      const firebaseUrl = payload?.saved?.firebaseUrl || ''
+      if (!firebaseUrl) {
+        throw new Error('Upload completed but no Firebase URL was returned.')
+      }
+
+      setFirebaseMovedUrls((current) => ({
+        ...current,
+        [entry.id]: firebaseUrl,
+      }))
+
+      updateHistoryItem(entry.id, {
+        resultUrl: firebaseUrl,
+      })
+
+      setSelectedEntry((current) => (
+        current && current.id === entry.id
+          ? { ...current, resultUrl: firebaseUrl }
+          : current
+      ))
+
+      if (!silent) {
+        showReuseToast({ message: 'Video archived to Firebase history.', type: 'success' })
+      }
+      return firebaseUrl
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to archive video to Firebase.'
+      if (!silent) {
+        showReuseToast({ message, type: 'error' })
+      }
+      return null
+    } finally {
+      setMovingToFirebaseIds((current) => {
+        const next = { ...current }
+        delete next[entry.id]
+        return next
+      })
+    }
+  }, [showReuseToast, studioActiveFolderId, studioProjectId, updateHistoryItem])
+
+  const moveHistoryVideoToFirebase = useCallback(async (
+    entry: LabNewLayoutGalleryHistoryEntry,
+    options: { silent?: boolean } = {},
+  ): Promise<boolean> => {
+    const silent = options.silent === true
+    const archivedUrl = await archiveHistoryVideoToFirebase(entry, {
+      silent,
+      showAlreadyArchivedMessage: false,
+    })
+    if (!archivedUrl) {
+      return false
+    }
+
+    const targetProjectId = (entry.projectId || studioProjectId || '').trim()
+    if (!targetProjectId) {
+      if (!silent) {
+        showReuseToast({ message: 'Select a Studio project first.', type: 'warning' })
+      }
+      return false
+    }
+
+    const referenceFolderId = (entry.folderId || studioActiveFolderId || '').trim() || null
+    const referenceExists = projectReferenceLibraryItems.some(
+      (item) => item.url === archivedUrl && (item.folderId || null) === referenceFolderId,
+    )
+    if (referenceExists) {
+      if (!silent) {
+        showReuseToast({ message: 'This video is already in project references.', type: 'info' })
+      }
+      return true
+    }
+
+    try {
+      await saveProjectReferenceLibraryItem(targetProjectId, {
+        id: `ref-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        url: archivedUrl,
+        kind: 'video',
+        name: entry.model || `history-${entry.id}`,
+        createdAt: Date.now(),
+        folderId: referenceFolderId,
+      }, authUid || 'anon')
+
+      if (!silent) {
+        showReuseToast({ message: 'Saved to project references.', type: 'success' })
+      }
+      return true
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to save video to references.'
+      if (!silent) {
+        showReuseToast({ message, type: 'error' })
+      }
+      return false
+    }
+  }, [archiveHistoryVideoToFirebase, authUid, projectReferenceLibraryItems, showReuseToast, studioActiveFolderId, studioProjectId])
+
+  const selectedEntryFailureReason = useMemo(() => {
+    const raw = (selectedEntry?.errorMessage || '').trim()
+    if (!raw) return ''
+    if (/^http\s*500$/i.test(raw) || /^http\s*5\d\d$/i.test(raw)) {
+      return 'Backend/provider returned an internal server error. Use Diagnose to auto-archive eligible videos, then retry this generation.'
+    }
+    return raw
+  }, [selectedEntry?.errorMessage])
+
+  const handleHistoryDiagnose = useCallback(async () => {
+    const successCount = effectiveEntries.filter((entry) => entry.status === 'success').length
+    const runningCount = effectiveEntries.filter((entry) => entry.status === 'running').length
+    const failedCount = effectiveEntries.filter((entry) => entry.status === 'failed').length
+    const referencedCount = effectiveEntries.filter((entry) => (entry.resultUrl || '').includes('firebasestorage')).length
+    const visibleCount = Math.min(visibleEntries.length, effectiveEntries.length)
+
+    const candidates = effectiveEntries.filter((entry) => {
+      const sourceUrl = (entry.resultUrl || '').trim()
+      if (!sourceUrl) return false
+      if (entry.status !== 'success') return false
+      if (sourceUrl.includes('firebasestorage')) return false
+      if (movingToFirebaseIds[entry.id]) return false
+      return true
+    })
+
+    showReuseToast({
+      type: 'info',
+      message: `Diag started: checking ${candidates.length} non-archived videos...`,
+    })
+
+    let autoArchived = 0
+    let autoFailed = 0
+    for (const entry of candidates) {
+      const archivedUrl = await archiveHistoryVideoToFirebase(entry, { silent: true, showAlreadyArchivedMessage: false })
+      if (archivedUrl) {
+        autoArchived += 1
+      } else {
+        autoFailed += 1
+      }
+    }
+
+    showReuseToast({
+      type: autoFailed > 0 ? 'warning' : 'success',
+      message: `Diag: total ${effectiveEntries.length}, visible ${visibleCount}, success ${successCount}, running ${runningCount}, failed ${failedCount}, archived ${referencedCount}. Auto-archive: ${autoArchived} done, ${autoFailed} failed.`,
+    })
+
+    if (typeof console !== 'undefined') {
+      console.info('[history-gallery-diagnose]', {
+        total: effectiveEntries.length,
+        visible: visibleCount,
+        success: successCount,
+        running: runningCount,
+        failed: failedCount,
+        referenced: referencedCount,
+        candidates: candidates.length,
+        autoArchived,
+        autoFailed,
+      })
+    }
+  }, [archiveHistoryVideoToFirebase, effectiveEntries, movingToFirebaseIds, showReuseToast, visibleEntries.length])
+
+  const handleDownloadVideo = useCallback(async (entry: LabNewLayoutGalleryHistoryEntry, sourceUrl: string) => {
+    const normalizedUrl = resolveProxySourceUrl(sourceUrl)
+    if (!normalizedUrl) {
+      showReuseToast({ message: 'No video URL available for download.', type: 'warning' })
+      return
+    }
+
+    try {
+      const payloadSceneName = extractSceneNameFromPayload(entry.requestPayload)
+      const fileName = buildDownloadFileName(entry, normalizedUrl, {
+        ...downloadNamingContext,
+        sceneName: payloadSceneName || downloadNamingContext.sceneName,
+      })
+      await downloadVideoToFile(normalizedUrl, fileName)
+      markDownloaded(normalizedUrl)
+      showReuseToast({ message: 'Video download started.', type: 'success' })
+
+      if (!normalizedUrl.includes('firebasestorage')) {
+        void archiveHistoryVideoToFirebase(entry, { silent: true, showAlreadyArchivedMessage: false })
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to download video.'
+      showReuseToast({ message, type: 'error' })
+    }
+  }, [archiveHistoryVideoToFirebase, downloadNamingContext, markDownloaded, showReuseToast])
+
+  const handleExtendFromEntry = useCallback(async (tabMode: 'before' | 'after', entryOverride?: LabNewLayoutGalleryHistoryEntry) => {
+    setActiveExtendTab(tabMode)
+    const targetEntry = entryOverride || selectedEntry
+    if (!targetEntry) return
+
+    const selectedVideoUrl = resolveProxySourceUrl(entryOverride
+      ? (targetEntry.resultUrl || Object.values(targetEntry.mediaUrls)[0] || '')
+      : (lightboxVideoRef.current?.currentSrc || lightboxVideoSrc || targetEntry.resultUrl || Object.values(targetEntry.mediaUrls)[0] || ''))
+
+    if (!selectedVideoUrl) {
+      showReuseToast({ message: 'No video source found to add as reference', type: 'warning' })
+      return
+    }
+
+    const existingReference = composerReferences.find((ref) => ref.url === selectedVideoUrl)
+    if (existingReference) {
+      showReuseToast({ message: `Already in Composer references (${tabMode})`, type: 'info' })
+      return
+    }
+
+    setIsSubmittingExtendReference(true)
+    try {
+      const firebaseUrl = await uploadReferenceVideoToFirebase(selectedVideoUrl, tabMode)
+      if (!firebaseUrl) {
+        showReuseToast({ message: 'Upload did not return a Firebase URL', type: 'error' })
+        return
+      }
+
+      if (composerReferences.some((ref) => ref.url === firebaseUrl)) {
+        showReuseToast({ message: `Already in Composer references (${tabMode})`, type: 'info' })
+        return
+      }
+
+      const referenceId = `extend-${tabMode}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      addComposerReference({
+        id: referenceId,
+        url: firebaseUrl,
+        kind: 'video',
+        name: tabMode === 'before' ? 'extend-before' : 'extend-after',
+      })
+      showReuseToast({ message: `Added as ${tabMode === 'before' ? 'Extend Before' : 'Extend After'} reference`, type: 'success' })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to prepare extend reference'
+      showReuseToast({ message, type: 'error' })
+    } finally {
+      setIsSubmittingExtendReference(false)
+    }
+  }, [addComposerReference, composerReferences, lightboxVideoSrc, selectedEntry, showReuseToast, uploadReferenceVideoToFirebase])
+
+  const handleExtendTabClick = useCallback(async (tabMode: 'before' | 'after') => {
+    await handleExtendFromEntry(tabMode)
+  }, [handleExtendFromEntry])
+
+  const handleReuseAll = useCallback(() => {
+    const seed = buildSeed('all')
+    if (!seed) return
+    setComposerReuseSeed(seed)
+    showReuseToast({ message: 'Loaded prompt & references into Composer', type: 'success' })
+    handleClose()
+  }, [buildSeed, handleClose, setComposerReuseSeed, showReuseToast])
+
+  const handleReusePrompt = useCallback(() => {
+    const seed = buildSeed('prompt')
+    if (!seed) return
+    setComposerReuseSeed(seed)
+    showReuseToast({ message: 'Prompt loaded into Composer', type: 'success' })
+    handleClose()
+  }, [buildSeed, handleClose, setComposerReuseSeed, showReuseToast])
+
+  const handleReuseReferences = useCallback(() => {
+    const seed = buildSeed('references')
+    if (!seed) return
+    setComposerReuseSeed(seed)
+    showReuseToast({ message: 'References loaded into Composer', type: 'success' })
+    handleClose()
+  }, [buildSeed, handleClose, setComposerReuseSeed, showReuseToast])
+
+  const buildSeedFromEntry = useCallback((entry: LabNewLayoutGalleryHistoryEntry, mode: 'all' | 'prompt' | 'references') => {
+    const entryReferences = Object.entries(entry.mediaUrls)
+      .filter(([, url]) => Boolean(url) && url !== entry.resultUrl)
+      .map(([key, url]) => {
+        const kind: 'image' | 'video' | 'audio' = key.startsWith('video')
+          ? 'video'
+          : key.startsWith('audio')
+            ? 'audio'
+            : 'image'
+        return { id: `${entry.id}-${key}`, url, kind, name: key }
+      })
+
+    const seedId = `${entry.id}-${mode}-${Date.now()}`
+    if (mode === 'prompt') {
+      return { id: seedId, prompt: entry.prompt }
+    }
+    if (mode === 'references') {
+      return { id: seedId, references: entryReferences }
+    }
+
+    return {
+      id: seedId,
+      prompt: entry.prompt,
+      references: entryReferences,
+      ratio: entry.ratio || undefined,
+      resolution: entry.resolution || undefined,
+      duration: entry.duration ?? undefined,
+      generateAudio: entry.generateAudio ?? undefined,
+      model: entry.model || undefined,
+      provider: entry.provider || undefined,
+    }
+  }, [])
+
+  const handleReuseFromEntry = useCallback((entry: LabNewLayoutGalleryHistoryEntry) => {
+    const seed = buildSeedFromEntry(entry, 'all')
+    setComposerReuseSeed(seed)
+    showReuseToast({ message: 'Loaded this generation into Composer', type: 'success' })
+  }, [buildSeedFromEntry, setComposerReuseSeed, showReuseToast])
+
+  const handleResubmitGeneration = useCallback((entry: LabNewLayoutGalleryHistoryEntry) => {
+    if (resubmittingIds[entry.id]) return
+    if (!entry.requestEndpoint || !entry.requestPayload) {
+      showReuseToast({ message: 'Cannot resubmit: generation request data is missing.', type: 'warning' })
+      return
+    }
+
+    const entryId = entry.id
+    const settings: GenerationRequestSettings = {
+      provider: (entry.provider as GenerationProvider) || 'atlas',
+      model: entry.model || 'bytedance/seedance-2.0-fast',
+      ratio: entry.ratio || '16:9',
+      duration: entry.duration ?? 15,
+      resolution: entry.resolution || '480p',
+      generateAudio: entry.generateAudio ?? true,
+    }
+
+    const request = {
+      endpoint: entry.requestEndpoint,
+      body: entry.requestPayload,
+      settings,
+    }
+
+    const shouldReplaceExisting = entry.status === 'failed'
+    const historyId = shouldReplaceExisting
+      ? entry.id
+      : `regen-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+
+    if (!shouldReplaceExisting) {
+      addHistoryItem({
+        id: historyId,
+        timestamp: Date.now(),
+        prompt: entry.prompt,
+        model: settings.model,
+        provider: settings.provider,
+        ratio: settings.ratio,
+        resolution: settings.resolution,
+        duration: settings.duration,
+        generateAudio: settings.generateAudio,
+        requestEndpoint: request.endpoint,
+        requestPayload: request.body,
+        mediaUrls: entry.mediaUrls,
+        sourceLabel: entry.sourceLabel || 'History regenerate',
+        status: 'queued',
+        projectId: entry.projectId || studioProjectId || undefined,
+        folderId: entry.folderId || studioActiveFolderId || undefined,
+      })
+    }
+
+    setResubmittingIds((prev) => {
+      const next: Record<string, boolean> = { ...prev, [entry.id]: true }
+      if (historyId !== entry.id) {
+        next[historyId] = true
+      }
+      return next
+    })
+    updateHistoryItem(historyId, {
+      status: 'running',
+      errorMessage: '',
+    })
+    if (shouldReplaceExisting) {
+      setSelectedEntry((current) => (
+        current && current.id === entryId
+          ? { ...current, status: 'running', errorMessage: '' }
+          : current
+      ))
+    }
+
+    showReuseToast({ message: shouldReplaceExisting ? 'Retrying failed generation...' : 'Starting regenerated variation...', type: 'info' })
+
+    void (async () => {
+      try {
+        const result = await runner.runGeneration(request, {
+          onQueued: ({ taskId, submittedAt, settings: queuedSettings }) => {
+            updateHistoryItem(historyId, {
+              status: 'running',
+              taskId,
+              submittedAt,
+              provider: queuedSettings.provider,
+              model: queuedSettings.model,
+              ratio: queuedSettings.ratio,
+              resolution: queuedSettings.resolution,
+              duration: queuedSettings.duration,
+              generateAudio: queuedSettings.generateAudio,
+            })
+          },
+        })
+
+        if (result) {
+          const archivedResultUrl = await archiveHistoryVideoToFirebase({
+            ...entry,
+            id: historyId,
+            resultUrl: result.resultUrl,
+            projectId: entry.projectId || studioProjectId || '',
+            folderId: entry.folderId || studioActiveFolderId || '',
+          }, { silent: true, showAlreadyArchivedMessage: false })
+
+          updateHistoryItem(historyId, {
+            status: 'success',
+            resultUrl: archivedResultUrl || result.resultUrl,
+            taskId: result.taskId,
+            submittedAt: result.submittedAt,
+            receivedAt: result.receivedAt,
+            completedAt: result.receivedAt,
+            provider: result.settings.provider,
+            model: result.settings.model,
+            ratio: result.settings.ratio,
+            resolution: result.settings.resolution,
+            duration: result.settings.duration,
+            generateAudio: result.settings.generateAudio,
+            errorMessage: '',
+          })
+          if (shouldReplaceExisting) {
+            setSelectedEntry((current) => (
+              current && current.id === entryId
+                ? {
+                    ...current,
+                    status: 'success',
+                    resultUrl: archivedResultUrl || result.resultUrl,
+                    taskId: result.taskId,
+                    submittedAt: result.submittedAt,
+                    receivedAt: result.receivedAt,
+                    completedAt: result.receivedAt,
+                    provider: result.settings.provider,
+                    model: result.settings.model,
+                    ratio: result.settings.ratio,
+                    resolution: result.settings.resolution,
+                    duration: result.settings.duration,
+                    generateAudio: result.settings.generateAudio,
+                    errorMessage: '',
+                  }
+                : current
+            ))
+          }
+          showReuseToast({ message: 'Generation succeeded!', type: 'success' })
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Resubmission failed.'
+        updateHistoryItem(historyId, {
+          status: 'failed',
+          errorMessage,
+          completedAt: Date.now(),
+        })
+        if (shouldReplaceExisting) {
+          setSelectedEntry((current) => (
+            current && current.id === entryId
+              ? { ...current, status: 'failed', errorMessage, completedAt: Date.now() }
+              : current
+          ))
+        }
+        showReuseToast({ message: `Resubmission failed: ${errorMessage}`, type: 'error' })
+      } finally {
+        setResubmittingIds((prev) => {
+          const next = { ...prev }
+          delete next[entry.id]
+          delete next[historyId]
+          return next
+        })
+      }
+    })()
+  }, [addHistoryItem, archiveHistoryVideoToFirebase, resubmittingIds, runner, showReuseToast, studioActiveFolderId, studioProjectId, updateHistoryItem])
+
+  const handleRecoverFromTaskId = useCallback((entryOverride?: LabNewLayoutGalleryHistoryEntry) => {
+    const targetEntry = entryOverride || selectedEntry
+    if (!targetEntry || isRecoveringTask) return
+    const taskId = (targetEntry.taskId || '').trim()
+    if (!taskId) {
+      showReuseToast({ message: 'This item has no task ID to recover.', type: 'warning' })
+      return
+    }
+
+    const entryId = targetEntry.id
+    const settings = buildRecoverySettings(targetEntry)
+
+    setIsRecoveringTask(true)
+    updateHistoryItem(entryId, {
+      status: 'running',
+      errorMessage: '',
+      taskId,
+      provider: settings.provider,
+      model: settings.model,
+      ratio: settings.ratio,
+      resolution: settings.resolution,
+      duration: settings.duration,
+      generateAudio: settings.generateAudio,
+    })
+    setSelectedEntry((current) => (
+      current && current.id === entryId
+        ? {
+            ...current,
+            status: 'running',
+            errorMessage: '',
+            taskId,
+            provider: settings.provider,
+            model: settings.model,
+            ratio: settings.ratio,
+            resolution: settings.resolution,
+            duration: settings.duration,
+            generateAudio: settings.generateAudio,
+          }
+        : current
+    ))
+
+    showReuseToast({ message: `Recovering task ${taskId}...`, type: 'info' })
+
+    void (async () => {
+      try {
+        const resumedResult = await runner.resumeGenerationTask({ taskId, settings })
+        if (!resumedResult) {
+          showReuseToast({ message: 'Recovery was cancelled.', type: 'info' })
+          return
+        }
+
+        const successUpdates = {
+          status: 'success' as const,
+          resultUrl: resumedResult.resultUrl,
+          taskId: resumedResult.taskId,
+          receivedAt: resumedResult.receivedAt,
+          completedAt: resumedResult.receivedAt,
+          provider: resumedResult.settings.provider,
+          model: resumedResult.settings.model,
+          ratio: resumedResult.settings.ratio,
+          resolution: resumedResult.settings.resolution,
+          duration: resumedResult.settings.duration,
+          generateAudio: resumedResult.settings.generateAudio,
+          errorMessage: '',
+        }
+
+        const archivedRecoveredUrl = await archiveHistoryVideoToFirebase({
+          ...targetEntry,
+          id: entryId,
+          resultUrl: resumedResult.resultUrl,
+        }, { silent: true, showAlreadyArchivedMessage: false })
+        if (archivedRecoveredUrl) {
+          successUpdates.resultUrl = archivedRecoveredUrl
+        }
+
+        updateHistoryItem(entryId, successUpdates)
+        setSelectedEntry((current) => (
+          current && current.id === entryId
+            ? { ...current, ...successUpdates }
+            : current
+        ))
+        showReuseToast({ message: 'Recovered. Video loaded from task result.', type: 'success' })
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Recovery failed.'
+        const lowerError = errorMessage.toLowerCase()
+        const transientConnectivityError = lowerError.includes('cannot reach local api backend')
+          || lowerError.includes('back end server is not working')
+          || lowerError.includes('networkerror')
+          || lowerError.includes('failed to fetch')
+
+        if (transientConnectivityError) {
+          const pausedMessage = `Recovery paused: ${errorMessage}`
+          updateHistoryItem(entryId, {
+            status: 'running',
+            errorMessage: pausedMessage,
+          })
+          setSelectedEntry((current) => (
+            current && current.id === entryId
+              ? { ...current, status: 'running', errorMessage: pausedMessage }
+              : current
+          ))
+          showReuseToast({ message: pausedMessage, type: 'warning' })
+          return
+        }
+
+        updateHistoryItem(entryId, {
+          status: 'failed',
+          errorMessage,
+          completedAt: Date.now(),
+        })
+        setSelectedEntry((current) => (
+          current && current.id === entryId
+            ? { ...current, status: 'failed', errorMessage, completedAt: Date.now() }
+            : current
+        ))
+        showReuseToast({ message: `Recovery failed: ${errorMessage}`, type: 'error' })
+      } finally {
+        setIsRecoveringTask(false)
+      }
+    })()
+  }, [archiveHistoryVideoToFirebase, isRecoveringTask, runner, selectedEntry, showReuseToast, updateHistoryItem])
 
   const lightbox = selectedEntry ? createPortal(
     <div
@@ -1079,58 +3107,335 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
             <div className="lab-newlayout-history-lightbox-kicker">{selectedEntry.sourceLabel || 'Generation'}</div>
             <div className="lab-newlayout-history-lightbox-title">{selectedEntry.model || 'Unknown model'}</div>
           </div>
-          <button
-            type="button"
-            className="lab-newlayout-history-lightbox-close"
-            onClick={handleClose}
-            aria-label="Close"
-          >
-            ✕
-          </button>
+          <div className="lab-newlayout-history-lightbox-head-actions">
+            <button
+              type="button"
+              className="lab-newlayout-history-lightbox-action"
+              onClick={handleReuseAll}
+              title="Load prompt and references into Composer"
+            >
+              Reuse
+            </button>
+            <button
+              type="button"
+              className="lab-newlayout-history-lightbox-action"
+              onClick={handleReusePrompt}
+              disabled={!selectedEntry.prompt}
+              title="Load only the prompt into Composer"
+            >
+              Reuse prompt
+            </button>
+            <button
+              type="button"
+              className="lab-newlayout-history-lightbox-action"
+              onClick={handleReuseReferences}
+              disabled={seedReferences.length === 0}
+              title="Load only the references into Composer"
+            >
+              Reuse refs
+            </button>
+            <button
+              type="button"
+              className="lab-newlayout-history-lightbox-action"
+              onClick={handleCopyPrompt}
+              disabled={!selectedEntry.prompt}
+              title="Copy prompt to clipboard"
+            >
+              Copy prompt
+            </button>
+            <button
+              type="button"
+              className={`lab-newlayout-history-lightbox-like${lightboxIsLiked ? ' is-liked' : ''}`}
+              onClick={() => toggleLiked(selectedEntry.id)}
+              aria-label={lightboxIsLiked ? 'Unlike generation' : 'Like generation'}
+              title={lightboxIsLiked ? 'Unlike' : 'Like'}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill={lightboxIsLiked ? 'currentColor' : 'none'}
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+              </svg>
+              <span>{lightboxIsLiked ? 'Liked' : 'Like'}</span>
+            </button>
+            <button
+              type="button"
+              className="lab-newlayout-history-lightbox-close"
+              onClick={handleClose}
+              aria-label="Close"
+            >
+              ✕
+            </button>
+          </div>
         </div>
         <div className="lab-newlayout-history-lightbox-body">
-          {(selectedEntry.resultUrl || Object.values(selectedEntry.mediaUrls)[0]) ? (
-            <div className="lab-newlayout-history-lightbox-media">
-              <video
-                className="lab-newlayout-history-lightbox-video"
-                src={selectedEntry.resultUrl || Object.values(selectedEntry.mediaUrls)[0]}
-                controls
-                autoPlay
-                playsInline
-                muted
-                poster={selectedEntry.posterUrl || undefined}
-              />
-            </div>
-          ) : null}
-          <div className="lab-newlayout-history-lightbox-meta">
-            {selectedEntry.ratio ? (
-              <div className="lab-newlayout-history-lightbox-meta-row">
-                <span>Ratio</span>
-                <strong>{selectedEntry.ratio}</strong>
+          <div className="lab-newlayout-history-lightbox-left">
+            {(selectedEntry.resultUrl || Object.values(selectedEntry.mediaUrls)[0]) ? (
+              <div className="lab-newlayout-history-lightbox-media">
+                <video
+                  ref={lightboxVideoRef}
+                  className="lab-newlayout-history-lightbox-video"
+                  src={lightboxVideoSrc}
+                  controls
+                  autoPlay
+                  playsInline
+                  poster={selectedEntry.posterUrl || undefined}
+                  onError={() => {
+                    if (!lightboxSourceUrl || !lightboxProxyUrl || failedLightboxSource === lightboxSourceUrl) return
+                    setFailedLightboxSource(lightboxSourceUrl)
+                  }}
+                  onContextMenu={(event) => {
+                    event.preventDefault()
+                    void handleDownloadVideo(
+                      selectedEntry,
+                      resolveProxySourceUrl(lightboxVideoRef.current?.currentSrc || lightboxVideoSrc || selectedEntry.resultUrl || Object.values(selectedEntry.mediaUrls)[0] || ''),
+                    )
+                  }}
+                />
+                <div className="lab-newlayout-history-lightbox-media-actions">
+                  <button
+                    type="button"
+                    className="lab-newlayout-history-lightbox-action"
+                    onClick={() => {
+                      void handleDownloadVideo(
+                        selectedEntry,
+                        resolveProxySourceUrl(lightboxVideoRef.current?.currentSrc || lightboxVideoSrc || selectedEntry.resultUrl || Object.values(selectedEntry.mediaUrls)[0] || ''),
+                      )
+                    }}
+                  >
+                    Download video
+                  </button>
+                  <button
+                    type="button"
+                    className="lab-newlayout-history-lightbox-action"
+                    onClick={() => {
+                      void moveHistoryVideoToFirebase(selectedEntry)
+                    }}
+                    disabled={lightboxIsReferencing || lightboxIsReferenced || !selectedEntry.resultUrl}
+                  >
+                    {lightboxIsReferencing ? 'Referencing...' : lightboxIsReferenced ? 'Referenced' : 'Reference video'}
+                  </button>
+                  <button
+                    type="button"
+                    className="lab-newlayout-history-lightbox-action"
+                    onClick={handleOpenLightboxVideoLink}
+                    disabled={!lightboxSourceUrl}
+                  >
+                    Open video link
+                  </button>
+                  <button
+                    type="button"
+                    className="lab-newlayout-history-lightbox-action"
+                    onClick={() => {
+                      void handleResubmitGeneration(selectedEntry)
+                    }}
+                    disabled={Boolean(resubmittingIds[selectedEntry.id])}
+                  >
+                    {resubmittingIds[selectedEntry.id] ? 'Regenerating...' : 'Regenerate'}
+                  </button>
+                </div>
+                {lightboxSourceUrl ? (
+                  <div className="lab-newlayout-history-lightbox-media-link-row">
+                    <a
+                      className="lab-newlayout-history-lightbox-video-link"
+                      href={lightboxSourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={lightboxSourceUrl}
+                    >
+                      {lightboxSourceUrl}
+                    </a>
+                  </div>
+                ) : null}
               </div>
             ) : null}
-            {selectedEntry.duration != null ? (
-              <div className="lab-newlayout-history-lightbox-meta-row">
-                <span>Duration</span>
-                <strong>{selectedEntry.duration}s</strong>
-              </div>
-            ) : null}
-            {selectedEntry.resolution ? (
-              <div className="lab-newlayout-history-lightbox-meta-row">
-                <span>Resolution</span>
-                <strong>{selectedEntry.resolution}</strong>
-              </div>
-            ) : null}
-            {selectedEntry.provider ? (
-              <div className="lab-newlayout-history-lightbox-meta-row">
-                <span>Provider</span>
-                <strong>{selectedEntry.provider}</strong>
-              </div>
+            {selectedEntry.prompt ? (
+              <div className="lab-newlayout-history-lightbox-prompt">{selectedEntry.prompt}</div>
             ) : null}
           </div>
-          {selectedEntry.prompt ? (
-            <div className="lab-newlayout-history-lightbox-prompt">{selectedEntry.prompt}</div>
-          ) : null}
+          <div className="lab-newlayout-history-lightbox-meta">
+            <div className="lab-newlayout-history-lightbox-meta-summary">
+              {selectedEntry.ratio ? (
+                <div className="lab-newlayout-history-lightbox-meta-row lab-newlayout-history-lightbox-meta-row--summary">
+                  <span>Ratio</span>
+                  <strong>{selectedEntry.ratio}</strong>
+                </div>
+              ) : null}
+              {selectedEntry.duration != null ? (
+                <div className="lab-newlayout-history-lightbox-meta-row lab-newlayout-history-lightbox-meta-row--summary">
+                  <span>Duration</span>
+                  <strong>{selectedEntry.duration}s</strong>
+                </div>
+              ) : null}
+              {selectedEntry.resolution ? (
+                <div className="lab-newlayout-history-lightbox-meta-row lab-newlayout-history-lightbox-meta-row--summary">
+                  <span>Resolution</span>
+                  <strong>{selectedEntry.resolution}</strong>
+                </div>
+              ) : null}
+              {selectedEntry.provider ? (
+                <div className="lab-newlayout-history-lightbox-meta-row lab-newlayout-history-lightbox-meta-row--summary">
+                  <span>Provider</span>
+                  <strong>{selectedEntry.provider}</strong>
+                </div>
+              ) : null}
+            </div>
+            {selectedEntry.model ? (
+              <div className="lab-newlayout-history-lightbox-meta-row">
+                <span>Model</span>
+                <strong className="lab-newlayout-history-lightbox-meta-mono">{formatModelName(selectedEntry.model)}</strong>
+              </div>
+            ) : null}
+            {referenceMedia.length > 0 ? (
+              <div className="lab-newlayout-history-lightbox-meta-refs">
+                <div className="lab-newlayout-history-lightbox-meta-refs-label">
+                  References ({referenceMedia.length})
+                </div>
+                <div className="lab-newlayout-history-lightbox-meta-refs-grid">
+                  {referenceMedia.map((ref) => (
+                    ref.kind === 'video' ? (
+                      <button
+                        key={ref.key}
+                        type="button"
+                        className="lab-newlayout-history-lightbox-meta-ref lab-newlayout-history-lightbox-meta-ref--action"
+                        title={`video: ${ref.url}`}
+                        onClick={() => { void handleDownloadVideo(selectedEntry, ref.url) }}
+                        onContextMenu={(event) => {
+                          event.preventDefault()
+                          void handleDownloadVideo(selectedEntry, ref.url)
+                        }}
+                      >
+                        <video src={buildVideoProxyUrl(ref.url) || ref.url} muted playsInline preload="metadata" />
+                      </button>
+                    ) : (
+                      <a
+                        key={ref.key}
+                        className="lab-newlayout-history-lightbox-meta-ref"
+                        href={ref.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={`${ref.kind}: ${ref.url}`}
+                      >
+                        {ref.kind === 'audio' ? (
+                          <div className="lab-newlayout-history-lightbox-meta-ref-audio">♪</div>
+                        ) : (
+                          <img src={ref.url} alt="" loading="lazy" />
+                        )}
+                      </a>
+                    )
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {selectedEntry.timestamp ? (
+              <div className="lab-newlayout-history-lightbox-meta-row">
+                <span>Completed</span>
+                <strong>{new Date(selectedEntry.timestamp).toLocaleString()}</strong>
+              </div>
+            ) : null}
+            {selectedEntry.taskId ? (
+              <div className="lab-newlayout-history-lightbox-meta-row">
+                <span>Task ID</span>
+                <strong className="lab-newlayout-history-lightbox-meta-mono">{selectedEntry.taskId}</strong>
+                <button
+                  type="button"
+                  className="lab-newlayout-history-lightbox-action lab-newlayout-history-lightbox-task-recovery-btn"
+                  onClick={() => handleRecoverFromTaskId()}
+                  disabled={isRecoveringTask}
+                >
+                  {isRecoveringTask ? 'Recovering...' : 'Use For Recovery'}
+                </button>
+              </div>
+            ) : null}
+            {selectedEntry.status ? (
+              <div className="lab-newlayout-history-lightbox-meta-row">
+                <span>Status</span>
+                <strong>{selectedEntry.status}</strong>
+              </div>
+            ) : null}
+            {lightboxSourceUrl ? (
+              <div className="lab-newlayout-history-lightbox-meta-row">
+                <span>Saved In</span>
+                <strong>{lightboxStorageLabel}</strong>
+              </div>
+            ) : null}
+            {selectedEntry.submittedAt && selectedEntry.completedAt ? (
+              <div className="lab-newlayout-history-lightbox-meta-row">
+                <span>Duration</span>
+                <strong>{calculateGenerationMetrics(selectedEntry.submittedAt, selectedEntry.completedAt).durationFormatted}</strong>
+              </div>
+            ) : null}
+            {selectedEntry.resultUrl && selectedEntry.submittedAt && !selectedEntry.resultUrl.includes('firebasestorage') ? (
+              <div className={`lab-newlayout-history-lightbox-meta-row ${getExpiryStatusClass(calculateUrlExpiry(selectedEntry.submittedAt))}`}>
+                <span>Link Expires</span>
+                <strong className="lab-newlayout-history-lightbox-expiry-status">
+                  {getExpiryStatusLabel(calculateUrlExpiry(selectedEntry.submittedAt))}
+                </strong>
+              </div>
+            ) : null}
+            {selectedEntryFailureReason ? (
+              <div className="lab-newlayout-history-lightbox-meta-row lab-newlayout-history-lightbox-meta-row--error">
+                <span>⚠ Failure reason</span>
+                <strong>{selectedEntryFailureReason}</strong>
+              </div>
+            ) : null}
+            <div className="lab-newlayout-history-lightbox-meta-json">
+              <button
+                type="button"
+                className="lab-newlayout-history-lightbox-json-toggle"
+                onClick={() => setIsJsonExpanded((current) => !current)}
+              >
+                <span className={`lab-newlayout-history-lightbox-json-chevron${isJsonExpanded ? ' is-open' : ''}`}>▸</span>
+                <span>Request JSON</span>
+                <span className="lab-newlayout-history-lightbox-json-model">{selectedEntry.model || 'unknown'}</span>
+              </button>
+              {isJsonExpanded ? (
+                <div className="lab-newlayout-history-lightbox-json-body">
+                  <div className="lab-newlayout-history-lightbox-json-meta">
+                    {selectedEntry.requestEndpoint ? (
+                      <span><strong>Endpoint:</strong> {selectedEntry.requestEndpoint}</span>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="lab-newlayout-history-lightbox-json-copy"
+                      onClick={handleCopyJson}
+                    >
+                      Copy
+                    </button>
+                  </div>
+                  <pre className="lab-newlayout-history-lightbox-json-pre">{requestJsonText}</pre>
+                </div>
+              ) : null}
+            </div>
+            <div className="lab-newlayout-history-lightbox-extend-tabs">
+              <div className="lab-newlayout-history-lightbox-extend-tabs-label">Extend</div>
+              <div className="lab-newlayout-history-lightbox-extend-tabs-row">
+                <button
+                  type="button"
+                  className={`lab-newlayout-history-lightbox-extend-tab${activeExtendTab === 'before' ? ' is-active' : ''}`}
+                  onClick={() => { void handleExtendTabClick('before') }}
+                  disabled={isSubmittingExtendReference}
+                >
+                  Extend Before
+                </button>
+                <button
+                  type="button"
+                  className={`lab-newlayout-history-lightbox-extend-tab${activeExtendTab === 'after' ? ' is-active' : ''}`}
+                  onClick={() => { void handleExtendTabClick('after') }}
+                  disabled={isSubmittingExtendReference}
+                >
+                  Extend After
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>,
@@ -1143,9 +3448,21 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
         <div className="lab-newlayout-history-toolbar">
           <div className="lab-newlayout-history-toolbar-stats">
             <span className="lab-newlayout-history-stat">{title}</span>
-            {!isLoading ? <span className="lab-newlayout-history-toolbar-note">{entries.length} items</span> : null}
+            {!isLoading ? (
+              <span className="lab-newlayout-history-toolbar-note">
+                {effectiveEntries.length} items
+                {Object.keys(movingToFirebaseIds).length > 0 ? ` · uploading ${Object.keys(movingToFirebaseIds).length}` : ''}
+              </span>
+            ) : null}
           </div>
           <div className="lab-newlayout-history-toolbar-actions">
+            <button
+              type="button"
+              className="lab-newlayout-ui-settings-action"
+              onClick={handleHistoryDiagnose}
+            >
+              Diagnose (temp)
+            </button>
             <button
               type="button"
               className="lab-newlayout-ui-settings-action"
@@ -1163,33 +3480,34 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
       ) : (
         <>
           <div className="lab-newlayout-history-gallery-grid">
-            {pageEntries.map((entry) => (
+            {visibleEntries.map((entry) => (
               <GalleryCard
-                key={entry.id}
+                key={`${entry.id}-${entry.timestamp}`}
                 entry={entry}
                 onClick={() => setSelectedEntry(entry)}
+                isLiked={likedIds.has(entry.id)}
+                onToggleLike={toggleLiked}
+                isDownloaded={isDownloaded(entry.resultUrl || Object.values(entry.mediaUrls)[0] || '')}
+                onDownloadVideo={handleDownloadVideo}
+                onReuse={handleReuseFromEntry}
+                onMoveToFirebase={moveHistoryVideoToFirebase}
+                isMovingToFirebase={Boolean(movingToFirebaseIds[entry.id])}
+                onExtendBefore={(target) => { void handleExtendFromEntry('before', target) }}
+                onExtendAfter={(target) => { void handleExtendFromEntry('after', target) }}
+                onDelete={removeHistoryItem}
               />
             ))}
           </div>
-          {totalPages > 1 ? (
+          {hasMoreEntries ? (
             <div className="lab-newlayout-history-pagination">
               <button
                 type="button"
                 className="lab-newlayout-ui-settings-action"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                onClick={handleLoadMoreEntries}
               >
-                ←
+                Load more
               </button>
-              <span className="lab-newlayout-history-pagination-copy">{page} / {totalPages}</span>
-              <button
-                type="button"
-                className="lab-newlayout-ui-settings-action"
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              >
-                →
-              </button>
+              <span className="lab-newlayout-history-pagination-copy">Showing {visibleEntries.length} / {effectiveEntries.length}</span>
             </div>
           ) : null}
         </>
@@ -1200,58 +3518,507 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
 }
 
 function ReferencesPanel(_props: IDockviewPanelProps<PanelSuggestionParams>) {
+  const REFERENCE_PAGE_SIZE = 36
+  const addComposerReference = useLabNewLayoutStore((state) => state.addComposerReference)
   const composerReferences = useLabNewLayoutStore((state) => state.composerReferences)
-  const composerPreview = useLabNewLayoutStore((state) => state.currentComposerPreview)
-  const storeImages = composerReferences.filter((reference) => reference.kind === 'image').map((reference) => reference.url)
-  const storeVideos = composerReferences.filter((reference) => reference.kind === 'video').map((reference) => reference.url)
+  const { authUid, studioProjectId, studioActiveFolderId, projectReferenceLibraryItems, projectReferenceLibraryLoading } = useLabNewLayoutData()
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const videoPreviewRefs = useRef<Record<string, HTMLVideoElement | null>>({})
+  const [isDragOver, setIsDragOver] = useState(false)
+  const [uploadingCount, setUploadingCount] = useState(0)
+  const [visibleReferenceCount, setVisibleReferenceCount] = useState(REFERENCE_PAGE_SIZE)
+  const [uploadScope, setUploadScope] = useState<'project' | 'folder'>(() => (studioActiveFolderId ? 'folder' : 'project'))
+  const { showToast: showRefToast } = useToast()
+  const { has: isReferenceLiked, toggle: toggleReferenceLiked } = useLikedReferenceUrls()
 
-  const previewImages: string[] = (composerPreview && Array.isArray(composerPreview.reference_images))
-    ? (composerPreview.reference_images as unknown[]).filter((url): url is string => typeof url === 'string' && url.length > 0)
-    : []
-  const previewVideos: string[] = (composerPreview && Array.isArray(composerPreview.reference_videos))
-    ? (composerPreview.reference_videos as unknown[]).filter((url): url is string => typeof url === 'string' && url.length > 0)
-    : []
+  const canMirrorReferenceUrlInBrowser = useCallback((value: string) => {
+    try {
+      const parsed = new URL(value, window.location.href)
+      return parsed.origin === window.location.origin
+        || parsed.hostname.includes('firebasestorage.googleapis.com')
+        || parsed.hostname.includes('firebasestorage.app')
+    } catch {
+      return false
+    }
+  }, [])
 
-  const referenceImages = storeImages.length > 0 ? storeImages : previewImages
-  const referenceVideos = storeVideos.length > 0 ? storeVideos : previewVideos
-  const allRefs = [...referenceImages, ...referenceVideos]
+  useEffect(() => {
+    if (uploadScope === 'folder' && !studioActiveFolderId) {
+      setUploadScope('project')
+    }
+  }, [studioActiveFolderId, uploadScope])
+
+  const visibleLibraryItems = useMemo(() => {
+    if (!studioActiveFolderId) {
+      return projectReferenceLibraryItems.filter((item) => !item.folderId)
+    }
+
+    return projectReferenceLibraryItems.filter((item) => !item.folderId || item.folderId === studioActiveFolderId)
+  }, [projectReferenceLibraryItems, studioActiveFolderId])
+
+  const pagedLibraryItems = useMemo(() => (
+    visibleLibraryItems.slice(0, visibleReferenceCount)
+  ), [visibleLibraryItems, visibleReferenceCount])
+
+  const hasMoreLibraryItems = visibleLibraryItems.length > visibleReferenceCount
+
+  useEffect(() => {
+    setVisibleReferenceCount(REFERENCE_PAGE_SIZE)
+  }, [studioProjectId, studioActiveFolderId])
+
+  useEffect(() => {
+    setVisibleReferenceCount((current) => Math.min(Math.max(current, REFERENCE_PAGE_SIZE), Math.max(visibleLibraryItems.length, REFERENCE_PAGE_SIZE)))
+  }, [visibleLibraryItems.length])
+
+  const handleLoadMoreReferences = useCallback(() => {
+    setVisibleReferenceCount((current) => current + REFERENCE_PAGE_SIZE)
+  }, [])
+
+  const uploadUrlToFirebase = useCallback(async (url: string, kind: 'image' | 'video', name: string): Promise<string | null> => {
+    try {
+      const targetFolderId = uploadScope === 'folder' ? studioActiveFolderId : null
+      const folderPathSegment = targetFolderId ? `folders/${targetFolderId}` : 'project'
+      const storagePathPrefix = `lab-references/projects/${studioProjectId}/${folderPathSegment}`
+      const response = await fetch('/api/lab/references/upload-by-url', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          url,
+          name,
+          kind,
+          storagePathPrefix,
+          firebaseConfig,
+          mimeType: kind === 'video' ? 'video/mp4' : 'image/jpeg',
+        }),
+      })
+      const payload = await response.json().catch(() => null) as { error?: string; saved?: { firebaseUrl?: string } } | null
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Reference upload failed')
+      }
+      return payload?.saved?.firebaseUrl || null
+    } catch {
+      return null
+    }
+  }, [studioActiveFolderId, studioProjectId, uploadScope])
+
+  const appendLibraryReference = useCallback(async (reference: DragReferencePayload): Promise<boolean> => {
+    if (!studioProjectId) {
+      showRefToast({ message: 'Select a Studio project first', type: 'warning' })
+      return false
+    }
+
+    const targetFolderId = uploadScope === 'folder' ? studioActiveFolderId : null
+    const normalizedUrl = reference.url.trim()
+    if (!normalizedUrl) return false
+
+    const isHistoryReference = reference.fromHistory === true
+    let finalUrl = normalizedUrl
+    if (isHistoryReference) {
+      if (canMirrorReferenceUrlInBrowser(normalizedUrl)) {
+        showRefToast({ message: `Uploading ${reference.kind} to Firebase...`, type: 'info' })
+        setUploadingCount((n) => n + 1)
+        const firebaseUrl = await uploadUrlToFirebase(normalizedUrl, reference.kind, reference.name)
+        setUploadingCount((n) => Math.max(0, n - 1))
+
+        if (!firebaseUrl) {
+          showRefToast({ message: `Failed to upload ${reference.kind} to Firebase`, type: 'error' })
+          return false
+        }
+
+        finalUrl = firebaseUrl
+        showRefToast({ message: `${reference.kind} uploaded to Firebase successfully`, type: 'success' })
+      } else {
+        showRefToast({
+          message: 'Source blocks client-side copying, so this reference was saved by URL instead of mirrored to Firebase.',
+          type: 'info',
+        })
+      }
+    }
+
+    const exists = projectReferenceLibraryItems.some(
+      (item) => item.url === finalUrl && (item.folderId || null) === (targetFolderId || null),
+    )
+    if (exists) return false
+
+    const itemId = `ref-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    await saveProjectReferenceLibraryItem(studioProjectId, {
+      id: itemId,
+      url: finalUrl,
+      kind: reference.kind,
+      name: reference.name,
+      createdAt: Date.now(),
+      folderId: targetFolderId,
+    }, authUid || 'anon')
+
+    return true
+  }, [authUid, canMirrorReferenceUrlInBrowser, projectReferenceLibraryItems, setUploadingCount, showRefToast, studioActiveFolderId, studioProjectId, uploadScope, uploadUrlToFirebase])
+
+  const uploadFiles = useCallback(async (files: File[]) => {
+    if (!studioProjectId) {
+      showRefToast({ message: 'Select a Studio project first', type: 'warning' })
+      return
+    }
+
+    if (!files.length) return
+    const validFiles = files.filter((f) => f.type.startsWith('image/') || f.type.startsWith('video/'))
+    if (!validFiles.length) {
+      showRefToast({ message: 'Only image and video files are supported', type: 'warning' })
+      return
+    }
+
+    const targetFolderId = uploadScope === 'folder' ? studioActiveFolderId : null
+    const folderPathSegment = targetFolderId ? `folders/${targetFolderId}` : 'project'
+    setUploadingCount((n) => n + validFiles.length)
+    await Promise.all(validFiles.map(async (file) => {
+      try {
+        const ext = file.name.split('.').pop() ?? ''
+        const uniqueName = `lab-references/projects/${studioProjectId}/${folderPathSegment}/${authUid || 'anon'}-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+        const ref = storageRef(storage, uniqueName)
+        await uploadBytes(ref, file, { contentType: file.type })
+        const url = await getDownloadURL(ref)
+        const kind: 'image' | 'video' = file.type.startsWith('video/') ? 'video' : 'image'
+
+        await appendLibraryReference({ url, kind, name: file.name })
+      } catch {
+        showRefToast({ message: `Failed to upload ${file.name}`, type: 'error' })
+      } finally {
+        setUploadingCount((n) => Math.max(0, n - 1))
+      }
+    }))
+  }, [appendLibraryReference, authUid, showRefToast, studioActiveFolderId, studioProjectId, uploadScope])
+
+  const handleDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    setIsDragOver(false)
+
+    const droppedHistoryReference = readHistoryReferencePayload(event.dataTransfer)
+    if (droppedHistoryReference) {
+      void appendLibraryReference(droppedHistoryReference).then((added) => {
+        showRefToast({
+          message: added
+            ? `Saved ${droppedHistoryReference.kind} to project references`
+            : 'Reference already exists in this scope',
+          type: added ? 'success' : 'info',
+        })
+      }).catch(() => {
+        showRefToast({ message: 'Failed to save reference', type: 'error' })
+      })
+      return
+    }
+
+    const files = Array.from(event.dataTransfer.files)
+    void uploadFiles(files)
+  }, [appendLibraryReference, showRefToast, uploadFiles])
+
+  const handleDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+    setIsDragOver(true)
+  }, [])
+
+  const handleDragLeave = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.contains(event.relatedTarget as Node)) {
+      setIsDragOver(false)
+    }
+  }, [])
+
+  const handleFileInput = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? [])
+    event.target.value = ''
+    void uploadFiles(files)
+  }, [uploadFiles])
+
+  const handlePlusClick = useCallback(() => {
+    fileInputRef.current?.click()
+  }, [])
+
+  const handleVideoHoverStart = useCallback((itemId: string) => {
+    const media = videoPreviewRefs.current[itemId]
+    if (!media) return
+    media.muted = false
+    void media.play().catch(() => {
+      media.muted = true
+      void media.play().catch(() => undefined)
+    })
+  }, [])
+
+  const handleVideoHoverEnd = useCallback((itemId: string) => {
+    const media = videoPreviewRefs.current[itemId]
+    if (!media) return
+    media.pause()
+    media.currentTime = 0
+    media.muted = true
+  }, [])
+
+  const handleAddToComposer = useCallback((item: StudioReferenceAsset) => {
+    if (composerReferences.some((ref) => ref.url === item.url)) {
+      showRefToast({ message: 'Already in composer references', type: 'info' })
+      return
+    }
+
+    addComposerReference({
+      id: `composer-ref-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      url: item.url,
+      kind: item.kind,
+      name: item.name,
+    })
+    showRefToast({ message: 'Added to composer references', type: 'success' })
+  }, [addComposerReference, composerReferences, showRefToast])
+
+  const handleReferenceDragStart = useCallback((event: React.DragEvent<HTMLDivElement>, item: StudioReferenceAsset) => {
+    const payload = {
+      id: `composer-ref-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      url: item.url,
+      kind: item.kind,
+      name: item.name,
+    }
+    event.dataTransfer.effectAllowed = 'copy'
+    event.dataTransfer.setData('application/json', JSON.stringify(payload))
+    event.dataTransfer.setData(LAB_NEWLAYOUT_HISTORY_REF_MIME, JSON.stringify(payload))
+    event.dataTransfer.setData('text/uri-list', item.url)
+    event.dataTransfer.setData('text/plain', item.url)
+  }, [])
+
+  const handleDeleteLibraryItem = useCallback(async (item: StudioReferenceAsset) => {
+    if (!studioProjectId) return
+
+    const approved = typeof window === 'undefined'
+      ? true
+      : window.confirm(`Remove "${item.name}" from project references? This will not remove it from composer.`)
+
+    if (!approved) return
+
+    try {
+      await deleteProjectReferenceLibraryItem(studioProjectId, item.id)
+      showRefToast({ message: 'Removed from project references', type: 'success' })
+    } catch {
+      showRefToast({ message: 'Failed to remove reference', type: 'error' })
+    }
+  }, [showRefToast, studioProjectId])
+
+  const importComposerReferences = useCallback(async () => {
+    if (!studioProjectId) {
+      showRefToast({ message: 'Select a Studio project first', type: 'warning' })
+      return
+    }
+
+    const targetFolderId = uploadScope === 'folder' ? studioActiveFolderId : null
+    const existing = new Set(
+      projectReferenceLibraryItems
+        .filter((item) => (item.folderId || null) === (targetFolderId || null))
+        .map((item) => item.url),
+    )
+
+    const candidates = composerReferences.filter((item) => !existing.has(item.url))
+    if (!candidates.length) {
+      showRefToast({ message: 'All composer references are already in project library', type: 'info' })
+      return
+    }
+
+    try {
+      await Promise.all(candidates.map((item) => saveProjectReferenceLibraryItem(studioProjectId, {
+        id: `ref-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        url: item.url,
+        kind: item.kind,
+        name: item.name,
+        createdAt: Date.now(),
+        folderId: targetFolderId,
+      }, authUid || 'anon')))
+      showRefToast({ message: `Imported ${candidates.length} composer reference${candidates.length === 1 ? '' : 's'}`, type: 'success' })
+    } catch {
+      showRefToast({ message: 'Failed to import composer references', type: 'error' })
+    }
+  }, [authUid, composerReferences, projectReferenceLibraryItems, showRefToast, studioActiveFolderId, studioProjectId, uploadScope])
+
+  const hasFolderScope = Boolean(studioActiveFolderId)
+  const { projectCount, folderCount } = useMemo(() => {
+    let nextProjectCount = 0
+    let nextFolderCount = 0
+    for (const item of projectReferenceLibraryItems) {
+      if (!item.folderId) {
+        nextProjectCount += 1
+      }
+      if (studioActiveFolderId && item.folderId === studioActiveFolderId) {
+        nextFolderCount += 1
+      }
+    }
+    return {
+      projectCount: nextProjectCount,
+      folderCount: nextFolderCount,
+    }
+  }, [projectReferenceLibraryItems, studioActiveFolderId])
+  const activeScopeLabel = uploadScope === 'folder' && studioActiveFolderId ? 'Folder' : 'Project'
 
   return (
-    <div className="lab-newlayout-panel lab-newlayout-panel--references">
+    <div
+      className={`lab-newlayout-panel lab-newlayout-panel--references${isDragOver ? ' is-drag-over' : ''}`}
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+    >
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*,video/*"
+        multiple
+        className="lab-newlayout-references-file-input"
+        aria-label="Upload reference images or videos"
+        onChange={handleFileInput}
+      />
       <div className="lab-newlayout-history-top-fixed">
         <div className="lab-newlayout-history-toolbar">
           <div className="lab-newlayout-history-toolbar-stats">
             <span className="lab-newlayout-history-stat">References</span>
-            <span className="lab-newlayout-history-toolbar-note">{allRefs.length} active</span>
+            <span className="lab-newlayout-history-toolbar-note">
+              {visibleLibraryItems.length} visible · {projectCount} project{hasFolderScope ? ` · ${folderCount} folder` : ''}
+              {uploadingCount > 0 ? ` · uploading ${uploadingCount}…` : ''}
+            </span>
+          </div>
+          <div className="lab-newlayout-references-toolbar-actions">
+            <div className="lab-newlayout-references-scope-toggle" aria-label="Upload scope">
+              <button
+                type="button"
+                className={`lab-newlayout-references-scope-btn${uploadScope === 'project' ? ' is-active' : ''}`}
+                onClick={() => setUploadScope('project')}
+              >
+                Project
+              </button>
+              <button
+                type="button"
+                className={`lab-newlayout-references-scope-btn${uploadScope === 'folder' ? ' is-active' : ''}`}
+                onClick={() => setUploadScope('folder')}
+                disabled={!hasFolderScope}
+                title={hasFolderScope ? 'Upload into current folder scope' : 'Select a folder to enable folder upload'}
+              >
+                Folder
+              </button>
+            </div>
+            <button type="button" className="lab-newlayout-references-add-btn" onClick={handlePlusClick} title={`Add files to ${activeScopeLabel}`}>
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3a.75.75 0 0 1 .75.75V7.25h3.5a.75.75 0 0 1 0 1.5h-3.5v3.5a.75.75 0 0 1-1.5 0v-3.5H3.75a.75.75 0 0 1 0-1.5h3.5V3.75A.75.75 0 0 1 8 3Z"/></svg>
+              Add
+            </button>
           </div>
         </div>
       </div>
-      {allRefs.length === 0 ? (
-        <div className="lab-newlayout-references-empty">
-          No references staged. Add references in the Composer.
-        </div>
-      ) : (
-        <div className="lab-newlayout-references-grid lab-newlayout-references-grid--active">
-          {referenceImages.map((url, index) => (
-            <img
-              key={`img-${index}`}
-              src={url}
-              alt=""
-              className="lab-newlayout-reference-thumb lab-newlayout-reference-thumb--image"
-            />
-          ))}
-          {referenceVideos.map((url, index) => (
-            <video
-              key={`vid-${index}`}
-              src={url}
-              muted
-              playsInline
-              preload="metadata"
-              className="lab-newlayout-reference-thumb lab-newlayout-reference-thumb--video"
-            />
-          ))}
-        </div>
-      )}
+
+      <div className="lab-newlayout-references-drop-zone">
+        {isDragOver && (
+          <div className="lab-newlayout-references-drop-hint">
+            Drop files or history items here
+          </div>
+        )}
+        {!studioProjectId && !isDragOver ? (
+          <div className="lab-newlayout-references-empty">
+            <div className="lab-newlayout-references-plus-card lab-newlayout-references-plus-card--static">
+              <span>Select a Studio project to manage shared references.</span>
+              <span className="lab-newlayout-references-plus-card-sub">Project references are independent from composer references.</span>
+            </div>
+          </div>
+        ) : projectReferenceLibraryLoading && !isDragOver ? (
+          <div className="lab-newlayout-references-empty">
+            <div className="lab-newlayout-history-loading">Loading references…</div>
+          </div>
+        ) : visibleLibraryItems.length === 0 && !isDragOver ? (
+          <div className="lab-newlayout-references-empty">
+            <div className="lab-newlayout-references-empty-actions">
+              <button type="button" className="lab-newlayout-references-plus-card" onClick={handlePlusClick}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5a.75.75 0 0 1 .75.75V11.25H18.25a.75.75 0 0 1 0 1.5H12.75v5.5a.75.75 0 0 1-1.5 0v-5.5H5.75a.75.75 0 0 1 0-1.5h5.5V5.75A.75.75 0 0 1 12 5Z"/></svg>
+                <span>Add images or videos</span>
+                <span className="lab-newlayout-references-plus-card-sub">Saved as {activeScopeLabel.toLowerCase()} reference · drag from desktop or History Gallery</span>
+              </button>
+              {composerReferences.length > 0 ? (
+                <button type="button" className="lab-newlayout-references-import-btn" onClick={() => { void importComposerReferences() }}>
+                  Import current composer refs
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <div className="lab-newlayout-references-grid lab-newlayout-references-grid--active">
+            <button type="button" className="lab-newlayout-reference-plus-tile" onClick={handlePlusClick} title="Add more">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5a.75.75 0 0 1 .75.75V11.25H18.25a.75.75 0 0 1 0 1.5H12.75v5.5a.75.75 0 0 1-1.5 0v-5.5H5.75a.75.75 0 0 1 0-1.5h5.5V5.75A.75.75 0 0 1 12 5Z"/></svg>
+            </button>
+            {pagedLibraryItems.map((item) => (
+              <div
+                key={item.id}
+                className="lab-newlayout-reference-item is-draggable"
+                draggable
+                onDragStart={(event) => handleReferenceDragStart(event, item)}
+                onMouseEnter={() => {
+                  if (item.kind === 'video') handleVideoHoverStart(item.id)
+                }}
+                onMouseLeave={() => {
+                  if (item.kind === 'video') handleVideoHoverEnd(item.id)
+                }}
+              >
+                {item.kind === 'video' ? (
+                  <>
+                    <video
+                      ref={(element) => {
+                        videoPreviewRefs.current[item.id] = element
+                      }}
+                      src={item.url}
+                      muted
+                      playsInline
+                      preload="metadata"
+                      className="lab-newlayout-reference-thumb lab-newlayout-reference-thumb--video"
+                    />
+                    <span className="lab-newlayout-reference-video-indicator" aria-hidden="true">▶</span>
+                  </>
+                ) : item.kind === 'audio' ? (
+                  <div className="lab-newlayout-reference-thumb lab-newlayout-reference-thumb--audio">♪</div>
+                ) : (
+                  <img
+                    src={item.url}
+                    alt=""
+                    className="lab-newlayout-reference-thumb lab-newlayout-reference-thumb--image"
+                  />
+                )}
+                <div className="lab-newlayout-reference-scope-badge">{item.folderId ? 'Folder' : 'Project'}</div>
+                <button
+                  type="button"
+                  className={`lab-newlayout-reference-heart${isReferenceLiked(item.url) ? ' is-liked' : ''}`}
+                  onClick={() => toggleReferenceLiked(item.url)}
+                  aria-label={isReferenceLiked(item.url) ? 'Unlike reference' : 'Like reference'}
+                  title={isReferenceLiked(item.url) ? 'Unlike reference' : 'Like reference'}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill={isReferenceLiked(item.url) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  className="lab-newlayout-reference-add-composer"
+                  onClick={() => handleAddToComposer(item)}
+                  title="Add to composer"
+                >
+                  + Composer
+                </button>
+                <button
+                  type="button"
+                  className="lab-newlayout-reference-remove"
+                  onClick={() => { void handleDeleteLibraryItem(item) }}
+                  title="Remove from project references"
+                >
+                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.22 4.22a.75.75 0 0 1 1.06 0L8 6.94l2.72-2.72a.75.75 0 1 1 1.06 1.06L9.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L8 9.06l-2.72 2.72a.75.75 0 0 1-1.06-1.06L6.94 8 4.22 5.28a.75.75 0 0 1 0-1.06Z"/></svg>
+                </button>
+              </div>
+            ))}
+            {hasMoreLibraryItems ? (
+              <button
+                type="button"
+                className="lab-newlayout-reference-plus-tile lab-newlayout-reference-plus-tile--load-more"
+                onClick={handleLoadMoreReferences}
+                title="Load more references"
+              >
+                <span>Load more</span>
+              </button>
+            ) : null}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -1372,6 +4139,7 @@ function buildDockviewDemoLayout(api: DockviewApi) {
     id: 'references',
     component: 'references',
     title: 'References',
+    renderer: 'always',
     position: { referencePanel: positionSummary },
     params: getPanelSuggestion('references', 'References'),
   })
@@ -1481,7 +4249,7 @@ function restorePanelsAfterFlowFocus(api: DockviewApi, panelIds: string[]) {
       position: { referencePanel: ensuredOrdersPanel, direction: 'below' },
       params: getPanelSuggestion('orderbook', 'Composer'),
     })
-    ensuredOrderbookPanel.api.group.model.header.hidden = true
+    ensuredOrderbookPanel.api.group.model.header.hidden = false
   }
 
   let ensuredPositionSummaryPanel = positionSummaryPanel
@@ -1511,6 +4279,7 @@ function restorePanelsAfterFlowFocus(api: DockviewApi, panelIds: string[]) {
       id: 'references',
       component: 'references',
       title: 'References',
+      renderer: 'always',
       position: { referencePanel: ensuredPositionSummaryPanel },
       params: getPanelSuggestion('references', 'References'),
     })
@@ -1639,7 +4408,7 @@ function populateEdgeGroups(api: DockviewApi) {
 function normalizeDockviewPreviewLayout(api: DockviewApi) {
   const composerPanel = api.panels.find((panel) => panel.id === 'orderbook')
   if (composerPanel) {
-    composerPanel.api.group.model.header.hidden = true
+    composerPanel.api.group.model.header.hidden = false
   }
 
   const leftEdge = api.getEdgeGroup('left')
@@ -1677,6 +4446,7 @@ function normalizeDockviewPreviewLayout(api: DockviewApi) {
       id: 'references',
       component: 'references',
       title: 'References',
+      renderer: 'always',
       position: { referencePanel: positionSummary },
       params: getPanelSuggestion('references', 'References'),
     })
@@ -1741,6 +4511,8 @@ export default function LabNewLayoutPage() {
   const {
     dataContextValue,
     studioProjectId,
+    projectNewLayoutConfig,
+    updateProjectNewLayoutConfig,
   } = useLabNewLayoutWorkspace({
     uid: authUid,
     displayName: authDisplayName,
@@ -1749,12 +4521,16 @@ export default function LabNewLayoutPage() {
   })
   const apiRef = useRef<DockviewApi | null>(null)
   const authUidRef = useRef('')
+  const { showToast } = useToast()
   const layoutChangeDisposableRef = useRef<{ dispose: () => void } | null>(null)
   const activePanelChangeDisposableRef = useRef<{ dispose: () => void } | null>(null)
   const isFlowFocusModeRef = useRef(false)
   const flowFocusClosedPanelIdsRef = useRef<string[]>([])
   const layoutSaveTimerRef = useRef<number | null>(null)
   const isApplyingLayoutRef = useRef(false)
+  const isSashDraggingRef = useRef(false)
+  const pendingRemoteLayoutPersistRef = useRef(false)
+  const layoutDirtyRef = useRef(false)
   const lastSavedLayoutJsonRef = useRef(initialLocalLayoutRef.current ? JSON.stringify(initialLocalLayoutRef.current.layout) : '')
   const lastSavedPresetStoreJsonRef = useRef(JSON.stringify(initialLocalPresetStoreRef.current))
   const normalizedMasterEmail = (MASTER_EMAIL || '').trim().toLowerCase()
@@ -1765,40 +4541,44 @@ export default function LabNewLayoutPage() {
   const canCurrentUserCloseMainTabs = isMasterAdminUser && projectTabPolicy.masterAdminCanCloseTabs
 
   const persistLayoutState = (api: DockviewApi, options?: { forceRemote?: boolean }) => {
-    const currentLayout = api.toJSON()
-    const currentLayoutJson = JSON.stringify(currentLayout)
-    const hasLayoutChanged = currentLayoutJson !== lastSavedLayoutJsonRef.current
-
-    if (!hasLayoutChanged && !options?.forceRemote) {
-      return
-    }
-
-    const nextState = createPersistedLayoutState(currentLayout)
-
-    if (hasLayoutChanged) {
-      lastSavedLayoutJsonRef.current = currentLayoutJson
-      writeLocalPersistedLayoutState(nextState)
-    }
-
-    if (!authUidRef.current) {
-      return
-    }
+    pendingRemoteLayoutPersistRef.current = pendingRemoteLayoutPersistRef.current || Boolean(options?.forceRemote)
 
     if (layoutSaveTimerRef.current !== null) {
       window.clearTimeout(layoutSaveTimerRef.current)
     }
 
-    const payload = JSON.stringify(nextState)
     layoutSaveTimerRef.current = window.setTimeout(() => {
+      layoutSaveTimerRef.current = null
+
+      const currentLayout = api.toJSON()
+      const currentLayoutJson = JSON.stringify(currentLayout)
+      const hasLayoutChanged = currentLayoutJson !== lastSavedLayoutJsonRef.current
+      const shouldForceRemote = pendingRemoteLayoutPersistRef.current
+      pendingRemoteLayoutPersistRef.current = false
+
+      if (!hasLayoutChanged && !shouldForceRemote) {
+        layoutDirtyRef.current = false
+        return
+      }
+
+      const nextState = createPersistedLayoutState(currentLayout)
+
+      if (hasLayoutChanged) {
+        lastSavedLayoutJsonRef.current = currentLayoutJson
+        writeLocalPersistedLayoutState(nextState)
+      }
+
       const currentUid = authUidRef.current
       if (!currentUid) {
         return
       }
 
       void saveUserPrefs(currentUid, {
-        toorGenDockviewLayoutState: payload,
+        toorGenDockviewLayoutState: JSON.stringify(nextState),
       })
-    }, 450)
+
+      layoutDirtyRef.current = false
+    }, isSashDraggingRef.current ? 260 : 120)
   }
 
   const persistPresetStore = (presets: LayoutPresetRecord[], options?: { forceRemote?: boolean }) => {
@@ -1877,6 +4657,28 @@ export default function LabNewLayoutPage() {
     applyDefaultLayout(api)
   }
 
+  const handleSaveAsDefault = useCallback(() => {
+    const api = apiRef.current
+    const currentUid = authUidRef.current
+    if (!api || !currentUid) {
+      return
+    }
+    if (typeof window !== 'undefined') {
+      const ok = window.confirm('Save the current UI as the default layout for all users?')
+      if (!ok) return
+    }
+    const persisted = createPersistedLayoutState(api.toJSON())
+    const payload = JSON.stringify(persisted)
+    void saveDefaultLabNewLayout(payload, currentUid)
+      .then(() => {
+        defaultLayoutStateRef.current = persisted
+        showToast({ message: 'Default UI saved for all users', type: 'success' })
+      })
+      .catch(() => {
+        showToast({ message: 'Failed to save default UI', type: 'error' })
+      })
+  }, [showToast])
+
   const handleSavePreset = () => {
     const api = apiRef.current
     const trimmedName = presetDraftName.trim()
@@ -1941,7 +4743,11 @@ export default function LabNewLayoutPage() {
     }
 
     writeLocalProjectTabPolicyState(studioProjectId, nextPolicy)
-    void saveProjectNewLayoutConfig(studioProjectId, nextPolicy)
+    updateProjectNewLayoutConfig((current) => ({
+      ...current,
+      adminOnlyPanelIds: nextPolicy.adminOnlyPanelIds,
+      masterAdminCanCloseTabs: nextPolicy.masterAdminCanCloseTabs,
+    }))
   }
 
   const handleToggleAdminOnlyTab = (panelId: string) => {
@@ -2031,7 +4837,7 @@ export default function LabNewLayoutPage() {
       }
 
       void loadUserPrefs(nextUid)
-        .then((prefs) => {
+        .then(async (prefs) => {
           if (cancelled) {
             return
           }
@@ -2043,6 +4849,16 @@ export default function LabNewLayoutPage() {
               lastSavedLayoutJsonRef.current = JSON.stringify(remoteLayoutState.layout)
               setInitialLayoutState(remoteLayoutState)
               writeLocalPersistedLayoutState(remoteLayoutState)
+            } else {
+              const globalDefaultPayload = await loadDefaultLabNewLayout()
+              if (!cancelled && globalDefaultPayload) {
+                const globalDefaultState = parsePersistedLayoutState(globalDefaultPayload)
+                if (globalDefaultState) {
+                  initialLocalLayoutRef.current = globalDefaultState
+                  defaultLayoutStateRef.current = globalDefaultState
+                  setInitialLayoutState(globalDefaultState)
+                }
+              }
             }
           }
 
@@ -2099,21 +4915,16 @@ export default function LabNewLayoutPage() {
 
   useEffect(() => {
     const fallbackPolicy = readLocalProjectTabPolicyState(studioProjectId) ?? initialLegacyPanelAccessRef.current
+    const nextPolicy = studioProjectId
+      ? createProjectTabPolicyState(projectNewLayoutConfig ?? fallbackPolicy)
+      : fallbackPolicy
 
-    setProjectTabPolicy(fallbackPolicy)
-
-    if (!studioProjectId) {
-      return
+    if (studioProjectId) {
+      writeLocalProjectTabPolicyState(studioProjectId, nextPolicy)
     }
 
-    const unsubscribe = subscribeToProjectNewLayoutConfig(studioProjectId, (remoteConfig) => {
-      const nextPolicy = createProjectTabPolicyState(remoteConfig ?? fallbackPolicy)
-      writeLocalProjectTabPolicyState(studioProjectId, nextPolicy)
-      setProjectTabPolicy(nextPolicy)
-    })
-
-    return unsubscribe
-  }, [studioProjectId])
+    setProjectTabPolicy(nextPolicy)
+  }, [projectNewLayoutConfig, studioProjectId])
 
   useEffect(() => {
     return () => {
@@ -2122,6 +4933,88 @@ export default function LabNewLayoutPage() {
       if (layoutSaveTimerRef.current !== null) {
         window.clearTimeout(layoutSaveTimerRef.current)
       }
+      if (typeof document !== 'undefined') {
+        document.body.classList.remove('lab-newlayout-resizing')
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    const flushLayoutIfDirty = () => {
+      const api = apiRef.current
+      if (!api || !layoutDirtyRef.current || isSashDraggingRef.current) {
+        return
+      }
+
+      persistLayoutState(api, { forceRemote: Boolean(authUidRef.current) })
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        flushLayoutIfDirty()
+      }
+    }
+
+    const handlePageHide = () => {
+      flushLayoutIfDirty()
+    }
+
+    const handleBeforeUnload = () => {
+      flushLayoutIfDirty()
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('pagehide', handlePageHide)
+    window.addEventListener('beforeunload', handleBeforeUnload)
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('pagehide', handlePageHide)
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [])
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof Element)) {
+        return
+      }
+
+      const sashHandle = target.closest('.lab-newlayout-dockview .dv-sash')
+      if (!sashHandle) {
+        return
+      }
+
+      isSashDraggingRef.current = true
+      if (typeof document !== 'undefined') {
+        document.body.classList.add('lab-newlayout-resizing')
+      }
+    }
+
+    const handlePointerEnd = () => {
+      if (!isSashDraggingRef.current) {
+        return
+      }
+
+      isSashDraggingRef.current = false
+      if (typeof document !== 'undefined') {
+        document.body.classList.remove('lab-newlayout-resizing')
+      }
+
+      if (apiRef.current) {
+        layoutDirtyRef.current = true
+      }
+    }
+
+    window.addEventListener('pointerdown', handlePointerDown, true)
+    window.addEventListener('pointerup', handlePointerEnd, true)
+    window.addEventListener('pointercancel', handlePointerEnd, true)
+
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown, true)
+      window.removeEventListener('pointerup', handlePointerEnd, true)
+      window.removeEventListener('pointercancel', handlePointerEnd, true)
     }
   }, [])
 
@@ -2150,10 +5043,20 @@ export default function LabNewLayoutPage() {
         return
       }
 
-      persistLayoutState(event.api)
+      if (isSashDraggingRef.current) {
+        return
+      }
+
+      // Avoid continuous autosave while users are actively arranging panels.
+      // Persist on lifecycle exits and explicit layout actions instead.
+      layoutDirtyRef.current = true
     })
 
     activePanelChangeDisposableRef.current = event.api.onDidActivePanelChange((activePanel) => {
+      if (isSashDraggingRef.current) {
+        return
+      }
+
       if (!activePanel) {
         return
       }
@@ -2175,9 +5078,11 @@ export default function LabNewLayoutPage() {
       }
 
       const closedPanelIds = [...flowFocusClosedPanelIdsRef.current]
+      const activePanelId = activePanel.id
       isFlowFocusModeRef.current = false
       flowFocusClosedPanelIdsRef.current = []
       restorePanelsAfterFlowFocus(event.api, closedPanelIds)
+      event.api.panels.find((panel) => panel.id === activePanelId)?.api.setActive()
     })
 
     persistLayoutState(event.api, { forceRemote: Boolean(authUidRef.current) })
@@ -2264,6 +5169,7 @@ export default function LabNewLayoutPage() {
     canApplyPreset: Boolean(selectedPresetId && apiRef.current),
     canManageTabClosing: isMasterAdminUser,
     canSavePreset: Boolean(presetDraftName.trim() && apiRef.current),
+    canSaveAsDefault: isMasterAdminUser,
     canUpdatePreset: Boolean(selectedPresetId && apiRef.current),
     isTabClosingEnabled: projectTabPolicy.masterAdminCanCloseTabs,
     presetDraftName,
@@ -2273,10 +5179,11 @@ export default function LabNewLayoutPage() {
     onPresetDraftNameChange: setPresetDraftName,
     onResetLayout: handleResetLayout,
     onSavePreset: handleSavePreset,
+    onSaveAsDefault: handleSaveAsDefault,
     onSelectedPresetIdChange: setSelectedPresetId,
     onSetTabClosingEnabled: handleSetTabClosingEnabled,
     onUpdatePreset: handleUpdatePreset,
-  }), [isMasterAdminUser, layoutPresets, presetDraftName, projectTabPolicy.masterAdminCanCloseTabs, selectedPresetId])
+  }), [handleSaveAsDefault, isMasterAdminUser, layoutPresets, presetDraftName, projectTabPolicy.masterAdminCanCloseTabs, selectedPresetId])
 
   const getTabContextMenuItems = (params: GetTabContextMenuItemsParams) => {
     const items: (BuiltInContextMenuItem | ReactContextMenuItemConfig)[] = []
@@ -2321,4 +5228,51 @@ export default function LabNewLayoutPage() {
         </LabNewLayoutUiSettingsContext.Provider>
     </LabNewLayoutDataContext.Provider>
   )
+}
+
+const readLikedReferenceUrls = (): Set<string> => {
+  if (typeof window === 'undefined') return new Set()
+  try {
+    const raw = window.localStorage.getItem(LIKED_REFERENCES_LOCAL_KEY)
+    if (!raw) return new Set()
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) {
+      return new Set(parsed.filter((value): value is string => typeof value === 'string' && value.trim().length > 0))
+    }
+  } catch {
+    // ignore parse errors
+  }
+  return new Set()
+}
+
+const writeLikedReferenceUrls = (urls: Set<string>): void => {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(LIKED_REFERENCES_LOCAL_KEY, JSON.stringify(Array.from(urls)))
+  } catch {
+    // ignore quota errors
+  }
+}
+
+function useLikedReferenceUrls() {
+  const [likedUrls, setLikedUrls] = useState<Set<string>>(() => readLikedReferenceUrls())
+
+  const toggle = useCallback((url: string) => {
+    const normalized = url.trim()
+    if (!normalized) return
+    setLikedUrls((current) => {
+      const next = new Set(current)
+      if (next.has(normalized)) {
+        next.delete(normalized)
+      } else {
+        next.add(normalized)
+      }
+      writeLikedReferenceUrls(next)
+      return next
+    })
+  }, [])
+
+  const has = useCallback((url: string) => likedUrls.has(url.trim()), [likedUrls])
+
+  return { likedUrls, has, toggle }
 }

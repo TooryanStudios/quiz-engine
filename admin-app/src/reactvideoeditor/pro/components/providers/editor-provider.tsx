@@ -7,6 +7,7 @@ import { useCompositionDuration } from "../../hooks/use-composition-duration";
 import { useAutosave } from "../../hooks/use-autosave";
 import { useAspectRatio } from "../../hooks/use-aspect-ratio";
 import { Overlay, CaptionStyles, AspectRatio, OverlayType } from "../../types";
+import { CanvasZoom } from "../advanced-timeline/components/timeline-header/canvas-zoom-dropdown";
 
 import { useRendering } from "../../hooks/use-rendering";
 import { useRenderer } from "../../contexts/renderer-context";
@@ -219,6 +220,7 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
   const playerRef = externalPlayerRef || internalPlayerRef;
   
   const [playbackRate, setPlaybackRate] = useState(1);
+  const [canvasZoom, setCanvasZoom] = useState<CanvasZoom>('fit');
   const [showAlignmentGuides, setShowAlignmentGuides] = useState(true);
   const [backgroundColor, setBackgroundColor] = useState(defaultBackgroundColor || "white");
   const [trackHeight, setTrackHeight] = useState(TIMELINE_CONSTANTS.TRACK_HEIGHT);
@@ -476,6 +478,10 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
     // Alignment Guides
     showAlignmentGuides,
     setShowAlignmentGuides,
+
+    // Canvas Zoom
+    canvasZoom,
+    setCanvasZoom,
 
     // Settings
     backgroundColor,

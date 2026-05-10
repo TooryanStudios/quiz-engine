@@ -45,10 +45,29 @@ type RunGenerationOptions = {
   shouldCancel?: () => boolean
 }
 
+type ResumeGenerationOptions = {
+  onStatus?: (statusText: string) => void
+  shouldCancel?: () => boolean
+}
+
+type ResumeGenerationInput = {
+  taskId: string
+  settings: GenerationRequestSettings
+}
+
 const DEFAULT_HEALTH_ENDPOINT = '/api/health'
 const DEFAULT_POLL_INTERVAL_MS = 4000
 const MAX_TRANSIENT_ERRORS = 5
 const MAX_RESULTLESS_SUCCESS_POLLS = 5
+
+const isNonRetryableProviderError = (message: string): boolean => {
+  const normalized = (message || '').toLowerCase()
+  if (!normalized) return false
+  return normalized.includes('image format is not supported')
+    || normalized.includes('insufficient balance')
+    || normalized.includes('output audio may contain sensitive information')
+    || normalized.includes('sensitive information')
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> => (
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -190,6 +209,75 @@ const parseJsonSafely = (rawText: string): unknown => {
   } catch {
     return { message: rawText.trim() }
   }
+}
+
+const extractErrorMessage = (payload: unknown, rawBody: string, fallback: string): string => {
+  const nested = isRecord(payload) && isRecord(payload.data)
+    ? payload.data as Record<string, unknown>
+    : null
+  const nestedErrorText = nested && typeof nested.error === 'string'
+    ? nested.error
+    : undefined
+  const nestedError = nested && isRecord(nested.error)
+    ? nested.error as Record<string, unknown>
+    : null
+  const rootErrorText = isRecord(payload) && typeof payload.error === 'string'
+    ? payload.error
+    : undefined
+  const rootError = isRecord(payload) && isRecord(payload.error)
+    ? payload.error as Record<string, unknown>
+    : null
+
+  return firstNonEmptyString(
+    nestedError?.message,
+    nestedError?.msg,
+    nestedError?.detail,
+    nestedError?.reason,
+    nested?.reason,
+    nested?.detail,
+    nested?.error,
+    nested?.error_message,
+    nested?.errorMessage,
+    nested?.status_message,
+    nested?.statusMessage,
+    nested?.message,
+    nested?.msg,
+    nestedErrorText,
+    rootError?.message,
+    rootError?.msg,
+    rootError?.detail,
+    rootError?.reason,
+    rootErrorText,
+    isRecord(payload) ? payload.message : undefined,
+    isRecord(payload) ? payload.msg : undefined,
+    isRecord(payload) ? payload.reason : undefined,
+    isRecord(payload) ? payload.detail : undefined,
+    isRecord(payload) ? payload.error_message : undefined,
+    isRecord(payload) ? payload.errorMessage : undefined,
+    isRecord(payload) ? payload.status_message : undefined,
+    isRecord(payload) ? payload.statusMessage : undefined,
+    // Only use raw body if it's not HTML or very short
+    (!isLikelyHtmlPayload(rawBody) && rawBody.trim().length > 10) ? rawBody.trim().slice(0, 320) : undefined,
+    fallback,
+  )
+}
+
+const isLikelyHtmlPayload = (rawText: string): boolean => {
+  const trimmed = rawText.trim()
+  if (!trimmed) return false
+  return /^<!doctype\s+html/i.test(trimmed) || /^<html[\s>]/i.test(trimmed)
+}
+
+const isLikelyBackendProxyFailure = (rawText: string): boolean => {
+  const normalized = rawText.trim().toLowerCase()
+  if (!normalized) return true
+  if (isLikelyHtmlPayload(rawText)) return true
+  return (
+    normalized.includes('failed to proxy')
+    || normalized.includes('econnrefused')
+    || normalized.includes('cannot connect')
+    || normalized.includes('socket hang up')
+  )
 }
 
 const extractTaskId = (payload: unknown): string => {
@@ -361,12 +449,18 @@ export function useGenerationRunner({
   ): Promise<string | null> => {
     let transientErrors = 0
     let successWithoutResultCount = 0
+    const startTime = Date.now()
+    const MAX_POLL_DURATION_MS = 3 * 60 * 60 * 1000 // 3 hours
 
     while (true) {
       await sleep(pollIntervalMs)
 
       if (shouldCancel()) {
         return null
+      }
+
+      if (Date.now() - startTime > MAX_POLL_DURATION_MS) {
+        throw new Error('Generation timed out after 3 hours.')
       }
 
       const statusUrl = requestProvider === 'atlas'
@@ -380,15 +474,12 @@ export function useGenerationRunner({
       const payload = parseJsonSafely(rawBody)
 
       if (!response.ok) {
-        const errorMessage = firstNonEmptyString(
-          isRecord(payload) ? payload.error : undefined,
-          isRecord(payload) ? payload.message : undefined,
-          isRecord(payload) ? payload.msg : undefined,
-          rawBody.trim().slice(0, 200),
-          `HTTP ${response.status}`,
-        )
+        const errorMessage = extractErrorMessage(payload, rawBody, `HTTP ${response.status}`)
 
         if (response.status >= 500 || response.status === 429) {
+          if (isNonRetryableProviderError(errorMessage)) {
+            throw new Error(errorMessage)
+          }
           if (response.status >= 500) {
             markBackendUnavailable()
           }
@@ -424,17 +515,10 @@ export function useGenerationRunner({
       successWithoutResultCount = 0
 
       if (isFailureStatus(status)) {
-        const upstreamError = isRecord(payload) && isRecord(payload.data) && typeof (payload.data as Record<string, unknown>).error === 'string'
-          ? (payload.data as Record<string, unknown>).error as string
-          : ''
+        const upstreamError = extractErrorMessage(payload, rawBody, '')
         throw new Error(
           upstreamError
-          || firstNonEmptyString(
-            isRecord(payload) ? payload.error : undefined,
-            isRecord(payload) ? payload.message : undefined,
-            isRecord(payload) ? payload.msg : undefined,
-            'Generation failed on the provider side.',
-          ),
+          || `Generation failed with status: ${status}. Please check the provider API logs for more details.`,
         )
       }
     }
@@ -444,11 +528,6 @@ export function useGenerationRunner({
     request: GenerationRequest,
     options: RunGenerationOptions = {},
   ): Promise<CompletedGeneration | null> => {
-    const backendReady = await checkBackendHealth()
-    if (!backendReady) {
-      throw new Error('Back end server is not running. Start it before generating.')
-    }
-
     const effectiveSettings = resolveGenerationRequestSettings(request.endpoint, request.body, request.settings)
     const submittedAt = Date.now()
     const response = await fetch(toApiUrl(apiBaseUrl, request.endpoint), {
@@ -461,18 +540,22 @@ export function useGenerationRunner({
     const payload = parseJsonSafely(rawBody)
 
     if (!response.ok) {
+      const looksLikeBackendProxyFailure = response.status >= 500 && isLikelyBackendProxyFailure(rawBody)
+      const errorMessage = extractErrorMessage(payload, rawBody, `HTTP ${response.status}`)
+
       if (response.status >= 500) {
-        markBackendUnavailable()
+        const backendDownMessage = looksLikeBackendProxyFailure
+          ? 'Cannot reach local API backend (expected on http://localhost:8787). Start it and try again.'
+          : undefined
+        markBackendUnavailable(backendDownMessage)
+        throw new Error(
+          (errorMessage && !/^HTTP 5\d\d$/i.test(errorMessage) && !looksLikeBackendProxyFailure)
+            ? errorMessage
+            : backendDownMessage || 'Back end server is not working. Start it before generating.',
+        )
       }
-      throw new Error(
-        firstNonEmptyString(
-          isRecord(payload) ? payload.error : undefined,
-          isRecord(payload) ? payload.message : undefined,
-          isRecord(payload) ? payload.msg : undefined,
-          rawBody.trim().slice(0, 240),
-          `HTTP ${response.status}`,
-        ),
-      )
+
+      throw new Error(errorMessage)
     }
 
     const taskId = extractTaskId(payload)
@@ -511,10 +594,36 @@ export function useGenerationRunner({
       receivedAt: Date.now(),
       settings: effectiveSettings,
     }
-  }, [apiBaseUrl, checkBackendHealth, markBackendUnavailable, pollUntilDone])
+  }, [apiBaseUrl, markBackendUnavailable, pollUntilDone])
+
+  const resumeGenerationTask = async (
+    input: ResumeGenerationInput,
+    options: ResumeGenerationOptions = {},
+  ): Promise<CompletedGeneration | null> => {
+    const resumedResultUrl = await pollUntilDone(
+      input.settings.provider,
+      input.settings.model,
+      input.taskId,
+      options.onStatus || (() => {}),
+      options.shouldCancel || (() => false),
+    )
+
+    if (!resumedResultUrl) {
+      return null
+    }
+
+    return {
+      taskId: input.taskId,
+      resultUrl: resumedResultUrl,
+      submittedAt: Date.now(),
+      receivedAt: Date.now(),
+      settings: input.settings,
+    }
+  }
 
   return {
     checkBackendHealth,
     runGeneration,
+    resumeGenerationTask,
   }
 }

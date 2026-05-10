@@ -981,6 +981,7 @@ function WorkflowBuilderCanvasInner({
     })
 
     const visited = new Set<string>()
+    const generationSourceHandle = new Map<string, string>()
     const stack = [nodeId]
     while (stack.length > 0) {
       const current = stack.pop() || ''
@@ -1003,7 +1004,16 @@ function WorkflowBuilderCanvasInner({
           || sourceNode.type === 'video_reference'
           || sourceNode.type === 'image_reference'
           || sourceNode.type === 'asset'
-        if (isTerminalReferenceNode) return
+        if (isTerminalReferenceNode) {
+          if (
+            GENERATION_NODE_KINDS.has(sourceNode.type as WorkflowBuilderNodeKind)
+            && typeof edge.sourceHandle === 'string'
+            && edge.sourceHandle.startsWith('video-history-')
+          ) {
+            generationSourceHandle.set(sourceId, edge.sourceHandle)
+          }
+          return
+        }
 
         if (sourceNode.type === 'reroute') {
           stack.push(sourceId)
@@ -1060,6 +1070,19 @@ function WorkflowBuilderCanvasInner({
       }
 
       if (GENERATION_NODE_KINDS.has(upstreamNode.type as WorkflowBuilderNodeKind)) {
+        const handleId = generationSourceHandle.get(upstreamId)
+        if (handleId && handleId.startsWith('video-history-')) {
+          const itemId = handleId.slice('video-history-'.length)
+          const queue = Array.isArray(upstreamNode.data.genQueue)
+            ? (upstreamNode.data.genQueue as Array<{ id?: string; videoUrl?: string; firebaseVideoUrl?: string; sourceVideoUrl?: string }>)
+            : []
+          const match = queue.find((q) => q?.id === itemId)
+          const historyUrl = match?.firebaseVideoUrl || match?.videoUrl || match?.sourceVideoUrl
+          if (historyUrl) {
+            pushRef('video', historyUrl, 'Generated Video')
+            return
+          }
+        }
         const videoUrl = upstreamNode.data.generatedSourceVideoUrl || upstreamNode.data.generatedVideoUrl
         if (videoUrl) {
           pushRef('video', videoUrl, 'Generated Video')
@@ -1290,7 +1313,37 @@ function WorkflowBuilderCanvasInner({
         ? `Completed. Firebase copy failed: ${finalized.storageSaveError}`
         : 'Completed. Video saved.',
     })
-  }, [saveGenerationHistoryEntry, updateNodeData])
+
+    // Also reconcile any genQueue item that was tracking this task so the
+    // history list stops showing "Queued/Submitting" after a page reload
+    // resumed an in-flight generation.
+    if (completed.taskId) {
+      setNodes((current) => current.map((n) => {
+        if (n.id !== nodeId) return n
+        const queue: unknown[] = Array.isArray(n.data.genQueue) ? (n.data.genQueue as unknown[]) : []
+        let matched = false
+        const nextQueue = queue.map((entry) => {
+          const qi = entry as Record<string, unknown>
+          if (matched) return qi
+          if (qi.taskId === completed.taskId || qi.id === completed.taskId) {
+            matched = true
+            return {
+              ...qi,
+              status: 'done',
+              videoUrl: finalized.playbackUrl,
+              firebaseVideoUrl: finalized.firebaseVideoUrl,
+              sourceVideoUrl: completed.resultUrl,
+              statusText: finalized.storageSaveError ? 'Done (provider link)' : 'Done',
+              completedAt: new Date().toISOString(),
+            }
+          }
+          return qi
+        })
+        if (!matched) return n
+        return { ...n, data: { ...n.data, genQueue: nextQueue } }
+      }))
+    }
+  }, [saveGenerationHistoryEntry, setNodes, updateNodeData])
 
   const handleResumeTask = useCallback(async (task: WorkflowPendingTask) => {
     if (resumedTaskIdsRef.current.has(task.requestId)) return
@@ -2016,7 +2069,12 @@ function WorkflowBuilderCanvasInner({
   const executeQueueItem = useCallback(async (nodeId: string, item: { id: string; prompt: string; genModel?: string; genRatio?: string; genDuration?: number; genResolution?: string; genAudio?: boolean }) => {
     const queueItemId = item.id
 
-    const prompt = item.prompt || ''
+    // Resolve prompt from connected upstream prompt nodes; only fall back to the
+    // inline queue-item prompt when nothing is wired in. This keeps the actual
+    // request consistent with the "Request to be sent (live)" preview in the
+    // inspector, which uses the same resolver.
+    const linkedPrompt = resolvePromptForGenerateNode(nodeId)
+    const prompt = linkedPrompt || item.prompt || ''
     const baseSettings = {
       provider: 'atlas' as const,
       model: item.genModel || 'seedance-2.0-fast',
@@ -2128,6 +2186,7 @@ function WorkflowBuilderCanvasInner({
     notify,
     patchQueueItem,
     removePendingTask,
+    resolvePromptForGenerateNode,
     runGeneration,
     saveGenerationHistoryEntry,
     updateLabHistoryItem,

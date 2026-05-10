@@ -1,5 +1,5 @@
-const CACHE_NAME = 'qyan-v6'
-const RUNTIME_CACHE = 'qyan-runtime-v6'
+const CACHE_NAME = 'qyan-v10'
+const RUNTIME_CACHE = 'qyan-runtime-v10'
 
 // Assets to cache on install
 const PRECACHE_ASSETS = [
@@ -35,16 +35,36 @@ self.addEventListener('fetch', (event) => {
   const { request } = event
   const url = new URL(request.url)
 
+  const safeCachePut = (cacheName, req, res) => {
+    return caches.open(cacheName)
+      .then((cache) => cache.put(req, res))
+      .catch(() => undefined)
+  }
+
   // Skip non-GET requests
   if (request.method !== 'GET') return
+
+  // Browser-only cache probes should never be handled in SW.
+  // Intercepting them can trigger ERR_CACHE_OPERATION_NOT_SUPPORTED.
+  if (request.cache === 'only-if-cached') return
+
+  // Never handle API traffic in SW cache logic.
+  // API endpoints should always be network-driven.
+  if (url.pathname.startsWith('/api/')) return
+
+  // Never cache or proxy media requests through SW.
+  // Range/chunk behavior varies by browser and can cause cache operation failures.
+  if (request.destination === 'video' || request.destination === 'audio') return
+  if (/\.(mp4|webm|mov|m4v|mp3|wav|ogg)$/i.test(url.pathname)) return
+  if (url.searchParams.has('token') || url.searchParams.get('alt') === 'media') return
+  if (url.searchParams.has('X-Amz-Algorithm') || url.searchParams.has('X-Tos-Algorithm')) return
+
+  // Skip Firebase Storage URLs - Firebase handles its own caching
+  if (url.hostname.includes('firebasestorage.googleapis.com')) return
 
   // Never proxy cross-origin requests through this SW.
   // This avoids cache-mode incompatibilities on media/CDN responses.
   if (url.origin !== self.location.origin) return
-
-  // Browser-internal cache probes can fail for cross-origin requests when SW intercepts.
-  // Let the browser handle these directly.
-  if (request.cache === 'only-if-cached' && request.mode !== 'same-origin') return
 
   // Do not proxy byte-range media requests through the SW cache layer.
   if (request.headers.has('range')) return
@@ -64,9 +84,7 @@ self.addEventListener('fetch', (event) => {
         .then((response) => {
           if (response && response.status === 200) {
             const responseClone = response.clone()
-            caches.open(RUNTIME_CACHE).then((cache) => {
-              cache.put(request, responseClone)
-            })
+            void safeCachePut(RUNTIME_CACHE, request, responseClone)
           }
           return response
         })
@@ -103,7 +121,7 @@ self.addEventListener('fetch', (event) => {
           if (cached) return cached
           return fetch(request).then((response) => {
             if (response && response.status === 200) {
-              cache.put(request, response.clone())
+              void cache.put(request, response.clone()).catch(() => undefined)
             }
             return response
           })
@@ -127,7 +145,7 @@ self.addEventListener('fetch', (event) => {
           return fetch(request).then((networkResponse) => {
             // Only cache successful responses
             if (networkResponse && networkResponse.status === 200) {
-              cache.put(request, networkResponse.clone())
+              void cache.put(request, networkResponse.clone()).catch(() => undefined)
             }
             return networkResponse
           }).catch(() => {
@@ -147,9 +165,7 @@ self.addEventListener('fetch', (event) => {
         // Cache successful responses
         if (response && response.status === 200 && request.url.startsWith(self.location.origin)) {
           const responseClone = response.clone()
-          caches.open(RUNTIME_CACHE).then((cache) => {
-            cache.put(request, responseClone)
-          })
+          void safeCachePut(RUNTIME_CACHE, request, responseClone)
         }
         return response
       })

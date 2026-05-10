@@ -8,6 +8,9 @@ export type LabNewLayoutGalleryHistoryEntry = {
   source: 'new-layout' | 'prompt-lab' | 'legacy-toorgen'
   sourceLabel: string
   timestamp: number
+  submittedAt: number | null
+  receivedAt: number | null
+  completedAt: number | null
   prompt: string
   model: string
   provider: string
@@ -130,10 +133,15 @@ const readMediaUrlsFromPayload = (payload: Record<string, unknown> | null): Reco
 
 const mergeMediaUrls = (...records: Array<Record<string, string>>): Record<string, string> => {
   const next: Record<string, string> = {}
+  const seenUrls = new Set<string>()
   records.forEach((record) => {
     Object.entries(record).forEach(([key, value]) => {
-      if (value) {
-        next[key] = value
+      if (!value) return
+      const normalizedValue = value.trim()
+      if (!normalizedValue || seenUrls.has(normalizedValue)) return
+      seenUrls.add(normalizedValue)
+      if (normalizedValue) {
+        next[key] = normalizedValue
       }
     })
   })
@@ -167,6 +175,9 @@ const mergeHistoryEntries = (
   resolution: incoming.resolution || existing.resolution,
   duration: incoming.duration ?? existing.duration,
   generateAudio: incoming.generateAudio ?? existing.generateAudio,
+  submittedAt: incoming.submittedAt ?? existing.submittedAt,
+  receivedAt: incoming.receivedAt ?? existing.receivedAt,
+  completedAt: incoming.completedAt ?? existing.completedAt,
   requestEndpoint: incoming.requestEndpoint || existing.requestEndpoint,
   requestPayload: incoming.requestPayload || existing.requestPayload,
   mediaUrls: mergeMediaUrls(existing.mediaUrls, incoming.mediaUrls),
@@ -194,6 +205,9 @@ const normalizeLabStoreEntry = (entry: GenerationHistoryItem): LabNewLayoutGalle
   source: 'new-layout',
   sourceLabel: entry.sourceLabel || 'New Layout',
   timestamp: entry.completedAt ?? entry.receivedAt ?? entry.submittedAt ?? entry.timestamp,
+  submittedAt: entry.submittedAt ?? null,
+  receivedAt: entry.receivedAt ?? null,
+  completedAt: entry.completedAt ?? null,
   prompt: entry.prompt,
   model: entry.model,
   provider: entry.provider || '',
@@ -221,6 +235,9 @@ const normalizePromptLabEntry = (value: unknown, sourceLabel: string): LabNewLay
 
   const requestPayload = readRequestPayload(value.requestPayload)
   const mediaUrls = mergeMediaUrls(readMediaRecord(value.mediaUrls), readMediaUrlsFromPayload(requestPayload))
+  const submittedAt = readNumber(value.submittedAt)
+  const receivedAt = readNumber(value.receivedAt)
+  const completedAt = readNumber(value.completedAt)
   const timestamp = readNumber(value.completedAt, value.receivedAt, value.submittedAt, value.createdAt) ?? Date.now()
   const resultUrl = firstNonEmptyString(value.firebaseVideoUrl, value.resultUrl)
   const prompt = firstNonEmptyString(value.prompt, value.sourcePrompt)
@@ -234,13 +251,16 @@ const normalizePromptLabEntry = (value: unknown, sourceLabel: string): LabNewLay
     source: 'prompt-lab',
     sourceLabel,
     timestamp,
+    submittedAt,
+    receivedAt,
+    completedAt,
     prompt,
     model: firstNonEmptyString(value.model),
     provider: firstNonEmptyString(value.provider, value.providerLabel),
     status: normalizeStatus(value.status, resultUrl ? 'success' : 'failed'),
     resultUrl,
     posterUrl: firstNonEmptyString(value.thumbnailPosterUrl),
-    errorMessage: firstNonEmptyString(value.storageSaveError),
+    errorMessage: firstNonEmptyString(value.storageSaveError, value.errorMessage, value.error, value.failureReason, value.failureMessage),
     taskId: firstNonEmptyString(value.taskId),
     ratio: firstNonEmptyString(value.ratio),
     resolution: firstNonEmptyString(value.resolution),
@@ -279,19 +299,25 @@ const normalizeLegacyHistoryEntry = (value: unknown): LabNewLayoutGalleryHistory
   }
 
   const timestamp = readNumber(value.completedAt, value.createdAt, value.submittedAt) ?? Date.now()
+  const submittedAt = readNumber(value.submittedAt)
+  const receivedAt = readNumber(value.receivedAt)
+  const completedAt = readNumber(value.completedAt)
 
   return {
     id: firstNonEmptyString(value.taskId, resultUrl, `${timestamp}`),
     source: 'legacy-toorgen',
     sourceLabel: 'Legacy ToorGen',
     timestamp,
+    submittedAt,
+    receivedAt,
+    completedAt,
     prompt,
     model: firstNonEmptyString(value.effectiveModel, value.requestedModel, value.model),
     provider: firstNonEmptyString(value.providerLabel, value.providerUsed),
     status: normalizeStatus(value.status, resultUrl ? 'success' : 'failed'),
     resultUrl,
     posterUrl: '',
-    errorMessage: '',
+    errorMessage: firstNonEmptyString(value.errorMessage, value.error, value.failureReason, value.failureMessage, value.statusMessage),
     taskId: firstNonEmptyString(value.taskId),
     ratio: firstNonEmptyString(value.aspectRatio),
     resolution: firstNonEmptyString(value.qualityPreset),

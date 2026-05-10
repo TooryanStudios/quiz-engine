@@ -12,10 +12,10 @@ export function LabNewLayoutDirectApiPanel(props: IDockviewPanelProps<DirectApiP
     directRequestJson,
     finalRequestBodyPreview,
     resetDirectRequestJson,
+    reloadComposerPreview,
     loadFullRequestJson,
     setDirectRequestJson,
     submitDirectJson,
-    isGenerating,
     generationStatus,
   } = useLabNewLayoutDirectApi()
 
@@ -43,7 +43,10 @@ export function LabNewLayoutDirectApiPanel(props: IDockviewPanelProps<DirectApiP
             <button
               type="button"
               className="lab-newlayout-direct-action-btn"
-              onClick={resetDirectRequestJson}
+              onClick={() => {
+                reloadComposerPreview()
+                resetDirectRequestJson()
+              }}
             >
               Load Current Preview
             </button>
@@ -74,20 +77,28 @@ export function LabNewLayoutDirectApiPanel(props: IDockviewPanelProps<DirectApiP
             <button 
               type="button" 
               className="lab-newlayout-direct-submit-btn"
-              disabled={isGenerating || !directRequestJson.trim()}
+              disabled={!directRequestJson.trim()}
               onClick={submitDirectJson}
             >
-              {isGenerating ? 'Submitting...' : 'Submit JSON'}
+              Submit JSON
             </button>
           </div>
         </div>
       </div>
 
-      <div className="lab-newlayout-direct-group lab-newlayout-direct-preview" role="region" aria-label="Final request body preview">
+      <div className="lab-newlayout-direct-group lab-newlayout-direct-preview lab-newlayout-direct-preview--grow" role="region" aria-label="Final request body preview">
         <div className="lab-newlayout-direct-preview-head">
           <strong>Final Request Body</strong>
+          <button
+            type="button"
+            className="lab-newlayout-direct-action-btn"
+            onClick={reloadComposerPreview}
+            title="Reload from current composer state"
+          >
+            Reload
+          </button>
         </div>
-        <pre className="lab-newlayout-direct-preview-code">{finalRequestBodyPreview}</pre>
+        <pre className="lab-newlayout-direct-preview-code lab-newlayout-direct-preview-code--grow">{finalRequestBodyPreview}</pre>
       </div>
     </div>
   )

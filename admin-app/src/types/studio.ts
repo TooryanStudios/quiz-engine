@@ -274,6 +274,7 @@ export type StudioReferenceAssetKind = 'image' | 'video' | 'audio'
 export type StudioReferenceAsset = {
   id: string
   projectId: string
+  folderId?: string | null
   kind: StudioReferenceAssetKind
   url: string
   thumbnailUrl?: string

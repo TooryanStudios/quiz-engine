@@ -1,6 +1,174 @@
-import { useEffect, useRef } from 'react'
-import type { IDockviewPanelProps } from 'dockview-react'
+import { memo, useEffect, useRef } from 'react'
 import { useLabNewLayoutComposer } from './useLabNewLayoutComposer'
+
+type ComposerReferenceItem = {
+  id: string
+  url: string
+  kind: string
+  name: string
+}
+
+const LAB_NEWLAYOUT_HISTORY_REF_MIME = 'application/x-lab-newlayout-reference'
+
+const inferDroppedKindFromUrl = (url: string): 'image' | 'video' | 'audio' => {
+  const normalized = url.toLowerCase()
+  if (/\.(mp4|webm|mov|m4v|avi|mkv)(\?|#|$)/.test(normalized)) {
+    return 'video'
+  }
+  if (/\.(mp3|wav|ogg|m4a|aac|flac)(\?|#|$)/.test(normalized)) {
+    return 'audio'
+  }
+  return 'image'
+}
+
+const normalizeDroppedReference = (value: unknown): ComposerReferenceItem | null => {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const candidate = value as Partial<ComposerReferenceItem>
+  const url = typeof candidate.url === 'string' ? candidate.url.trim() : ''
+  if (!url) {
+    return null
+  }
+
+  const kind = candidate.kind === 'video' || candidate.kind === 'audio'
+    ? candidate.kind
+    : inferDroppedKindFromUrl(url)
+  const name = typeof candidate.name === 'string' && candidate.name.trim()
+    ? candidate.name.trim()
+    : `Dropped ${kind}`
+  const id = typeof candidate.id === 'string' && candidate.id.trim()
+    ? candidate.id.trim()
+    : `composer-ref-${Date.now()}-${Math.random().toString(36).slice(2)}`
+
+  return { id, url, kind, name }
+}
+
+const parseDroppedReference = (dataTransfer: DataTransfer): ComposerReferenceItem | null => {
+  const customPayloadRaw = dataTransfer.getData(LAB_NEWLAYOUT_HISTORY_REF_MIME)
+  if (customPayloadRaw) {
+    try {
+      const parsed = JSON.parse(customPayloadRaw) as unknown
+      return normalizeDroppedReference(parsed)
+    } catch {
+      // continue and try other formats
+    }
+  }
+
+  const jsonPayloadRaw = dataTransfer.getData('application/json')
+  if (jsonPayloadRaw) {
+    try {
+      const parsed = JSON.parse(jsonPayloadRaw) as unknown
+      return normalizeDroppedReference(parsed)
+    } catch {
+      // continue and try URI text fallback
+    }
+  }
+
+  const uriPayload = (dataTransfer.getData('text/uri-list') || dataTransfer.getData('text/plain') || '').trim()
+  if (!uriPayload) {
+    return null
+  }
+
+  return normalizeDroppedReference({
+    url: uriPayload,
+    kind: inferDroppedKindFromUrl(uriPayload),
+    name: 'Dropped media',
+  })
+}
+
+const ComposerReferencesRail = memo(function ComposerReferencesRail({
+  selectedReferences,
+  addReference,
+  removeReference,
+}: {
+  selectedReferences: ComposerReferenceItem[]
+  addReference: (reference: ComposerReferenceItem) => void
+  removeReference: (id: string) => void
+}) {
+  const railRef = useRef<HTMLDivElement>(null)
+
+  return (
+    <div
+      ref={railRef}
+      className="lab-newlayout-composer-references-rail"
+      onDragOver={(e) => {
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'copy'
+      }}
+      onDrop={(e) => {
+        e.preventDefault()
+        const droppedReference = parseDroppedReference(e.dataTransfer)
+        if (!droppedReference) {
+          return
+        }
+
+        if (selectedReferences.some((reference) => reference.url === droppedReference.url)) {
+          return
+        }
+
+        addReference(droppedReference)
+        setTimeout(() => {
+          if (railRef.current) {
+            railRef.current.scrollTo({ left: railRef.current.scrollWidth, behavior: 'smooth' })
+          }
+        }, 50)
+      }}
+    >
+      {selectedReferences.map(ref => {
+        return (
+          <div
+            key={ref.id}
+            className="lab-newlayout-composer-ref-item"
+            onMouseEnter={(e) => {
+              e.currentTarget.classList.add('is-hovered')
+              const media = e.currentTarget.querySelector('video')
+              if (media) {
+                media.muted = false
+                void media.play().catch(() => {
+                  media.muted = true
+                  void media.play().catch(() => undefined)
+                })
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.classList.remove('is-hovered')
+              const media = e.currentTarget.querySelector('video')
+              if (media) {
+                media.pause()
+                media.currentTime = 0
+                media.muted = true
+              }
+            }}
+          >
+            {ref.kind === 'video' ? (
+              <>
+                <video src={ref.url} className="lab-newlayout-composer-ref-media" muted playsInline preload="metadata" />
+                <span className="lab-newlayout-composer-video-indicator" aria-hidden="true">▶</span>
+              </>
+            ) : ref.kind === 'audio' ? (
+              <div className="lab-newlayout-composer-ref-audio">🎵</div>
+            ) : (
+              <img src={ref.url} alt={ref.name} className="lab-newlayout-composer-ref-media" />
+            )}
+            <div className="lab-newlayout-composer-ref-outline" />
+            <button
+              className="lab-newlayout-composer-ref-remove-btn"
+              onClick={() => removeReference(ref.id)}
+              title="Remove reference"
+            >
+              ✕
+            </button>
+          </div>
+        )
+      })}
+      <div className="lab-newlayout-composer-drop-target">
+        + Drop
+      </div>
+    </div>
+  )
+})
 
 function renderComposerModeIcon(modeId: string) {
   switch (modeId) {
@@ -40,7 +208,7 @@ function renderComposerModeIcon(modeId: string) {
   }
 }
 
-function renderComposerActionIcon(actionId: 'templates' | 'refine') {
+function renderComposerActionIcon(actionId: 'templates' | 'refine' | 'fontSize') {
   if (actionId === 'templates') {
     return (
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -52,6 +220,17 @@ function renderComposerActionIcon(actionId: 'templates' | 'refine') {
     )
   }
 
+  if (actionId === 'fontSize') {
+    return (
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M4 20l4.5-12h3L16 20" />
+        <path d="M6 15h8" />
+        <path d="M18 8h2" />
+        <path d="M19 8v8" />
+      </svg>
+    )
+  }
+
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M12 3l1.8 3.7L18 8.5l-3 2.9.7 4.1L12 13.8l-3.7 1.7.7-4.1-3-2.9 4.2-1.8L12 3z" />
@@ -59,38 +238,53 @@ function renderComposerActionIcon(actionId: 'templates' | 'refine') {
   )
 }
 
-export function LabNewLayoutComposerPanel(_props: IDockviewPanelProps<Record<string, never>>) {
+export function LabNewLayoutComposerPanel() {
   const topStackRef = useRef<HTMLDivElement | null>(null)
+  const footerControlsRef = useRef<HTMLDivElement | null>(null)
   const {
     activeMode,
     activeModeId,
+    activeFooterMenu,
+    applyDurationSetting,
+    applyModelSetting,
+    applyPromptFontSize,
+    applyRatioSetting,
     applyRefineAction,
+    applyResolutionSetting,
     applyTemplate,
     closeMenus,
-    composerConfigChips,
+    composerDurationOptions,
+    composerFontSizeOptions,
     composerModelChip,
+    composerModelOptions,
     composerModeOptions,
+    composerRatioOptions,
     composerRefineActions,
+    composerResolutionOptions,
+    composerSettings,
     composerTemplates,
+    isFontSizeMenuOpen,
     isRefineMenuOpen,
     isTemplatesMenuOpen,
+    promptFontSize,
     promptText,
     selectMode,
+    toggleFontSizeMenu,
     toggleRefineMenu,
     toggleTemplatesMenu,
     updatePromptText,
+    handlePromptFocus,
+    handlePromptBlur,
     startGeneration,
-    isGenerating,
-    generationStatus,
     selectedReferences,
     addReference,
     removeReference,
+    toggleComposerAudio,
+    toggleFooterMenu,
   } = useLabNewLayoutComposer()
 
-  const railRef = useRef<HTMLDivElement>(null)
-
   useEffect(() => {
-    if (!isTemplatesMenuOpen && !isRefineMenuOpen) {
+    if (!isTemplatesMenuOpen && !isRefineMenuOpen && !isFontSizeMenuOpen && !activeFooterMenu) {
       return
     }
 
@@ -104,6 +298,10 @@ export function LabNewLayoutComposerPanel(_props: IDockviewPanelProps<Record<str
         return
       }
 
+      if (footerControlsRef.current?.contains(target)) {
+        return
+      }
+
       closeMenus()
     }
 
@@ -111,7 +309,7 @@ export function LabNewLayoutComposerPanel(_props: IDockviewPanelProps<Record<str
     return () => {
       document.removeEventListener('pointerdown', handlePointerDown)
     }
-  }, [closeMenus, isRefineMenuOpen, isTemplatesMenuOpen])
+  }, [activeFooterMenu, closeMenus, isFontSizeMenuOpen, isRefineMenuOpen, isTemplatesMenuOpen])
 
   return (
     <div className="lab-newlayout-panel lab-newlayout-panel--composer">
@@ -145,6 +343,18 @@ export function LabNewLayoutComposerPanel(_props: IDockviewPanelProps<Record<str
             >
               <span className="lab-newlayout-composer-trigger-icon" aria-hidden="true">
                 {renderComposerActionIcon('templates')}
+              </span>
+            </button>
+            <button
+              type="button"
+              className="lab-newlayout-composer-menu-trigger lab-newlayout-composer-icon-trigger"
+              aria-haspopup="menu"
+              aria-label="Prompt font size"
+              title="Prompt font size"
+              onClick={toggleFontSizeMenu}
+            >
+              <span className="lab-newlayout-composer-trigger-icon" aria-hidden="true">
+                {renderComposerActionIcon('fontSize')}
               </span>
             </button>
             <button
@@ -195,100 +405,173 @@ export function LabNewLayoutComposerPanel(_props: IDockviewPanelProps<Record<str
             ))}
           </div>
         ) : null}
+
+        {isFontSizeMenuOpen ? (
+          <div className="lab-newlayout-composer-menu" role="menu" aria-label="Prompt font sizes">
+            {composerFontSizeOptions.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                role="menuitem"
+                className={`lab-newlayout-composer-menu-item${promptFontSize === option.id ? ' is-selected' : ''}`}
+                onClick={() => applyPromptFontSize(option.id)}
+              >
+                <span className="lab-newlayout-composer-menu-item-title">{option.label}</span>
+                <span className="lab-newlayout-composer-menu-item-copy">{option.description}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       <div className="lab-newlayout-composer-body lab-newlayout-composer-body--stack">
         <textarea
-          className="lab-newlayout-composer-prompt lab-textarea--composer lab-newlayout-composer-prompt--stretch"
+          className={`lab-newlayout-composer-prompt lab-textarea--composer lab-newlayout-composer-prompt--stretch lab-newlayout-composer-prompt--font-${promptFontSize}`}
           value={promptText}
           onChange={(event) => updatePromptText(event.target.value)}
-          onFocus={closeMenus}
+          onFocus={() => { closeMenus(); handlePromptFocus() }}
+          onBlur={handlePromptBlur}
           placeholder={activeMode.promptPlaceholder}
           aria-label="Composer prompt input"
         />
 
         {/* References Thumbnails Rail */}
-        <div
-          ref={railRef}
-          className="lab-newlayout-composer-references-rail"
-          onDragOver={(e) => {
-            e.preventDefault()
-            e.dataTransfer.dropEffect = 'copy'
-          }}
-          onDrop={(e) => {
-            e.preventDefault()
-            const data = e.dataTransfer.getData('application/json')
-            if (data) {
-              try {
-                const item = JSON.parse(data)
-                addReference(item)
-                setTimeout(() => {
-                  if (railRef.current) {
-                    railRef.current.scrollTo({ left: railRef.current.scrollWidth, behavior: 'smooth' })
-                  }
-                }, 50)
-              } catch(err) {}
-            }
-          }}
-        >
-          {selectedReferences.map(ref => (
-            <div
-              key={ref.id}
-              className="lab-newlayout-composer-ref-item"
-              onMouseEnter={(e) => e.currentTarget.classList.add('is-hovered')}
-              onMouseLeave={(e) => e.currentTarget.classList.remove('is-hovered')}
-            >
-              {ref.kind === 'video' ? (
-                <video src={ref.url} className="lab-newlayout-composer-ref-media" muted loop playsInline />
-              ) : ref.kind === 'audio' ? (
-                <div className="lab-newlayout-composer-ref-audio">🎵</div>
-              ) : (
-                <img src={ref.url} alt={ref.name} className="lab-newlayout-composer-ref-media" />
-              )}
-              <div className="lab-newlayout-composer-ref-outline" />
-              <button
-                className="lab-newlayout-composer-ref-remove-btn"
-                onClick={() => removeReference(ref.id)}
-                title="Remove reference"
-              >
-                ✕
-              </button>
-            </div>
-          ))}
-          <div className="lab-newlayout-composer-drop-target">
-            + Drop
-          </div>
-        </div>
+        <ComposerReferencesRail
+          selectedReferences={selectedReferences}
+          addReference={addReference}
+          removeReference={removeReference}
+        />
       </div>
 
       <div className="lab-newlayout-composer-footer">
-        <div className="lab-newlayout-composer-config-row" aria-label="Composer generation settings">
-          {composerConfigChips.map((label) => (
-            <button key={label} type="button" className="lab-newlayout-composer-config-btn lab-newlayout-composer-config-btn--compact">
-              {label}
+        <div ref={footerControlsRef} className="lab-newlayout-composer-config-row" aria-label="Composer generation settings">
+          <div className="lab-newlayout-composer-footer-setting">
+            <button
+              type="button"
+              className={`lab-newlayout-composer-config-btn lab-newlayout-composer-config-btn--compact${activeFooterMenu === 'ratio' ? ' is-active' : ''}`}
+              onClick={() => toggleFooterMenu('ratio')}
+              title="Aspect ratio"
+            >
+              {composerSettings.ratio}
             </button>
-          ))}
-          <button type="button" className="lab-newlayout-composer-audio-btn lab-newlayout-composer-audio-btn--compact" title="Audio references enabled">
+            {activeFooterMenu === 'ratio' ? (
+              <div className="lab-newlayout-composer-menu lab-newlayout-composer-menu--footer" role="menu" aria-label="Aspect ratio options">
+                {composerRatioOptions.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    role="menuitem"
+                    className={`lab-newlayout-composer-menu-item${composerSettings.ratio === option.id ? ' is-selected' : ''}`}
+                    onClick={() => applyRatioSetting(option.id)}
+                  >
+                    <span className="lab-newlayout-composer-menu-item-title">{option.label}</span>
+                    <span className="lab-newlayout-composer-menu-item-copy">{option.description}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="lab-newlayout-composer-footer-setting">
+            <button
+              type="button"
+              className={`lab-newlayout-composer-config-btn lab-newlayout-composer-config-btn--compact${activeFooterMenu === 'resolution' ? ' is-active' : ''}`}
+              onClick={() => toggleFooterMenu('resolution')}
+              title="Resolution"
+            >
+              {composerSettings.resolution}
+            </button>
+            {activeFooterMenu === 'resolution' ? (
+              <div className="lab-newlayout-composer-menu lab-newlayout-composer-menu--footer" role="menu" aria-label="Resolution options">
+                {composerResolutionOptions.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    role="menuitem"
+                    className={`lab-newlayout-composer-menu-item${composerSettings.resolution === option.id ? ' is-selected' : ''}`}
+                    onClick={() => applyResolutionSetting(option.id)}
+                  >
+                    <span className="lab-newlayout-composer-menu-item-title">{option.label}</span>
+                    <span className="lab-newlayout-composer-menu-item-copy">{option.description}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="lab-newlayout-composer-footer-setting">
+            <button
+              type="button"
+              className={`lab-newlayout-composer-config-btn lab-newlayout-composer-config-btn--compact${activeFooterMenu === 'duration' ? ' is-active' : ''}`}
+              onClick={() => toggleFooterMenu('duration')}
+              title="Duration"
+            >
+              {composerSettings.duration}s
+            </button>
+            {activeFooterMenu === 'duration' ? (
+              <div className="lab-newlayout-composer-menu lab-newlayout-composer-menu--footer" role="menu" aria-label="Duration options">
+                {composerDurationOptions.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    role="menuitem"
+                    className={`lab-newlayout-composer-menu-item${composerSettings.duration === option.id ? ' is-selected' : ''}`}
+                    onClick={() => applyDurationSetting(option.id)}
+                  >
+                    <span className="lab-newlayout-composer-menu-item-title">{option.label}</span>
+                    <span className="lab-newlayout-composer-menu-item-copy">{option.description}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          <button
+            type="button"
+            className={`lab-newlayout-composer-audio-btn lab-newlayout-composer-audio-btn--compact${composerSettings.generateAudio ? ' is-active' : ''}`}
+            title={composerSettings.generateAudio ? 'Audio generation enabled' : 'Audio generation disabled'}
+            onClick={toggleComposerAudio}
+          >
             {renderComposerModeIcon('audio')}
           </button>
-          <button type="button" className="lab-newlayout-composer-model-chip lab-newlayout-composer-model-chip--compact">
-            {composerModelChip}
-          </button>
+
+          <div className="lab-newlayout-composer-footer-setting">
+            <button
+              type="button"
+              className={`lab-newlayout-composer-model-chip lab-newlayout-composer-model-chip--compact${activeFooterMenu === 'model' ? ' is-active' : ''}`}
+              onClick={() => toggleFooterMenu('model')}
+              title="Generation model"
+            >
+              {composerModelChip}
+            </button>
+            {activeFooterMenu === 'model' ? (
+              <div className="lab-newlayout-composer-menu lab-newlayout-composer-menu--footer lab-newlayout-composer-menu--footer-wide" role="menu" aria-label="Model options">
+                {composerModelOptions.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    role="menuitem"
+                    className={`lab-newlayout-composer-menu-item${composerModelChip === option.label ? ' is-selected' : ''}`}
+                    onClick={() => applyModelSetting(option.id)}
+                  >
+                    <span className="lab-newlayout-composer-menu-item-title">{option.label}</span>
+                    <span className="lab-newlayout-composer-menu-item-copy">{option.description}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
         </div>
 
         <div className="lab-newlayout-composer-footer-status-row">
-          <div className="lab-newlayout-composer-status-slot">
-            {generationStatus && (
-              <span className="lab-newlayout-composer-status-text">{generationStatus}</span>
-            )}
-          </div>
+          <span className="lab-newlayout-composer-status-slot" aria-hidden="true" />
           <button
             type="button"
             className="lab-newlayout-composer-generate-btn"
-            disabled={isGenerating || !promptText.trim()}
+            disabled={!promptText.trim()}
             onClick={startGeneration}
           >
-            {isGenerating ? 'Generating...' : 'Generate'}
+            Generate
           </button>
         </div>
       </div>

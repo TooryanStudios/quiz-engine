@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { loadUserPrefs, saveUserPrefs } from '../lib/adminRepo'
 import { subscribeToProjectFolders, subscribeToUserProjects } from '../lib/studioService'
 import type { FolderSummary, ProjectSummary } from '../types/studio'
@@ -21,6 +21,44 @@ type UseStudioProjectSelectionOptions = {
   onUserPrefsSettled?: () => void
   onProjectsError?: (error: unknown) => void
   onFoldersError?: (error: unknown) => void
+}
+
+const areProjectListsEqual = (left: ProjectSummary[], right: ProjectSummary[]): boolean => {
+  if (left.length !== right.length) return false
+  for (let index = 0; index < left.length; index += 1) {
+    const a = left[index]
+    const b = right[index]
+    if (
+      a.id !== b.id
+      || a.name !== b.name
+      || a.orgId !== b.orgId
+      || a.createdBy !== b.createdBy
+      || a.role !== b.role
+      || (a.parentProjectId || null) !== (b.parentProjectId || null)
+    ) {
+      return false
+    }
+  }
+  return true
+}
+
+const areFolderListsEqual = (left: FolderSummary[], right: FolderSummary[]): boolean => {
+  if (left.length !== right.length) return false
+  for (let index = 0; index < left.length; index += 1) {
+    const a = left[index]
+    const b = right[index]
+    if (
+      a.id !== b.id
+      || a.projectId !== b.projectId
+      || a.name !== b.name
+      || (a.parentId || null) !== (b.parentId || null)
+      || a.createdBy !== b.createdBy
+      || a.createdAt !== b.createdAt
+    ) {
+      return false
+    }
+  }
+  return true
 }
 
 export function useStudioProjectSelection({
@@ -50,6 +88,10 @@ export function useStudioProjectSelection({
   const [studioFolders, setStudioFolders] = useState<FolderSummary[]>([])
   const [studioFoldersLoading, setStudioFoldersLoading] = useState<boolean>(false)
   const [hasLoadedStudioSelection, setHasLoadedStudioSelection] = useState<boolean>(false)
+  const activeProjectRole = useMemo(
+    () => studioProjects.find((item) => item.id === studioProjectId)?.role || null,
+    [studioProjectId, studioProjects],
+  )
 
   useEffect(() => {
     onUserPrefsLoadedRef.current = onUserPrefsLoaded
@@ -147,7 +189,7 @@ export function useStudioProjectSelection({
     const unsub = subscribeToUserProjects(
       authUid,
       (next) => {
-        setStudioProjects(next)
+        setStudioProjects((current) => (areProjectListsEqual(current, next) ? current : next))
         setStudioProjectsLoading(false)
         setStudioProjectIdState((current) => {
           if (current && next.some((project) => project.id === current)) {
@@ -180,12 +222,11 @@ export function useStudioProjectSelection({
     }
 
     setStudioFoldersLoading(true)
-    const projectRole = studioProjects.find((item) => item.id === studioProjectId)?.role || null
     const unsub = subscribeToProjectFolders(
       studioProjectId,
-      { userId: authUid, role: projectRole },
+      { userId: authUid, role: activeProjectRole },
       (folders) => {
-        setStudioFolders(folders)
+        setStudioFolders((current) => (areFolderListsEqual(current, folders) ? current : folders))
         setStudioFoldersLoading(false)
         setStudioActiveFolderIdState((current) => {
           if (current && folders.some((folder) => folder.id === current)) {
@@ -209,7 +250,7 @@ export function useStudioProjectSelection({
     return () => {
       unsub()
     }
-  }, [authUid, studioProjectId, studioProjects])
+  }, [activeProjectRole, authUid, studioProjectId])
 
   useEffect(() => {
     preferredStudioProjectIdRef.current = studioProjectId

@@ -31,6 +31,7 @@ const MAX_TOASTS = 5
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastState[]>([])
   const timersRef = useRef<Map<number, { main: number; fade: number }>>(new Map())
+  const toastIdRef = useRef<number>(Date.now())
 
   const clearTimers = (id: number) => {
     const t = timersRef.current.get(id)
@@ -51,7 +52,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }
 
   const showToast = (options: ToastOptions) => {
-    const id = Date.now()
+    toastIdRef.current += 1
+    const id = toastIdRef.current
     const duration = options.durationMs ?? 6000
 
     setToasts((prev) => {

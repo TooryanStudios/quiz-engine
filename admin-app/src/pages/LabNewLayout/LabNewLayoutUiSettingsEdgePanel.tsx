@@ -12,6 +12,7 @@ export function LabNewLayoutUiSettingsEdgePanel(props: IDockviewPanelProps<UiSet
     canApplyPreset,
     canManageTabClosing,
     canSavePreset,
+    canSaveAsDefault,
     canUpdatePreset,
     isTabClosingEnabled,
     presetDraftName,
@@ -21,6 +22,7 @@ export function LabNewLayoutUiSettingsEdgePanel(props: IDockviewPanelProps<UiSet
     onPresetDraftNameChange,
     onResetLayout,
     onSavePreset,
+    onSaveAsDefault,
     onSelectedPresetIdChange,
     onSetTabClosingEnabled,
     onUpdatePreset,
@@ -99,7 +101,22 @@ export function LabNewLayoutUiSettingsEdgePanel(props: IDockviewPanelProps<UiSet
           >
             Reset Default Layout
           </button>
+          {canSaveAsDefault ? (
+            <button
+              type="button"
+              className="lab-newlayout-ui-settings-action"
+              onClick={onSaveAsDefault}
+              title="Save current UI as the default layout for all users"
+            >
+              Save as Default UI
+            </button>
+          ) : null}
         </div>
+        {canSaveAsDefault ? (
+          <div className="lab-newlayout-ui-settings-note">
+            Master-admin only. Becomes the fallback layout shown to every user.
+          </div>
+        ) : null}
       </div>
 
       <div className="lab-newlayout-ui-settings-section">

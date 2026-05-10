@@ -314,6 +314,78 @@
   letter-spacing: 0.02em;
 }
 
+/* Inline flow rename — trigger button */
+.workflow-builder-test-page__inline-rename-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0.28rem 0.52rem;
+  border-radius: 999px;
+  border: 1px solid rgba(100, 116, 139, 0.45);
+  background: rgba(15, 23, 42, 0.82);
+  color: #cbd5e1;
+  font-size: 0.67rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.workflow-builder-test-page__inline-rename-trigger:hover {
+  border-color: rgba(148, 163, 184, 0.7);
+  color: #f1f5f9;
+}
+
+/* Inline rename — editing form */
+.workflow-builder-test-page__inline-rename-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.workflow-builder-test-page__inline-rename-input {
+  width: 12rem;
+  padding: 0.25rem 0.45rem;
+  border-radius: 4px;
+  border: 1px solid rgba(56, 189, 248, 0.55);
+  background: rgba(15, 23, 42, 0.97);
+  color: #f1f5f9;
+  font-size: 0.67rem;
+  outline: none;
+}
+.workflow-builder-test-page__inline-rename-input:focus {
+  border-color: #38bdf8;
+}
+.workflow-builder-test-page__inline-rename-save,
+.workflow-builder-test-page__inline-rename-cancel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 4px;
+  border: 1px solid rgba(100, 116, 139, 0.4);
+  background: rgba(30, 41, 59, 0.9);
+  color: #94a3b8;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+.workflow-builder-test-page__inline-rename-save:hover:not(:disabled) { color: #4ade80; border-color: #4ade80; }
+.workflow-builder-test-page__inline-rename-cancel:hover { color: #f87171; border-color: #f87171; }
+.workflow-builder-test-page__inline-rename-save:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.workflow-builder-test-page__inline-save-label {
+  color: #94a3b8;
+  font-size: 0.63rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+
+
 .workflow-builder-test-page__top-context-item {
   display: grid;
   gap: 0.12rem;
@@ -504,6 +576,150 @@
   text-decoration: underline;
 }
 
+.workflow-builder-test-page__dialog-tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.workflow-builder-test-page__dialog-tab {
+  border: 1px solid rgba(100, 116, 139, 0.42);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.88);
+  color: #94a3b8;
+  padding: 0.36rem 0.68rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.workflow-builder-test-page__dialog-tab--active {
+  border-color: rgba(56, 189, 248, 0.65);
+  background: rgba(8, 47, 73, 0.95);
+  color: #e0f2fe;
+}
+
+.workflow-builder-test-page__field--inline {
+  grid-column: auto;
+}
+
+.workflow-builder-test-page__cleanup {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.workflow-builder-test-page__cleanup-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.workflow-builder-test-page__cleanup-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.workflow-builder-test-page__cleanup-select-all,
+.workflow-builder-test-page__cleanup-delete {
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.workflow-builder-test-page__cleanup-select-all {
+  border: 1px solid rgba(100, 116, 139, 0.45);
+  background: rgba(15, 23, 42, 0.85);
+  color: #cbd5e1;
+}
+
+.workflow-builder-test-page__cleanup-delete {
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  background: rgba(69, 10, 10, 0.9);
+  color: #fecaca;
+}
+
+.workflow-builder-test-page__cleanup-select-all:disabled,
+.workflow-builder-test-page__cleanup-delete:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.workflow-builder-test-page__cleanup-empty {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 8rem;
+  justify-content: center;
+  border: 1px dashed rgba(71, 85, 105, 0.55);
+  border-radius: 12px;
+  color: #94a3b8;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.workflow-builder-test-page__cleanup-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+  max-height: 24rem;
+  overflow: auto;
+}
+
+.workflow-builder-test-page__cleanup-item {
+  border: 1px solid rgba(51, 65, 85, 0.72);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.62);
+}
+
+.workflow-builder-test-page__cleanup-item--checked {
+  border-color: rgba(56, 189, 248, 0.55);
+  background: rgba(8, 47, 73, 0.4);
+}
+
+.workflow-builder-test-page__cleanup-item--open {
+  border-color: rgba(250, 204, 21, 0.45);
+}
+
+.workflow-builder-test-page__cleanup-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.7rem 0.85rem;
+  cursor: pointer;
+}
+
+.workflow-builder-test-page__cleanup-name {
+  color: #e2e8f0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  min-width: 0;
+}
+
+.workflow-builder-test-page__cleanup-path {
+  color: #94a3b8;
+  font-size: 0.69rem;
+  white-space: nowrap;
+}
+
+.workflow-builder-test-page__cleanup-badge {
+  border-radius: 999px;
+  padding: 0.18rem 0.48rem;
+  background: rgba(120, 53, 15, 0.92);
+  color: #fde68a;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 @media (max-width: 1024px) {
   .workflow-builder-test-page__dialog {
     width: min(700px, 100%);
@@ -520,6 +736,15 @@
 
   .workflow-builder-test-page__inline-row {
     grid-template-columns: 1fr;
+  }
+
+  .workflow-builder-test-page__cleanup-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .workflow-builder-test-page__cleanup-path,
+  .workflow-builder-test-page__cleanup-badge {
+    grid-column: 2;
   }
 }
 
@@ -547,5 +772,18 @@
 
   .workflow-builder-test-page__top-context {
     display: none;
+  }
+
+  .workflow-builder-test-page__dialog-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .workflow-builder-test-page__cleanup-toolbar {
+    align-items: stretch;
+  }
+
+  .workflow-builder-test-page__cleanup-actions {
+    width: 100%;
   }
 }

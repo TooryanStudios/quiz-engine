@@ -11,6 +11,7 @@ import {
 } from '../features/workflowBuilder'
 import { useStudioProjectSelection, type PersistedStudioSelection } from '../hooks/useStudioProjectSelection'
 import {
+  deleteProjectFlowCanvas,
   listProjectFlowCanvases,
   listProjectFolders,
   loadProjectFlowCanvasState,
@@ -34,7 +35,7 @@ const LEGACY_WORKFLOW_FIELDS = [
 ]
 
 type UnknownRecord = Record<string, unknown>
-type FlowManagerMode = 'create' | 'open' | 'sample'
+type FlowManagerMode = 'create' | 'open' | 'sample' | 'cleanup'
 type QuickNavProjectData = {
   folders: FolderSummary[]
   flows: StudioProjectFlowCanvasSummary[]
@@ -184,14 +185,22 @@ export default function WorkflowBuilderTestPage() {
   const [flowsLoading, setFlowsLoading] = useState(false)
   const [activeFlowScopeId, setActiveFlowScopeId] = useState<string | null>(null)
   const [draftFlowName, setDraftFlowName] = useState('')
+  const draftFlowNameRef = useRef('')
+  draftFlowNameRef.current = draftFlowName
   const [moveTargetFolderId, setMoveTargetFolderId] = useState<string | null>(null)
   const [isRenamingFlow, setIsRenamingFlow] = useState(false)
   const [isMovingFlow, setIsMovingFlow] = useState(false)
   const [isFlowManagerOpen, setIsFlowManagerOpen] = useState(false)
+  const [isInlineRenamingFlow, setIsInlineRenamingFlow] = useState(false)
+  const [pendingSaveWorkflow, setPendingSaveWorkflow] = useState<WorkflowBuilderDefinition | null>(null)
+  const [pendingSaveName, setPendingSaveName] = useState('')
+  const [isSavingNewFlow, setIsSavingNewFlow] = useState(false)
   const [managerMode, setManagerMode] = useState<FlowManagerMode>('create')
   const [managerFlowName, setManagerFlowName] = useState('Untitled Flow')
   const [managerOpenScopeId, setManagerOpenScopeId] = useState<string | null>(null)
   const [isCreatingFlow, setIsCreatingFlow] = useState(false)
+  const [cleanupSelectedIds, setCleanupSelectedIds] = useState<Set<string>>(new Set())
+  const [isDeletingFlows, setIsDeletingFlows] = useState(false)
   const [legacyRecoveryAttemptKey, setLegacyRecoveryAttemptKey] = useState('')
   const [cloudWriteBlocked, setCloudWriteBlocked] = useState(false)
   const [isQuickNavOpen, setIsQuickNavOpen] = useState(false)
@@ -397,6 +406,33 @@ export default function WorkflowBuilderTestPage() {
     }
   }, [showErrorToastDeduped])
 
+  const bulkDeleteFlows = useCallback(async () => {
+    if (!studioProjectId || cleanupSelectedIds.size === 0) return
+
+    const toDelete = Array.from(cleanupSelectedIds)
+    // Never delete the currently open flow
+    const safeToDelete = toDelete.filter((id) => id !== activeFlowScopeId)
+    if (safeToDelete.length === 0) return
+
+    if (!window.confirm(`Delete ${safeToDelete.length} selected flow${safeToDelete.length > 1 ? 's' : ''}? This cannot be undone.`)) {
+      return
+    }
+
+    setIsDeletingFlows(true)
+    try {
+      await Promise.all(safeToDelete.map((scopeId) => deleteProjectFlowCanvas(studioProjectId, scopeId)))
+      setCleanupSelectedIds(new Set())
+      await loadProjectFlows(studioProjectId, activeFlowScopeId ?? undefined)
+      setQuickNavLoadedAt(0)
+      showToastRef.current({ message: `Deleted ${safeToDelete.length} flow${safeToDelete.length > 1 ? 's' : ''}.`, type: 'success' })
+    } catch (error) {
+      const message = (error as Error)?.message || 'Could not delete flows.'
+      showErrorToastDeduped(message, `bulk-delete:${message}`)
+    } finally {
+      setIsDeletingFlows(false)
+    }
+  }, [activeFlowScopeId, cleanupSelectedIds, loadProjectFlows, showErrorToastDeduped, studioProjectId])
+
   const loadQuickNavData = useCallback(async () => {
     if (!authUid || studioProjects.length === 0) {
       setQuickNavData({})
@@ -579,7 +615,14 @@ export default function WorkflowBuilderTestPage() {
   }, [authUid, studioFolders, studioProjectId])
 
   useEffect(() => {
-    if (!hasLoadedStudioSelection || routeFlowId || !authUid || !studioProjectId || flowsLoading ) {
+    // Only attempt recovery when: signed in, project loaded, no flows exist yet, no route flow
+    if (!hasLoadedStudioSelection || routeFlowId || !authUid || !studioProjectId || flowsLoading || flowItems.length > 0) {
+      return
+    }
+
+    // Per-user localStorage flag — once migrated, never attempt again (even across projects)
+    const migratedKey = `workflow-canvas:legacy-migrated:${authUid}`
+    if (typeof window !== 'undefined' && window.localStorage.getItem(migratedKey) === 'true') {
       return
     }
 
@@ -624,6 +667,12 @@ export default function WorkflowBuilderTestPage() {
           } catch {
             // keep going even if clean-up fails
           }
+          // Mark as permanently migrated so we never attempt this again
+          try {
+            window.localStorage.setItem(`workflow-canvas:legacy-migrated:${authUid}`, 'true')
+          } catch {
+            // non-critical
+          }
         }
 
         if (!recoveredFlow) {
@@ -661,6 +710,8 @@ export default function WorkflowBuilderTestPage() {
       setManagerFlowName(`Untitled Flow ${flowItems.length + 1}`)
     } else if (mode === 'sample') {
       setManagerFlowName('Sample Starter Flow')
+    } else if (mode === 'cleanup') {
+      setCleanupSelectedIds(new Set())
     } else {
       setManagerOpenScopeId(activeFlowScopeId || flowItems[0]?.scopeId || null)
     }
@@ -799,6 +850,7 @@ export default function WorkflowBuilderTestPage() {
       await renameProjectFlowCanvas(studioProjectId, activeFlowScopeId, normalized)
       setCloudWriteBlocked(false)
       setDraftFlowName(normalized)
+      setIsInlineRenamingFlow(false)
       await loadProjectFlows(studioProjectId, activeFlowScopeId)
       setQuickNavLoadedAt(0)
       showToastRef.current({ message: 'Flow renamed.', type: 'success' })
@@ -812,6 +864,37 @@ export default function WorkflowBuilderTestPage() {
       setIsRenamingFlow(false)
     }
   }, [activeFlowScopeId, draftFlowName, loadProjectFlows, showErrorToastDeduped, studioProjectId])
+
+  const handleSaveNoFile = useCallback((workflow: WorkflowBuilderDefinition) => {
+    setPendingSaveWorkflow(workflow)
+    setPendingSaveName('')
+  }, [])
+
+  const commitPendingSave = useCallback(async () => {
+    if (!pendingSaveWorkflow || !studioProjectId) return
+    const name = pendingSaveName.trim() || 'Untitled Flow'
+    setIsSavingNewFlow(true)
+    try {
+      const scopeId = await createFlowDocument({
+        flowName: name,
+        workflow: pendingSaveWorkflow,
+        folderId: studioActiveFolderId,
+      })
+      if (scopeId) {
+        setPendingSaveWorkflow(null)
+        setPendingSaveName('')
+        await loadProjectFlows(studioProjectId, scopeId)
+        setActiveFlowScopeId(scopeId)
+        navigate(buildFlowPath(scopeId), { replace: false })
+        showToastRef.current({ message: 'Flow saved.', type: 'success' })
+      }
+    } catch (error) {
+      const message = (error as Error)?.message || 'Could not save flow.'
+      showErrorToastDeduped(message, `save-new-flow:${message}`)
+    } finally {
+      setIsSavingNewFlow(false)
+    }
+  }, [buildFlowPath, createFlowDocument, loadProjectFlows, navigate, pendingSaveName, pendingSaveWorkflow, showErrorToastDeduped, studioActiveFolderId, studioProjectId])
 
   const moveFlow = useCallback(async () => {
     if (!studioProjectId || !activeFlowScopeId) return
@@ -861,7 +944,7 @@ export default function WorkflowBuilderTestPage() {
       await saveProjectFlowCanvasState({
         projectId: studioProjectId,
         scopeId: flowScope,
-        flowName: (selectedFlow?.flowName || draftFlowName || '').trim() || 'Untitled Flow',
+        flowName: (selectedFlow?.flowName || draftFlowNameRef.current || '').trim() || 'Untitled Flow',
         folderId: effectiveFlowFolderId || null,
         folderPathIds: effectiveFlowFolderPath.ids,
         folderPathNames: effectiveFlowFolderPath.names,
@@ -886,7 +969,6 @@ export default function WorkflowBuilderTestPage() {
   }, [
     authUid,
     cloudWriteBlocked,
-    draftFlowName,
     effectiveFlowFolderId,
     effectiveFlowFolderPath.ids,
     effectiveFlowFolderPath.names,
@@ -981,6 +1063,68 @@ export default function WorkflowBuilderTestPage() {
           <div className="workflow-builder-test-page__top-context-loading" role="status" aria-live="polite">
             <Loader className="wf-spin" size={11} /> Loading flow...
           </div>
+        ) : null}
+
+        {selectedFlow && !isFlowHydrating ? (
+          isInlineRenamingFlow ? (
+            <form
+              className="workflow-builder-test-page__inline-rename-form"
+              onSubmit={(event) => { event.preventDefault(); void renameFlow() }}
+            >
+              <input
+                className="workflow-builder-test-page__inline-rename-input"
+                type="text"
+                title="Flow name"
+                placeholder="Flow name"
+                value={draftFlowName}
+                onChange={(event) => setDraftFlowName(event.target.value)}
+                autoFocus
+                disabled={isRenamingFlow}
+                onKeyDown={(event) => { if (event.key === 'Escape') setIsInlineRenamingFlow(false) }}
+              />
+              <button type="submit" className="workflow-builder-test-page__inline-rename-save" disabled={isRenamingFlow}>
+                {isRenamingFlow ? '…' : '✓'}
+              </button>
+              <button type="button" className="workflow-builder-test-page__inline-rename-cancel" onClick={() => setIsInlineRenamingFlow(false)}>
+                ✕
+              </button>
+            </form>
+          ) : (
+            <button
+              type="button"
+              className="workflow-builder-test-page__inline-rename-trigger"
+              title="Rename this flow"
+              onClick={() => { setDraftFlowName(selectedFlow.flowName); setIsInlineRenamingFlow(true) }}
+            >
+              ✎ {selectedFlow.flowName}
+            </button>
+          )
+        ) : null}
+
+        {pendingSaveWorkflow && !isFlowHydrating ? (
+          <form
+            className="workflow-builder-test-page__inline-rename-form"
+            onSubmit={(event) => { event.preventDefault(); void commitPendingSave() }}
+          >
+            <span className="workflow-builder-test-page__inline-save-label">Save as:</span>
+            <input
+              className="workflow-builder-test-page__inline-rename-input"
+              type="text"
+              title="New flow name"
+              placeholder="Flow name"
+              value={pendingSaveName}
+              onChange={(event) => setPendingSaveName(event.target.value)}
+              autoFocus
+              disabled={isSavingNewFlow}
+              onKeyDown={(event) => { if (event.key === 'Escape') setPendingSaveWorkflow(null) }}
+            />
+            <button type="submit" className="workflow-builder-test-page__inline-rename-save" disabled={isSavingNewFlow}>
+              {isSavingNewFlow ? '…' : '✓'}
+            </button>
+            <button type="button" className="workflow-builder-test-page__inline-rename-cancel" onClick={() => setPendingSaveWorkflow(null)}>
+              ✕
+            </button>
+          </form>
         ) : null}
       </div>
 
@@ -1127,6 +1271,19 @@ export default function WorkflowBuilderTestPage() {
     studioProjects,
     studioProjectsLoading,
     toggleQuickNav,
+    draftFlowName,
+    isInlineRenamingFlow,
+    isRenamingFlow,
+    renameFlow,
+    selectedFlow,
+    setDraftFlowName,
+    setIsInlineRenamingFlow,
+    pendingSaveWorkflow,
+    pendingSaveName,
+    setPendingSaveName,
+    setPendingSaveWorkflow,
+    commitPendingSave,
+    isSavingNewFlow,
   ])
 
 
@@ -1156,9 +1313,18 @@ export default function WorkflowBuilderTestPage() {
             onClick={(event) => event.stopPropagation()}
           >
             <header className="workflow-builder-test-page__dialog-header">
-              <h2>
-                {managerMode === 'create' ? 'Create new flow' : managerMode === 'sample' ? 'Load sample flow' : 'Open existing flow'}
-              </h2>
+              <nav className="workflow-builder-test-page__dialog-tabs">
+                {(['create', 'open', 'sample', 'cleanup'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={`workflow-builder-test-page__dialog-tab${managerMode === mode ? ' workflow-builder-test-page__dialog-tab--active' : ''}`}
+                    onClick={() => setManagerMode(mode)}
+                  >
+                    {mode === 'create' ? 'Create' : mode === 'open' ? 'Open' : mode === 'sample' ? 'Sample' : 'Clean Up'}
+                  </button>
+                ))}
+              </nav>
               <button
                 type="button"
                 className="workflow-builder-test-page__dialog-close"
@@ -1168,6 +1334,107 @@ export default function WorkflowBuilderTestPage() {
               </button>
             </header>
 
+            {managerMode === 'cleanup' ? (
+              <div className="workflow-builder-test-page__cleanup">
+                <div className="workflow-builder-test-page__cleanup-toolbar">
+                  <label className="workflow-builder-test-page__field workflow-builder-test-page__field--inline">
+                    <span>Project</span>
+                    <select
+                      value={studioProjectId || ''}
+                      onChange={(event) => {
+                        const nextProjectId = event.target.value || null
+                        setStudioProjectId(nextProjectId)
+                        setStudioActiveFolderId(null)
+                        setActiveFlowScopeId(null)
+                        setManagerOpenScopeId(null)
+                        setCleanupSelectedIds(new Set())
+                      }}
+                      disabled={!authUid || studioProjectsLoading}
+                    >
+                      <option value="">{studioProjectsLoading ? 'Loading projects...' : 'Select project'}</option>
+                      {studioProjects.map((project) => (
+                        <option key={project.id} value={project.id}>{project.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="workflow-builder-test-page__cleanup-actions">
+                    <button
+                      type="button"
+                      className="workflow-builder-test-page__cleanup-select-all"
+                      onClick={() => {
+                        const deletable = flowItems.filter((f) => f.scopeId !== activeFlowScopeId)
+                        if (cleanupSelectedIds.size === deletable.length && deletable.length > 0) {
+                          setCleanupSelectedIds(new Set())
+                        } else {
+                          setCleanupSelectedIds(new Set(deletable.map((f) => f.scopeId)))
+                        }
+                      }}
+                      disabled={flowItems.length === 0 || isDeletingFlows}
+                    >
+                      {cleanupSelectedIds.size > 0 && cleanupSelectedIds.size === flowItems.filter((f) => f.scopeId !== activeFlowScopeId).length
+                        ? 'Deselect all'
+                        : 'Select all'}
+                    </button>
+                    <button
+                      type="button"
+                      className="workflow-builder-test-page__cleanup-delete"
+                      onClick={() => { void bulkDeleteFlows() }}
+                      disabled={cleanupSelectedIds.size === 0 || isDeletingFlows}
+                    >
+                      {isDeletingFlows ? 'Deleting…' : `Delete selected (${cleanupSelectedIds.size})`}
+                    </button>
+                  </div>
+                </div>
+
+                {flowsLoading ? (
+                  <div className="workflow-builder-test-page__cleanup-empty">
+                    <Loader className="wf-spin" size={14} /> Loading flows…
+                  </div>
+                ) : !studioProjectId ? (
+                  <div className="workflow-builder-test-page__cleanup-empty">Select a project to see its flows.</div>
+                ) : flowItems.length === 0 ? (
+                  <div className="workflow-builder-test-page__cleanup-empty">No flows in this project.</div>
+                ) : (
+                  <ul className="workflow-builder-test-page__cleanup-list">
+                    {flowItems.map((flow) => {
+                      const isOpen = flow.scopeId === activeFlowScopeId
+                      const isChecked = cleanupSelectedIds.has(flow.scopeId)
+                      return (
+                        <li
+                          key={flow.scopeId}
+                          className={`workflow-builder-test-page__cleanup-item${isChecked ? ' workflow-builder-test-page__cleanup-item--checked' : ''}${isOpen ? ' workflow-builder-test-page__cleanup-item--open' : ''}`}
+                        >
+                          <label className="workflow-builder-test-page__cleanup-row">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              disabled={isOpen || isDeletingFlows}
+                              onChange={(event) => {
+                                setCleanupSelectedIds((prev) => {
+                                  const next = new Set(prev)
+                                  if (event.target.checked) {
+                                    next.add(flow.scopeId)
+                                  } else {
+                                    next.delete(flow.scopeId)
+                                  }
+                                  return next
+                                })
+                              }}
+                            />
+                            <span className="workflow-builder-test-page__cleanup-name">{flow.flowName}</span>
+                            {flow.folderPathNames.length > 0 ? (
+                              <span className="workflow-builder-test-page__cleanup-path">{flow.folderPathNames.join(' / ')}</span>
+                            ) : null}
+                            {isOpen ? <span className="workflow-builder-test-page__cleanup-badge">open</span> : null}
+                          </label>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+              </div>
+            ) : (
+              <>
             <div className="workflow-builder-test-page__dialog-grid">
               <label className="workflow-builder-test-page__field">
                 <span>Project</span>
@@ -1306,6 +1573,8 @@ export default function WorkflowBuilderTestPage() {
                 </label>
               </div>
             ) : null}
+              </>
+            )}
 
             <div className="workflow-builder-test-page__scope">
               <div>
@@ -1363,6 +1632,16 @@ export default function WorkflowBuilderTestPage() {
                 <strong>Load Sample</strong>
                 <span>Create a sample starter flow with basic nodes for learning the canvas.</span>
               </button>
+
+              <button
+                type="button"
+                className="workflow-builder-test-page__landing-card"
+                onClick={() => openManager('cleanup')}
+                disabled={!authUid}
+              >
+                <strong>Clean Up Flows</strong>
+                <span>Bulk-select old recovered canvases and delete the ones you do not want.</span>
+              </button>
             </div>
 
             {cloudWriteBlocked ? (
@@ -1379,6 +1658,7 @@ export default function WorkflowBuilderTestPage() {
             storageKey={flowStorageKey}
             readRemoteWorkflow={readRemoteWorkflow}
             saveRemoteWorkflow={cloudWriteBlocked ? undefined : saveRemoteWorkflow}
+            onSaveNoFile={studioProjectId ? handleSaveNoFile : undefined}
             onWorkflowChange={setWorkflow}
             onNotify={handleNotify}
             topActionSlot={topActionSlot}

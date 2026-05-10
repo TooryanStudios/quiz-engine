@@ -110,6 +110,10 @@ export default defineConfig(({ mode: _mode }) => {
       '@remotion/licensing',
     ],
     alias: {
+      '@qyan/api-client/http-renderer': path.resolve(rootDir, 'packages/api-client/src/http-renderer.ts'),
+      '@qyan/firebase-client': path.resolve(rootDir, 'packages/firebase-client/src/index.ts'),
+      '@qyan/platform-constants': path.resolve(rootDir, 'packages/platform-constants/src/index.ts'),
+      '@qyan/shared-types': path.resolve(rootDir, 'packages/shared-types/src/index.ts'),
       components: path.resolve(rootDir, 'src/components'),
       react: path.resolve(rootDir, 'node_modules/react'),
       'react-dom': path.resolve(rootDir, 'node_modules/react-dom'),

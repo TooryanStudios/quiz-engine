@@ -742,6 +742,13 @@
   min-width: 460px;
 }
 
+/* Allow the generate node host (.react-flow__node) to grow with its content
+   so the green-bordered card always wraps the entire body, including a long
+   generation history list and the settings/actions footer. */
+.react-flow__node:has(.workflow-builder-node--generate) {
+  height: auto !important;
+}
+
 .workflow-builder-node--prompt {
   --workflow-node-accent: #b45309;
   /* Only right-side socket — collapse left padding to match right socket gutter */
@@ -1091,8 +1098,9 @@
 
 .workflow-builder-node__title {
   color: #f1f5f9;
-  font-size: 0.92rem;
+  font-size: 3.7rem;
   font-weight: 800;
+  line-height: 1.1;
 }
 
 .workflow-builder-node__description,
@@ -1124,14 +1132,42 @@
   gap: 0;
 }
 
-/* Two-column generate layout */
+/* Two-column generate layout. Height is now controlled inline via React state
+   driven by the drag-divider below it, so the prompt and video preview keep a
+   stable, user-tunable size while the history list grows underneath. */
 .workflow-builder-node__gen-cols {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.6rem;
-  flex: 1 1 0;
-  min-height: 0;
-  height: 100%;
+  flex: 0 0 auto;
+}
+
+/* Horizontal drag handle between the top section and the history list */
+.workflow-builder-node__gen-divider {
+  flex: 0 0 auto;
+  height: 14px;
+  margin: 0.35rem 0 0.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ns-resize;
+  user-select: none;
+  touch-action: none;
+}
+
+.workflow-builder-node__gen-divider-grip {
+  display: block;
+  width: 64px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  transition: background 120ms ease, width 120ms ease;
+}
+
+.workflow-builder-node__gen-divider:hover .workflow-builder-node__gen-divider-grip,
+.workflow-builder-node__gen-divider:active .workflow-builder-node__gen-divider-grip {
+  background: rgba(168, 85, 247, 0.7);
+  width: 96px;
 }
 
 .workflow-builder-node__gen-col {
@@ -1252,6 +1288,77 @@
   border-color: rgba(255, 255, 255, 0.42);
   color: #f8fafc;
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12);
+}
+
+.workflow-builder-node__prompt-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.workflow-builder-node__refine-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid rgba(168, 85, 247, 0.45);
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.22), rgba(59, 130, 246, 0.2));
+  color: #ddd6fe;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease;
+}
+
+.workflow-builder-node__refine-btn:hover:not(:disabled) {
+  border-color: rgba(168, 85, 247, 0.75);
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.36), rgba(59, 130, 246, 0.32));
+  color: #f5f3ff;
+}
+
+.workflow-builder-node__refine-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.workflow-builder-node__refine-btn--error {
+  border-color: rgba(248, 113, 113, 0.6);
+  color: #fecaca;
+}
+
+/* Wider, easier-to-grab scrollbars for the prompt textareas inside nodes */
+.workflow-builder-node__prompt-input,
+.workflow-builder-node__prompt-textarea {
+  scrollbar-width: auto;
+  scrollbar-color: rgba(168, 85, 247, 0.55) rgba(255, 255, 255, 0.06);
+}
+
+.workflow-builder-node__prompt-input::-webkit-scrollbar,
+.workflow-builder-node__prompt-textarea::-webkit-scrollbar {
+  width: 36px;
+  height: 36px;
+}
+
+.workflow-builder-node__prompt-input::-webkit-scrollbar-track,
+.workflow-builder-node__prompt-textarea::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+}
+
+.workflow-builder-node__prompt-input::-webkit-scrollbar-thumb,
+.workflow-builder-node__prompt-textarea::-webkit-scrollbar-thumb {
+  background: rgba(168, 85, 247, 0.55);
+  border: 6px solid rgba(18, 21, 29, 0.92);
+  border-radius: 18px;
+  min-height: 60px;
+}
+
+.workflow-builder-node__prompt-input::-webkit-scrollbar-thumb:hover,
+.workflow-builder-node__prompt-textarea::-webkit-scrollbar-thumb:hover {
+  background: rgba(168, 85, 247, 0.85);
 }
 
 .workflow-builder-node__prompt-connected {
@@ -2557,11 +2664,11 @@
 .wf-gen-list__items {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  max-height: 260px;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+  gap: 0;
+}
+
+.wf-gen-list__items > .wf-gen-list-item + .wf-gen-list-item {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .wf-gen-list__items::-webkit-scrollbar {
@@ -2579,11 +2686,12 @@
 
 /* Row */
 .wf-gen-list-item {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.35rem 0.4rem;
-  border-radius: 6px;
+  gap: 0.75rem;
+  padding: 0.6rem 0.55rem;
+  border-radius: 8px;
   background: transparent;
   border: 1px solid transparent;
   cursor: pointer;
@@ -2605,9 +2713,9 @@
 /* Thumbnail cell */
 .wf-gen-list-item__thumb {
   flex-shrink: 0;
-  width: 60px;
-  height: 40px;
-  border-radius: 4px;
+  width: 180px;
+  height: 120px;
+  border-radius: 6px;
   overflow: hidden;
   background: rgba(30, 30, 30, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -2647,21 +2755,21 @@
 }
 
 .wf-gen-list-item__label {
-  font-size: 0.72rem;
-  color: rgba(255, 255, 255, 0.8);
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.85);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .wf-gen-list-item__meta {
-  font-size: 0.63rem;
-  color: rgba(255, 255, 255, 0.35);
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.45);
 }
 
 .wf-gen-list-item__error {
-  font-size: 0.62rem;
+  font-size: 0.85rem;
   color: #f87171;
   white-space: nowrap;
   overflow: hidden;
@@ -2669,13 +2777,13 @@
 }
 
 .wf-gen-list-item__progress {
-  font-size: 0.62rem;
+  font-size: 0.85rem;
   color: #10b981;
 }
 
 .wf-gen-list-item__url {
-  font-size: 0.6rem;
-  color: rgba(99, 179, 237, 0.65);
+  font-size: 0.8rem;
+  color: rgba(99, 179, 237, 0.7);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2689,16 +2797,16 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 6px;
 }
 
 .wf-gen-list-item__action-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 4px;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.05);
   color: rgba(255, 255, 255, 0.4);
@@ -2718,7 +2826,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
+  width: 28px;
 }
 
 .wf-gen-list-item__badge--done {
@@ -2735,4 +2843,17 @@
 
 .wf-gen-list-item__badge--queued {
   color: rgba(255, 255, 255, 0.3);
+}
+
+/* Per-history output handle anchored to the node's right edge column */
+.wf-gen-list-item__handle.workflow-builder-node__handle--output {
+  top: 50% !important;
+  right: calc(-25px - 2.6rem) !important;
+  transform: translateY(-50%) !important;
+}
+
+.wf-gen-list-item__handle--inactive {
+  opacity: 0.35;
+  pointer-events: none;
+  filter: grayscale(1);
 }

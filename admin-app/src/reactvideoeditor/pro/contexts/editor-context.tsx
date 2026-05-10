@@ -1,5 +1,6 @@
 import React, { createContext, useContext, ReactNode } from "react";
 import { Overlay, AspectRatio, CaptionStyles } from "../types";
+import { CanvasZoom } from "../components/advanced-timeline/components/timeline-header/canvas-zoom-dropdown";
 
 // Define the shape of the context
 export interface EditorContextProps {
@@ -45,6 +46,10 @@ export interface EditorContextProps {
   playerDimensions: { width: number; height: number }; // Current player dimensions
   updatePlayerDimensions: (width: number, height: number) => void; // Update player size
   getAspectRatioDimensions: () => { width: number; height: number }; // Calculate dimensions based on ratio
+
+  // Canvas Zoom
+  canvasZoom: CanvasZoom;
+  setCanvasZoom: (zoom: CanvasZoom) => void;
 
   // Video Properties
   durationInFrames: number; // Total number of frames

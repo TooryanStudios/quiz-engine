@@ -7,6 +7,7 @@ import { SplittingToggle } from './splitting-toggle';
 import { SplitAtSelectionButton } from './split-at-selection-button';
 import { UndoRedoControls } from './undo-redo-controls';
 import { AspectRatioDropdown } from './aspect-ratio-dropdown';
+import { CanvasZoomDropdown, CanvasZoom } from './canvas-zoom-dropdown';
 import { AspectRatio } from '../../../../types';
 import { Overlay } from '../../../../types';
 
@@ -61,6 +62,9 @@ interface TimelineHeaderProps {
   aspectRatio?: AspectRatio;
   onAspectRatioChange?: (ratio: AspectRatio) => void;
   showAspectRatioControls?: boolean;
+  // Canvas zoom controls
+  canvasZoom?: CanvasZoom;
+  onCanvasZoomChange?: (zoom: CanvasZoom) => void;
   // Visibility controls
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
@@ -106,6 +110,8 @@ export const TimelineHeader: React.FC<TimelineHeaderProps> = ({
   aspectRatio = "16:9",
   onAspectRatioChange,
   showAspectRatioControls = true,
+  canvasZoom = 'fit',
+  onCanvasZoomChange,
   isCollapsed = false,
   onToggleCollapse,
   // overlays = [],
@@ -262,6 +268,12 @@ export const TimelineHeader: React.FC<TimelineHeaderProps> = ({
           <AspectRatioDropdown
             aspectRatio={aspectRatio}
             onAspectRatioChange={onAspectRatioChange}
+          />
+        )}
+        {onCanvasZoomChange && (
+          <CanvasZoomDropdown
+            canvasZoom={canvasZoom}
+            onCanvasZoomChange={onCanvasZoomChange}
           />
         )}
         {showZoomControls && zoomScale !== undefined && setZoomScale && (

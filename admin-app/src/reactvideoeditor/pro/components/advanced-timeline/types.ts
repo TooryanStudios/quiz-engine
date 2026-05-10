@@ -113,6 +113,9 @@ export interface TimelineProps {
   aspectRatio?: AspectRatio; // Current aspect ratio
   onAspectRatioChange?: (ratio: AspectRatio) => void; // Callback when aspect ratio changes
   showAspectRatioControls?: boolean; // Whether to show aspect ratio dropdown (default: false)
+  // Canvas zoom controls
+  canvasZoom?: import('./components/timeline-header/canvas-zoom-dropdown').CanvasZoom;
+  onCanvasZoomChange?: (zoom: import('./components/timeline-header/canvas-zoom-dropdown').CanvasZoom) => void;
   // Update present history ref for controlling undo/redo behavior
   updatePresentHistoryRef?: React.MutableRefObject<boolean>; // Ref to control whether to skip adding changes to history
   // Seek controls

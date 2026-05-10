@@ -4,6 +4,7 @@ export type LabNewLayoutUiSettingsContextValue = {
   canApplyPreset: boolean
   canManageTabClosing: boolean
   canSavePreset: boolean
+  canSaveAsDefault: boolean
   canUpdatePreset: boolean
   isTabClosingEnabled: boolean
   presetDraftName: string
@@ -13,6 +14,7 @@ export type LabNewLayoutUiSettingsContextValue = {
   onPresetDraftNameChange: (value: string) => void
   onResetLayout: () => void
   onSavePreset: () => void
+  onSaveAsDefault: () => void
   onSelectedPresetIdChange: (value: string) => void
   onSetTabClosingEnabled: (value: boolean) => void
   onUpdatePreset: () => void

@@ -66,6 +66,9 @@ export const TimelineSection: React.FC<TimelineSectionProps> = () => {
     // Add aspect ratio controls
     aspectRatio,
     setAspectRatio,
+    // Canvas zoom
+    canvasZoom,
+    setCanvasZoom,
   } = useEditorContext();
 
   // Get sidebar context for setting active panel
@@ -332,6 +335,8 @@ export const TimelineSection: React.FC<TimelineSectionProps> = () => {
           aspectRatio={aspectRatio}
           onAspectRatioChange={setAspectRatio}
           showAspectRatioControls={true}
+          canvasZoom={canvasZoom}
+          onCanvasZoomChange={setCanvasZoom}
           collapsed={isTimelineCollapsed}
           onCollapseChange={handleCollapseChange}
           overlays={overlays}

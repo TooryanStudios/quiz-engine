@@ -23,7 +23,7 @@ const configuredAuthDomain = normalizeAuthDomain(import.meta.env.VITE_FIREBASE_A
 const fallbackAuthDomain = projectId ? `${projectId}.firebaseapp.com` : ''
 const resolvedAuthDomain = configuredAuthDomain || fallbackAuthDomain
 
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   // Always use the env-configured auth domain (should be qyan-om.firebaseapp.com).
   // DO NOT override with window.location.hostname — this was found to cause an infinite
