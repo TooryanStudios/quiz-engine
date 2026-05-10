@@ -94,6 +94,7 @@ export type WorkflowBuilderCanvasProps = {
   className?: string
   showPersistenceControls?: boolean
   hidePanels?: boolean
+  onSaveNoFile?: (workflow: WorkflowBuilderDefinition) => void
   readRemoteWorkflow?: () => Promise<WorkflowBuilderDefinition | null>
   saveRemoteWorkflow?: (workflow: WorkflowBuilderDefinition) => Promise<void>
   onWorkflowChange?: (workflow: WorkflowBuilderDefinition) => void

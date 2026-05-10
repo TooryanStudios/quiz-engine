@@ -4,7 +4,7 @@ import { useLabNewLayoutComposer } from './useLabNewLayoutComposer'
 type ComposerReferenceItem = {
   id: string
   url: string
-  kind: string
+  kind: 'image' | 'video' | 'audio'
   name: string
 }
 

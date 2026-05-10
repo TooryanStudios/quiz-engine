@@ -98,6 +98,30 @@ export type StudioProjectNewLayoutConfig = {
   version: 1
   adminOnlyPanelIds: string[]
   masterAdminCanCloseTabs: boolean
+  composerDrafts?: Record<string, StudioProjectComposerDraft>
+}
+
+export type StudioComposerPromptFontSize = 'small' | 'medium' | 'large' | 'xlarge' | 'xxlarge'
+
+export type StudioProjectComposerDraftReference = {
+  id: string
+  url: string
+  kind: 'image' | 'video' | 'audio'
+  name: string
+}
+
+export type StudioProjectComposerDraft = {
+  activeModeId: string
+  promptText: string
+  promptFontSize: StudioComposerPromptFontSize
+  references: StudioProjectComposerDraftReference[]
+  model: string
+  provider: string
+  ratio: string
+  resolution: string
+  duration: number
+  generateAudio: boolean
+  updatedAt: number
 }
 
 /**
@@ -241,6 +265,8 @@ export type ProjectSummary = Pick<
 > & {
   role: ProjectRole
   updatedAt: number
+  createdBy?: string
+  parentProjectId?: string | null
 }
 
 // ─── Folder ───────────────────────────────────────────────────────────────────
