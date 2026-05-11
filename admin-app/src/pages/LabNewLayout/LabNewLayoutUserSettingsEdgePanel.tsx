@@ -8,6 +8,7 @@ type UserSettingsEdgePanelParams = {
 }
 
 export function LabNewLayoutUserSettingsEdgePanel(props: IDockviewPanelProps<UserSettingsEdgePanelParams>) {
+  const panelParams = props.params ?? {}
   const {
     authUid,
     authDisplayName,
@@ -23,10 +24,10 @@ export function LabNewLayoutUserSettingsEdgePanel(props: IDockviewPanelProps<Use
   const profileInitial = (authDisplayName || authEmail || 'U').trim().charAt(0).toUpperCase()
 
   return (
-    <div className="lab-newlayout-edge-panel lab-newlayout-edge-panel--user-settings" data-position={props.params.position ?? 'edge'}>
+    <div className="lab-newlayout-edge-panel lab-newlayout-edge-panel--user-settings" data-position={panelParams.position ?? 'edge'}>
       <div className="lab-newlayout-edge-head">
-        <span className="lab-newlayout-edge-title">{props.params.label ?? props.api.title}</span>
-        {props.params.phase ? <span className="lab-newlayout-phase-badge">{props.params.phase}</span> : null}
+        <span className="lab-newlayout-edge-title">{panelParams.label ?? props.api.title}</span>
+        {panelParams.phase ? <span className="lab-newlayout-phase-badge">{panelParams.phase}</span> : null}
       </div>
 
       {!authUid ? (

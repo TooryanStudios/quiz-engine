@@ -5,10 +5,10 @@
   "type": "module",
   "scripts": {
     "sync:tinymce": "node ./scripts/sync-tinymce-assets.mjs",
-    "dev": "npm run sync:tinymce && concurrently -n ui,api -c cyan,magenta \"vite\" \"node functions-chatbot/server/index.js\"",
+    "dev": "npm run sync:tinymce && concurrently --restart-tries -1 --restart-after 2000 -n ui,api -c cyan,magenta \"vite\" \"node functions-chatbot/server/index.js\"",
     "dev:ui": "npm run sync:tinymce && vite",
     "dev:videdit": "npm run sync:tinymce && vite --config apps/videdit/vite.config.ts",
-    "dev:api": "node functions-chatbot/server/index.js",
+    "dev:api": "concurrently --restart-tries -1 --restart-after 2000 -n api -c magenta \"node functions-chatbot/server/index.js\"",
     "dev:games": "npm run sync:tinymce && vite --open /game-modes",
     "build": "npm run sync:tinymce && tsc -b && vite build",
     "build:videdit": "npm run sync:tinymce && vite build --config apps/videdit/vite.config.ts",

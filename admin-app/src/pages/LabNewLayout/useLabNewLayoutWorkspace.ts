@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { useStudioProjectSelection } from '../../hooks/useStudioProjectSelection'
-import { saveProjectNewLayoutConfig, subscribeToProjectNewLayoutConfig, subscribeToProjectReferenceLibrary } from '../../lib/studioService'
-import type { FolderSummary, ProjectSummary, StudioProjectComposerDraft, StudioProjectNewLayoutConfig, StudioReferenceAsset } from '../../types/studio'
+import { saveProjectNewLayoutConfig, subscribeToProjectNewLayoutConfig, subscribeToProjectReferenceLibrary, createProject, createFolder } from '../../lib/studioService'
+import type { FolderSummary, ProjectSummary, StudioProjectComposerDraft, StudioProjectNewLayoutConfig, StudioProjectStoryBibleData, StudioReferenceAsset } from '../../types/studio'
 
 type LabNewLayoutStudioSelectionState = {
   version: 1
@@ -78,15 +78,28 @@ export type LabNewLayoutDataContextValue = {
   updateStoryBibleData: (updater: (current: StoryBibleData) => StoryBibleData) => void
   setStudioProjectId: (projectId: string | null) => void
   setStudioActiveFolderId: (folderId: string | null) => void
+  ensureDefaultProjectAndFolder: () => Promise<{ projectId: string; folderId: string } | null>
+  openHistoryGallery: () => void
   projectReferenceLibraryItems: StudioReferenceAsset[]
   projectReferenceLibraryLoading: boolean
   projectNewLayoutConfig: StudioProjectNewLayoutConfig
   projectNewLayoutConfigLoading: boolean
   updateProjectNewLayoutConfig: (updater: (current: StudioProjectNewLayoutConfig) => StudioProjectNewLayoutConfig) => void
+  openStudioExplorer: () => void
 }
 
 const LAB_NEWLAYOUT_STUDIO_SELECTION_STORAGE_KEY = 'toorgen:lab-newlayout:studio-selection:v1'
 const STORY_BIBLE_STORAGE_KEY = 'toorgen_story_bible_v1'
+
+const emptyStoryBibleData: StoryBibleData = {
+  title: '',
+  summary: '',
+  folderSummaries: {},
+  chapters: [],
+  episodes: [],
+  scenes: [],
+  characters: [],
+}
 
 export const LabNewLayoutDataContext = createContext<LabNewLayoutDataContextValue | null>(null)
 
@@ -128,10 +141,33 @@ function sanitizeComposerDraft(input: StudioProjectComposerDraft | null | undefi
   }
 }
 
+function normalizeComposerDraftScopeId(scopeId: unknown): string | null {
+  if (typeof scopeId !== 'string') {
+    return null
+  }
+
+  const trimmed = scopeId.trim()
+  if (!trimmed) {
+    return null
+  }
+
+  // Firestore rejects field names that begin and end with "__".
+  if (trimmed === '__project__') {
+    return 'project'
+  }
+
+  if (/^__.*__$/.test(trimmed)) {
+    return null
+  }
+
+  return trimmed
+}
+
 function sanitizeProjectNewLayoutConfig(input?: Partial<StudioProjectNewLayoutConfig> | null): StudioProjectNewLayoutConfig {
   const composerDraftEntries = Object.entries(input?.composerDrafts ?? {})
     .map(([scopeId, draft]) => {
-      if (typeof scopeId !== 'string' || !scopeId.trim()) {
+      const normalizedScopeId = normalizeComposerDraftScopeId(scopeId)
+      if (!normalizedScopeId) {
         return null
       }
 
@@ -140,7 +176,7 @@ function sanitizeProjectNewLayoutConfig(input?: Partial<StudioProjectNewLayoutCo
         return null
       }
 
-      return [scopeId, sanitizedDraft] as const
+      return [normalizedScopeId, sanitizedDraft] as const
     })
     .filter((entry): entry is readonly [string, StudioProjectComposerDraft] => Boolean(entry))
 
@@ -149,6 +185,7 @@ function sanitizeProjectNewLayoutConfig(input?: Partial<StudioProjectNewLayoutCo
     adminOnlyPanelIds: [...new Set((input?.adminOnlyPanelIds ?? []).filter((panelId) => typeof panelId === 'string' && panelId.trim().length > 0))].sort(),
     masterAdminCanCloseTabs: input?.masterAdminCanCloseTabs === true,
     composerDrafts: Object.fromEntries(composerDraftEntries),
+    storyBibleData: sanitizeStoryBibleDataFromConfig(input?.storyBibleData),
   }
 }
 
@@ -241,16 +278,6 @@ function writeStoryBibleData(projectId: string | null, data: StoryBibleData): vo
 }
 
 function readStoryBibleData(projectId: string | null): StoryBibleData {
-  const emptyStoryBibleData: StoryBibleData = {
-    title: '',
-    summary: '',
-    folderSummaries: {},
-    chapters: [],
-    episodes: [],
-    scenes: [],
-    characters: [],
-  }
-
   if (typeof window === 'undefined') {
     return emptyStoryBibleData
   }
@@ -387,7 +414,11 @@ type LabNewLayoutWorkspaceAuthState = {
 export function useLabNewLayoutWorkspace(authState: LabNewLayoutWorkspaceAuthState) {
   const { uid: authUid, displayName: authDisplayName, email: authEmail, photoUrl: authPhotoUrl } = authState
   const initialLocalStudioSelectionRef = useRef<LabNewLayoutStudioSelectionState | null>(readLocalPersistedStudioSelection())
-  const [storyBibleData, setStoryBibleData] = useState<StoryBibleData>(() => readStoryBibleData(initialLocalStudioSelectionRef.current?.projectId ?? null))
+  const [storyBibleData, setStoryBibleData] = useState<StoryBibleData>(() => (
+    import.meta.env.DEV
+      ? readStoryBibleData(initialLocalStudioSelectionRef.current?.projectId ?? null)
+      : emptyStoryBibleData
+  ))
   const [projectReferenceLibraryItems, setProjectReferenceLibraryItems] = useState<StudioReferenceAsset[]>([])
   const [projectReferenceLibraryLoading, setProjectReferenceLibraryLoading] = useState(false)
   const [projectNewLayoutConfig, setProjectNewLayoutConfig] = useState<StudioProjectNewLayoutConfig>(sanitizeProjectNewLayoutConfig())
@@ -412,16 +443,8 @@ export function useLabNewLayoutWorkspace(authState: LabNewLayoutWorkspaceAuthSta
         folderId,
       })
     },
-    selectionPriority: 'local',
+    selectionPriority: 'user-prefs',
   })
-
-  useEffect(() => {
-    if (!isStudioSelectionBootstrapComplete) {
-      return
-    }
-
-    setStoryBibleData(readStoryBibleData(studioProjectId))
-  }, [isStudioSelectionBootstrapComplete, studioProjectId])
 
   useEffect(() => {
     if (!studioProjectId) {
@@ -468,13 +491,28 @@ export function useLabNewLayoutWorkspace(authState: LabNewLayoutWorkspaceAuthSta
 
     if (!studioProjectId) {
       setProjectNewLayoutConfig(sanitizeProjectNewLayoutConfig())
+      setStoryBibleData(import.meta.env.DEV ? readStoryBibleData(null) : emptyStoryBibleData)
       setProjectNewLayoutConfigLoading(false)
       return
     }
 
     setProjectNewLayoutConfigLoading(true)
     const unsubscribe = subscribeToProjectNewLayoutConfig(studioProjectId, (config) => {
-      setProjectNewLayoutConfig(sanitizeProjectNewLayoutConfig(config))
+      const sanitizedConfig = sanitizeProjectNewLayoutConfig(config)
+      setProjectNewLayoutConfig(sanitizedConfig)
+      const fromConfig = sanitizeStoryBibleDataFromConfig(sanitizedConfig.storyBibleData)
+      const hasConfigStoryData = Boolean(
+        fromConfig.title
+        || fromConfig.summary
+        || fromConfig.chapters.length
+        || fromConfig.episodes.length
+        || fromConfig.scenes.length
+        || fromConfig.characters.length,
+      )
+      const resolvedStoryBibleData = import.meta.env.DEV && !hasConfigStoryData
+        ? readStoryBibleData(studioProjectId)
+        : fromConfig
+      setStoryBibleData(resolvedStoryBibleData)
       setProjectNewLayoutConfigLoading(false)
     }, (error) => {
       console.error('Failed to load new layout config:', error)
@@ -487,7 +525,26 @@ export function useLabNewLayoutWorkspace(authState: LabNewLayoutWorkspaceAuthSta
   const updateStoryBibleData = useCallback((updater: (current: StoryBibleData) => StoryBibleData) => {
     setStoryBibleData((current) => {
       const next = sanitizeStoryBibleData(updater(current))
-      writeStoryBibleData(studioProjectId, next)
+
+      if (import.meta.env.DEV) {
+        writeStoryBibleData(studioProjectId, next)
+      }
+
+      setProjectNewLayoutConfig((currentConfig) => {
+        const nextConfig = sanitizeProjectNewLayoutConfig({
+          ...currentConfig,
+          storyBibleData: next,
+        })
+
+        if (studioProjectId) {
+          void saveProjectNewLayoutConfig(studioProjectId, nextConfig).catch((error) => {
+            console.error('Failed to save story bible data:', error)
+          })
+        }
+
+        return nextConfig
+      })
+
       return next
     })
   }, [studioProjectId])
@@ -503,6 +560,33 @@ export function useLabNewLayoutWorkspace(authState: LabNewLayoutWorkspaceAuthSta
       return next
     })
   }, [studioProjectId])
+
+  const ensureDefaultProjectAndFolder = useCallback(async (): Promise<{ projectId: string; folderId: string } | null> => {
+    if (!authUid) {
+      return null
+    }
+    // If already active, return current selection
+    const currentProjectId = (studioProjectId || '').trim()
+    const currentFolderId = (studioActiveFolderId || '').trim()
+    if (currentProjectId && currentFolderId) {
+      return { projectId: currentProjectId, folderId: currentFolderId }
+    }
+    try {
+      const created = await createProject(
+        { orgId: authUid, name: 'My Project' },
+        { uid: authUid, displayName: authDisplayName, email: authEmail, photoUrl: authPhotoUrl },
+      )
+      const folder = await createFolder(
+        { projectId: created.id, name: 'Default', parentId: null },
+        authUid,
+      )
+      setStudioProjectId(created.id)
+      setStudioActiveFolderId(folder.id)
+      return { projectId: created.id, folderId: folder.id }
+    } catch {
+      return null
+    }
+  }, [authDisplayName, authEmail, authPhotoUrl, authUid, setStudioActiveFolderId, setStudioProjectId, studioActiveFolderId, studioProjectId])
 
   const dataContextValue = useMemo<LabNewLayoutDataContextValue>(() => ({
     authUid,
@@ -524,6 +608,9 @@ export function useLabNewLayoutWorkspace(authState: LabNewLayoutWorkspaceAuthSta
     projectNewLayoutConfig,
     projectNewLayoutConfigLoading,
     updateProjectNewLayoutConfig,
+    openStudioExplorer: () => undefined,
+    openHistoryGallery: () => undefined,
+    ensureDefaultProjectAndFolder,
   }), [
     authDisplayName,
     authEmail,
@@ -544,6 +631,7 @@ export function useLabNewLayoutWorkspace(authState: LabNewLayoutWorkspaceAuthSta
     projectNewLayoutConfig,
     projectNewLayoutConfigLoading,
     updateProjectNewLayoutConfig,
+    ensureDefaultProjectAndFolder,
   ])
 
   return {
@@ -562,4 +650,24 @@ export function useLabNewLayoutWorkspace(authState: LabNewLayoutWorkspaceAuthSta
     projectNewLayoutConfigLoading,
     updateProjectNewLayoutConfig,
   }
+}
+
+function sanitizeStoryBibleDataFromConfig(data: StudioProjectStoryBibleData | StoryBibleData | null | undefined): StoryBibleData {
+  if (!data) {
+    return emptyStoryBibleData
+  }
+
+  const normalized: StoryBibleData = {
+    title: typeof data.title === 'string' ? data.title : '',
+    summary: typeof data.summary === 'string' ? data.summary : '',
+    folderSummaries: isRecord(data.folderSummaries)
+      ? Object.fromEntries(Object.entries(data.folderSummaries).map(([folderId, summary]) => [folderId, String(summary ?? '')]))
+      : {},
+    chapters: Array.isArray(data.chapters) ? data.chapters : [],
+    episodes: Array.isArray(data.episodes) ? data.episodes : [],
+    scenes: Array.isArray(data.scenes) ? data.scenes : [],
+    characters: Array.isArray(data.characters) ? data.characters : [],
+  }
+
+  return sanitizeStoryBibleData(normalized)
 }

@@ -7,7 +7,8 @@ type DirectApiPanelParams = {
 }
 
 export function LabNewLayoutDirectApiPanel(props: IDockviewPanelProps<DirectApiPanelParams>) {
-  const title = props.params.label ?? props.api.title
+  const panelParams = props.params ?? {}
+  const title = panelParams.label ?? props.api.title
   const {
     directRequestJson,
     finalRequestBodyPreview,
@@ -28,7 +29,7 @@ export function LabNewLayoutDirectApiPanel(props: IDockviewPanelProps<DirectApiP
               <div className="lab-newlayout-panel-kicker">Direct Submit</div>
               <span className="lab-newlayout-panel-title">{title}</span>
             </div>
-            {props.params.phase ? <span className="lab-newlayout-phase-badge">{props.params.phase}</span> : null}
+            {panelParams.phase ? <span className="lab-newlayout-phase-badge">{panelParams.phase}</span> : null}
           </div>
 
           <div className="lab-newlayout-direct-group-actions">

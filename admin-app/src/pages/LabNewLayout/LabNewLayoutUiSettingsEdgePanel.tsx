@@ -8,6 +8,7 @@ type UiSettingsEdgePanelParams = {
 }
 
 export function LabNewLayoutUiSettingsEdgePanel(props: IDockviewPanelProps<UiSettingsEdgePanelParams>) {
+  const panelParams = props.params ?? {}
   const {
     canApplyPreset,
     canManageTabClosing,
@@ -29,10 +30,10 @@ export function LabNewLayoutUiSettingsEdgePanel(props: IDockviewPanelProps<UiSet
   } = useLabNewLayoutUiSettings()
 
   return (
-    <div className="lab-newlayout-edge-panel lab-newlayout-edge-panel--ui-settings" data-position={props.params.position ?? 'edge'}>
+    <div className="lab-newlayout-edge-panel lab-newlayout-edge-panel--ui-settings" data-position={panelParams.position ?? 'edge'}>
       <div className="lab-newlayout-edge-head">
-        <span className="lab-newlayout-edge-title">{props.params.label ?? props.api.title}</span>
-        {props.params.phase ? <span className="lab-newlayout-phase-badge">{props.params.phase}</span> : null}
+        <span className="lab-newlayout-edge-title">{panelParams.label ?? props.api.title}</span>
+        {panelParams.phase ? <span className="lab-newlayout-phase-badge">{panelParams.phase}</span> : null}
       </div>
 
       <div className="lab-newlayout-ui-settings-section">

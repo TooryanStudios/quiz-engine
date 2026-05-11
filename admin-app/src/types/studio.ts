@@ -99,6 +99,61 @@ export type StudioProjectNewLayoutConfig = {
   adminOnlyPanelIds: string[]
   masterAdminCanCloseTabs: boolean
   composerDrafts?: Record<string, StudioProjectComposerDraft>
+  storyBibleData?: StudioProjectStoryBibleData
+}
+
+export type StudioProjectStoryBibleChapter = {
+  id: string
+  title: string
+  summary: string
+  folderId: string
+  episodeIds: string[]
+}
+
+export type StudioProjectStoryBibleEpisode = {
+  id: string
+  title: string
+  section: string
+  category: string
+  discipline: string
+  folderId: string
+  story: string
+  scenario: string
+  scenarios: string[]
+  dialogs: string[]
+  characters: string[]
+}
+
+export type StudioProjectStoryBibleScene = {
+  id: string
+  folderId: string
+  title: string
+  durationSec: number
+  category: string
+  discipline: string
+  script: string
+  scenario: string
+  visualThumbnailUrl: string
+  visual: string
+  action: string
+  characterIds: string[]
+}
+
+export type StudioProjectStoryBibleCharacter = {
+  id: string
+  name: string
+  bio: string
+  imageUrl: string
+}
+
+export type StudioProjectStoryBibleData = {
+  title: string
+  summary: string
+  folderSummaries: Record<string, string>
+  chapters: StudioProjectStoryBibleChapter[]
+  episodes: StudioProjectStoryBibleEpisode[]
+  scenes: StudioProjectStoryBibleScene[]
+  characters: StudioProjectStoryBibleCharacter[]
 }
 
 export type StudioComposerPromptFontSize = 'small' | 'medium' | 'large' | 'xlarge' | 'xxlarge'

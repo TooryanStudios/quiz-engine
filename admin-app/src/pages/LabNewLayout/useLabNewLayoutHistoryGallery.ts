@@ -1,10 +1,25 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { collection, getDocs, limit, orderBy, query } from 'firebase/firestore'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  limit,
+  orderBy,
+  query,
+  serverTimestamp,
+  setDoc,
+  startAfter,
+  type DocumentData,
+  type QueryConstraint,
+  type QueryDocumentSnapshot,
+} from 'firebase/firestore'
 import { db } from '../../lib/firebase'
 import { useLabNewLayoutStore, type GenerationHistoryItem } from './useLabNewLayoutStore'
 
 export type LabNewLayoutGalleryHistoryEntry = {
   id: string
+  remoteDocId?: string
   source: 'new-layout' | 'prompt-lab' | 'legacy-toorgen'
   sourceLabel: string
   timestamp: number
@@ -34,7 +49,8 @@ export type LabNewLayoutGalleryHistoryEntry = {
 const PROMPT_LAB_LOCAL_HISTORY_KEY = 'toorgen-prompt-lab-history-v3'
 const PROMPT_LAB_FIRESTORE_COLLECTION = 'toorgen_prompt_lab_generations'
 const LEGACY_TOORGEN_HISTORY_KEY = 'toorgen_history'
-const MAX_REMOTE_HISTORY_ITEMS = 80
+const REMOTE_HISTORY_PAGE_SIZE = 30
+const OPTIMISTIC_SUCCESS_WINDOW_MS = 2 * 60 * 1000
 
 const isRecord = (value: unknown): value is Record<string, unknown> => (
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -55,12 +71,76 @@ const readNumber = (...values: unknown[]): number | null => {
       return value
     }
     if (typeof value === 'string' && value.trim()) {
-      const numericValue = Number(value.replace(/[^\d.\-]/g, ''))
+      const numericValue = Number(value.replace(/[^\d.-]/g, ''))
       if (Number.isFinite(numericValue)) {
         return numericValue
       }
     }
   }
+  return null
+}
+
+const readTimestampValue = (...values: unknown[]): number | null => {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value
+    }
+
+    if (typeof value === 'string' && value.trim()) {
+      const trimmed = value.trim()
+      const numericValue = Number(trimmed)
+      if (Number.isFinite(numericValue)) {
+        return numericValue
+      }
+
+      const parsedDate = Date.parse(trimmed)
+      if (Number.isFinite(parsedDate)) {
+        return parsedDate
+      }
+
+      const sanitizedNumericValue = Number(trimmed.replace(/[^\d.-]/g, ''))
+      if (Number.isFinite(sanitizedNumericValue)) {
+        return sanitizedNumericValue
+      }
+    }
+
+    if (value instanceof Date) {
+      const dateValue = value.getTime()
+      if (Number.isFinite(dateValue)) {
+        return dateValue
+      }
+    }
+
+    if (isRecord(value)) {
+      const toMillis = value.toMillis
+      if (typeof toMillis === 'function') {
+        try {
+          const millis = Number(toMillis.call(value))
+          if (Number.isFinite(millis)) {
+            return millis
+          }
+        } catch {
+          // Ignore malformed timestamp-like objects.
+        }
+      }
+
+      const seconds = typeof value.seconds === 'number'
+        ? value.seconds
+        : typeof value._seconds === 'number'
+          ? value._seconds
+          : null
+      const nanoseconds = typeof value.nanoseconds === 'number'
+        ? value.nanoseconds
+        : typeof value._nanoseconds === 'number'
+          ? value._nanoseconds
+          : 0
+
+      if (seconds !== null) {
+        return (seconds * 1000) + Math.floor(nanoseconds / 1_000_000)
+      }
+    }
+  }
+
   return null
 }
 
@@ -85,6 +165,13 @@ const normalizeStatus = (value: unknown, fallback: LabNewLayoutGalleryHistoryEnt
   return fallback
 }
 
+const coerceCompletedStatus = (
+  status: LabNewLayoutGalleryHistoryEntry['status'],
+  resultUrl: string,
+): LabNewLayoutGalleryHistoryEntry['status'] => (
+  resultUrl.trim() ? 'success' : status
+)
+
 const readMediaRecord = (value: unknown): Record<string, string> => {
   if (!isRecord(value)) {
     return {}
@@ -103,15 +190,95 @@ const readStringArray = (value: unknown): string[] => (
     : []
 )
 
+const readUrlLike = (value: unknown): string => {
+  if (typeof value === 'string' && value.trim()) {
+    return value.trim()
+  }
+  if (!isRecord(value)) {
+    return ''
+  }
+
+  const imageUrl = isRecord(value.image_url) ? value.image_url : null
+  const videoUrl = isRecord(value.video_url) ? value.video_url : null
+  const audioUrl = isRecord(value.audio_url) ? value.audio_url : null
+
+  return firstNonEmptyString(
+    value.url,
+    value.src,
+    imageUrl?.url,
+    videoUrl?.url,
+    audioUrl?.url,
+  )
+}
+
+const pushBucketUrl = (bucket: string[], value: unknown) => {
+  const url = readUrlLike(value)
+  if (url) {
+    bucket.push(url)
+  }
+}
+
+const mergeBucketsIntoMedia = (
+  target: Record<string, string>,
+  buckets: { image: string[]; video: string[]; audio: string[]; reference: string[] },
+) => {
+  mergeArrayMedia(target, 'image', buckets.image)
+  mergeArrayMedia(target, 'video', buckets.video)
+  mergeArrayMedia(target, 'audio', buckets.audio)
+  mergeArrayMedia(target, 'reference', buckets.reference)
+}
+
+const readMediaUrlsFromHistoryFields = (value: Record<string, unknown>): Record<string, string> => {
+  const next: Record<string, string> = {}
+  const buckets = {
+    image: readStringArray(value.referenceImages),
+    video: readStringArray(value.referenceVideos),
+    audio: readStringArray(value.referenceAudios),
+    reference: [] as string[],
+  }
+
+  if (Array.isArray(value.referenceNodes)) {
+    value.referenceNodes.forEach((entry) => {
+      if (!isRecord(entry)) return
+      const kind = firstNonEmptyString(entry.kind).toLowerCase()
+      if (kind === 'video') {
+        pushBucketUrl(buckets.video, entry)
+        return
+      }
+      if (kind === 'audio') {
+        pushBucketUrl(buckets.audio, entry)
+        return
+      }
+      pushBucketUrl(buckets.image, entry)
+    })
+  }
+
+  mergeBucketsIntoMedia(next, buckets)
+  return next
+}
+
 const mergeArrayMedia = (target: Record<string, string>, prefix: string, values: string[]) => {
   values.forEach((value, index) => {
     target[`${prefix}-${index + 1}`] = value
   })
 }
 
-const readRequestPayload = (value: unknown): Record<string, unknown> | null => (
-  isRecord(value) ? value : null
-)
+const readRequestPayload = (value: unknown): Record<string, unknown> | null => {
+  if (isRecord(value)) {
+    return value
+  }
+
+  if (typeof value !== 'string' || !value.trim()) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return isRecord(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
 
 const readMediaUrlsFromPayload = (payload: Record<string, unknown> | null): Record<string, string> => {
   if (!payload) {
@@ -124,10 +291,110 @@ const readMediaUrlsFromPayload = (payload: Record<string, unknown> | null): Reco
   }
 
   const next: Record<string, string> = {}
-  mergeArrayMedia(next, 'image', readStringArray(payload.reference_images ?? payload.referenceImages ?? payload.images))
-  mergeArrayMedia(next, 'video', readStringArray(payload.reference_videos ?? payload.referenceVideos ?? payload.videos))
-  mergeArrayMedia(next, 'audio', readStringArray(payload.reference_audios ?? payload.referenceAudios ?? payload.audios))
-  mergeArrayMedia(next, 'reference', readStringArray(payload.references))
+  const buckets = {
+    image: [
+      ...readStringArray(payload.reference_images ?? payload.referenceImages ?? payload.images ?? payload.image_urls ?? payload.imageUrls),
+    ],
+    video: [
+      ...readStringArray(payload.reference_videos ?? payload.referenceVideos ?? payload.videos ?? payload.video_urls ?? payload.videoUrls),
+    ],
+    audio: [
+      ...readStringArray(payload.reference_audios ?? payload.referenceAudios ?? payload.audios ?? payload.audio_urls ?? payload.audioUrls),
+    ],
+    reference: [] as string[],
+  }
+
+  pushBucketUrl(buckets.image, payload.image)
+  pushBucketUrl(buckets.image, payload.image_url)
+  pushBucketUrl(buckets.image, payload.imageUrl)
+
+  pushBucketUrl(buckets.video, payload.video)
+  pushBucketUrl(buckets.video, payload.video_url)
+  pushBucketUrl(buckets.video, payload.videoUrl)
+  pushBucketUrl(buckets.video, payload.source_video_url)
+  pushBucketUrl(buckets.video, payload.sourceVideoUrl)
+  pushBucketUrl(buckets.video, payload.extension_video_url)
+  pushBucketUrl(buckets.video, payload.extensionVideoUrl)
+
+  pushBucketUrl(buckets.audio, payload.audio)
+  pushBucketUrl(buckets.audio, payload.audio_url)
+  pushBucketUrl(buckets.audio, payload.audioUrl)
+
+  if (Array.isArray(payload.references)) {
+    payload.references.forEach((entry) => {
+      if (typeof entry === 'string') {
+        buckets.reference.push(entry.trim())
+        return
+      }
+      if (!isRecord(entry)) return
+      const kind = firstNonEmptyString(entry.kind).toLowerCase()
+      if (kind === 'video') {
+        pushBucketUrl(buckets.video, entry)
+        return
+      }
+      if (kind === 'audio') {
+        pushBucketUrl(buckets.audio, entry)
+        return
+      }
+      if (kind === 'image') {
+        pushBucketUrl(buckets.image, entry)
+        return
+      }
+      pushBucketUrl(buckets.reference, entry)
+    })
+  }
+
+  if (Array.isArray(payload.mention_references)) {
+    payload.mention_references.forEach((entry) => {
+      if (!isRecord(entry)) return
+      const kind = firstNonEmptyString(entry.kind).toLowerCase()
+      if (kind === 'video') {
+        pushBucketUrl(buckets.video, entry)
+        return
+      }
+      if (kind === 'audio') {
+        pushBucketUrl(buckets.audio, entry)
+        return
+      }
+      pushBucketUrl(kind === 'image' ? buckets.image : buckets.reference, entry)
+    })
+  }
+
+  if (isRecord(payload.reference_aliases)) {
+    Object.values(payload.reference_aliases).forEach((entry) => {
+      if (!isRecord(entry)) return
+      const kind = firstNonEmptyString(entry.kind).toLowerCase()
+      if (kind === 'video') {
+        pushBucketUrl(buckets.video, entry)
+        return
+      }
+      if (kind === 'audio') {
+        pushBucketUrl(buckets.audio, entry)
+        return
+      }
+      pushBucketUrl(kind === 'image' ? buckets.image : buckets.reference, entry)
+    })
+  }
+
+  if (Array.isArray(payload.content)) {
+    payload.content.forEach((entry) => {
+      if (!isRecord(entry)) return
+      const type = firstNonEmptyString(entry.type).toLowerCase()
+      if (type === 'image_url') {
+        pushBucketUrl(buckets.image, entry)
+        return
+      }
+      if (type === 'video_url') {
+        pushBucketUrl(buckets.video, entry)
+        return
+      }
+      if (type === 'audio_url') {
+        pushBucketUrl(buckets.audio, entry)
+      }
+    })
+  }
+
+  mergeBucketsIntoMedia(next, buckets)
   return next
 }
 
@@ -140,9 +407,7 @@ const mergeMediaUrls = (...records: Array<Record<string, string>>): Record<strin
       const normalizedValue = value.trim()
       if (!normalizedValue || seenUrls.has(normalizedValue)) return
       seenUrls.add(normalizedValue)
-      if (normalizedValue) {
-        next[key] = normalizedValue
-      }
+      next[key] = normalizedValue
     })
   })
   return next
@@ -151,45 +416,61 @@ const mergeMediaUrls = (...records: Array<Record<string, string>>): Record<strin
 const mergeHistoryEntries = (
   existing: LabNewLayoutGalleryHistoryEntry,
   incoming: LabNewLayoutGalleryHistoryEntry,
-): LabNewLayoutGalleryHistoryEntry => ({
-  ...existing,
-  ...incoming,
-  source: incoming.source || existing.source,
-  sourceLabel: incoming.sourceLabel || existing.sourceLabel,
-  timestamp: Math.max(existing.timestamp, incoming.timestamp),
-  prompt: incoming.prompt || existing.prompt,
-  model: incoming.model || existing.model,
-  provider: incoming.provider || existing.provider,
-  status: incoming.status === 'success'
+): LabNewLayoutGalleryHistoryEntry => {
+  const mergedResultUrl = incoming.resultUrl || existing.resultUrl
+  const mergedStatus = incoming.status === 'success'
     ? 'success'
-    : incoming.status === 'failed' && existing.status !== 'success'
-      ? 'failed'
-      : incoming.status === 'running' && existing.status === 'queued'
-        ? 'running'
-        : existing.status,
-  resultUrl: incoming.resultUrl || existing.resultUrl,
-  posterUrl: incoming.posterUrl || existing.posterUrl,
-  errorMessage: incoming.errorMessage || existing.errorMessage,
-  taskId: incoming.taskId || existing.taskId,
-  ratio: incoming.ratio || existing.ratio,
-  resolution: incoming.resolution || existing.resolution,
-  duration: incoming.duration ?? existing.duration,
-  generateAudio: incoming.generateAudio ?? existing.generateAudio,
-  submittedAt: incoming.submittedAt ?? existing.submittedAt,
-  receivedAt: incoming.receivedAt ?? existing.receivedAt,
-  completedAt: incoming.completedAt ?? existing.completedAt,
-  requestEndpoint: incoming.requestEndpoint || existing.requestEndpoint,
-  requestPayload: incoming.requestPayload || existing.requestPayload,
-  mediaUrls: mergeMediaUrls(existing.mediaUrls, incoming.mediaUrls),
-  outputDimensions: incoming.outputDimensions || existing.outputDimensions,
-  projectId: incoming.projectId || existing.projectId,
-  folderId: incoming.folderId || existing.folderId,
-})
+    : existing.status === 'success'
+      ? 'success'
+      : incoming.status === 'failed' && !mergedResultUrl
+        ? 'failed'
+        : existing.status === 'failed' && !mergedResultUrl
+          ? 'failed'
+          : incoming.status === 'running' && existing.status === 'queued'
+            ? 'running'
+            : existing.status
+
+  return {
+    ...existing,
+    ...incoming,
+    remoteDocId: incoming.remoteDocId || existing.remoteDocId,
+    source: incoming.source || existing.source,
+    sourceLabel: incoming.sourceLabel || existing.sourceLabel,
+    timestamp: Math.max(existing.timestamp, incoming.timestamp),
+    prompt: incoming.prompt || existing.prompt,
+    model: incoming.model || existing.model,
+    provider: incoming.provider || existing.provider,
+    status: coerceCompletedStatus(mergedStatus, mergedResultUrl),
+    resultUrl: mergedResultUrl,
+    posterUrl: incoming.posterUrl || existing.posterUrl,
+    errorMessage: incoming.errorMessage || existing.errorMessage,
+    taskId: incoming.taskId || existing.taskId,
+    ratio: incoming.ratio || existing.ratio,
+    resolution: incoming.resolution || existing.resolution,
+    duration: incoming.duration ?? existing.duration,
+    generateAudio: incoming.generateAudio ?? existing.generateAudio,
+    submittedAt: incoming.submittedAt ?? existing.submittedAt,
+    receivedAt: incoming.receivedAt ?? existing.receivedAt,
+    completedAt: incoming.completedAt ?? existing.completedAt,
+    requestEndpoint: incoming.requestEndpoint || existing.requestEndpoint,
+    requestPayload: incoming.requestPayload || existing.requestPayload,
+    mediaUrls: mergeMediaUrls(existing.mediaUrls, incoming.mediaUrls),
+    outputDimensions: incoming.outputDimensions || existing.outputDimensions,
+    projectId: incoming.projectId || existing.projectId,
+    folderId: incoming.folderId || existing.folderId,
+  }
+}
 
 const mergeLists = (...lists: LabNewLayoutGalleryHistoryEntry[][]): LabNewLayoutGalleryHistoryEntry[] => {
   const merged = new Map<string, LabNewLayoutGalleryHistoryEntry>()
   lists.flat().forEach((entry) => {
-    const dedupeKey = firstNonEmptyString(entry.taskId, entry.id, entry.resultUrl, `${entry.timestamp}-${entry.prompt.slice(0, 48)}`)
+    const dedupeKey = firstNonEmptyString(
+      entry.id,
+      entry.remoteDocId,
+      entry.taskId,
+      entry.resultUrl,
+      `${entry.timestamp}-${entry.prompt.slice(0, 48)}`,
+    )
     const existing = merged.get(dedupeKey)
     if (!existing) {
       merged.set(dedupeKey, entry)
@@ -200,46 +481,66 @@ const mergeLists = (...lists: LabNewLayoutGalleryHistoryEntry[][]): LabNewLayout
   return Array.from(merged.values()).sort((left, right) => right.timestamp - left.timestamp)
 }
 
-const normalizeLabStoreEntry = (entry: GenerationHistoryItem): LabNewLayoutGalleryHistoryEntry => ({
-  id: entry.id,
-  source: 'new-layout',
-  sourceLabel: entry.sourceLabel || 'New Layout',
-  timestamp: entry.completedAt ?? entry.receivedAt ?? entry.submittedAt ?? entry.timestamp,
-  submittedAt: entry.submittedAt ?? null,
-  receivedAt: entry.receivedAt ?? null,
-  completedAt: entry.completedAt ?? null,
-  prompt: entry.prompt,
-  model: entry.model,
-  provider: entry.provider || '',
-  status: entry.status,
-  resultUrl: entry.resultUrl || '',
-  posterUrl: entry.posterUrl || '',
-  errorMessage: entry.errorMessage || '',
-  taskId: entry.taskId || '',
-  ratio: entry.ratio || '',
-  resolution: entry.resolution || '',
-  duration: entry.duration ?? null,
-  generateAudio: entry.generateAudio ?? null,
-  requestEndpoint: entry.requestEndpoint || '',
-  requestPayload: readRequestPayload(entry.requestPayload),
-  mediaUrls: mergeMediaUrls(entry.mediaUrls || {}, readMediaUrlsFromPayload(readRequestPayload(entry.requestPayload))),
-  outputDimensions: entry.outputDimensions || '',
-  projectId: entry.projectId || '',
-  folderId: entry.folderId || '',
-})
+const normalizeLabStoreEntry = (entry: GenerationHistoryItem): LabNewLayoutGalleryHistoryEntry => {
+  const requestPayload = readRequestPayload(entry.requestPayload)
+  const resultUrl = firstNonEmptyString(entry.resultUrl)
 
-const normalizePromptLabEntry = (value: unknown, sourceLabel: string): LabNewLayoutGalleryHistoryEntry | null => {
+  return {
+    id: entry.id,
+    remoteDocId: entry.id,
+    source: 'new-layout',
+    sourceLabel: entry.sourceLabel || 'New Layout',
+    timestamp: entry.completedAt ?? entry.receivedAt ?? entry.submittedAt ?? entry.timestamp,
+    submittedAt: entry.submittedAt ?? null,
+    receivedAt: entry.receivedAt ?? null,
+    completedAt: entry.completedAt ?? null,
+    prompt: entry.prompt,
+    model: entry.model,
+    provider: entry.provider || '',
+    status: coerceCompletedStatus(entry.status, resultUrl),
+    resultUrl,
+    posterUrl: entry.posterUrl || '',
+    errorMessage: entry.errorMessage || '',
+    taskId: entry.taskId || '',
+    ratio: entry.ratio || '',
+    resolution: entry.resolution || '',
+    duration: entry.duration ?? null,
+    generateAudio: entry.generateAudio ?? null,
+    requestEndpoint: entry.requestEndpoint || '',
+    requestPayload,
+    mediaUrls: mergeMediaUrls(entry.mediaUrls || {}, readMediaUrlsFromPayload(requestPayload)),
+    outputDimensions: entry.outputDimensions || '',
+    projectId: entry.projectId || '',
+    folderId: entry.folderId || '',
+  }
+}
+
+const normalizePromptLabEntry = (value: unknown, sourceLabel: string, remoteDocId?: string): LabNewLayoutGalleryHistoryEntry | null => {
   if (!isRecord(value)) {
     return null
   }
 
   const requestPayload = readRequestPayload(value.requestPayload)
-  const mediaUrls = mergeMediaUrls(readMediaRecord(value.mediaUrls), readMediaUrlsFromPayload(requestPayload))
-  const submittedAt = readNumber(value.submittedAt)
-  const receivedAt = readNumber(value.receivedAt)
-  const completedAt = readNumber(value.completedAt)
-  const timestamp = readNumber(value.completedAt, value.receivedAt, value.submittedAt, value.createdAt) ?? Date.now()
-  const resultUrl = firstNonEmptyString(value.firebaseVideoUrl, value.resultUrl)
+    || readRequestPayload(value.requestPayloadJson)
+    || readRequestPayload(value.apiPayload)
+    || readRequestPayload(value.apiPayloadJson)
+  const mediaUrls = mergeMediaUrls(
+    readMediaRecord(value.mediaUrls),
+    readMediaUrlsFromPayload(requestPayload),
+    readMediaUrlsFromHistoryFields(value),
+  )
+  const submittedAt = readTimestampValue(value.submittedAt)
+  const receivedAt = readTimestampValue(value.receivedAt)
+  const completedAt = readTimestampValue(value.completedAt)
+  const timestamp = readTimestampValue(
+    value.completedAt,
+    value.receivedAt,
+    value.submittedAt,
+    value.createdAt,
+    value.updatedAt,
+    value.timestamp,
+  ) ?? 0
+  const resultUrl = firstNonEmptyString(value.firebaseVideoUrl, value.resultUrl, value.videoUrl)
   const prompt = firstNonEmptyString(value.prompt, value.sourcePrompt)
 
   if (!resultUrl && !prompt && Object.keys(mediaUrls).length === 0) {
@@ -248,6 +549,7 @@ const normalizePromptLabEntry = (value: unknown, sourceLabel: string): LabNewLay
 
   return {
     id: firstNonEmptyString(value.historyId, value.taskId, resultUrl, `${timestamp}`),
+    remoteDocId,
     source: 'prompt-lab',
     sourceLabel,
     timestamp,
@@ -257,7 +559,7 @@ const normalizePromptLabEntry = (value: unknown, sourceLabel: string): LabNewLay
     prompt,
     model: firstNonEmptyString(value.model),
     provider: firstNonEmptyString(value.provider, value.providerLabel),
-    status: normalizeStatus(value.status, resultUrl ? 'success' : 'failed'),
+    status: coerceCompletedStatus(normalizeStatus(value.status, resultUrl ? 'success' : 'failed'), resultUrl),
     resultUrl,
     posterUrl: firstNonEmptyString(value.thumbnailPosterUrl),
     errorMessage: firstNonEmptyString(value.storageSaveError, value.errorMessage, value.error, value.failureReason, value.failureMessage),
@@ -281,30 +583,35 @@ const normalizeLegacyHistoryEntry = (value: unknown): LabNewLayoutGalleryHistory
   }
 
   const requestPayload = readRequestPayload(value.apiPayload)
+    || readRequestPayload(value.apiPayloadJson)
+    || readRequestPayload(value.requestPayload)
+    || readRequestPayload(value.requestPayloadJson)
   const mediaUrls = mergeMediaUrls(
     readMediaUrlsFromPayload(requestPayload),
-    (() => {
-      const next: Record<string, string> = {}
-      mergeArrayMedia(next, 'image', readStringArray(value.referenceImages))
-      mergeArrayMedia(next, 'video', readStringArray(value.referenceVideos))
-      mergeArrayMedia(next, 'audio', readStringArray(value.referenceAudios))
-      return next
-    })(),
+    readMediaUrlsFromHistoryFields(value),
   )
-  const resultUrl = firstNonEmptyString(value.videoUrl)
+  const resultUrl = firstNonEmptyString(value.firebaseVideoUrl, value.resultUrl, value.videoUrl)
   const prompt = firstNonEmptyString(value.prompt, value.sourcePrompt)
 
   if (!resultUrl && !prompt) {
     return null
   }
 
-  const timestamp = readNumber(value.completedAt, value.createdAt, value.submittedAt) ?? Date.now()
-  const submittedAt = readNumber(value.submittedAt)
-  const receivedAt = readNumber(value.receivedAt)
-  const completedAt = readNumber(value.completedAt)
+  const timestamp = readTimestampValue(
+    value.completedAt,
+    value.receivedAt,
+    value.createdAt,
+    value.submittedAt,
+    value.updatedAt,
+    value.timestamp,
+  ) ?? 0
+  const submittedAt = readTimestampValue(value.submittedAt)
+  const receivedAt = readTimestampValue(value.receivedAt)
+  const completedAt = readTimestampValue(value.completedAt)
 
   return {
     id: firstNonEmptyString(value.taskId, resultUrl, `${timestamp}`),
+    remoteDocId: '',
     source: 'legacy-toorgen',
     sourceLabel: 'Legacy ToorGen',
     timestamp,
@@ -314,7 +621,7 @@ const normalizeLegacyHistoryEntry = (value: unknown): LabNewLayoutGalleryHistory
     prompt,
     model: firstNonEmptyString(value.effectiveModel, value.requestedModel, value.model),
     provider: firstNonEmptyString(value.providerLabel, value.providerUsed),
-    status: normalizeStatus(value.status, resultUrl ? 'success' : 'failed'),
+    status: coerceCompletedStatus(normalizeStatus(value.status, resultUrl ? 'success' : 'failed'), resultUrl),
     resultUrl,
     posterUrl: '',
     errorMessage: firstNonEmptyString(value.errorMessage, value.error, value.failureReason, value.failureMessage, value.statusMessage),
@@ -360,16 +667,63 @@ const readLegacyHistory = (): LabNewLayoutGalleryHistoryEntry[] => (
     .filter((entry): entry is LabNewLayoutGalleryHistoryEntry => Boolean(entry))
 )
 
-const readPromptLabFirestoreHistory = async (uid: string): Promise<LabNewLayoutGalleryHistoryEntry[]> => {
-  try {
-    const historyRef = collection(db, 'users', uid, PROMPT_LAB_FIRESTORE_COLLECTION)
-    const historyQuery = query(historyRef, orderBy('completedAt', 'desc'), limit(MAX_REMOTE_HISTORY_ITEMS))
-    const snapshot = await getDocs(historyQuery)
-    return snapshot.docs
-      .map((docSnapshot) => normalizePromptLabEntry(docSnapshot.data(), 'Prompt Lab'))
-      .filter((entry): entry is LabNewLayoutGalleryHistoryEntry => Boolean(entry))
-  } catch {
-    return []
+const readPromptLabFirestoreHistoryPage = async (
+  uid: string,
+  cursor: QueryDocumentSnapshot<DocumentData> | null,
+): Promise<{ entries: LabNewLayoutGalleryHistoryEntry[]; nextCursor: QueryDocumentSnapshot<DocumentData> | null; hasMore: boolean }> => {
+  const historyRef = collection(db, 'users', uid, PROMPT_LAB_FIRESTORE_COLLECTION)
+  const constraints: QueryConstraint[] = [
+    orderBy('completedAt', 'desc'),
+    limit(REMOTE_HISTORY_PAGE_SIZE + 1),
+  ]
+
+  if (cursor) {
+    constraints.splice(1, 0, startAfter(cursor))
+  }
+
+  const historyQuery = query(historyRef, ...constraints)
+  const snapshot = await getDocs(historyQuery)
+  const hasMore = snapshot.docs.length > REMOTE_HISTORY_PAGE_SIZE
+  const docs = hasMore ? snapshot.docs.slice(0, REMOTE_HISTORY_PAGE_SIZE) : snapshot.docs
+  const nextCursor = docs.length > 0 ? docs[docs.length - 1] : cursor
+
+  const entries = docs
+    .map((docSnapshot) => normalizePromptLabEntry(docSnapshot.data(), 'Prompt Lab', docSnapshot.id))
+    .filter((entry): entry is LabNewLayoutGalleryHistoryEntry => Boolean(entry))
+
+  return { entries, nextCursor, hasMore }
+}
+
+const buildFirestoreSyncPayload = (entry: LabNewLayoutGalleryHistoryEntry, uid: string): Record<string, unknown> => {
+  const completedAt = entry.completedAt ?? entry.receivedAt ?? entry.submittedAt ?? entry.timestamp
+
+  return {
+    historyId: entry.id,
+    taskId: entry.taskId,
+    provider: entry.provider,
+    model: entry.model,
+    ratio: entry.ratio,
+    duration: entry.duration,
+    resolution: entry.resolution,
+    generateAudio: entry.generateAudio,
+    prompt: entry.prompt,
+    mediaUrls: entry.mediaUrls,
+    requestEndpoint: entry.requestEndpoint,
+    requestPayload: entry.requestPayload,
+    resultUrl: entry.resultUrl,
+    firebaseVideoUrl: entry.resultUrl,
+    thumbnailPosterUrl: entry.posterUrl,
+    storageSaveError: entry.errorMessage,
+    submittedAt: entry.submittedAt,
+    receivedAt: entry.receivedAt,
+    completedAt,
+    ownerUid: uid,
+    sourceLabel: entry.sourceLabel,
+    status: entry.status,
+    outputDimensions: entry.outputDimensions,
+    projectId: entry.projectId,
+    folderId: entry.folderId,
+    updatedAt: serverTimestamp(),
   }
 }
 
@@ -382,45 +736,216 @@ export function useLabNewLayoutHistoryGallery({ authUid }: UseLabNewLayoutHistor
   const [promptLabHistory, setPromptLabHistory] = useState<LabNewLayoutGalleryHistoryEntry[]>(() => readPromptLabLocalHistory())
   const [legacyHistory, setLegacyHistory] = useState<LabNewLayoutGalleryHistoryEntry[]>(() => readLegacyHistory())
   const [remoteHistory, setRemoteHistory] = useState<LabNewLayoutGalleryHistoryEntry[]>([])
+  const [remoteLoaded, setRemoteLoaded] = useState(false)
+  const [remoteCursor, setRemoteCursor] = useState<QueryDocumentSnapshot<DocumentData> | null>(null)
+  const [hasMoreRemote, setHasMoreRemote] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
+  const lastSuccessfulSyncSignatureByIdRef = useRef<Record<string, string>>({})
+  const inFlightSyncSignatureByIdRef = useRef<Record<string, string>>({})
+  const syncRetryTimerRef = useRef<number | null>(null)
+  const [syncRetryNonce, setSyncRetryNonce] = useState(0)
+
+  const scheduleSyncRetry = useCallback(() => {
+    if (typeof window === 'undefined' || syncRetryTimerRef.current !== null) {
+      return
+    }
+
+    syncRetryTimerRef.current = window.setTimeout(() => {
+      syncRetryTimerRef.current = null
+      setSyncRetryNonce((current) => current + 1)
+    }, 5000)
+  }, [])
 
   const refresh = useCallback(async () => {
     setPromptLabHistory(readPromptLabLocalHistory())
     setLegacyHistory(readLegacyHistory())
+    setRemoteLoaded(false)
 
     if (!authUid) {
       setRemoteHistory([])
+      setRemoteCursor(null)
+      setHasMoreRemote(false)
       setErrorMessage('')
+      setRemoteLoaded(true)
       return
     }
 
     setIsLoading(true)
     setErrorMessage('')
     try {
-      const nextRemoteHistory = await readPromptLabFirestoreHistory(authUid)
-      setRemoteHistory(nextRemoteHistory)
+      const firstPage = await readPromptLabFirestoreHistoryPage(authUid, null)
+      setRemoteHistory(firstPage.entries)
+      setRemoteCursor(firstPage.nextCursor)
+      setHasMoreRemote(firstPage.hasMore)
     } catch {
       setRemoteHistory([])
+      setRemoteCursor(null)
+      setHasMoreRemote(false)
       setErrorMessage('Could not load synced history right now.')
     } finally {
       setIsLoading(false)
+      setRemoteLoaded(true)
     }
   }, [authUid])
+
+  const loadMoreRemote = useCallback(async () => {
+    if (!authUid || isLoadingMore || !hasMoreRemote || !remoteCursor) {
+      return
+    }
+
+    setIsLoadingMore(true)
+    try {
+      const nextPage = await readPromptLabFirestoreHistoryPage(authUid, remoteCursor)
+      setRemoteHistory((current) => mergeLists(current, nextPage.entries))
+      setRemoteCursor(nextPage.nextCursor)
+      setHasMoreRemote(nextPage.hasMore)
+    } catch {
+      setErrorMessage('Could not load more synced history right now.')
+    } finally {
+      setIsLoadingMore(false)
+    }
+  }, [authUid, hasMoreRemote, isLoadingMore, remoteCursor])
 
   useEffect(() => {
     void refresh()
   }, [refresh])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined
+    }
+
+    const handleOnline = () => {
+      setSyncRetryNonce((current) => current + 1)
+      void refresh()
+    }
+
+    window.addEventListener('online', handleOnline)
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      if (syncRetryTimerRef.current !== null) {
+        window.clearTimeout(syncRetryTimerRef.current)
+        syncRetryTimerRef.current = null
+      }
+    }
+  }, [refresh])
+
+  useEffect(() => {
+    if (!authUid) {
+      lastSuccessfulSyncSignatureByIdRef.current = {}
+      inFlightSyncSignatureByIdRef.current = {}
+      return
+    }
+
+    const normalizedEntries = liveLabHistory.map(normalizeLabStoreEntry)
+    const syncCandidates = normalizedEntries.filter((entry) => Boolean(entry.id && entry.prompt.trim()))
+
+    if (syncCandidates.length === 0) {
+      return
+    }
+
+    syncCandidates.forEach((entry) => {
+      const signature = JSON.stringify([
+        entry.status,
+        entry.resultUrl,
+        entry.posterUrl,
+        entry.errorMessage,
+        entry.taskId,
+        entry.submittedAt,
+        entry.receivedAt,
+        entry.completedAt,
+        entry.requestEndpoint,
+        entry.requestPayload,
+        entry.mediaUrls,
+        entry.projectId,
+        entry.folderId,
+      ])
+
+      if (
+        lastSuccessfulSyncSignatureByIdRef.current[entry.id] === signature
+        || inFlightSyncSignatureByIdRef.current[entry.id] === signature
+      ) {
+        return
+      }
+
+      inFlightSyncSignatureByIdRef.current[entry.id] = signature
+      const payload = buildFirestoreSyncPayload(entry, authUid)
+      void setDoc(
+        doc(db, 'users', authUid, PROMPT_LAB_FIRESTORE_COLLECTION, entry.id),
+        payload,
+        { merge: true },
+      ).then(() => {
+        if (inFlightSyncSignatureByIdRef.current[entry.id] === signature) {
+          delete inFlightSyncSignatureByIdRef.current[entry.id]
+        }
+        lastSuccessfulSyncSignatureByIdRef.current[entry.id] = signature
+        setRemoteHistory((current) => mergeLists(current, [{ ...entry, remoteDocId: entry.id }]))
+        setErrorMessage((current) => (current === 'Could not load synced history right now.' ? '' : current))
+      }).catch(() => {
+        if (inFlightSyncSignatureByIdRef.current[entry.id] === signature) {
+          delete inFlightSyncSignatureByIdRef.current[entry.id]
+        }
+        scheduleSyncRetry()
+      })
+    })
+  }, [authUid, liveLabHistory, scheduleSyncRetry, syncRetryNonce])
+
+  const deleteHistoryEntry = useCallback(async (entry: LabNewLayoutGalleryHistoryEntry) => {
+    setRemoteHistory((current) => current.filter((currentEntry) => currentEntry.id !== entry.id))
+    setPromptLabHistory((current) => current.filter((currentEntry) => currentEntry.id !== entry.id))
+    setLegacyHistory((current) => current.filter((currentEntry) => currentEntry.id !== entry.id))
+    delete lastSuccessfulSyncSignatureByIdRef.current[entry.id]
+    delete inFlightSyncSignatureByIdRef.current[entry.id]
+
+    if (!authUid || entry.source === 'legacy-toorgen') {
+      return
+    }
+
+    const remoteDocId = firstNonEmptyString(entry.remoteDocId, entry.id)
+    if (!remoteDocId) {
+      return
+    }
+
+    await deleteDoc(doc(db, 'users', authUid, PROMPT_LAB_FIRESTORE_COLLECTION, remoteDocId))
+  }, [authUid])
+
   const entries = useMemo(() => {
-    const normalizedLabHistory = liveLabHistory.map(normalizeLabStoreEntry)
-    return mergeLists(normalizedLabHistory, promptLabHistory, remoteHistory, legacyHistory)
-  }, [legacyHistory, liveLabHistory, promptLabHistory, remoteHistory])
+    const now = Date.now()
+    const normalizedLiveLabHistory = liveLabHistory.map(normalizeLabStoreEntry)
+
+    const optimisticLiveEntries = normalizedLiveLabHistory.filter((entry) => (
+      entry.status === 'queued'
+      || entry.status === 'running'
+      || (
+        (entry.status === 'success' || entry.status === 'failed')
+        && (now - entry.timestamp) <= OPTIMISTIC_SUCCESS_WINDOW_MS
+      )
+    ))
+
+    // While remote data is still loading, show only in-flight (queued/running/recent)
+    // entries so stale local storage data never flashes before the remote sort arrives.
+    if (!remoteLoaded) {
+      return mergeLists(optimisticLiveEntries)
+    }
+
+    const shouldUseLocalFallback = !authUid || Boolean(errorMessage)
+    if (shouldUseLocalFallback) {
+      return mergeLists(optimisticLiveEntries, remoteHistory, promptLabHistory, legacyHistory)
+    }
+
+    return mergeLists(optimisticLiveEntries, remoteHistory)
+  }, [authUid, errorMessage, legacyHistory, liveLabHistory, promptLabHistory, remoteHistory, remoteLoaded])
 
   return {
     entries,
     isLoading,
+    isLoadingMore,
+    hasMoreRemote,
     errorMessage,
     refresh,
+    loadMoreRemote,
+    deleteHistoryEntry,
   }
 }

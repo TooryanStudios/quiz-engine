@@ -34,9 +34,20 @@ if (typeof envContent === "string" && envContent.includes("REPLACE_WITH_RAILWAY_
 }
 
 console.log("📦 Building chatbot frontend...");
+const chatbotBuildEnv = {
+  ...process.env,
+  NODE_OPTIONS: [
+    process.env.NODE_OPTIONS,
+    "--max-old-space-size=8192",
+  ]
+    .filter(Boolean)
+    .join(" "),
+}
+
 execSync("npm run build", {
   cwd: chatbotDir,
   stdio: "inherit",
+  env: chatbotBuildEnv,
 });
 
 if (!existsSync(chatbotDistDir)) {

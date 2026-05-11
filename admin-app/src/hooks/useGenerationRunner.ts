@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useRef } from 'react'
 
 export type GenerationProvider = 'byteplus' | 'atlas' | 'grok'
 
@@ -31,12 +31,20 @@ export type CompletedGeneration = {
   settings: GenerationRequestSettings
 }
 
+type GenerationStillProcessingTimeoutError = Error & {
+  code: 'generation-still-processing-timeout'
+  taskId: string
+  elapsedMs: number
+}
+
 type UseGenerationRunnerOptions = {
   apiBaseUrl?: string
   healthEndpoint?: string
   onBackendAvailable?: () => void
   onBackendUnavailable?: (message?: string) => void
+  onGenerateCooldownChange?: (remainingMs: number) => void
   pollIntervalMs?: number
+  generateCooldownMs?: number
 }
 
 type RunGenerationOptions = {
@@ -57,6 +65,9 @@ type ResumeGenerationInput = {
 
 const DEFAULT_HEALTH_ENDPOINT = '/api/health'
 const DEFAULT_POLL_INTERVAL_MS = 4000
+const DEFAULT_MAX_POLL_DURATION_MS = 12 * 60 * 1000
+const DEFAULT_HEALTH_TIMEOUT_MS = 3500
+const DEFAULT_GENERATE_COOLDOWN_MS = 20000
 const MAX_TRANSIENT_ERRORS = 5
 const MAX_RESULTLESS_SUCCESS_POLLS = 5
 
@@ -68,6 +79,16 @@ const isNonRetryableProviderError = (message: string): boolean => {
     || normalized.includes('output audio may contain sensitive information')
     || normalized.includes('sensitive information')
 }
+
+const isMalformedBackendJsonError = (message: string): boolean => {
+  const normalized = (message || '').toLowerCase()
+  if (!normalized) return false
+  return normalized.includes('unexpected end of json input')
+    || normalized.includes('server returned a non-json response')
+}
+
+const malformedBackendJsonMessage =
+  'Local API backend returned an invalid/empty JSON response. Restart backend on http://localhost:8787 and try again.'
 
 const isRecord = (value: unknown): value is Record<string, unknown> => (
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -87,6 +108,28 @@ const toApiUrl = (apiBaseUrl: string, path: string) => `${apiBaseUrl.replace(/\/
 const sleep = (ms: number) => new Promise<void>((resolve) => {
   window.setTimeout(resolve, ms)
 })
+
+const createStillProcessingTimeoutError = (taskId: string, elapsedMs: number): GenerationStillProcessingTimeoutError => {
+  const elapsedMinutes = Math.max(1, Math.round(elapsedMs / 60000))
+  const error = new Error(`Generation timed out after ${elapsedMinutes} minute(s). Provider is still processing.`) as GenerationStillProcessingTimeoutError
+  error.name = 'GenerationStillProcessingTimeoutError'
+  error.code = 'generation-still-processing-timeout'
+  error.taskId = taskId
+  error.elapsedMs = elapsedMs
+  return error
+}
+
+export const isGenerationStillProcessingTimeoutError = (error: unknown): error is GenerationStillProcessingTimeoutError => (
+  error instanceof Error
+  && (error as Partial<GenerationStillProcessingTimeoutError>).code === 'generation-still-processing-timeout'
+)
+
+const normalizePollingFetchErrorMessage = (error: unknown): string => {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message.trim()
+  }
+  return 'Failed to fetch'
+}
 
 const extractUrlLike = (value: unknown): string => {
   if (typeof value === 'string' && value.trim()) {
@@ -228,7 +271,7 @@ const extractErrorMessage = (payload: unknown, rawBody: string, fallback: string
     ? payload.error as Record<string, unknown>
     : null
 
-  return firstNonEmptyString(
+  const baseMessage = firstNonEmptyString(
     nestedError?.message,
     nestedError?.msg,
     nestedError?.detail,
@@ -260,6 +303,15 @@ const extractErrorMessage = (payload: unknown, rawBody: string, fallback: string
     (!isLikelyHtmlPayload(rawBody) && rawBody.trim().length > 10) ? rawBody.trim().slice(0, 320) : undefined,
     fallback,
   )
+
+  const upstreamStatus = isRecord(payload) && typeof payload.upstreamStatus === 'number'
+    ? payload.upstreamStatus
+    : undefined
+  if (upstreamStatus && !baseMessage.includes('upstream HTTP')) {
+    return `${baseMessage} (upstream HTTP ${upstreamStatus})`
+  }
+
+  return baseMessage
 }
 
 const isLikelyHtmlPayload = (rawText: string): boolean => {
@@ -333,6 +385,27 @@ const extractResultUrl = (payload: unknown): string => {
   }
 
   const nested = isRecord(payload.data) ? payload.data : null
+
+  // Direct extraction for provider outputs arrays (e.g. Atlas Cloud: data.outputs[0].url).
+  // Accept any HTTPS URL here without requiring video extension/keyword — outputs from
+  // the provider are always result media, not polling status endpoints.
+  if (nested) {
+    const rawOutputs = nested.outputs
+    if (Array.isArray(rawOutputs)) {
+      for (const output of rawOutputs) {
+        if (typeof output === 'string') {
+          const trimmed = output.trim()
+          if (/^https?:\/\//i.test(trimmed)) return trimmed
+        } else if (isRecord(output)) {
+          for (const key of ['url', 'video_url', 'videoUrl', 'output_url', 'download_url'] as const) {
+            const raw = typeof output[key] === 'string' ? (output[key] as string).trim() : ''
+            if (raw && /^https?:\/\//i.test(raw)) return raw
+          }
+        }
+      }
+    }
+  }
+
   const contentSources = [payload.content, nested?.content]
 
   for (const source of contentSources) {
@@ -415,30 +488,126 @@ export function useGenerationRunner({
   healthEndpoint = DEFAULT_HEALTH_ENDPOINT,
   onBackendAvailable,
   onBackendUnavailable,
+  onGenerateCooldownChange,
   pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
+  generateCooldownMs = DEFAULT_GENERATE_COOLDOWN_MS,
 }: UseGenerationRunnerOptions = {}) {
+  const generateCooldownUntilRef = useRef(0)
+  const lastBackendErrorMessageRef = useRef('')
+
+  const getGenerateCooldownRemainingMs = useCallback(() => {
+    const remaining = generateCooldownUntilRef.current - Date.now()
+    return remaining > 0 ? remaining : 0
+  }, [])
+
+  const emitGenerateCooldown = useCallback((remainingMs: number) => {
+    onGenerateCooldownChange?.(Math.max(0, remainingMs))
+  }, [onGenerateCooldownChange])
+
+  const clearGenerateCooldown = useCallback(() => {
+    generateCooldownUntilRef.current = 0
+    emitGenerateCooldown(0)
+  }, [emitGenerateCooldown])
+
+  const applyGenerateCooldown = useCallback((baseMessage: string): string => {
+    const cooldownMs = Math.max(0, generateCooldownMs)
+    if (!cooldownMs) {
+      emitGenerateCooldown(0)
+      return baseMessage
+    }
+
+    generateCooldownUntilRef.current = Date.now() + cooldownMs
+    emitGenerateCooldown(cooldownMs)
+    const retrySeconds = Math.ceil(cooldownMs / 1000)
+    return `${baseMessage} Retry in ${retrySeconds}s.`
+  }, [emitGenerateCooldown, generateCooldownMs])
+
   const markBackendAvailable = useCallback(() => {
+    lastBackendErrorMessageRef.current = ''
     onBackendAvailable?.()
   }, [onBackendAvailable])
 
   const markBackendUnavailable = useCallback((message?: string) => {
-    onBackendUnavailable?.(message)
+    const normalizedMessage = (message || 'Back end server is not working. Start it before generating.').trim()
+    lastBackendErrorMessageRef.current = normalizedMessage
+    onBackendUnavailable?.(normalizedMessage)
   }, [onBackendUnavailable])
 
   const checkBackendHealth = useCallback(async (): Promise<boolean> => {
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => {
+      controller.abort()
+    }, DEFAULT_HEALTH_TIMEOUT_MS)
+
     try {
-      const response = await fetch(toApiUrl(apiBaseUrl, healthEndpoint))
+      const response = await fetch(toApiUrl(apiBaseUrl, healthEndpoint), { signal: controller.signal })
       if (response.ok) {
+        clearGenerateCooldown()
         markBackendAvailable()
+        window.clearTimeout(timeout)
         return true
       }
-      markBackendUnavailable(`Back end server check failed (${response.status}). Please run it.`)
+      markBackendUnavailable(applyGenerateCooldown(`Back end server check failed (${response.status}). Please run it.`))
+      window.clearTimeout(timeout)
       return false
     } catch {
-      markBackendUnavailable('Back end server is not working. Please run it.')
+      markBackendUnavailable(applyGenerateCooldown('Back end server is not working. Please run it.'))
+      window.clearTimeout(timeout)
       return false
     }
-  }, [apiBaseUrl, healthEndpoint, markBackendAvailable, markBackendUnavailable])
+  }, [apiBaseUrl, applyGenerateCooldown, clearGenerateCooldown, healthEndpoint, markBackendAvailable, markBackendUnavailable])
+
+  const checkGenerationReadiness = useCallback(async (endpoint: string): Promise<boolean> => {
+    const cooldownRemaining = getGenerateCooldownRemainingMs()
+    if (cooldownRemaining > 0) {
+      emitGenerateCooldown(cooldownRemaining)
+      markBackendUnavailable(`Generation is cooling down after a recent backend failure. Retry in ${Math.ceil(cooldownRemaining / 1000)}s.`)
+      return false
+    }
+
+    const backendReady = await checkBackendHealth()
+    if (!backendReady) {
+      return false
+    }
+
+    const normalizedEndpoint = endpoint.trim().toLowerCase()
+    if (!normalizedEndpoint.startsWith('/api/seedance/')) {
+      return true
+    }
+
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => {
+      controller.abort()
+    }, DEFAULT_HEALTH_TIMEOUT_MS)
+
+    try {
+      const probeResponse = await fetch(toApiUrl(apiBaseUrl, '/api/seedance/readiness'), {
+        signal: controller.signal,
+      })
+      const probeRawBody = await probeResponse.text()
+      const probePayload = parseJsonSafely(probeRawBody)
+
+      if (!probeResponse.ok) {
+        const message = extractErrorMessage(
+          probePayload,
+          probeRawBody,
+          'Seedance backend route is unavailable. Start/recover backend on http://localhost:8787 and try again.',
+        )
+        markBackendUnavailable(applyGenerateCooldown(message))
+        window.clearTimeout(timeout)
+        return false
+      }
+
+      clearGenerateCooldown()
+      markBackendAvailable()
+      window.clearTimeout(timeout)
+      return true
+    } catch {
+      markBackendUnavailable(applyGenerateCooldown('Cannot reach Seedance backend route. Start backend on http://localhost:8787 and try again.'))
+      window.clearTimeout(timeout)
+      return false
+    }
+  }, [apiBaseUrl, applyGenerateCooldown, checkBackendHealth, clearGenerateCooldown, emitGenerateCooldown, getGenerateCooldownRemainingMs, markBackendAvailable, markBackendUnavailable])
 
   const pollUntilDone = useCallback(async (
     requestProvider: GenerationProvider,
@@ -450,7 +619,7 @@ export function useGenerationRunner({
     let transientErrors = 0
     let successWithoutResultCount = 0
     const startTime = Date.now()
-    const MAX_POLL_DURATION_MS = 3 * 60 * 60 * 1000 // 3 hours
+    const maxPollDurationMs = Number(import.meta.env.VITE_GENERATION_MAX_POLL_MS) || DEFAULT_MAX_POLL_DURATION_MS
 
     while (true) {
       await sleep(pollIntervalMs)
@@ -459,8 +628,9 @@ export function useGenerationRunner({
         return null
       }
 
-      if (Date.now() - startTime > MAX_POLL_DURATION_MS) {
-        throw new Error('Generation timed out after 3 hours.')
+      const elapsedMs = Date.now() - startTime
+      if (elapsedMs > maxPollDurationMs) {
+        throw createStillProcessingTimeoutError(taskId, elapsedMs)
       }
 
       const statusUrl = requestProvider === 'atlas'
@@ -469,7 +639,20 @@ export function useGenerationRunner({
           ? `${toApiUrl(apiBaseUrl, '/api/seedance/status')}?task_id=${encodeURIComponent(taskId)}&model=${encodeURIComponent(requestModel)}&provider=grok`
           : `${toApiUrl(apiBaseUrl, '/api/byteplus/status')}?task_id=${encodeURIComponent(taskId)}`
 
-      const response = await fetch(statusUrl)
+      let response: Response
+      try {
+        response = await fetch(statusUrl)
+      } catch (error) {
+        markBackendUnavailable()
+        transientErrors += 1
+        const errorMessage = normalizePollingFetchErrorMessage(error)
+        onStatus(`Status check connection error. Retry ${transientErrors}/5...`)
+        if (transientErrors >= MAX_TRANSIENT_ERRORS) {
+          throw new Error(errorMessage)
+        }
+        continue
+      }
+
       const rawBody = await response.text()
       const payload = parseJsonSafely(rawBody)
 
@@ -521,6 +704,11 @@ export function useGenerationRunner({
           || `Generation failed with status: ${status}. Please check the provider API logs for more details.`,
         )
       }
+
+      if (status.includes('processing') || status.includes('pending') || status.includes('running') || status.includes('queue')) {
+        const elapsedSeconds = Math.floor(elapsedMs / 1000)
+        onStatus(`Still processing... ${elapsedSeconds}s`)
+      }
     }
   }, [apiBaseUrl, markBackendUnavailable, pollIntervalMs])
 
@@ -528,6 +716,11 @@ export function useGenerationRunner({
     request: GenerationRequest,
     options: RunGenerationOptions = {},
   ): Promise<CompletedGeneration | null> => {
+    const backendReady = await checkGenerationReadiness(request.endpoint)
+    if (!backendReady) {
+      throw new Error(lastBackendErrorMessageRef.current || 'Back end server is not working. Start it before generating.')
+    }
+
     const effectiveSettings = resolveGenerationRequestSettings(request.endpoint, request.body, request.settings)
     const submittedAt = Date.now()
     const response = await fetch(toApiUrl(apiBaseUrl, request.endpoint), {
@@ -543,15 +736,22 @@ export function useGenerationRunner({
       const looksLikeBackendProxyFailure = response.status >= 500 && isLikelyBackendProxyFailure(rawBody)
       const errorMessage = extractErrorMessage(payload, rawBody, `HTTP ${response.status}`)
 
+      if (isMalformedBackendJsonError(errorMessage)) {
+        const cooldownMessage = applyGenerateCooldown(malformedBackendJsonMessage)
+        markBackendUnavailable(cooldownMessage)
+        throw new Error(cooldownMessage)
+      }
+
       if (response.status >= 500) {
         const backendDownMessage = looksLikeBackendProxyFailure
           ? 'Cannot reach local API backend (expected on http://localhost:8787). Start it and try again.'
           : undefined
-        markBackendUnavailable(backendDownMessage)
+        const cooldownMessage = applyGenerateCooldown(backendDownMessage || 'Back end server is not working. Start it before generating.')
+        markBackendUnavailable(cooldownMessage)
         throw new Error(
           (errorMessage && !/^HTTP 5\d\d$/i.test(errorMessage) && !looksLikeBackendProxyFailure)
-            ? errorMessage
-            : backendDownMessage || 'Back end server is not working. Start it before generating.',
+            ? applyGenerateCooldown(errorMessage)
+            : cooldownMessage,
         )
       }
 
@@ -594,7 +794,7 @@ export function useGenerationRunner({
       receivedAt: Date.now(),
       settings: effectiveSettings,
     }
-  }, [apiBaseUrl, markBackendUnavailable, pollUntilDone])
+  }, [apiBaseUrl, applyGenerateCooldown, checkGenerationReadiness, markBackendUnavailable, pollUntilDone])
 
   const resumeGenerationTask = async (
     input: ResumeGenerationInput,
@@ -623,6 +823,8 @@ export function useGenerationRunner({
 
   return {
     checkBackendHealth,
+    checkGenerationReadiness,
+    getGenerateCooldownRemainingMs,
     runGeneration,
     resumeGenerationTask,
   }

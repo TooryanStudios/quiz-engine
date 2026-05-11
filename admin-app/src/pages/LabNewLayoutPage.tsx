@@ -31,12 +31,14 @@ import { LabNewLayoutExplorerEdgePanel } from './LabNewLayout/LabNewLayoutExplor
 import { LabNewLayoutUiSettingsContext } from './LabNewLayout/LabNewLayoutUiSettingsContext'
 import { LabNewLayoutUiSettingsEdgePanel } from './LabNewLayout/LabNewLayoutUiSettingsEdgePanel'
 import { LabNewLayoutUserSettingsEdgePanel } from './LabNewLayout/LabNewLayoutUserSettingsEdgePanel'
+import { normalizeComposerModelId } from './LabNewLayout/useLabNewLayoutComposer'
 import { useGenerationRunner, type GenerationProvider, type GenerationRequestSettings } from '../hooks/useGenerationRunner'
 import { useLabNewLayoutHistoryGallery, type LabNewLayoutGalleryHistoryEntry } from './LabNewLayout/useLabNewLayoutHistoryGallery'
-import { useLabNewLayoutStore } from './LabNewLayout/useLabNewLayoutStore'
+import { useLabNewLayoutStore, type ComposerReuseSeed } from './LabNewLayout/useLabNewLayoutStore'
 import { calculateUrlExpiry, calculateGenerationMetrics, getExpiryStatusLabel, getExpiryStatusClass, formatModelName } from './LabNewLayout/utils/urlExpiryUtils'
 import { auth, firebaseConfig, storage } from '../lib/firebase'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { LabNewLayoutDataContext, useLabNewLayoutData, useLabNewLayoutWorkspace } from './LabNewLayout/useLabNewLayoutWorkspace'
 import type { StoryBibleScene } from './LabNewLayout/useLabNewLayoutWorkspace'
 import {
@@ -47,6 +49,16 @@ import {
 } from '../features/workflowBuilder'
 import type { FolderSummary, StudioReferenceAsset } from '../types/studio'
 import { useToast } from '../lib/ToastContext'
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../reactvideoeditor/pro/components/ui/dropdown-menu'
 import 'dockview-react/dist/styles/dockview.css'
 import './LabNewLayoutPage.css'
 
@@ -147,6 +159,65 @@ function resolveFolderPath(folderId: string | null, folders: FolderSummary[]) {
   }
 
   return { ids, names }
+}
+
+const LAB_NEWLAYOUT_BASE_PATH = '/lab/newlayout'
+
+function parseLabNewLayoutRoute(pathname: string): { projectId: string | null; folderPathIds: string[] } {
+  const normalizedPath = pathname.split(/[?#]/)[0]
+  const segments = normalizedPath.split('/').filter(Boolean)
+
+  if (segments.length < 2 || segments[0] !== 'lab' || segments[1] !== 'newlayout') {
+    return { projectId: null, folderPathIds: [] }
+  }
+
+  const projectMarkerIndex = segments.indexOf('p')
+  if (projectMarkerIndex < 0 || !segments[projectMarkerIndex + 1]) {
+    return { projectId: null, folderPathIds: [] }
+  }
+
+  const projectId = decodeURIComponent(segments[projectMarkerIndex + 1])
+  const folderMarkerIndex = segments.indexOf('f')
+  if (folderMarkerIndex < 0) {
+    return { projectId, folderPathIds: [] }
+  }
+
+  const folderPathIds = segments.slice(folderMarkerIndex + 1)
+    .map((segment) => decodeURIComponent(segment))
+    .filter((segment) => segment.trim().length > 0)
+
+  return { projectId, folderPathIds }
+}
+
+function buildLabNewLayoutRoute(projectId: string | null, folderPathIds: string[]): string {
+  const normalizedProjectId = (projectId || '').trim()
+  if (!normalizedProjectId) {
+    return LAB_NEWLAYOUT_BASE_PATH
+  }
+
+  const base = `${LAB_NEWLAYOUT_BASE_PATH}/p/${encodeURIComponent(normalizedProjectId)}`
+  const normalizedFolderPathIds = folderPathIds
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0)
+
+  if (normalizedFolderPathIds.length === 0) {
+    return base
+  }
+
+  return `${base}/f/${normalizedFolderPathIds.map((id) => encodeURIComponent(id)).join('/')}`
+}
+
+function resolveHistoryFolderLabel(folderId: string | null, folders: FolderSummary[]) {
+  if (!folderId) {
+    return 'Project root'
+  }
+
+  const folderPath = resolveFolderPath(folderId, folders)
+  if (folderPath.names.length > 0) {
+    return folderPath.names.join(' / ')
+  }
+
+  return folders.find((folder) => folder.id === folderId)?.name || 'Unknown folder'
 }
 
 const panelSuggestions: Record<string, Omit<PanelSuggestionParams, 'label' | 'position'>> = {
@@ -546,7 +617,8 @@ function getPanelSuggestion(id: string, label: string, position?: string): Panel
 
 function PlaceholderPanel(props: IDockviewPanelProps<PanelSuggestionParams>) {
   // PERF TEST: content stubbed
-  return <div className="lab-newlayout-placeholder-panel">{props.params.label ?? props.api.title}</div>
+  const panelParams = props.params ?? {}
+  return <div className="lab-newlayout-placeholder-panel">{panelParams.label ?? props.api.title}</div>
 }
 
 function WorkspaceHomeMetricCard({
@@ -576,6 +648,7 @@ type DraftSceneItem = {
 }
 
 function WorkspaceHomePanel(props: IDockviewPanelProps<PanelSuggestionParams>) {
+  const panelParams = props.params ?? {}
   const setComposerReuseSeed = useLabNewLayoutStore((state) => state.setComposerReuseSeed)
   const { showToast } = useToast()
   const {
@@ -641,7 +714,7 @@ function WorkspaceHomePanel(props: IDockviewPanelProps<PanelSuggestionParams>) {
 
     return storyBibleData.folderSummaries[studioActiveFolderId] || ''
   }, [storyBibleData.folderSummaries, storyBibleData.summary, studioActiveFolderId])
-  const homeTitle = props.params.label ?? props.api.title
+  const homeTitle = panelParams.label ?? props.api.title
   const selectedDraftScene = useMemo(
     () => draftScenes.find((scene) => scene.id === selectedDraftSceneId) || null,
     [draftScenes, selectedDraftSceneId],
@@ -1557,6 +1630,92 @@ function inferReferenceKindFromUrl(url: string): 'image' | 'video' {
   return inferReferenceMediaKindFromUrl(url) === 'video' ? 'video' : 'image'
 }
 
+const buildExtendPromptPrefix = (tabMode: 'before' | 'after'): string => (
+  tabMode === 'before'
+    ? 'Generate the content before video 1.'
+    : 'Generate the content after video 1.'
+)
+
+const isFirebaseHistoryUrl = (url: string): boolean => url.toLowerCase().includes('firebasestorage')
+
+const readPayloadString = (payload: Record<string, unknown> | null, ...keys: string[]): string => {
+  if (!payload) return ''
+  for (const key of keys) {
+    const value = payload[key]
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim()
+    }
+  }
+  return ''
+}
+
+const readPayloadBoolean = (payload: Record<string, unknown> | null, ...keys: string[]): boolean | undefined => {
+  if (!payload) return undefined
+  for (const key of keys) {
+    const value = payload[key]
+    if (typeof value === 'boolean') {
+      return value
+    }
+  }
+  return undefined
+}
+
+const buildComposerSeedSettingsFromEntry = (entry: LabNewLayoutGalleryHistoryEntry): Pick<ComposerReuseSeed, 'ratio' | 'resolution' | 'duration' | 'generateAudio' | 'model' | 'provider'> => {
+  const payload = entry.requestPayload
+  const provider = readPayloadString(payload, 'providerHint', 'provider', 'provider_hint') || entry.provider || 'atlas'
+  const rawModel = readPayloadString(payload, 'model') || entry.model || ''
+
+  return {
+    ratio: entry.ratio || readPayloadString(payload, 'ratio', 'aspect_ratio') || undefined,
+    resolution: entry.resolution || readPayloadString(payload, 'resolution') || undefined,
+    duration: entry.duration ?? (typeof payload?.duration === 'number' ? payload.duration : undefined),
+    generateAudio: entry.generateAudio ?? readPayloadBoolean(payload, 'generate_audio', 'generateAudio'),
+    model: normalizeComposerModelId(rawModel, provider),
+    provider,
+  }
+}
+
+function buildRequestPayloadFallback(entry: LabNewLayoutGalleryHistoryEntry): Record<string, unknown> {
+  const referenceImages: string[] = []
+  const referenceVideos: string[] = []
+  const referenceAudios: string[] = []
+
+  Object.entries(entry.mediaUrls)
+    .filter(([, url]) => Boolean(url) && url !== entry.resultUrl)
+    .forEach(([key, url]) => {
+      const kind: 'image' | 'video' | 'audio' = key.startsWith('video')
+        ? 'video'
+        : key.startsWith('audio')
+          ? 'audio'
+          : key.startsWith('image')
+            ? 'image'
+            : inferReferenceMediaKindFromUrl(url)
+
+      if (kind === 'video') {
+        referenceVideos.push(url)
+        return
+      }
+      if (kind === 'audio') {
+        referenceAudios.push(url)
+        return
+      }
+      referenceImages.push(url)
+    })
+
+  return {
+    model: entry.model,
+    provider: entry.provider,
+    prompt: entry.prompt,
+    ratio: entry.ratio,
+    resolution: entry.resolution,
+    duration: entry.duration,
+    generateAudio: entry.generateAudio,
+    ...(referenceImages.length > 0 ? { reference_images: referenceImages } : {}),
+    ...(referenceVideos.length > 0 ? { reference_videos: referenceVideos } : {}),
+    ...(referenceAudios.length > 0 ? { reference_audios: referenceAudios } : {}),
+  }
+}
+
 const toApiUrl = (apiBaseUrl: string, path: string): string => {
   const base = (apiBaseUrl || '').trim().replace(/\/$/, '')
   return base ? `${base}${path}` : path
@@ -1621,6 +1780,19 @@ const sanitizeFileNameSegment = (value: string, fallback: string): string => {
   return normalized || fallback
 }
 
+// Unicode-safe variant — keeps Arabic, CJK, and other non-ASCII letters/digits.
+// Only strips characters that are illegal or problematic in filenames.
+const sanitizeUnicodeFileNameSegment = (value: string, fallback: string): string => {
+  const normalized = value
+    .trim()
+    .replace(/[\/\\:*?"<>|\x00-\x1F]/g, '-')
+    .replace(/ +/g, '_')
+    .replace(/-+/g, '-')
+    .replace(/^[-_]|[-_]$/g, '')
+
+  return normalized || fallback
+}
+
 const summarizePromptForFileName = (prompt: string): string => {
   const words = prompt
     .trim()
@@ -1673,7 +1845,7 @@ const detectDownloadExtension = (sourceUrl: string): string => {
 }
 
 const buildDownloadFileName = (
-  entry: LabNewLayoutGalleryHistoryEntry,
+  _entry: LabNewLayoutGalleryHistoryEntry,
   sourceUrl: string,
   context: {
     projectName: string
@@ -1682,15 +1854,14 @@ const buildDownloadFileName = (
     prefix: string
   },
 ): string => {
-  const projectSegment = sanitizeFileNameSegment(context.projectName, 'project')
-  const folderSegment = sanitizeFileNameSegment(context.folderName, 'folder')
-  const sceneSegment = sanitizeFileNameSegment(context.sceneName, 'scene')
-  const prefixSegment = sanitizeFileNameSegment(context.prefix, 'video')
-  const promptSegment = summarizePromptForFileName(entry.prompt)
+  const projectSegment = sanitizeUnicodeFileNameSegment(context.projectName, 'project')
+  const folderSegment = sanitizeUnicodeFileNameSegment(context.folderName, 'folder')
+  const sceneSegment = sanitizeFileNameSegment(context.sceneName, '')
   const counter = String(readAndIncrementDownloadCounter()).padStart(4, '0')
   const extension = detectDownloadExtension(sourceUrl)
 
-  return `${projectSegment}-${folderSegment}-${sceneSegment}-${prefixSegment}-${promptSegment}-${counter}.${extension}`
+  const parts = [projectSegment, folderSegment, sceneSegment, counter].filter(Boolean)
+  return `${parts.join('-')}.${extension}`
 }
 
 const triggerDownload = (href: string, fileName: string) => {
@@ -1710,7 +1881,7 @@ const downloadVideoToFile = async (sourceUrl: string, fileName: string): Promise
     throw new Error('No video URL was available to download.')
   }
 
-  const proxyUrl = buildVideoProxyUrl(normalizedSourceUrl)
+  const proxyUrl = buildVideoProxyUrl(normalizedSourceUrl) || normalizedSourceUrl
   const response = await fetch(proxyUrl)
   if (!response.ok) {
     throw new Error(`Failed to download video (HTTP ${response.status}).`)
@@ -1718,11 +1889,10 @@ const downloadVideoToFile = async (sourceUrl: string, fileName: string): Promise
 
   const blob = await response.blob()
   const objectUrl = URL.createObjectURL(blob)
-  try {
-    triggerDownload(objectUrl, fileName)
-  } finally {
-    URL.revokeObjectURL(objectUrl)
-  }
+  triggerDownload(objectUrl, fileName)
+  // Revoke after a generous delay — revoking immediately after click() truncates
+  // the file because the browser hasn't finished reading the blob yet.
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
 }
 
 function buildHistoryReferencePayload(entry: LabNewLayoutGalleryHistoryEntry): DragReferencePayload | null {
@@ -1851,6 +2021,8 @@ function useDownloadedHistoryUrls() {
   return { markDownloaded, isDownloaded }
 }
 
+type HistoryGalleryFilterMode = 'all' | 'liked' | 'failed'
+
 type GalleryCardProps = {
   entry: LabNewLayoutGalleryHistoryEntry
   onClick: () => void
@@ -1924,7 +2096,7 @@ function GalleryCard({
   }, [entry.status, entry.errorMessage])
   const isReferenceUploading = Boolean(isMovingToFirebase)
   const isReferenceUploaded = entry.status === 'success' && Boolean(entry.resultUrl) && entry.resultUrl.includes('firebasestorage')
-  const hasReferenceStatus = isReferenceUploading || isReferenceUploaded
+  const isReferenceMissing = entry.status === 'success' && !isReferenceUploading && !isReferenceUploaded
   const dragPayload = useMemo(() => buildHistoryReferencePayload(entry), [entry])
 
   const clearIdleTimer = useCallback(() => {
@@ -1985,7 +2157,7 @@ function GalleryCard({
 
   return (
     <div
-      className={`lab-newlayout-history-gallery-card${mediaUrl ? ' is-clickable' : ''}${dragPayload ? ' is-draggable' : ''}${hasReferenceStatus ? ' has-reference-status' : ''}${isInProgress ? ' is-in-progress' : ''}${isHovered && isOverlayIdleHidden ? ' is-overlay-idle-hidden' : ''}`}
+      className={`lab-newlayout-history-gallery-card${mediaUrl ? ' is-clickable' : ''}${dragPayload ? ' is-draggable' : ''}${isInProgress ? ' is-in-progress' : ''}${galleryErrorInfo ? ' is-failed' : ''}${isHovered && isOverlayIdleHidden ? ' is-overlay-idle-hidden' : ''}`}
       draggable={Boolean(dragPayload)}
       onDragStart={handleDragStart}
       {...hoverHandlers}
@@ -2004,7 +2176,7 @@ function GalleryCard({
             className="lab-newlayout-history-gallery-preview"
             src={playbackUrl}
             playsInline
-            preload="auto"
+            preload="metadata"
             onPlay={() => setPosterHidden(true)}
             onPause={() => setPosterHidden(false)}
             onError={() => {
@@ -2023,9 +2195,12 @@ function GalleryCard({
         )}
         {galleryErrorInfo ? (
           <div className={`lab-newlayout-history-gallery-error-overlay lab-newlayout-history-gallery-error-overlay--${galleryErrorInfo.kind}`}>
-            <div className="lab-newlayout-history-gallery-error-chip" title={entry.errorMessage ?? undefined}>
+            <div
+              className="lab-newlayout-history-gallery-error-chip"
+              title={entry.errorMessage || galleryErrorInfo.label}
+              aria-label={entry.errorMessage || galleryErrorInfo.label}
+            >
               <span className="lab-newlayout-history-gallery-error-icon" aria-hidden="true">{galleryErrorInfo.icon}</span>
-              <span className="lab-newlayout-history-gallery-error-label">{galleryErrorInfo.label}</span>
             </div>
           </div>
         ) : null}
@@ -2043,27 +2218,18 @@ function GalleryCard({
           </div>
         ) : null}
       </div>
-      {entry.status !== 'success' ? (
-        <div className="lab-newlayout-history-gallery-badges">
-          <span className={`lab-newlayout-history-gallery-badge lab-newlayout-history-gallery-badge--${entry.status}`}>
-            {isInProgress ? <span className="lab-newlayout-history-gallery-badge-live-dot" aria-hidden="true" /> : null}
-            {entry.status}
-          </span>
-        </div>
-      ) : null}
       {entry.status === 'success' && entry.resultUrl && entry.submittedAt && !entry.resultUrl.includes('firebasestorage') && !showActionOverlays ? (
         <div className="lab-newlayout-history-gallery-expiry-badge">
           <ExpiryBadgeForCard entry={entry} />
         </div>
       ) : null}
-      {entry.status === 'success' && hasReferenceStatus ? (
+      {isReferenceMissing && !showActionOverlays ? (
         <div
-          className={`lab-newlayout-history-gallery-reference-status${isReferenceUploading ? ' is-uploading' : ' is-uploaded'}`}
-          aria-label={isReferenceUploading ? 'Uploading to references' : 'Saved to references'}
-          title={isReferenceUploading ? 'Uploading to references' : 'Saved to references'}
+          className="lab-newlayout-history-gallery-reference-warning"
+          aria-label="Not referenced yet"
+          title="Not referenced yet. Save to project references from the player."
         >
-          {isReferenceUploading ? <span className="lab-newlayout-history-gallery-reference-status-dot" aria-hidden="true" /> : null}
-          <span>{isReferenceUploading ? 'Uploading...' : 'Referenced'}</span>
+          <span aria-hidden="true">!</span>
         </div>
       ) : null}
       {onDownloadVideo && showActionOverlays && entry.status === 'success' && mediaUrl && !confirmingDelete ? (
@@ -2176,15 +2342,27 @@ function GalleryCard({
             type="button"
             className="lab-newlayout-history-gallery-extend-btn"
             onClick={(event) => { event.stopPropagation(); onExtendBefore?.(entry) }}
+            aria-label="Extend before"
+            title="Extend Before"
           >
-            Extend Before
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M19 12H9" />
+              <path d="m12 15-3-3 3-3" />
+              <path d="M5 5v14" />
+            </svg>
           </button>
           <button
             type="button"
             className="lab-newlayout-history-gallery-extend-btn"
             onClick={(event) => { event.stopPropagation(); onExtendAfter?.(entry) }}
+            aria-label="Extend after"
+            title="Extend After"
           >
-            Extend After
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M5 12h10" />
+              <path d="m12 9 3 3-3 3" />
+              <path d="M19 5v14" />
+            </svg>
           </button>
         </div>
       ) : null}
@@ -2201,6 +2379,7 @@ function GalleryCard({
 }
 
 function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestionParams>) {
+  const panelParams = props.params ?? {}
   const {
     authUid,
     studioProjectId,
@@ -2210,18 +2389,30 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
     storyBibleData,
     projectReferenceLibraryItems,
   } = useLabNewLayoutData()
-  const { entries, isLoading, refresh } = useLabNewLayoutHistoryGallery({ authUid })
+  const {
+    entries,
+    isLoading,
+    isLoadingMore,
+    hasMoreRemote,
+    errorMessage,
+    refresh,
+    loadMoreRemote,
+    deleteHistoryEntry,
+  } = useLabNewLayoutHistoryGallery({ authUid })
   const [firebaseMovedUrls, setFirebaseMovedUrls] = useState<Record<string, string>>({})
   const [movingToFirebaseIds, setMovingToFirebaseIds] = useState<Record<string, boolean>>({})
   const [visibleEntryCount, setVisibleEntryCount] = useState(GALLERY_PAGE_SIZE)
   const [selectedEntry, setSelectedEntry] = useState<LabNewLayoutGalleryHistoryEntry | null>(null)
   const [isJsonExpanded, setIsJsonExpanded] = useState(false)
+  const [historyFilterMode, setHistoryFilterMode] = useState<HistoryGalleryFilterMode>('all')
+  const [showFailedGenerations, setShowFailedGenerations] = useState(false)
   const [activeExtendTab, setActiveExtendTab] = useState<'before' | 'after'>('after')
   const [isSubmittingExtendReference, setIsSubmittingExtendReference] = useState(false)
   const [isRecoveringTask, setIsRecoveringTask] = useState(false)
   const [resubmittingIds, setResubmittingIds] = useState<Record<string, boolean>>({})
   const lightboxVideoRef = useRef<HTMLVideoElement | null>(null)
   const [failedLightboxSource, setFailedLightboxSource] = useState('')
+  const autoReferenceSignatureByIdRef = useRef<Record<string, string>>({})
   const runner = useGenerationRunner({ apiBaseUrl: CHATBOT_BASE })
   const { likedIds, toggle: toggleLiked } = useLikedHistoryIds()
   const { markDownloaded, isDownloaded } = useDownloadedHistoryUrls()
@@ -2233,12 +2424,69 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
         : entry
     })
   ), [entries, firebaseMovedUrls])
+  const projectScopedEntries = useMemo(() => {
+    const byProject = studioProjectId
+      ? effectiveEntries.filter((entry) => entry.projectId === studioProjectId)
+      : effectiveEntries
+
+    if (!studioActiveFolderId) {
+      return byProject
+    }
+
+    return byProject.filter((entry) => (entry.folderId || '').trim() === studioActiveFolderId)
+  }, [effectiveEntries, studioActiveFolderId, studioProjectId])
+  const filteredProjectEntries = useMemo(() => {
+    return projectScopedEntries.filter((entry) => {
+      const isFailed = entry.status === 'failed'
+
+      if (historyFilterMode === 'failed') {
+        return isFailed
+      }
+
+      if (historyFilterMode === 'liked' && !likedIds.has(entry.id)) {
+        return false
+      }
+
+      if (!showFailedGenerations && isFailed) {
+        return false
+      }
+
+      return true
+    })
+  }, [historyFilterMode, likedIds, projectScopedEntries, showFailedGenerations])
+  const hiddenFailedCount = useMemo(() => {
+    if (historyFilterMode === 'failed' || showFailedGenerations) {
+      return 0
+    }
+    return projectScopedEntries.filter((entry) => entry.status === 'failed').length
+  }, [historyFilterMode, projectScopedEntries, showFailedGenerations])
+  const historyFilterSummaryLabel = useMemo(() => {
+    if (historyFilterMode === 'failed') {
+      return 'Failed only'
+    }
+    if (historyFilterMode === 'liked') {
+      return showFailedGenerations ? 'Liked + failed' : 'Liked only'
+    }
+    return showFailedGenerations ? 'All + failed' : 'All'
+  }, [historyFilterMode, showFailedGenerations])
   const visibleEntries = useMemo(
-    () => effectiveEntries.slice(0, visibleEntryCount),
-    [effectiveEntries, visibleEntryCount],
+    () => filteredProjectEntries.slice(0, visibleEntryCount),
+    [filteredProjectEntries, visibleEntryCount],
   )
-  const hasMoreEntries = effectiveEntries.length > visibleEntryCount
-  const title = props.params.label ?? props.api.title
+  const hasMoreEntries = filteredProjectEntries.length > visibleEntryCount || hasMoreRemote
+  const title = panelParams.label ?? props.api.title
+  const selectedEntryFolderLabel = useMemo(
+    () => (selectedEntry ? resolveHistoryFolderLabel(selectedEntry.folderId || null, studioFolders) : ''),
+    [selectedEntry, studioFolders],
+  )
+  const selectedEntryProjectLabel = useMemo(
+    () => (selectedEntry ? (studioProjects.find((p) => p.id === selectedEntry.projectId)?.name || '') : ''),
+    [selectedEntry, studioProjects],
+  )
+
+  useEffect(() => {
+    setVisibleEntryCount(GALLERY_PAGE_SIZE)
+  }, [historyFilterMode, showFailedGenerations, studioActiveFolderId, studioProjectId])
   const downloadNamingContext = useMemo(() => {
     const projectName = studioProjects.find((project) => project.id === studioProjectId)?.name || 'project'
     const folderPath = resolveFolderPath(studioActiveFolderId || null, studioFolders)
@@ -2254,6 +2502,19 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
       prefix: 'video',
     }
   }, [storyBibleData.scenes, studioActiveFolderId, studioFolders, studioProjectId, studioProjects])
+
+  const resolveEntryDownloadNamingContext = useCallback((entry: LabNewLayoutGalleryHistoryEntry) => {
+    const entryProjectId = entry.projectId || studioProjectId || ''
+    const entryFolderId = entry.folderId || studioActiveFolderId || null
+    const projectName = studioProjects.find((p) => p.id === entryProjectId)?.name || downloadNamingContext.projectName
+    const folderPath = resolveFolderPath(entryFolderId, studioFolders)
+    const folderName = folderPath.names.length > 0 ? folderPath.names.join('-') : (studioFolders.find((f) => f.id === entryFolderId)?.name || downloadNamingContext.folderName)
+    const firstScopedScene = entryFolderId
+      ? storyBibleData.scenes.find((scene) => scene.folderId === entryFolderId)
+      : storyBibleData.scenes[0]
+    const sceneName = firstScopedScene?.title || firstScopedScene?.id || downloadNamingContext.sceneName
+    return { projectName, folderName, sceneName, prefix: 'video' }
+  }, [downloadNamingContext, storyBibleData.scenes, studioActiveFolderId, studioFolders, studioProjectId, studioProjects])
 
   const lightboxSourceUrl = useMemo(() => {
     if (!selectedEntry) return ''
@@ -2329,15 +2590,7 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
     if (!selectedEntry) return ''
     const payload = selectedEntry.requestPayload && Object.keys(selectedEntry.requestPayload).length > 0
       ? selectedEntry.requestPayload
-      : {
-          model: selectedEntry.model,
-          provider: selectedEntry.provider,
-          prompt: selectedEntry.prompt,
-          ratio: selectedEntry.ratio,
-          resolution: selectedEntry.resolution,
-          duration: selectedEntry.duration,
-          generateAudio: selectedEntry.generateAudio,
-        }
+      : buildRequestPayloadFallback(selectedEntry)
     try {
       return JSON.stringify(payload, null, 2)
     } catch {
@@ -2361,12 +2614,40 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
   const { showToast: showReuseToast } = useToast()
 
   useEffect(() => {
-    setVisibleEntryCount((current) => Math.min(Math.max(current, GALLERY_PAGE_SIZE), Math.max(effectiveEntries.length, GALLERY_PAGE_SIZE)))
-  }, [effectiveEntries.length])
+    setVisibleEntryCount((current) => Math.min(Math.max(current, GALLERY_PAGE_SIZE), Math.max(projectScopedEntries.length, GALLERY_PAGE_SIZE)))
+  }, [projectScopedEntries.length])
 
-  const handleLoadMoreEntries = useCallback(() => {
-    setVisibleEntryCount((current) => current + GALLERY_PAGE_SIZE)
-  }, [])
+  const handleLoadMoreEntries = useCallback(async () => {
+    if (projectScopedEntries.length > visibleEntryCount) {
+      setVisibleEntryCount((current) => current + GALLERY_PAGE_SIZE)
+      return
+    }
+
+    if (hasMoreRemote) {
+      await loadMoreRemote()
+      setVisibleEntryCount((current) => current + GALLERY_PAGE_SIZE)
+    }
+  }, [hasMoreRemote, loadMoreRemote, projectScopedEntries.length, visibleEntryCount])
+
+  const handleDeleteHistoryEntry = useCallback(async (entry: LabNewLayoutGalleryHistoryEntry) => {
+    removeHistoryItem(entry.id)
+    try {
+      await deleteHistoryEntry(entry)
+    } catch {
+      showReuseToast({ message: 'Failed to delete synced history entry', type: 'error' })
+    }
+  }, [deleteHistoryEntry, removeHistoryItem, showReuseToast])
+
+  useEffect(() => {
+    if (!selectedEntry) {
+      return
+    }
+    if (projectScopedEntries.some((entry) => entry.id === selectedEntry.id)) {
+      return
+    }
+    setSelectedEntry(null)
+    setIsJsonExpanded(false)
+  }, [projectScopedEntries, selectedEntry])
 
   const seedReferences = useMemo(() => {
     if (!selectedEntry) return [] as { id: string; url: string; kind: 'image' | 'video' | 'audio'; name: string }[]
@@ -2384,7 +2665,9 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
           ? 'video'
           : key.startsWith('audio')
             ? 'audio'
-            : 'image'
+            : key.startsWith('image')
+              ? 'image'
+              : inferReferenceMediaKindFromUrl(url)
         return { id: `${selectedEntry.id}-${key}`, url, kind, name: key }
       })
   }, [selectedEntry])
@@ -2402,6 +2685,7 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
   const buildSeed = useCallback((mode: 'all' | 'prompt' | 'references') => {
     if (!selectedEntry) return null
     const seedId = `${selectedEntry.id}-${mode}-${Date.now()}`
+    const settingsSeed = buildComposerSeedSettingsFromEntry(selectedEntry)
     if (mode === 'prompt') {
       return { id: seedId, prompt: selectedEntry.prompt }
     }
@@ -2412,46 +2696,9 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
       id: seedId,
       prompt: selectedEntry.prompt,
       references: seedReferences,
-      ratio: selectedEntry.ratio || undefined,
-      resolution: selectedEntry.resolution || undefined,
-      duration: selectedEntry.duration ?? undefined,
-      generateAudio: selectedEntry.generateAudio ?? undefined,
-      model: selectedEntry.model || undefined,
-      provider: selectedEntry.provider || undefined,
+      ...settingsSeed,
     }
   }, [selectedEntry, seedReferences])
-
-  const uploadReferenceVideoToFirebase = useCallback(async (sourceUrl: string, tabMode: 'before' | 'after') => {
-    if (!studioProjectId) {
-      showReuseToast({ message: 'Select a Studio project first', type: 'warning' })
-      return null
-    }
-
-    const targetFolderId = studioActiveFolderId || null
-    const folderPathSegment = targetFolderId ? `folders/${targetFolderId}` : 'project'
-    const storagePathPrefix = `lab-generated-videos/projects/${studioProjectId}/${folderPathSegment}`
-    const response = await fetch('/api/lab/references/upload-by-url', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        url: sourceUrl,
-        name: `${tabMode}-extend-${Date.now()}`,
-        kind: 'video',
-        storagePathPrefix,
-        firebaseConfig,
-        mimeType: 'video/mp4',
-      }),
-    })
-
-    const payload = await response.json().catch(() => null) as { error?: string; saved?: { firebaseUrl?: string } } | null
-    if (!response.ok) {
-      throw new Error(payload?.error || 'Failed to upload current video to Firebase.')
-    }
-
-    return payload?.saved?.firebaseUrl || null
-  }, [showReuseToast, studioActiveFolderId, studioProjectId])
 
   const archiveHistoryVideoToFirebase = useCallback(async (
     entry: LabNewLayoutGalleryHistoryEntry,
@@ -2514,18 +2761,23 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
         throw new Error('Upload completed but no Firebase URL was returned.')
       }
 
+      const successUpdates = {
+        status: 'success' as const,
+        resultUrl: firebaseUrl,
+        completedAt: entry.completedAt ?? entry.receivedAt ?? Date.now(),
+        errorMessage: '',
+      }
+
       setFirebaseMovedUrls((current) => ({
         ...current,
         [entry.id]: firebaseUrl,
       }))
 
-      updateHistoryItem(entry.id, {
-        resultUrl: firebaseUrl,
-      })
+      updateHistoryItem(entry.id, successUpdates)
 
       setSelectedEntry((current) => (
         current && current.id === entry.id
-          ? { ...current, resultUrl: firebaseUrl }
+          ? { ...current, ...successUpdates }
           : current
       ))
 
@@ -2603,6 +2855,48 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
     }
   }, [archiveHistoryVideoToFirebase, authUid, projectReferenceLibraryItems, showReuseToast, studioActiveFolderId, studioProjectId])
 
+  const autoReferenceCandidate = useMemo(() => {
+    if (Object.keys(movingToFirebaseIds).length > 0) {
+      return null
+    }
+
+    return projectScopedEntries.find((entry) => {
+      const sourceUrl = (entry.resultUrl || '').trim()
+      if (!sourceUrl || entry.status === 'failed') {
+        return false
+      }
+
+      const referenceFolderId = (entry.folderId || studioActiveFolderId || '').trim() || null
+      if (sourceUrl.includes('firebasestorage')) {
+        return !projectReferenceLibraryItems.some(
+          (item) => item.url === sourceUrl && (item.folderId || null) === referenceFolderId,
+        )
+      }
+
+      return true
+    }) ?? null
+  }, [movingToFirebaseIds, projectReferenceLibraryItems, projectScopedEntries, studioActiveFolderId])
+
+  useEffect(() => {
+    if (!autoReferenceCandidate) {
+      return
+    }
+
+    const signature = JSON.stringify([
+      autoReferenceCandidate.resultUrl,
+      autoReferenceCandidate.projectId || studioProjectId || '',
+      autoReferenceCandidate.folderId || studioActiveFolderId || '',
+      autoReferenceCandidate.status,
+    ])
+
+    if (autoReferenceSignatureByIdRef.current[autoReferenceCandidate.id] === signature) {
+      return
+    }
+
+    autoReferenceSignatureByIdRef.current[autoReferenceCandidate.id] = signature
+    void moveHistoryVideoToFirebase(autoReferenceCandidate, { silent: true })
+  }, [autoReferenceCandidate, moveHistoryVideoToFirebase, studioActiveFolderId, studioProjectId])
+
   const selectedEntryFailureReason = useMemo(() => {
     const raw = (selectedEntry?.errorMessage || '').trim()
     if (!raw) return ''
@@ -2673,9 +2967,10 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
 
     try {
       const payloadSceneName = extractSceneNameFromPayload(entry.requestPayload)
+      const entryNamingContext = resolveEntryDownloadNamingContext(entry)
       const fileName = buildDownloadFileName(entry, normalizedUrl, {
-        ...downloadNamingContext,
-        sceneName: payloadSceneName || downloadNamingContext.sceneName,
+        ...entryNamingContext,
+        sceneName: payloadSceneName || entryNamingContext.sceneName,
       })
       await downloadVideoToFile(normalizedUrl, fileName)
       markDownloaded(normalizedUrl)
@@ -2688,7 +2983,7 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
       const message = error instanceof Error ? error.message : 'Failed to download video.'
       showReuseToast({ message, type: 'error' })
     }
-  }, [archiveHistoryVideoToFirebase, downloadNamingContext, markDownloaded, showReuseToast])
+  }, [archiveHistoryVideoToFirebase, resolveEntryDownloadNamingContext, markDownloaded, showReuseToast])
 
   const handleExtendFromEntry = useCallback(async (tabMode: 'before' | 'after', entryOverride?: LabNewLayoutGalleryHistoryEntry) => {
     setActiveExtendTab(tabMode)
@@ -2704,40 +2999,66 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
       return
     }
 
-    const existingReference = composerReferences.find((ref) => ref.url === selectedVideoUrl)
-    if (existingReference) {
-      showReuseToast({ message: `Already in Composer references (${tabMode})`, type: 'info' })
-      return
-    }
-
     setIsSubmittingExtendReference(true)
     try {
-      const firebaseUrl = await uploadReferenceVideoToFirebase(selectedVideoUrl, tabMode)
-      if (!firebaseUrl) {
-        showReuseToast({ message: 'Upload did not return a Firebase URL', type: 'error' })
+      let referenceUrl = ''
+
+      if (isFirebaseHistoryUrl(selectedVideoUrl)) {
+        referenceUrl = selectedVideoUrl
+      } else if (isFirebaseHistoryUrl(targetEntry.resultUrl || '')) {
+        referenceUrl = (targetEntry.resultUrl || '').trim()
+      } else {
+        const archivedUrl = await archiveHistoryVideoToFirebase(targetEntry, {
+          silent: true,
+          showAlreadyArchivedMessage: false,
+        })
+
+        if (!archivedUrl) {
+          showReuseToast({
+            message: 'This video must be archived to Firebase before it can be used for extend.',
+            type: 'error',
+          })
+          return
+        }
+
+        referenceUrl = archivedUrl
+      }
+
+      if (!referenceUrl) {
+        showReuseToast({
+          message: 'No stable video URL was available for extend.',
+          type: 'error',
+        })
         return
       }
 
-      if (composerReferences.some((ref) => ref.url === firebaseUrl)) {
-        showReuseToast({ message: `Already in Composer references (${tabMode})`, type: 'info' })
-        return
-      }
-
-      const referenceId = `extend-${tabMode}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-      addComposerReference({
-        id: referenceId,
-        url: firebaseUrl,
-        kind: 'video',
-        name: tabMode === 'before' ? 'extend-before' : 'extend-after',
+      const settingsSeed = buildComposerSeedSettingsFromEntry(targetEntry)
+      setComposerReuseSeed({
+        id: `extend-seed-${tabMode}-${targetEntry.id}-${Date.now()}`,
+        modeId: 'video',
+        promptPrefix: buildExtendPromptPrefix(tabMode),
+        mergePrompt: true,
+        references: [{
+          id: `extend-${tabMode}-${targetEntry.id}`,
+          url: referenceUrl,
+          kind: 'video',
+          name: 'video 1',
+        }],
+        referenceMergeStrategy: 'prepend',
+        ...settingsSeed,
       })
-      showReuseToast({ message: `Added as ${tabMode === 'before' ? 'Extend Before' : 'Extend After'} reference`, type: 'success' })
+      showReuseToast({
+        message: `${tabMode === 'before' ? 'Extend Before' : 'Extend After'} prepared in Composer`,
+        type: 'success',
+      })
+      handleClose()
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to prepare extend reference'
       showReuseToast({ message, type: 'error' })
     } finally {
       setIsSubmittingExtendReference(false)
     }
-  }, [addComposerReference, composerReferences, lightboxVideoSrc, selectedEntry, showReuseToast, uploadReferenceVideoToFirebase])
+  }, [archiveHistoryVideoToFirebase, handleClose, lightboxVideoSrc, selectedEntry, setComposerReuseSeed, showReuseToast])
 
   const handleExtendTabClick = useCallback(async (tabMode: 'before' | 'after') => {
     await handleExtendFromEntry(tabMode)
@@ -2775,11 +3096,14 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
           ? 'video'
           : key.startsWith('audio')
             ? 'audio'
-            : 'image'
+            : key.startsWith('image')
+              ? 'image'
+              : inferReferenceMediaKindFromUrl(url)
         return { id: `${entry.id}-${key}`, url, kind, name: key }
       })
 
     const seedId = `${entry.id}-${mode}-${Date.now()}`
+    const settingsSeed = buildComposerSeedSettingsFromEntry(entry)
     if (mode === 'prompt') {
       return { id: seedId, prompt: entry.prompt }
     }
@@ -2791,12 +3115,7 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
       id: seedId,
       prompt: entry.prompt,
       references: entryReferences,
-      ratio: entry.ratio || undefined,
-      resolution: entry.resolution || undefined,
-      duration: entry.duration ?? undefined,
-      generateAudio: entry.generateAudio ?? undefined,
-      model: entry.model || undefined,
-      provider: entry.provider || undefined,
+      ...settingsSeed,
     }
   }, [])
 
@@ -3240,6 +3559,22 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
                   >
                     {resubmittingIds[selectedEntry.id] ? 'Regenerating...' : 'Regenerate'}
                   </button>
+                  <button
+                    type="button"
+                    className="lab-newlayout-history-lightbox-action"
+                    onClick={() => { void handleExtendTabClick('before') }}
+                    disabled={isSubmittingExtendReference}
+                  >
+                    {isSubmittingExtendReference && activeExtendTab === 'before' ? 'Preparing...' : 'Extend Before'}
+                  </button>
+                  <button
+                    type="button"
+                    className="lab-newlayout-history-lightbox-action"
+                    onClick={() => { void handleExtendTabClick('after') }}
+                    disabled={isSubmittingExtendReference}
+                  >
+                    {isSubmittingExtendReference && activeExtendTab === 'after' ? 'Preparing...' : 'Extend After'}
+                  </button>
                 </div>
                 {lightboxSourceUrl ? (
                   <div className="lab-newlayout-history-lightbox-media-link-row">
@@ -3287,10 +3622,36 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
                 </div>
               ) : null}
             </div>
-            {selectedEntry.model ? (
+            {selectedEntry.model || selectedEntry.status ? (
+              <div className="lab-newlayout-history-lightbox-meta-pair-row">
+                {selectedEntry.model ? (
+                  <div className="lab-newlayout-history-lightbox-meta-pair-cell">
+                    <span>Model</span>
+                    <strong className="lab-newlayout-history-lightbox-meta-mono">{formatModelName(selectedEntry.model)}</strong>
+                  </div>
+                ) : null}
+                {selectedEntry.status ? (
+                  <div className="lab-newlayout-history-lightbox-meta-pair-cell">
+                    <span>Status</span>
+                    <strong>{selectedEntry.status}</strong>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            <div className="lab-newlayout-history-lightbox-meta-pair-row">
+              <div className="lab-newlayout-history-lightbox-meta-pair-cell">
+                <span>Folder</span>
+                <strong>{[selectedEntryProjectLabel, selectedEntryFolderLabel || 'Project root'].filter(Boolean).join(' / ')}</strong>
+              </div>
+              <div className="lab-newlayout-history-lightbox-meta-pair-cell">
+                <span>Reference</span>
+                <strong>{lightboxIsReferencing ? 'Referencing…' : lightboxIsReferenced ? 'Referenced' : 'Not referenced yet'}</strong>
+              </div>
+            </div>
+            {selectedEntry.status === 'failed' ? (
               <div className="lab-newlayout-history-lightbox-meta-row">
-                <span>Model</span>
-                <strong className="lab-newlayout-history-lightbox-meta-mono">{formatModelName(selectedEntry.model)}</strong>
+                <span>Failure</span>
+                <strong title={selectedEntry.errorMessage || 'Generation failed'}>{selectedEntry.errorMessage || 'Generation failed'}</strong>
               </div>
             ) : null}
             {referenceMedia.length > 0 ? (
@@ -3334,10 +3695,20 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
                 </div>
               </div>
             ) : null}
-            {selectedEntry.timestamp ? (
-              <div className="lab-newlayout-history-lightbox-meta-row">
-                <span>Completed</span>
-                <strong>{new Date(selectedEntry.timestamp).toLocaleString()}</strong>
+            {selectedEntry.timestamp || lightboxSourceUrl ? (
+              <div className="lab-newlayout-history-lightbox-meta-pair-row">
+                {selectedEntry.timestamp ? (
+                  <div className="lab-newlayout-history-lightbox-meta-pair-cell">
+                    <span>Completed</span>
+                    <strong>{new Date(selectedEntry.timestamp).toLocaleString()}</strong>
+                  </div>
+                ) : null}
+                {lightboxSourceUrl ? (
+                  <div className="lab-newlayout-history-lightbox-meta-pair-cell">
+                    <span>Saved In</span>
+                    <strong>{lightboxStorageLabel}</strong>
+                  </div>
+                ) : null}
               </div>
             ) : null}
             {selectedEntry.taskId ? (
@@ -3352,18 +3723,6 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
                 >
                   {isRecoveringTask ? 'Recovering...' : 'Use For Recovery'}
                 </button>
-              </div>
-            ) : null}
-            {selectedEntry.status ? (
-              <div className="lab-newlayout-history-lightbox-meta-row">
-                <span>Status</span>
-                <strong>{selectedEntry.status}</strong>
-              </div>
-            ) : null}
-            {lightboxSourceUrl ? (
-              <div className="lab-newlayout-history-lightbox-meta-row">
-                <span>Saved In</span>
-                <strong>{lightboxStorageLabel}</strong>
               </div>
             ) : null}
             {selectedEntry.submittedAt && selectedEntry.completedAt ? (
@@ -3414,27 +3773,6 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
                 </div>
               ) : null}
             </div>
-            <div className="lab-newlayout-history-lightbox-extend-tabs">
-              <div className="lab-newlayout-history-lightbox-extend-tabs-label">Extend</div>
-              <div className="lab-newlayout-history-lightbox-extend-tabs-row">
-                <button
-                  type="button"
-                  className={`lab-newlayout-history-lightbox-extend-tab${activeExtendTab === 'before' ? ' is-active' : ''}`}
-                  onClick={() => { void handleExtendTabClick('before') }}
-                  disabled={isSubmittingExtendReference}
-                >
-                  Extend Before
-                </button>
-                <button
-                  type="button"
-                  className={`lab-newlayout-history-lightbox-extend-tab${activeExtendTab === 'after' ? ' is-active' : ''}`}
-                  onClick={() => { void handleExtendTabClick('after') }}
-                  disabled={isSubmittingExtendReference}
-                >
-                  Extend After
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -3450,7 +3788,8 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
             <span className="lab-newlayout-history-stat">{title}</span>
             {!isLoading ? (
               <span className="lab-newlayout-history-toolbar-note">
-                {effectiveEntries.length} items
+                  {visibleEntries.length} shown{filteredProjectEntries.length > visibleEntries.length ? ` of ${filteredProjectEntries.length}` : projectScopedEntries.length !== filteredProjectEntries.length ? ` of ${filteredProjectEntries.length}` : ''}
+                {hiddenFailedCount > 0 ? ` · ${hiddenFailedCount} failed hidden` : ''}
                 {Object.keys(movingToFirebaseIds).length > 0 ? ` · uploading ${Object.keys(movingToFirebaseIds).length}` : ''}
               </span>
             ) : null}
@@ -3458,14 +3797,53 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
           <div className="lab-newlayout-history-toolbar-actions">
             <button
               type="button"
-              className="lab-newlayout-ui-settings-action"
+              className="lab-newlayout-history-toolbar-btn"
               onClick={handleHistoryDiagnose}
             >
-              Diagnose (temp)
+              Run Diagnostics
             </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="lab-newlayout-history-toolbar-btn"
+                >
+                  Filter: {historyFilterSummaryLabel}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-55">
+                <DropdownMenuLabel>History Gallery</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuRadioGroup
+                  value={historyFilterMode}
+                  onValueChange={(value) => {
+                    if (value === 'all' || value === 'liked' || value === 'failed') {
+                      setHistoryFilterMode(value)
+                    }
+                  }}
+                >
+                  <DropdownMenuRadioItem value="all">Show all generations</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="liked">Only liked generations</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="failed">Show failed generations</DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuCheckboxItem
+                  checked={historyFilterMode === 'failed' ? true : showFailedGenerations}
+                  disabled={historyFilterMode === 'failed'}
+                  onCheckedChange={(checked) => {
+                    if (historyFilterMode === 'failed') {
+                      return
+                    }
+                    setShowFailedGenerations(Boolean(checked))
+                  }}
+                >
+                  Include failed in normal views
+                </DropdownMenuCheckboxItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <button
               type="button"
-              className="lab-newlayout-ui-settings-action"
+              className="lab-newlayout-history-toolbar-btn"
               onClick={() => { void refresh() }}
             >
               Refresh
@@ -3477,8 +3855,23 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
         <div className="lab-newlayout-history-loading">Loading…</div>
       ) : entries.length === 0 ? (
         <div className="lab-newlayout-history-loading">No generations yet.</div>
+      ) : filteredProjectEntries.length === 0 ? (
+        <div className="lab-newlayout-history-loading">
+          {projectScopedEntries.length === 0
+            ? 'No generations in this scope yet.'
+            : historyFilterMode === 'failed'
+              ? 'No failed generations in this scope.'
+              : historyFilterMode === 'liked'
+                ? 'No liked generations match this filter.'
+                : hiddenFailedCount > 0
+                  ? 'Only failed generations are in this scope. Use Filter to show them.'
+                  : 'No generations match this filter.'}
+        </div>
       ) : (
         <>
+          {errorMessage ? (
+            <div className="lab-newlayout-history-loading">{errorMessage}</div>
+          ) : null}
           <div className="lab-newlayout-history-gallery-grid">
             {visibleEntries.map((entry) => (
               <GalleryCard
@@ -3494,7 +3887,14 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
                 isMovingToFirebase={Boolean(movingToFirebaseIds[entry.id])}
                 onExtendBefore={(target) => { void handleExtendFromEntry('before', target) }}
                 onExtendAfter={(target) => { void handleExtendFromEntry('after', target) }}
-                onDelete={removeHistoryItem}
+                onDelete={(entryId) => {
+                  const targetEntry = projectScopedEntries.find((entry) => entry.id === entryId)
+                  if (!targetEntry) {
+                    removeHistoryItem(entryId)
+                    return
+                  }
+                  void handleDeleteHistoryEntry(targetEntry)
+                }}
               />
             ))}
           </div>
@@ -3503,11 +3903,14 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
               <button
                 type="button"
                 className="lab-newlayout-ui-settings-action"
-                onClick={handleLoadMoreEntries}
+                onClick={() => { void handleLoadMoreEntries() }}
+                disabled={isLoadingMore}
               >
-                Load more
+                {isLoadingMore ? 'Loading…' : 'Load more'}
               </button>
-              <span className="lab-newlayout-history-pagination-copy">Showing {visibleEntries.length} / {effectiveEntries.length}</span>
+              <span className="lab-newlayout-history-pagination-copy">
+                Showing {visibleEntries.length} / {hasMoreRemote ? `${projectScopedEntries.length}+` : projectScopedEntries.length}
+              </span>
             </div>
           ) : null}
         </>
@@ -3519,11 +3922,13 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
 
 function ReferencesPanel(_props: IDockviewPanelProps<PanelSuggestionParams>) {
   const REFERENCE_PAGE_SIZE = 36
+  const REFERENCE_SKELETON_COUNT = 10
   const addComposerReference = useLabNewLayoutStore((state) => state.addComposerReference)
   const composerReferences = useLabNewLayoutStore((state) => state.composerReferences)
   const { authUid, studioProjectId, studioActiveFolderId, projectReferenceLibraryItems, projectReferenceLibraryLoading } = useLabNewLayoutData()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const videoPreviewRefs = useRef<Record<string, HTMLVideoElement | null>>({})
+  const hoveredVideoIdRef = useRef<string | null>(null)
   const [isDragOver, setIsDragOver] = useState(false)
   const [uploadingCount, setUploadingCount] = useState(0)
   const [visibleReferenceCount, setVisibleReferenceCount] = useState(REFERENCE_PAGE_SIZE)
@@ -3555,6 +3960,9 @@ function ReferencesPanel(_props: IDockviewPanelProps<PanelSuggestionParams>) {
 
     return projectReferenceLibraryItems.filter((item) => !item.folderId || item.folderId === studioActiveFolderId)
   }, [projectReferenceLibraryItems, studioActiveFolderId])
+
+  const isReferenceListSyncing = projectReferenceLibraryLoading
+  const showReferenceSkeletons = Boolean(studioProjectId && visibleLibraryItems.length === 0 && isReferenceListSyncing)
 
   const pagedLibraryItems = useMemo(() => (
     visibleLibraryItems.slice(0, visibleReferenceCount)
@@ -3735,21 +4143,38 @@ function ReferencesPanel(_props: IDockviewPanelProps<PanelSuggestionParams>) {
   }, [])
 
   const handleVideoHoverStart = useCallback((itemId: string) => {
+    hoveredVideoIdRef.current = itemId
+    for (const [currentId, media] of Object.entries(videoPreviewRefs.current)) {
+      if (!media || currentId === itemId) continue
+      media.pause()
+      media.currentTime = 0
+    }
+
     const media = videoPreviewRefs.current[itemId]
     if (!media) return
-    media.muted = false
+    media.muted = true
     void media.play().catch(() => {
-      media.muted = true
       void media.play().catch(() => undefined)
     })
   }, [])
 
   const handleVideoHoverEnd = useCallback((itemId: string) => {
+    if (hoveredVideoIdRef.current === itemId) {
+      hoveredVideoIdRef.current = null
+    }
     const media = videoPreviewRefs.current[itemId]
     if (!media) return
     media.pause()
     media.currentTime = 0
     media.muted = true
+  }, [])
+
+  useEffect(() => () => {
+    for (const media of Object.values(videoPreviewRefs.current)) {
+      if (!media) continue
+      media.pause()
+      media.currentTime = 0
+    }
   }, [])
 
   const handleAddToComposer = useCallback((item: StudioReferenceAsset) => {
@@ -3874,6 +4299,7 @@ function ReferencesPanel(_props: IDockviewPanelProps<PanelSuggestionParams>) {
             <span className="lab-newlayout-history-toolbar-note">
               {visibleLibraryItems.length} visible · {projectCount} project{hasFolderScope ? ` · ${folderCount} folder` : ''}
               {uploadingCount > 0 ? ` · uploading ${uploadingCount}…` : ''}
+              {uploadingCount === 0 && isReferenceListSyncing ? ' · loading references…' : ''}
             </span>
           </div>
           <div className="lab-newlayout-references-toolbar-actions">
@@ -3916,11 +4342,7 @@ function ReferencesPanel(_props: IDockviewPanelProps<PanelSuggestionParams>) {
               <span className="lab-newlayout-references-plus-card-sub">Project references are independent from composer references.</span>
             </div>
           </div>
-        ) : projectReferenceLibraryLoading && !isDragOver ? (
-          <div className="lab-newlayout-references-empty">
-            <div className="lab-newlayout-history-loading">Loading references…</div>
-          </div>
-        ) : visibleLibraryItems.length === 0 && !isDragOver ? (
+        ) : visibleLibraryItems.length === 0 && !showReferenceSkeletons && !isDragOver ? (
           <div className="lab-newlayout-references-empty">
             <div className="lab-newlayout-references-empty-actions">
               <button type="button" className="lab-newlayout-references-plus-card" onClick={handlePlusClick}>
@@ -3940,6 +4362,13 @@ function ReferencesPanel(_props: IDockviewPanelProps<PanelSuggestionParams>) {
             <button type="button" className="lab-newlayout-reference-plus-tile" onClick={handlePlusClick} title="Add more">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5a.75.75 0 0 1 .75.75V11.25H18.25a.75.75 0 0 1 0 1.5H12.75v5.5a.75.75 0 0 1-1.5 0v-5.5H5.75a.75.75 0 0 1 0-1.5h5.5V5.75A.75.75 0 0 1 12 5Z"/></svg>
             </button>
+            {showReferenceSkeletons
+              ? Array.from({ length: REFERENCE_SKELETON_COUNT }).map((_, index) => (
+                <div key={`ref-skeleton-${index}`} className="lab-newlayout-reference-item lab-newlayout-reference-item--skeleton" aria-hidden="true">
+                  <div className="lab-newlayout-reference-thumb lab-newlayout-reference-thumb--image lab-newlayout-reference-thumb--skeleton" />
+                </div>
+              ))
+              : null}
             {pagedLibraryItems.map((item) => (
               <div
                 key={item.id}
@@ -3963,6 +4392,11 @@ function ReferencesPanel(_props: IDockviewPanelProps<PanelSuggestionParams>) {
                       muted
                       playsInline
                       preload="metadata"
+                      onPlay={(event) => {
+                        if (hoveredVideoIdRef.current === item.id) return
+                        event.currentTarget.pause()
+                        event.currentTarget.currentTime = 0
+                      }}
                       className="lab-newlayout-reference-thumb lab-newlayout-reference-thumb--video"
                     />
                     <span className="lab-newlayout-reference-video-indicator" aria-hidden="true">▶</span>
@@ -3973,6 +4407,8 @@ function ReferencesPanel(_props: IDockviewPanelProps<PanelSuggestionParams>) {
                   <img
                     src={item.url}
                     alt=""
+                    loading="lazy"
+                    decoding="async"
                     className="lab-newlayout-reference-thumb lab-newlayout-reference-thumb--image"
                   />
                 )}
@@ -4412,6 +4848,16 @@ function normalizeDockviewPreviewLayout(api: DockviewApi) {
   }
 
   const leftEdge = api.getEdgeGroup('left')
+  if (leftEdge && !api.panels.find((panel) => panel.id === 'left-1')) {
+    api.addPanel({
+      id: 'left-1',
+      component: 'explorerEdge',
+      title: 'Explorer',
+      position: { referenceGroup: leftEdge.id },
+      params: getPanelSuggestion('left-1', 'Explorer', 'left'),
+    })
+  }
+
   if (leftEdge && !api.panels.find((panel) => panel.id === 'left-2')) {
     api.addPanel({
       id: 'left-2',
@@ -4492,10 +4938,14 @@ function restoreDockviewLayout(api: DockviewApi, persistedState: LabNewLayoutPer
 }
 
 export default function LabNewLayoutPage() {
+  const location = useLocation()
+  const navigate = useNavigate()
   const initialLocalLayoutRef = useRef<LabNewLayoutPersistedState | null>(readLocalPersistedLayoutState())
   const initialLocalPresetStoreRef = useRef<LabNewLayoutPresetStore>(readLocalPresetStore())
   const initialLegacyPanelAccessRef = useRef<LabNewLayoutProjectTabPolicyState>(readLegacyPanelAccessState())
   const defaultLayoutStateRef = useRef<LabNewLayoutPersistedState | null>(null)
+  const hasAppliedUrlSelectionRef = useRef(false)
+  const hasBootstrappedCanonicalUrlRef = useRef(false)
   const [authUid, setAuthUid] = useState('')
   const [authDisplayName, setAuthDisplayName] = useState('')
   const [authEmail, setAuthEmail] = useState('')
@@ -4511,6 +4961,11 @@ export default function LabNewLayoutPage() {
   const {
     dataContextValue,
     studioProjectId,
+    studioProjects,
+    studioFolders,
+    studioActiveFolderId,
+    setStudioProjectId,
+    setStudioActiveFolderId,
     projectNewLayoutConfig,
     updateProjectNewLayoutConfig,
   } = useLabNewLayoutWorkspace({
@@ -4539,6 +4994,22 @@ export default function LabNewLayoutPage() {
   const isPrivilegedUser = isMasterAdminUser || hasAdminClaim
   const adminOnlyPanelIds = projectTabPolicy.adminOnlyPanelIds
   const canCurrentUserCloseMainTabs = isMasterAdminUser && projectTabPolicy.masterAdminCanCloseTabs
+  const parsedRouteSelection = useMemo(
+    () => parseLabNewLayoutRoute(location.pathname),
+    [location.pathname],
+  )
+  const selectedFolderPath = useMemo(
+    () => resolveFolderPath(studioActiveFolderId || null, studioFolders),
+    [studioActiveFolderId, studioFolders],
+  )
+  const canonicalSelectionPath = useMemo(
+    () => buildLabNewLayoutRoute(studioProjectId || null, selectedFolderPath.ids),
+    [selectedFolderPath.ids, studioProjectId],
+  )
+  const routeSelectionKey = useMemo(
+    () => `${parsedRouteSelection.projectId || ''}|${parsedRouteSelection.folderPathIds.join('/')}`,
+    [parsedRouteSelection.folderPathIds, parsedRouteSelection.projectId],
+  )
 
   const persistLayoutState = (api: DockviewApi, options?: { forceRemote?: boolean }) => {
     pendingRemoteLayoutPersistRef.current = pendingRemoteLayoutPersistRef.current || Boolean(options?.forceRemote)
@@ -4607,6 +5078,50 @@ export default function LabNewLayoutPage() {
     applyAdminOnlyPanelVisibility(api, adminOnlyPanelIds, isPrivilegedUser)
     applyEdgeGroupPolicies(api)
   }
+
+  const handleOpenStudioExplorer = useCallback(() => {
+    const api = apiRef.current
+    if (!api) {
+      return
+    }
+
+    if (!api.isEdgeGroupVisible('left')) {
+      api.setEdgeGroupVisible('left', true)
+    }
+
+    const leftEdge = api.getEdgeGroup('left')
+    if (leftEdge) {
+      if (leftEdge.isCollapsed()) {
+        leftEdge.expand()
+      } else if (leftEdge.width < LEFT_EDGE_WIDTH) {
+        leftEdge.setSize({ width: LEFT_EDGE_WIDTH })
+      }
+    }
+
+    let explorerPanel = api.panels.find((panel) => panel.id === 'left-1')
+    if (!explorerPanel && leftEdge) {
+      api.addPanel({
+        id: 'left-1',
+        component: 'explorerEdge',
+        title: 'Explorer',
+        position: { referenceGroup: leftEdge.id },
+        params: getPanelSuggestion('left-1', 'Explorer', 'left'),
+      })
+      explorerPanel = api.panels.find((panel) => panel.id === 'left-1')
+    }
+
+    explorerPanel?.api.setActive()
+  }, [])
+
+  const handleOpenHistoryGallery = useCallback(() => {
+    const api = apiRef.current
+    if (!api) {
+      return
+    }
+
+    const historyPanel = api.panels.find((panel) => panel.id === 'orders')
+    historyPanel?.api.setActive()
+  }, [])
 
   const commitAppliedLayout = (api: DockviewApi, options?: { captureAsDefault?: boolean }) => {
     const nextAppliedState = createPersistedLayoutState(api.toJSON())
@@ -4927,6 +5442,85 @@ export default function LabNewLayoutPage() {
   }, [projectNewLayoutConfig, studioProjectId])
 
   useEffect(() => {
+    hasAppliedUrlSelectionRef.current = false
+  }, [routeSelectionKey])
+
+  // DISABLED FOR DIAGNOSTICS: URL Hydration Effect - syncs URL params to selection state
+  // useEffect(() => {
+  //   const routeProjectId = (parsedRouteSelection.projectId || '').trim()
+  //   const routeFolderIds = parsedRouteSelection.folderPathIds
+  //   const routeTargetFolderId = routeFolderIds.length > 0 ? routeFolderIds[routeFolderIds.length - 1] : null
+
+  //   if (!routeProjectId) {
+  //     hasAppliedUrlSelectionRef.current = true
+  //     return
+  //   }
+
+  //   if (studioProjects.length > 0 && !studioProjects.some((project) => project.id === routeProjectId)) {
+  //     hasAppliedUrlSelectionRef.current = true
+  //     return
+  //   }
+
+  //   if (studioProjectId !== routeProjectId) {
+  //     setStudioProjectId(routeProjectId)
+  //     if (studioActiveFolderId) {
+  //       setStudioActiveFolderId(null)
+  //     }
+  //     return
+  //   }
+
+  //   if (!routeTargetFolderId) {
+  //     hasAppliedUrlSelectionRef.current = true
+  //     if (studioActiveFolderId) {
+  //       setStudioActiveFolderId(null)
+  //     }
+  //     return
+  //   }
+
+  //   const routeFolderExists = studioFolders.some((folder) => folder.id === routeTargetFolderId)
+  //   if (!routeFolderExists) {
+  //     if (studioFolders.length > 0) {
+  //       hasAppliedUrlSelectionRef.current = true
+  //     }
+  //     return
+  //   }
+
+  //   if (studioActiveFolderId !== routeTargetFolderId) {
+  //     setStudioActiveFolderId(routeTargetFolderId)
+  //     return
+  //   }
+
+  //   hasAppliedUrlSelectionRef.current = true
+  // }, [
+  //   parsedRouteSelection.folderPathIds,
+  //   parsedRouteSelection.projectId,
+  //   setStudioActiveFolderId,
+  //   setStudioProjectId,
+  //   studioActiveFolderId,
+  //   studioFolders,
+  //   studioProjectId,
+  //   studioProjects,
+  // ])
+
+  // DISABLED FOR DIAGNOSTICS: URL Canonical Sync Effect - syncs selection state to URL
+  // useEffect(() => {
+  //   if (!hasAppliedUrlSelectionRef.current) {
+  //     const routeProjectId = (parsedRouteSelection.projectId || '').trim()
+  //     if (routeProjectId) {
+  //       return
+  //     }
+  //   }
+
+  //   if (!hasBootstrappedCanonicalUrlRef.current) {
+  //     hasBootstrappedCanonicalUrlRef.current = true
+  //   }
+
+  //   if (location.pathname !== canonicalSelectionPath) {
+  //     navigate(canonicalSelectionPath, { replace: true })
+  //   }
+  // }, [canonicalSelectionPath, location.pathname, navigate, parsedRouteSelection.projectId])
+
+  useEffect(() => {
     return () => {
       layoutChangeDisposableRef.current?.dispose()
       activePanelChangeDisposableRef.current?.dispose()
@@ -5004,6 +5598,7 @@ export default function LabNewLayoutPage() {
 
       if (apiRef.current) {
         layoutDirtyRef.current = true
+        persistLayoutState(apiRef.current, { forceRemote: Boolean(authUidRef.current) })
       }
     }
 
@@ -5046,10 +5641,8 @@ export default function LabNewLayoutPage() {
       if (isSashDraggingRef.current) {
         return
       }
-
-      // Avoid continuous autosave while users are actively arranging panels.
-      // Persist on lifecycle exits and explicit layout actions instead.
       layoutDirtyRef.current = true
+      persistLayoutState(event.api, { forceRemote: Boolean(authUidRef.current) })
     })
 
     activePanelChangeDisposableRef.current = event.api.onDidActivePanelChange((activePanel) => {
@@ -5163,7 +5756,7 @@ export default function LabNewLayoutPage() {
         </div>
       )
     }
-  }, [adminOnlyPanelIds, authDisplayName, authEmail, authPhotoUrl, canCurrentUserCloseMainTabs])
+  }, [adminOnlyPanelIds, authDisplayName, authEmail, authPhotoUrl, canCurrentUserCloseMainTabs, handleOpenHistoryGallery, handleOpenStudioExplorer])
 
   const uiSettingsContextValue = useMemo(() => ({
     canApplyPreset: Boolean(selectedPresetId && apiRef.current),
@@ -5184,6 +5777,12 @@ export default function LabNewLayoutPage() {
     onSetTabClosingEnabled: handleSetTabClosingEnabled,
     onUpdatePreset: handleUpdatePreset,
   }), [handleSaveAsDefault, isMasterAdminUser, layoutPresets, presetDraftName, projectTabPolicy.masterAdminCanCloseTabs, selectedPresetId])
+
+  const dataContextValueWithActions = useMemo(() => ({
+    ...dataContextValue,
+    openStudioExplorer: handleOpenStudioExplorer,
+    openHistoryGallery: handleOpenHistoryGallery,
+  }), [dataContextValue, handleOpenHistoryGallery, handleOpenStudioExplorer])
 
   const getTabContextMenuItems = (params: GetTabContextMenuItemsParams) => {
     const items: (BuiltInContextMenuItem | ReactContextMenuItemConfig)[] = []
@@ -5210,7 +5809,7 @@ export default function LabNewLayoutPage() {
   }
 
   return (
-    <LabNewLayoutDataContext.Provider value={dataContextValue}>
+    <LabNewLayoutDataContext.Provider value={dataContextValueWithActions}>
       <LabNewLayoutUiSettingsContext.Provider value={uiSettingsContextValue}>
           <div className="lab-newlayout-page">
             <div className="lab-newlayout-frame">

@@ -320,6 +320,13 @@ export function useLabNewLayoutDirectApi() {
   }, [requestComposerPreviewRefresh])
 
   const submitDirectJson = useCallback(() => {
+    const activeProjectId = (studioProjectId || '').trim()
+    const activeFolderId = (studioActiveFolderId || '').trim()
+    if (!activeProjectId || !activeFolderId) {
+      setGenerationStatus('Select or create an active project and folder in Explorer before generating.')
+      return
+    }
+
     let parsed: Record<string, unknown>
     try {
       parsed = JSON.parse(directRequestJson)
@@ -370,8 +377,8 @@ export function useLabNewLayoutDirectApi() {
       requestPayload: request.body,
       sourceLabel: 'Direct API',
       status: 'queued',
-      projectId: studioProjectId || undefined,
-      folderId: studioActiveFolderId || undefined,
+      projectId: activeProjectId,
+      folderId: activeFolderId,
     })
 
     void (async () => {
@@ -412,8 +419,8 @@ export function useLabNewLayoutDirectApi() {
           })
           playGenerationSuccessSound()
 
-          const archiveProjectId = (studioProjectId || '').trim()
-          const archiveFolderId = (studioActiveFolderId || '').trim() || null
+          const archiveProjectId = activeProjectId
+          const archiveFolderId = activeFolderId || null
           void (async () => {
             const archivedUrl = await archiveVideoToFirebase(
               result.resultUrl,

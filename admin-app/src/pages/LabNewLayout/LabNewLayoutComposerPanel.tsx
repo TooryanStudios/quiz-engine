@@ -1,5 +1,7 @@
-import { memo, useEffect, useRef } from 'react'
+import { memo, useEffect, useState, useCallback, useRef, type MouseEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { useLabNewLayoutComposer } from './useLabNewLayoutComposer'
+import { useLabNewLayoutData } from './useLabNewLayoutWorkspace'
 
 type ComposerReferenceItem = {
   id: string
@@ -241,6 +243,8 @@ function renderComposerActionIcon(actionId: 'templates' | 'refine' | 'fontSize')
 export function LabNewLayoutComposerPanel() {
   const topStackRef = useRef<HTMLDivElement | null>(null)
   const footerControlsRef = useRef<HTMLDivElement | null>(null)
+  const { openStudioExplorer, ensureDefaultProjectAndFolder } = useLabNewLayoutData()
+  const [isGenerationBlockedDialogOpen, setGenerationBlockedDialogOpen] = useState(false)
   const {
     activeMode,
     activeModeId,
@@ -266,8 +270,15 @@ export function LabNewLayoutComposerPanel() {
     isFontSizeMenuOpen,
     isRefineMenuOpen,
     isTemplatesMenuOpen,
+    hasActiveStudioProjectAndFolder,
+    backendStatusMessage,
+    backendCooldownRemainingMs,
+    generationBlockedReason,
+    isSubmittingGeneration,
+    isPreparingReferences,
     promptFontSize,
     promptText,
+    referenceAccessMessage,
     selectMode,
     toggleFontSizeMenu,
     toggleRefineMenu,
@@ -282,6 +293,70 @@ export function LabNewLayoutComposerPanel() {
     toggleComposerAudio,
     toggleFooterMenu,
   } = useLabNewLayoutComposer()
+
+  const promptReady = Boolean(promptText.trim())
+  const normalizedBackendStatusMessage = (backendStatusMessage || '').trim()
+  const hasBackendIssue = Boolean(normalizedBackendStatusMessage)
+  const isBackendCoolingDown = backendCooldownRemainingMs > 0
+  const canGenerate = promptReady && hasActiveStudioProjectAndFolder && !isBackendCoolingDown && !isPreparingReferences && !referenceAccessMessage
+  const [generationBlockedCase, setGenerationBlockedCase] = useState<'prompt' | null>(null)
+  const [isAutoCreating, setIsAutoCreating] = useState(false)
+  const [isBackendDetailsOpen, setBackendDetailsOpen] = useState(false)
+  const [dismissedBackendMessage, setDismissedBackendMessage] = useState('')
+  const isBackendAlertDismissed = hasBackendIssue && dismissedBackendMessage === normalizedBackendStatusMessage
+  const showBackendIssue = hasBackendIssue && !isBackendAlertDismissed
+
+  const preventFocusStealOnMouseDown = useCallback((event: MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+  }, [])
+
+  const handleStartGeneration = useCallback(() => {
+    if (isSubmittingGeneration || isAutoCreating) {
+      return
+    }
+
+    if (!promptReady) {
+      setGenerationBlockedCase('prompt')
+      setGenerationBlockedDialogOpen(true)
+      return
+    }
+
+    if (!hasActiveStudioProjectAndFolder) {
+      setIsAutoCreating(true)
+      void ensureDefaultProjectAndFolder().then((result) => {
+        setIsAutoCreating(false)
+        if (result) {
+          startGeneration({ projectId: result.projectId, folderId: result.folderId })
+        }
+      })
+      return
+    }
+
+    startGeneration()
+  }, [ensureDefaultProjectAndFolder, hasActiveStudioProjectAndFolder, isAutoCreating, isSubmittingGeneration, promptReady, startGeneration])
+
+  const handleOpenExplorerFromDialog = useCallback(() => {
+    openStudioExplorer()
+    setGenerationBlockedDialogOpen(false)
+  }, [openStudioExplorer])
+
+  useEffect(() => {
+    if (!hasBackendIssue) {
+      setBackendDetailsOpen(false)
+      setDismissedBackendMessage('')
+    }
+  }, [hasBackendIssue])
+
+  useEffect(() => {
+    if (!normalizedBackendStatusMessage) {
+      return
+    }
+
+    if (dismissedBackendMessage && dismissedBackendMessage !== normalizedBackendStatusMessage) {
+      setDismissedBackendMessage('')
+      setBackendDetailsOpen(false)
+    }
+  }, [dismissedBackendMessage, normalizedBackendStatusMessage])
 
   useEffect(() => {
     if (!isTemplatesMenuOpen && !isRefineMenuOpen && !isFontSizeMenuOpen && !activeFooterMenu) {
@@ -380,6 +455,7 @@ export function LabNewLayoutComposerPanel() {
                 type="button"
                 role="menuitem"
                 className="lab-newlayout-composer-menu-item"
+                onMouseDown={preventFocusStealOnMouseDown}
                 onClick={() => applyTemplate(template.id)}
               >
                 <span className="lab-newlayout-composer-menu-item-title">{template.label}</span>
@@ -397,6 +473,7 @@ export function LabNewLayoutComposerPanel() {
                 type="button"
                 role="menuitem"
                 className="lab-newlayout-composer-menu-item"
+                onMouseDown={preventFocusStealOnMouseDown}
                 onClick={() => applyRefineAction(action.id)}
               >
                 <span className="lab-newlayout-composer-menu-item-title">{action.label}</span>
@@ -414,6 +491,7 @@ export function LabNewLayoutComposerPanel() {
                 type="button"
                 role="menuitem"
                 className={`lab-newlayout-composer-menu-item${promptFontSize === option.id ? ' is-selected' : ''}`}
+                onMouseDown={preventFocusStealOnMouseDown}
                 onClick={() => applyPromptFontSize(option.id)}
               >
                 <span className="lab-newlayout-composer-menu-item-title">{option.label}</span>
@@ -462,6 +540,7 @@ export function LabNewLayoutComposerPanel() {
                     type="button"
                     role="menuitem"
                     className={`lab-newlayout-composer-menu-item${composerSettings.ratio === option.id ? ' is-selected' : ''}`}
+                    onMouseDown={preventFocusStealOnMouseDown}
                     onClick={() => applyRatioSetting(option.id)}
                   >
                     <span className="lab-newlayout-composer-menu-item-title">{option.label}</span>
@@ -489,6 +568,7 @@ export function LabNewLayoutComposerPanel() {
                     type="button"
                     role="menuitem"
                     className={`lab-newlayout-composer-menu-item${composerSettings.resolution === option.id ? ' is-selected' : ''}`}
+                    onMouseDown={preventFocusStealOnMouseDown}
                     onClick={() => applyResolutionSetting(option.id)}
                   >
                     <span className="lab-newlayout-composer-menu-item-title">{option.label}</span>
@@ -516,6 +596,7 @@ export function LabNewLayoutComposerPanel() {
                     type="button"
                     role="menuitem"
                     className={`lab-newlayout-composer-menu-item${composerSettings.duration === option.id ? ' is-selected' : ''}`}
+                    onMouseDown={preventFocusStealOnMouseDown}
                     onClick={() => applyDurationSetting(option.id)}
                   >
                     <span className="lab-newlayout-composer-menu-item-title">{option.label}</span>
@@ -552,6 +633,7 @@ export function LabNewLayoutComposerPanel() {
                     type="button"
                     role="menuitem"
                     className={`lab-newlayout-composer-menu-item${composerModelChip === option.label ? ' is-selected' : ''}`}
+                    onMouseDown={preventFocusStealOnMouseDown}
                     onClick={() => applyModelSetting(option.id)}
                   >
                     <span className="lab-newlayout-composer-menu-item-title">{option.label}</span>
@@ -564,17 +646,92 @@ export function LabNewLayoutComposerPanel() {
         </div>
 
         <div className="lab-newlayout-composer-footer-status-row">
-          <span className="lab-newlayout-composer-status-slot" aria-hidden="true" />
+          {showBackendIssue ? (
+            <div className="lab-newlayout-composer-backend-alert" role="status" aria-live="polite">
+              <div className="lab-newlayout-composer-backend-alert-head">
+                <span>{normalizedBackendStatusMessage}</span>
+                <div className="lab-newlayout-composer-backend-alert-actions">
+                  <button
+                    type="button"
+                    className="lab-newlayout-composer-backend-alert-toggle"
+                    onClick={() => setBackendDetailsOpen((current) => !current)}
+                    aria-controls="lab-newlayout-composer-backend-details"
+                  >
+                    {isBackendDetailsOpen ? 'Hide details' : 'Details'}
+                  </button>
+                  <button
+                    type="button"
+                    className="lab-newlayout-composer-backend-alert-close"
+                    onClick={() => {
+                      setDismissedBackendMessage(normalizedBackendStatusMessage)
+                      setBackendDetailsOpen(false)
+                    }}
+                    aria-label="Dismiss backend warning"
+                    title="Dismiss"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+              {isBackendDetailsOpen ? (
+                <div id="lab-newlayout-composer-backend-details" className="lab-newlayout-composer-backend-alert-details">
+                  <div>Readiness check: /api/seedance/readiness</div>
+                  <div>Local backend: http://localhost:8787</div>
+                  <div>Cooldown: {Math.max(1, Math.ceil(backendCooldownRemainingMs / 1000))}s</div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <button
             type="button"
             className="lab-newlayout-composer-generate-btn"
-            disabled={!promptText.trim()}
-            onClick={startGeneration}
+            disabled={!canGenerate || isAutoCreating || isSubmittingGeneration}
+            onClick={handleStartGeneration}
+            title={canGenerate
+              ? 'Generate video'
+              : !promptReady
+                ? 'Write a prompt to enable generation.'
+                : !hasActiveStudioProjectAndFolder
+                  ? 'Select a project and folder to enable generation.'
+                  : isPreparingReferences
+                    ? referenceAccessMessage || 'Preparing reference assets for public access.'
+                    : referenceAccessMessage
+                      ? referenceAccessMessage
+                  : isBackendCoolingDown
+                    ? `Generation cooling down. Retry in ${Math.ceil(backendCooldownRemainingMs / 1000)}s.`
+                    : backendStatusMessage || 'Back end server is not working. Please run it.'}
           >
-            Generate
+            {isAutoCreating ? 'Setting up...' : isSubmittingGeneration ? 'Starting...' : 'Generate'}
           </button>
         </div>
       </div>
+
+      {isGenerationBlockedDialogOpen ? createPortal(
+        <div className="lab-newlayout-composer-blocked-dialog-backdrop" role="presentation" onClick={() => setGenerationBlockedDialogOpen(false)}>
+          <div
+            className="lab-newlayout-composer-blocked-dialog"
+            role="dialog"
+            aria-labelledby="lab-newlayout-generate-blocked-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="lab-newlayout-generate-blocked-title" className="lab-newlayout-composer-blocked-dialog-title">
+              Write a prompt first
+            </h3>
+            <p className="lab-newlayout-composer-blocked-dialog-copy">
+              Enter a prompt in the text area above to describe what you want to generate.
+            </p>
+            <div className="lab-newlayout-composer-blocked-dialog-actions">
+              <button
+                type="button"
+                className="lab-newlayout-explorer-dialog-close"
+                onClick={() => setGenerationBlockedDialogOpen(false)}
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      , document.body) : null}
     </div>
   )
 }

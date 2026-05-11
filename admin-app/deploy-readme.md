@@ -83,3 +83,4 @@ WorkHub v.010 | 2026-04-16 | <commit-sha> | <short notes>
 ## Release Log
 
 WorkHub v.014 | 2026-05-09 | de4d42a | uploads library in video editor, video thumbnails, hover autoplay, Firestore collectionGroup rules fix
+WorkHub v.015 | 2026-05-11 | <sha> | generation polling reliability, gallery flicker fix, download video fix, lightbox project display, Unicode filenames

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useGenerationRunner } from '../../hooks/useGenerationRunner'
+import { isGenerationStillProcessingTimeoutError, useGenerationRunner } from '../../hooks/useGenerationRunner'
 import { firebaseConfig } from '../../lib/firebase'
 import { playGenerationFailureSound, playGenerationSuccessSound } from './generationSounds'
 import { buildToorGenRequest } from '../../lib/toorgen/generationRequestBuilder'
@@ -8,7 +8,7 @@ import { useLabNewLayoutData } from './useLabNewLayoutWorkspace'
 import { useLabNewLayoutStore } from './useLabNewLayoutStore'
 
 const CHATBOT_BASE = (import.meta.env.VITE_CHATBOT_API_URL as string | undefined) || ''
-const COMPOSER_PROJECT_SCOPE_ID = '__project__'
+const COMPOSER_PROJECT_SCOPE_ID = 'project'
 const DRAFT_SAVE_DEBOUNCE_MS = 450
 
 type ComposerRequestSettingsState = {
@@ -22,7 +22,7 @@ type ComposerRequestSettingsState = {
 
 const defaultComposerSettings: ComposerRequestSettingsState = {
   provider: 'atlas',
-  model: 'bytedance/seedance-2.0-fast',
+  model: 'seedance-2.0-fast',
   ratio: '16:9',
   duration: 15,
   resolution: '480p',
@@ -30,6 +30,46 @@ const defaultComposerSettings: ComposerRequestSettingsState = {
 }
 
 const defaultPromptFontSize: StudioComposerPromptFontSize = 'medium'
+
+const captureFirstVideoFrame = (videoUrl: string): Promise<string> => (
+  new Promise((resolve) => {
+    let settled = false
+    const done = (result: string) => {
+      if (settled) return
+      settled = true
+      video.src = ''
+      resolve(result)
+    }
+    const video = document.createElement('video')
+    video.crossOrigin = 'anonymous'
+    video.muted = true
+    video.playsInline = true
+    video.preload = 'metadata'
+    video.addEventListener('error', () => done(''), { once: true })
+    video.addEventListener('loadedmetadata', () => {
+      video.currentTime = video.duration > 0 ? Math.min(1, video.duration * 0.05) : 0
+    }, { once: true })
+    video.addEventListener('seeked', () => {
+      try {
+        const scale = Math.min(1, 480 / Math.max(video.videoWidth || 480, video.videoHeight || 480))
+        const w = Math.round((video.videoWidth || 480) * scale)
+        const h = Math.round((video.videoHeight || 270) * scale)
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        if (!ctx) { done(''); return }
+        ctx.drawImage(video, 0, 0, w, h)
+        done(canvas.toDataURL('image/jpeg', 0.72))
+      } catch {
+        done('')
+      }
+    }, { once: true })
+    setTimeout(() => done(''), 20_000)
+    video.src = videoUrl
+    video.load()
+  })
+)
 
 const isFirebaseDownloadUrl = (value: string): boolean => {
   if (!value.trim()) {
@@ -44,6 +84,133 @@ const isFirebaseDownloadUrl = (value: string): boolean => {
   } catch {
     return false
   }
+}
+
+const isLocalReferenceHostname = (value: string): boolean => {
+  const hostname = value.trim().toLowerCase()
+  if (!hostname) {
+    return true
+  }
+
+  if (
+    hostname === 'localhost'
+    || hostname === '0.0.0.0'
+    || hostname === '::1'
+    || hostname.endsWith('.local')
+  ) {
+    return true
+  }
+
+  if (/^127(?:\.\d{1,3}){3}$/.test(hostname)) {
+    return true
+  }
+
+  if (/^10(?:\.\d{1,3}){3}$/.test(hostname)) {
+    return true
+  }
+
+  if (/^192\.168(?:\.\d{1,3}){2}$/.test(hostname)) {
+    return true
+  }
+
+  const privateRangeMatch = hostname.match(/^172\.(\d{1,3})(?:\.\d{1,3}){2}$/)
+  if (privateRangeMatch) {
+    const secondOctet = Number(privateRangeMatch[1])
+    if (Number.isFinite(secondOctet) && secondOctet >= 16 && secondOctet <= 31) {
+      return true
+    }
+  }
+
+  return false
+}
+
+const normalizeComposerReferenceUrl = (value: string): string => {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return ''
+  }
+
+  if (/^(data|blob):/i.test(trimmed)) {
+    return trimmed
+  }
+
+  try {
+    const fallbackOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
+    const parsed = new URL(trimmed, fallbackOrigin)
+    if (parsed.pathname.endsWith('/api/video-proxy')) {
+      const original = parsed.searchParams.get('url') || ''
+      return original.trim() ? normalizeComposerReferenceUrl(original) : parsed.toString()
+    }
+
+    return parsed.toString()
+  } catch {
+    return trimmed
+  }
+}
+
+const isPublicComposerReferenceUrl = (value: string): boolean => {
+  const normalized = normalizeComposerReferenceUrl(value)
+  if (!normalized) {
+    return false
+  }
+
+  try {
+    const parsed = new URL(normalized)
+    if (!/^https?:$/i.test(parsed.protocol)) {
+      return false
+    }
+
+    const browserOrigin = typeof window !== 'undefined' ? window.location.origin : ''
+    if (browserOrigin && parsed.origin === browserOrigin && parsed.pathname.startsWith('/api/')) {
+      return false
+    }
+
+    return !isLocalReferenceHostname(parsed.hostname)
+  } catch {
+    return false
+  }
+}
+
+const canPublishComposerReferenceUrl = (value: string): boolean => {
+  const normalized = normalizeComposerReferenceUrl(value)
+  if (!normalized) {
+    return false
+  }
+
+  try {
+    const parsed = new URL(normalized)
+    return /^https?:$/i.test(parsed.protocol)
+  } catch {
+    return false
+  }
+}
+
+const areComposerReferencesEqual = (left: ComposerReference[], right: ComposerReference[]): boolean => {
+  if (left.length !== right.length) {
+    return false
+  }
+
+  return left.every((reference, index) => {
+    const other = right[index]
+    return Boolean(other)
+      && reference.id === other.id
+      && reference.url === other.url
+      && reference.kind === other.kind
+      && reference.name === other.name
+  })
+}
+
+const dedupeComposerReferences = (references: ComposerReference[]): ComposerReference[] => {
+  const seenUrls = new Set<string>()
+  return references.filter((reference) => {
+    const normalizedUrl = reference.url.trim()
+    if (!normalizedUrl || seenUrls.has(normalizedUrl)) {
+      return false
+    }
+
+    seenUrls.add(normalizedUrl)
+    return true
+  })
 }
 
 export type ComposerModeOption = {
@@ -119,6 +286,8 @@ export const composerModelOptions: ComposerSettingsOption[] = [
   { id: 'seedance-2.0', label: 'Seedance 2.0 API', description: 'Standard Seedance API route' },
   { id: 'seedance-1.5', label: 'Seedance 1.5 API', description: 'Legacy Seedance route' },
 ]
+
+const EXTEND_PROMPT_PREFIX_PATTERN = /^\s*generate the content (before|after) video 1\.?\s*/i
 
 export type ComposerTemplate = {
   id: string
@@ -296,7 +465,7 @@ function buildDraftSnapshot(input: {
 function resolveDraftSettings(draft: StudioProjectComposerDraft | null | undefined): ComposerRequestSettingsState {
   return {
     provider: draft?.provider === 'atlas' ? 'atlas' : defaultComposerSettings.provider,
-    model: draft?.model || defaultComposerSettings.model,
+    model: normalizeComposerModelId(draft?.model || '', draft?.provider),
     ratio: draft?.ratio || defaultComposerSettings.ratio,
     duration: typeof draft?.duration === 'number' ? draft.duration : defaultComposerSettings.duration,
     resolution: draft?.resolution || defaultComposerSettings.resolution,
@@ -343,6 +512,57 @@ function getComposerModelLabel(model: string): string {
   return model
 }
 
+export function normalizeComposerModelId(model: string, provider?: string): string {
+  const raw = (model || '').trim()
+  const lower = raw.toLowerCase()
+  const normalizedProvider = (provider || '').trim().toLowerCase()
+
+  if (!raw) {
+    return defaultComposerSettings.model
+  }
+
+  if (composerModelOptions.some((option) => option.id === raw)) {
+    return raw
+  }
+
+  if (lower.includes('seedance-1.5') || lower.includes('atlas 1.5')) {
+    return 'seedance-1.5'
+  }
+
+  if (
+    lower.includes('seedance-2.0-fast')
+    || lower.includes('atlas cloud 2.0 fast')
+    || lower.includes('seedance api 2.0 fast')
+  ) {
+    return 'seedance-2.0-fast'
+  }
+
+  if (
+    lower.includes('bytedance/seedance-2.0')
+    || lower.includes('atlas cloud 2.0')
+    || lower === 'atlas-2.0'
+    || (lower === 'seedance-2.0' && normalizedProvider === 'atlas')
+  ) {
+    return 'atlas-2.0'
+  }
+
+  if (lower === 'seedance-2.0' || lower.includes('seedance 2.0 api')) {
+    return 'seedance-2.0'
+  }
+
+  return defaultComposerSettings.model
+}
+
+function mergePromptPrefix(currentPrompt: string, promptPrefix: string): string {
+  const prefix = promptPrefix.trim()
+  if (!prefix) {
+    return currentPrompt
+  }
+
+  const strippedPrompt = currentPrompt.replace(EXTEND_PROMPT_PREFIX_PATTERN, '').trimStart()
+  return strippedPrompt ? `${prefix}\n\n${strippedPrompt}` : prefix
+}
+
 function createClientUniqueId(prefix: string): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return `${prefix}-${crypto.randomUUID()}`
@@ -362,6 +582,10 @@ function getUnsupportedImageReference(reference: ComposerReference): ComposerRef
   }
 
   return null
+}
+
+function buildReferenceMediaKey(reference: ComposerReference, index: number): string {
+  return `${reference.kind}_${index + 1}`
 }
 
 function resolveArchiveFailureNotice(error: unknown): { signature: string; message: string } {
@@ -395,6 +619,14 @@ function resolveArchiveFailureNotice(error: unknown): { signature: string; messa
 
 let lastComposerArchiveFailureSignature: string | null = null
 
+const isTransientGenerationConnectivityError = (message: string): boolean => {
+  const lowerError = (message || '').toLowerCase()
+  return lowerError.includes('cannot reach local api backend')
+    || lowerError.includes('back end server is not working')
+    || lowerError.includes('networkerror')
+    || lowerError.includes('failed to fetch')
+}
+
 export function useLabNewLayoutComposer() {
   const {
     studioProjectId,
@@ -412,6 +644,11 @@ export function useLabNewLayoutComposer() {
   const [isRefineMenuOpen, setRefineMenuOpen] = useState(false)
   const [isFontSizeMenuOpen, setFontSizeMenuOpen] = useState(false)
   const [activeFooterMenu, setActiveFooterMenu] = useState<ComposerFooterMenuId | null>(null)
+  const [backendStatusMessage, setBackendStatusMessage] = useState('')
+  const [backendCooldownRemainingMs, setBackendCooldownRemainingMs] = useState(0)
+  const [isSubmittingGeneration, setIsSubmittingGeneration] = useState(false)
+  const [referenceAccessMessage, setReferenceAccessMessage] = useState('')
+  const [publicizingReferenceCount, setPublicizingReferenceCount] = useState(0)
 
   const selectedReferences = useLabNewLayoutStore((state) => state.composerReferences)
   const addComposerReference = useLabNewLayoutStore((state) => state.addComposerReference)
@@ -422,10 +659,38 @@ export function useLabNewLayoutComposer() {
   const addHistoryItem = useLabNewLayoutStore((state) => state.addHistoryItem)
   const updateHistoryItem = useLabNewLayoutStore((state) => state.updateHistoryItem)
   const history = useLabNewLayoutStore((state) => state.history)
+  const submittingGenerationRef = useRef(false)
+  const locallyStartedHistoryIdsRef = useRef<Set<string>>(new Set())
+  const referencePublicizePromiseByKeyRef = useRef<Map<string, Promise<string | null>>>(new Map())
 
   const runner = useGenerationRunner({
     apiBaseUrl: CHATBOT_BASE,
+    onBackendAvailable: () => {
+      setBackendStatusMessage('')
+      setBackendCooldownRemainingMs(0)
+    },
+    onBackendUnavailable: (message) => {
+      setBackendStatusMessage((message || 'Back end server is not working. Please run it.').trim())
+    },
+    onGenerateCooldownChange: (remainingMs) => {
+      setBackendCooldownRemainingMs(Math.max(0, remainingMs))
+    },
   })
+
+  useEffect(() => {
+    if (backendCooldownRemainingMs <= 0) {
+      return undefined
+    }
+
+    const intervalId = window.setInterval(() => {
+      const remaining = runner.getGenerateCooldownRemainingMs()
+      setBackendCooldownRemainingMs(remaining)
+    }, 250)
+
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [backendCooldownRemainingMs, runner])
 
   const archiveVideoToFirebase = useCallback(async (
     sourceUrl: string,
@@ -479,6 +744,125 @@ export function useLabNewLayoutComposer() {
     }
   }, [])
 
+  const publicizeReferenceToFirebase = useCallback(async (
+    reference: ComposerReference,
+    projectId: string,
+    folderId: string | null,
+  ): Promise<string | null> => {
+    const normalizedSourceUrl = normalizeComposerReferenceUrl(reference.url)
+    if (!normalizedSourceUrl) {
+      return null
+    }
+
+    if (isPublicComposerReferenceUrl(normalizedSourceUrl)) {
+      return normalizedSourceUrl
+    }
+
+    if (!projectId.trim() || !canPublishComposerReferenceUrl(normalizedSourceUrl)) {
+      return null
+    }
+
+    const folderPathSegment = folderId ? `folders/${folderId}` : 'project'
+    const storagePathPrefix = `lab-references/projects/${projectId}/${folderPathSegment}`
+    const cacheKey = JSON.stringify([reference.kind, normalizedSourceUrl, storagePathPrefix])
+    const existingPromise = referencePublicizePromiseByKeyRef.current.get(cacheKey)
+    if (existingPromise) {
+      return existingPromise
+    }
+
+    setPublicizingReferenceCount((current) => current + 1)
+
+    const uploadPromise = (async () => {
+      try {
+        const response = await fetch('/api/lab/references/upload-by-url', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            url: normalizedSourceUrl,
+            name: reference.name,
+            kind: reference.kind,
+            storagePathPrefix,
+            firebaseConfig,
+          }),
+        })
+
+        const payload = await response.json().catch(() => null) as { error?: string; saved?: { firebaseUrl?: string } } | null
+        if (!response.ok) {
+          throw new Error(payload?.error || `Failed to publish ${reference.kind} reference.`)
+        }
+
+        return payload?.saved?.firebaseUrl || null
+      } finally {
+        referencePublicizePromiseByKeyRef.current.delete(cacheKey)
+        setPublicizingReferenceCount((current) => Math.max(0, current - 1))
+      }
+    })()
+
+    referencePublicizePromiseByKeyRef.current.set(cacheKey, uploadPromise)
+    return uploadPromise
+  }, [])
+
+  const ensureComposerReferencesArePublic = useCallback(async (
+    references: ComposerReference[],
+    projectId: string,
+    folderId: string | null,
+  ): Promise<{ references: ComposerReference[]; blockingMessage: string }> => {
+    const nextReferences: ComposerReference[] = []
+    let blockingMessage = ''
+
+    for (const reference of references) {
+      const normalizedUrl = normalizeComposerReferenceUrl(reference.url)
+      let nextReference = normalizedUrl && normalizedUrl !== reference.url
+        ? { ...reference, url: normalizedUrl }
+        : reference
+
+      if (!normalizedUrl) {
+        blockingMessage ||= `Reference "${reference.name || reference.id}" is missing a valid URL.`
+        nextReferences.push(nextReference)
+        continue
+      }
+
+      if (isPublicComposerReferenceUrl(normalizedUrl)) {
+        nextReferences.push(nextReference)
+        continue
+      }
+
+      if (!projectId.trim()) {
+        blockingMessage ||= 'Select a project before Composer can publish reference assets to public URLs.'
+        nextReferences.push(nextReference)
+        continue
+      }
+
+      if (!canPublishComposerReferenceUrl(normalizedUrl)) {
+        blockingMessage ||= `Reference "${reference.name || reference.id}" cannot be converted into a public URL automatically.`
+        nextReferences.push(nextReference)
+        continue
+      }
+
+      try {
+        const publicUrl = await publicizeReferenceToFirebase(nextReference, projectId, folderId)
+        if (publicUrl && publicUrl.trim()) {
+          nextReference = { ...nextReference, url: publicUrl.trim() }
+        } else {
+          blockingMessage ||= `Reference "${reference.name || reference.id}" could not be published to a public URL.`
+        }
+      } catch (error) {
+        blockingMessage ||= error instanceof Error
+          ? error.message
+          : `Reference "${reference.name || reference.id}" could not be published to a public URL.`
+      }
+
+      nextReferences.push(nextReference)
+    }
+
+    return {
+      references: dedupeComposerReferences(nextReferences),
+      blockingMessage,
+    }
+  }, [publicizeReferenceToFirebase])
+
   const activeMode = useMemo(
     () => composerModeOptions.find((mode) => mode.id === activeModeId) ?? composerModeOptions[0],
     [activeModeId],
@@ -500,11 +884,54 @@ export function useLabNewLayoutComposer() {
     references: selectedReferences,
     settings: composerSettings,
   }))
-  const pendingPersistSignatureRef = useRef<string | null>(null)
 
   useEffect(() => {
-    pendingPersistSignatureRef.current = null
-  }, [composerDraftScopeId])
+    if (!selectedReferences.length) {
+      setReferenceAccessMessage('')
+      return
+    }
+
+    const activeProjectId = (studioProjectId || '').trim()
+    const activeFolderId = ((studioActiveFolderId || '').trim() || null)
+    let isCancelled = false
+
+    void (async () => {
+      const { references, blockingMessage } = await ensureComposerReferencesArePublic(
+        selectedReferences,
+        activeProjectId,
+        activeFolderId,
+      )
+
+      if (isCancelled) {
+        return
+      }
+
+      if (!areComposerReferencesEqual(selectedReferences, references)) {
+        setComposerReferences(references)
+      }
+
+      const hasRemainingNonPublicReference = references.some((reference) => {
+        const normalizedUrl = normalizeComposerReferenceUrl(reference.url)
+        return !normalizedUrl || !isPublicComposerReferenceUrl(normalizedUrl)
+      })
+
+      if (blockingMessage) {
+        setReferenceAccessMessage(blockingMessage)
+        return
+      }
+
+      if (hasRemainingNonPublicReference) {
+        setReferenceAccessMessage('Composer references must use public URLs before generation can start.')
+        return
+      }
+
+      setReferenceAccessMessage('')
+    })()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [ensureComposerReferencesArePublic, selectedReferences, setComposerReferences, studioActiveFolderId, studioProjectId])
 
   const persistScopeDraft = useCallback((scopeId: string, draft: StudioProjectComposerDraft) => {
     if (!studioProjectId) {
@@ -557,18 +984,10 @@ export function useLabNewLayoutComposer() {
       return
     }
 
-    const incomingDraftSignature = activeScopeDraft ? createDraftSignature(activeScopeDraft) : ''
     const isHydratingNewScope = hydratedScopeIdRef.current !== composerDraftScopeId
 
-    if (!isHydratingNewScope && !pendingPersistSignatureRef.current) {
+    if (!isHydratingNewScope) {
       return
-    }
-
-    if (pendingPersistSignatureRef.current) {
-      if (incomingDraftSignature !== pendingPersistSignatureRef.current) {
-        return
-      }
-      pendingPersistSignatureRef.current = null
     }
 
     setActiveModeId(activeScopeDraft?.activeModeId || 'video')
@@ -591,7 +1010,6 @@ export function useLabNewLayoutComposer() {
       references: selectedReferences,
       settings: composerSettings,
     })
-    pendingPersistSignatureRef.current = createDraftSignature(nextDraft)
     const timeout = window.setTimeout(() => {
       persistScopeDraft(composerDraftScopeId, nextDraft)
     }, DRAFT_SAVE_DEBOUNCE_MS)
@@ -738,23 +1156,23 @@ export function useLabNewLayoutComposer() {
     setActiveFooterMenu(null)
   }, [])
 
-  const buildCurrentRequest = useCallback(() => {
+  const buildCurrentRequest = useCallback((references: ComposerReference[] = selectedReferences) => {
     const tab = {
       id: activeModeId,
       requestMode: (activeModeId === 'video' ? 'reference-to-video' : 'text-to-video') as 'reference-to-video' | 'text-to-video',
-      fields: selectedReferences.map((ref, idx) => ({ kind: ref.kind, key: `ref_${idx}` as string, isRequired: false, label: '', helpText: '', placeholder: '' })),
+      fields: references.map((ref, idx) => ({ kind: ref.kind, key: buildReferenceMediaKey(ref, idx), isRequired: false, label: '', helpText: '', placeholder: '' })),
     }
 
     const requestState = {
       prompt: promptText,
-      mediaUrls: Object.fromEntries(selectedReferences.map((ref, idx) => [`ref_${idx}`, ref.url])),
+      mediaUrls: Object.fromEntries(references.map((ref, idx) => [buildReferenceMediaKey(ref, idx), ref.url])),
     }
 
     const request = buildToorGenRequest({
       tab,
       state: requestState,
       settings: composerSettings,
-      mentionReferences: selectedReferences.map(ref => ({ name: ref.name, mention: ref.name, kind: ref.kind, role: 'general', url: ref.url })),
+      mentionReferences: references.map(ref => ({ name: ref.name, mention: ref.name, kind: ref.kind, role: 'general', url: ref.url })),
       combinedReferenceTabId: activeModeId,
     })
 
@@ -780,19 +1198,71 @@ export function useLabNewLayoutComposer() {
     if (!composerReuseSeed) return
     if (lastConsumedSeedIdRef.current === composerReuseSeed.id) return
     lastConsumedSeedIdRef.current = composerReuseSeed.id
-    if (typeof composerReuseSeed.prompt === 'string') {
+    if (typeof composerReuseSeed.modeId === 'string' && composerReuseSeed.modeId.trim()) {
+      setActiveModeId(composerReuseSeed.modeId.trim())
+    }
+    if (composerReuseSeed.mergePrompt && typeof composerReuseSeed.promptPrefix === 'string') {
+      setPromptText((current) => mergePromptPrefix(current, composerReuseSeed.promptPrefix || ''))
+    } else if (typeof composerReuseSeed.prompt === 'string') {
       setPromptText(composerReuseSeed.prompt)
+    } else if (typeof composerReuseSeed.promptPrefix === 'string' && composerReuseSeed.promptPrefix.trim()) {
+      setPromptText((current) => mergePromptPrefix(current, composerReuseSeed.promptPrefix || ''))
     }
     if (Array.isArray(composerReuseSeed.references)) {
-      setComposerReferences(composerReuseSeed.references.map((ref) => ({
+      const incomingReferences = composerReuseSeed.references.map((ref) => ({
         id: ref.id,
         url: ref.url,
         kind: ref.kind,
         name: ref.name,
-      })))
+      }))
+
+      if (composerReuseSeed.referenceMergeStrategy === 'append' || composerReuseSeed.referenceMergeStrategy === 'prepend') {
+        const orderedReferences = composerReuseSeed.referenceMergeStrategy === 'prepend'
+          ? [...incomingReferences, ...selectedReferences]
+          : [...selectedReferences, ...incomingReferences]
+        const seenUrls = new Set<string>()
+        setComposerReferences(orderedReferences.filter((ref) => {
+          const normalizedUrl = ref.url.trim()
+          if (!normalizedUrl || seenUrls.has(normalizedUrl)) {
+            return false
+          }
+          seenUrls.add(normalizedUrl)
+          return true
+        }))
+      } else {
+        setComposerReferences(incomingReferences)
+      }
+    }
+    if (
+      typeof composerReuseSeed.provider === 'string'
+      || typeof composerReuseSeed.ratio === 'string'
+      || typeof composerReuseSeed.resolution === 'string'
+      || typeof composerReuseSeed.duration === 'number'
+      || typeof composerReuseSeed.generateAudio === 'boolean'
+      || typeof composerReuseSeed.model === 'string'
+    ) {
+      setComposerSettings((current) => ({
+        ...current,
+        provider: composerReuseSeed.provider === 'atlas' ? 'atlas' : current.provider,
+        ratio: typeof composerReuseSeed.ratio === 'string' && composerReuseSeed.ratio.trim()
+          ? composerReuseSeed.ratio
+          : current.ratio,
+        resolution: typeof composerReuseSeed.resolution === 'string' && composerReuseSeed.resolution.trim()
+          ? composerReuseSeed.resolution
+          : current.resolution,
+        duration: typeof composerReuseSeed.duration === 'number'
+          ? composerReuseSeed.duration
+          : current.duration,
+        generateAudio: typeof composerReuseSeed.generateAudio === 'boolean'
+          ? composerReuseSeed.generateAudio
+          : current.generateAudio,
+        model: typeof composerReuseSeed.model === 'string' && composerReuseSeed.model.trim()
+          ? normalizeComposerModelId(composerReuseSeed.model, composerReuseSeed.provider)
+          : current.model,
+      }))
     }
     setComposerReuseSeed(null)
-  }, [composerReuseSeed, setComposerReferences, setComposerReuseSeed])
+  }, [composerReuseSeed, selectedReferences, setComposerReferences, setComposerReuseSeed])
 
   useEffect(() => {
     const inFlightComposerEntries = history.filter((entry) => (
@@ -809,6 +1279,10 @@ export function useLabNewLayoutComposer() {
     let isCancelled = false
 
     inFlightComposerEntries.forEach((entry) => {
+      if (locallyStartedHistoryIdsRef.current.has(entry.id)) {
+        return
+      }
+
       if (resumedHistoryIdsRef.current.has(entry.id)) {
         return
       }
@@ -828,7 +1302,7 @@ export function useLabNewLayoutComposer() {
               provider: (entry.provider === 'atlas' || entry.provider === 'grok' || entry.provider === 'byteplus')
                 ? entry.provider
                 : 'atlas',
-              model: entry.model || 'bytedance/seedance-2.0-fast',
+              model: normalizeComposerModelId(entry.model || '', entry.provider),
               ratio: entry.ratio || '16:9',
               duration: typeof entry.duration === 'number' ? entry.duration : 15,
               resolution: entry.resolution || '480p',
@@ -877,16 +1351,20 @@ export function useLabNewLayoutComposer() {
             return
           }
           const errorMessage = error instanceof Error ? error.message : 'Recovery failed.'
+          const timedOutStillProcessing = isGenerationStillProcessingTimeoutError(error)
           const lowerError = errorMessage.toLowerCase()
           const transientConnectivityError = lowerError.includes('cannot reach local api backend')
             || lowerError.includes('back end server is not working')
             || lowerError.includes('networkerror')
             || lowerError.includes('failed to fetch')
 
-          if (transientConnectivityError) {
+          if (timedOutStillProcessing || transientConnectivityError) {
+            resumedHistoryIdsRef.current.delete(entry.id)
             updateHistoryItem(entry.id, {
               status: 'running',
-              errorMessage: `Recovery paused: ${errorMessage}`,
+              errorMessage: timedOutStillProcessing
+                ? `Still processing: ${errorMessage}`
+                : `Recovery paused: ${errorMessage}`,
             })
             return
           }
@@ -906,42 +1384,91 @@ export function useLabNewLayoutComposer() {
     }
   }, [history, runner, updateHistoryItem])
 
-  const startGeneration = useCallback(() => {
+  const startGeneration = useCallback((override?: { projectId?: string; folderId?: string | null }) => {
+    if (submittingGenerationRef.current) {
+      return
+    }
+
     if (!promptText.trim()) return
 
-    const request = buildCurrentRequest()
-    setCurrentComposerPreview(request)
-    const historyId = createClientUniqueId('composer-history')
+    const activeProjectId = (override?.projectId || studioProjectId || '').trim()
+    const activeFolderId = ((override?.folderId ?? studioActiveFolderId) || '').trim()
+    if (!activeProjectId || !activeFolderId) {
+      return
+    }
 
-    addHistoryItem({
-      id: historyId,
-      timestamp: Date.now(),
-      prompt: promptText,
-      model: request.settings.model,
-      provider: request.settings.provider,
-      ratio: request.settings.ratio,
-      resolution: request.settings.resolution,
-      duration: request.settings.duration,
-      generateAudio: request.settings.generateAudio,
-      requestEndpoint: request.endpoint,
-      requestPayload: request.body,
-      mediaUrls: Object.fromEntries(selectedReferences.map((ref, index) => [`ref_${index + 1}`, ref.url])),
-      sourceLabel: 'Composer',
-      status: 'queued',
-      projectId: studioProjectId || undefined,
-      folderId: studioActiveFolderId || undefined,
-    })
+    submittingGenerationRef.current = true
+    setIsSubmittingGeneration(true)
 
     void (async () => {
+      let historyId: string | null = null
+      let queuedTaskId = ''
       try {
-        const unsupportedReference = selectedReferences.find((reference) => getUnsupportedImageReference(reference))
+        const { references: preparedReferences, blockingMessage } = await ensureComposerReferencesArePublic(
+          selectedReferences,
+          activeProjectId,
+          activeFolderId || null,
+        )
+        if (blockingMessage) {
+          throw new Error(blockingMessage)
+        }
+
+        if (!areComposerReferencesEqual(selectedReferences, preparedReferences)) {
+          setComposerReferences(preparedReferences)
+        }
+
+        const unsupportedReference = preparedReferences.find((reference) => getUnsupportedImageReference(reference))
         if (unsupportedReference) {
           throw new Error(`Unsupported image format in reference: ${unsupportedReference.name || unsupportedReference.url}. Use JPG, JPEG, PNG, or WEBP.`)
         }
 
+        const request = buildCurrentRequest(preparedReferences)
+        const requestSignature = JSON.stringify([request.endpoint, request.body, activeProjectId, activeFolderId])
+        const hasMatchingInFlightRequest = history.some((entry) => {
+          if (entry.sourceLabel !== 'Composer') return false
+          if (entry.status !== 'queued' && entry.status !== 'running') return false
+          return JSON.stringify([
+            entry.requestEndpoint || '',
+            entry.requestPayload || null,
+            entry.projectId || '',
+            entry.folderId || '',
+          ]) === requestSignature
+        })
+        if (hasMatchingInFlightRequest) {
+          return
+        }
+
+        setCurrentComposerPreview(request)
+
+        const nextHistoryId = createClientUniqueId('composer-history')
+        historyId = nextHistoryId
+        locallyStartedHistoryIdsRef.current.add(nextHistoryId)
+
+        addHistoryItem({
+          id: nextHistoryId,
+          timestamp: Date.now(),
+          prompt: promptText,
+          model: request.settings.model,
+          provider: request.settings.provider,
+          ratio: request.settings.ratio,
+          resolution: request.settings.resolution,
+          duration: request.settings.duration,
+          generateAudio: request.settings.generateAudio,
+          requestEndpoint: request.endpoint,
+          requestPayload: request.body,
+          mediaUrls: Object.fromEntries(preparedReferences.map((ref, index) => [buildReferenceMediaKey(ref, index), ref.url])),
+          sourceLabel: 'Composer',
+          status: 'queued',
+          projectId: activeProjectId,
+          folderId: activeFolderId,
+        })
+
         const result = await runner.runGeneration(request, {
           onQueued: ({ taskId, submittedAt, settings }) => {
-            updateHistoryItem(historyId, {
+            queuedTaskId = taskId
+            submittingGenerationRef.current = false
+            setIsSubmittingGeneration(false)
+            updateHistoryItem(nextHistoryId, {
               status: 'running',
               taskId,
               submittedAt,
@@ -959,7 +1486,7 @@ export function useLabNewLayoutComposer() {
         })
 
         if (result) {
-          updateHistoryItem(historyId, {
+          updateHistoryItem(nextHistoryId, {
             status: 'success',
             resultUrl: result.resultUrl,
             taskId: result.taskId,
@@ -975,33 +1502,71 @@ export function useLabNewLayoutComposer() {
           })
           playGenerationSuccessSound()
 
-          const archiveProjectId = (studioProjectId || '').trim()
-          const archiveFolderId = (studioActiveFolderId || '').trim() || null
+          const archiveProjectId = activeProjectId
+          const archiveFolderId = activeFolderId || null
+          const archiveHistoryId = nextHistoryId
           void (async () => {
             const archivedUrl = await archiveVideoToFirebase(
               result.resultUrl,
-              `composer-${historyId}-${Date.now()}`,
+              `composer-${archiveHistoryId}-${Date.now()}`,
               archiveProjectId,
               archiveFolderId,
             )
 
             if (archivedUrl && archivedUrl !== result.resultUrl) {
-              updateHistoryItem(historyId, { resultUrl: archivedUrl })
+              updateHistoryItem(archiveHistoryId, { resultUrl: archivedUrl })
+            }
+
+            // Capture a thumbnail frame in the background. Use the Firebase URL
+            // when available (stable CORS), otherwise fall back to the provider URL.
+            const thumbSrc = archivedUrl || result.resultUrl
+            if (thumbSrc) {
+              try {
+                const frameDataUrl = await captureFirstVideoFrame(thumbSrc)
+                if (frameDataUrl) {
+                  updateHistoryItem(archiveHistoryId, { posterUrl: frameDataUrl })
+                }
+              } catch {
+                // Thumbnail capture is optional — ignore errors.
+              }
             }
           })()
         }
       } catch (error) {
-        console.error(error)
         const errorMessage = error instanceof Error ? error.message : 'Generation failed.'
+        const timedOutStillProcessing = isGenerationStillProcessingTimeoutError(error)
+          const transientConnectivityError = isTransientGenerationConnectivityError(errorMessage)
+          if (historyId && (timedOutStillProcessing || (transientConnectivityError && queuedTaskId))) {
+          updateHistoryItem(historyId, {
+            status: 'running',
+              taskId: queuedTaskId || undefined,
+              errorMessage: timedOutStillProcessing
+                ? `Still processing: ${errorMessage}`
+                : `Recovery paused: ${errorMessage}`,
+          })
+          return
+        }
+        console.error(error)
         playGenerationFailureSound()
-        updateHistoryItem(historyId, { status: 'failed', errorMessage, completedAt: Date.now() })
+        if (historyId) {
+          updateHistoryItem(historyId, { status: 'failed', errorMessage, completedAt: Date.now() })
+        }
+      } finally {
+        submittingGenerationRef.current = false
+        setIsSubmittingGeneration(false)
+        if (historyId) {
+          locallyStartedHistoryIdsRef.current.delete(historyId)
+        }
       }
     })()
   }, [
     addHistoryItem,
     buildCurrentRequest,
+    ensureComposerReferencesArePublic,
+    history,
     promptText,
     runner,
+    setComposerReferences,
     setCurrentComposerPreview,
     selectedReferences,
     archiveVideoToFirebase,
@@ -1009,6 +1574,19 @@ export function useLabNewLayoutComposer() {
     studioProjectId,
     updateHistoryItem,
   ])
+
+  const hasActiveStudioProjectAndFolder = Boolean((studioProjectId || '').trim() && (studioActiveFolderId || '').trim())
+  const isPreparingReferences = publicizingReferenceCount > 0
+  const effectiveReferenceAccessMessage = isPreparingReferences
+    ? `Preparing ${publicizingReferenceCount} reference asset${publicizingReferenceCount === 1 ? '' : 's'} for public access...`
+    : referenceAccessMessage
+  const generationBlockedReason = !hasActiveStudioProjectAndFolder
+    ? 'Select or create an active project and folder in Explorer before generating.'
+    : effectiveReferenceAccessMessage
+      ? effectiveReferenceAccessMessage
+    : backendCooldownRemainingMs > 0
+      ? `Generation is cooling down after backend errors. Retry in ${Math.ceil(backendCooldownRemainingMs / 1000)}s.`
+      : backendStatusMessage
 
   return {
     activeMode,
@@ -1035,8 +1613,15 @@ export function useLabNewLayoutComposer() {
     isFontSizeMenuOpen,
     isRefineMenuOpen,
     isTemplatesMenuOpen,
+    hasActiveStudioProjectAndFolder,
+    backendStatusMessage,
+    backendCooldownRemainingMs,
+    generationBlockedReason,
+    isSubmittingGeneration,
+    isPreparingReferences,
     promptFontSize,
     promptText,
+    referenceAccessMessage: effectiveReferenceAccessMessage,
     selectMode,
     startGeneration,
     selectedReferences,

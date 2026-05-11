@@ -109,6 +109,15 @@ function docData<T>(snapshot: { data(): unknown; id: string }): T {
   return { ...(snapshot.data() as object), id: snapshot.id } as T
 }
 
+// Duck-typed createdAt resolver — handles Firestore Timestamp, plain number, and unknown.
+const resolveRefCreatedAtMs = (value: unknown): number => {
+  if (typeof value === 'number') return value
+  if (value && typeof (value as { toMillis?: unknown }).toMillis === 'function') {
+    return (value as { toMillis: () => number }).toMillis()
+  }
+  return 0
+}
+
 // ─── Organizations ────────────────────────────────────────────────────────────
 
 export interface CreateOrgInput {
@@ -1069,8 +1078,8 @@ export function subscribeToProjectReferenceLibrary(
       const items = snap.docs
         .map((docSnap) => docData<StudioReferenceAsset>(docSnap))
         .sort((left, right) => {
-          const leftAt = left.createdAt instanceof Timestamp ? left.createdAt.toMillis() : 0
-          const rightAt = right.createdAt instanceof Timestamp ? right.createdAt.toMillis() : 0
+          const leftAt = resolveRefCreatedAtMs(left.createdAt)
+          const rightAt = resolveRefCreatedAtMs(right.createdAt)
           return rightAt - leftAt
         })
       onData(items)
@@ -1090,8 +1099,8 @@ export function subscribeToUserReferenceLibrary(
       const items = snap.docs
         .map((docSnap) => docData<StudioReferenceAsset>(docSnap))
         .sort((left, right) => {
-          const leftAt = left.createdAt instanceof Timestamp ? left.createdAt.toMillis() : 0
-          const rightAt = right.createdAt instanceof Timestamp ? right.createdAt.toMillis() : 0
+          const leftAt = resolveRefCreatedAtMs(left.createdAt)
+          const rightAt = resolveRefCreatedAtMs(right.createdAt)
           return rightAt - leftAt
         })
       onData(items)
@@ -1227,6 +1236,15 @@ export async function updateFolder(
   name: string,
 ): Promise<void> {
   await updateDoc(folderDoc(projectId, folderId), { name })
+}
+
+/** Move a folder by updating its parentId (null means root level). */
+export async function moveFolder(
+  projectId: string,
+  folderId: string,
+  parentId: string | null,
+): Promise<void> {
+  await updateDoc(folderDoc(projectId, folderId), { parentId: parentId ?? null })
 }
 
 export async function setFolderMemberVisibility(

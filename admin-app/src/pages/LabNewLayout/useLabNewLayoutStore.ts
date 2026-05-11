@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { createJSONStorage, persist } from 'zustand/middleware'
 
 export type GenerationHistoryItem = {
   id: string
@@ -38,7 +38,11 @@ export type ComposerReferenceItem = {
 export type ComposerReuseSeed = {
   id: string
   prompt?: string
+  promptPrefix?: string
+  mergePrompt?: boolean
   references?: ComposerReferenceItem[]
+  referenceMergeStrategy?: 'replace' | 'append' | 'prepend'
+  modeId?: string
   ratio?: string
   resolution?: string
   duration?: number
@@ -68,6 +72,118 @@ export type LabNewLayoutStoreState = {
   clearHistory: () => void
 }
 
+const LAB_NEWLAYOUT_STORE_KEY = 'lab-newlayout-store-v2'
+const HISTORY_MAX_ITEMS = 120
+const MAX_PERSISTED_STORE_BYTES = 2_000_000
+
+const trimText = (value: string | undefined, maxLength: number): string | undefined => {
+  if (typeof value !== 'string') return undefined
+  if (value.length <= maxLength) return value
+  return `${value.slice(0, maxLength)}...`
+}
+
+const toPersistedHistoryItem = (item: GenerationHistoryItem): GenerationHistoryItem => ({
+  ...item,
+  prompt: trimText(item.prompt, 2000) || '',
+  errorMessage: trimText(item.errorMessage, 600),
+  // Strip canvas data URLs — they are large and only useful for the current session.
+  // Firebase Storage URLs are preserved since they are stable and compact.
+  posterUrl: item.posterUrl?.startsWith('data:') ? undefined : item.posterUrl,
+})
+
+const compactHistoryForPersist = (history: GenerationHistoryItem[]): GenerationHistoryItem[] => {
+  return history.slice(0, HISTORY_MAX_ITEMS).map(toPersistedHistoryItem)
+}
+
+const selfHealPersistedStoreSnapshot = () => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  const raw = window.localStorage.getItem(LAB_NEWLAYOUT_STORE_KEY)
+  if (!raw) {
+    return
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as {
+      state?: Partial<LabNewLayoutStoreState>
+      version?: number
+    }
+    const nextHistory = compactHistoryForPersist(parsed.state?.history ?? [])
+    const mustCompact = raw.length > MAX_PERSISTED_STORE_BYTES
+      || nextHistory.length !== (parsed.state?.history?.length ?? 0)
+
+    if (!mustCompact) {
+      return
+    }
+
+    const repaired = JSON.stringify({
+      ...parsed,
+      state: {
+        ...parsed.state,
+        history: nextHistory,
+      },
+    })
+
+    window.localStorage.setItem(LAB_NEWLAYOUT_STORE_KEY, repaired)
+  } catch {
+    // If persisted data is malformed or non-recoverable, clear this store only.
+    window.localStorage.removeItem(LAB_NEWLAYOUT_STORE_KEY)
+  }
+}
+
+selfHealPersistedStoreSnapshot()
+
+const quotaSafeLocalStorage: Storage = {
+  getItem: (name) => {
+    try {
+      return window.localStorage.getItem(name)
+    } catch {
+      return null
+    }
+  },
+  setItem: (name, value) => {
+    try {
+      window.localStorage.setItem(name, value)
+      return
+    } catch (error) {
+      if (!(error instanceof DOMException) || error.name !== 'QuotaExceededError') {
+        return
+      }
+    }
+
+    try {
+      const parsed = JSON.parse(value) as { state?: Partial<LabNewLayoutStoreState>; version?: number }
+      const reducedHistory = compactHistoryForPersist(parsed.state?.history ?? []).slice(0, 30)
+      const reducedPayload = JSON.stringify({
+        ...parsed,
+        state: {
+          ...parsed.state,
+          history: reducedHistory,
+        },
+      })
+      window.localStorage.setItem(name, reducedPayload)
+    } catch {
+      // Swallow persistence failures to keep the UI responsive.
+    }
+  },
+  removeItem: (name) => {
+    try {
+      window.localStorage.removeItem(name)
+    } catch {
+      // ignore storage failures
+    }
+  },
+  clear: () => {
+    window.localStorage.clear()
+  },
+  key: (index) => window.localStorage.key(index),
+  get length() {
+    return window.localStorage.length
+  },
+}
+
 export const useLabNewLayoutStore = create<LabNewLayoutStoreState>()(
   persist(
     (set) => ({
@@ -93,7 +209,7 @@ export const useLabNewLayoutStore = create<LabNewLayoutStoreState>()(
       setComposerReuseSeed: (seed) => set({ composerReuseSeed: seed }),
 
       history: [],
-      addHistoryItem: (item) => set((state) => ({ history: [item, ...state.history] })),
+      addHistoryItem: (item) => set((state) => ({ history: [item, ...state.history].slice(0, HISTORY_MAX_ITEMS) })),
       updateHistoryItem: (id, updates) => set((state) => ({
         history: state.history.map((item) => item.id === id ? { ...item, ...updates } : item)
       })),
@@ -103,12 +219,13 @@ export const useLabNewLayoutStore = create<LabNewLayoutStoreState>()(
       clearHistory: () => set({ history: [] }),
     }),
     {
-      name: 'lab-newlayout-store-v2', // persistent storage key
-      partialize: (state) => ({ history: state.history }),
+      name: LAB_NEWLAYOUT_STORE_KEY,
+      storage: createJSONStorage(() => quotaSafeLocalStorage),
+      partialize: (state) => ({ history: compactHistoryForPersist(state.history) }),
       merge: (persistedState, currentState) => ({
         ...currentState,
         history: Array.isArray((persistedState as Partial<LabNewLayoutStoreState> | undefined)?.history)
-          ? (persistedState as Partial<LabNewLayoutStoreState>).history ?? currentState.history
+          ? compactHistoryForPersist((persistedState as Partial<LabNewLayoutStoreState>).history ?? currentState.history)
           : currentState.history,
       }),
     }
