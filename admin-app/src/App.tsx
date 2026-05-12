@@ -352,8 +352,9 @@ function App() {
   const navigate = useNavigate()
   const location = useLocation()
   const isLocalDevHost = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
+  const hasScopedVidEditContext = new URLSearchParams(location.search).has('studioProjectId')
   const standaloneVidEditOrigin = (import.meta.env.VITE_VIDEDIT_DEV_ORIGIN as string | undefined)?.trim() || 'http://localhost:3001'
-  const useStandaloneVidEdit = import.meta.env.DEV && isLocalDevHost && Boolean(standaloneVidEditOrigin)
+  const useStandaloneVidEdit = import.meta.env.DEV && isLocalDevHost && Boolean(standaloneVidEditOrigin) && !hasScopedVidEditContext
   const allowUnauthedLocalPlayTest = false
   const allowUnauthedLocalCanvas = false
   const enableMSESequencerDemo = import.meta.env.VITE_ENABLE_MSE_SEQUENCER_DEMO === '1'

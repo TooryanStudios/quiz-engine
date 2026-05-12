@@ -3,6 +3,147 @@ import { createPortal } from 'react-dom'
 import { useLabNewLayoutComposer } from './useLabNewLayoutComposer'
 import { useLabNewLayoutData } from './useLabNewLayoutWorkspace'
 
+// ── Voice recording ────────────────────────────────────────────────────
+type BrowserSpeechRecognition = {
+  continuous: boolean
+  interimResults: boolean
+  start(): void
+  stop(): void
+  abort(): void
+  onstart: (() => void) | null
+  onend: (() => void) | null
+  onerror: ((event: { error: string }) => void) | null
+  onresult: ((event: { results: SpeechRecognitionResultList; resultIndex?: number }) => void) | null
+}
+
+type BrowserSpeechRecognitionCtor = new () => BrowserSpeechRecognition
+
+function getComposerSpeechRecognitionCtor(): BrowserSpeechRecognitionCtor | null {
+  if (typeof window === 'undefined') return null
+  const win = window as typeof window & {
+    SpeechRecognition?: BrowserSpeechRecognitionCtor
+    webkitSpeechRecognition?: BrowserSpeechRecognitionCtor
+  }
+  return win.SpeechRecognition ?? win.webkitSpeechRecognition ?? null
+}
+
+function useComposerVoiceRecording(updatePromptText: (text: string) => void, focusPrompt: () => void) {
+  const [isListening, setIsListening] = useState(false)
+  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null)
+  const keepListeningRef = useRef(false)
+  const restartTimerRef = useRef<number | null>(null)
+  const silenceTimerRef = useRef<number | null>(null)
+  const isSupported = Boolean(getComposerSpeechRecognitionCtor())
+
+  const clearSilenceTimer = useCallback(() => {
+    if (silenceTimerRef.current !== null) {
+      window.clearTimeout(silenceTimerRef.current)
+      silenceTimerRef.current = null
+    }
+  }, [])
+
+  const scheduleSilenceTimeout = useCallback(() => {
+    clearSilenceTimer()
+    silenceTimerRef.current = window.setTimeout(() => {
+      silenceTimerRef.current = null
+      keepListeningRef.current = false
+      recognitionRef.current?.stop()
+    }, 8000)
+  }, [clearSilenceTimer])
+
+  const stop = useCallback(() => {
+    keepListeningRef.current = false
+    clearSilenceTimer()
+    if (restartTimerRef.current !== null) {
+      window.clearTimeout(restartTimerRef.current)
+      restartTimerRef.current = null
+    }
+    recognitionRef.current?.stop()
+    recognitionRef.current = null
+    setIsListening(false)
+  }, [clearSilenceTimer])
+
+  const startSession = useCallback(() => {
+    const Ctor = getComposerSpeechRecognitionCtor()
+    if (!Ctor) return
+
+    const rec = new Ctor()
+    recognitionRef.current = rec
+    const recAny = rec as unknown as { continuous: boolean; interimResults: boolean; lang: string }
+    recAny.continuous = true
+    recAny.interimResults = true
+    recAny.lang = 'ar-SA'
+
+    rec.onstart = () => {
+      scheduleSilenceTimeout()
+      setIsListening(true)
+    }
+
+    rec.onresult = (event) => {
+      scheduleSilenceTimeout()
+      const chunks: string[] = []
+      const startIndex = event.resultIndex ?? 0
+      for (let i = startIndex; i < event.results.length; i++) {
+        const result = event.results[i]
+        const transcript = result?.[0]?.transcript?.trim()
+        if (!result?.isFinal || !transcript) continue
+        chunks.push(transcript)
+      }
+      if (chunks.length > 0) {
+        updatePromptText(chunks.join(' '))
+      }
+    }
+
+    rec.onerror = (event) => {
+      if (event.error === 'aborted' || event.error === 'no-speech') return
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        keepListeningRef.current = false
+        clearSilenceTimer()
+        setIsListening(false)
+      }
+    }
+
+    rec.onend = () => {
+      if (recognitionRef.current === rec) recognitionRef.current = null
+      if (!keepListeningRef.current) {
+        setIsListening(false)
+        clearSilenceTimer()
+        return
+      }
+      if (restartTimerRef.current !== null) window.clearTimeout(restartTimerRef.current)
+      restartTimerRef.current = window.setTimeout(() => {
+        restartTimerRef.current = null
+        startSession()
+      }, 120)
+    }
+
+    try {
+      rec.start()
+    } catch {
+      clearSilenceTimer()
+      recognitionRef.current = null
+      keepListeningRef.current = false
+      setIsListening(false)
+    }
+  }, [scheduleSilenceTimeout, clearSilenceTimer, updatePromptText])
+
+  const toggle = useCallback(() => {
+    if (isListening) {
+      stop()
+      return
+    }
+    if (!isSupported) return
+    focusPrompt()
+    keepListeningRef.current = true
+    startSession()
+  }, [isListening, isSupported, focusPrompt, stop, startSession])
+
+  useEffect(() => () => stop(), [stop])
+
+  return { isListening, isSupported, toggle }
+}
+// ──────────────────────────────────────────────────────────────────────
+
 type ComposerReferenceItem = {
   id: string
   url: string
@@ -84,12 +225,18 @@ const ComposerReferencesRail = memo(function ComposerReferencesRail({
   selectedReferences,
   addReference,
   removeReference,
+  activeModeId,
 }: {
   selectedReferences: ComposerReferenceItem[]
   addReference: (reference: ComposerReferenceItem) => void
   removeReference: (id: string) => void
+  activeModeId: string
 }) {
   const railRef = useRef<HTMLDivElement>(null)
+  const imageRefIds = selectedReferences.filter((ref) => ref.kind === 'image').map((ref) => ref.id)
+  const styleSourceId = imageRefIds[0] || ''
+  const destinationId = imageRefIds[1] || ''
+  const isStyleTransferMode = activeModeId === 'style-transfer'
 
   return (
     <div
@@ -119,6 +266,8 @@ const ComposerReferencesRail = memo(function ComposerReferencesRail({
       }}
     >
       {selectedReferences.map(ref => {
+        const isStyleSource = isStyleTransferMode && styleSourceId && ref.id === styleSourceId
+        const isDestination = isStyleTransferMode && destinationId && ref.id === destinationId
         return (
           <div
             key={ref.id}
@@ -155,6 +304,8 @@ const ComposerReferencesRail = memo(function ComposerReferencesRail({
               <img src={ref.url} alt={ref.name} className="lab-newlayout-composer-ref-media" />
             )}
             <div className="lab-newlayout-composer-ref-outline" />
+            {isStyleSource ? <span className="lab-newlayout-composer-ref-role-badge">Style</span> : null}
+            {isDestination ? <span className="lab-newlayout-composer-ref-role-badge lab-newlayout-composer-ref-role-badge--destination">Target</span> : null}
             <button
               className="lab-newlayout-composer-ref-remove-btn"
               onClick={() => removeReference(ref.id)}
@@ -188,6 +339,17 @@ function renderComposerModeIcon(modeId: string) {
           <rect x="3" y="3" width="18" height="18" rx="2" />
           <circle cx="8.5" cy="8.5" r="1.5" />
           <polyline points="21 15 16 10 5 21" />
+        </svg>
+      )
+    case 'style-transfer':
+      return (
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <rect x="3" y="5" width="7" height="7" rx="1" />
+          <rect x="14" y="12" width="7" height="7" rx="1" />
+          <path d="M10 8h4" />
+          <path d="M12 6l2 2-2 2" />
+          <path d="M14 16h-4" />
+          <path d="M12 14l-2 2 2 2" />
         </svg>
       )
     case 'video':
@@ -243,6 +405,7 @@ function renderComposerActionIcon(actionId: 'templates' | 'refine' | 'fontSize')
 export function LabNewLayoutComposerPanel() {
   const topStackRef = useRef<HTMLDivElement | null>(null)
   const footerControlsRef = useRef<HTMLDivElement | null>(null)
+  const promptTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const { openStudioExplorer, ensureDefaultProjectAndFolder } = useLabNewLayoutData()
   const [isGenerationBlockedDialogOpen, setGenerationBlockedDialogOpen] = useState(false)
   const {
@@ -275,6 +438,7 @@ export function LabNewLayoutComposerPanel() {
     backendCooldownRemainingMs,
     generationBlockedReason,
     isSubmittingGeneration,
+    generationSubmittedFlash,
     isPreparingReferences,
     promptFontSize,
     promptText,
@@ -287,6 +451,7 @@ export function LabNewLayoutComposerPanel() {
     handlePromptFocus,
     handlePromptBlur,
     startGeneration,
+    buildCurrentRequest,
     selectedReferences,
     addReference,
     removeReference,
@@ -294,15 +459,37 @@ export function LabNewLayoutComposerPanel() {
     toggleFooterMenu,
   } = useLabNewLayoutComposer()
 
-  const promptReady = Boolean(promptText.trim())
+  const focusPromptTextarea = useCallback(() => {
+    promptTextareaRef.current?.focus()
+  }, [])
+
+  const appendVoiceTranscript = useCallback((chunk: string) => {
+    const current = promptTextareaRef.current?.value ?? ''
+    const separator = current.length > 0 && !current.endsWith(' ') ? ' ' : ''
+    updatePromptText(current + separator + chunk)
+  }, [updatePromptText])
+
+  const { isListening: isVoiceListening, isSupported: isVoiceSupported, toggle: toggleVoice } = useComposerVoiceRecording(appendVoiceTranscript, focusPromptTextarea)
+
+  const promptReady = activeModeId === 'style-transfer' ? true : Boolean(promptText.trim())
+  const imageReferenceCount = selectedReferences.filter((reference) => reference.kind === 'image').length
+  const requiresStyleTransferPair = activeModeId === 'style-transfer'
+  const hasStyleTransferPair = imageReferenceCount >= 2
   const normalizedBackendStatusMessage = (backendStatusMessage || '').trim()
   const hasBackendIssue = Boolean(normalizedBackendStatusMessage)
   const isBackendCoolingDown = backendCooldownRemainingMs > 0
-  const canGenerate = promptReady && hasActiveStudioProjectAndFolder && !isBackendCoolingDown && !isPreparingReferences && !referenceAccessMessage
+  const canGenerate = promptReady
+    && hasActiveStudioProjectAndFolder
+    && !isBackendCoolingDown
+    && !isPreparingReferences
+    && !referenceAccessMessage
+    && (!requiresStyleTransferPair || hasStyleTransferPair)
   const [generationBlockedCase, setGenerationBlockedCase] = useState<'prompt' | null>(null)
   const [isAutoCreating, setIsAutoCreating] = useState(false)
   const [isBackendDetailsOpen, setBackendDetailsOpen] = useState(false)
   const [dismissedBackendMessage, setDismissedBackendMessage] = useState('')
+  const [isDebugDialogOpen, setDebugDialogOpen] = useState(false)
+  const [debugContent, setDebugContent] = useState('')
   const isBackendAlertDismissed = hasBackendIssue && dismissedBackendMessage === normalizedBackendStatusMessage
   const showBackendIssue = hasBackendIssue && !isBackendAlertDismissed
 
@@ -339,6 +526,73 @@ export function LabNewLayoutComposerPanel() {
     openStudioExplorer()
     setGenerationBlockedDialogOpen(false)
   }, [openStudioExplorer])
+
+  const handleOpenDebugDialog = useCallback(() => {
+    const request = buildCurrentRequest()
+    const frontendBody = request.body as Record<string, unknown>
+
+    // Determine if this is a Grok image model
+    const isGrokImage = /^grok-imagine-image/i.test(String(frontendBody.model ?? ''))
+    if (!isGrokImage) {
+      setDebugContent(
+        `=== Not a Grok Image Model ===\nDebug view is for Grok image models only.\n\n=== Frontend Payload (sent to backend) ===\n${JSON.stringify(frontendBody, null, 2)}`
+      )
+      setDebugDialogOpen(true)
+      return
+    }
+
+    // Mirror backend logic: determine images and target endpoint
+    const imagesArr = Array.isArray(frontendBody.images) ? (frontendBody.images as Array<{ type?: string; url?: string; image_url?: string }>) : []
+    const imageUrlsArr = Array.isArray(frontendBody.image_urls) ? (frontendBody.image_urls as string[]) : []
+    const singleImage = frontendBody.image && typeof frontendBody.image === 'object' ? (frontendBody.image as { url?: string }) : null
+    const hasReferenceImages = imagesArr.length > 0 || imageUrlsArr.length > 0 || singleImage !== null
+
+    const xaiUrl = hasReferenceImages
+      ? 'https://api.x.ai/v1/images/edits'
+      : 'https://api.x.ai/v1/images/generations'
+
+    const xaiBody: Record<string, unknown> = {
+      model: frontendBody.model,
+      prompt: frontendBody.prompt,
+    }
+
+    const ratio = String(frontendBody.aspect_ratio ?? frontendBody.ratio ?? '16:9')
+    xaiBody.aspect_ratio = ratio === 'adaptive' ? 'auto' : ratio
+
+    const resolution = String(frontendBody.resolution ?? '')
+    if (resolution === '1k' || resolution === '2k') xaiBody.resolution = resolution
+    else if (!hasReferenceImages) xaiBody.resolution = '1k'
+
+    if (hasReferenceImages) {
+      if (singleImage) {
+        xaiBody.image = { type: 'image_url', url: singleImage.url }
+      } else if (imagesArr.length === 1) {
+        xaiBody.image = { type: 'image_url', url: imagesArr[0].url ?? imagesArr[0].image_url }
+      } else if (imagesArr.length > 1) {
+        xaiBody.images = imagesArr.map((img) => ({ type: 'image_url', url: img.url ?? img.image_url }))
+      } else if (imageUrlsArr.length === 1) {
+        xaiBody.image = { type: 'image_url', url: imageUrlsArr[0] }
+      } else if (imageUrlsArr.length > 1) {
+        xaiBody.images = imageUrlsArr.map((url) => ({ type: 'image_url', url }))
+      }
+    }
+
+    const result = {
+      url: xaiUrl,
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer [XAI_API_KEY — from server env, not visible in browser]',
+        'Content-Type': 'application/json',
+      },
+      body: xaiBody,
+      note: 'Firebase Storage URLs are converted to base64 data URIs by the backend before the request is sent.',
+    }
+
+    setDebugContent(
+      `=== xAI API Request (computed from frontend payload) ===\n${JSON.stringify(result, null, 2)}\n\n=== Frontend Payload (what frontend sends to backend) ===\n${JSON.stringify(frontendBody, null, 2)}`
+    )
+    setDebugDialogOpen(true)
+  }, [buildCurrentRequest])
 
   useEffect(() => {
     if (!hasBackendIssue) {
@@ -406,7 +660,7 @@ export function LabNewLayoutComposerPanel() {
               </button>
             ))}
           </div>
-          <div className="lab-newlayout-composer-heading">Composer 1.0</div>
+          <div className="lab-newlayout-composer-heading" aria-hidden="true" />
           <div className="lab-newlayout-composer-top-actions">
             <button
               type="button"
@@ -442,6 +696,29 @@ export function LabNewLayoutComposerPanel() {
             >
               <span className="lab-newlayout-composer-trigger-icon" aria-hidden="true">
                 {renderComposerActionIcon('refine')}
+              </span>
+            </button>
+            <button
+              type="button"
+              className={`lab-newlayout-composer-refine-btn lab-newlayout-composer-icon-trigger${isVoiceListening ? ' lab-newlayout-composer-voice-btn--active' : ''}${!isVoiceSupported ? ' lab-newlayout-composer-voice-btn--unsupported' : ''}`}
+              aria-label={isVoiceListening ? 'Stop recording' : 'Start voice input'}
+              title={isVoiceSupported ? (isVoiceListening ? 'Stop recording' : 'Voice input') : 'Voice input not supported in this browser'}
+              onClick={toggleVoice}
+              disabled={!isVoiceSupported}
+            >
+              <span className="lab-newlayout-composer-trigger-icon" aria-hidden="true">
+                {isVoiceListening ? (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <rect x="4" y="4" width="16" height="16" rx="2" />
+                  </svg>
+                ) : (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                    <line x1="12" y1="19" x2="12" y2="23" />
+                    <line x1="8" y1="23" x2="16" y2="23" />
+                  </svg>
+                )}
               </span>
             </button>
           </div>
@@ -504,7 +781,8 @@ export function LabNewLayoutComposerPanel() {
 
       <div className="lab-newlayout-composer-body lab-newlayout-composer-body--stack">
         <textarea
-          className={`lab-newlayout-composer-prompt lab-textarea--composer lab-newlayout-composer-prompt--stretch lab-newlayout-composer-prompt--font-${promptFontSize}`}
+          ref={promptTextareaRef}
+          className={`lab-newlayout-composer-prompt lab-textarea--composer lab-newlayout-composer-prompt--stretch lab-newlayout-composer-prompt--font-${promptFontSize}${isVoiceListening ? ' lab-newlayout-composer-prompt--voice-active' : ''}`}
           value={promptText}
           onChange={(event) => updatePromptText(event.target.value)}
           onFocus={() => { closeMenus(); handlePromptFocus() }}
@@ -518,12 +796,20 @@ export function LabNewLayoutComposerPanel() {
           selectedReferences={selectedReferences}
           addReference={addReference}
           removeReference={removeReference}
+          activeModeId={activeModeId}
         />
+        {activeModeId === 'style-transfer' ? (
+          <div className="lab-newlayout-composer-style-transfer-hint" role="status" aria-live="polite">
+            <strong>Style transfer:</strong> add 2 images in order - 1st is style source, 2nd is destination target.
+          </div>
+        ) : null}
       </div>
 
       <div className="lab-newlayout-composer-footer">
         <div ref={footerControlsRef} className="lab-newlayout-composer-config-row" aria-label="Composer generation settings">
-          <div className="lab-newlayout-composer-footer-setting">
+          {activeModeId !== 'image' && activeModeId !== 'style-transfer' ? (
+            <>
+              <div className="lab-newlayout-composer-footer-setting">
             <button
               type="button"
               className={`lab-newlayout-composer-config-btn lab-newlayout-composer-config-btn--compact${activeFooterMenu === 'ratio' ? ' is-active' : ''}`}
@@ -615,6 +901,8 @@ export function LabNewLayoutComposerPanel() {
           >
             {renderComposerModeIcon('audio')}
           </button>
+            </>
+          ) : null}
 
           <div className="lab-newlayout-composer-footer-setting">
             <button
@@ -682,29 +970,67 @@ export function LabNewLayoutComposerPanel() {
               ) : null}
             </div>
           ) : null}
-          <button
-            type="button"
-            className="lab-newlayout-composer-generate-btn"
-            disabled={!canGenerate || isAutoCreating || isSubmittingGeneration}
-            onClick={handleStartGeneration}
-            title={canGenerate
-              ? 'Generate video'
-              : !promptReady
-                ? 'Write a prompt to enable generation.'
-                : !hasActiveStudioProjectAndFolder
-                  ? 'Select a project and folder to enable generation.'
-                  : isPreparingReferences
-                    ? referenceAccessMessage || 'Preparing reference assets for public access.'
-                    : referenceAccessMessage
-                      ? referenceAccessMessage
-                  : isBackendCoolingDown
-                    ? `Generation cooling down. Retry in ${Math.ceil(backendCooldownRemainingMs / 1000)}s.`
-                    : backendStatusMessage || 'Back end server is not working. Please run it.'}
-          >
-            {isAutoCreating ? 'Setting up...' : isSubmittingGeneration ? 'Starting...' : 'Generate'}
-          </button>
+          <div className="lab-newlayout-composer-generate-row">
+            <button
+              type="button"
+              className={`lab-newlayout-composer-generate-btn${generationSubmittedFlash ? ' is-submitted' : ''}`}
+              disabled={!canGenerate || isAutoCreating || isSubmittingGeneration}
+              onClick={handleStartGeneration}
+              title={canGenerate
+                ? 'Generate video'
+                : !promptReady
+                  ? 'Write a prompt to enable generation.'
+                  : !hasActiveStudioProjectAndFolder
+                    ? 'Select a project and folder to enable generation.'
+                    : requiresStyleTransferPair && !hasStyleTransferPair
+                      ? 'Add two image references for style transfer: source style first, destination target second.'
+                    : isPreparingReferences
+                      ? referenceAccessMessage || 'Preparing reference assets for public access.'
+                      : referenceAccessMessage
+                        ? referenceAccessMessage
+                    : isBackendCoolingDown
+                      ? `Generation cooling down. Retry in ${Math.ceil(backendCooldownRemainingMs / 1000)}s.`
+                      : backendStatusMessage || 'Back end server is not working. Please run it.'}
+            >
+              {isAutoCreating ? 'Setting up...' : isSubmittingGeneration ? 'Starting...' : 'Generate'}
+            </button>
+            <button
+              type="button"
+              className="lab-newlayout-composer-debug-btn"
+              title="Inspect final xAI API request"
+              onClick={handleOpenDebugDialog}
+            >
+              {'{ }'}
+            </button>
+          </div>
         </div>
       </div>
+
+      {isDebugDialogOpen ? createPortal(
+        <div className="lab-newlayout-composer-blocked-dialog-backdrop" role="presentation" onClick={() => setDebugDialogOpen(false)}>
+          <div
+            className="lab-newlayout-composer-debug-dialog"
+            role="dialog"
+            aria-label="xAI API Request Inspector"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="lab-newlayout-composer-debug-dialog-header">
+              <span>xAI API Request Inspector</span>
+              <button type="button" className="lab-newlayout-explorer-dialog-close" onClick={() => setDebugDialogOpen(false)}>✕</button>
+            </div>
+            <p className="lab-newlayout-composer-debug-dialog-hint">
+              This is the exact request that will be sent to the xAI API. API key is partially masked.
+            </p>
+            <textarea
+              className="lab-newlayout-composer-debug-dialog-textarea"
+              readOnly
+              value={debugContent}
+              onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+            />
+          </div>
+        </div>,
+        document.body
+      ) : null}
 
       {isGenerationBlockedDialogOpen ? createPortal(
         <div className="lab-newlayout-composer-blocked-dialog-backdrop" role="presentation" onClick={() => setGenerationBlockedDialogOpen(false)}>

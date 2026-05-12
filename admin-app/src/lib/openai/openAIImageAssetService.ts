@@ -1,4 +1,4 @@
-import { saveProjectReferenceLibraryItem } from '../studioService'
+import { saveUserReferenceLibraryItem } from '../studioService'
 import {
   mergeMediaLibraryItems,
   readLocalMediaLibrary,
@@ -25,6 +25,11 @@ type SaveOpenAIImageAssetToLibraryOptions = {
   authUid?: string
   storagePathPrefix?: string
   maxItems?: number
+  generationModel?: string
+  generationProvider?: string
+  generationAspectRatio?: string
+  generationResolution?: string
+  generationSource?: string
 }
 
 type GenerateAndSaveOpenAIImageToLibraryOptions = {
@@ -39,7 +44,7 @@ type GenerateAndSaveOpenAIImageToLibraryOptions = {
 export type SavedOpenAIImageAsset = {
   firebaseUrl: string
   item: MediaLibraryItem
-  savedTo: 'project' | 'local'
+  savedTo: 'user' | 'project' | 'local'
 }
 
 export type GenerateAndSaveOpenAIImageToLibraryResult = {
@@ -137,6 +142,12 @@ export async function persistOpenAIImageToLibrary({
   studioProjectId,
   authUid,
   maxItems = DEFAULT_MAX_LIBRARY_ITEMS,
+  generationModel,
+  generationProvider,
+  generationAspectRatio,
+  generationResolution,
+  generationSource = 'grok-image',
+  generationRequestPayload,
 }: {
   firebaseUrl: string
   prompt: string
@@ -144,6 +155,12 @@ export async function persistOpenAIImageToLibrary({
   studioProjectId?: string | null
   authUid?: string
   maxItems?: number
+  generationModel?: string
+  generationProvider?: string
+  generationAspectRatio?: string
+  generationResolution?: string
+  generationSource?: string
+  generationRequestPayload?: Record<string, unknown>
 }): Promise<SavedOpenAIImageAsset> {
   const normalizedFirebaseUrl = firebaseUrl.trim()
   if (!normalizedFirebaseUrl) {
@@ -157,21 +174,35 @@ export async function persistOpenAIImageToLibrary({
     name: title?.trim() || buildDefaultAssetTitle(prompt),
     createdAt: Date.now(),
     projectId: (studioProjectId?.trim() || '') || undefined,
+    generationPrompt: prompt,
+    generationModel,
+    generationProvider,
+    generationAspectRatio,
+    generationResolution,
+    generationSource,
+    generationRequestPayload,
   }
 
   const normalizedProjectId = studioProjectId?.trim() || ''
   const normalizedAuthUid = authUid?.trim() || ''
 
-  if (normalizedProjectId && !normalizedAuthUid) {
-    throw new Error('Authentication is required to save into a project assets library.')
-  }
+  if (normalizedAuthUid) {
+    await saveUserReferenceLibraryItem(normalizedAuthUid, {
+      ...item,
+      projectId: normalizedProjectId || undefined,
+      generationPrompt: prompt,
+      generationModel,
+      generationProvider,
+      generationAspectRatio,
+      generationResolution,
+      generationSource,
+      generationRequestPayload,
+    })
 
-  if (normalizedProjectId) {
-    await saveProjectReferenceLibraryItem(normalizedProjectId, item, normalizedAuthUid)
     return {
       firebaseUrl: normalizedFirebaseUrl,
       item,
-      savedTo: 'project',
+      savedTo: 'user',
     }
   }
 

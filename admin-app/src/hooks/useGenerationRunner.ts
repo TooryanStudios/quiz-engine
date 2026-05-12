@@ -78,6 +78,8 @@ const isNonRetryableProviderError = (message: string): boolean => {
     || normalized.includes('insufficient balance')
     || normalized.includes('output audio may contain sensitive information')
     || normalized.includes('sensitive information')
+    || normalized.includes('api_key is not configured')
+    || normalized.includes('not configured on server')
 }
 
 const isMalformedBackendJsonError = (message: string): boolean => {
@@ -384,6 +386,16 @@ const extractResultUrl = (payload: unknown): string => {
     return ''
   }
 
+  // xAI/OpenAI image responses can return top-level data arrays.
+  const topLevelData = Array.isArray(payload.data) ? payload.data : []
+  for (const entry of topLevelData) {
+    if (!isRecord(entry)) continue
+    const url = firstNonEmptyString(entry.url)
+    if (url && /^https?:\/\//i.test(url)) {
+      return url
+    }
+  }
+
   const nested = isRecord(payload.data) ? payload.data : null
 
   // Direct extraction for provider outputs arrays (e.g. Atlas Cloud: data.outputs[0].url).
@@ -557,21 +569,31 @@ export function useGenerationRunner({
     }
   }, [apiBaseUrl, applyGenerateCooldown, clearGenerateCooldown, healthEndpoint, markBackendAvailable, markBackendUnavailable])
 
-  const checkGenerationReadiness = useCallback(async (endpoint: string): Promise<boolean> => {
+  const checkGenerationReadiness = useCallback(async (endpoint: string, requestBody?: Record<string, unknown>): Promise<boolean> => {
     const cooldownRemaining = getGenerateCooldownRemainingMs()
-    if (cooldownRemaining > 0) {
-      emitGenerateCooldown(cooldownRemaining)
-      markBackendUnavailable(`Generation is cooling down after a recent backend failure. Retry in ${Math.ceil(cooldownRemaining / 1000)}s.`)
+    const backendReady = await checkBackendHealth()
+    if (!backendReady) {
+      if (cooldownRemaining > 0) {
+        emitGenerateCooldown(cooldownRemaining)
+        markBackendUnavailable(`Generation is cooling down after a recent backend failure. Retry in ${Math.ceil(cooldownRemaining / 1000)}s.`)
+      }
       return false
     }
 
-    const backendReady = await checkBackendHealth()
-    if (!backendReady) {
-      return false
+    if (cooldownRemaining > 0) {
+      clearGenerateCooldown()
     }
 
     const normalizedEndpoint = endpoint.trim().toLowerCase()
     if (!normalizedEndpoint.startsWith('/api/seedance/')) {
+      return true
+    }
+
+    // Grok requests go to /api/seedance/generate but use the XAI key, not the
+    // Seedance key. Skip the Seedance readiness probe for them.
+    const bodyModel = String(requestBody?.model || requestBody?.providerHint || '').toLowerCase()
+    const bodyProvider = String(requestBody?.providerHint || requestBody?.provider || '').toLowerCase()
+    if (bodyModel.includes('grok') || bodyProvider === 'grok') {
       return true
     }
 
@@ -716,7 +738,7 @@ export function useGenerationRunner({
     request: GenerationRequest,
     options: RunGenerationOptions = {},
   ): Promise<CompletedGeneration | null> => {
-    const backendReady = await checkGenerationReadiness(request.endpoint)
+    const backendReady = await checkGenerationReadiness(request.endpoint, request.body as Record<string, unknown>)
     if (!backendReady) {
       throw new Error(lastBackendErrorMessageRef.current || 'Back end server is not working. Start it before generating.')
     }

@@ -220,7 +220,7 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
   const playerRef = externalPlayerRef || internalPlayerRef;
   
   const [playbackRate, setPlaybackRate] = useState(1);
-  const [canvasZoom, setCanvasZoom] = useState<CanvasZoom>('fit');
+  const [canvasZoom, setCanvasZoom] = useState<CanvasZoom>('75%');
   const [showAlignmentGuides, setShowAlignmentGuides] = useState(true);
   const [backgroundColor, setBackgroundColor] = useState(defaultBackgroundColor || "white");
   const [trackHeight, setTrackHeight] = useState(TIMELINE_CONSTANTS.TRACK_HEIGHT);

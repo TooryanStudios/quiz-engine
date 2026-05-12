@@ -153,7 +153,7 @@ export function useAssetsLibrary(): AssetsLibraryState {
           const code = String((err as { code?: string } | undefined)?.code || '').toLowerCase()
 
           if (code.includes('permission-denied') || msg.toLowerCase().includes('permission-denied')) {
-            setError('Failed to load library: Firestore permission denied. Check rules for collectionGroup reference_library and createdBy filtering.')
+            setError('Failed to load library: Firestore permission denied. Check the user reference_library rules and auth state.')
             return
           }
 

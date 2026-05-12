@@ -75,8 +75,10 @@ export function OpenAIImageInternalTestPanel() {
       })
 
       showToast({
-        message: result.library.savedTo === 'project'
-          ? 'Generated image saved to the selected project assets library.'
+        message: result.library.savedTo === 'user'
+          ? 'Generated image saved to your assets library.'
+          : result.library.savedTo === 'project'
+            ? 'Generated image saved to the selected project assets library.'
           : 'Generated image saved to the local assets library.',
         type: 'success',
       })
@@ -202,7 +204,7 @@ export function OpenAIImageInternalTestPanel() {
           </div>
           <div>
             <strong>Target library</strong>
-            <span>{lastResult?.library.savedTo === 'project' ? 'Project assets library' : 'Local assets library'}</span>
+            <span>{lastResult?.library.savedTo === 'user' ? 'User assets library' : lastResult?.library.savedTo === 'project' ? 'Project assets library' : 'Local assets library'}</span>
           </div>
           <div>
             <strong>Auth UID</strong>

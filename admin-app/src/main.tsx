@@ -12,7 +12,7 @@ const CHUNK_RELOAD_KEY = 'quiz-admin:chunk-reload-once'
 const DEV_SW_RESET_RELOAD_KEY = 'quiz-admin:dev-sw-reset-reload-once'
 const PROD_SW_SCHEMA_KEY = 'quiz-admin:sw-schema-version'
 const PROD_SW_RESET_RELOAD_KEY = 'quiz-admin:prod-sw-reset-reload-once'
-const SW_SCHEMA_VERSION = '2026-05-10-v5'
+const SW_SCHEMA_VERSION = '2026-05-12-v6'
 
 function shouldRecoverChunkError(reason: unknown): boolean {
   const text = typeof reason === 'string'

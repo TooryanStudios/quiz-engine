@@ -80,6 +80,12 @@ export type LabNewLayoutDataContextValue = {
   setStudioActiveFolderId: (folderId: string | null) => void
   ensureDefaultProjectAndFolder: () => Promise<{ projectId: string; folderId: string } | null>
   openHistoryGallery: () => void
+  compareBeforeUrl: string
+  compareAfterUrl: string
+  compareOverlayOpen: boolean
+  setCompareBeforeUrl: (url: string) => void
+  setCompareAfterUrl: (url: string) => void
+  setCompareOverlayOpen: (open: boolean) => void
   projectReferenceLibraryItems: StudioReferenceAsset[]
   projectReferenceLibraryLoading: boolean
   projectNewLayoutConfig: StudioProjectNewLayoutConfig
@@ -458,6 +464,7 @@ export function useLabNewLayoutWorkspace(authState: LabNewLayoutWorkspaceAuthSta
       setProjectReferenceLibraryItems((previousItems) => {
         // Defensively clone incoming snapshots so React always sees immutable state updates.
         const nextItems = [...items]
+        if (typeof window !== 'undefined') (window as any).__debugRefItems = nextItems
         if (previousItems.length === nextItems.length) {
           const isSame = previousItems.every((entry, index) => {
             const nextEntry = nextItems[index]
@@ -588,6 +595,10 @@ export function useLabNewLayoutWorkspace(authState: LabNewLayoutWorkspaceAuthSta
     }
   }, [authDisplayName, authEmail, authPhotoUrl, authUid, setStudioActiveFolderId, setStudioProjectId, studioActiveFolderId, studioProjectId])
 
+  const [compareBeforeUrl, setCompareBeforeUrl] = useState('')
+  const [compareAfterUrl, setCompareAfterUrl] = useState('')
+  const [compareOverlayOpen, setCompareOverlayOpen] = useState(false)
+
   const dataContextValue = useMemo<LabNewLayoutDataContextValue>(() => ({
     authUid,
     authDisplayName,
@@ -610,6 +621,12 @@ export function useLabNewLayoutWorkspace(authState: LabNewLayoutWorkspaceAuthSta
     updateProjectNewLayoutConfig,
     openStudioExplorer: () => undefined,
     openHistoryGallery: () => undefined,
+    compareBeforeUrl,
+    compareAfterUrl,
+    compareOverlayOpen,
+    setCompareBeforeUrl,
+    setCompareAfterUrl,
+    setCompareOverlayOpen,
     ensureDefaultProjectAndFolder,
   }), [
     authDisplayName,
@@ -632,6 +649,12 @@ export function useLabNewLayoutWorkspace(authState: LabNewLayoutWorkspaceAuthSta
     projectNewLayoutConfigLoading,
     updateProjectNewLayoutConfig,
     ensureDefaultProjectAndFolder,
+    compareBeforeUrl,
+    compareAfterUrl,
+    compareOverlayOpen,
+    setCompareBeforeUrl,
+    setCompareAfterUrl,
+    setCompareOverlayOpen,
   ])
 
   return {

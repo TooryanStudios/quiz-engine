@@ -1,5 +1,5 @@
-const CACHE_NAME = 'qyan-v6'
-const RUNTIME_CACHE = 'qyan-runtime-v6'
+const CACHE_NAME = 'qyan-v11'
+const RUNTIME_CACHE = 'qyan-runtime-v11'
 
 // Assets to cache on install
 const PRECACHE_ASSETS = [
@@ -42,9 +42,25 @@ self.addEventListener('fetch', (event) => {
   // This avoids cache-mode incompatibilities on media/CDN responses.
   if (url.origin !== self.location.origin) return
 
-  // Browser-internal cache probes can fail for cross-origin requests when SW intercepts.
-  // Let the browser handle these directly.
-  if (request.cache === 'only-if-cached' && request.mode !== 'same-origin') return
+  // Browser-only cache probes should never be handled in SW.
+  // Intercepting them can trigger ERR_CACHE_OPERATION_NOT_SUPPORTED.
+  if (request.cache === 'only-if-cached') return
+
+  // Never handle API traffic in SW cache logic.
+  // API endpoints should always be network-driven.
+  if (url.pathname.startsWith('/api/')) return
+
+  // Never cache or proxy media requests through SW.
+  // Range/chunk behavior varies by browser and can cause cache operation failures.
+  if (request.destination === 'video' || request.destination === 'audio') return
+  if (/\.(mp4|webm|mov|m4v|mp3|wav|ogg)$/i.test(url.pathname)) return
+  if (url.pathname.includes('%2Fgenerated%2F')) return
+  if (url.searchParams.has('token') || url.searchParams.get('alt') === 'media') return
+  if (url.searchParams.has('X-Amz-Algorithm') || url.searchParams.has('X-Tos-Algorithm')) return
+
+  // Skip Firebase Storage URLs - Firebase handles its own caching
+  if (url.hostname.includes('firebasestorage.googleapis.com')) return
+  if (url.hostname.endsWith('.cloudfront.net')) return
 
   // Do not proxy byte-range media requests through the SW cache layer.
   if (request.headers.has('range')) return

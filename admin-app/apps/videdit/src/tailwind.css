@@ -1,0 +1,4 @@
+@import "tailwindcss";
+@source "../../../src/reactvideoeditor/pro/**/*.tsx";
+@source "../../../src/reactvideoeditor/pro/**/*.ts";
+@source "../../../src/pages/VideoEditorPage.tsx";

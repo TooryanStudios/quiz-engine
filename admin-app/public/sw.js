@@ -1,5 +1,5 @@
-const CACHE_NAME = 'qyan-v10'
-const RUNTIME_CACHE = 'qyan-runtime-v10'
+const CACHE_NAME = 'qyan-v11'
+const RUNTIME_CACHE = 'qyan-runtime-v11'
 
 // Assets to cache on install
 const PRECACHE_ASSETS = [
@@ -56,11 +56,13 @@ self.addEventListener('fetch', (event) => {
   // Range/chunk behavior varies by browser and can cause cache operation failures.
   if (request.destination === 'video' || request.destination === 'audio') return
   if (/\.(mp4|webm|mov|m4v|mp3|wav|ogg)$/i.test(url.pathname)) return
+  if (url.pathname.includes('%2Fgenerated%2F')) return
   if (url.searchParams.has('token') || url.searchParams.get('alt') === 'media') return
   if (url.searchParams.has('X-Amz-Algorithm') || url.searchParams.has('X-Tos-Algorithm')) return
 
   // Skip Firebase Storage URLs - Firebase handles its own caching
   if (url.hostname.includes('firebasestorage.googleapis.com')) return
+  if (url.hostname.endsWith('.cloudfront.net')) return
 
   // Never proxy cross-origin requests through this SW.
   // This avoids cache-mode incompatibilities on media/CDN responses.

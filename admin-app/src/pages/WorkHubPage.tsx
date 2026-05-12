@@ -1,3 +1,5 @@
+import 'img-comparison-slider'
+import 'img-comparison-slider/dist/styles.css'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
 import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
@@ -1956,6 +1958,9 @@ export default function WorkHubPage() {
     markerAuthor: auth.currentUser?.displayName || auth.currentUser?.email || member?.displayName || member?.email || 'Member',
     showToast,
   })
+  const [lightboxCompareMode, setLightboxCompareMode] = useState(false)
+  const [lightboxCompareBeforeUrl, setLightboxCompareBeforeUrl] = useState('')
+  const [lightboxCompareAfterUrl, setLightboxCompareAfterUrl] = useState('')
   const visibleWorkspaces = useMemo(
     () => workspaces.filter((item) => canAccessWorkspace(item, currentUid, userEmail, isPrivilegedMember)),
     [currentUid, isPrivilegedMember, userEmail, workspaces],
@@ -13033,28 +13038,85 @@ export default function WorkHubPage() {
                   <span className="workhub-image-review-topbar-label">Image review</span>
                   <span className="workhub-image-review-topbar-hint">Tap image to place markers · Double-click marker to edit</span>
                 </div>
-                <button className="workhub-ghost-btn workhub-image-review-close-btn" onClick={() => setLightboxImageUrl('')}>Close</button>
+                <button className="workhub-ghost-btn workhub-image-review-close-btn" onClick={() => { setLightboxImageUrl(''); setLightboxCompareMode(false); setLightboxCompareBeforeUrl(''); setLightboxCompareAfterUrl('') }}>Close</button>
               </div>
 
               <div className="workhub-image-review-layout">
                 <div className="workhub-image-review-stage-wrap">
                   <div className="workhub-image-review-toolbar">
-                    <div className="workhub-image-tool-group">
-                      <button type="button" className={lightboxTool === 'point' ? 'is-active' : ''} onClick={() => setLightboxTool('point')}>Point</button>
-                      <button type="button" className={lightboxTool === 'line' ? 'is-active' : ''} onClick={() => setLightboxTool('line')}>Line</button>
-                      <button type="button" className={lightboxTool === 'checkbox' ? 'is-active' : ''} onClick={() => setLightboxTool('checkbox')}>Checkbox</button>
-                    </div>
-                    <span className="workhub-image-review-tip">
-                      {lightboxTool === 'line' && lightboxDraftLine ? 'Tap second point to finish line' : 'Tap image to add annotation'}
-                    </span>
-                    <div className="workhub-image-review-fit-group">
-                      <button type="button" className={lightboxImageFit === 'contain' ? 'is-active' : ''} onClick={() => setLightboxImageFit('contain')}>Fit</button>
-                      <button type="button" className={lightboxImageFit === 'cover' ? 'is-active' : ''} onClick={() => setLightboxImageFit('cover')}>Fill</button>
-                      <button type="button" className={lightboxImageFit === 'scale-down' ? 'is-active' : ''} onClick={() => setLightboxImageFit('scale-down')}>Smart</button>
-                    </div>
-                    <button type="button" onClick={() => { void handleLightboxFullscreenToggle() }}>Fullscreen</button>
+                    {!lightboxCompareMode && (
+                      <>
+                        <div className="workhub-image-tool-group">
+                          <button type="button" className={lightboxTool === 'point' ? 'is-active' : ''} onClick={() => setLightboxTool('point')}>Point</button>
+                          <button type="button" className={lightboxTool === 'line' ? 'is-active' : ''} onClick={() => setLightboxTool('line')}>Line</button>
+                          <button type="button" className={lightboxTool === 'checkbox' ? 'is-active' : ''} onClick={() => setLightboxTool('checkbox')}>Checkbox</button>
+                        </div>
+                        <span className="workhub-image-review-tip">
+                          {lightboxTool === 'line' && lightboxDraftLine ? 'Tap second point to finish line' : 'Tap image to add annotation'}
+                        </span>
+                        <div className="workhub-image-review-fit-group">
+                          <button type="button" className={lightboxImageFit === 'contain' ? 'is-active' : ''} onClick={() => setLightboxImageFit('contain')}>Fit</button>
+                          <button type="button" className={lightboxImageFit === 'cover' ? 'is-active' : ''} onClick={() => setLightboxImageFit('cover')}>Fill</button>
+                          <button type="button" className={lightboxImageFit === 'scale-down' ? 'is-active' : ''} onClick={() => setLightboxImageFit('scale-down')}>Smart</button>
+                        </div>
+                        <button type="button" onClick={() => { void handleLightboxFullscreenToggle() }}>Fullscreen</button>
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      className={lightboxCompareMode ? 'is-active' : ''}
+                      onClick={() => {
+                        if (!lightboxCompareMode) {
+                          setLightboxCompareMode(true)
+                          setLightboxCompareBeforeUrl(lightboxImageUrl)
+                          setLightboxCompareAfterUrl('')
+                        } else {
+                          setLightboxCompareMode(false)
+                          setLightboxCompareBeforeUrl('')
+                          setLightboxCompareAfterUrl('')
+                        }
+                      }}
+                    >
+                      Compare
+                    </button>
                   </div>
 
+                  {lightboxCompareMode ? (
+                    <div className="workhub-image-compare-wrap">
+                      <div className="workhub-image-compare-inputs">
+                        <label className="workhub-image-compare-input-row">
+                          <span>Before</span>
+                          <input
+                            type="url"
+                            value={lightboxCompareBeforeUrl}
+                            onChange={(e) => setLightboxCompareBeforeUrl(e.target.value)}
+                            placeholder="Before image URL"
+                          />
+                        </label>
+                        <label className="workhub-image-compare-input-row">
+                          <span>After</span>
+                          <input
+                            type="url"
+                            value={lightboxCompareAfterUrl}
+                            onChange={(e) => setLightboxCompareAfterUrl(e.target.value)}
+                            placeholder="After image URL"
+                          />
+                        </label>
+                      </div>
+                      {lightboxCompareBeforeUrl && lightboxCompareAfterUrl ? (
+                        <div className="workhub-image-compare-stage">
+                          <img-comparison-slider value={50} style={{ width: '100%', height: '100%', display: 'block' }}>
+                            <img slot="first" src={lightboxCompareBeforeUrl} alt="Before" style={{ width: '100%', display: 'block' }} />
+                            <img slot="second" src={lightboxCompareAfterUrl} alt="After" style={{ width: '100%', display: 'block' }} />
+                          </img-comparison-slider>
+                        </div>
+                      ) : (
+                        <div className="workhub-image-compare-placeholder">
+                          Enter both Before and After image URLs above to preview the comparison.
+                        </div>
+                      )}
+                    </div>
+                  ) : (
                   <div ref={lightboxStageRef} className="workhub-image-review-stage" onClick={handleLightboxStageClick} style={lightboxImageAspect ? { '--img-aspect': lightboxImageAspect } as React.CSSProperties : undefined}>
                     <img src={lightboxImageUrl} alt="Attachment" className="workhub-image-review-image" style={{ objectFit: lightboxImageFit }} onLoad={(e) => { const img = e.currentTarget; setLightboxImageAspect(img.naturalWidth / img.naturalHeight) }} />
 
@@ -13140,6 +13202,7 @@ export default function WorkHubPage() {
                     )}
 
                   </div>
+                  )}
                 </div>
               </div>
             </div>

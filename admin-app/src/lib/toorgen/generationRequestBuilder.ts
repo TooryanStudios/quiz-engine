@@ -144,9 +144,7 @@ const resolveAtlasModelForMode = (
     || lower.includes('dreamina-seedance-2-0')
     || lower.includes('seedance-2.0')
   )
-  const baseModel = isSeedance20Family && !isExplicitFast
-    ? 'bytedance/seedance-2.0'
-    : 'bytedance/seedance-2.0-fast'
+  const baseModel = 'bytedance/seedance-2.0-fast'
 
   const modeSuffix = requestMode === 'image-to-video'
     ? 'image-to-video'
@@ -366,7 +364,49 @@ export const buildToorGenRequest = ({
     videoWorkflowOptions,
   }
 
-  if (tab.id === combinedReferenceTabId || tab.id === singleImageTabId) {
+  const requiresAtlasPayload = tab.id === combinedReferenceTabId || tab.id === singleImageTabId
+
+
+  if (settings.provider === 'grok') {
+    const atlasPayload = buildAtlasPayload(atlasBuilderOptions)
+    const normalizedModel = settings.model.trim().toLowerCase().includes('grok')
+      ? settings.model.trim()
+      : 'grok-imagine-video'
+    const grokPayload: Record<string, unknown> = {
+      ...atlasPayload,
+      model: normalizedModel,
+      providerHint: 'grok',
+    }
+
+    // Patch: For Grok image edits, use image: { url } if exactly one image, else image_urls
+    let imageUrls: string[] = []
+    if (Array.isArray(grokPayload.reference_images)) {
+      imageUrls = grokPayload.reference_images as string[]
+    } else if (Array.isArray(grokPayload.images)) {
+      imageUrls = grokPayload.images as string[]
+    } else if (typeof grokPayload.image === 'string' && grokPayload.image.trim()) {
+      imageUrls = [grokPayload.image.trim()]
+    }
+
+    // Remove all image fields to avoid duplicates
+    delete grokPayload.reference_images
+    delete grokPayload.images
+    delete grokPayload.image
+    delete grokPayload.image_url
+
+    if (imageUrls.length === 1) {
+      grokPayload.image = { url: imageUrls[0] }
+    } else if (imageUrls.length > 1) {
+      grokPayload.image_urls = imageUrls
+    }
+
+    return {
+      endpoint: '/api/seedance/generate',
+      body: grokPayload,
+    }
+  }
+
+  if (requiresAtlasPayload) {
     return {
       endpoint: '/api/seedance/generate',
       body: buildAtlasPayload(atlasBuilderOptions),
@@ -377,21 +417,6 @@ export const buildToorGenRequest = ({
     return {
       endpoint: '/api/seedance/generate',
       body: buildAtlasPayload(atlasBuilderOptions),
-    }
-  }
-
-  if (settings.provider === 'grok') {
-    const atlasPayload = buildAtlasPayload(atlasBuilderOptions)
-    const grokPayload: Record<string, unknown> = { ...atlasPayload, providerHint: 'grok' }
-
-    if (typeof grokPayload.image === 'string' && grokPayload.image.trim()) {
-      grokPayload.image_urls = [grokPayload.image]
-      delete grokPayload.image
-    }
-
-    return {
-      endpoint: '/api/seedance/generate',
-      body: grokPayload,
     }
   }
 

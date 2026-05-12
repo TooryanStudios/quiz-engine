@@ -178,6 +178,10 @@ service cloud.firestore {
       allow create, update: if isOwner(userId) || isMasterAdmin();
       allow delete: if isMasterAdmin();
 
+      match /reference_library/{itemId} {
+        allow read, create, update, delete: if isOwner(userId) || isMasterAdmin();
+      }
+
       match /toorgen_extend_generations/{taskId} {
         allow read, create, update: if isOwner(userId) || isMasterAdmin();
         allow delete: if isOwner(userId) || isMasterAdmin();
@@ -599,6 +603,12 @@ service cloud.firestore {
       }
 
       match /flow_canvas/{scopeId} {
+        allow read: if canReadStudioProject(
+          get(/databases/$(database)/documents/studio_projects/$(projectId)).data);
+        allow create, update, delete: if isProjectOwnerOrEditor(projectId);
+      }
+
+      match /video_docs/{docId} {
         allow read: if canReadStudioProject(
           get(/databases/$(database)/documents/studio_projects/$(projectId)).data);
         allow create, update, delete: if isProjectOwnerOrEditor(projectId);

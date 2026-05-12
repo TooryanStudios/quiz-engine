@@ -10398,6 +10398,70 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
         opacity: 0.55;
         cursor: not-allowed;
       }
+      .workhub-image-compare-wrap {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        align-items: stretch;
+        flex: 1;
+        min-height: 0;
+      }
+      .workhub-image-compare-inputs {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .workhub-image-compare-input-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex: 1;
+        min-width: 200px;
+        font-size: 0.78rem;
+        color: #304b74;
+        font-weight: 600;
+      }
+      .workhub-image-compare-input-row input {
+        flex: 1;
+        background: #f4f8ff;
+        border: 1px solid #d7e3fb;
+        border-radius: 6px;
+        padding: 5px 8px;
+        font-size: 0.78rem;
+        color: #173056;
+        outline: none;
+      }
+      .workhub-image-compare-input-row input:focus {
+        border-color: #2f64d8;
+        box-shadow: 0 0 0 2px rgba(47, 100, 216, 0.12);
+      }
+      .workhub-image-compare-stage {
+        flex: 1;
+        min-height: 0;
+        border-radius: 10px;
+        overflow: hidden;
+        border: 1px solid #d7e3fb;
+        background: #edf4ff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .workhub-image-compare-stage img-comparison-slider {
+        max-height: calc(100vh - 280px);
+      }
+      .workhub-image-compare-placeholder {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 32px;
+        font-size: 0.82rem;
+        color: #6b7da0;
+        text-align: center;
+        border-radius: 10px;
+        border: 1px dashed #c5d5f0;
+        background: #f4f8ff;
+      }
       .workhub-image-review-tip {
         font-size: 0.74rem;
         color: #6b7da0;

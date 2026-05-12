@@ -14,6 +14,14 @@ export type MediaLibraryItem = {
   name: string
   createdAt: number
   projectId?: string
+  folderId?: string | null
+  generationPrompt?: string
+  generationModel?: string
+  generationProvider?: string
+  generationAspectRatio?: string
+  generationResolution?: string
+  generationSource?: string
+  generationRequestPayload?: Record<string, unknown>
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => (
@@ -63,6 +71,14 @@ export const parseMediaLibraryItem = (value: unknown): MediaLibraryItem | null =
     name: typeof value.name === 'string' && value.name.trim() ? value.name : `Reference ${kind}`,
     createdAt,
     projectId: typeof value.projectId === 'string' && value.projectId.trim() ? value.projectId.trim() : undefined,
+    folderId: typeof value.folderId === 'string' && value.folderId.trim() ? value.folderId.trim() : null,
+    generationPrompt: typeof value.generationPrompt === 'string' && value.generationPrompt.trim() ? value.generationPrompt : undefined,
+    generationModel: typeof value.generationModel === 'string' && value.generationModel.trim() ? value.generationModel : undefined,
+    generationProvider: typeof value.generationProvider === 'string' && value.generationProvider.trim() ? value.generationProvider : undefined,
+    generationAspectRatio: typeof value.generationAspectRatio === 'string' && value.generationAspectRatio.trim() ? value.generationAspectRatio : undefined,
+    generationResolution: typeof value.generationResolution === 'string' && value.generationResolution.trim() ? value.generationResolution : undefined,
+    generationSource: typeof value.generationSource === 'string' && value.generationSource.trim() ? value.generationSource : undefined,
+    generationRequestPayload: isRecord(value.generationRequestPayload) ? value.generationRequestPayload : undefined,
   }
 }
 
@@ -119,6 +135,14 @@ export const mergeMediaLibraryItems = (...lists: MediaLibraryItem[][]): MediaLib
         ...preferred,
         thumbnailUrl: preferred.thumbnailUrl || fallback.thumbnailUrl,
         projectId: preferred.projectId || fallback.projectId,
+        folderId: preferred.folderId ?? fallback.folderId,
+        generationPrompt: preferred.generationPrompt || fallback.generationPrompt,
+        generationModel: preferred.generationModel || fallback.generationModel,
+        generationProvider: preferred.generationProvider || fallback.generationProvider,
+        generationAspectRatio: preferred.generationAspectRatio || fallback.generationAspectRatio,
+        generationResolution: preferred.generationResolution || fallback.generationResolution,
+        generationSource: preferred.generationSource || fallback.generationSource,
+        generationRequestPayload: preferred.generationRequestPayload || fallback.generationRequestPayload,
       })
     })
   })
@@ -153,6 +177,14 @@ export const toMediaLibraryItem = (item: StudioReferenceAsset): MediaLibraryItem
     ? (item.createdAt as { toMillis: () => number }).toMillis()
     : Date.now(),
   projectId: item.projectId,
+  folderId: item.folderId ?? null,
+  generationPrompt: item.generationPrompt,
+  generationModel: item.generationModel,
+  generationProvider: item.generationProvider,
+  generationAspectRatio: item.generationAspectRatio,
+  generationResolution: item.generationResolution,
+  generationSource: item.generationSource,
+  generationRequestPayload: item.generationRequestPayload,
 })
 
 export const buildSelectedLibrarySnapshotItems = (

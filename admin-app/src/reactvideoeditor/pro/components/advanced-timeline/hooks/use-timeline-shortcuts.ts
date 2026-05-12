@@ -9,6 +9,8 @@ interface UseTimelineShortcutsProps {
   canRedo: boolean;
   zoomScale: number;
   setZoomScale: (scale: number) => void;
+  selectedItemIds?: string[];
+  onDeleteItems?: (itemIds: string[]) => void;
 }
 
 /**
@@ -38,6 +40,8 @@ export const useTimelineShortcuts = ({
   canRedo,
   zoomScale,
   setZoomScale,
+  selectedItemIds = [],
+  onDeleteItems,
 }: UseTimelineShortcutsProps) => {
   useHotkeys(
     "space",
@@ -90,6 +94,25 @@ export const useTimelineShortcuts = ({
     {
       keydown: true,
       preventDefault: true,
+    }
+  );
+
+  useHotkeys(
+    "delete, backspace",
+    (e) => {
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable ||
+        target.closest('[contenteditable="true"]')
+      ) {
+        return;
+      }
+      if (selectedItemIds.length > 0 && onDeleteItems) {
+        e.preventDefault();
+        onDeleteItems(selectedItemIds);
+      }
     }
   );
 }; 

@@ -1,3 +1,5 @@
+import 'img-comparison-slider'
+import 'img-comparison-slider/dist/styles.css'
 import { type PointerEventHandler, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { onAuthStateChanged } from 'firebase/auth'
@@ -22,6 +24,7 @@ import {
   renameProjectFlowCanvas,
   saveProjectFlowCanvasState,
   saveProjectReferenceLibraryItem,
+  subscribeToProjectReferenceLibrary,
   subscribeToProjectFlowCanvases,
   type StudioProjectFlowCanvasSummary,
 } from '../lib/studioService'
@@ -33,21 +36,23 @@ import { LabNewLayoutUiSettingsEdgePanel } from './LabNewLayout/LabNewLayoutUiSe
 import { LabNewLayoutUserSettingsEdgePanel } from './LabNewLayout/LabNewLayoutUserSettingsEdgePanel'
 import { normalizeComposerModelId } from './LabNewLayout/useLabNewLayoutComposer'
 import { useGenerationRunner, type GenerationProvider, type GenerationRequestSettings } from '../hooks/useGenerationRunner'
+import { useStaleGenerationRecovery } from '../hooks/useStaleGenerationRecovery'
 import { useLabNewLayoutHistoryGallery, type LabNewLayoutGalleryHistoryEntry } from './LabNewLayout/useLabNewLayoutHistoryGallery'
-import { useLabNewLayoutStore, type ComposerReuseSeed } from './LabNewLayout/useLabNewLayoutStore'
+import { useLabNewLayoutStore, type ComposerReuseSeed, type PendingGenerationAsset } from './LabNewLayout/useLabNewLayoutStore'
 import { calculateUrlExpiry, calculateGenerationMetrics, getExpiryStatusLabel, getExpiryStatusClass, formatModelName } from './LabNewLayout/utils/urlExpiryUtils'
 import { auth, firebaseConfig, storage } from '../lib/firebase'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { LabNewLayoutDataContext, useLabNewLayoutData, useLabNewLayoutWorkspace } from './LabNewLayout/useLabNewLayoutWorkspace'
 import type { StoryBibleScene } from './LabNewLayout/useLabNewLayoutWorkspace'
+import { useAssetsLibrary } from '../reactvideoeditor/pro/hooks/use-assets-library'
 import {
   WorkflowBuilderCanvas,
   createWorkflowBuilderSampleWorkflow,
   type WorkflowBuilderDefinition,
   type WorkflowBuilderNotice,
 } from '../features/workflowBuilder'
-import type { FolderSummary, StudioReferenceAsset } from '../types/studio'
+import type { FolderSummary, ProjectSummary, StudioReferenceAsset } from '../types/studio'
 import { useToast } from '../lib/ToastContext'
 import {
   DropdownMenu,
@@ -59,6 +64,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../reactvideoeditor/pro/components/ui/dropdown-menu'
+import { FolderMenu } from '../components/FolderMenu'
+import type { FolderTarget } from '../components/FolderMenu'
 import 'dockview-react/dist/styles/dockview.css'
 import './LabNewLayoutPage.css'
 
@@ -75,6 +82,64 @@ type PanelSuggestionParams = {
 
 const FLOW_ROOT_FOLDER_VALUE = '__root__'
 const CHATBOT_BASE = (import.meta.env.VITE_CHATBOT_API_URL as string | undefined) || ''
+
+// Module-level poster cache so thumbnail frames survive panel remounts.
+// Keyed by the original video URL; value is a JPEG data URL of the first frame.
+const _referencePosterCache = new Map<string, string>()
+// Keyed by gallery playback URL; value is a JPEG data URL thumbnail.
+const _historyPosterCache = new Map<string, string>()
+
+function _captureVideoFrame(video: HTMLVideoElement): string | null {
+  try {
+    const w = Math.min(video.videoWidth || 160, 320)
+    const h = video.videoHeight ? Math.round(w * (video.videoHeight / video.videoWidth)) : 90
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    ctx.drawImage(video, 0, 0, w, h)
+    return canvas.toDataURL('image/jpeg', 0.75)
+  } catch {
+    return null
+  }
+}
+
+function formatAssetPreviewCreatedAt(value: unknown): string {
+  if (!value) return ''
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return new Date(value).toLocaleString()
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value)
+    return Number.isNaN(parsed) ? value : new Date(parsed).toLocaleString()
+  }
+
+  if (typeof value === 'object' && value) {
+    const candidate = value as {
+      toDate?: () => Date
+      toMillis?: () => number
+      seconds?: number
+      _seconds?: number
+    }
+    if (typeof candidate.toDate === 'function') {
+      return candidate.toDate().toLocaleString()
+    }
+    if (typeof candidate.toMillis === 'function') {
+      return new Date(candidate.toMillis()).toLocaleString()
+    }
+    if (typeof candidate.seconds === 'number') {
+      return new Date(candidate.seconds * 1000).toLocaleString()
+    }
+    if (typeof candidate._seconds === 'number') {
+      return new Date(candidate._seconds * 1000).toLocaleString()
+    }
+  }
+
+  return ''
+}
 
 const normalizeRecoveryProvider = (provider: string | undefined): GenerationProvider => (
   (() => {
@@ -631,7 +696,7 @@ function WorkspaceHomeMetricCard({
   detail: string
 }) {
   return (
-    <article className="lab-newlayout-workspace-home-metric-card">
+    <article className="lab-newlayout-workspace-home-metric">
       <div className="lab-newlayout-workspace-home-metric-label">{label}</div>
       <div className="lab-newlayout-workspace-home-metric-value">{value}</div>
       <p className="lab-newlayout-workspace-home-metric-detail">{detail}</p>
@@ -1604,10 +1669,30 @@ const LAB_NEWLAYOUT_HISTORY_REF_MIME = 'application/x-lab-newlayout-reference'
 
 type DragReferencePayload = {
   url: string
-  kind: 'image' | 'video'
+  kind: 'image' | 'video' | 'audio'
   name: string
   fromHistory?: boolean
 }
+
+type ReferenceLibraryFilterMode = 'all' | 'liked' | 'image' | 'video' | 'audio'
+
+type PendingReferenceUpload = {
+  id: string
+  kind: StudioReferenceAsset['kind']
+  name: string
+  createdAt: number
+  isPending: true
+}
+
+type VisibleReferenceItem = StudioReferenceAsset | PendingReferenceUpload | PendingGenerationAsset
+
+const isPendingReferenceUpload = (item: VisibleReferenceItem): item is PendingReferenceUpload => (
+  (item as PendingReferenceUpload).isPending === true
+)
+
+const isPendingGenerationAsset = (item: VisibleReferenceItem): item is PendingGenerationAsset => (
+  (item as PendingGenerationAsset).isPendingGeneration === true
+)
 
 function inferReferenceMediaKindFromUrl(url: string): 'image' | 'video' | 'audio' {
   const normalizedInput = url.trim().toLowerCase()
@@ -1744,6 +1829,11 @@ const shouldBypassVideoProxy = (sourceUrl: string): boolean => {
     if (parsed.origin === fallbackOrigin) {
       return false
     }
+    const isFirebaseStorageHost = parsed.hostname.toLowerCase() === 'firebasestorage.googleapis.com'
+      || parsed.hostname.toLowerCase().endsWith('.firebasestorage.app')
+    if (isFirebaseStorageHost) {
+      return false
+    }
     return parsed.searchParams.has('token')
       || parsed.searchParams.has('X-Amz-Algorithm')
       || parsed.searchParams.has('X-Amz-Signature')
@@ -1766,6 +1856,43 @@ const buildVideoProxyUrl = (sourceUrl: string): string => {
 const shouldPreferProxyForPreview = (resolution: string | null | undefined): boolean => {
   const normalized = (resolution || '').trim().toLowerCase()
   return normalized.includes('1080') || normalized.includes('full')
+}
+
+const isImageResultUrl = (url: string): boolean => {
+  const lower = url.trim().toLowerCase()
+  if (!lower) return false
+  return /\.(jpg|jpeg|png|webp|gif|avif|svg)(\?|#|$)/.test(lower)
+}
+
+// Resolves a numeric sort key for a reference library item (newest = highest).
+// Tries createdAt (Timestamp or plain number), then falls back to the ms
+// timestamp embedded in the item ID (format: ref-{ms}-{random}).
+const resolveReferenceItemSortKey = (item: { createdAt?: unknown; id?: string; name?: string }): number => {
+  const ca = item.createdAt
+  let result = 0
+  if (typeof ca === 'number' && ca > 0) result = ca
+  else if (ca && typeof (ca as { toMillis?: unknown }).toMillis === 'function') {
+    result = (ca as { toMillis: () => number }).toMillis()
+  }
+  else if (ca && typeof (ca as { seconds?: unknown }).seconds === 'number') {
+    result = (ca as { seconds: number }).seconds * 1000
+  }
+  else if (ca && typeof (ca as { _seconds?: unknown })._seconds === 'number') {
+    result = (ca as { _seconds: number })._seconds * 1000
+  }
+  else if (typeof ca === 'string') {
+    const parsed = Date.parse(ca)
+    if (!isNaN(parsed) && parsed > 0) result = parsed
+  }
+  else if (typeof item.id === 'string') {
+    const m = item.id.match(/(?:^|-)([1-9]\d{11,12})(?:-|$)/)
+    if (m) result = Number(m[1])
+  }
+  
+  if (result === 0) {
+    console.warn(`[LabNewLayout] Reference item missing sort key:`, item.name || item.id, ca)
+  }
+  return result
 }
 
 const sanitizeFileNameSegment = (value: string, fallback: string): string => {
@@ -2035,7 +2162,10 @@ type GalleryCardProps = {
   isMovingToFirebase?: boolean
   onExtendBefore?: (entry: LabNewLayoutGalleryHistoryEntry) => void
   onExtendAfter?: (entry: LabNewLayoutGalleryHistoryEntry) => void
+  onSetCompareBefore?: (url: string) => void
+  onSetCompareAfter?: (url: string) => void
   onDelete?: (id: string) => void
+  onCapturePoster?: (id: string, dataUrl: string) => void
 }
 
 function ExpiryBadgeForCard({ entry }: { entry: LabNewLayoutGalleryHistoryEntry }) {
@@ -2060,16 +2190,19 @@ function GalleryCard({
   isMovingToFirebase,
   onExtendBefore,
   onExtendAfter,
+  onSetCompareBefore,
+  onSetCompareAfter,
   onDelete,
+  onCapturePoster,
 }: GalleryCardProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const idleTimerRef = useRef<number | null>(null)
   const [isHovered, setIsHovered] = useState(false)
   const [isOverlayIdleHidden, setIsOverlayIdleHidden] = useState(false)
-  const [posterHidden, setPosterHidden] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [failedPlaybackSource, setFailedPlaybackSource] = useState('')
   const mediaUrl = entry.resultUrl || Object.values(entry.mediaUrls)[0] || ''
+  const isImageResult = isImageResultUrl(mediaUrl)
   const normalizedMediaUrl = useMemo(() => resolveProxySourceUrl(mediaUrl), [mediaUrl])
   const proxyMediaUrl = useMemo(() => buildVideoProxyUrl(normalizedMediaUrl), [normalizedMediaUrl])
   const playbackUrl = useMemo(() => {
@@ -2098,6 +2231,30 @@ function GalleryCard({
   const isReferenceUploaded = entry.status === 'success' && Boolean(entry.resultUrl) && entry.resultUrl.includes('firebasestorage')
   const isReferenceMissing = entry.status === 'success' && !isReferenceUploading && !isReferenceUploaded
   const dragPayload = useMemo(() => buildHistoryReferencePayload(entry), [entry])
+  const cachedPosterUrl = useMemo(() => {
+    const normalized = normalizedMediaUrl.trim()
+    const raw = mediaUrl.trim()
+
+    if (entry.posterUrl) {
+      if (normalized) {
+        _historyPosterCache.set(normalized, entry.posterUrl)
+      }
+      if (raw) {
+        _historyPosterCache.set(raw, entry.posterUrl)
+      }
+      return entry.posterUrl
+    }
+
+    if (normalized && _historyPosterCache.has(normalized)) {
+      return _historyPosterCache.get(normalized) || ''
+    }
+
+    if (raw && _historyPosterCache.has(raw)) {
+      return _historyPosterCache.get(raw) || ''
+    }
+
+    return ''
+  }, [entry.posterUrl, mediaUrl, normalizedMediaUrl])
 
   const clearIdleTimer = useCallback(() => {
     if (idleTimerRef.current !== null) {
@@ -2142,7 +2299,6 @@ function GalleryCard({
         videoRef.current.pause()
         videoRef.current.currentTime = 0
         videoRef.current.muted = true
-        setPosterHidden(false)
       }
     },
   }
@@ -2163,36 +2319,67 @@ function GalleryCard({
       {...hoverHandlers}
     >
       <div className="lab-newlayout-history-gallery-media">
-        {entry.posterUrl ? (
+        {!isImageResult && cachedPosterUrl ? (
           <img
-            className={`lab-newlayout-history-gallery-poster${posterHidden ? ' is-hidden' : ''}`}
-            src={entry.posterUrl}
+            className={`lab-newlayout-history-gallery-poster${isHovered ? ' is-hidden' : ''}`}
+            src={cachedPosterUrl}
             alt=""
           />
         ) : null}
         {mediaUrl ? (
-          <video
-            ref={videoRef}
-            className="lab-newlayout-history-gallery-preview"
-            src={playbackUrl}
-            playsInline
-            preload="metadata"
-            onPlay={() => setPosterHidden(true)}
-            onPause={() => setPosterHidden(false)}
-            onError={() => {
-              if (!normalizedMediaUrl || !proxyMediaUrl || failedPlaybackSource === normalizedMediaUrl) return
-              setFailedPlaybackSource(normalizedMediaUrl)
-            }}
-            onContextMenu={(event) => {
-              if (!onDownloadVideo || entry.status !== 'success') return
-              event.preventDefault()
-              event.stopPropagation()
-              onDownloadVideo(entry, playbackUrl || mediaUrl)
-            }}
-          />
+          isImageResult ? (
+            <img
+              className="lab-newlayout-history-gallery-preview"
+              src={mediaUrl}
+              alt=""
+              loading="lazy"
+            />
+          ) : (
+            <video
+              ref={videoRef}
+              className="lab-newlayout-history-gallery-preview"
+              src={playbackUrl ? (buildVideoProxyUrl(playbackUrl) || playbackUrl) : ''}
+              poster={cachedPosterUrl || undefined}
+              crossOrigin={(buildVideoProxyUrl(playbackUrl) || playbackUrl).includes('/api/video-proxy') ? undefined : 'anonymous'}
+              playsInline
+              preload={cachedPosterUrl ? 'none' : 'auto'}
+              onLoadedData={(event) => {
+                if (cachedPosterUrl || !onCapturePoster) return
+                const dataUrl = _captureVideoFrame(event.currentTarget)
+                if (dataUrl) {
+                  const normalized = normalizedMediaUrl.trim()
+                  const raw = mediaUrl.trim()
+                  if (normalized) {
+                    _historyPosterCache.set(normalized, dataUrl)
+                  }
+                  if (raw) {
+                    _historyPosterCache.set(raw, dataUrl)
+                  }
+                  event.currentTarget.poster = dataUrl
+                  onCapturePoster(entry.id, dataUrl)
+                }
+              }}
+              onError={() => {
+                if (!normalizedMediaUrl || !proxyMediaUrl || failedPlaybackSource === normalizedMediaUrl) return
+                setFailedPlaybackSource(normalizedMediaUrl)
+              }}
+              onContextMenu={(event) => {
+                if (!onDownloadVideo || entry.status !== 'success') return
+                event.preventDefault()
+                event.stopPropagation()
+                onDownloadVideo(entry, playbackUrl || mediaUrl)
+              }}
+            />
+          )
         ) : (
           <div className="lab-newlayout-history-gallery-preview" />
         )}
+        {isImageResult && entry.status === 'success' ? (
+          <div className="lab-newlayout-history-gallery-image-badge" aria-label="Image generation">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            IMG
+          </div>
+        ) : null}
         {galleryErrorInfo ? (
           <div className={`lab-newlayout-history-gallery-error-overlay lab-newlayout-history-gallery-error-overlay--${galleryErrorInfo.kind}`}>
             <div
@@ -2336,34 +2523,62 @@ function GalleryCard({
             {isMovingToFirebase ? '...' : 'Ref'}
           </button>
         ) : null}
-      {(onExtendBefore || onExtendAfter) && showActionOverlays && !confirmingDelete ? (
+      {((onSetCompareBefore || onSetCompareAfter || onExtendBefore || onExtendAfter) && showActionOverlays && !confirmingDelete) ? (
         <div className="lab-newlayout-history-gallery-extend-actions">
-          <button
-            type="button"
-            className="lab-newlayout-history-gallery-extend-btn"
-            onClick={(event) => { event.stopPropagation(); onExtendBefore?.(entry) }}
-            aria-label="Extend before"
-            title="Extend Before"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M19 12H9" />
-              <path d="m12 15-3-3 3-3" />
-              <path d="M5 5v14" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            className="lab-newlayout-history-gallery-extend-btn"
-            onClick={(event) => { event.stopPropagation(); onExtendAfter?.(entry) }}
-            aria-label="Extend after"
-            title="Extend After"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M5 12h10" />
-              <path d="m12 9 3 3-3 3" />
-              <path d="M19 5v14" />
-            </svg>
-          </button>
+          {(onSetCompareBefore || onSetCompareAfter) && entry.status === 'success' && mediaUrl ? (
+            <>
+              <button
+                type="button"
+                className="lab-newlayout-history-gallery-compare-set-btn"
+                onClick={(event) => { event.stopPropagation(); onSetCompareBefore?.(mediaUrl) }}
+                aria-label="Set as Before in comparison"
+                title="Set as Before"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="18" rx="2"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
+                <span>B</span>
+              </button>
+              <button
+                type="button"
+                className="lab-newlayout-history-gallery-compare-set-btn"
+                onClick={(event) => { event.stopPropagation(); onSetCompareAfter?.(mediaUrl) }}
+                aria-label="Set as After in comparison"
+                title="Set as After"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="18" rx="2"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
+                <span>A</span>
+              </button>
+            </>
+          ) : null}
+          {(onExtendBefore || onExtendAfter) ? (
+            <>
+              <button
+                type="button"
+                className="lab-newlayout-history-gallery-extend-btn"
+                onClick={(event) => { event.stopPropagation(); onExtendBefore?.(entry) }}
+                aria-label="Extend before"
+                title="Extend Before"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M19 12H9" />
+                  <path d="m12 15-3-3 3-3" />
+                  <path d="M5 5v14" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="lab-newlayout-history-gallery-extend-btn"
+                onClick={(event) => { event.stopPropagation(); onExtendAfter?.(entry) }}
+                aria-label="Extend after"
+                title="Extend After"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M5 12h10" />
+                  <path d="m12 9 3 3-3 3" />
+                  <path d="M19 5v14" />
+                </svg>
+              </button>
+            </>
+          ) : null}
         </div>
       ) : null}
       {mediaUrl ? (
@@ -2388,6 +2603,9 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
     studioFolders,
     storyBibleData,
     projectReferenceLibraryItems,
+    setCompareBeforeUrl,
+    setCompareAfterUrl,
+    setCompareOverlayOpen,
   } = useLabNewLayoutData()
   const {
     entries,
@@ -2547,6 +2765,7 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
     return projectReferenceLibraryItems.some((item) => item.url === selectedEntry.resultUrl)
   }, [projectReferenceLibraryItems, selectedEntry?.resultUrl])
   const lightboxIsReferencing = Boolean(selectedEntry && movingToFirebaseIds[selectedEntry.id])
+  const lightboxIsImage = isImageResultUrl(lightboxSourceUrl)
 
   const handleOpenLightboxVideoLink = useCallback(() => {
     if (!lightboxSourceUrl || typeof window === 'undefined') return
@@ -2613,9 +2832,8 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
   const updateHistoryItem = useLabNewLayoutStore((state) => state.updateHistoryItem)
   const { showToast: showReuseToast } = useToast()
 
-  useEffect(() => {
-    setVisibleEntryCount((current) => Math.min(Math.max(current, GALLERY_PAGE_SIZE), Math.max(projectScopedEntries.length, GALLERY_PAGE_SIZE)))
-  }, [projectScopedEntries.length])
+  // When in-progress entries finish they stay visible because they were already in the first page.
+  // Do NOT auto-expand visible count here — that would load all videos on mount.
 
   const handleLoadMoreEntries = useCallback(async () => {
     if (projectScopedEntries.length > visibleEntryCount) {
@@ -2855,6 +3073,9 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
     }
   }, [archiveHistoryVideoToFirebase, authUid, projectReferenceLibraryItems, showReuseToast, studioActiveFolderId, studioProjectId])
 
+  // Auto-archive: find the first completed generation not yet stored in Firebase.
+  // We intentionally do NOT auto-add to the references library here — the user
+  // adds references to the panel manually.
   const autoReferenceCandidate = useMemo(() => {
     if (Object.keys(movingToFirebaseIds).length > 0) {
       return null
@@ -2865,17 +3086,10 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
       if (!sourceUrl || entry.status === 'failed') {
         return false
       }
-
-      const referenceFolderId = (entry.folderId || studioActiveFolderId || '').trim() || null
-      if (sourceUrl.includes('firebasestorage')) {
-        return !projectReferenceLibraryItems.some(
-          (item) => item.url === sourceUrl && (item.folderId || null) === referenceFolderId,
-        )
-      }
-
-      return true
+      // Only needs archiving if not already in Firebase storage
+      return !sourceUrl.includes('firebasestorage')
     }) ?? null
-  }, [movingToFirebaseIds, projectReferenceLibraryItems, projectScopedEntries, studioActiveFolderId])
+  }, [movingToFirebaseIds, projectScopedEntries])
 
   useEffect(() => {
     if (!autoReferenceCandidate) {
@@ -2894,8 +3108,9 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
     }
 
     autoReferenceSignatureByIdRef.current[autoReferenceCandidate.id] = signature
-    void moveHistoryVideoToFirebase(autoReferenceCandidate, { silent: true })
-  }, [autoReferenceCandidate, moveHistoryVideoToFirebase, studioActiveFolderId, studioProjectId])
+    // Archive to Firebase only — do not add to references library
+    void archiveHistoryVideoToFirebase(autoReferenceCandidate, { silent: true, showAlreadyArchivedMessage: false })
+  }, [autoReferenceCandidate, archiveHistoryVideoToFirebase, studioActiveFolderId, studioProjectId])
 
   const selectedEntryFailureReason = useMemo(() => {
     const raw = (selectedEntry?.errorMessage || '').trim()
@@ -3498,26 +3713,34 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
           <div className="lab-newlayout-history-lightbox-left">
             {(selectedEntry.resultUrl || Object.values(selectedEntry.mediaUrls)[0]) ? (
               <div className="lab-newlayout-history-lightbox-media">
-                <video
-                  ref={lightboxVideoRef}
-                  className="lab-newlayout-history-lightbox-video"
-                  src={lightboxVideoSrc}
-                  controls
-                  autoPlay
-                  playsInline
-                  poster={selectedEntry.posterUrl || undefined}
-                  onError={() => {
-                    if (!lightboxSourceUrl || !lightboxProxyUrl || failedLightboxSource === lightboxSourceUrl) return
-                    setFailedLightboxSource(lightboxSourceUrl)
-                  }}
-                  onContextMenu={(event) => {
-                    event.preventDefault()
-                    void handleDownloadVideo(
-                      selectedEntry,
-                      resolveProxySourceUrl(lightboxVideoRef.current?.currentSrc || lightboxVideoSrc || selectedEntry.resultUrl || Object.values(selectedEntry.mediaUrls)[0] || ''),
-                    )
-                  }}
-                />
+                {lightboxIsImage ? (
+                  <img
+                    className="lab-newlayout-history-lightbox-image"
+                    src={lightboxSourceUrl}
+                    alt=""
+                  />
+                ) : (
+                  <video
+                    ref={lightboxVideoRef}
+                    className="lab-newlayout-history-lightbox-video"
+                    src={lightboxVideoSrc}
+                    controls
+                    autoPlay
+                    playsInline
+                    poster={selectedEntry.posterUrl || undefined}
+                    onError={() => {
+                      if (!lightboxSourceUrl || !lightboxProxyUrl || failedLightboxSource === lightboxSourceUrl) return
+                      setFailedLightboxSource(lightboxSourceUrl)
+                    }}
+                    onContextMenu={(event) => {
+                      event.preventDefault()
+                      void handleDownloadVideo(
+                        selectedEntry,
+                        resolveProxySourceUrl(lightboxVideoRef.current?.currentSrc || lightboxVideoSrc || selectedEntry.resultUrl || Object.values(selectedEntry.mediaUrls)[0] || ''),
+                      )
+                    }}
+                  />
+                )}
                 <div className="lab-newlayout-history-lightbox-media-actions">
                   <button
                     type="button"
@@ -3525,11 +3748,11 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
                     onClick={() => {
                       void handleDownloadVideo(
                         selectedEntry,
-                        resolveProxySourceUrl(lightboxVideoRef.current?.currentSrc || lightboxVideoSrc || selectedEntry.resultUrl || Object.values(selectedEntry.mediaUrls)[0] || ''),
+                        resolveProxySourceUrl(lightboxIsImage ? lightboxSourceUrl : (lightboxVideoRef.current?.currentSrc || lightboxVideoSrc || selectedEntry.resultUrl || Object.values(selectedEntry.mediaUrls)[0] || '')),
                       )
                     }}
                   >
-                    Download video
+                    {lightboxIsImage ? 'Download image' : 'Download video'}
                   </button>
                   <button
                     type="button"
@@ -3539,7 +3762,7 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
                     }}
                     disabled={lightboxIsReferencing || lightboxIsReferenced || !selectedEntry.resultUrl}
                   >
-                    {lightboxIsReferencing ? 'Referencing...' : lightboxIsReferenced ? 'Referenced' : 'Reference video'}
+                    {lightboxIsReferencing ? 'Referencing...' : lightboxIsReferenced ? 'Referenced' : lightboxIsImage ? 'Reference image' : 'Reference video'}
                   </button>
                   <button
                     type="button"
@@ -3547,7 +3770,7 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
                     onClick={handleOpenLightboxVideoLink}
                     disabled={!lightboxSourceUrl}
                   >
-                    Open video link
+                    {lightboxIsImage ? 'Open image link' : 'Open video link'}
                   </button>
                   <button
                     type="button"
@@ -3559,22 +3782,26 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
                   >
                     {resubmittingIds[selectedEntry.id] ? 'Regenerating...' : 'Regenerate'}
                   </button>
-                  <button
-                    type="button"
-                    className="lab-newlayout-history-lightbox-action"
-                    onClick={() => { void handleExtendTabClick('before') }}
-                    disabled={isSubmittingExtendReference}
-                  >
-                    {isSubmittingExtendReference && activeExtendTab === 'before' ? 'Preparing...' : 'Extend Before'}
-                  </button>
-                  <button
-                    type="button"
-                    className="lab-newlayout-history-lightbox-action"
-                    onClick={() => { void handleExtendTabClick('after') }}
-                    disabled={isSubmittingExtendReference}
-                  >
-                    {isSubmittingExtendReference && activeExtendTab === 'after' ? 'Preparing...' : 'Extend After'}
-                  </button>
+                  {!lightboxIsImage ? (
+                    <>
+                      <button
+                        type="button"
+                        className="lab-newlayout-history-lightbox-action"
+                        onClick={() => { void handleExtendTabClick('before') }}
+                        disabled={isSubmittingExtendReference}
+                      >
+                        {isSubmittingExtendReference && activeExtendTab === 'before' ? 'Preparing...' : 'Extend Before'}
+                      </button>
+                      <button
+                        type="button"
+                        className="lab-newlayout-history-lightbox-action"
+                        onClick={() => { void handleExtendTabClick('after') }}
+                        disabled={isSubmittingExtendReference}
+                      >
+                        {isSubmittingExtendReference && activeExtendTab === 'after' ? 'Preparing...' : 'Extend After'}
+                      </button>
+                    </>
+                  ) : null}
                 </div>
                 {lightboxSourceUrl ? (
                   <div className="lab-newlayout-history-lightbox-media-link-row">
@@ -3603,7 +3830,7 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
                   <strong>{selectedEntry.ratio}</strong>
                 </div>
               ) : null}
-              {selectedEntry.duration != null ? (
+              {!lightboxIsImage && selectedEntry.duration != null ? (
                 <div className="lab-newlayout-history-lightbox-meta-row lab-newlayout-history-lightbox-meta-row--summary">
                   <span>Duration</span>
                   <strong>{selectedEntry.duration}s</strong>
@@ -3727,7 +3954,7 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
             ) : null}
             {selectedEntry.submittedAt && selectedEntry.completedAt ? (
               <div className="lab-newlayout-history-lightbox-meta-row">
-                <span>Duration</span>
+                <span>Time to Generate</span>
                 <strong>{calculateGenerationMetrics(selectedEntry.submittedAt, selectedEntry.completedAt).durationFormatted}</strong>
               </div>
             ) : null}
@@ -3887,6 +4114,9 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
                 isMovingToFirebase={Boolean(movingToFirebaseIds[entry.id])}
                 onExtendBefore={(target) => { void handleExtendFromEntry('before', target) }}
                 onExtendAfter={(target) => { void handleExtendFromEntry('after', target) }}
+                onSetCompareBefore={(url) => { setCompareBeforeUrl(url) }}
+                onSetCompareAfter={(url) => { setCompareAfterUrl(url) }}
+                onCapturePoster={(id, dataUrl) => updateHistoryItem(id, { posterUrl: dataUrl })}
                 onDelete={(entryId) => {
                   const targetEntry = projectScopedEntries.find((entry) => entry.id === entryId)
                   if (!targetEntry) {
@@ -3920,21 +4150,55 @@ function HistoryGallerySuggestionPanel(props: IDockviewPanelProps<PanelSuggestio
   )
 }
 
-function ReferencesPanel(_props: IDockviewPanelProps<PanelSuggestionParams>) {
+function ReferencesPanel(props: IDockviewPanelProps<PanelSuggestionParams>) {
   const REFERENCE_PAGE_SIZE = 36
   const REFERENCE_SKELETON_COUNT = 10
   const addComposerReference = useLabNewLayoutStore((state) => state.addComposerReference)
   const composerReferences = useLabNewLayoutStore((state) => state.composerReferences)
-  const { authUid, studioProjectId, studioActiveFolderId, projectReferenceLibraryItems, projectReferenceLibraryLoading } = useLabNewLayoutData()
+  const pendingGenerationAssets = useLabNewLayoutStore((state) => state.pendingGenerationAssets)
+  const { authUid, studioProjectId, studioActiveFolderId, projectReferenceLibraryItems, projectReferenceLibraryLoading, compareBeforeUrl, compareAfterUrl, setCompareBeforeUrl, setCompareAfterUrl } = useLabNewLayoutData()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const videoPreviewRefs = useRef<Record<string, HTMLVideoElement | null>>({})
   const hoveredVideoIdRef = useRef<string | null>(null)
   const [isDragOver, setIsDragOver] = useState(false)
   const [uploadingCount, setUploadingCount] = useState(0)
   const [visibleReferenceCount, setVisibleReferenceCount] = useState(REFERENCE_PAGE_SIZE)
+  const [referenceFilterMode, setReferenceFilterMode] = useState<ReferenceLibraryFilterMode>('all')
+  const [pendingReferenceUploads, setPendingReferenceUploads] = useState<PendingReferenceUpload[]>([])
+  const [selectedReferenceItem, setSelectedReferenceItem] = useState<StudioReferenceAsset | null>(null)
+  const [liveReferenceLibraryItems, setLiveReferenceLibraryItems] = useState<StudioReferenceAsset[] | null>(null)
+  const [liveReferenceLibraryLoading, setLiveReferenceLibraryLoading] = useState(() => Boolean(studioProjectId))
+  // subscriptionKey increments when the panel becomes active so the subscription is
+  // guaranteed to (re)start even if studioProjectId hasn't changed since mount.
+  // This handles the case where Dockview mounts the panel as inactive (another panel
+  // receives setActive during layout construction) and only later restores References
+  // as the active tab via api.fromJSON.
+  const [subscriptionKey, setSubscriptionKey] = useState(0)
   const [uploadScope, setUploadScope] = useState<'project' | 'folder'>(() => (studioActiveFolderId ? 'folder' : 'project'))
   const { showToast: showRefToast } = useToast()
   const { has: isReferenceLiked, toggle: toggleReferenceLiked } = useLikedReferenceUrls()
+
+  // Bump subscriptionKey when the panel first becomes active (handles fromJSON restore).
+  useEffect(() => {
+    const disposable = props.api.onDidActiveChange(() => {
+      if (props.api.isActive) {
+        setSubscriptionKey((k) => k + 1)
+      }
+    })
+    // Also trigger immediately if the panel is already active at mount time.
+    if (props.api.isActive) {
+      setSubscriptionKey((k) => k + 1)
+    }
+    return () => disposable.dispose()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const removePendingReferenceUpload = useCallback((pendingId: string) => {
+    setPendingReferenceUploads((current) => {
+      const next = current.filter((item) => item.id !== pendingId)
+      return next.length === current.length ? current : next
+    })
+  }, [])
 
   const canMirrorReferenceUrlInBrowser = useCallback((value: string) => {
     try {
@@ -3953,16 +4217,124 @@ function ReferencesPanel(_props: IDockviewPanelProps<PanelSuggestionParams>) {
     }
   }, [studioActiveFolderId, uploadScope])
 
-  const visibleLibraryItems = useMemo(() => {
-    if (!studioActiveFolderId) {
-      return projectReferenceLibraryItems.filter((item) => !item.folderId)
+  useEffect(() => {
+    if (!studioProjectId) {
+      setLiveReferenceLibraryItems(null)
+      setLiveReferenceLibraryLoading(false)
+      return
     }
 
-    return projectReferenceLibraryItems.filter((item) => !item.folderId || item.folderId === studioActiveFolderId)
-  }, [projectReferenceLibraryItems, studioActiveFolderId])
+    setLiveReferenceLibraryLoading(true)
+    const unsubscribe = subscribeToProjectReferenceLibrary(
+      studioProjectId,
+      (items) => {
+        setLiveReferenceLibraryItems(items)
+        setLiveReferenceLibraryLoading(false)
+      },
+      () => {
+        setLiveReferenceLibraryLoading(false)
+      },
+    )
 
-  const isReferenceListSyncing = projectReferenceLibraryLoading
-  const showReferenceSkeletons = Boolean(studioProjectId && visibleLibraryItems.length === 0 && isReferenceListSyncing)
+    return unsubscribe
+  }, [studioProjectId, subscriptionKey])
+
+  const effectiveReferenceLibraryItems = liveReferenceLibraryItems ?? projectReferenceLibraryItems
+
+  useEffect(() => {
+    const savedReferenceIds = new Set(effectiveReferenceLibraryItems.map((item) => item.id))
+    setPendingReferenceUploads((current) => {
+      const next = current.filter((item) => !savedReferenceIds.has(item.id))
+      return next.length === current.length ? current : next
+    })
+  }, [effectiveReferenceLibraryItems])
+
+  useEffect(() => {
+    if (!selectedReferenceItem) {
+      return
+    }
+
+    if (!effectiveReferenceLibraryItems.some((item) => item.id === selectedReferenceItem.id)) {
+      setSelectedReferenceItem(null)
+    }
+  }, [effectiveReferenceLibraryItems, selectedReferenceItem])
+
+  const scopedLibraryItems = useMemo(() => {
+    const filtered = !studioActiveFolderId
+      ? effectiveReferenceLibraryItems.filter((item) => !item.folderId)
+      : effectiveReferenceLibraryItems.filter((item) => !item.folderId || item.folderId === studioActiveFolderId)
+    return [...filtered].sort((a, b) => resolveReferenceItemSortKey(b) - resolveReferenceItemSortKey(a))
+  }, [effectiveReferenceLibraryItems, studioActiveFolderId])
+
+  const filteredLibraryItems = useMemo(() => {
+    return scopedLibraryItems.filter((item) => {
+      if (referenceFilterMode === 'liked') {
+        return isReferenceLiked(item.url)
+      }
+
+      if (referenceFilterMode === 'all') {
+        return true
+      }
+
+      return item.kind === referenceFilterMode
+    })
+  }, [isReferenceLiked, referenceFilterMode, scopedLibraryItems])
+
+  const filteredPendingReferenceUploads = useMemo(() => {
+    return pendingReferenceUploads.filter((item) => {
+      if (referenceFilterMode === 'liked' || referenceFilterMode === 'all') {
+        return true
+      }
+
+      return item.kind === referenceFilterMode
+    })
+  }, [pendingReferenceUploads, referenceFilterMode])
+
+  const filteredPendingGenerationAssets = useMemo(() => {
+    if (referenceFilterMode === 'liked' || referenceFilterMode === 'all' || referenceFilterMode === 'image') {
+      return pendingGenerationAssets
+    }
+    return []
+  }, [pendingGenerationAssets, referenceFilterMode])
+
+  const visibleLibraryItems = useMemo<VisibleReferenceItem[]>(() => {
+    const sortedItems = [...filteredPendingGenerationAssets, ...filteredPendingReferenceUploads, ...filteredLibraryItems].sort(
+      (a, b) => resolveReferenceItemSortKey(b) - resolveReferenceItemSortKey(a),
+    )
+    const uniqueItems = new Map<string, VisibleReferenceItem>()
+
+    for (const item of sortedItems) {
+      if (!uniqueItems.has(item.id)) {
+        uniqueItems.set(item.id, item)
+      }
+    }
+
+    return Array.from(uniqueItems.values())
+  }, [filteredLibraryItems, filteredPendingReferenceUploads, filteredPendingGenerationAssets])
+
+  const referenceFilterSummaryLabel = useMemo(() => {
+    switch (referenceFilterMode) {
+      case 'liked':
+        return 'Liked only'
+      case 'image':
+        return 'Images only'
+      case 'video':
+        return 'Videos only'
+      case 'audio':
+        return 'Audio only'
+      default:
+        return 'All'
+    }
+  }, [referenceFilterMode])
+
+  const isReferenceListSyncing = liveReferenceLibraryLoading || (liveReferenceLibraryItems === null && projectReferenceLibraryLoading)
+  const showReferenceSkeletons = Boolean(
+    studioProjectId
+    && scopedLibraryItems.length === 0
+    && pendingReferenceUploads.length === 0
+    && pendingGenerationAssets.length === 0
+    && isReferenceListSyncing,
+  )
 
   const pagedLibraryItems = useMemo(() => (
     visibleLibraryItems.slice(0, visibleReferenceCount)
@@ -3972,7 +4344,7 @@ function ReferencesPanel(_props: IDockviewPanelProps<PanelSuggestionParams>) {
 
   useEffect(() => {
     setVisibleReferenceCount(REFERENCE_PAGE_SIZE)
-  }, [studioProjectId, studioActiveFolderId])
+  }, [referenceFilterMode, studioProjectId, studioActiveFolderId])
 
   useEffect(() => {
     setVisibleReferenceCount((current) => Math.min(Math.max(current, REFERENCE_PAGE_SIZE), Math.max(visibleLibraryItems.length, REFERENCE_PAGE_SIZE)))
@@ -3982,7 +4354,7 @@ function ReferencesPanel(_props: IDockviewPanelProps<PanelSuggestionParams>) {
     setVisibleReferenceCount((current) => current + REFERENCE_PAGE_SIZE)
   }, [])
 
-  const uploadUrlToFirebase = useCallback(async (url: string, kind: 'image' | 'video', name: string): Promise<string | null> => {
+  const uploadUrlToFirebase = useCallback(async (url: string, kind: 'image' | 'video' | 'audio', name: string): Promise<string | null> => {
     try {
       const targetFolderId = uploadScope === 'folder' ? studioActiveFolderId : null
       const folderPathSegment = targetFolderId ? `folders/${targetFolderId}` : 'project'
@@ -3998,7 +4370,7 @@ function ReferencesPanel(_props: IDockviewPanelProps<PanelSuggestionParams>) {
           kind,
           storagePathPrefix,
           firebaseConfig,
-          mimeType: kind === 'video' ? 'video/mp4' : 'image/jpeg',
+          mimeType: kind === 'video' ? 'video/mp4' : kind === 'audio' ? 'audio/mpeg' : 'image/jpeg',
         }),
       })
       const payload = await response.json().catch(() => null) as { error?: string; saved?: { firebaseUrl?: string } } | null
@@ -4011,7 +4383,7 @@ function ReferencesPanel(_props: IDockviewPanelProps<PanelSuggestionParams>) {
     }
   }, [studioActiveFolderId, studioProjectId, uploadScope])
 
-  const appendLibraryReference = useCallback(async (reference: DragReferencePayload): Promise<boolean> => {
+  const appendLibraryReference = useCallback(async (reference: DragReferencePayload, options?: { itemId?: string }): Promise<boolean> => {
     if (!studioProjectId) {
       showRefToast({ message: 'Select a Studio project first', type: 'warning' })
       return false
@@ -4050,7 +4422,7 @@ function ReferencesPanel(_props: IDockviewPanelProps<PanelSuggestionParams>) {
     )
     if (exists) return false
 
-    const itemId = `ref-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const itemId = options?.itemId || `ref-${Date.now()}-${Math.random().toString(36).slice(2)}`
     await saveProjectReferenceLibraryItem(studioProjectId, {
       id: itemId,
       url: finalUrl,
@@ -4070,32 +4442,49 @@ function ReferencesPanel(_props: IDockviewPanelProps<PanelSuggestionParams>) {
     }
 
     if (!files.length) return
-    const validFiles = files.filter((f) => f.type.startsWith('image/') || f.type.startsWith('video/'))
+    const validFiles = files.filter((f) => f.type.startsWith('image/') || f.type.startsWith('video/') || f.type.startsWith('audio/'))
     if (!validFiles.length) {
-      showRefToast({ message: 'Only image and video files are supported', type: 'warning' })
+      showRefToast({ message: 'Only image, video, and audio files are supported', type: 'warning' })
       return
     }
 
     const targetFolderId = uploadScope === 'folder' ? studioActiveFolderId : null
     const folderPathSegment = targetFolderId ? `folders/${targetFolderId}` : 'project'
+    const pendingItems: PendingReferenceUpload[] = validFiles.map((file, index) => ({
+      id: `ref-${Date.now()}-${index}-${Math.random().toString(36).slice(2)}`,
+      kind: file.type.startsWith('video/') ? 'video' : file.type.startsWith('audio/') ? 'audio' : 'image',
+      name: file.name,
+      createdAt: Date.now() + index,
+      isPending: true as const,
+    }))
+    setPendingReferenceUploads((current) => [...pendingItems, ...current])
     setUploadingCount((n) => n + validFiles.length)
-    await Promise.all(validFiles.map(async (file) => {
+    await Promise.all(validFiles.map(async (file, index) => {
+      const pendingItem = pendingItems[index]
       try {
         const ext = file.name.split('.').pop() ?? ''
         const uniqueName = `lab-references/projects/${studioProjectId}/${folderPathSegment}/${authUid || 'anon'}-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
         const ref = storageRef(storage, uniqueName)
         await uploadBytes(ref, file, { contentType: file.type })
         const url = await getDownloadURL(ref)
-        const kind: 'image' | 'video' = file.type.startsWith('video/') ? 'video' : 'image'
+        const kind: 'image' | 'video' | 'audio' = file.type.startsWith('video/')
+          ? 'video'
+          : file.type.startsWith('audio/')
+            ? 'audio'
+            : 'image'
 
-        await appendLibraryReference({ url, kind, name: file.name })
+        const added = await appendLibraryReference({ url, kind, name: file.name }, { itemId: pendingItem.id })
+        if (!added) {
+          removePendingReferenceUpload(pendingItem.id)
+        }
       } catch {
+        removePendingReferenceUpload(pendingItem.id)
         showRefToast({ message: `Failed to upload ${file.name}`, type: 'error' })
       } finally {
         setUploadingCount((n) => Math.max(0, n - 1))
       }
     }))
-  }, [appendLibraryReference, authUid, showRefToast, studioActiveFolderId, studioProjectId, uploadScope])
+  }, [appendLibraryReference, authUid, removePendingReferenceUpload, showRefToast, studioActiveFolderId, studioProjectId, uploadScope])
 
   const handleDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault()
@@ -4140,6 +4529,14 @@ function ReferencesPanel(_props: IDockviewPanelProps<PanelSuggestionParams>) {
 
   const handlePlusClick = useCallback(() => {
     fileInputRef.current?.click()
+  }, [])
+
+  const handleOpenReferenceItem = useCallback((item: StudioReferenceAsset) => {
+    setSelectedReferenceItem(item)
+  }, [])
+
+  const handleCloseReferenceItem = useCallback(() => {
+    setSelectedReferenceItem(null)
   }, [])
 
   const handleVideoHoverStart = useCallback((itemId: string) => {
@@ -4217,6 +4614,7 @@ function ReferencesPanel(_props: IDockviewPanelProps<PanelSuggestionParams>) {
 
     try {
       await deleteProjectReferenceLibraryItem(studioProjectId, item.id)
+      setSelectedReferenceItem((current) => (current?.id === item.id ? null : current))
       showRefToast({ message: 'Removed from project references', type: 'success' })
     } catch {
       showRefToast({ message: 'Failed to remove reference', type: 'error' })
@@ -4275,6 +4673,126 @@ function ReferencesPanel(_props: IDockviewPanelProps<PanelSuggestionParams>) {
     }
   }, [projectReferenceLibraryItems, studioActiveFolderId])
   const activeScopeLabel = uploadScope === 'folder' && studioActiveFolderId ? 'Folder' : 'Project'
+  const hasAnyScopedReferences = scopedLibraryItems.length > 0 || pendingReferenceUploads.length > 0
+  const selectedReferenceSourceUrl = useMemo(
+    () => (selectedReferenceItem ? resolveProxySourceUrl(selectedReferenceItem.url) : ''),
+    [selectedReferenceItem],
+  )
+  const selectedReferenceVideoUrl = useMemo(() => {
+    if (!selectedReferenceItem || selectedReferenceItem.kind !== 'video') {
+      return ''
+    }
+
+    return buildVideoProxyUrl(selectedReferenceSourceUrl) || selectedReferenceSourceUrl
+  }, [selectedReferenceItem, selectedReferenceSourceUrl])
+  const selectedReferenceIsLiked = selectedReferenceItem ? isReferenceLiked(selectedReferenceItem.url) : false
+  const referenceLightbox = selectedReferenceItem ? createPortal(
+    <div
+      className="lab-newlayout-history-lightbox-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Reference preview"
+      onClick={handleCloseReferenceItem}
+    >
+      <div
+        className="lab-newlayout-history-lightbox lab-newlayout-reference-lightbox"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="lab-newlayout-history-lightbox-head">
+          <div>
+            <div className="lab-newlayout-history-lightbox-kicker">Reference · {selectedReferenceItem.kind}</div>
+            <div className="lab-newlayout-history-lightbox-title">{selectedReferenceItem.name || 'Reference asset'}</div>
+          </div>
+          <div className="lab-newlayout-history-lightbox-head-actions">
+            <button
+              type="button"
+              className={`lab-newlayout-history-lightbox-like${selectedReferenceIsLiked ? ' is-liked' : ''}`}
+              onClick={() => toggleReferenceLiked(selectedReferenceItem.url)}
+              aria-label={selectedReferenceIsLiked ? 'Unlike reference' : 'Like reference'}
+              title={selectedReferenceIsLiked ? 'Unlike reference' : 'Like reference'}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill={selectedReferenceIsLiked ? 'currentColor' : 'none'}
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+              </svg>
+              <span>{selectedReferenceIsLiked ? 'Liked' : 'Like'}</span>
+            </button>
+            <button
+              type="button"
+              className="lab-newlayout-history-lightbox-action"
+              onClick={() => handleAddToComposer(selectedReferenceItem)}
+            >
+              Add to composer
+            </button>
+            <button
+              type="button"
+              className="lab-newlayout-history-lightbox-action"
+              onClick={() => {
+                if (!selectedReferenceSourceUrl) return
+                window.open(selectedReferenceSourceUrl, '_blank', 'noopener,noreferrer')
+              }}
+              disabled={!selectedReferenceSourceUrl}
+            >
+              Open link
+            </button>
+            {(selectedReferenceItem.kind === 'image' || selectedReferenceItem.kind === 'video') && (
+              <button
+                type="button"
+                className="lab-newlayout-history-lightbox-action"
+                onClick={() => {
+                  setCompareBeforeUrl(selectedReferenceSourceUrl)
+                }}
+              >
+                Compare
+              </button>
+            )}
+            <button
+              type="button"
+              className="lab-newlayout-history-lightbox-close"
+              onClick={handleCloseReferenceItem}
+              aria-label="Close"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+        <div className="lab-newlayout-reference-lightbox-body">
+          <div className="lab-newlayout-reference-lightbox-media">
+            {selectedReferenceItem.kind === 'video' ? (
+              <video
+                className="lab-newlayout-reference-lightbox-media-element"
+                src={selectedReferenceVideoUrl}
+                controls
+                autoPlay
+                playsInline
+              />
+            ) : selectedReferenceItem.kind === 'audio' ? (
+              <div className="lab-newlayout-reference-lightbox-audio-shell">
+                <div className="lab-newlayout-reference-lightbox-audio-icon">♪</div>
+                <audio className="lab-newlayout-reference-lightbox-audio" src={selectedReferenceSourceUrl} controls autoPlay />
+              </div>
+            ) : (
+              <img
+                className="lab-newlayout-reference-lightbox-media-element lab-newlayout-reference-lightbox-image"
+                src={selectedReferenceSourceUrl}
+                alt={selectedReferenceItem.name}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  ) : null
 
   return (
     <div
@@ -4286,10 +4804,10 @@ function ReferencesPanel(_props: IDockviewPanelProps<PanelSuggestionParams>) {
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*,video/*"
+        accept="image/*,video/*,audio/*"
         multiple
         className="lab-newlayout-references-file-input"
-        aria-label="Upload reference images or videos"
+        aria-label="Upload reference images, videos, or audio"
         onChange={handleFileInput}
       />
       <div className="lab-newlayout-history-top-fixed">
@@ -4303,6 +4821,34 @@ function ReferencesPanel(_props: IDockviewPanelProps<PanelSuggestionParams>) {
             </span>
           </div>
           <div className="lab-newlayout-references-toolbar-actions">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="lab-newlayout-history-toolbar-btn"
+                >
+                  Filter: {referenceFilterSummaryLabel}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-55">
+                <DropdownMenuLabel>References</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuRadioGroup
+                  value={referenceFilterMode}
+                  onValueChange={(value) => {
+                    if (value === 'all' || value === 'liked' || value === 'image' || value === 'video' || value === 'audio') {
+                      setReferenceFilterMode(value)
+                    }
+                  }}
+                >
+                  <DropdownMenuRadioItem value="all">Show all references</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="liked">Only liked references</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="image">Only images</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="video">Only videos</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="audio">Only audio</DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <div className="lab-newlayout-references-scope-toggle" aria-label="Upload scope">
               <button
                 type="button"
@@ -4344,18 +4890,25 @@ function ReferencesPanel(_props: IDockviewPanelProps<PanelSuggestionParams>) {
           </div>
         ) : visibleLibraryItems.length === 0 && !showReferenceSkeletons && !isDragOver ? (
           <div className="lab-newlayout-references-empty">
-            <div className="lab-newlayout-references-empty-actions">
-              <button type="button" className="lab-newlayout-references-plus-card" onClick={handlePlusClick}>
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5a.75.75 0 0 1 .75.75V11.25H18.25a.75.75 0 0 1 0 1.5H12.75v5.5a.75.75 0 0 1-1.5 0v-5.5H5.75a.75.75 0 0 1 0-1.5h5.5V5.75A.75.75 0 0 1 12 5Z"/></svg>
-                <span>Add images or videos</span>
-                <span className="lab-newlayout-references-plus-card-sub">Saved as {activeScopeLabel.toLowerCase()} reference · drag from desktop or History Gallery</span>
-              </button>
-              {composerReferences.length > 0 ? (
-                <button type="button" className="lab-newlayout-references-import-btn" onClick={() => { void importComposerReferences() }}>
-                  Import current composer refs
+            {hasAnyScopedReferences ? (
+              <div className="lab-newlayout-references-plus-card lab-newlayout-references-plus-card--static">
+                <span>No references match this filter.</span>
+                <span className="lab-newlayout-references-plus-card-sub">Change Filter to see other image, video, or audio assets.</span>
+              </div>
+            ) : (
+              <div className="lab-newlayout-references-empty-actions">
+                <button type="button" className="lab-newlayout-references-plus-card" onClick={handlePlusClick}>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5a.75.75 0 0 1 .75.75V11.25H18.25a.75.75 0 0 1 0 1.5H12.75v5.5a.75.75 0 0 1-1.5 0v-5.5H5.75a.75.75 0 0 1 0-1.5h5.5V5.75A.75.75 0 0 1 12 5Z"/></svg>
+                  <span>Add images, videos, or audio</span>
+                  <span className="lab-newlayout-references-plus-card-sub">Saved as {activeScopeLabel.toLowerCase()} reference · drag from desktop or History Gallery</span>
                 </button>
-              ) : null}
-            </div>
+                {composerReferences.length > 0 ? (
+                  <button type="button" className="lab-newlayout-references-import-btn" onClick={() => { void importComposerReferences() }}>
+                    Import current composer refs
+                  </button>
+                ) : null}
+              </div>
+            )}
           </div>
         ) : (
           <div className="lab-newlayout-references-grid lab-newlayout-references-grid--active">
@@ -4369,79 +4922,158 @@ function ReferencesPanel(_props: IDockviewPanelProps<PanelSuggestionParams>) {
                 </div>
               ))
               : null}
-            {pagedLibraryItems.map((item) => (
-              <div
-                key={item.id}
-                className="lab-newlayout-reference-item is-draggable"
-                draggable
-                onDragStart={(event) => handleReferenceDragStart(event, item)}
-                onMouseEnter={() => {
-                  if (item.kind === 'video') handleVideoHoverStart(item.id)
-                }}
-                onMouseLeave={() => {
-                  if (item.kind === 'video') handleVideoHoverEnd(item.id)
-                }}
-              >
-                {item.kind === 'video' ? (
-                  <>
-                    <video
-                      ref={(element) => {
-                        videoPreviewRefs.current[item.id] = element
-                      }}
+            {pagedLibraryItems.map((item) => {
+              if (isPendingGenerationAsset(item)) {
+                return (
+                  <div
+                    key={item.id}
+                    className="lab-newlayout-reference-item lab-newlayout-reference-item--generating"
+                    aria-label="Generating image…"
+                    aria-live="polite"
+                  >
+                    <div
+                      className="lab-newlayout-reference-thumb lab-newlayout-reference-thumb--image lab-newlayout-reference-thumb--generating"
+                      style={item.referenceImageUrl ? { backgroundImage: `url(${item.referenceImageUrl})` } : undefined}
+                    >
+                      <div className="lab-newlayout-reference-generating-overlay">
+                        <span className="lab-newlayout-reference-generating-spinner" aria-hidden="true" />
+                        <span className="lab-newlayout-reference-generating-copy">Generating…</span>
+                      </div>
+                    </div>
+                  </div>
+                )
+              }
+
+              if (isPendingReferenceUpload(item)) {
+                return (
+                  <div
+                    key={item.id}
+                    className="lab-newlayout-reference-item lab-newlayout-reference-item--pending"
+                    aria-hidden="true"
+                  >
+                    <div className={`lab-newlayout-reference-thumb lab-newlayout-reference-thumb--${item.kind} lab-newlayout-reference-thumb--pending`}>
+                      <span className="lab-newlayout-reference-upload-kind">{item.kind}</span>
+                      <span className="lab-newlayout-reference-upload-copy">Uploading…</span>
+                    </div>
+                  </div>
+                )
+              }
+
+              const isLiked = isReferenceLiked(item.url)
+
+              return (
+                <div
+                  key={item.id}
+                  className="lab-newlayout-reference-item lab-newlayout-reference-item--openable is-draggable"
+                  draggable
+                  onClick={() => handleOpenReferenceItem(item)}
+                  onDragStart={(event) => handleReferenceDragStart(event, item)}
+                  onMouseEnter={() => {
+                    if (item.kind === 'video') handleVideoHoverStart(item.id)
+                  }}
+                  onMouseLeave={() => {
+                    if (item.kind === 'video') handleVideoHoverEnd(item.id)
+                  }}
+                >
+                  {item.kind === 'video' ? (
+                    <>
+                      <video
+                        ref={(element) => {
+                          videoPreviewRefs.current[item.id] = element
+                        }}
+                        src={buildVideoProxyUrl(item.url) || item.url}
+                        poster={_referencePosterCache.get(item.url)}
+                        crossOrigin={(buildVideoProxyUrl(item.url) || item.url).includes('/api/video-proxy') ? undefined : 'anonymous'}
+                        muted
+                        playsInline
+                        preload={_referencePosterCache.has(item.url) ? 'none' : 'metadata'}
+                        onLoadedData={(event) => {
+                          const el = event.currentTarget
+                          if (!_referencePosterCache.has(item.url)) {
+                            const dataUrl = _captureVideoFrame(el)
+                            if (dataUrl) {
+                              _referencePosterCache.set(item.url, dataUrl)
+                              el.poster = dataUrl
+                            }
+                          }
+                        }}
+                        onPlay={(event) => {
+                          if (hoveredVideoIdRef.current === item.id) return
+                          event.currentTarget.pause()
+                          event.currentTarget.currentTime = 0
+                        }}
+                        className="lab-newlayout-reference-thumb lab-newlayout-reference-thumb--video"
+                      />
+                      <span className="lab-newlayout-reference-video-indicator" aria-hidden="true">▶</span>
+                    </>
+                  ) : item.kind === 'audio' ? (
+                    <div className="lab-newlayout-reference-thumb lab-newlayout-reference-thumb--audio">♪</div>
+                  ) : (
+                    <img
                       src={item.url}
-                      muted
-                      playsInline
-                      preload="metadata"
-                      onPlay={(event) => {
-                        if (hoveredVideoIdRef.current === item.id) return
-                        event.currentTarget.pause()
-                        event.currentTarget.currentTime = 0
-                      }}
-                      className="lab-newlayout-reference-thumb lab-newlayout-reference-thumb--video"
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      className="lab-newlayout-reference-thumb lab-newlayout-reference-thumb--image"
                     />
-                    <span className="lab-newlayout-reference-video-indicator" aria-hidden="true">▶</span>
-                  </>
-                ) : item.kind === 'audio' ? (
-                  <div className="lab-newlayout-reference-thumb lab-newlayout-reference-thumb--audio">♪</div>
-                ) : (
-                  <img
-                    src={item.url}
-                    alt=""
-                    loading="lazy"
-                    decoding="async"
-                    className="lab-newlayout-reference-thumb lab-newlayout-reference-thumb--image"
-                  />
-                )}
-                <div className="lab-newlayout-reference-scope-badge">{item.folderId ? 'Folder' : 'Project'}</div>
-                <button
-                  type="button"
-                  className={`lab-newlayout-reference-heart${isReferenceLiked(item.url) ? ' is-liked' : ''}`}
-                  onClick={() => toggleReferenceLiked(item.url)}
-                  aria-label={isReferenceLiked(item.url) ? 'Unlike reference' : 'Like reference'}
-                  title={isReferenceLiked(item.url) ? 'Unlike reference' : 'Like reference'}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill={isReferenceLiked(item.url) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  className="lab-newlayout-reference-add-composer"
-                  onClick={() => handleAddToComposer(item)}
-                  title="Add to composer"
-                >
-                  + Composer
-                </button>
-                <button
-                  type="button"
-                  className="lab-newlayout-reference-remove"
-                  onClick={() => { void handleDeleteLibraryItem(item) }}
-                  title="Remove from project references"
-                >
-                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.22 4.22a.75.75 0 0 1 1.06 0L8 6.94l2.72-2.72a.75.75 0 1 1 1.06 1.06L9.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L8 9.06l-2.72 2.72a.75.75 0 0 1-1.06-1.06L6.94 8 4.22 5.28a.75.75 0 0 1 0-1.06Z"/></svg>
-                </button>
-              </div>
-            ))}
+                  )}
+                  <button
+                    type="button"
+                    className={`lab-newlayout-reference-heart${isLiked ? ' is-liked' : ''}`}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      toggleReferenceLiked(item.url)
+                    }}
+                    aria-label={isLiked ? 'Unlike reference' : 'Like reference'}
+                    title={isLiked ? 'Unlike reference' : 'Like reference'}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill={isLiked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    className="lab-newlayout-reference-add-composer"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      handleAddToComposer(item)
+                    }}
+                    title="Add to composer"
+                  >
+                    + Composer
+                  </button>
+                  {item.kind !== 'audio' ? (
+                    <>
+                      <button
+                        type="button"
+                        className="lab-newlayout-reference-compare-set-btn lab-newlayout-reference-compare-set-btn--before"
+                        onClick={(event) => { event.stopPropagation(); setCompareBeforeUrl(item.url) }}
+                        aria-label="Set as Before in comparison"
+                        title="Set as Before"
+                      >B</button>
+                      <button
+                        type="button"
+                        className="lab-newlayout-reference-compare-set-btn lab-newlayout-reference-compare-set-btn--after"
+                        onClick={(event) => { event.stopPropagation(); setCompareAfterUrl(item.url) }}
+                        aria-label="Set as After in comparison"
+                        title="Set as After"
+                      >A</button>
+                    </>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="lab-newlayout-reference-remove"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      void handleDeleteLibraryItem(item)
+                    }}
+                    title="Remove from project references"
+                  >
+                    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.22 4.22a.75.75 0 0 1 1.06 0L8 6.94l2.72-2.72a.75.75 0 1 1 1.06 1.06L9.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L8 9.06l-2.72 2.72a.75.75 0 0 1-1.06-1.06L6.94 8 4.22 5.28a.75.75 0 0 1 0-1.06Z"/></svg>
+                  </button>
+                </div>
+              )
+            })}
             {hasMoreLibraryItems ? (
               <button
                 type="button"
@@ -4455,14 +5087,1237 @@ function ReferencesPanel(_props: IDockviewPanelProps<PanelSuggestionParams>) {
           </div>
         )}
       </div>
+      {referenceLightbox}
     </div>
   )
 }
 
+type GrokExampleDef = {
+  readonly id: string
+  readonly label: string
+  readonly description: string
+  readonly refKind: 'none' | 'image' | 'video' | 'multi-image'
+  readonly refCount: number
+  readonly prompt: string
+  readonly model: string
+  readonly provider: string
+  readonly modeId: string
+  readonly capabilityGroup?: 'generation' | 'style-transfer' | 'multi-image' | 'understanding'
+}
+
+type GrokNavSubgroup = {
+  readonly id: string
+  readonly title: string
+  readonly exampleIds: readonly string[]
+}
+
+type GrokNavGroup = {
+  readonly id: string
+  readonly title: string
+  readonly subgroups: readonly GrokNavSubgroup[]
+}
+
+const GROK_EXAMPLES: readonly GrokExampleDef[] = [
+  {
+    id: 'text-video',
+    label: 'Text → Video',
+    description: 'Generate a cinematic shot from a text description only — no reference image needed.',
+    refKind: 'none',
+    refCount: 0,
+    prompt: 'A silver-haired runner moves through a rain-soaked market alley at blue hour, neon reflections sliding across wet stone, handheld camera trailing close behind, subtle steam vents and passing umbrellas creating layered depth, cinematic contrast, realistic motion blur, ending on a brief look over the shoulder.',
+    model: 'grok-imagine-video',
+    provider: 'grok',
+    modeId: 'video',
+  },
+  {
+    id: 'img-video',
+    label: 'Image → Video',
+    description: 'Animate a still image while preserving its composition. Describe the motion only — not the frame itself.',
+    refKind: 'image',
+    refCount: 1,
+    prompt: 'Preserve the framing and wardrobe from the source image. Add a slow push-in, soft wind through fabric and hair, drifting dust in the light shaft, and a restrained shift in expression that turns the still portrait into a living moment.',
+    model: 'grok-imagine-video',
+    provider: 'grok',
+    modeId: 'video',
+  },
+  {
+    id: 'ref-video',
+    label: 'Reference → Video',
+    description: 'Use 2–3 references to lock character, environment, or style while generating new motion.',
+    refKind: 'multi-image',
+    refCount: 3,
+    prompt: 'Preserve the character identity and environment from the reference images. Generate a new motion sequence: the subject crosses the space, camera holds at mid-range, consistent lighting and color grade throughout.',
+    model: 'grok-imagine-video',
+    provider: 'grok',
+    modeId: 'video',
+  },
+  {
+    id: 'extend-video',
+    label: 'Extend Video',
+    description: 'Continue an existing video clip without breaking its motion or style continuity.',
+    refKind: 'video',
+    refCount: 1,
+    prompt: 'Continue the same camera move and color grade. After the previous action, the vehicle clears the intersection, taillights stretch across the wet street, and the shot settles into a wider reveal of the avenue without changing lens language or subject scale.',
+    model: 'grok-imagine-video',
+    provider: 'grok',
+    modeId: 'video',
+  },
+  {
+    id: 'first-last',
+    label: 'First & Last Frame',
+    description: 'Lock the opening and closing frames, then let Grok solve the motion between them.',
+    refKind: 'multi-image',
+    refCount: 2,
+    prompt: 'Use the first frame and the last frame as anchors. Preserve character identity, environment, and camera language while Grok solves the in-between motion. Camera arcs smoothly left as the subject steps forward, and the lighting shifts from cool dawn to warm sunrise by the final beat.',
+    model: 'grok-imagine-video',
+    provider: 'grok',
+    modeId: 'video',
+  },
+  {
+    id: 'image-gen',
+    label: 'Image Generation',
+    description: 'Generate a still image from text only. No reference image is required.',
+    refKind: 'none',
+    refCount: 0,
+    prompt: 'Create a solitary lighthouse on a rocky coastal cliff at dusk, with dramatic storm clouds rolling in from the ocean, golden-pink light breaking through on the horizon, rough surf below, highly detailed environment, cinematic composition, and a moody atmosphere.',
+    model: 'grok-imagine-image-quality',
+    provider: 'grok',
+    modeId: 'image',
+  },
+  {
+    id: 'image-frame',
+    label: 'Image From Frame',
+    description: 'Use one provided frame and refine it into a polished still.',
+    refKind: 'image',
+    refCount: 1,
+    prompt: 'Preserve the framing, subject identity, and overall composition from the provided frame. Refine the lighting, textures, and background into a cinematic still with crisp detail and balanced contrast.',
+    model: 'grok-imagine-image-quality',
+    provider: 'grok',
+    modeId: 'image',
+  },
+  {
+    id: 'image-multi',
+    label: 'Image With Multiple Refs',
+    description: 'Blend several image references and stress-test multi-reference consistency.',
+    refKind: 'multi-image',
+    refCount: 3,
+    prompt: 'Use image 1 as the primary character reference. Preserve the exact face, outfit, body proportions, and character styling from image 1. Use image 2 as the environment reference. Preserve the architecture, layout, scale, and spatial structure from image 2. Use image 3 as the lighting and finish reference only. Preserve its color mood, shading softness, and rendering polish without copying extra subjects. Create one clean 16:9 still image. Do not merge identities across images. Do not add extra characters or random objects. Keep the result cohesive, sharp, and suitable for kids animation.',
+    model: 'grok-imagine-image-quality',
+    provider: 'grok',
+    modeId: 'image',
+    capabilityGroup: 'multi-image',
+  },
+  {
+    id: 'image-edit-style-transfer',
+    label: 'Oil Painting',
+    description: 'Apply an oil painting look to the provided image while preserving the original subject and framing.',
+    refKind: 'image',
+    refCount: 1,
+    prompt: 'Apply an oil painting look to the provided image. Keep the subject identity, pose, and composition intact. Render warm brushstrokes, visible paint texture, rich shadows, and an old-master fine art finish.',
+    model: 'grok-imagine-image-quality',
+    provider: 'grok',
+    modeId: 'image',
+    capabilityGroup: 'style-transfer',
+  },
+  {
+    id: 'image-edit-sketch',
+    label: 'Sketch',
+    description: 'Turn the provided image into a pencil sketch with linework, shading, and a hand-drawn finish.',
+    refKind: 'image',
+    refCount: 1,
+    prompt: 'Turn the provided image into a detailed pencil sketch. Keep the composition readable, and use expressive line weight, cross-hatching, grayscale shading, and a hand-drawn feel.',
+    model: 'grok-imagine-image-quality',
+    provider: 'grok',
+    modeId: 'image',
+    capabilityGroup: 'style-transfer',
+  },
+  {
+    id: 'image-edit-pop-art',
+    label: 'Pop Art',
+    description: 'Convert the provided image into a bold pop-art print with vivid color and graphic contrast.',
+    refKind: 'image',
+    refCount: 1,
+    prompt: 'Convert the provided image into pop art. Keep the subject identity and composition intact while using high-contrast shapes, flat color blocks, vivid saturation, and a poster-print look.',
+    model: 'grok-imagine-image-quality',
+    provider: 'grok',
+    modeId: 'image',
+    capabilityGroup: 'style-transfer',
+  },
+  {
+    id: 'image-edit-enhancement',
+    label: 'Image Enhancement',
+    description: 'Edit a specific part of the provided image while preserving subject identity and composition.',
+    refKind: 'image',
+    refCount: 1,
+    prompt: 'Edit the provided image with a targeted enhancement. Preserve subject identity, framing, and overall composition. Apply this change only: [DESCRIBE THE EXACT OBJECT/AREA TO EDIT]. Keep all other regions unchanged. Improve local detail, lighting consistency, and clean edges for a natural final result.',
+    model: 'grok-imagine-image-quality',
+    provider: 'grok',
+    modeId: 'image',
+    capabilityGroup: 'style-transfer',
+  },
+  {
+    id: 'image-sharpen-enhance',
+    label: 'Sharpen & Crisp',
+    description: 'Enhance image sharpness, clarity, and crispness while preserving natural appearance.',
+    refKind: 'image',
+    refCount: 1,
+    prompt: 'Enhance the sharpness and crispness of the provided image. Increase detail resolution, improve edge definition, and boost overall clarity without introducing artifacts or unnatural sharpening effects. Preserve the original colors, lighting, and composition while making the image appear more focused and professional.',
+    model: 'grok-imagine-image-quality',
+    provider: 'grok',
+    modeId: 'image',
+    capabilityGroup: 'style-transfer',
+  },
+  {
+    id: 'multi-combine-subjects',
+    label: 'Combine Subjects',
+    description: 'Use multiple references to compose a new scene with all subjects present.',
+    refKind: 'multi-image',
+    refCount: 3,
+    prompt: 'Use image 1, image 2, and image 3 as separate subject references. Preserve the exact identity, silhouette, outfit, and distinctive features of each subject from its own source image. Place all subjects together in one shared scene with consistent scale, perspective, and lighting. Do not fuse subjects together. Do not swap faces, outfits, or proportions between them. Create a balanced group composition with clean spacing, readable poses, and one unified background.',
+    model: 'grok-imagine-image-quality',
+    provider: 'grok',
+    modeId: 'image',
+    capabilityGroup: 'multi-image',
+  },
+  {
+    id: 'multi-merge-environments',
+    label: 'Merge Environments',
+    description: 'Blend scene, lighting, and background cues from multiple references.',
+    refKind: 'multi-image',
+    refCount: 3,
+    prompt: 'Use image 1 as the base environment layout. Use image 2 to borrow secondary architectural or landscape elements. Use image 3 only for atmosphere, lighting direction, and color mood. Build one believable location that feels intentionally designed, not like a collage. Keep the horizon, perspective, scale, and material language consistent across the whole scene. Do not duplicate structures unnecessarily, and do not introduce unrelated objects or characters.',
+    model: 'grok-imagine-image-quality',
+    provider: 'grok',
+    modeId: 'image',
+    capabilityGroup: 'multi-image',
+  },
+  {
+    id: 'multi-apply-art-style',
+    label: 'Apply Art Style',
+    description: 'Use image 1 as the art style reference and image 2 as the target — redraw the target in the style of the first image.',
+    refKind: 'multi-image',
+    refCount: 2,
+    prompt: 'Image 1 is the art style reference only — extract its visual style, color palette, brushwork, texture, line quality, rendering technique, and overall aesthetic. Image 2 is the target content — preserve every subject, object, pose, composition, and spatial layout from image 2 exactly. Redraw the full content of image 2 in the artistic style taken from image 1. Do not copy any subjects, objects, or scenes from image 1 into the output. Do not alter the subjects or composition from image 2.',
+    model: 'grok-imagine-image-quality',
+    provider: 'grok',
+    modeId: 'image',
+    capabilityGroup: 'multi-image',
+  },
+  {
+    id: 'image-understanding',
+    label: 'Image Understanding',
+    description: 'Use a reference image and ask the model to analyze what it contains.',
+    refKind: 'image',
+    refCount: 1,
+    prompt: 'Analyze this image in detail. Describe the scene, the main subjects, notable objects, visible text, and the overall mood. Call out any important visual relationships or inconsistencies you can observe.',
+    model: 'grok-imagine-image-quality',
+    provider: 'grok',
+    modeId: 'image',
+    capabilityGroup: 'understanding',
+  },
+]
+
+const GROK_EXAMPLE_BY_ID = new Map(GROK_EXAMPLES.map((example) => [example.id, example]))
+
+const GROK_NAV_GROUPS: readonly GrokNavGroup[] = [
+  {
+    id: 'image-creation',
+    title: 'Image Creation',
+    subgroups: [
+      {
+        id: 'style-transfer',
+        title: 'Style Transfer',
+        exampleIds: ['image-edit-style-transfer', 'image-edit-sketch', 'image-edit-pop-art'],
+      },
+      {
+        id: 'image-enhancement',
+        title: 'Image Enhancement',
+        exampleIds: ['image-edit-enhancement', 'image-sharpen-enhance'],
+      },
+      {
+        id: 'image-generation',
+        title: 'Image Generation',
+        exampleIds: ['image-gen'],
+      },
+      {
+        id: 'image-from-frame',
+        title: 'Image From Frame',
+        exampleIds: ['image-frame'],
+      },
+      {
+        id: 'multi-image-image',
+        title: 'Multi-Image Composition',
+        exampleIds: ['image-multi', 'multi-combine-subjects', 'multi-merge-environments', 'multi-apply-art-style'],
+      },
+      {
+        id: 'image-understanding',
+        title: 'Image Understanding',
+        exampleIds: ['image-understanding'],
+      },
+    ],
+  },
+  {
+    id: 'generation-motion',
+    title: 'Generation & Motion',
+    subgroups: [
+      {
+        id: 'motion-workflows',
+        title: 'Motion Workflows',
+        exampleIds: ['text-video', 'img-video', 'ref-video', 'extend-video', 'first-last'],
+      },
+    ],
+  },
+]
+
+function GrokTestingPanel(_props: IDockviewPanelProps<PanelSuggestionParams>) {
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  const [applied, setApplied] = useState(false)
+  const [overrideRefs, setOverrideRefs] = useState<Array<{ url: string; kind: 'image' | 'video'; name: string } | null>>([])
+  const [dragOverSlot, setDragOverSlot] = useState<number | null>(null)
+  const [isSending, setIsSending] = useState(false)
+  const [sendDone, setSendDone] = useState(false)
+  const [sendStatus, setSendStatus] = useState('')
+  const [sendError, setSendError] = useState('')
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
+    'image-creation': true,
+    'generation-motion': true,
+  })
+  const [expandedSubgroups, setExpandedSubgroups] = useState<Record<string, boolean>>({
+    'style-transfer': true,
+    'image-enhancement': true,
+    'image-generation': true,
+    'image-from-frame': true,
+    'multi-image-image': true,
+    'image-understanding': true,
+    'motion-workflows': true,
+  })
+
+  const { projectReferenceLibraryItems } = useLabNewLayoutData()
+  const setComposerReuseSeed = useLabNewLayoutStore((state) => state.setComposerReuseSeed)
+  const addHistoryItem = useLabNewLayoutStore((state) => state.addHistoryItem)
+  const updateHistoryItem = useLabNewLayoutStore((state) => state.updateHistoryItem)
+  const runner = useGenerationRunner({ apiBaseUrl: CHATBOT_BASE })
+
+  const example = activeId ? GROK_EXAMPLE_BY_ID.get(activeId) ?? null : null
+
+  const pickedRefs = useMemo(() => {
+    if (!example) return []
+    if (example.refKind === 'none') return []
+    const matchKind = example.refKind === 'video' ? 'video' : 'image'
+    return projectReferenceLibraryItems
+      .filter((item) => item.kind === matchKind)
+      .slice(0, example.refCount)
+  }, [example, projectReferenceLibraryItems])
+
+  // Per-slot effective refs: override slots take priority over auto-picked refs
+  const effectiveRefs = useMemo(() => {
+    if (!example || example.refKind === 'none') return []
+    const count = example.refCount
+    const result: Array<{ url: string; kind: 'image' | 'video'; name: string } | null> = []
+    for (let i = 0; i < count; i++) {
+      const override = overrideRefs[i]
+      if (override !== undefined) {
+        result.push(override)
+        continue
+      }
+      const picked = pickedRefs[i]
+      if (picked) {
+        result.push({ url: picked.url, kind: picked.kind === 'video' ? 'video' : 'image', name: picked.name })
+      } else {
+        result.push(null)
+      }
+    }
+    return result
+  }, [example, overrideRefs, pickedRefs])
+
+  // Reset overrides when example changes
+  useEffect(() => {
+    setOverrideRefs([])
+    setSendDone(false)
+    setSendStatus('')
+    setSendError('')
+  }, [activeId])
+
+  const parseDragRef = useCallback((dataTransfer: DataTransfer): { url: string; kind: 'image' | 'video'; name: string } | null => {
+    const raw = dataTransfer.getData(LAB_NEWLAYOUT_HISTORY_REF_MIME) || dataTransfer.getData('application/json')
+    if (!raw) return null
+    try {
+      const parsed = JSON.parse(raw) as Partial<{ url: string; kind: string; name: string }>
+      if (!parsed || typeof parsed.url !== 'string' || !parsed.url.trim()) return null
+      const kind: 'image' | 'video' = parsed.kind === 'video' ? 'video' : 'image'
+      const name = typeof parsed.name === 'string' && parsed.name.trim() ? parsed.name.trim() : kind
+      return { url: parsed.url.trim(), kind, name }
+    } catch {
+      return null
+    }
+  }, [])
+
+  const handleSlotDragOver = useCallback((e: React.DragEvent<HTMLDivElement>, slotIndex: number) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+    setDragOverSlot(slotIndex)
+  }, [])
+
+  const handleSlotDragLeave = useCallback(() => {
+    setDragOverSlot(null)
+  }, [])
+
+  const handleSlotDrop = useCallback((e: React.DragEvent<HTMLDivElement>, slotIndex: number) => {
+    e.preventDefault()
+    setDragOverSlot(null)
+    const ref = parseDragRef(e.dataTransfer)
+    if (!ref) return
+    setOverrideRefs((prev) => {
+      const next = [...prev]
+      next[slotIndex] = ref
+      return next
+    })
+  }, [parseDragRef])
+
+  const handleCopy = useCallback(() => {
+    if (!example) return
+    void navigator.clipboard.writeText(example.prompt)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1800)
+  }, [example])
+
+  const handleApply = useCallback(() => {
+    if (!example) return
+    const isGrokImageExample = example.provider === 'grok' && example.modeId === 'image'
+    const refsForSeed = effectiveRefs.filter((r): r is NonNullable<typeof r> => r !== null)
+    const seed: ComposerReuseSeed = {
+      id: `grok-example-${Date.now()}`,
+      prompt: example.prompt,
+      references: refsForSeed.map((ref, i) => ({
+        id: `grok-ref-${i}-${Date.now()}`,
+        url: ref.url,
+        kind: ref.kind as 'image' | 'video' | 'audio',
+        name: ref.name,
+      })),
+      model: example.model,
+      provider: example.provider,
+      modeId: example.modeId,
+      ratio: '16:9',
+      ...(isGrokImageExample ? {
+        resolution: '1k',
+        duration: 0,
+        generateAudio: false,
+      } : {}),
+    }
+    setComposerReuseSeed(seed)
+    setApplied(true)
+    setTimeout(() => setApplied(false), 2000)
+  }, [example, effectiveRefs, setComposerReuseSeed])
+
+  const handleSendToGrok = useCallback(() => {
+    if (!example || isSending) return
+    const isImage = example.modeId === 'image'
+    const refsForSend = effectiveRefs.filter((r): r is NonNullable<typeof r> => r !== null)
+    const imageUrls = refsForSend.map((r) => r.url)
+
+    const body: Record<string, unknown> = {
+      prompt: example.prompt,
+      model: example.model,
+      providerHint: 'grok',
+    }
+
+    if (imageUrls.length === 1) {
+      body.image = { url: imageUrls[0] }
+    } else if (imageUrls.length > 1) {
+      body.image_urls = imageUrls
+    }
+
+    const settings: GenerationRequestSettings = {
+      provider: 'grok',
+      model: example.model,
+      ratio: '16:9',
+      duration: isImage ? 0 : 15,
+      resolution: isImage ? '1k' : '480p',
+      generateAudio: false,
+    }
+
+    const request = { endpoint: '/api/seedance/generate', body, settings }
+    const historyId = `grok-direct-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+
+    addHistoryItem({
+      id: historyId,
+      timestamp: Date.now(),
+      prompt: example.prompt,
+      model: example.model,
+      provider: 'grok',
+      ratio: '16:9',
+      resolution: settings.resolution,
+      duration: settings.duration,
+      generateAudio: false,
+      requestEndpoint: request.endpoint,
+      requestPayload: request.body,
+      status: 'queued',
+      sourceLabel: `Grok Testing — ${example.label}`,
+    })
+
+    setIsSending(true)
+    setSendDone(false)
+    setSendStatus('Sending...')
+    setSendError('')
+
+    void (async () => {
+      try {
+        const result = await runner.runGeneration(request, {
+          onQueued: () => {
+            updateHistoryItem(historyId, { status: 'running' })
+            setSendStatus('Queued — waiting for result...')
+          },
+          onStatus: (text) => { setSendStatus(text) },
+        })
+
+        if (result) {
+          updateHistoryItem(historyId, {
+            status: 'success',
+            resultUrl: result.resultUrl,
+            taskId: result.taskId,
+            submittedAt: result.submittedAt,
+            receivedAt: result.receivedAt,
+            completedAt: result.receivedAt,
+          })
+          setSendStatus('Done ✓')
+          setSendDone(true)
+        } else {
+          updateHistoryItem(historyId, { status: 'failed', errorMessage: 'Generation cancelled or returned no result.' })
+          setSendError('Generation returned no result.')
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown error'
+        updateHistoryItem(historyId, { status: 'failed', errorMessage: msg })
+        setSendError(msg)
+      } finally {
+        setIsSending(false)
+      }
+    })()
+  }, [example, effectiveRefs, isSending, addHistoryItem, updateHistoryItem, runner])
+
+  const needsRefs = example ? example.refKind !== 'none' : false
+  const hasRefs = effectiveRefs.some((r) => r !== null)
+  const refCount = example?.refCount ?? 0
+  const capabilityLabel = example?.capabilityGroup === 'style-transfer'
+    ? 'Style Transfer'
+    : example?.capabilityGroup === 'multi-image'
+      ? 'Multi-Image'
+      : example?.capabilityGroup === 'understanding'
+        ? 'Understanding'
+        : 'Generation'
+
+  const toggleGroup = useCallback((groupId: string) => {
+    setExpandedGroups((current) => ({ ...current, [groupId]: !current[groupId] }))
+  }, [])
+
+  const toggleSubgroup = useCallback((subgroupId: string) => {
+    setExpandedSubgroups((current) => ({ ...current, [subgroupId]: !current[subgroupId] }))
+  }, [])
+
+  const hasActiveExample = Boolean(example)
+
+  return (
+    <div className="lab-newlayout-panel lab-newlayout-panel--grok-testing">
+      <div className="lab-newlayout-history-top-fixed">
+        <div className="lab-newlayout-history-toolbar">
+          <div className="lab-newlayout-history-toolbar-stats">
+            <span className="lab-newlayout-history-stat">Grok Examples</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="lab-newlayout-grok-shell">
+        <div className="lab-newlayout-grok-body">
+          <div className="lab-newlayout-grok-content">
+            <aside className="lab-newlayout-grok-leftpane" aria-label="Grok example groups">
+              {GROK_NAV_GROUPS.map((group) => (
+                <section key={group.id} className="lab-newlayout-grok-tree-group">
+                  <button
+                    type="button"
+                    className="lab-newlayout-grok-tree-groupbtn"
+                    onClick={() => toggleGroup(group.id)}
+                  >
+                    <span className="lab-newlayout-grok-tree-caret">{expandedGroups[group.id] ? '▾' : '▸'}</span>
+                    <span>{group.title}</span>
+                  </button>
+
+                  {expandedGroups[group.id] && (
+                    <div className="lab-newlayout-grok-tree-subgroups">
+                      {group.subgroups.map((subgroup) => (
+                        <div key={subgroup.id} className="lab-newlayout-grok-tree-subgroup">
+                          <button
+                            type="button"
+                            className="lab-newlayout-grok-tree-subgroupbtn"
+                            onClick={() => toggleSubgroup(subgroup.id)}
+                          >
+                            <span className="lab-newlayout-grok-tree-caret">{expandedSubgroups[subgroup.id] ? '▾' : '▸'}</span>
+                            <span>{subgroup.title}</span>
+                          </button>
+
+                          {expandedSubgroups[subgroup.id] && (
+                            <div className="lab-newlayout-grok-tree-examples">
+                              {subgroup.exampleIds.map((exampleId) => {
+                                const item = GROK_EXAMPLE_BY_ID.get(exampleId)
+                                if (!item) return null
+                                return (
+                                  <button
+                                    key={item.id}
+                                    type="button"
+                                    className={`lab-newlayout-grok-tree-examplebtn${activeId === item.id ? ' is-active' : ''}`}
+                                    onClick={() => {
+                                      setActiveId(item.id)
+                                      setCopied(false)
+                                      setApplied(false)
+                                    }}
+                                  >
+                                    {item.label}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              ))}
+            </aside>
+
+            <section className="lab-newlayout-grok-rightpane" aria-label="Grok example details">
+              {example ? (
+                <>
+                  <div className="lab-newlayout-grok-hero">
+                    <div className="lab-newlayout-grok-hero-copywrap">
+                      <div className="lab-newlayout-grok-hero-title">{example.label}</div>
+                      <p className="lab-newlayout-grok-hero-copy">{example.description}</p>
+                    </div>
+                    <div className="lab-newlayout-grok-hero-meta">
+                      <span className="lab-newlayout-grok-chip">{example.provider === 'grok' ? 'Grok' : example.provider}</span>
+                      <span className="lab-newlayout-grok-chip">{example.model === 'grok-imagine-video' ? 'Grok Imagine Video' : 'Grok Imagine Image'}</span>
+                      <span className={`lab-newlayout-grok-chip lab-newlayout-grok-chip--capability lab-newlayout-grok-chip--${example.capabilityGroup || 'generation'}`}>
+                        {capabilityLabel}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="lab-newlayout-grok-stage">
+                    <div className="lab-newlayout-grok-stage-main">
+                      <div className="lab-newlayout-grok-promptblock">
+                        <div className="lab-newlayout-grok-promptbar">
+                          <span className="lab-newlayout-grok-promptlabel">Grok prompt</span>
+                          <button
+                            type="button"
+                            className="lab-newlayout-grok-copybtn"
+                            onClick={handleCopy}
+                          >
+                            {copied ? 'Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <pre className="lab-newlayout-grok-prompttext">{example.prompt}</pre>
+                      </div>
+                      <div className="lab-newlayout-grok-footer-summary">
+                        <span className="lab-newlayout-grok-footer-summary-label">How this example works</span>
+                        <p>
+                          {needsRefs
+                            ? `${hasRefs ? `${effectiveRefs.filter((r) => r !== null).length} reference${effectiveRefs.filter((r) => r !== null).length !== 1 ? 's are' : ' is'} ready` : 'This example expects image references. Drop items from the References or Assets panel onto the slots below.'}`
+                            : 'This example is text-only and can be applied without references.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <aside className="lab-newlayout-grok-stage-side">
+                      {needsRefs ? (
+                        <div className="lab-newlayout-grok-mediagrid">
+                          {effectiveRefs.map((ref, slotIndex) => (
+                            <div
+                              key={slotIndex}
+                              className={`lab-newlayout-grok-mediaitem${dragOverSlot === slotIndex ? ' lab-newlayout-grok-mediaitem--dropover' : ''}${ref === null ? ' lab-newlayout-grok-mediaitem--empty' : ''}`}
+                              onDragOver={(e) => { handleSlotDragOver(e, slotIndex) }}
+                              onDragLeave={handleSlotDragLeave}
+                              onDrop={(e) => { handleSlotDrop(e, slotIndex) }}
+                            >
+                              {ref !== null ? (
+                                <>
+                                  {ref.kind === 'video' ? (
+                                    <video
+                                      src={ref.url}
+                                      className="lab-newlayout-grok-mediapreview"
+                                      muted
+                                      preload="metadata"
+                                    />
+                                  ) : (
+                                    <img
+                                      src={ref.url}
+                                      alt={ref.name}
+                                      className="lab-newlayout-grok-mediapreview"
+                                    />
+                                  )}
+                                  <span className="lab-newlayout-grok-medianame">{ref.name}</span>
+                                </>
+                              ) : (
+                                <span>Drop ref {slotIndex + 1}</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="lab-newlayout-grok-mediaplaceholder lab-newlayout-grok-mediaplaceholder--textonly">
+                          No reference image is required for this example.
+                        </div>
+                      )}
+                    </aside>
+                  </div>
+                </>
+              ) : (
+                <div className="lab-newlayout-grok-empty">
+                  <div className="lab-newlayout-grok-empty-title">Select an example</div>
+                  <p className="lab-newlayout-grok-empty-copy">
+                    Choose a subgroup item on the left. Prompt, references, and details will appear here.
+                  </p>
+                </div>
+              )}
+            </section>
+          </div>
+
+          <div className="lab-newlayout-grok-footer-fixed">
+            <div className="lab-newlayout-grok-chips">
+              {needsRefs && hasActiveExample && (
+                <span className={`lab-newlayout-grok-chip${hasRefs ? ' lab-newlayout-grok-chip--ok' : ' lab-newlayout-grok-chip--warn'}`}>
+                  {hasRefs
+                    ? `${effectiveRefs.filter((r) => r !== null).length} ref${effectiveRefs.filter((r) => r !== null).length !== 1 ? 's' : ''} ready`
+                    : `${refCount} ref${refCount !== 1 ? 's' : ''} needed`}
+                </span>
+              )}
+              {sendStatus && !sendError && (
+                <span className="lab-newlayout-grok-sendstatus">{sendStatus}</span>
+              )}
+              {sendError && (
+                <span className="lab-newlayout-grok-sendstatus lab-newlayout-grok-sendstatus--error">{sendError}</span>
+              )}
+            </div>
+
+            <div className="lab-newlayout-grok-footer-actions">
+              <button
+                type="button"
+                className={`lab-newlayout-grok-sendbtn${isSending ? ' is-sending' : ''}${sendDone ? ' is-done' : ''}`}
+                onClick={handleSendToGrok}
+                disabled={!hasActiveExample || isSending}
+              >
+                {isSending ? 'Sending…' : sendDone ? 'Sent ✓' : 'Send to Grok'}
+              </button>
+              <button
+                type="button"
+                className={`lab-newlayout-grok-applybtn${applied ? ' is-applied' : ''}`}
+                onClick={handleApply}
+                disabled={!hasActiveExample}
+              >
+                {!hasActiveExample
+                  ? 'Select an Example'
+                  : applied
+                    ? 'Applied ✓'
+                    : 'Apply to Composer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AssetsLibraryPanel() {
+  const { items, user, isAuthLoading, error } = useAssetsLibrary()
+  const setAssetPreviewItem = useLabNewLayoutStore((state) => state.setAssetPreviewItem)
+  const addComposerReference = useLabNewLayoutStore((state) => state.addComposerReference)
+  const composerReferences = useLabNewLayoutStore((state) => state.composerReferences)
+  const { setCompareBeforeUrl, setCompareAfterUrl } = useLabNewLayoutData()
+  const { showToast } = useToast()
+
+  const handleAddToComposer = useCallback((item: (typeof items)[number]) => {
+    if (composerReferences.some((ref) => ref.url === item.url)) {
+      showToast({ message: 'Already in composer references', type: 'info' })
+      return
+    }
+    addComposerReference({
+      id: `composer-ref-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      url: item.url,
+      kind: item.kind,
+      name: item.name,
+    })
+    showToast({ message: 'Added to composer references', type: 'success' })
+  }, [addComposerReference, composerReferences, showToast])
+
+  const handleDragStart = useCallback((event: React.DragEvent<HTMLDivElement>, item: (typeof items)[number]) => {
+    const payload = {
+      id: `composer-ref-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      url: item.url,
+      kind: item.kind,
+      name: item.name,
+    }
+    event.dataTransfer.effectAllowed = 'copy'
+    event.dataTransfer.setData('application/json', JSON.stringify(payload))
+    event.dataTransfer.setData(LAB_NEWLAYOUT_HISTORY_REF_MIME, JSON.stringify(payload))
+    event.dataTransfer.setData('text/uri-list', item.url)
+    event.dataTransfer.setData('text/plain', item.url)
+  }, [])
+
+  return (
+    <div className="lab-newlayout-panel lab-newlayout-panel--assets-library">
+      <div className="lab-newlayout-history-top-fixed">
+        <div className="lab-newlayout-history-toolbar">
+          <div className="lab-newlayout-history-toolbar-stats">
+            <span className="lab-newlayout-history-stat">Assets Library</span>
+            <span className="lab-newlayout-history-stat">{isAuthLoading ? 'Loading...' : user ? `${items.length} item${items.length === 1 ? '' : 's'}` : `${items.length} local item${items.length === 1 ? '' : 's'}`}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="lab-newlayout-references-drop-zone">
+        {error ? (
+          <div className="lab-newlayout-references-empty">
+            <div className="lab-newlayout-references-plus-card lab-newlayout-references-plus-card--static">
+              <span>{error}</span>
+            </div>
+          </div>
+        ) : items.length === 0 ? (
+          <div className="lab-newlayout-references-empty">
+            <div className="lab-newlayout-references-plus-card lab-newlayout-references-plus-card--static">
+              <span>No generated assets yet.</span>
+              <span className="lab-newlayout-references-plus-card-sub">Generated images will appear here and can be dragged back into the composer.</span>
+            </div>
+          </div>
+        ) : (
+          <div className="lab-newlayout-references-grid lab-newlayout-references-grid--active">
+            {items.map((item) => {
+              const enrichedItem = item as typeof item & {
+                folderId?: string | null
+                generationPrompt?: string
+                generationModel?: string
+                generationProvider?: string
+                generationAspectRatio?: string
+                generationResolution?: string
+                generationSource?: string
+                generationRequestPayload?: Record<string, unknown>
+              }
+
+              return (
+                <div
+                  key={item.id}
+                  className="lab-newlayout-reference-item lab-newlayout-reference-item--openable is-draggable"
+                  draggable
+                  onDragStart={(event) => handleDragStart(event, item)}
+                  onClick={() => setAssetPreviewItem({
+                    id: item.id,
+                    url: item.url,
+                    kind: item.kind,
+                    name: item.name,
+                    thumbnailUrl: item.thumbnailUrl,
+                    projectId: item.projectId,
+                    folderId: enrichedItem.folderId,
+                    createdAt: item.createdAt,
+                    generationPrompt: enrichedItem.generationPrompt,
+                    generationModel: enrichedItem.generationModel,
+                    generationProvider: enrichedItem.generationProvider,
+                    generationAspectRatio: enrichedItem.generationAspectRatio,
+                    generationResolution: enrichedItem.generationResolution,
+                    generationSource: enrichedItem.generationSource,
+                    generationRequestPayload: enrichedItem.generationRequestPayload,
+                  })}
+                >
+                  {item.kind === 'video' ? (
+                    <video className="lab-newlayout-reference-thumb lab-newlayout-reference-thumb--video" src={buildVideoProxyUrl(item.url) || item.url} muted playsInline preload="metadata" />
+                  ) : (
+                    <img className="lab-newlayout-reference-thumb lab-newlayout-reference-thumb--image" src={item.url} alt={item.name} />
+                  )}
+                  <button
+                    type="button"
+                    className="lab-newlayout-reference-add-composer"
+                  onClick={(event) => { event.stopPropagation(); handleAddToComposer(item) }}
+                  title="Add to composer"
+                >
+                  + Composer
+                </button>
+                {item.kind !== 'audio' ? (
+                  <>
+                    <button
+                      type="button"
+                      className="lab-newlayout-reference-compare-set-btn lab-newlayout-reference-compare-set-btn--before"
+                      onClick={(event) => { event.stopPropagation(); setCompareBeforeUrl(item.url) }}
+                      aria-label="Set as Before in comparison"
+                      title="Set as Before"
+                    >B</button>
+                    <button
+                      type="button"
+                      className="lab-newlayout-reference-compare-set-btn lab-newlayout-reference-compare-set-btn--after"
+                      onClick={(event) => { event.stopPropagation(); setCompareAfterUrl(item.url) }}
+                      aria-label="Set as After in comparison"
+                      title="Set as After"
+                    >A</button>
+                  </>
+                ) : null}
+                <div className="lab-newlayout-reference-meta">
+                  <div className="lab-newlayout-reference-title" title={item.name}>{item.name}</div>
+                  <div className="lab-newlayout-reference-subtitle" title={item.url}>{item.kind}</div>
+                </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function GlobalCompareOverlay() {
+  const {
+    compareBeforeUrl,
+    compareAfterUrl,
+    compareOverlayOpen,
+    setCompareBeforeUrl,
+    setCompareAfterUrl,
+    setCompareOverlayOpen,
+  } = useLabNewLayoutData()
+
+  // Auto-open when both slots are filled
+  useEffect(() => {
+    if (compareBeforeUrl && compareAfterUrl) {
+      setCompareOverlayOpen(true)
+    }
+  }, [compareBeforeUrl, compareAfterUrl, setCompareOverlayOpen])
+
+  if (!compareOverlayOpen) return null
+
+  const isBeforeVideo = /\.(mp4|webm|mov|ogg)(\?|$)/i.test(compareBeforeUrl)
+  const isAfterVideo = /\.(mp4|webm|mov|ogg)(\?|$)/i.test(compareAfterUrl)
+  const hasBoth = Boolean(compareBeforeUrl && compareAfterUrl)
+
+  return createPortal(
+    <div
+      className="lab-compare-overlay-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Compare"
+      onClick={() => setCompareOverlayOpen(false)}
+    >
+      <div
+        className="lab-compare-overlay"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="lab-compare-overlay-head">
+          <div className="lab-compare-overlay-title">Compare</div>
+          <div className="lab-compare-overlay-head-actions">
+            <button
+              type="button"
+              className={`lab-compare-slot-btn${compareBeforeUrl ? ' is-set' : ''}`}
+              onClick={() => setCompareBeforeUrl('')}
+              title={compareBeforeUrl ? 'Clear Before (B)' : 'Before (B) not set'}
+            >
+              <span className="lab-compare-slot-label">B</span>
+              {compareBeforeUrl ? (
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              ) : (
+                <span className="lab-compare-slot-empty">—</span>
+              )}
+            </button>
+            <button
+              type="button"
+              className={`lab-compare-slot-btn${compareAfterUrl ? ' is-set' : ''}`}
+              onClick={() => setCompareAfterUrl('')}
+              title={compareAfterUrl ? 'Clear After (A)' : 'After (A) not set'}
+            >
+              <span className="lab-compare-slot-label">A</span>
+              {compareAfterUrl ? (
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              ) : (
+                <span className="lab-compare-slot-empty">—</span>
+              )}
+            </button>
+            <button
+              type="button"
+              className="lab-compare-clear-all-btn"
+              onClick={() => { setCompareBeforeUrl(''); setCompareAfterUrl('') }}
+              title="Clear both"
+            >
+              Clear all
+            </button>
+            <button
+              type="button"
+              className="lab-newlayout-history-lightbox-close"
+              onClick={() => setCompareOverlayOpen(false)}
+              aria-label="Close"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+        <div className="lab-compare-overlay-body">
+          {hasBoth ? (
+            <img-comparison-slider value={50} className="lab-compare-overlay-slider">
+              {isBeforeVideo ? (
+                <video slot="first" src={compareBeforeUrl} muted playsInline loop autoPlay className="lab-compare-overlay-media" />
+              ) : (
+                <img slot="first" src={compareBeforeUrl} alt="Before" className="lab-compare-overlay-media" />
+              )}
+              {isAfterVideo ? (
+                <video slot="second" src={compareAfterUrl} muted playsInline loop autoPlay className="lab-compare-overlay-media" />
+              ) : (
+                <img slot="second" src={compareAfterUrl} alt="After" className="lab-compare-overlay-media" />
+              )}
+            </img-comparison-slider>
+          ) : (
+            <div className="lab-compare-overlay-waiting">
+              <div className={`lab-compare-overlay-slot-status${compareBeforeUrl ? ' is-filled' : ''}`}>
+                <span className="lab-compare-overlay-slot-badge">B</span>
+                {compareBeforeUrl ? 'Before is set' : 'Before not set — hover a card and click B'}
+              </div>
+              <div className={`lab-compare-overlay-slot-status${compareAfterUrl ? ' is-filled' : ''}`}>
+                <span className="lab-compare-overlay-slot-badge">A</span>
+                {compareAfterUrl ? 'After is set' : 'After not set — hover a card and click A'}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+function GlobalAssetPreviewOverlay() {
+  const previewItem = useLabNewLayoutStore((state) => state.assetPreviewItem)
+  const setAssetPreviewItem = useLabNewLayoutStore((state) => state.setAssetPreviewItem)
+  const addComposerReference = useLabNewLayoutStore((state) => state.addComposerReference)
+  const { showToast: showRefToast } = useToast()
+  const { has: isAssetLiked, toggle: toggleAssetLiked } = useLikedReferenceUrls()
+  const [detailsState, setDetailsState] = useState<{ assetId: string | null; open: boolean }>({ assetId: null, open: false })
+
+  const handleAddToComposer = useCallback(() => {
+    if (!previewItem) return
+
+    if (useLabNewLayoutStore.getState().composerReferences.some((ref) => ref.url === previewItem.url)) {
+      showRefToast({ message: 'Already in composer references', type: 'info' })
+      return
+    }
+
+    addComposerReference({
+      id: `composer-ref-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      url: previewItem.url,
+      kind: previewItem.kind,
+      name: previewItem.name,
+    })
+    showRefToast({ message: 'Added to composer references', type: 'success' })
+    setAssetPreviewItem(null)
+  }, [addComposerReference, previewItem, setAssetPreviewItem, showRefToast])
+
+  if (!previewItem) return null
+
+  const sourceUrl = resolveProxySourceUrl(previewItem.url)
+  const videoUrl = previewItem.kind === 'video'
+    ? (buildVideoProxyUrl(sourceUrl) || sourceUrl)
+    : ''
+  const isLiked = isAssetLiked(previewItem.url)
+  const createdAtLabel = formatAssetPreviewCreatedAt(previewItem.createdAt)
+  const showDetails = detailsState.assetId === previewItem.id && detailsState.open
+
+  return createPortal(
+    <div
+      className="lab-newlayout-history-lightbox-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Asset preview"
+      onClick={() => setAssetPreviewItem(null)}
+    >
+      <div
+        className="lab-newlayout-history-lightbox lab-newlayout-reference-lightbox"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="lab-newlayout-history-lightbox-head">
+          <div>
+            <div className="lab-newlayout-history-lightbox-kicker">Asset · {previewItem.kind}</div>
+            <div className="lab-newlayout-history-lightbox-title">{previewItem.name || 'Asset'}</div>
+          </div>
+          <div className="lab-newlayout-history-lightbox-head-actions">
+            <button
+              type="button"
+              className={`lab-newlayout-history-lightbox-like${isLiked ? ' is-liked' : ''}`}
+              onClick={() => toggleAssetLiked(previewItem.url)}
+              aria-label={isLiked ? 'Unlike asset' : 'Like asset'}
+              title={isLiked ? 'Unlike asset' : 'Like asset'}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill={isLiked ? 'currentColor' : 'none'}
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+              </svg>
+              <span>{isLiked ? 'Liked' : 'Like'}</span>
+            </button>
+            <button
+              type="button"
+              className="lab-newlayout-history-lightbox-action"
+              onClick={() => setDetailsState((current) => (
+                current.assetId === previewItem.id
+                  ? { assetId: previewItem.id, open: !current.open }
+                  : { assetId: previewItem.id, open: true }
+              ))}
+            >
+              {showDetails ? 'Hide details' : 'Details'}
+            </button>
+            <button
+              type="button"
+              className="lab-newlayout-history-lightbox-action"
+              onClick={handleAddToComposer}
+            >
+              Add to composer
+            </button>
+            <button
+              type="button"
+              className="lab-newlayout-history-lightbox-action"
+              onClick={() => {
+                if (!sourceUrl) return
+                window.open(sourceUrl, '_blank', 'noopener,noreferrer')
+              }}
+              disabled={!sourceUrl}
+            >
+              Open link
+            </button>
+            <button
+              type="button"
+              className="lab-newlayout-history-lightbox-close"
+              onClick={() => setAssetPreviewItem(null)}
+              aria-label="Close"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+        <div className="lab-newlayout-reference-lightbox-body">
+          <div className="lab-newlayout-reference-lightbox-media">
+            {previewItem.kind === 'video' ? (
+              <video
+                className="lab-newlayout-reference-lightbox-media-element"
+                src={videoUrl}
+                controls
+                autoPlay
+                playsInline
+              />
+            ) : previewItem.kind === 'audio' ? (
+              <div className="lab-newlayout-reference-lightbox-audio-shell">
+                <div className="lab-newlayout-reference-lightbox-audio-icon">♪</div>
+                <audio className="lab-newlayout-reference-lightbox-audio" src={sourceUrl} controls autoPlay />
+              </div>
+            ) : (
+              <img
+                className="lab-newlayout-reference-lightbox-media-element lab-newlayout-reference-lightbox-image"
+                src={sourceUrl}
+                alt={previewItem.name}
+              />
+            )}
+          </div>
+          {showDetails ? (
+            <div className="lab-newlayout-history-lightbox-meta lab-newlayout-history-lightbox-meta--sidebar">
+              <div className="lab-newlayout-history-lightbox-meta-summary">
+                <div className="lab-newlayout-history-lightbox-meta-row lab-newlayout-history-lightbox-meta-row--summary">
+                  <span>Kind</span>
+                  <strong>{previewItem.kind}</strong>
+                </div>
+                {previewItem.generationProvider ? (
+                  <div className="lab-newlayout-history-lightbox-meta-row lab-newlayout-history-lightbox-meta-row--summary">
+                    <span>Provider</span>
+                    <strong>{previewItem.generationProvider}</strong>
+                  </div>
+                ) : null}
+                {previewItem.generationResolution ? (
+                  <div className="lab-newlayout-history-lightbox-meta-row lab-newlayout-history-lightbox-meta-row--summary">
+                    <span>Resolution</span>
+                    <strong>{previewItem.generationResolution}</strong>
+                  </div>
+                ) : null}
+                {previewItem.generationAspectRatio ? (
+                  <div className="lab-newlayout-history-lightbox-meta-row lab-newlayout-history-lightbox-meta-row--summary">
+                    <span>Ratio</span>
+                    <strong>{previewItem.generationAspectRatio}</strong>
+                  </div>
+                ) : null}
+              </div>
+              {(previewItem.generationModel || createdAtLabel) ? (
+                <div className="lab-newlayout-history-lightbox-meta-pair-row">
+                  {previewItem.generationModel ? (
+                    <div className="lab-newlayout-history-lightbox-meta-pair-cell">
+                      <span>Model</span>
+                      <strong className="lab-newlayout-history-lightbox-meta-mono">{previewItem.generationModel}</strong>
+                    </div>
+                  ) : null}
+                  {createdAtLabel ? (
+                    <div className="lab-newlayout-history-lightbox-meta-pair-cell">
+                      <span>Created</span>
+                      <strong>{createdAtLabel}</strong>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              {(previewItem.projectId || previewItem.folderId) ? (
+                <div className="lab-newlayout-history-lightbox-meta-pair-row">
+                  {previewItem.projectId ? (
+                    <div className="lab-newlayout-history-lightbox-meta-pair-cell">
+                      <span>Project</span>
+                      <strong className="lab-newlayout-history-lightbox-meta-mono">{previewItem.projectId}</strong>
+                    </div>
+                  ) : null}
+                  {previewItem.folderId ? (
+                    <div className="lab-newlayout-history-lightbox-meta-pair-cell">
+                      <span>Folder</span>
+                      <strong className="lab-newlayout-history-lightbox-meta-mono">{previewItem.folderId}</strong>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              {previewItem.generationSource ? (
+                <div className="lab-newlayout-history-lightbox-meta-row">
+                  <span>Source</span>
+                  <strong>{previewItem.generationSource}</strong>
+                </div>
+              ) : null}
+              <div className="lab-newlayout-history-lightbox-meta-row">
+                <span>Asset URL</span>
+                <strong className="lab-newlayout-history-lightbox-meta-mono" title={previewItem.url}>{previewItem.url}</strong>
+              </div>
+              {previewItem.generationPrompt ? (
+                <div className="lab-newlayout-history-lightbox-meta-row">
+                  <span>Prompt</span>
+                  <strong title={previewItem.generationPrompt}>{previewItem.generationPrompt}</strong>
+                </div>
+              ) : null}
+              {previewItem.generationRequestPayload ? (
+                <div className="lab-newlayout-history-lightbox-meta-row">
+                  <span>JSON</span>
+                  <pre className="lab-newlayout-history-lightbox-meta-json">{JSON.stringify(previewItem.generationRequestPayload, null, 2)}</pre>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+// Placeholder — kept for legacy grid/card patterns referenced below
 const dockviewComponents = {
   default: PlaceholderPanel,
   workspaceHome: WorkspaceHomePanel,
-  watchlist: PlaceholderPanel,
+  watchlist: AssetsLibraryPanel,
   pricealert: PlaceholderPanel,
   research: StoryOverviewPanel,
   flow: FlowPanel,
@@ -4471,6 +6326,7 @@ const dockviewComponents = {
   vesselfinder: PlaceholderPanel,
   positionsummary: LabNewLayoutDirectApiPanel,
   references: ReferencesPanel,
+  grokTesting: GrokTestingPanel,
   eventlog: PlaceholderPanel,
   layoutinspector: PlaceholderPanel,
   debuginfo: PlaceholderPanel,
@@ -4504,6 +6360,15 @@ function buildDockviewDemoLayout(api: DockviewApi) {
     renderer: 'always',
     position: { referencePanel: watchlist },
     params: getPanelSuggestion('pricealert', 'Workflow Library'),
+  })
+
+  const grokTesting = api.addPanel({
+    id: 'grokTesting',
+    component: 'grokTesting',
+    title: 'Grok Testing',
+    renderer: 'always',
+    position: { referencePanel: priceAlert },
+    params: getPanelSuggestion('grokTesting', 'Grok Testing'),
   })
 
   api.addPanel({
@@ -4595,6 +6460,11 @@ function buildDockviewDemoLayout(api: DockviewApi) {
     groupId: watchlistGroupId,
     tabGroupId: marketData.id,
     panelId: 'pricealert',
+  })
+  api.addPanelToTabGroup({
+    groupId: watchlistGroupId,
+    tabGroupId: marketData.id,
+    panelId: 'grokTesting',
   })
 
   const ordersGroupId = orders.api.group.id
@@ -4898,7 +6768,51 @@ function normalizeDockviewPreviewLayout(api: DockviewApi) {
     })
   }
 
+  const assetsLibraryPanel = api.panels.find((panel) => panel.id === 'watchlist')
   const workflowLibraryPanel = api.panels.find((panel) => panel.id === 'pricealert')
+  if (workflowLibraryPanel && !api.panels.find((panel) => panel.id === 'grokTesting')) {
+    api.addPanel({
+      id: 'grokTesting',
+      component: 'grokTesting',
+      title: 'Grok Testing',
+      renderer: 'always',
+      position: { referencePanel: workflowLibraryPanel },
+      params: getPanelSuggestion('grokTesting', 'Grok Testing'),
+    })
+  }
+
+  const grokTestingPanel = api.panels.find((panel) => panel.id === 'grokTesting')
+  if (assetsLibraryPanel && grokTestingPanel) {
+    const groupId = assetsLibraryPanel.api.group.id
+    const libraryTabGroup = [...api.getTabGroups({ groupId })][0] ?? api.createTabGroup({
+      groupId,
+      label: 'Library',
+      color: '#6b7280',
+    })
+
+    api.addPanelToTabGroup({
+      groupId,
+      tabGroupId: libraryTabGroup.id,
+      panelId: 'watchlist',
+    })
+
+    if (workflowLibraryPanel?.api.group.id === groupId) {
+      api.addPanelToTabGroup({
+        groupId,
+        tabGroupId: libraryTabGroup.id,
+        panelId: 'pricealert',
+      })
+    }
+
+    if (grokTestingPanel.api.group.id === groupId) {
+      api.addPanelToTabGroup({
+        groupId,
+        tabGroupId: libraryTabGroup.id,
+        panelId: 'grokTesting',
+      })
+    }
+  }
+
   if (workflowLibraryPanel && !api.panels.find((panel) => panel.id === 'flow')) {
     api.addPanel({
       id: 'flow',
@@ -4935,6 +6849,44 @@ function restoreDockviewLayout(api: DockviewApi, persistedState: LabNewLayoutPer
     buildDefaultDockviewLayout(api)
     return false
   }
+}
+
+function LabNewLayoutFolderToolbar({
+  studioProjectId,
+  studioActiveFolderId,
+  studioProjects,
+  studioFolders,
+  setStudioProjectId,
+  setStudioActiveFolderId,
+}: {
+  studioProjectId: string | null
+  studioActiveFolderId: string | null
+  studioProjects: ProjectSummary[]
+  studioFolders: FolderSummary[]
+  setStudioProjectId: (id: string | null) => void
+  setStudioActiveFolderId: (id: string | null) => void
+}) {
+  const folderTarget: FolderTarget | null = studioProjectId
+    ? {
+        projectId: studioProjectId,
+        projectName: studioProjects.find((p) => p.id === studioProjectId)?.name ?? studioProjectId,
+        folderId: studioActiveFolderId,
+        folderName: studioActiveFolderId
+          ? (studioFolders.find((f) => f.id === studioActiveFolderId)?.name ?? studioActiveFolderId)
+          : null,
+      }
+    : null
+
+  const handleChange = (target: FolderTarget | null) => {
+    setStudioProjectId(target?.projectId ?? null)
+    setStudioActiveFolderId(target?.folderId ?? null)
+  }
+
+  return (
+    <div className="lab-newlayout-toolbar">
+      <FolderMenu value={folderTarget} onChange={handleChange} />
+    </div>
+  )
 }
 
 export default function LabNewLayoutPage() {
@@ -4994,6 +6946,8 @@ export default function LabNewLayoutPage() {
   const isPrivilegedUser = isMasterAdminUser || hasAdminClaim
   const adminOnlyPanelIds = projectTabPolicy.adminOnlyPanelIds
   const canCurrentUserCloseMainTabs = isMasterAdminUser && projectTabPolicy.masterAdminCanCloseTabs
+
+  useStaleGenerationRecovery(CHATBOT_BASE)
   const parsedRouteSelection = useMemo(
     () => parseLabNewLayoutRoute(location.pathname),
     [location.pathname],
@@ -5445,6 +7399,59 @@ export default function LabNewLayoutPage() {
     hasAppliedUrlSelectionRef.current = false
   }, [routeSelectionKey])
 
+  useEffect(() => {
+    const routeProjectId = (parsedRouteSelection.projectId || '').trim()
+    const routeFolderIds = parsedRouteSelection.folderPathIds
+    const routeTargetFolderId = routeFolderIds.length > 0 ? routeFolderIds[routeFolderIds.length - 1] : null
+
+    if (!routeProjectId) {
+      hasAppliedUrlSelectionRef.current = true
+      return
+    }
+
+    if (studioProjects.length > 0 && !studioProjects.some((project) => project.id === routeProjectId)) {
+      hasAppliedUrlSelectionRef.current = true
+      return
+    }
+
+    if (studioProjectId !== routeProjectId) {
+      setStudioProjectId(routeProjectId)
+      if (studioActiveFolderId) {
+        setStudioActiveFolderId(null)
+      }
+      return
+    }
+
+    if (!routeTargetFolderId) {
+      hasAppliedUrlSelectionRef.current = true
+      if (studioActiveFolderId) {
+        setStudioActiveFolderId(null)
+      }
+      return
+    }
+
+    if (studioFolders.length > 0 && !studioFolders.some((folder) => folder.id === routeTargetFolderId)) {
+      hasAppliedUrlSelectionRef.current = true
+      return
+    }
+
+    if (studioActiveFolderId !== routeTargetFolderId) {
+      setStudioActiveFolderId(routeTargetFolderId)
+      return
+    }
+
+    hasAppliedUrlSelectionRef.current = true
+  }, [
+    parsedRouteSelection.folderPathIds,
+    parsedRouteSelection.projectId,
+    setStudioActiveFolderId,
+    setStudioProjectId,
+    studioActiveFolderId,
+    studioFolders,
+    studioProjectId,
+    studioProjects,
+  ])
+
   // DISABLED FOR DIAGNOSTICS: URL Hydration Effect - syncs URL params to selection state
   // useEffect(() => {
   //   const routeProjectId = (parsedRouteSelection.projectId || '').trim()
@@ -5812,6 +7819,8 @@ export default function LabNewLayoutPage() {
     <LabNewLayoutDataContext.Provider value={dataContextValueWithActions}>
       <LabNewLayoutUiSettingsContext.Provider value={uiSettingsContextValue}>
           <div className="lab-newlayout-page">
+            <GlobalCompareOverlay />
+            <GlobalAssetPreviewOverlay />
             <div className="lab-newlayout-frame">
               {isLayoutBootstrapComplete && isPrivilegeBootstrapComplete ? (
                 <DockviewReact

@@ -12,7 +12,7 @@ import {
 import { ZoomIn, ChevronDown, Maximize2 } from 'lucide-react';
 import { Button } from '../../../ui/button';
 
-export type CanvasZoom = 'fit' | '100%' | '50%';
+export type CanvasZoom = 'fit' | '100%' | '75%' | '50%';
 
 interface CanvasZoomDropdownProps {
   canvasZoom: CanvasZoom;
@@ -24,6 +24,7 @@ interface CanvasZoomDropdownProps {
 const CANVAS_ZOOM_OPTIONS: { value: CanvasZoom; label: string; description: string }[] = [
   { value: 'fit',  label: 'Fit',  description: 'Fit to window' },
   { value: '100%', label: '100%', description: 'Full size' },
+  { value: '75%',  label: '75%',  description: 'Three-quarter size' },
   { value: '50%',  label: '50%',  description: 'Half size' },
 ];
 

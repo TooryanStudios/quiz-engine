@@ -8,6 +8,8 @@ import { TimelineSection } from "./timeline-section";
 import { MobileNavBar } from "../shared/mobile-nav-bar";
 
 export interface EditorProps extends EditorHeaderProps {
+  /** Extra controls injected into the header (passed through from EditorHeaderProps) */
+  headerAddon?: React.ReactNode;
   /** Whether to hide the theme toggle dropdown */
   hideThemeToggle?: boolean | undefined;
   /** Default theme to use when theme toggle is hidden */
@@ -49,6 +51,7 @@ export const Editor: React.FC<EditorProps> = ({
   showDefaultThemes,
   hideThemeToggle,
   defaultTheme,
+  headerAddon,
 }) => {
   /** State to track if the current viewport is mobile-sized */
   const [isMobile, setIsMobile] = React.useState(false);
@@ -176,6 +179,7 @@ export const Editor: React.FC<EditorProps> = ({
         showDefaultThemes={showDefaultThemes}
         hideThemeToggle={hideThemeToggle}
         defaultTheme={defaultTheme}
+        headerAddon={headerAddon}
       />
       <div className="grow flex flex-col lg:flex-row overflow-hidden">
         <VideoPlayer playerRef={playerRef} />

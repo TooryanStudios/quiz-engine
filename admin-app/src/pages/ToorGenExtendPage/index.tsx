@@ -302,7 +302,9 @@ export function ToorGenExtendPage() {
 
   const getPlaybackUrl = (url: string): string => {
     if (!url) return url
-    if (url.includes('firebasestorage.googleapis.com')) return url
+    if (url.includes('firebasestorage.googleapis.com') || url.includes('firebasestorage.app')) {
+      return `${buildApiUrl('/api/video-proxy')}?url=${encodeURIComponent(url)}`
+    }
     return `${buildApiUrl('/api/video-proxy')}?url=${encodeURIComponent(url)}`
   }
 

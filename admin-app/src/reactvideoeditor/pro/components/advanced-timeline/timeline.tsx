@@ -207,17 +207,6 @@ export const Timeline = forwardRef<TimelineRef, TimelineProps>(({
     }
   }, [isPlaying, onPlay, onPause]);
 
-  // Setup keyboard shortcuts
-  useTimelineShortcuts({
-    handlePlayPause,
-    undo,
-    redo,
-    canUndo,
-    canRedo,
-    zoomScale,
-    setZoomScale,
-  });
-  
   const {
     handleExternalItemMove,
     handleExternalItemResize,
@@ -323,6 +312,19 @@ export const Timeline = forwardRef<TimelineRef, TimelineProps>(({
     internalItemsDelete(itemIds);
     handleExternalItemsDelete(itemIds);
   }, [internalItemsDelete, handleExternalItemsDelete]);
+
+  // Setup keyboard shortcuts
+  useTimelineShortcuts({
+    handlePlayPause,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    zoomScale,
+    setZoomScale,
+    selectedItemIds,
+    onDeleteItems: handleCombinedItemsDelete,
+  });
 
   const handleCombinedAddNewItem = useCallback((itemData: {
     type: string;

@@ -1,0 +1,10 @@
+{
+    "prompt":  "Blend the character traits, environment cues, and lighting language from all reference images into a single coherent still image. Keep the composition grounded and consistent while honoring the strongest visual details from each reference.",
+    "providerHint":  "grok",
+    "model":  "grok-imagine-image-quality",
+    "image_urls":  [
+                       "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO0nqz0AAAAASUVORK5CYII=",
+                       "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO0nqz0AAAAASUVORK5CYII=",
+                       "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO0nqz0AAAAASUVORK5CYII="
+                   ]
+}

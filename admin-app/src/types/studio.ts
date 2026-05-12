@@ -354,7 +354,7 @@ export type StudioReferenceAssetKind = 'image' | 'video' | 'audio'
 
 export type StudioReferenceAsset = {
   id: string
-  projectId: string
+  projectId?: string
   folderId?: string | null
   kind: StudioReferenceAssetKind
   url: string
@@ -362,4 +362,11 @@ export type StudioReferenceAsset = {
   name: string
   createdBy: string
   createdAt: Timestamp
+  generationPrompt?: string
+  generationModel?: string
+  generationProvider?: string
+  generationAspectRatio?: string
+  generationResolution?: string
+  generationSource?: string
+  generationRequestPayload?: Record<string, unknown>
 }

@@ -1,0 +1,9 @@
+﻿{
+    "prompt":  "Apply the visual style of the first image to the second image",
+    "providerHint":  "grok",
+    "model":  "grok-imagine-image-quality",
+    "image_urls":  [
+                       "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO0nqz0AAAAASUVORK5CYII=",
+                       "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO0nqz0AAAAASUVORK5CYII="
+                   ]
+}

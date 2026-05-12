@@ -1,5 +1,5 @@
-const CACHE_NAME = 'qyan-v6'
-const RUNTIME_CACHE = 'qyan-runtime-v6'
+const CACHE_NAME = 'qyan-v11'
+const RUNTIME_CACHE = 'qyan-runtime-v11'
 
 // Assets to cache on install
 const PRECACHE_ASSETS = [
@@ -48,6 +48,9 @@ self.addEventListener('fetch', (event) => {
 
   // Do not proxy byte-range media requests through the SW cache layer.
   if (request.headers.has('range')) return
+
+  // Never cache generated media object paths.
+  if (url.pathname.includes('%2Fgenerated%2F')) return
 
   // Firebase auth helper endpoints must never be cached by SW.
   if (url.pathname.startsWith('/__/auth/') || url.pathname.startsWith('/__/firebase/')) {

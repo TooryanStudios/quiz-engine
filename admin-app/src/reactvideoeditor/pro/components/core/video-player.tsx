@@ -46,6 +46,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     setSelectedOverlayId,
     changeOverlay,
     selectedOverlayId,
+    deleteOverlay,
     aspectRatio,
     playerDimensions,
     updatePlayerDimensions,
@@ -198,6 +199,26 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     setSelectedOverlayId(null);
   }, [setSelectedOverlayId]);
 
+  // Delete key handler for canvas overlay selection
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable ||
+        target.closest('[contenteditable="true"]')
+      ) return;
+      if (selectedOverlayId === null) return;
+      e.preventDefault();
+      deleteOverlay(selectedOverlayId);
+      setSelectedOverlayId(null);
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [selectedOverlayId, deleteOverlay, setSelectedOverlayId]);
+
   return (
     <EditorInteractionContext.Provider value={interactionContextValue}>
     <div ref={containerRef} className={`w-full h-full overflow-hidden ${className || ''}`} style={style}>
@@ -228,8 +249,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                       maxHeight: "100%",
                     }
                   : {
-                      width: canvasZoom === '100%' ? compositionWidth : compositionWidth * 0.5,
-                      height: canvasZoom === '100%' ? compositionHeight : compositionHeight * 0.5,
+                      width: canvasZoom === '100%' ? compositionWidth : canvasZoom === '75%' ? compositionWidth * 0.75 : compositionWidth * 0.5,
+                      height: canvasZoom === '100%' ? compositionHeight : canvasZoom === '75%' ? compositionHeight * 0.75 : compositionHeight * 0.5,
                     }
               }
             >

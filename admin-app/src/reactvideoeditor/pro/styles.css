@@ -1,13 +1,12 @@
 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@700&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Inter&display=swap');
-
-@import 'tailwindcss';
-@source './**/*.{ts,tsx}';
-
-/* Import base theme files */
 @import './styles/base-themes/light.css' layer(utilities);
 @import './styles/base-themes/dark.css' layer(utilities);
 @import './styles/base-themes/rve.css' layer(utilities);
+
+@import 'tailwindcss';
+@source './**/*.{ts,tsx}';
+@source '../../pages/VideoEditorPage.tsx';
 
 /*
   Bridge CSS custom properties → Tailwind v4 color utilities.

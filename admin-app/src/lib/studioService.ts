@@ -17,7 +17,6 @@ import {
   arrayRemove,
   arrayUnion,
   collection,
-  collectionGroup,
   deleteDoc,
   doc,
   getDoc,
@@ -78,6 +77,7 @@ const inviteDoc = (inviteId: string) => doc(db, 'studio_invites', inviteId)
 const studioNotificationsCol = () => collection(db, 'studio_notifications')
 const projectReferenceLibraryCol = (projectId: string) => collection(db, 'studio_projects', projectId, 'reference_library')
 const projectReferenceLibraryDoc = (projectId: string, itemId: string) => doc(db, 'studio_projects', projectId, 'reference_library', itemId)
+const userReferenceLibraryDoc = (userId: string, itemId: string) => doc(db, 'users', userId, 'reference_library', itemId)
 
 const foldersCol = (projectId: string) =>
   collection(db, 'studio_projects', projectId, 'folders')
@@ -114,6 +114,33 @@ const resolveRefCreatedAtMs = (value: unknown): number => {
   if (typeof value === 'number') return value
   if (value && typeof (value as { toMillis?: unknown }).toMillis === 'function') {
     return (value as { toMillis: () => number }).toMillis()
+  }
+  // Plain object from serialization: { seconds, nanoseconds }
+  if (value && typeof (value as { seconds?: unknown }).seconds === 'number') {
+    return (value as { seconds: number }).seconds * 1000
+  }
+  if (value && typeof (value as { _seconds?: unknown })._seconds === 'number') {
+    return (value as { _seconds: number })._seconds * 1000
+  }
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value)
+    if (!isNaN(parsed) && parsed > 0) return parsed
+  }
+  return 0
+}
+
+// Falls back to the timestamp embedded in the item ID (format: ref-{ms}-{random})
+// when createdAt is missing on older items.
+const resolveRefSortKey = (item: { createdAt?: unknown; id?: string }): number => {
+  const fromCreatedAt = resolveRefCreatedAtMs(item.createdAt)
+  if (fromCreatedAt > 0) return fromCreatedAt
+  // Try to parse timestamp out of the ID, e.g. "ref-1715000000000-abc"
+  if (typeof item.id === 'string') {
+    const match = item.id.match(/(?:^|-)([1-9]\d{11,12})(?:-|$)/)
+    if (match) {
+      const parsed = Number(match[1])
+      if (parsed > 0) return parsed
+    }
   }
   return 0
 }
@@ -1078,8 +1105,8 @@ export function subscribeToProjectReferenceLibrary(
       const items = snap.docs
         .map((docSnap) => docData<StudioReferenceAsset>(docSnap))
         .sort((left, right) => {
-          const leftAt = resolveRefCreatedAtMs(left.createdAt)
-          const rightAt = resolveRefCreatedAtMs(right.createdAt)
+          const leftAt = resolveRefSortKey(left)
+          const rightAt = resolveRefSortKey(right)
           return rightAt - leftAt
         })
       onData(items)
@@ -1094,13 +1121,13 @@ export function subscribeToUserReferenceLibrary(
   onError?: (error: Error) => void,
 ): Unsubscribe {
   return onSnapshot(
-    query(collectionGroup(db, 'reference_library'), where('createdBy', '==', userId)),
+    query(collection(db, 'users', userId, 'reference_library'), orderBy('createdAt', 'desc')),
     (snap) => {
       const items = snap.docs
         .map((docSnap) => docData<StudioReferenceAsset>(docSnap))
         .sort((left, right) => {
-          const leftAt = resolveRefCreatedAtMs(left.createdAt)
-          const rightAt = resolveRefCreatedAtMs(right.createdAt)
+          const leftAt = resolveRefSortKey(left)
+          const rightAt = resolveRefSortKey(right)
           return rightAt - leftAt
         })
       onData(items)
@@ -1135,6 +1162,53 @@ export async function saveProjectReferenceLibraryItem(
     name: item.name,
     createdBy,
     createdAt: Timestamp.fromMillis(item.createdAt),
+  })
+}
+
+export async function saveUserReferenceLibraryItem(
+  userId: string,
+  item: {
+    id: string
+    kind: StudioReferenceAssetKind
+    url: string
+    thumbnailUrl?: string
+    name: string
+    createdAt: number
+    projectId?: string | null
+    folderId?: string | null
+    generationPrompt?: string
+    generationModel?: string
+    generationProvider?: string
+    generationAspectRatio?: string
+    generationResolution?: string
+    generationSource?: string
+    generationRequestPayload?: Record<string, unknown>
+  },
+): Promise<void> {
+  const thumbnailUrl = (item.thumbnailUrl || '').trim()
+  const normalizedProjectId = typeof item.projectId === 'string' && item.projectId.trim()
+    ? item.projectId.trim()
+    : ''
+  const normalizedFolderId = typeof item.folderId === 'string' && item.folderId.trim()
+    ? item.folderId.trim()
+    : null
+
+  await setDoc(userReferenceLibraryDoc(userId, item.id), {
+    projectId: normalizedProjectId,
+    ...(normalizedFolderId ? { folderId: normalizedFolderId } : {}),
+    kind: item.kind,
+    url: item.url,
+    ...(thumbnailUrl ? { thumbnailUrl } : {}),
+    name: item.name,
+    createdBy: userId,
+    createdAt: Timestamp.fromMillis(item.createdAt),
+    ...(item.generationPrompt ? { generationPrompt: item.generationPrompt } : {}),
+    ...(item.generationModel ? { generationModel: item.generationModel } : {}),
+    ...(item.generationProvider ? { generationProvider: item.generationProvider } : {}),
+    ...(item.generationAspectRatio ? { generationAspectRatio: item.generationAspectRatio } : {}),
+    ...(item.generationResolution ? { generationResolution: item.generationResolution } : {}),
+    ...(item.generationSource ? { generationSource: item.generationSource } : {}),
+    ...(item.generationRequestPayload ? { generationRequestPayload: item.generationRequestPayload } : {}),
   })
 }
 
@@ -1320,3 +1394,128 @@ export function subscribeToProjectFolders(
     (err) => onError?.(err),
   )
 }
+
+// ─── Video documents ──────────────────────────────────────────────────────────
+
+const videoDocsCol = (projectId: string) =>
+  collection(db, 'studio_projects', projectId, 'video_docs')
+const videoDocRef = (projectId: string, docId: string) =>
+  doc(db, 'studio_projects', projectId, 'video_docs', docId)
+
+export type VideoDocSummary = {
+  docId: string
+  name: string
+  projectId: string
+  folderId: string | null
+  updatedBy: string
+  updatedAt: number
+}
+
+/**
+ * Create or update a video editor document in Firestore.
+ * Pass `docId: null` to create a new document (auto-ID).
+ * Returns the docId.
+ */
+export async function saveVideoDoc(input: {
+  projectId: string
+  docId: string | null
+  name: string
+  folderId: string | null
+  updatedBy: string
+  editorState: unknown
+}): Promise<string> {
+  const payload = {
+    name: input.name.trim() || 'Untitled',
+    projectId: input.projectId,
+    folderId: input.folderId ?? null,
+    updatedBy: input.updatedBy,
+    editorState: input.editorState,
+    updatedAt: serverTimestamp(),
+  }
+  if (input.docId) {
+    await setDoc(videoDocRef(input.projectId, input.docId), payload, { merge: true })
+    return input.docId
+  } else {
+    const ref = await addDoc(videoDocsCol(input.projectId), payload)
+    return ref.id
+  }
+}
+
+/**
+ * Load the full editor state for a single video document.
+ */
+export async function loadVideoDoc(projectId: string, docId: string): Promise<unknown> {
+  const snap = await getDoc(videoDocRef(projectId, docId))
+  if (!snap.exists()) return null
+  const data = snap.data()
+  return data?.editorState ?? null
+}
+
+/**
+ * Subscribe to all video documents in a folder (or root when folderId is null).
+ */
+export function subscribeToFolderVideoDocs(
+  projectId: string,
+  folderId: string | null,
+  onResult: (docs: VideoDocSummary[]) => void,
+  onError?: (error: Error) => void,
+): Unsubscribe {
+  const q = folderId
+    ? query(videoDocsCol(projectId), where('folderId', '==', folderId), orderBy('updatedAt', 'desc'))
+    : query(videoDocsCol(projectId), where('folderId', '==', null), orderBy('updatedAt', 'desc'))
+  return onSnapshot(
+    q,
+    (snap) => {
+      const docs: VideoDocSummary[] = snap.docs.map((d) => {
+        const data = d.data() as Record<string, unknown>
+        return {
+          docId: d.id,
+          name: typeof data.name === 'string' && data.name.trim() ? data.name.trim() : 'Untitled',
+          projectId: typeof data.projectId === 'string' ? data.projectId : projectId,
+          folderId: typeof data.folderId === 'string' ? data.folderId : null,
+          updatedBy: typeof data.updatedBy === 'string' ? data.updatedBy : '',
+          updatedAt: data.updatedAt instanceof Timestamp ? data.updatedAt.toMillis() : 0,
+        }
+      })
+      onResult(docs)
+    },
+    (err) => onError?.(err),
+  )
+}
+
+/**
+ * Delete a video document.
+ */
+export async function deleteVideoDoc(projectId: string, docId: string): Promise<void> {
+  await deleteDoc(videoDocRef(projectId, docId))
+}
+
+/**
+ * Subscribe to ALL video documents in a project (all folders), ordered by most recent.
+ */
+export function subscribeToProjectVideoDocs(
+  projectId: string,
+  onResult: (docs: VideoDocSummary[]) => void,
+  onError?: (error: Error) => void,
+): Unsubscribe {
+  const q = query(videoDocsCol(projectId), orderBy('updatedAt', 'desc'))
+  return onSnapshot(
+    q,
+    (snap) => {
+      const docs: VideoDocSummary[] = snap.docs.map((d) => {
+        const data = d.data() as Record<string, unknown>
+        return {
+          docId: d.id,
+          name: typeof data.name === 'string' && data.name.trim() ? data.name.trim() : 'Untitled',
+          projectId: typeof data.projectId === 'string' ? data.projectId : projectId,
+          folderId: typeof data.folderId === 'string' ? data.folderId : null,
+          updatedBy: typeof data.updatedBy === 'string' ? data.updatedBy : '',
+          updatedAt: data.updatedAt instanceof Timestamp ? data.updatedAt.toMillis() : 0,
+        }
+      })
+      onResult(docs)
+    },
+    (err) => onError?.(err),
+  )
+}
+

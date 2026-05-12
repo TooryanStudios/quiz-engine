@@ -11,6 +11,8 @@ import { ReactVideoEditorProvider, ReactVideoEditorProviderProps } from "./provi
 import { PlayerRef } from "@remotion/player";
 
 export interface ReactVideoEditorProps extends Omit<ReactVideoEditorProviderProps, 'children'> {
+  /** Extra controls injected into the editor header, just before the save button */
+  headerAddon?: React.ReactNode;
   showSidebar?: boolean;
   showAutosaveStatus?: boolean;
   className?: string;
@@ -60,6 +62,7 @@ export const ReactVideoEditor: React.FC<ReactVideoEditorProps> = ({
   onSaved,
   isPlayerOnly = false,
   playerRef: externalPlayerRef,
+  headerAddon,
   ...providerProps
 }) => {
   const [isSaving, setIsSaving] = useState(false);
@@ -133,6 +136,7 @@ export const ReactVideoEditor: React.FC<ReactVideoEditorProps> = ({
               showDefaultThemes={showDefaultThemes}
               hideThemeToggle={hideThemeToggle}
               defaultTheme={defaultTheme}
+              headerAddon={headerAddon}
             />
           </SidebarInset>
 

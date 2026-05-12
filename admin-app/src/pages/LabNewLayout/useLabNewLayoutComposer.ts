@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isGenerationStillProcessingTimeoutError, useGenerationRunner } from '../../hooks/useGenerationRunner'
 import { firebaseConfig } from '../../lib/firebase'
+import { useToast } from '../../lib/ToastContext'
+import { persistOpenAIImageToLibrary } from '../../lib/openai/openAIImageAssetService'
 import { playGenerationFailureSound, playGenerationSuccessSound } from './generationSounds'
 import { buildToorGenRequest } from '../../lib/toorgen/generationRequestBuilder'
 import type { StudioComposerPromptFontSize, StudioProjectComposerDraft } from '../../types/studio'
@@ -11,8 +13,10 @@ const CHATBOT_BASE = (import.meta.env.VITE_CHATBOT_API_URL as string | undefined
 const COMPOSER_PROJECT_SCOPE_ID = 'project'
 const DRAFT_SAVE_DEBOUNCE_MS = 450
 
+type ComposerProvider = 'atlas' | 'grok'
+
 type ComposerRequestSettingsState = {
-  provider: 'atlas'
+  provider: ComposerProvider
   model: string
   ratio: string
   duration: number
@@ -27,6 +31,25 @@ const defaultComposerSettings: ComposerRequestSettingsState = {
   duration: 15,
   resolution: '480p',
   generateAudio: true,
+}
+
+const isComposerProvider = (value: unknown): value is ComposerProvider => (
+  value === 'atlas' || value === 'grok'
+)
+
+const getDefaultComposerModelForProvider = (provider?: string): string => (
+  provider === 'grok' ? 'grok-imagine-video' : defaultComposerSettings.model
+)
+
+const isGrokImageGenerationModel = (model: string): boolean => (
+  model.trim().toLowerCase().startsWith('grok-imagine-image')
+)
+
+const getComposerModelsForMode = (modeId: string) => {
+  if (modeId === 'image' || modeId === 'style-transfer') {
+    return composerModelOptions.filter((option) => isGrokImageGenerationModel(option.id))
+  }
+  return composerModelOptions.filter((option) => !isGrokImageGenerationModel(option.id))
 }
 
 const defaultPromptFontSize: StudioComposerPromptFontSize = 'medium'
@@ -231,6 +254,10 @@ export type ComposerSettingsOption<T extends string | number = string> = {
   description: string
 }
 
+type ComposerModelOption = ComposerSettingsOption & {
+  provider: ComposerProvider
+}
+
 export const composerModeOptions: ComposerModeOption[] = [
   {
     id: 'text',
@@ -241,6 +268,11 @@ export const composerModeOptions: ComposerModeOption[] = [
     id: 'image',
     label: 'Image references',
     promptPlaceholder: 'Describe how the selected image should move and evolve...',
+  },
+  {
+    id: 'style-transfer',
+    label: 'Style transfer',
+    promptPlaceholder: 'Describe how to apply style from source image to destination image...',
   },
   {
     id: 'video',
@@ -280,11 +312,13 @@ export const composerDurationOptions: ComposerSettingsOption<number>[] = [
   { id: 15, label: '15s', description: 'Longer sequence' },
 ]
 
-export const composerModelOptions: ComposerSettingsOption[] = [
-  { id: 'atlas-2.0', label: 'Atlas Cloud 2.0', description: 'Seedance 2.0 on Atlas Cloud' },
-  { id: 'seedance-2.0-fast', label: 'Atlas Cloud 2.0 Fast', description: 'Fast Atlas Cloud variant' },
-  { id: 'seedance-2.0', label: 'Seedance 2.0 API', description: 'Standard Seedance API route' },
-  { id: 'seedance-1.5', label: 'Seedance 1.5 API', description: 'Legacy Seedance route' },
+export const composerModelOptions: ComposerModelOption[] = [
+  { id: 'atlas-2.0', label: 'Atlas Cloud 2.0', description: 'Seedance 2.0 on Atlas Cloud', provider: 'atlas' },
+  { id: 'seedance-2.0-fast', label: 'Atlas Cloud 2.0 Fast', description: 'Fast Atlas Cloud variant', provider: 'atlas' },
+  { id: 'seedance-2.0', label: 'Seedance 2.0 API', description: 'Standard Seedance API route', provider: 'atlas' },
+  { id: 'seedance-1.5', label: 'Seedance 1.5 API', description: 'Legacy Seedance route', provider: 'atlas' },
+  { id: 'grok-imagine-video', label: 'Grok Imagine Video', description: 'xAI Grok video route', provider: 'grok' },
+  { id: 'grok-imagine-image-quality', label: 'Grok Imagine Image Quality', description: 'xAI Grok image generation', provider: 'grok' },
 ]
 
 const EXTEND_PROMPT_PREFIX_PATTERN = /^\s*generate the content (before|after) video 1\.?\s*/i
@@ -463,9 +497,10 @@ function buildDraftSnapshot(input: {
 }
 
 function resolveDraftSettings(draft: StudioProjectComposerDraft | null | undefined): ComposerRequestSettingsState {
+  const provider = isComposerProvider(draft?.provider) ? draft.provider : defaultComposerSettings.provider
   return {
-    provider: draft?.provider === 'atlas' ? 'atlas' : defaultComposerSettings.provider,
-    model: normalizeComposerModelId(draft?.model || '', draft?.provider),
+    provider,
+    model: normalizeComposerModelId(draft?.model || '', provider),
     ratio: draft?.ratio || defaultComposerSettings.ratio,
     duration: typeof draft?.duration === 'number' ? draft.duration : defaultComposerSettings.duration,
     resolution: draft?.resolution || defaultComposerSettings.resolution,
@@ -487,6 +522,14 @@ function getComposerModelLabel(model: string): string {
 
   if (!raw) {
     return 'Atlas Cloud 2.0 Fast'
+  }
+
+  if (raw === 'grok-imagine-image-quality') {
+    return 'Grok Imagine Image Quality'
+  }
+
+  if (raw === 'grok-imagine-video' || raw.includes('grok')) {
+    return 'Grok Imagine Video'
   }
 
   if (raw === 'atlas-2.0' || raw === 'bytedance/seedance-2.0') {
@@ -516,13 +559,28 @@ export function normalizeComposerModelId(model: string, provider?: string): stri
   const raw = (model || '').trim()
   const lower = raw.toLowerCase()
   const normalizedProvider = (provider || '').trim().toLowerCase()
+  const fallbackModel = getDefaultComposerModelForProvider(provider)
 
   if (!raw) {
-    return defaultComposerSettings.model
+    return fallbackModel
   }
 
   if (composerModelOptions.some((option) => option.id === raw)) {
     return raw
+  }
+
+  if (normalizedProvider === 'grok') {
+    if (lower.includes('grok-imagine-image') || lower.includes('image')) {
+      return 'grok-imagine-image-quality'
+    }
+    return lower.includes('grok') ? 'grok-imagine-video' : fallbackModel
+  }
+
+  if (lower.includes('grok')) {
+    if (lower.includes('image')) {
+      return 'grok-imagine-image-quality'
+    }
+    return 'grok-imagine-video'
   }
 
   if (lower.includes('seedance-1.5') || lower.includes('atlas 1.5')) {
@@ -550,7 +608,7 @@ export function normalizeComposerModelId(model: string, provider?: string): stri
     return 'seedance-2.0'
   }
 
-  return defaultComposerSettings.model
+  return fallbackModel
 }
 
 function mergePromptPrefix(currentPrompt: string, promptPrefix: string): string {
@@ -629,12 +687,14 @@ const isTransientGenerationConnectivityError = (message: string): boolean => {
 
 export function useLabNewLayoutComposer() {
   const {
+    authUid,
     studioProjectId,
     studioActiveFolderId,
     projectNewLayoutConfig,
     projectNewLayoutConfigLoading,
     updateProjectNewLayoutConfig,
   } = useLabNewLayoutData()
+  const { showToast } = useToast()
   const [activeModeId, setActiveModeId] = useState('video')
   const [promptText, setPromptText] = useState('')
   const [isPromptFocused, setIsPromptFocused] = useState(false)
@@ -647,6 +707,8 @@ export function useLabNewLayoutComposer() {
   const [backendStatusMessage, setBackendStatusMessage] = useState('')
   const [backendCooldownRemainingMs, setBackendCooldownRemainingMs] = useState(0)
   const [isSubmittingGeneration, setIsSubmittingGeneration] = useState(false)
+  const [generationSubmittedFlash, setGenerationSubmittedFlash] = useState(false)
+  const generationSubmittedFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [referenceAccessMessage, setReferenceAccessMessage] = useState('')
   const [publicizingReferenceCount, setPublicizingReferenceCount] = useState(0)
 
@@ -658,6 +720,8 @@ export function useLabNewLayoutComposer() {
   const setComposerReferences = useLabNewLayoutStore((state) => state.setComposerReferences)
   const addHistoryItem = useLabNewLayoutStore((state) => state.addHistoryItem)
   const updateHistoryItem = useLabNewLayoutStore((state) => state.updateHistoryItem)
+  const addPendingGenerationAsset = useLabNewLayoutStore((state) => state.addPendingGenerationAsset)
+  const removePendingGenerationAsset = useLabNewLayoutStore((state) => state.removePendingGenerationAsset)
   const history = useLabNewLayoutStore((state) => state.history)
   const submittingGenerationRef = useRef(false)
   const locallyStartedHistoryIdsRef = useRef<Set<string>>(new Set())
@@ -743,6 +807,76 @@ export function useLabNewLayoutComposer() {
       return null
     }
   }, [])
+
+  const archiveImageToFirebase = useCallback(async (
+    sourceUrl: string,
+    name: string,
+    projectId: string,
+    folderId: string | null,
+  ): Promise<string | null> => {
+    const normalizedSourceUrl = sourceUrl.trim()
+    if (!normalizedSourceUrl || isFirebaseDownloadUrl(normalizedSourceUrl)) {
+      return normalizedSourceUrl || null
+    }
+
+    if (!projectId.trim()) {
+      return null
+    }
+
+    const folderPathSegment = folderId ? `folders/${folderId}` : 'project'
+    const storagePathPrefix = `lab-generated-images/projects/${projectId}/${folderPathSegment}`
+
+    try {
+      const response = await fetch('/api/lab/references/upload-by-url', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          url: normalizedSourceUrl,
+          name,
+          kind: 'image',
+          storagePathPrefix,
+          firebaseConfig,
+          mimeType: 'image/jpeg',
+        }),
+      })
+
+      const payload = await response.json().catch(() => null) as { error?: string; saved?: { firebaseUrl?: string } } | null
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Failed to archive image to Firebase.')
+      }
+
+      return payload?.saved?.firebaseUrl || null
+    } catch (error) {
+      console.warn('Lab composer image archive to Firebase failed:', error)
+      return null
+    }
+  }, [])
+
+  const addGeneratedImageToAssetsLibrary = useCallback(async (
+    imageUrl: string,
+    prompt: string,
+    requestPayload?: Record<string, unknown>,
+  ): Promise<void> => {
+    const normalizedUrl = imageUrl.trim()
+    if (!normalizedUrl) {
+      return
+    }
+
+    await persistOpenAIImageToLibrary({
+      firebaseUrl: normalizedUrl,
+      prompt,
+      title: prompt.trim().slice(0, 72) || 'Grok Image',
+      authUid,
+      generationModel: composerSettings.model,
+      generationProvider: composerSettings.provider,
+      generationAspectRatio: composerSettings.ratio,
+      generationResolution: composerSettings.resolution,
+      generationSource: 'grok-image',
+      generationRequestPayload: requestPayload,
+    })
+  }, [authUid, composerSettings.model, composerSettings.provider, composerSettings.ratio, composerSettings.resolution])
 
   const publicizeReferenceToFirebase = useCallback(async (
     reference: ComposerReference,
@@ -1141,9 +1275,50 @@ export function useLabNewLayoutComposer() {
   }, [])
 
   const applyModelSetting = useCallback((model: string) => {
-    setComposerSettings((current) => ({ ...current, model }))
+    const selectedOption = composerModelOptions.find((option) => option.id === model)
+    setComposerSettings((current) => {
+      const nextProvider = selectedOption?.provider || current.provider
+      return {
+        ...current,
+        provider: nextProvider,
+        model: normalizeComposerModelId(model, nextProvider),
+      }
+    })
+
+    if (isGrokImageGenerationModel(model)) {
+      if (activeModeId !== 'image' && activeModeId !== 'style-transfer') {
+        setActiveModeId('image')
+      }
+    } else if (activeModeId === 'image' || activeModeId === 'style-transfer') {
+      setActiveModeId('video')
+    }
+
     setActiveFooterMenu(null)
-  }, [])
+  }, [activeModeId])
+
+  useEffect(() => {
+    const allowedModels = getComposerModelsForMode(activeModeId)
+    const isCurrentAllowed = allowedModels.some((option) => option.id === composerSettings.model)
+    if (isCurrentAllowed) {
+      return
+    }
+
+    if (activeModeId === 'image' || activeModeId === 'style-transfer') {
+      setComposerSettings((current) => ({
+        ...current,
+        provider: 'grok',
+        model: 'grok-imagine-image-quality',
+      }))
+      return
+    }
+
+    setComposerSettings((current) => ({
+      ...current,
+      model: isComposerProvider(current.provider)
+        ? normalizeComposerModelId(getDefaultComposerModelForProvider(current.provider), current.provider)
+        : normalizeComposerModelId(defaultComposerSettings.model, 'atlas'),
+    }))
+  }, [activeModeId, composerSettings.model])
 
   const toggleComposerAudio = useCallback(() => {
     setComposerSettings((current) => ({ ...current, generateAudio: !current.generateAudio }))
@@ -1157,9 +1332,63 @@ export function useLabNewLayoutComposer() {
   }, [])
 
   const buildCurrentRequest = useCallback((references: ComposerReference[] = selectedReferences) => {
+    const isImageModel = isGrokImageGenerationModel(composerSettings.model)
+    if (isImageModel) {
+      const imageRefUrls = references
+        .filter((ref) => ref.kind === 'image')
+        .map((ref) => ref.url)
+      const uniqueImageRefUrls = Array.from(new Set(imageRefUrls.filter((url) => url.trim().length > 0)))
+      const isStyleTransferMode = activeModeId === 'style-transfer'
+      const normalizedImageResolution = composerSettings.resolution === '1k' || composerSettings.resolution === '2k'
+        ? composerSettings.resolution
+        : '1k'
+      const imageBody: Record<string, unknown> = {
+        prompt: promptText.trim(),
+        model: composerSettings.model,
+        providerHint: 'grok',
+        aspect_ratio: composerSettings.ratio,
+        resolution: normalizedImageResolution,
+      }
+
+      if (isStyleTransferMode) {
+        const styleImageUrl = uniqueImageRefUrls[0] || ''
+        const destinationImageUrl = uniqueImageRefUrls[1] || ''
+
+        // Send both images using the standard edit endpoint — same pattern as the
+        // working oil painting example. The first image is the style source,
+        // the second is the destination. The operation flag is for backend
+        // routing only and is stripped before the xAI request is sent.
+        imageBody.operation = 'style-transfer'
+        const bothImages = [styleImageUrl, destinationImageUrl].filter(Boolean)
+        if (bothImages.length > 0) {
+          imageBody.image_urls = bothImages
+        }
+
+        const basePrompt = promptText.trim()
+        imageBody.prompt = basePrompt
+          || 'Apply the visual style of the first image to the second image. Preserve the composition, subject, and structure of the second image while adopting the color palette, texture, lighting, and artistic aesthetic of the first image.'
+      }
+
+      if (!isStyleTransferMode && uniqueImageRefUrls.length === 1) {
+        imageBody.image = { url: uniqueImageRefUrls[0] }
+      } else if (!isStyleTransferMode && uniqueImageRefUrls.length > 1) {
+        imageBody.images = uniqueImageRefUrls.map((url) => ({
+          type: 'image_url',
+          url,
+        }))
+      }
+      
+      return {
+        endpoint: '/api/seedance/generate',
+        body: imageBody,
+        settings: composerSettings,
+      }
+    }
+
+    const requestMode = activeModeId === 'video' ? 'reference-to-video' : 'text-to-video'
     const tab = {
       id: activeModeId,
-      requestMode: (activeModeId === 'video' ? 'reference-to-video' : 'text-to-video') as 'reference-to-video' | 'text-to-video',
+      requestMode: requestMode as 'reference-to-video' | 'text-to-video',
       fields: references.map((ref, idx) => ({ kind: ref.kind, key: buildReferenceMediaKey(ref, idx), isRequired: false, label: '', helpText: '', placeholder: '' })),
     }
 
@@ -1241,25 +1470,32 @@ export function useLabNewLayoutComposer() {
       || typeof composerReuseSeed.generateAudio === 'boolean'
       || typeof composerReuseSeed.model === 'string'
     ) {
-      setComposerSettings((current) => ({
-        ...current,
-        provider: composerReuseSeed.provider === 'atlas' ? 'atlas' : current.provider,
-        ratio: typeof composerReuseSeed.ratio === 'string' && composerReuseSeed.ratio.trim()
-          ? composerReuseSeed.ratio
-          : current.ratio,
-        resolution: typeof composerReuseSeed.resolution === 'string' && composerReuseSeed.resolution.trim()
-          ? composerReuseSeed.resolution
-          : current.resolution,
-        duration: typeof composerReuseSeed.duration === 'number'
-          ? composerReuseSeed.duration
-          : current.duration,
-        generateAudio: typeof composerReuseSeed.generateAudio === 'boolean'
-          ? composerReuseSeed.generateAudio
-          : current.generateAudio,
-        model: typeof composerReuseSeed.model === 'string' && composerReuseSeed.model.trim()
-          ? normalizeComposerModelId(composerReuseSeed.model, composerReuseSeed.provider)
-          : current.model,
-      }))
+      setComposerSettings((current) => {
+        const nextProvider = isComposerProvider(composerReuseSeed.provider)
+          ? composerReuseSeed.provider
+          : current.provider
+        const nextModelSource = typeof composerReuseSeed.model === 'string' && composerReuseSeed.model.trim()
+          ? composerReuseSeed.model
+          : current.model
+
+        return {
+          ...current,
+          provider: nextProvider,
+          ratio: typeof composerReuseSeed.ratio === 'string' && composerReuseSeed.ratio.trim()
+            ? composerReuseSeed.ratio
+            : current.ratio,
+          resolution: typeof composerReuseSeed.resolution === 'string' && composerReuseSeed.resolution.trim()
+            ? composerReuseSeed.resolution
+            : current.resolution,
+          duration: typeof composerReuseSeed.duration === 'number'
+            ? composerReuseSeed.duration
+            : current.duration,
+          generateAudio: typeof composerReuseSeed.generateAudio === 'boolean'
+            ? composerReuseSeed.generateAudio
+            : current.generateAudio,
+          model: normalizeComposerModelId(nextModelSource, nextProvider),
+        }
+      })
     }
     setComposerReuseSeed(null)
   }, [composerReuseSeed, selectedReferences, setComposerReferences, setComposerReuseSeed])
@@ -1389,7 +1625,7 @@ export function useLabNewLayoutComposer() {
       return
     }
 
-    if (!promptText.trim()) return
+    if (activeModeId !== 'style-transfer' && !promptText.trim()) return
 
     const activeProjectId = (override?.projectId || studioProjectId || '').trim()
     const activeFolderId = ((override?.folderId ?? studioActiveFolderId) || '').trim()
@@ -1422,9 +1658,17 @@ export function useLabNewLayoutComposer() {
           throw new Error(`Unsupported image format in reference: ${unsupportedReference.name || unsupportedReference.url}. Use JPG, JPEG, PNG, or WEBP.`)
         }
 
+        if (activeModeId === 'style-transfer') {
+          const imageReferenceCount = preparedReferences.filter((reference) => reference.kind === 'image').length
+          if (imageReferenceCount < 2) {
+            throw new Error('Style transfer needs 2 image references: source style first, destination image second.')
+          }
+        }
+
         const request = buildCurrentRequest(preparedReferences)
+        const isImageGeneration = isGrokImageGenerationModel(request.settings.model)
         const requestSignature = JSON.stringify([request.endpoint, request.body, activeProjectId, activeFolderId])
-        const hasMatchingInFlightRequest = history.some((entry) => {
+        const hasMatchingInFlightRequest = !isImageGeneration && history.some((entry) => {
           if (entry.sourceLabel !== 'Composer') return false
           if (entry.status !== 'queued' && entry.status !== 'running') return false
           return JSON.stringify([
@@ -1440,13 +1684,109 @@ export function useLabNewLayoutComposer() {
 
         setCurrentComposerPreview(request)
 
+        if (isImageGeneration) {
+          // Add a pending card to the history panel so the user sees that
+          // generation is in-flight. The button remains in "Starting..." state
+          // until the result arrives.
+          const nextHistoryId = createClientUniqueId('composer-image')
+          const submittedAt = Date.now()
+          historyId = nextHistoryId
+          locallyStartedHistoryIdsRef.current.add(nextHistoryId)
+
+          addHistoryItem({
+            id: nextHistoryId,
+            timestamp: submittedAt,
+            submittedAt,
+            prompt: promptText,
+            model: request.settings.model,
+            provider: request.settings.provider,
+            ratio: request.settings.ratio,
+            resolution: request.settings.resolution,
+            duration: request.settings.duration,
+            generateAudio: request.settings.generateAudio,
+            requestEndpoint: request.endpoint,
+            requestPayload: request.body,
+            mediaUrls: Object.fromEntries(preparedReferences.map((ref, index) => [buildReferenceMediaKey(ref, index), ref.url])),
+            sourceLabel: 'Composer',
+            status: 'running',
+            projectId: activeProjectId,
+            folderId: activeFolderId,
+          })
+
+          // Release the Generate button as soon as the request is submitted.
+          submittingGenerationRef.current = false
+          setIsSubmittingGeneration(false)
+
+          // Flash the generate button green to confirm the request was accepted.
+          if (generationSubmittedFlashTimerRef.current) {
+            clearTimeout(generationSubmittedFlashTimerRef.current)
+          }
+          setGenerationSubmittedFlash(true)
+          generationSubmittedFlashTimerRef.current = setTimeout(() => {
+            setGenerationSubmittedFlash(false)
+            generationSubmittedFlashTimerRef.current = null
+          }, 1200)
+
+          // Show a placeholder card in the assets library while generation runs.
+          const firstImageRef = preparedReferences.find((ref) => ref.kind === 'image')
+          addPendingGenerationAsset({
+            id: nextHistoryId,
+            kind: 'image',
+            name: promptText.trim().slice(0, 72) || 'Generating…',
+            createdAt: submittedAt,
+            isPendingGeneration: true,
+            referenceImageUrl: firstImageRef?.url,
+          })
+
+          const result = await runner.runGeneration(request)
+
+          if (!result) {
+            updateHistoryItem(nextHistoryId, { status: 'failed', errorMessage: 'Image generation failed.' })
+            return
+          }
+
+          const archivedImageUrl = await archiveImageToFirebase(
+            result.resultUrl,
+            `composer-image-${Date.now()}`,
+            activeProjectId,
+            activeFolderId || null,
+          )
+          const finalImageUrl = archivedImageUrl || result.resultUrl
+
+          updateHistoryItem(nextHistoryId, {
+            status: 'success',
+            resultUrl: finalImageUrl,
+            taskId: result.taskId,
+            submittedAt: result.submittedAt,
+            receivedAt: result.receivedAt,
+            completedAt: result.receivedAt,
+            provider: result.settings.provider,
+            model: result.settings.model,
+            ratio: result.settings.ratio,
+            resolution: result.settings.resolution,
+          })
+
+          removePendingGenerationAsset(nextHistoryId)
+          await addGeneratedImageToAssetsLibrary(
+            finalImageUrl,
+            promptText,
+            request.body as Record<string, unknown>,
+          )
+
+          showToast({ message: 'Image added to Assets Library', type: 'success' })
+          playGenerationSuccessSound()
+          return
+        }
+
         const nextHistoryId = createClientUniqueId('composer-history')
+        const submittedAt = Date.now()
         historyId = nextHistoryId
         locallyStartedHistoryIdsRef.current.add(nextHistoryId)
 
         addHistoryItem({
           id: nextHistoryId,
-          timestamp: Date.now(),
+          timestamp: submittedAt,
+          submittedAt,
           prompt: promptText,
           model: request.settings.model,
           provider: request.settings.provider,
@@ -1555,6 +1895,7 @@ export function useLabNewLayoutComposer() {
         submittingGenerationRef.current = false
         setIsSubmittingGeneration(false)
         if (historyId) {
+          removePendingGenerationAsset(historyId)
           locallyStartedHistoryIdsRef.current.delete(historyId)
         }
       }
@@ -1562,6 +1903,9 @@ export function useLabNewLayoutComposer() {
   }, [
     addHistoryItem,
     buildCurrentRequest,
+    addGeneratedImageToAssetsLibrary,
+    addPendingGenerationAsset,
+    removePendingGenerationAsset,
     ensureComposerReferencesArePublic,
     history,
     promptText,
@@ -1569,6 +1913,8 @@ export function useLabNewLayoutComposer() {
     setComposerReferences,
     setCurrentComposerPreview,
     selectedReferences,
+    activeModeId,
+    archiveImageToFirebase,
     archiveVideoToFirebase,
     studioActiveFolderId,
     studioProjectId,
@@ -1603,7 +1949,7 @@ export function useLabNewLayoutComposer() {
     composerDurationOptions,
     composerFontSizeOptions,
     composerModelChip,
-    composerModelOptions,
+    composerModelOptions: getComposerModelsForMode(activeModeId),
     composerModeOptions,
     composerRatioOptions,
     composerRefineActions,
@@ -1618,6 +1964,7 @@ export function useLabNewLayoutComposer() {
     backendCooldownRemainingMs,
     generationBlockedReason,
     isSubmittingGeneration,
+    generationSubmittedFlash,
     isPreparingReferences,
     promptFontSize,
     promptText,
@@ -1636,5 +1983,6 @@ export function useLabNewLayoutComposer() {
     toggleTemplatesMenu,
     updatePromptText,
     history,
+    buildCurrentRequest,
   }
 }

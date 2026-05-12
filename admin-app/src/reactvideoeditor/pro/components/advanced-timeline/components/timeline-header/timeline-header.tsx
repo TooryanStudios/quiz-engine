@@ -110,7 +110,7 @@ export const TimelineHeader: React.FC<TimelineHeaderProps> = ({
   aspectRatio = "16:9",
   onAspectRatioChange,
   showAspectRatioControls = true,
-  canvasZoom = 'fit',
+  canvasZoom = '75%',
   onCanvasZoomChange,
   isCollapsed = false,
   onToggleCollapse,

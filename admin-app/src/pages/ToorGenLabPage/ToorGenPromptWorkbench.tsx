@@ -474,6 +474,7 @@ const PROVIDER_MODELS = {
   ],
   grok: [
     'grok-imagine-video',
+    'grok-imagine-image-quality',
   ],
 } as const
 
@@ -513,6 +514,12 @@ const COMBINED_MODEL_OPTIONS: Array<{ value: string; label: string; provider: Pr
     label: 'Grok Imagine Video',
     provider: 'grok',
     model: 'grok-imagine-video',
+  },
+  {
+    value: 'grok:grok-imagine-image-quality',
+    label: 'Grok Imagine Image Quality',
+    provider: 'grok',
+    model: 'grok-imagine-image-quality',
   },
 ]
 
@@ -2120,6 +2127,7 @@ const normalizeModelForProvider = (
     if (lower.includes('seedance-2.0-fast')) return 'seedance-2.0-fast'
   }
   if (provider === 'grok' && lower.includes('grok')) {
+    if (lower.includes('image')) return 'grok-imagine-image-quality'
     return 'grok-imagine-video'
   }
 

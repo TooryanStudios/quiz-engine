@@ -35,6 +35,33 @@ export type ComposerReferenceItem = {
   name: string
 }
 
+export type PendingGenerationAsset = {
+  id: string
+  kind: 'image'
+  name: string
+  createdAt: number
+  isPendingGeneration: true
+  referenceImageUrl?: string
+}
+
+export type AssetPreviewItem = {
+  id: string
+  url: string
+  kind: 'video' | 'image' | 'audio'
+  name: string
+  thumbnailUrl?: string
+  projectId?: string
+  folderId?: string | null
+  createdAt?: unknown
+  generationPrompt?: string
+  generationModel?: string
+  generationProvider?: string
+  generationAspectRatio?: string
+  generationResolution?: string
+  generationSource?: string
+  generationRequestPayload?: Record<string, unknown>
+}
+
 export type ComposerReuseSeed = {
   id: string
   prompt?: string
@@ -57,6 +84,9 @@ export type LabNewLayoutStoreState = {
   composerPreviewRefreshNonce: number
   requestComposerPreviewRefresh: () => void
 
+  assetPreviewItem: AssetPreviewItem | null
+  setAssetPreviewItem: (item: AssetPreviewItem | null) => void
+
   composerReferences: ComposerReferenceItem[]
   setComposerReferences: (references: ComposerReferenceItem[]) => void
   addComposerReference: (item: ComposerReferenceItem) => void
@@ -70,6 +100,10 @@ export type LabNewLayoutStoreState = {
   updateHistoryItem: (id: string, updates: Partial<GenerationHistoryItem>) => void
   removeHistoryItem: (id: string) => void
   clearHistory: () => void
+
+  pendingGenerationAssets: PendingGenerationAsset[]
+  addPendingGenerationAsset: (item: PendingGenerationAsset) => void
+  removePendingGenerationAsset: (id: string) => void
 }
 
 const LAB_NEWLAYOUT_STORE_KEY = 'lab-newlayout-store-v2'
@@ -194,6 +228,9 @@ export const useLabNewLayoutStore = create<LabNewLayoutStoreState>()(
         composerPreviewRefreshNonce: state.composerPreviewRefreshNonce + 1,
       })),
 
+      assetPreviewItem: null,
+      setAssetPreviewItem: (item) => set({ assetPreviewItem: item }),
+
       composerReferences: [],
       setComposerReferences: (references) => set({ composerReferences: references }),
       addComposerReference: (item) => set((state) => ({
@@ -217,6 +254,14 @@ export const useLabNewLayoutStore = create<LabNewLayoutStoreState>()(
         history: state.history.filter((item) => item.id !== id)
       })),
       clearHistory: () => set({ history: [] }),
+
+      pendingGenerationAssets: [],
+      addPendingGenerationAsset: (item) => set((state) => ({
+        pendingGenerationAssets: [item, ...state.pendingGenerationAssets],
+      })),
+      removePendingGenerationAsset: (id) => set((state) => ({
+        pendingGenerationAssets: state.pendingGenerationAssets.filter((item) => item.id !== id),
+      })),
     }),
     {
       name: LAB_NEWLAYOUT_STORE_KEY,

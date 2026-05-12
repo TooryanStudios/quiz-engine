@@ -52,6 +52,21 @@ const buildSelectionUrlPath = (projectId: string, folderPathIds: string[]): stri
   return `/lab/newlayout/p/${safeProjectId}/f/${safeFolderPath}`
 }
 
+const buildVideoEditorUrl = (
+  project: { id: string; name: string },
+  folder: { id: string; name: string } | null,
+): string => {
+  const params = new URLSearchParams()
+  params.set('studioProjectId', project.id)
+  params.set('studioProjectName', project.name)
+  if (folder) {
+    params.set('studioFolderId', folder.id)
+    params.set('studioFolderName', folder.name)
+  }
+  params.set('source', 'lab-newlayout')
+  return `/vidEdit?${params.toString()}`
+}
+
 export function LabNewLayoutExplorerEdgePanel(props: IDockviewPanelProps<ExplorerEdgePanelParams>) {
   const panelParams = props.params ?? {}
   const {
@@ -320,6 +335,15 @@ export function LabNewLayoutExplorerEdgePanel(props: IDockviewPanelProps<Explore
     }
   }
 
+  const handleOpenVideoEditor = () => {
+    if (!selectedProject) {
+      setManagementStatus('Select a project before opening the video editor.')
+      return
+    }
+
+    window.location.assign(buildVideoEditorUrl(selectedProject, selectedFolder))
+  }
+
   return (
     <div className="lab-newlayout-edge-panel lab-newlayout-edge-panel--explorer" data-position={panelParams.position ?? 'edge'}>
       <div className="lab-newlayout-edge-head">
@@ -343,6 +367,15 @@ export function LabNewLayoutExplorerEdgePanel(props: IDockviewPanelProps<Explore
         onClick={openHistoryGallery}
       >
         View Project Generations
+      </button>
+
+      <button
+        type="button"
+        className="lab-newlayout-explorer-button"
+        disabled={!selectedProject || isManaging}
+        onClick={handleOpenVideoEditor}
+      >
+        {selectedFolder ? 'Open Video Editor For Folder' : 'Open Video Editor'}
       </button>
 
       {!selectedProject ? (

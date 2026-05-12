@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useGenerationRunner } from '../../hooks/useGenerationRunner'
+import { resolveGenerationRequestSettings, useGenerationRunner, type GenerationProvider } from '../../hooks/useGenerationRunner'
 import { firebaseConfig } from '../../lib/firebase'
 import { playGenerationFailureSound, playGenerationSuccessSound } from './generationSounds'
 import { useLabNewLayoutData } from './useLabNewLayoutWorkspace'
@@ -62,6 +62,17 @@ const readDurationValue = (value: unknown, fallback: number) => {
 const readBooleanValue = (value: unknown, fallback: boolean) => (
   typeof value === 'boolean' ? value : fallback
 )
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+)
+
+const readProviderValue = (value: unknown): GenerationProvider | null => {
+  if (value === 'atlas' || value === 'grok' || value === 'byteplus') {
+    return value
+  }
+  return null
+}
 
 function resolveArchiveFailureNotice(error: unknown): { signature: string; message: string } {
   const rawMessage = error instanceof Error ? error.message : 'Failed to archive video to Firebase.'
@@ -344,22 +355,39 @@ export function useLabNewLayoutDirectApi() {
       : typeof parsed.prompt === 'string'
         ? parsed.prompt
         : '(Direct API request)'
+    const parsedSettings = isRecord(parsed.settings) ? parsed.settings : null
     const model = typeof body.model === 'string'
       ? body.model
       : typeof parsed.model === 'string'
         ? parsed.model
+        : typeof parsedSettings?.model === 'string'
+          ? parsedSettings.model
         : 'unknown'
+    const requestSettings = resolveGenerationRequestSettings(endpoint, body, {
+      provider: readProviderValue(parsedSettings?.provider ?? parsed.provider) || 'atlas',
+      model,
+      ratio: typeof body.ratio === 'string'
+        ? body.ratio
+        : typeof body.aspect_ratio === 'string'
+          ? body.aspect_ratio
+          : typeof parsedSettings?.ratio === 'string'
+            ? parsedSettings.ratio
+            : '16:9',
+      duration: readDurationValue(body.duration ?? parsedSettings?.duration, 15),
+      resolution: typeof body.resolution === 'string'
+        ? body.resolution
+        : typeof parsedSettings?.resolution === 'string'
+          ? parsedSettings.resolution
+          : '480p',
+      generateAudio: readBooleanValue(
+        body.generate_audio ?? body.generateAudio ?? parsedSettings?.generateAudio,
+        true,
+      ),
+    })
     const request = {
       endpoint,
       body,
-      settings: {
-        provider: 'atlas' as const,
-        model,
-        ratio: typeof body.ratio === 'string' ? body.ratio : '16:9',
-        duration: readDurationValue(body.duration, 15),
-        resolution: typeof body.resolution === 'string' ? body.resolution : '480p',
-        generateAudio: readBooleanValue(body.generate_audio ?? body.generateAudio, true),
-      }
+      settings: requestSettings,
     }
     const historyId = createClientUniqueId('direct-api-history')
 
@@ -367,7 +395,7 @@ export function useLabNewLayoutDirectApi() {
       id: historyId,
       timestamp: Date.now(),
       prompt,
-      model,
+      model: request.settings.model,
       provider: request.settings.provider,
       ratio: request.settings.ratio,
       resolution: request.settings.resolution,

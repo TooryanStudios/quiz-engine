@@ -11,6 +11,8 @@ import { useEditorContext } from "../../contexts/editor-context";
 import { useEffect } from "react";
 
 export interface EditorHeaderProps {
+  /** Extra controls to render in the header, just before the save button */
+  headerAddon?: React.ReactNode;
   /** Array of available custom themes for the theme dropdown */
   availableThemes?: CustomTheme[] | undefined;
   /** Current selected theme */
@@ -67,6 +69,7 @@ export function EditorHeader({
   showDefaultThemes,
   hideThemeToggle,
   defaultTheme,
+  headerAddon,
 }: EditorHeaderProps = {}) {
   /**
    * Destructure required values from the editor context:
@@ -129,6 +132,9 @@ export function EditorHeader({
 
       {/* Spacer to push rendering controls to the right */}
       <div className="grow" />
+
+      {/* Addon slot (e.g. folder selector + filename) */}
+      {headerAddon}
 
       {/* Save controls */}
       <SaveControls onSave={saveProject || (() => Promise.resolve())} />
