@@ -52,6 +52,7 @@ import {
   type WorkflowBuilderDefinition,
   type WorkflowBuilderNotice,
 } from '../features/workflowBuilder'
+import { OpenAIImageLabPanel } from '../features/openaiImage/OpenAIImageLabPanel'
 import type { FolderSummary, ProjectSummary, StudioReferenceAsset } from '../types/studio'
 import { useToast } from '../lib/ToastContext'
 import {
@@ -2027,13 +2028,12 @@ function buildHistoryReferencePayload(entry: LabNewLayoutGalleryHistoryEntry): D
   if (!mediaUrl) return null
 
   const matchedMediaKey = Object.entries(entry.mediaUrls).find(([, url]) => url === mediaUrl)?.[0] || ''
-  const kind: 'image' | 'video' = entry.resultUrl && mediaUrl === entry.resultUrl
+  // Determine kind by checking mediaUrls keys first (most reliable), then fall back to URL inference
+  const kind: 'image' | 'video' = matchedMediaKey.startsWith('video')
     ? 'video'
-    : matchedMediaKey.startsWith('video')
-      ? 'video'
-      : matchedMediaKey.startsWith('image')
-        ? 'image'
-        : inferReferenceKindFromUrl(mediaUrl)
+    : matchedMediaKey.startsWith('image')
+      ? 'image'
+      : inferReferenceKindFromUrl(mediaUrl)
 
   return {
     url: mediaUrl,
@@ -5832,8 +5832,14 @@ function AssetsLibraryPanel() {
   const setAssetPreviewItem = useLabNewLayoutStore((state) => state.setAssetPreviewItem)
   const addComposerReference = useLabNewLayoutStore((state) => state.addComposerReference)
   const composerReferences = useLabNewLayoutStore((state) => state.composerReferences)
+  const pendingGenerationAssets = useLabNewLayoutStore((state) => state.pendingGenerationAssets)
   const { setCompareBeforeUrl, setCompareAfterUrl } = useLabNewLayoutData()
   const { showToast } = useToast()
+
+  const visibleItems = useMemo(() => {
+    const pendingIds = new Set(pendingGenerationAssets.map((item) => item.id))
+    return [...pendingGenerationAssets, ...items.filter((item) => !pendingIds.has(item.id))]
+  }, [items, pendingGenerationAssets])
 
   const handleAddToComposer = useCallback((item: (typeof items)[number]) => {
     if (composerReferences.some((ref) => ref.url === item.url)) {
@@ -5869,7 +5875,7 @@ function AssetsLibraryPanel() {
         <div className="lab-newlayout-history-toolbar">
           <div className="lab-newlayout-history-toolbar-stats">
             <span className="lab-newlayout-history-stat">Assets Library</span>
-            <span className="lab-newlayout-history-stat">{isAuthLoading ? 'Loading...' : user ? `${items.length} item${items.length === 1 ? '' : 's'}` : `${items.length} local item${items.length === 1 ? '' : 's'}`}</span>
+            <span className="lab-newlayout-history-stat">{isAuthLoading ? 'Loading...' : user ? `${visibleItems.length} item${visibleItems.length === 1 ? '' : 's'}` : `${visibleItems.length} local item${visibleItems.length === 1 ? '' : 's'}`}</span>
           </div>
         </div>
       </div>
@@ -5881,7 +5887,7 @@ function AssetsLibraryPanel() {
               <span>{error}</span>
             </div>
           </div>
-        ) : items.length === 0 ? (
+        ) : visibleItems.length === 0 ? (
           <div className="lab-newlayout-references-empty">
             <div className="lab-newlayout-references-plus-card lab-newlayout-references-plus-card--static">
               <span>No generated assets yet.</span>
@@ -5890,8 +5896,36 @@ function AssetsLibraryPanel() {
           </div>
         ) : (
           <div className="lab-newlayout-references-grid lab-newlayout-references-grid--active">
-            {items.map((item) => {
-              const enrichedItem = item as typeof item & {
+            {visibleItems.map((item) => {
+              if ((item as PendingGenerationAsset).isPendingGeneration === true) {
+                const pendingItem = item as PendingGenerationAsset
+                return (
+                  <div
+                    key={pendingItem.id}
+                    className="lab-newlayout-reference-item lab-newlayout-reference-item--generating"
+                    aria-label="Generating image…"
+                    aria-live="polite"
+                  >
+                    <div
+                      className="lab-newlayout-reference-thumb lab-newlayout-reference-thumb--image lab-newlayout-reference-thumb--generating"
+                      style={pendingItem.referenceImageUrl ? { backgroundImage: `url(${pendingItem.referenceImageUrl})` } : undefined}
+                    >
+                      <div className="lab-newlayout-reference-generating-overlay">
+                        <span className="lab-newlayout-reference-generating-spinner" aria-hidden="true" />
+                        <span className="lab-newlayout-reference-generating-copy">Generating…</span>
+                      </div>
+                    </div>
+                    <div className="lab-newlayout-reference-meta">
+                      <div className="lab-newlayout-reference-title" title={pendingItem.name}>{pendingItem.name}</div>
+                      <div className="lab-newlayout-reference-subtitle">pending</div>
+                    </div>
+                  </div>
+                )
+              }
+
+              const mediaItem = item as (typeof items)[number]
+
+              const enrichedItem = mediaItem as typeof mediaItem & {
                 folderId?: string | null
                 generationPrompt?: string
                 generationModel?: string
@@ -5904,19 +5938,19 @@ function AssetsLibraryPanel() {
 
               return (
                 <div
-                  key={item.id}
+                  key={mediaItem.id}
                   className="lab-newlayout-reference-item lab-newlayout-reference-item--openable is-draggable"
                   draggable
-                  onDragStart={(event) => handleDragStart(event, item)}
+                  onDragStart={(event) => handleDragStart(event, mediaItem)}
                   onClick={() => setAssetPreviewItem({
-                    id: item.id,
-                    url: item.url,
-                    kind: item.kind,
-                    name: item.name,
-                    thumbnailUrl: item.thumbnailUrl,
-                    projectId: item.projectId,
+                    id: mediaItem.id,
+                    url: mediaItem.url,
+                    kind: mediaItem.kind,
+                    name: mediaItem.name,
+                    thumbnailUrl: mediaItem.thumbnailUrl,
+                    projectId: mediaItem.projectId,
                     folderId: enrichedItem.folderId,
-                    createdAt: item.createdAt,
+                    createdAt: mediaItem.createdAt,
                     generationPrompt: enrichedItem.generationPrompt,
                     generationModel: enrichedItem.generationModel,
                     generationProvider: enrichedItem.generationProvider,
@@ -5926,40 +5960,40 @@ function AssetsLibraryPanel() {
                     generationRequestPayload: enrichedItem.generationRequestPayload,
                   })}
                 >
-                  {item.kind === 'video' ? (
-                    <video className="lab-newlayout-reference-thumb lab-newlayout-reference-thumb--video" src={buildVideoProxyUrl(item.url) || item.url} muted playsInline preload="metadata" />
+                  {mediaItem.kind === 'video' ? (
+                    <video className="lab-newlayout-reference-thumb lab-newlayout-reference-thumb--video" src={buildVideoProxyUrl(mediaItem.url) || mediaItem.url} muted playsInline preload="metadata" />
                   ) : (
-                    <img className="lab-newlayout-reference-thumb lab-newlayout-reference-thumb--image" src={item.url} alt={item.name} />
+                    <img className="lab-newlayout-reference-thumb lab-newlayout-reference-thumb--image" src={mediaItem.url} alt={mediaItem.name} />
                   )}
                   <button
                     type="button"
                     className="lab-newlayout-reference-add-composer"
-                  onClick={(event) => { event.stopPropagation(); handleAddToComposer(item) }}
+                  onClick={(event) => { event.stopPropagation(); handleAddToComposer(mediaItem) }}
                   title="Add to composer"
                 >
                   + Composer
                 </button>
-                {item.kind !== 'audio' ? (
+                {mediaItem.kind !== 'audio' ? (
                   <>
                     <button
                       type="button"
                       className="lab-newlayout-reference-compare-set-btn lab-newlayout-reference-compare-set-btn--before"
-                      onClick={(event) => { event.stopPropagation(); setCompareBeforeUrl(item.url) }}
+                      onClick={(event) => { event.stopPropagation(); setCompareBeforeUrl(mediaItem.url) }}
                       aria-label="Set as Before in comparison"
                       title="Set as Before"
                     >B</button>
                     <button
                       type="button"
                       className="lab-newlayout-reference-compare-set-btn lab-newlayout-reference-compare-set-btn--after"
-                      onClick={(event) => { event.stopPropagation(); setCompareAfterUrl(item.url) }}
+                      onClick={(event) => { event.stopPropagation(); setCompareAfterUrl(mediaItem.url) }}
                       aria-label="Set as After in comparison"
                       title="Set as After"
                     >A</button>
                   </>
                 ) : null}
                 <div className="lab-newlayout-reference-meta">
-                  <div className="lab-newlayout-reference-title" title={item.name}>{item.name}</div>
-                  <div className="lab-newlayout-reference-subtitle" title={item.url}>{item.kind}</div>
+                  <div className="lab-newlayout-reference-title" title={mediaItem.name}>{mediaItem.name}</div>
+                  <div className="lab-newlayout-reference-subtitle" title={mediaItem.url}>{mediaItem.kind}</div>
                 </div>
                 </div>
               )
@@ -6313,6 +6347,14 @@ function GlobalAssetPreviewOverlay() {
   )
 }
 
+function OpenAIImageTestingPanel() {
+  return (
+    <div className="lab-newlayout-panel lab-newlayout-panel--openai-image-testing">
+      <OpenAIImageLabPanel />
+    </div>
+  )
+}
+
 // Placeholder — kept for legacy grid/card patterns referenced below
 const dockviewComponents = {
   default: PlaceholderPanel,
@@ -6327,6 +6369,7 @@ const dockviewComponents = {
   positionsummary: LabNewLayoutDirectApiPanel,
   references: ReferencesPanel,
   grokTesting: GrokTestingPanel,
+  openaiImageTesting: OpenAIImageTestingPanel,
   eventlog: PlaceholderPanel,
   layoutinspector: PlaceholderPanel,
   debuginfo: PlaceholderPanel,
@@ -6369,6 +6412,15 @@ function buildDockviewDemoLayout(api: DockviewApi) {
     renderer: 'always',
     position: { referencePanel: priceAlert },
     params: getPanelSuggestion('grokTesting', 'Grok Testing'),
+  })
+
+  api.addPanel({
+    id: 'openaiImageTesting',
+    component: 'openaiImageTesting',
+    title: 'OpenAI Image',
+    renderer: 'always',
+    position: { referencePanel: grokTesting },
+    params: getPanelSuggestion('openaiImageTesting', 'OpenAI Image'),
   })
 
   api.addPanel({
@@ -6465,6 +6517,11 @@ function buildDockviewDemoLayout(api: DockviewApi) {
     groupId: watchlistGroupId,
     tabGroupId: marketData.id,
     panelId: 'grokTesting',
+  })
+  api.addPanelToTabGroup({
+    groupId: watchlistGroupId,
+    tabGroupId: marketData.id,
+    panelId: 'openaiImageTesting',
   })
 
   const ordersGroupId = orders.api.group.id
@@ -6782,6 +6839,18 @@ function normalizeDockviewPreviewLayout(api: DockviewApi) {
   }
 
   const grokTestingPanel = api.panels.find((panel) => panel.id === 'grokTesting')
+  if (grokTestingPanel && !api.panels.find((panel) => panel.id === 'openaiImageTesting')) {
+    api.addPanel({
+      id: 'openaiImageTesting',
+      component: 'openaiImageTesting',
+      title: 'OpenAI Image',
+      renderer: 'always',
+      position: { referencePanel: grokTestingPanel },
+      params: getPanelSuggestion('openaiImageTesting', 'OpenAI Image'),
+    })
+  }
+
+  const openAIImageTestingPanel = api.panels.find((panel) => panel.id === 'openaiImageTesting')
   if (assetsLibraryPanel && grokTestingPanel) {
     const groupId = assetsLibraryPanel.api.group.id
     const libraryTabGroup = [...api.getTabGroups({ groupId })][0] ?? api.createTabGroup({
@@ -6809,6 +6878,14 @@ function normalizeDockviewPreviewLayout(api: DockviewApi) {
         groupId,
         tabGroupId: libraryTabGroup.id,
         panelId: 'grokTesting',
+      })
+    }
+
+    if (openAIImageTestingPanel?.api.group.id === groupId) {
+      api.addPanelToTabGroup({
+        groupId,
+        tabGroupId: libraryTabGroup.id,
+        panelId: 'openaiImageTesting',
       })
     }
   }

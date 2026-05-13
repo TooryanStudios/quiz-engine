@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { storage } from '../lib/firebase'
 import {
   fetchOpenAIImageHealth,
@@ -37,6 +37,7 @@ type GenerateAndSaveRequest = {
   authUid?: string
   maxItems?: number
   firebaseConfig?: OpenAIImageFirebaseConfig
+  referenceImages?: string[]
 }
 
 const readDefaultFirebaseConfig = (): OpenAIImageFirebaseConfig => ({
@@ -61,8 +62,18 @@ export function useOpenAIImageAssetGeneration({
   const [lastError, setLastError] = useState('')
   const [health, setHealth] = useState<OpenAIImageHealth | null>(null)
   const [isCheckingHealth, setIsCheckingHealth] = useState(false)
+  const onSuccessRef = useRef(onSuccess)
+  const onErrorRef = useRef(onError)
 
   const defaultFirebaseConfig = useMemo(() => readDefaultFirebaseConfig(), [])
+
+  useEffect(() => {
+    onSuccessRef.current = onSuccess
+  }, [onSuccess])
+
+  useEffect(() => {
+    onErrorRef.current = onError
+  }, [onError])
 
   const generateAndSave = useCallback(async (request: GenerateAndSaveRequest) => {
     setIsGenerating(true)
@@ -81,6 +92,7 @@ export function useOpenAIImageAssetGeneration({
           outputCompression: request.outputCompression,
           moderation: request.moderation,
           n: request.n,
+          referenceImages: request.referenceImages,
           title: request.title,
           assetIndex: request.assetIndex,
           storagePathPrefix: request.storagePathPrefix,
@@ -93,17 +105,17 @@ export function useOpenAIImageAssetGeneration({
         maxItems: request.maxItems,
       })
       setLastResult(result)
-      await onSuccess?.(result)
+      await onSuccessRef.current?.(result)
       return result
     } catch (error) {
       const message = error instanceof Error ? error.message : 'OpenAI image generation and save failed.'
       setLastError(message)
-      onError?.(message)
+      onErrorRef.current?.(message)
       throw error
     } finally {
       setIsGenerating(false)
     }
-  }, [apiBaseUrl, defaultFirebaseConfig, endpoint, firebaseConfig, onError, onSuccess])
+  }, [apiBaseUrl, defaultFirebaseConfig, endpoint, firebaseConfig])
 
   const checkHealth = useCallback(async () => {
     setIsCheckingHealth(true)
@@ -114,12 +126,12 @@ export function useOpenAIImageAssetGeneration({
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not load OpenAI image health status.'
       setLastError(message)
-      onError?.(message)
+      onErrorRef.current?.(message)
       throw error
     } finally {
       setIsCheckingHealth(false)
     }
-  }, [apiBaseUrl, healthEndpoint, onError])
+  }, [apiBaseUrl, healthEndpoint])
 
   const reset = useCallback(() => {
     setLastError('')

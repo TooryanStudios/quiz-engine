@@ -137,14 +137,9 @@ const resolveAtlasModelForMode = (
   if (raw.includes('/')) return raw
 
   const lower = raw.toLowerCase()
-  const isExplicitFast = lower.includes('fast')
-  const isSeedance20Family = (
-    lower === 'atlas-2.0'
-    || lower === 'seedance-2.0'
-    || lower.includes('dreamina-seedance-2-0')
-    || lower.includes('seedance-2.0')
-  )
-  const baseModel = 'bytedance/seedance-2.0-fast'
+  const baseModel = lower.includes('fast')
+    ? 'bytedance/seedance-2.0-fast'
+    : 'bytedance/seedance-2.0'
 
   const modeSuffix = requestMode === 'image-to-video'
     ? 'image-to-video'

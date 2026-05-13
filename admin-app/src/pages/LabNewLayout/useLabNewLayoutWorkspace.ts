@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { useStudioProjectSelection } from '../../hooks/useStudioProjectSelection'
 import { saveProjectNewLayoutConfig, subscribeToProjectNewLayoutConfig, subscribeToProjectReferenceLibrary, createProject, createFolder } from '../../lib/studioService'
-import type { FolderSummary, ProjectSummary, StudioProjectComposerDraft, StudioProjectNewLayoutConfig, StudioProjectStoryBibleData, StudioReferenceAsset } from '../../types/studio'
+import type { FolderSummary, ProjectSummary, StudioProjectComposerDraft, StudioProjectNewLayoutConfig, StudioProjectOpenAIStoryboardDraft, StudioProjectStoryBibleData, StudioReferenceAsset } from '../../types/studio'
 
 type LabNewLayoutStudioSelectionState = {
   version: 1
@@ -147,6 +147,36 @@ function sanitizeComposerDraft(input: StudioProjectComposerDraft | null | undefi
   }
 }
 
+function sanitizeOpenAIStoryboardDraft(input: StudioProjectOpenAIStoryboardDraft | null | undefined): StudioProjectOpenAIStoryboardDraft | null {
+  if (!input) {
+    return null
+  }
+
+  return {
+    activeGroupId: typeof input.activeGroupId === 'string' && input.activeGroupId.trim() ? input.activeGroupId.trim() : 'story-beats',
+    activeExampleId: typeof input.activeExampleId === 'string' ? input.activeExampleId.trim() : '',
+    customPrompt: typeof input.customPrompt === 'string' ? input.customPrompt : '',
+    size: typeof input.size === 'string' && input.size.trim() ? input.size.trim() : '3840x2160',
+    quality: input.quality === 'low' || input.quality === 'medium' || input.quality === 'high' || input.quality === 'auto'
+      ? input.quality
+      : 'high',
+    assetTitle: typeof input.assetTitle === 'string' ? input.assetTitle : '',
+    shotCount: typeof input.shotCount === 'number' && Number.isFinite(input.shotCount)
+      ? Math.max(1, Math.min(12, Math.round(input.shotCount)))
+      : 4,
+    columns: typeof input.columns === 'number' && Number.isFinite(input.columns)
+      ? Math.max(1, Math.min(4, Math.round(input.columns)))
+      : 2,
+    rows: input.rows === '1' || input.rows === '2' || input.rows === '3' || input.rows === '4' || input.rows === 'auto'
+      ? input.rows
+      : 'auto',
+    generationCount: typeof input.generationCount === 'number' && Number.isFinite(input.generationCount)
+      ? Math.max(1, Math.min(4, Math.round(input.generationCount)))
+      : 1,
+    updatedAt: typeof input.updatedAt === 'number' && Number.isFinite(input.updatedAt) ? input.updatedAt : Date.now(),
+  }
+}
+
 function normalizeComposerDraftScopeId(scopeId: unknown): string | null {
   if (typeof scopeId !== 'string') {
     return null
@@ -186,11 +216,28 @@ function sanitizeProjectNewLayoutConfig(input?: Partial<StudioProjectNewLayoutCo
     })
     .filter((entry): entry is readonly [string, StudioProjectComposerDraft] => Boolean(entry))
 
+  const openAIStoryboardDraftEntries = Object.entries(input?.openAIStoryboardDrafts ?? {})
+    .map(([scopeId, draft]) => {
+      const normalizedScopeId = normalizeComposerDraftScopeId(scopeId)
+      if (!normalizedScopeId) {
+        return null
+      }
+
+      const sanitizedDraft = sanitizeOpenAIStoryboardDraft(draft)
+      if (!sanitizedDraft) {
+        return null
+      }
+
+      return [normalizedScopeId, sanitizedDraft] as const
+    })
+    .filter((entry): entry is readonly [string, StudioProjectOpenAIStoryboardDraft] => Boolean(entry))
+
   return {
     version: 1,
     adminOnlyPanelIds: [...new Set((input?.adminOnlyPanelIds ?? []).filter((panelId) => typeof panelId === 'string' && panelId.trim().length > 0))].sort(),
     masterAdminCanCloseTabs: input?.masterAdminCanCloseTabs === true,
     composerDrafts: Object.fromEntries(composerDraftEntries),
+    openAIStoryboardDrafts: Object.fromEntries(openAIStoryboardDraftEntries),
     storyBibleData: sanitizeStoryBibleDataFromConfig(input?.storyBibleData),
   }
 }

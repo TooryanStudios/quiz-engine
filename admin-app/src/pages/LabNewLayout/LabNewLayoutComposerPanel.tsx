@@ -225,14 +225,19 @@ const ComposerReferencesRail = memo(function ComposerReferencesRail({
   selectedReferences,
   addReference,
   removeReference,
+  replaceReference,
+  moveReference,
   activeModeId,
 }: {
   selectedReferences: ComposerReferenceItem[]
   addReference: (reference: ComposerReferenceItem) => void
   removeReference: (id: string) => void
+  replaceReference: (id: string, newReference: ComposerReferenceItem) => void
+  moveReference: (fromIndex: number, toIndex: number) => void
   activeModeId: string
 }) {
   const railRef = useRef<HTMLDivElement>(null)
+  const draggedRefIdRef = useRef<string | null>(null)
   const imageRefIds = selectedReferences.filter((ref) => ref.kind === 'image').map((ref) => ref.id)
   const styleSourceId = imageRefIds[0] || ''
   const destinationId = imageRefIds[1] || ''
@@ -258,6 +263,7 @@ const ComposerReferencesRail = memo(function ComposerReferencesRail({
         }
 
         addReference(droppedReference)
+        draggedRefIdRef.current = null
         setTimeout(() => {
           if (railRef.current) {
             railRef.current.scrollTo({ left: railRef.current.scrollWidth, behavior: 'smooth' })
@@ -265,13 +271,45 @@ const ComposerReferencesRail = memo(function ComposerReferencesRail({
         }, 50)
       }}
     >
-      {selectedReferences.map(ref => {
+      {selectedReferences.map((ref, index) => {
         const isStyleSource = isStyleTransferMode && styleSourceId && ref.id === styleSourceId
         const isDestination = isStyleTransferMode && destinationId && ref.id === destinationId
         return (
           <div
             key={ref.id}
             className="lab-newlayout-composer-ref-item"
+            draggable
+            onDragStart={(e) => {
+              draggedRefIdRef.current = ref.id
+              e.dataTransfer.effectAllowed = 'move'
+              e.dataTransfer.setData('application/x-composer-ref-index', String(index))
+            }}
+            onDragOver={(e) => {
+              e.preventDefault()
+              e.dataTransfer.dropEffect = 'copy'
+            }}
+            onDrop={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+
+              // Check if it's a dragged reference item from within this rail
+              const draggedIndex = e.dataTransfer.getData('application/x-composer-ref-index')
+              if (draggedIndex) {
+                const fromIdx = parseInt(draggedIndex, 10)
+                if (fromIdx !== index) {
+                  moveReference(fromIdx, index)
+                }
+                draggedRefIdRef.current = null
+                return
+              }
+
+              // Otherwise, try to replace with dropped reference
+              const droppedReference = parseDroppedReference(e.dataTransfer)
+              if (droppedReference && droppedReference.url !== ref.url) {
+                replaceReference(ref.id, droppedReference)
+              }
+              draggedRefIdRef.current = null
+            }}
             onMouseEnter={(e) => {
               e.currentTarget.classList.add('is-hovered')
               const media = e.currentTarget.querySelector('video')
@@ -455,6 +493,8 @@ export function LabNewLayoutComposerPanel() {
     selectedReferences,
     addReference,
     removeReference,
+    replaceReference,
+    moveReference,
     toggleComposerAudio,
     toggleFooterMenu,
   } = useLabNewLayoutComposer()
@@ -531,11 +571,15 @@ export function LabNewLayoutComposerPanel() {
     const request = buildCurrentRequest()
     const frontendBody = request.body as Record<string, unknown>
 
-    // Determine if this is a Grok image model
-    const isGrokImage = /^grok-imagine-image/i.test(String(frontendBody.model ?? ''))
-    if (!isGrokImage) {
+    const modelName = String(frontendBody.model ?? '')
+    // Determine if this is a Grok image or video model
+    const isGrokImage = /^grok-imagine-image/i.test(modelName)
+    const isGrokVideo = /^grok-imagine-video/i.test(modelName)
+    const isGrok = isGrokImage || isGrokVideo
+
+    if (!isGrok) {
       setDebugContent(
-        `=== Not a Grok Image Model ===\nDebug view is for Grok image models only.\n\n=== Frontend Payload (sent to backend) ===\n${JSON.stringify(frontendBody, null, 2)}`
+        `=== Not a Grok Model ===\nDebug view is for Grok image and video models only.\n\n=== Frontend Payload (sent to backend) ===\n${JSON.stringify(frontendBody, null, 2)}`
       )
       setDebugDialogOpen(true)
       return
@@ -547,9 +591,11 @@ export function LabNewLayoutComposerPanel() {
     const singleImage = frontendBody.image && typeof frontendBody.image === 'object' ? (frontendBody.image as { url?: string }) : null
     const hasReferenceImages = imagesArr.length > 0 || imageUrlsArr.length > 0 || singleImage !== null
 
-    const xaiUrl = hasReferenceImages
-      ? 'https://api.x.ai/v1/images/edits'
-      : 'https://api.x.ai/v1/images/generations'
+    let xaiUrl = isGrokVideo 
+      ? 'https://api.x.ai/v1/images/video'
+      : (hasReferenceImages
+        ? 'https://api.x.ai/v1/images/edits'
+        : 'https://api.x.ai/v1/images/generations')
 
     const xaiBody: Record<string, unknown> = {
       model: frontendBody.model,
@@ -559,21 +605,35 @@ export function LabNewLayoutComposerPanel() {
     const ratio = String(frontendBody.aspect_ratio ?? frontendBody.ratio ?? '16:9')
     xaiBody.aspect_ratio = ratio === 'adaptive' ? 'auto' : ratio
 
-    const resolution = String(frontendBody.resolution ?? '')
-    if (resolution === '1k' || resolution === '2k') xaiBody.resolution = resolution
-    else if (!hasReferenceImages) xaiBody.resolution = '1k'
+    if (isGrokVideo) {
+      // Logic for video models
+      if (hasReferenceImages) {
+        if (singleImage) {
+          xaiBody.image = { type: 'image_url', url: singleImage.url }
+        } else if (imagesArr.length > 0) {
+          xaiBody.image = { type: 'image_url', url: imagesArr[0].url ?? imagesArr[0].image_url }
+        } else if (imageUrlsArr.length > 0) {
+          xaiBody.image = { type: 'image_url', url: imageUrlsArr[0] }
+        }
+      }
+    } else {
+      // Logic for image models
+      const resolution = String(frontendBody.resolution ?? '')
+      if (resolution === '1k' || resolution === '2k') xaiBody.resolution = resolution
+      else if (!hasReferenceImages) xaiBody.resolution = '1k'
 
-    if (hasReferenceImages) {
-      if (singleImage) {
-        xaiBody.image = { type: 'image_url', url: singleImage.url }
-      } else if (imagesArr.length === 1) {
-        xaiBody.image = { type: 'image_url', url: imagesArr[0].url ?? imagesArr[0].image_url }
-      } else if (imagesArr.length > 1) {
-        xaiBody.images = imagesArr.map((img) => ({ type: 'image_url', url: img.url ?? img.image_url }))
-      } else if (imageUrlsArr.length === 1) {
-        xaiBody.image = { type: 'image_url', url: imageUrlsArr[0] }
-      } else if (imageUrlsArr.length > 1) {
-        xaiBody.images = imageUrlsArr.map((url) => ({ type: 'image_url', url }))
+      if (hasReferenceImages) {
+        if (singleImage) {
+          xaiBody.image = { type: 'image_url', url: singleImage.url }
+        } else if (imagesArr.length === 1) {
+          xaiBody.image = { type: 'image_url', url: imagesArr[0].url ?? imagesArr[0].image_url }
+        } else if (imagesArr.length > 1) {
+          xaiBody.images = imagesArr.map((img) => ({ type: 'image_url', url: img.url ?? img.image_url }))
+        } else if (imageUrlsArr.length === 1) {
+          xaiBody.image = { type: 'image_url', url: imageUrlsArr[0] }
+        } else if (imageUrlsArr.length > 1) {
+          xaiBody.images = imageUrlsArr.map((url) => ({ type: 'image_url', url }))
+        }
       }
     }
 
@@ -796,6 +856,8 @@ export function LabNewLayoutComposerPanel() {
           selectedReferences={selectedReferences}
           addReference={addReference}
           removeReference={removeReference}
+          replaceReference={replaceReference}
+          moveReference={moveReference}
           activeModeId={activeModeId}
         />
         {activeModeId === 'style-transfer' ? (

@@ -715,6 +715,8 @@ export function useLabNewLayoutComposer() {
   const selectedReferences = useLabNewLayoutStore((state) => state.composerReferences)
   const addComposerReference = useLabNewLayoutStore((state) => state.addComposerReference)
   const removeComposerReference = useLabNewLayoutStore((state) => state.removeComposerReference)
+  const replaceComposerReference = useLabNewLayoutStore((state) => state.replaceComposerReference)
+  const moveComposerReference = useLabNewLayoutStore((state) => state.moveComposerReference)
   const setCurrentComposerPreview = useLabNewLayoutStore((state) => state.setCurrentComposerPreview)
   const composerPreviewRefreshNonce = useLabNewLayoutStore((state) => state.composerPreviewRefreshNonce)
   const setComposerReferences = useLabNewLayoutStore((state) => state.setComposerReferences)
@@ -1192,6 +1194,14 @@ export function useLabNewLayoutComposer() {
   const removeReference = useCallback((id: string) => {
     removeComposerReference(id)
   }, [removeComposerReference])
+
+  const replaceReference = useCallback((id: string, newRef: ComposerReference) => {
+    replaceComposerReference(id, newRef)
+  }, [replaceComposerReference])
+
+  const moveReference = useCallback((fromIndex: number, toIndex: number) => {
+    moveComposerReference(fromIndex, toIndex)
+  }, [moveComposerReference])
 
   const toggleTemplatesMenu = useCallback(() => {
     setTemplatesMenuOpen((current) => {
@@ -1974,6 +1984,8 @@ export function useLabNewLayoutComposer() {
     selectedReferences,
     addReference,
     removeReference,
+    replaceReference,
+    moveReference,
     toggleComposerAudio,
     toggleFooterMenu,
     toggleFontSizeMenu,

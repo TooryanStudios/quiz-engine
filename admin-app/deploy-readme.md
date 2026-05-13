@@ -84,3 +84,4 @@ WorkHub v.010 | 2026-04-16 | <commit-sha> | <short notes>
 
 WorkHub v.014 | 2026-05-09 | de4d42a | uploads library in video editor, video thumbnails, hover autoplay, Firestore collectionGroup rules fix
 WorkHub v.015 | 2026-05-11 | 1519bf7 | generation polling reliability, gallery flicker fix, download video fix, lightbox project display, Unicode filenames
+WorkHub v.016 | 2026-05-13 | 6257fcb | history gallery image support (IMG badge, lightbox img viewer), stale generation auto-recovery on mount, gallery button row merge

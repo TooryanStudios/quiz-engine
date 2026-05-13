@@ -8,8 +8,9 @@ import {
 import { uploadBlobToFirebase } from '../toorgen/generationPersistence'
 import {
   base64ImageToBlob,
-  generateAndSaveOpenAIImage,
+  generateOpenAIImages,
   type OpenAIImageGenerationAsset,
+  type OpenAIImageGenerationResponse,
   type OpenAIImageGenerateAndSaveRequest,
   type OpenAIImageGenerateAndSaveResponse,
 } from './openAIImageClient'
@@ -30,6 +31,7 @@ type SaveOpenAIImageAssetToLibraryOptions = {
   generationAspectRatio?: string
   generationResolution?: string
   generationSource?: string
+  generationRequestPayload?: Record<string, unknown>
 }
 
 type GenerateAndSaveOpenAIImageToLibraryOptions = {
@@ -43,6 +45,8 @@ type GenerateAndSaveOpenAIImageToLibraryOptions = {
 
 export type SavedOpenAIImageAsset = {
   firebaseUrl: string
+  objectPath: string
+  contentType: string
   item: MediaLibraryItem
   savedTo: 'user' | 'project' | 'local'
 }
@@ -109,6 +113,12 @@ export async function saveOpenAIImageAssetToLibrary({
   authUid,
   storagePathPrefix = DEFAULT_STORAGE_PREFIX,
   maxItems = DEFAULT_MAX_LIBRARY_ITEMS,
+  generationModel,
+  generationProvider,
+  generationAspectRatio,
+  generationResolution,
+  generationSource = 'openai-image',
+  generationRequestPayload,
 }: SaveOpenAIImageAssetToLibraryOptions): Promise<SavedOpenAIImageAsset> {
   const normalizedProjectId = studioProjectId?.trim() || ''
   const normalizedAuthUid = authUid?.trim() || ''
@@ -132,6 +142,14 @@ export async function saveOpenAIImageAssetToLibrary({
     studioProjectId,
     authUid,
     maxItems,
+    generationModel,
+    generationProvider,
+    generationAspectRatio,
+    generationResolution,
+    generationSource,
+    generationRequestPayload,
+    objectPath: storagePath,
+    contentType: resolvedMimeType,
   })
 }
 
@@ -146,8 +164,10 @@ export async function persistOpenAIImageToLibrary({
   generationProvider,
   generationAspectRatio,
   generationResolution,
-  generationSource = 'grok-image',
+  generationSource = 'openai-image',
   generationRequestPayload,
+  objectPath,
+  contentType,
 }: {
   firebaseUrl: string
   prompt: string
@@ -161,6 +181,8 @@ export async function persistOpenAIImageToLibrary({
   generationResolution?: string
   generationSource?: string
   generationRequestPayload?: Record<string, unknown>
+  objectPath?: string
+  contentType?: string
 }): Promise<SavedOpenAIImageAsset> {
   const normalizedFirebaseUrl = firebaseUrl.trim()
   if (!normalizedFirebaseUrl) {
@@ -201,6 +223,8 @@ export async function persistOpenAIImageToLibrary({
 
     return {
       firebaseUrl: normalizedFirebaseUrl,
+      objectPath: objectPath?.trim() || '',
+      contentType: contentType?.trim() || 'image/png',
       item,
       savedTo: 'user',
     }
@@ -211,10 +235,42 @@ export async function persistOpenAIImageToLibrary({
 
   return {
     firebaseUrl: normalizedFirebaseUrl,
+    objectPath: objectPath?.trim() || '',
+    contentType: contentType?.trim() || 'image/png',
     item,
     savedTo: 'local',
   }
 }
+
+const buildGenerateAndSaveResult = ({
+  generation,
+  asset,
+  library,
+}: {
+  generation: OpenAIImageGenerationResponse
+  asset: OpenAIImageGenerationAsset
+  library: SavedOpenAIImageAsset
+}): OpenAIImageGenerateAndSaveResponse => ({
+  createdAt: generation.createdAt,
+  requestedModel: generation.requestedModel,
+  model: generation.model,
+  usedFallback: generation.usedFallback,
+  fallbackModel: generation.fallbackModel,
+  fallbackReason: generation.fallbackReason,
+  size: generation.size,
+  quality: generation.quality,
+  background: generation.background,
+  outputFormat: generation.outputFormat,
+  moderation: generation.moderation,
+  usage: generation.usage,
+  revisedPrompt: asset.revisedPrompt || generation.data[0]?.revisedPrompt || '',
+  saved: {
+    firebaseUrl: library.firebaseUrl,
+    objectPath: library.objectPath,
+    contentType: library.contentType,
+    name: library.item.name,
+  },
+})
 
 export async function generateAndSaveOpenAIImageToLibrary({
   request,
@@ -224,22 +280,36 @@ export async function generateAndSaveOpenAIImageToLibrary({
   authUid,
   maxItems,
 }: GenerateAndSaveOpenAIImageToLibraryOptions): Promise<GenerateAndSaveOpenAIImageToLibraryResult> {
-  const generation = await generateAndSaveOpenAIImage(request, {
+  const generation = await generateOpenAIImages(request, {
     apiBaseUrl,
     endpoint,
   })
 
-  const library = await persistOpenAIImageToLibrary({
-    firebaseUrl: generation.saved.firebaseUrl,
+  const normalizedAssetIndex = Number.isFinite(request.assetIndex)
+    ? Math.max(0, Math.min(generation.data.length - 1, Number(request.assetIndex)))
+    : 0
+  const targetAsset = generation.data[normalizedAssetIndex]
+
+  if (!targetAsset) {
+    throw new Error('OpenAI image generation returned no image data.')
+  }
+
+  const library = await saveOpenAIImageAssetToLibrary({
+    asset: targetAsset,
     prompt: request.prompt,
     title: request.title,
     studioProjectId,
     authUid,
     maxItems,
+    storagePathPrefix: request.storagePathPrefix,
+    generationModel: generation.model,
+    generationProvider: 'openai',
+    generationResolution: generation.size,
+    generationSource: 'openai-image',
   })
 
   return {
-    generation,
+    generation: buildGenerateAndSaveResult({ generation, asset: targetAsset, library }),
     library,
   }
 }

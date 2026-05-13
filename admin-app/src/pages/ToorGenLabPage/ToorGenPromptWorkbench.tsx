@@ -4608,12 +4608,16 @@ export default function ToorGenPromptWorkbench() {
   const applyExtendActionToComposer = (sourceUrl: string, resolution: string | undefined, direction: 'before' | 'after') => {
     const resolvedSourceUrl = (sourceUrl || '').trim()
     if (!resolvedSourceUrl) return
+    const selectedAtlasModel = normalizeModelForProvider('atlas', activeWorkflowSettings.atlasModel)
+    const atlasBaseModel = selectedAtlasModel.includes('fast')
+      ? 'bytedance/seedance-2.0-fast'
+      : 'bytedance/seedance-2.0'
 
     const extendPrompt = direction === 'before'
       ? 'Generate the content before Video 1:    [ADD_YOUR_PROMPT]'
       : 'Generate the content after Video 1:    [ADD_YOUR_PROMPT]'
     const extendJson = {
-      model: 'bytedance/seedance-2.0-fast/reference-to-video',
+      model: `${atlasBaseModel}/reference-to-video`,
       duration: 15,
       resolution: (resolution || sharedSettings.resolution || '720p').trim(),
       ratio: 'adaptive',

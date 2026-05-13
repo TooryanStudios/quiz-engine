@@ -99,7 +99,22 @@ export type StudioProjectNewLayoutConfig = {
   adminOnlyPanelIds: string[]
   masterAdminCanCloseTabs: boolean
   composerDrafts?: Record<string, StudioProjectComposerDraft>
+  openAIStoryboardDrafts?: Record<string, StudioProjectOpenAIStoryboardDraft>
   storyBibleData?: StudioProjectStoryBibleData
+}
+
+export type StudioProjectOpenAIStoryboardDraft = {
+  activeGroupId: string
+  activeExampleId: string
+  customPrompt: string
+  size: string
+  quality: 'auto' | 'low' | 'medium' | 'high'
+  assetTitle: string
+  shotCount: number
+  columns: number
+  rows: 'auto' | '1' | '2' | '3' | '4'
+  generationCount: number
+  updatedAt: number
 }
 
 export type StudioProjectStoryBibleChapter = {

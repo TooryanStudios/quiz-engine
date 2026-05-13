@@ -91,6 +91,8 @@ export type LabNewLayoutStoreState = {
   setComposerReferences: (references: ComposerReferenceItem[]) => void
   addComposerReference: (item: ComposerReferenceItem) => void
   removeComposerReference: (id: string) => void
+  replaceComposerReference: (id: string, newItem: ComposerReferenceItem) => void
+  moveComposerReference: (fromIndex: number, toIndex: number) => void
 
   composerReuseSeed: ComposerReuseSeed | null
   setComposerReuseSeed: (seed: ComposerReuseSeed | null) => void
@@ -241,6 +243,17 @@ export const useLabNewLayoutStore = create<LabNewLayoutStoreState>()(
       removeComposerReference: (id) => set((state) => ({
         composerReferences: state.composerReferences.filter((r) => r.id !== id),
       })),
+      replaceComposerReference: (id, newItem) => set((state) => ({
+        composerReferences: state.composerReferences.map((r) => r.id === id ? newItem : r),
+      })),
+      moveComposerReference: (fromIndex, toIndex) => set((state) => {
+        if (fromIndex < 0 || fromIndex >= state.composerReferences.length) return { composerReferences: state.composerReferences }
+        if (toIndex < 0 || toIndex >= state.composerReferences.length) return { composerReferences: state.composerReferences }
+        const newRefs = [...state.composerReferences]
+        const [removed] = newRefs.splice(fromIndex, 1)
+        newRefs.splice(toIndex, 0, removed)
+        return { composerReferences: newRefs }
+      }),
 
       composerReuseSeed: null,
       setComposerReuseSeed: (seed) => set({ composerReuseSeed: seed }),

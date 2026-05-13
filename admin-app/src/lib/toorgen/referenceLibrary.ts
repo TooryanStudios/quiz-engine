@@ -1,6 +1,7 @@
 import type { StudioReferenceAsset } from '../../types/studio'
 
 export const SHARED_REFERENCE_LIBRARY_KEY = 'toorgen_reference_library_v1'
+export const LOCAL_MEDIA_LIBRARY_UPDATED_EVENT = 'toorgen:local-media-library-updated'
 export const REFERENCE_LIBRARY_PAGE_SIZE = 10
 
 export type MediaKind = 'image' | 'video' | 'audio'
@@ -111,6 +112,7 @@ export const writeLocalMediaLibrary = (items: MediaLibraryItem[]) => {
   }
   try {
     window.localStorage.setItem(SHARED_REFERENCE_LIBRARY_KEY, JSON.stringify(items))
+    window.dispatchEvent(new CustomEvent(LOCAL_MEDIA_LIBRARY_UPDATED_EVENT))
   } catch {
     // ignore storage write failures
   }

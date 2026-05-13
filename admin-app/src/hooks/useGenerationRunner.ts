@@ -777,6 +777,10 @@ export function useGenerationRunner({
         )
       }
 
+      if (response.status === 402) {
+        throw new Error(applyGenerateCooldown('Insufficient balance — top up your Seedance account and try again.'))
+      }
+
       throw new Error(errorMessage)
     }
 

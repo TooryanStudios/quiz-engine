@@ -7,6 +7,7 @@ import {
   subscribeToUserReferenceLibrary,
 } from '../../../lib/studioService'
 import {
+  LOCAL_MEDIA_LIBRARY_UPDATED_EVENT,
   mergeMediaLibraryItems,
   readLocalMediaLibrary,
   toMediaLibraryItem,
@@ -67,10 +68,12 @@ export function useAssetsLibrary(): AssetsLibraryState {
     // Refresh when another tab writes to storage and when this tab regains focus.
     window.addEventListener('storage', refreshLocalItems)
     window.addEventListener('focus', refreshLocalItems)
+    window.addEventListener(LOCAL_MEDIA_LIBRARY_UPDATED_EVENT, refreshLocalItems)
 
     return () => {
       window.removeEventListener('storage', refreshLocalItems)
       window.removeEventListener('focus', refreshLocalItems)
+      window.removeEventListener(LOCAL_MEDIA_LIBRARY_UPDATED_EVENT, refreshLocalItems)
     }
   }, [])
 
