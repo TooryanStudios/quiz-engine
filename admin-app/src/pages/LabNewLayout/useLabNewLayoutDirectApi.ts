@@ -8,6 +8,7 @@ import { useLabNewLayoutStore } from './useLabNewLayoutStore'
 const DEFAULT_COMPOSER_MODEL_ID = 'bytedance/seedance-2.0-fast'
 
 const CHATBOT_BASE = (import.meta.env.VITE_CHATBOT_API_URL as string | undefined) || ''
+const MASTER_EMAIL = import.meta.env.VITE_MASTER_EMAIL as string | undefined
 
 const isFirebaseDownloadUrl = (value: string): boolean => {
   if (!value.trim()) {
@@ -114,7 +115,7 @@ function createClientUniqueId(prefix: string): string {
 }
 
 export function useLabNewLayoutDirectApi() {
-  const { studioProjectId, studioActiveFolderId } = useLabNewLayoutData()
+  const { authEmail, studioProjectId, studioActiveFolderId } = useLabNewLayoutData()
   const currentComposerPreview = useLabNewLayoutStore((state) => state.currentComposerPreview)
   const requestComposerPreviewRefresh = useLabNewLayoutStore((state) => state.requestComposerPreviewRefresh)
   const addHistoryItem = useLabNewLayoutStore((state) => state.addHistoryItem)
@@ -123,6 +124,9 @@ export function useLabNewLayoutDirectApi() {
   const resumedHistoryIdsRef = useRef<Set<string>>(new Set())
 
   const [generationStatus, setGenerationStatus] = useState<string>('')
+  const normalizedMasterEmail = (MASTER_EMAIL || '').trim().toLowerCase()
+  const normalizedAuthEmail = authEmail.trim().toLowerCase()
+  const isMasterAdminUser = normalizedMasterEmail.length > 0 && normalizedAuthEmail === normalizedMasterEmail
 
   const runner = useGenerationRunner({
     apiBaseUrl: CHATBOT_BASE,
@@ -331,6 +335,11 @@ export function useLabNewLayoutDirectApi() {
   }, [requestComposerPreviewRefresh])
 
   const submitDirectJson = useCallback(() => {
+    if (!isMasterAdminUser) {
+      setGenerationStatus('Only the master admin can generate.')
+      return
+    }
+
     const activeProjectId = (studioProjectId || '').trim()
     const activeFolderId = (studioActiveFolderId || '').trim()
     if (!activeProjectId || !activeFolderId) {
@@ -470,7 +479,7 @@ export function useLabNewLayoutDirectApi() {
         updateHistoryItem(historyId, { status: 'failed', errorMessage, completedAt: Date.now() })
       }
     })()
-  }, [addHistoryItem, archiveVideoToFirebase, directRequestJson, runner, studioActiveFolderId, studioProjectId, updateHistoryItem])
+  }, [addHistoryItem, archiveVideoToFirebase, directRequestJson, isMasterAdminUser, runner, studioActiveFolderId, studioProjectId, updateHistoryItem])
 
   return {
     directRequestJson,
@@ -481,5 +490,6 @@ export function useLabNewLayoutDirectApi() {
     setDirectRequestJson,
     submitDirectJson,
     generationStatus,
+    isMasterAdminUser,
   }
 }

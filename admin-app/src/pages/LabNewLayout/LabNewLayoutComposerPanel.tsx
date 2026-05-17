@@ -497,6 +497,7 @@ export function LabNewLayoutComposerPanel() {
     moveReference,
     toggleComposerAudio,
     toggleFooterMenu,
+    isMasterAdminUser,
   } = useLabNewLayoutComposer()
 
   const focusPromptTextarea = useCallback(() => {
@@ -524,6 +525,7 @@ export function LabNewLayoutComposerPanel() {
     && !isPreparingReferences
     && !referenceAccessMessage
     && (!requiresStyleTransferPair || hasStyleTransferPair)
+    && isMasterAdminUser
   const [generationBlockedCase, setGenerationBlockedCase] = useState<'prompt' | null>(null)
   const [isAutoCreating, setIsAutoCreating] = useState(false)
   const [isBackendDetailsOpen, setBackendDetailsOpen] = useState(false)
@@ -958,7 +960,10 @@ export function LabNewLayoutComposerPanel() {
           <button
             type="button"
             className={`lab-newlayout-composer-audio-btn lab-newlayout-composer-audio-btn--compact${composerSettings.generateAudio ? ' is-active' : ''}`}
-            title={composerSettings.generateAudio ? 'Audio generation enabled' : 'Audio generation disabled'}
+            disabled={!isMasterAdminUser}
+            title={isMasterAdminUser
+              ? (composerSettings.generateAudio ? 'Audio generation enabled' : 'Audio generation disabled')
+              : 'Only the master admin can generate audio.'}
             onClick={toggleComposerAudio}
           >
             {renderComposerModeIcon('audio')}

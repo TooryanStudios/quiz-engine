@@ -176,11 +176,28 @@ function escapeHtmlAttribute(value: string) {
   return escapeHtml(value).replace(/"/g, '&quot;')
 }
 
+const DEFAULT_DOCUMENT_ICON = '📄'
+const DEFAULT_NOTE_ICON = '🗒️'
+const DEFAULT_CONTEXT_ICON = '📁'
+const DEFAULT_TAB_ICON = '📄'
+const DELETE_ICON = '🗑'
+const LOCK_ICON = '🔒'
+const UNLOCK_ICON = '🔓'
+const SHARE_ICON = '👥'
+const NEW_DOCUMENT_ICON = '＋'
+const SAVE_ICON = '💾'
+const DETAILS_ICON = 'ℹ️'
+const RENAME_ICON = '✎'
+const CLOSE_ICON = '✕'
+const CONFIRM_ICON = '✓'
+const COLLAPSE_ICON = '▸'
+const SEPARATOR_ICON = '·'
+
 // -- Cover page themes ---------------------------------------------------------
 const COVER_THEMES = [
   {
     id: 'warm',
-    label: 'Warm � Brand Orange',
+    label: 'Warm - Brand Orange',
     swatch: '#ffe0c8',
     bg: 'linear-gradient(160deg, #fff8f4 0%, #fff0e6 50%, #ffe5d0 100%)',
     circle1: 'rgba(210,70,10,0.08)',
@@ -214,7 +231,7 @@ const COVER_THEMES = [
   },
   {
     id: 'charcoal',
-    label: 'Charcoal � Dark',
+    label: 'Charcoal - Dark',
     swatch: '#252b3d',
     bg: 'linear-gradient(160deg, #1e2330 0%, #252b3d 50%, #1a2030 100%)',
     circle1: 'rgba(255,255,255,0.05)',
@@ -896,7 +913,7 @@ function buildPrintExportHtml(params: {
     }` : ''}
     /*
      * thead repeats natively at the top of every printed page in Chrome/Edge.
-     * tfoot repeats at the bottom of each page after content � reliable across browsers.
+    * tfoot repeats at the bottom of each page after content and is reliable across browsers.
      * Neither uses position:fixed (which collapses to 1 page in Chrome print).
      */
     .doc-layout-table {
@@ -1632,7 +1649,7 @@ export function WorkhubDocEditor({
   const selectedShareMember = selectedShareUid
     ? workhubShareCandidates.find((item) => item.uid === selectedShareUid)
     : undefined
-  const selectedDocumentIcon = selectedDocument?.icon || (selectedDocument?.type === 'note' ? '????️' : '??')
+  const selectedDocumentIcon = selectedDocument?.icon || (selectedDocument?.type === 'note' ? DEFAULT_NOTE_ICON : DEFAULT_DOCUMENT_ICON)
   const activeTab = documentTabsDraft.length > 0 ? documentTabsDraft.find((tab) => tab.id === activeTabId) || null : null
   const showPublicSourceWarning = Boolean(selectedDocument && selectedDocumentHasOutgoingReferences && !selectedDocument.referenceSourceDocumentId)
   const showAutoSaveError = collaborationConflictBlocked || (publicReferenceAutoSaveBlocked && selectedDocumentChanged)
@@ -1640,7 +1657,7 @@ export function WorkhubDocEditor({
     ? 'Autosave paused. New collaborator updates available.'
     : (publicReferenceAutoSaveBlocked && selectedDocumentChanged
       ? 'Autosave paused for public content. Publish manually.'
-      : (noteAutoSaveStatus === 'saving' ? 'Saving�' : noteAutoSaveStatus === 'saved' ? '? Saved' : ''))
+      : (noteAutoSaveStatus === 'saving' ? 'Saving…' : noteAutoSaveStatus === 'saved' ? 'Saved' : ''))
   const staticDocumentBodyHtml = useMemo(
     () => sanitizePrintHtmlFragment(toDocumentBodyEditorHtml(selectedDocumentBodyDraft)) || '<p></p>',
     [selectedDocumentBodyDraft],
@@ -1939,9 +1956,9 @@ export function WorkhubDocEditor({
     [selectedDocumentMasterPageDraft],
   )
   const previewTitle = selectedDocument
-    ? ((selectedDocumentTitleDraft.trim() || selectedDocument.title) + (activeTab ? ` � ${activeTab.title}` : ''))
+    ? ((selectedDocumentTitleDraft.trim() || selectedDocument.title) + (activeTab ? ` · ${activeTab.title}` : ''))
     : ''
-  const pageLayoutLabel = `${normalizedMasterPage.pageSize} � ${normalizedMasterPage.orientation}`
+  const pageLayoutLabel = `${normalizedMasterPage.pageSize} × ${normalizedMasterPage.orientation}`
   const previewDocumentHtml = useMemo(() => {
     if (!selectedDocument) return ''
     return buildPrintableDocumentHtml({
@@ -1971,7 +1988,7 @@ export function WorkhubDocEditor({
       // Fetch uncached URLs
       const uncached = Array.from(urls).filter((u) => !cache.has(u))
       if (uncached.length === 0) {
-        // All URLs are cached � substitute and set
+        // All URLs are cached, substitute and set
         const html = previewDocumentHtml.replace(/src="(https?:\/\/[^"]+)"/g, (_full, url) => {
           const dataUri = cache.get(url)
           return dataUri ? `src="${dataUri}"` : `src="${url}"`
@@ -2422,7 +2439,7 @@ export function WorkhubDocEditor({
                     disabled={selectedDocumentReadOnly || uploadingDocumentAssetImage}
                     onClick={() => openLogoAssetUpload(activeMasterVariantKey, sectionKey)}
                   >
-                    {uploadingDocumentAssetImage ? 'Uploading�' : 'Upload image'}
+                    {uploadingDocumentAssetImage ? 'Uploading…' : 'Upload image'}
                   </button>
                   <button
                     type="button"
@@ -2715,7 +2732,7 @@ export function WorkhubDocEditor({
                 </button>
               )}
             </div>
-            <span className="workhub-quick-note-esc-hint"><kbd>Esc</kbd> to close � <kbd>Ctrl S</kbd> to save</span>
+            <span className="workhub-quick-note-esc-hint"><kbd>Esc</kbd> to close · <kbd>Ctrl S</kbd> to save</span>
             <div className="workhub-quick-note-actions">
               {selectedDocumentCanEdit && !selectedDocumentLocked ? (
                 <button
@@ -2727,7 +2744,7 @@ export function WorkhubDocEditor({
                     void handleDeleteSelectedDocument()
                   }}
                 >
-                  {busyKey === `document-delete:${selectedDocument.id}` ? 'Deleting�' : 'Delete'}
+                  {busyKey === `document-delete:${selectedDocument.id}` ? 'Deleting…' : 'Delete'}
                 </button>
               ) : null}
               <button type="button" className="workhub-primary-btn" onClick={closeSelectedDocument}>Done</button>
@@ -2762,8 +2779,8 @@ export function WorkhubDocEditor({
                 <div className="workhub-task-context-path">
                   {taskContextTrail.map((project, index) => {
                     const isCurrent = index === taskContextTrail.length - 1
-                    const icon = taskContextIconByProjectId[project.id] || '??'
-                    const iconKind = icon === '??' ? 'project' : 'folder'
+                    const icon = taskContextIconByProjectId[project.id] || DEFAULT_CONTEXT_ICON
+                    const iconKind = icon === DEFAULT_CONTEXT_ICON ? 'project' : 'folder'
                     return (
                       <div key={project.id} className="workhub-task-context-node-wrap">
                         <button
@@ -2778,7 +2795,7 @@ export function WorkhubDocEditor({
                             <span className="workhub-task-context-node-title">{project.name}</span>
                           </span>
                         </button>
-                        {!isCurrent && <span className="workhub-task-context-sep" aria-hidden="true">�</span>}
+                        {!isCurrent && <span className="workhub-task-context-sep" aria-hidden="true">{SEPARATOR_ICON}</span>}
                       </div>
                     )
                   })}
@@ -2811,7 +2828,7 @@ export function WorkhubDocEditor({
                       disabled={selectedDocumentReadOnly}
                     />
                     {showPublicSourceWarning && (
-                      <span className="workhub-public-source-chip" title="This is a public source document with active references.">?? Public source</span>
+                      <span className="workhub-public-source-chip" title="This is a public source document with active references.">🌐 Public source</span>
                     )}
                   </div>
                 ) : (
@@ -2826,7 +2843,7 @@ export function WorkhubDocEditor({
                     aria-label="New document"
                     onClick={() => openDocumentCreateDialog(selectedProjectId !== 'all' ? selectedProjectId : '')}
                   >
-                    {'??'}
+                    {NEW_DOCUMENT_ICON}
                   </button>
                 )}
                 {!selectedDocumentLocked && (
@@ -2857,7 +2874,7 @@ export function WorkhubDocEditor({
                     aria-label="Share document"
                     disabled={!selectedDocumentCanEdit}
                   >
-                    {'??'}
+                    {SHARE_ICON}
                   </button>
                 ) : null}
                 {selectedDocument && !selectedDocumentLocked ? (
@@ -2880,7 +2897,7 @@ export function WorkhubDocEditor({
                     </svg>
                   </button>
                 ) : null}
-                {/* Lock � anyone who can edit can lock */}
+                {/* Lock: anyone who can edit can lock */}
                 {selectedDocument && selectedDocumentCanEdit && !selectedDocumentLocked ? (
                   <button
                     className="workhub-ghost-btn workhub-doc-tool-btn"
@@ -2889,10 +2906,10 @@ export function WorkhubDocEditor({
                     title="Lock document"
                     aria-label="Lock document"
                   >
-                    {busyKey === `document-lock:${selectedDocument.id}` ? '?' : '??'}
+                    {busyKey === `document-lock:${selectedDocument.id}` ? '…' : LOCK_ICON}
                   </button>
                 ) : null}
-                {/* Unlock � only creator or admins */}
+                {/* Unlock: only creator or admins */}
                 {selectedDocument && canUnlockDocument ? (
                   <button
                     className="workhub-ghost-btn workhub-doc-tool-btn"
@@ -2901,7 +2918,7 @@ export function WorkhubDocEditor({
                     title="Unlock document"
                     aria-label="Unlock document"
                   >
-                    {busyKey === `document-lock:${selectedDocument.id}` ? '?' : '??'}
+                    {busyKey === `document-lock:${selectedDocument.id}` ? '…' : UNLOCK_ICON}
                   </button>
                 ) : null}
 
@@ -2916,7 +2933,7 @@ export function WorkhubDocEditor({
                       void handleDeleteSelectedDocument()
                     }}
                   >
-                    {busyKey === `document-delete:${selectedDocument.id}` ? '?' : '??'}
+                    {busyKey === `document-delete:${selectedDocument.id}` ? '…' : DELETE_ICON}
                   </button>
                 ) : null}
                 {selectedDocument && (
@@ -2996,7 +3013,7 @@ export function WorkhubDocEditor({
                       onClick={() => { void handleSaveSelectedDocument() }}
                       style={{ display: 'none' }}
                     >
-                      {busyKey === `document:${selectedDocument?.id || ''}` ? '?' : '??'}
+                      {busyKey === `document:${selectedDocument?.id || ''}` ? '…' : SAVE_ICON}
                     </button>
                     {selectedDocument && (
                       <>
@@ -3027,7 +3044,7 @@ export function WorkhubDocEditor({
                         title="Details"
                         aria-label="Details"
                       >
-                        ??
+                        {DETAILS_ICON}
                       </button>
                     )}
                   </>
@@ -3162,7 +3179,7 @@ export function WorkhubDocEditor({
                   title="Expand details"
                   aria-label="Expand details"
                 >
-                  �
+                  ▸
                 </button>
               )}
             </div>
@@ -3184,14 +3201,14 @@ export function WorkhubDocEditor({
                 />
                 <div className="workhub-mobile-detail-drawer-title-row">
                   <strong>{detailRailTab === 'ai' ? 'AI assistant' : 'Details'}</strong>
-                  <button type="button" className="workhub-ghost-mini" onClick={() => setMobileDocDetailsOpen(false)}>?</button>
+                  <button type="button" className="workhub-ghost-mini" onClick={() => setMobileDocDetailsOpen(false)}>✕</button>
                 </div>
               </div>
             )}
             <div className="workhub-detail-rail-head">
               {selectedDocument?.referenceSourceDocumentId ? (
                 <div className="workhub-detail-rail-tabs" role="tablist" aria-label="Detail rail sections">
-                  <span className="workhub-detail-rail-tab is-active" style={{ cursor: 'default', padding: '0 14px' }}>Reference</span>
+                  <span className="workhub-detail-rail-tab is-active workhub-detail-rail-tab--static">Reference</span>
                 </div>
               ) : (
                 <div className="workhub-detail-rail-tabs" role="tablist" aria-label="Detail rail sections">
@@ -3235,7 +3252,7 @@ export function WorkhubDocEditor({
                     title="Collapse details"
                     aria-label="Collapse details"
                   >
-                    �
+                    ▸
                   </button>
                 )}
               </div>
@@ -3265,7 +3282,7 @@ export function WorkhubDocEditor({
                                 title="Tab icon"
                                 disabled
                               >
-                                {tab.icon ?? '??'}
+                                {tab.icon ?? DEFAULT_TAB_ICON}
                               </button>
                               <button
                                 type="button"
@@ -3384,10 +3401,10 @@ export function WorkhubDocEditor({
                         >
                           {/* Drag handle */}
                           {!selectedDocumentReadOnly && (
-                            <span className="workhub-doc-tab-row-drag" aria-hidden="true" title="Drag to reorder">?</span>
+                            <span className="workhub-doc-tab-row-drag" aria-hidden="true" title="Drag to reorder">⋮⋮</span>
                           )}
 
-                          {/* Icon badge � click to open picker */}
+                          {/* Icon badge: click to open picker */}
                           <button
                             type="button"
                             className="workhub-doc-tab-row-icon-btn"
@@ -3400,10 +3417,10 @@ export function WorkhubDocEditor({
                               setIconPickerAnchorEl(next ? e.currentTarget : null)
                             }}
                           >
-                            {tab.icon ?? '??'}
+                            {tab.icon ?? DEFAULT_TAB_ICON}
                           </button>
 
-                          {/* Title � click to navigate, double-click to rename */}
+                          {/* Title: click to navigate, double-click to rename */}
                           {renamingTabId === tab.id ? (
                             <input
                               ref={renameInputRef}
@@ -3425,8 +3442,8 @@ export function WorkhubDocEditor({
                               title={tab.id === activeTabId ? 'Currently viewing' : 'Switch to this tab'}
                             >
                               {tab.title}
-                              {sourceReferencedTabIds.includes(tab.id) ? ' ??' : ''}
-                              {selectedDocument.referenceSourceDocumentId ? ' ??' : ''}
+                              {sourceReferencedTabIds.includes(tab.id) ? ' · shared' : ''}
+                              {selectedDocument.referenceSourceDocumentId ? ' · reference' : ''}
                             </button>
                           )}
 
@@ -3440,7 +3457,7 @@ export function WorkhubDocEditor({
                                 aria-label="Rename tab"
                                 onClick={() => handleStartRename(tab)}
                               >
-                                ?
+                                ✎
                               </button>
                               {documentTabsDraft.length > 1 && pendingDeleteTabId !== tab.id && (
                                 <button
@@ -3450,7 +3467,7 @@ export function WorkhubDocEditor({
                                   aria-label="Remove tab"
                                   onClick={() => handleDeleteTab(tab.id)}
                                 >
-                                  �
+                                  🗑
                                 </button>
                               )}
                               {pendingDeleteTabId === tab.id && (
@@ -3463,7 +3480,7 @@ export function WorkhubDocEditor({
                                     aria-label="Confirm delete tab"
                                     onClick={handleConfirmDeleteTab}
                                   >
-                                    ?
+                                    ✓
                                   </button>
                                   <button
                                     type="button"
@@ -3472,7 +3489,7 @@ export function WorkhubDocEditor({
                                     aria-label="Cancel delete tab"
                                     onClick={handleCancelDeleteTab}
                                   >
-                                    ?
+                                    ✕
                                   </button>
                                 </span>
                               )}
@@ -3508,9 +3525,9 @@ export function WorkhubDocEditor({
                   >
                     <span className="toggle-label">
                       <span>Page Settings</span>
-                      <span className="toggle-status">{normalizedMasterPage.pageSize} � {normalizedMasterPage.orientation}</span>
+                      <span className="toggle-status">{normalizedMasterPage.pageSize} × {normalizedMasterPage.orientation}</span>
                     </span>
-                    <span className="toggle-chevron">�</span>
+                    <span className="toggle-chevron">▾</span>
                   </button>
                   {masterPageSectionExpanded && (
                     <div className="workhub-doc-print-settings-body">
@@ -3519,7 +3536,7 @@ export function WorkhubDocEditor({
                   <div className="workhub-doc-tabs-card-head">
                     <h3>Master Page</h3>
                     <span className="workhub-doc-master-page-status">
-                      {normalizedMasterPage.pageSize} � {normalizedMasterPage.orientation}
+                      {normalizedMasterPage.pageSize} × {normalizedMasterPage.orientation}
                     </span>
                   </div>
                   <div className="workhub-doc-master-page-grid">
@@ -3703,7 +3720,7 @@ export function WorkhubDocEditor({
                         type="text"
                         value={normalizedMasterPage.coverTagLine}
                         disabled={selectedDocumentReadOnly || !normalizedMasterPage.showCoverPage}
-                        placeholder="e.g. Confidential � Internal use"
+                        placeholder="e.g. Confidential · Internal use"
                         onChange={(e) => {
                           updateMasterPageDraft((current) => ({ ...current, coverTagLine: e.target.value }))
                         }}
@@ -3771,7 +3788,7 @@ export function WorkhubDocEditor({
                   {/* Scale + opacity sliders */}
                   <div className="workhub-doc-master-page-grid is-margins">
                     <label className="workhub-doc-master-page-field is-block">
-                      <span>Center scale � {normalizedMasterPage.watermarkScale}%</span>
+                      <span>Center scale · {normalizedMasterPage.watermarkScale}%</span>
                       <input
                         type="range"
                         min={10} max={100} step={5}
@@ -3782,7 +3799,7 @@ export function WorkhubDocEditor({
                       />
                     </label>
                     <label className="workhub-doc-master-page-field is-block">
-                      <span>Center opacity � {normalizedMasterPage.watermarkOpacity}%</span>
+                      <span>Center opacity · {normalizedMasterPage.watermarkOpacity}%</span>
                       <input
                         type="range"
                         min={1} max={30} step={1}
@@ -3795,7 +3812,7 @@ export function WorkhubDocEditor({
                     {normalizedMasterPage.watermarkLayout === 'triple' && (
                       <>
                         <label className="workhub-doc-master-page-field is-block">
-                          <span>Corner size � {normalizedMasterPage.watermarkCornerScale}%</span>
+                          <span>Corner size · {normalizedMasterPage.watermarkCornerScale}%</span>
                           <input
                             type="range"
                             min={10} max={80} step={5}
@@ -3806,7 +3823,7 @@ export function WorkhubDocEditor({
                           />
                         </label>
                         <label className="workhub-doc-master-page-field is-block">
-                          <span>Corner opacity � {normalizedMasterPage.watermarkCornerOpacity}%</span>
+                          <span>Corner opacity · {normalizedMasterPage.watermarkCornerOpacity}%</span>
                           <input
                             type="range"
                             min={1} max={20} step={1}
@@ -3825,7 +3842,7 @@ export function WorkhubDocEditor({
                       <img src={normalizedMasterPage.watermarkLogoUrl} alt="Watermark asset" />
                     </div>
                   ) : (
-                    <div className="workhub-doc-master-page-logo-empty">No watermark image selected � pick one from workspace assets below</div>
+                    <div className="workhub-doc-master-page-logo-empty">No watermark image selected · pick one from workspace assets below</div>
                   )}
                   <div className="workhub-doc-master-page-asset-grid">
                     {workspaceAssetLibraryUrls.length > 0 ? workspaceAssetLibraryUrls.map((assetUrl) => (
@@ -3840,7 +3857,7 @@ export function WorkhubDocEditor({
                         <img src={assetUrl} alt="Workspace asset" />
                       </button>
                     )) : (
-                      <div className="workhub-doc-master-page-logo-empty">No workspace assets yet � upload one in the Asset Library below.</div>
+                      <div className="workhub-doc-master-page-logo-empty">No workspace assets yet · upload one in the Asset Library below.</div>
                     )}
                   </div>
                   <p className="workhub-doc-master-page-note">
@@ -3857,14 +3874,14 @@ export function WorkhubDocEditor({
                       disabled={selectedDocumentReadOnly || uploadingWorkspaceAssetLibraryImage}
                       onClick={() => workspaceAssetInputRef.current?.click()}
                     >
-                      {uploadingWorkspaceAssetLibraryImage ? 'Uploading�' : 'Upload asset'}
+                      {uploadingWorkspaceAssetLibraryImage ? 'Uploading…' : 'Upload asset'}
                     </button>
                   </div>
                   <p className="workhub-doc-asset-library-note">
                     Upload workspace-level brand assets once, then reuse them across documents. Choose an asset below to apply it to the current {activeMasterVariantKey === 'firstPage' ? 'first page' : 'later pages'} header or footer.
                   </p>
                   {workspaceAssetLibraryLoading ? (
-                    <div className="workhub-doc-master-page-logo-empty">Loading workspace assets�</div>
+                    <div className="workhub-doc-master-page-logo-empty">Loading workspace assets…</div>
                   ) : workspaceAssetLibraryUrls.length > 0 ? (
                     <div className="workhub-doc-asset-library-grid">
                       {workspaceAssetLibraryUrls.map((assetUrl) => (
@@ -4013,7 +4030,7 @@ export function WorkhubDocEditor({
                                 handleDocLinkRemove(url)
                               }}
                             >
-                              ??
+                              ✕
                             </button>
                           )}
                         </div>
@@ -4058,8 +4075,8 @@ export function WorkhubDocEditor({
         <div className="workhub-share-doc-overlay" onClick={() => setShareDocDialogOpen(false)}>
           <div className="workhub-share-doc-dialog" onClick={(e) => e.stopPropagation()}>
             <div className="workhub-share-doc-head">
-              <span>Share � <em>{selectedDocument.title}</em></span>
-              <button type="button" className="workhub-share-doc-close" onClick={() => setShareDocDialogOpen(false)}>?</button>
+              <span>Share · <em>{selectedDocument.title}</em></span>
+              <button type="button" className="workhub-share-doc-close" onClick={() => setShareDocDialogOpen(false)}>✕</button>
             </div>
 
             {selectedDocumentCanEdit && (
@@ -4124,7 +4141,7 @@ export function WorkhubDocEditor({
                 disabled={!selectedDocumentCanEdit || shareDocSaving}
                 onClick={() => { void handleSaveDocInternalShare() }}
               >
-                {shareDocSaving ? 'Saving�' : shareSelectedCount > 0 ? 'Share document' : 'Clear sharing'}
+                {shareDocSaving ? 'Saving…' : shareSelectedCount > 0 ? 'Share document' : 'Clear sharing'}
               </button>
             </div>
 
@@ -4139,8 +4156,8 @@ export function WorkhubDocEditor({
         <div className="workhub-share-doc-overlay" onClick={() => setCopyToFolderDialogOpen(false)}>
           <div className="workhub-share-doc-dialog" onClick={(e) => e.stopPropagation()}>
             <div className="workhub-share-doc-head">
-              <span>Reference in folder � <em>{selectedDocument.title}</em></span>
-              <button type="button" className="workhub-share-doc-close" onClick={() => setCopyToFolderDialogOpen(false)}>?</button>
+              <span>Reference in folder · <em>{selectedDocument.title}</em></span>
+              <button type="button" className="workhub-share-doc-close" onClick={() => setCopyToFolderDialogOpen(false)}>✕</button>
             </div>
             <p className="workhub-share-doc-desc">
               This creates a live read-only reference. Source updates are synced automatically and unsharing removes the reference.
@@ -4153,7 +4170,7 @@ export function WorkhubDocEditor({
                   value={copyToFolderWorkspaceId}
                   onChange={(e) => { setCopyToFolderWorkspaceId(e.target.value); setCopyToFolderProjectId('') }}
                 >
-                  <option value="">Select workspace�</option>
+                  <option value="">Select workspace…</option>
                   {allWorkspaceIds.map((ws) => (
                     <option key={ws.id} value={ws.id}>{ws.name}</option>
                   ))}
@@ -4174,7 +4191,7 @@ export function WorkhubDocEditor({
                     value={copyToFolderProjectId}
                     onChange={(e) => setCopyToFolderProjectId(e.target.value)}
                   >
-                    <option value="">Select folder�</option>
+                    <option value="">Select folder…</option>
                     {(() => {
                       const wsProjects = allWorkspaceProjects.filter((p) => p.workspaceId === copyToFolderWorkspaceId)
                       if (wsProjects.length === 0) {
@@ -4253,7 +4270,7 @@ export function WorkhubDocEditor({
                               }}
                             >
                               <div className="workhub-share-doc-member-copy">
-                                <strong className="workhub-ref-location">{workspaceName} � {projectName}</strong>
+                                <strong className="workhub-ref-location">{workspaceName} · {projectName}</strong>
                                 <small className="workhub-ref-docname">{refDoc.title}</small>
                               </div>
                               <button
@@ -4267,7 +4284,7 @@ export function WorkhubDocEditor({
                                   void handleRemoveDocumentReference(refDoc.id)
                                 }}
                               >
-                                {busyKey === `document-reference-remove:${refDoc.id}` ? 'Removing�' : 'Unshare'}
+                                {busyKey === `document-reference-remove:${refDoc.id}` ? 'Removing…' : 'Unshare'}
                               </button>
                             </div>
                           )
@@ -4367,9 +4384,9 @@ export function WorkhubDocEditor({
                 }}
               >
                 {copyToFolderSaving
-                  ? 'Saving�'
+                  ? 'Saving…'
                   : highlightedReferenceDocument
-                    ? (busyKey === `document-reference-update:${highlightedReferenceDocument.id}` ? 'Updating�' : 'Update reference')
+                    ? (busyKey === `document-reference-update:${highlightedReferenceDocument.id}` ? 'Updating…' : 'Update reference')
                     : 'Create reference'}
               </button>
             </div>

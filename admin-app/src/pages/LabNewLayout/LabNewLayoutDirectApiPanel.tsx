@@ -18,6 +18,7 @@ export function LabNewLayoutDirectApiPanel(props: IDockviewPanelProps<DirectApiP
     setDirectRequestJson,
     submitDirectJson,
     generationStatus,
+    isMasterAdminUser,
   } = useLabNewLayoutDirectApi()
 
   return (
@@ -78,7 +79,8 @@ export function LabNewLayoutDirectApiPanel(props: IDockviewPanelProps<DirectApiP
             <button 
               type="button" 
               className="lab-newlayout-direct-submit-btn"
-              disabled={!directRequestJson.trim()}
+              disabled={!isMasterAdminUser || !directRequestJson.trim()}
+              title={isMasterAdminUser ? undefined : 'Only the master admin can generate.'}
               onClick={submitDirectJson}
             >
               Submit JSON

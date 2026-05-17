@@ -34,6 +34,7 @@ import { CloudUpload, Download, FilePenLine, Heart, Info, RotateCcw } from 'luci
 import './workbench.css'
 
 const CHATBOT_BASE = (import.meta.env.VITE_CHATBOT_API_URL as string | undefined) || ''
+const MASTER_EMAIL = import.meta.env.VITE_MASTER_EMAIL as string | undefined
 const apiUrl = (path: string) => `${CHATBOT_BASE.replace(/\/$/, '')}${path}`
 
 const LOCAL_DRAFT_STORAGE_KEY = 'toorgen-prompt-lab-draft-v3'
@@ -2790,6 +2791,9 @@ export default function ToorGenPromptWorkbench() {
   const [authUid, setAuthUid] = useState<string>('')
   const [isBackendAvailable, setIsBackendAvailable] = useState<boolean>(true)
   const [backendNotice, setBackendNotice] = useState<string>('')
+  const normalizedMasterEmail = (MASTER_EMAIL || '').trim().toLowerCase()
+  const normalizedAuthEmail = (auth.currentUser?.email || '').trim().toLowerCase()
+  const isMasterAdminUser = normalizedMasterEmail.length > 0 && normalizedAuthEmail === normalizedMasterEmail
 
   const [videoDialogState, setVideoDialogState] = useState<VideoDialogState | null>(null)
   const [pendingGenerations, setPendingGenerations] = useState<PendingGeneration[]>([])
@@ -3054,7 +3058,7 @@ export default function ToorGenPromptWorkbench() {
 
   const activeTab = ACTIVE_TABS.find((tab) => tab.id === activeTabId) || FALLBACK_TAB
   const hasConfiguredWorkflows = ACTIVE_TABS.length > 0
-  const canGenerate = hasConfiguredWorkflows && Boolean(studioActiveFolderId)
+  const canGenerate = hasConfiguredWorkflows && Boolean(studioActiveFolderId) && isMasterAdminUser
   const activeState = modeStates[activeTab.id] || createDefaultModeState(activeTab)
   const activeWorkflowSettings = workflowSettingsByTabId[activeTab.id] || createDefaultWorkflowSettings()
   const rawSelectedModel = activeWorkflowSettings.provider === 'atlas'
@@ -4098,6 +4102,14 @@ export default function ToorGenPromptWorkbench() {
   }
 
   const handleGenerate = async (tab: PromptTab) => {
+    if (!isMasterAdminUser) {
+      updateModeState(activeTab.id, (current) => ({
+        ...current,
+        statusText: 'Only the master admin can generate.',
+      }))
+      return
+    }
+
     if (!studioActiveFolderId) {
       updateModeState(activeTab.id, (current) => ({
         ...current,
@@ -5586,6 +5598,11 @@ export default function ToorGenPromptWorkbench() {
   }
 
   const handleDirectRequestSubmit = async () => {
+    if (!isMasterAdminUser) {
+      pushDirectSubmitFeed('Only the master admin can generate.')
+      return
+    }
+
     const rawRequest = directRequestJson.trim()
     if (!rawRequest) {
       pushDirectSubmitFeed('Request JSON is required.')
@@ -10153,8 +10170,13 @@ export default function ToorGenPromptWorkbench() {
                   <button
                     type="button"
                     className={`lab-audio-toggle${activeWorkflowSettings.generateAudio ? ' is-active' : ''}`}
-                    title={activeWorkflowSettings.generateAudio ? 'Audio on' : 'Audio off'}
-                    aria-label={activeWorkflowSettings.generateAudio ? 'Turn audio off' : 'Turn audio on'}
+                    disabled={!isMasterAdminUser}
+                    title={isMasterAdminUser
+                      ? (activeWorkflowSettings.generateAudio ? 'Audio on' : 'Audio off')
+                      : 'Only the master admin can generate audio.'}
+                    aria-label={isMasterAdminUser
+                      ? (activeWorkflowSettings.generateAudio ? 'Turn audio off' : 'Turn audio on')
+                      : 'Only the master admin can generate audio.'}
                     onClick={() => updateWorkflowSettings(activeTab.id, (current) => ({
                       ...current,
                       generateAudio: !current.generateAudio,
@@ -10167,7 +10189,6 @@ export default function ToorGenPromptWorkbench() {
                   </button>
                 </div>
               </div>
-              <div className="lab-composer-generate-row">
                 <div className="lab-chip-select-wrap lab-chip-select-wrap--model">
                   <span className="lab-chip-icon" aria-hidden="true">▥</span>
                   <select
@@ -10261,7 +10282,6 @@ export default function ToorGenPromptWorkbench() {
                   Direct submit to API
                 </button>
               </div>
-            </div>
             </section>
           </section>
           )}

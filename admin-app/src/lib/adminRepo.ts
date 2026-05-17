@@ -398,13 +398,17 @@ export async function recordUserActivity(uid: string, profile: {
     const userRef = doc(db, 'users', uid)
     await runTransaction(db, async (tx) => {
       const snap = await tx.get(userRef)
-      const existing = snap.exists() ? (snap.data() as Partial<UserProfile>) : null
+      if (!snap.exists()) {
+        // New profile creation is intentionally disabled.
+        return
+      }
+
+      const existing = snap.data() as Partial<UserProfile>
       tx.set(userRef, {
         email: profile.email,
         displayName: profile.displayName,
         photoURL: profile.photoURL,
         platform: profile.platform,
-        // Default to active so first-time Google sign-in does not get auto-logged-out.
         status: existing?.status || 'active',
         signInCount: increment(1),
         lastSeen: serverTimestamp(),

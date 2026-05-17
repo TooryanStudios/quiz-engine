@@ -154,7 +154,6 @@ function createLazyRoute(
 }
 
 const BillingPage     = createLazyRoute('BillingPage', () => import('./pages/BillingPage'), 'BillingPage')
-const DashboardPage   = createLazyRoute('DashboardPage', () => import('./pages/DashboardPage'), 'DashboardPage')
 const PacksPage       = createLazyRoute('PacksPage', () => import('./pages/PacksPage'), 'PacksPage')
 const MyQuizzesPage   = createLazyRoute('MyQuizzesPage', () => import('./pages/MyQuizzesPage'), 'MyQuizzesPage')
 const WorkHubRoutePage = createLazyRoute('WorkHubPage', () => import('./pages/WorkHubPage'))
@@ -302,6 +301,21 @@ function AppBrandMark() {
   return (
     <div className="app-loading-brand" aria-label="QYan Gaming">
       Q<span>Yan</span> Gaming
+    </div>
+  )
+}
+
+function UnderConstructionPage({
+  user,
+}: {
+  user: User
+}) {
+  const userLabel = user.displayName || user.email || user.uid
+  return (
+    <div className="app-loading-screen" role="status" aria-live="polite">
+      <AppBrandMark />
+      <p className="app-loading-note">Website is under construction.</p>
+      <p className="app-loading-note">Signed in as: {userLabel}</p>
     </div>
   )
 }
@@ -635,6 +649,26 @@ function App() {
     if (!user) return
     const unsub = subscribeUserDoc(user.uid, (profile) => {
       const runtimeStatus = ((profile as { status?: string } | null)?.status || '').toLowerCase()
+
+      // Access is now restricted to pre-approved users only.
+      if (!profile) {
+        localStorage.setItem(accessDeniedReasonKey, 'pending')
+        void signOut(auth)
+        return
+      }
+
+      if (runtimeStatus === 'pending') {
+        localStorage.setItem(accessDeniedReasonKey, 'pending')
+        void signOut(auth)
+        return
+      }
+
+      if (runtimeStatus === 'rejected') {
+        localStorage.setItem(accessDeniedReasonKey, 'rejected')
+        void signOut(auth)
+        return
+      }
+
       if (runtimeStatus === 'blocked' || runtimeStatus === 'deleted' || runtimeStatus === 'suspended') {
         localStorage.setItem(accessDeniedReasonKey, 'blocked')
         void signOut(auth)
@@ -1000,9 +1034,9 @@ function App() {
   const appRoutes = (
     <Routes>
       <Route path="/vidEdit" element={withRouteBoundary('videdit', <RequireAuth user={user}>{useStandaloneVidEdit ? <StandaloneDevRedirect origin={standaloneVidEditOrigin} fallbackLabel="Video Editor" /> : <VideoEditorPage />}</RequireAuth>)} />
-      <Route path="/" element={withRouteBoundary('home', <Navigate to="/dashboard" replace />)} />
+      <Route path="/" element={withRouteBoundary('home', <Navigate to="/login" replace />)} />
       <Route path="/login" element={withRouteBoundary('login', <LoginPage />)} />
-      <Route path="/dashboard" element={withRouteBoundary('dashboard', <RequireAuth user={user}><DashboardPage /></RequireAuth>)} />
+      <Route path="/dashboard" element={withRouteBoundary('dashboard', <RequireAuth user={user}><UnderConstructionPage user={user as User} /></RequireAuth>)} />
       <Route path="/editor" element={withRouteBoundary('editor', <RequireAuth user={user}><QuizEditorPage /></RequireAuth>)} />
       <Route path="/editor/:id" element={withRouteBoundary('editor-id', <RequireAuth user={user}><QuizEditorPage /></RequireAuth>)} />
       <Route path="/mini-game-editor" element={withRouteBoundary('mini-game-editor', <RequireAuth user={user}><QuizEditorPage /></RequireAuth>)} />
@@ -1038,7 +1072,7 @@ function App() {
   )
 
   const isMasterUser = !!(user && MASTER_EMAIL && user.email === MASTER_EMAIL)
-  const navItems = getNav(isAr, isMasterUser)
+  const navItems: NavItem[] = []
   const navLookup = new Map(navItems.map((item) => [item.to, item]))
   const pickNavItems = (targets: string[]): NavItem[] => {
     const selected: NavItem[] = []
@@ -1164,15 +1198,7 @@ function App() {
     },
   ]
 
-  const mobileAdminLinks = user?.email === MASTER_EMAIL && MASTER_PATH
-    ? [
-        { to: '/game-modes', icon: '🧩', label: isAr ? 'أوضاع اللعب' : 'Game Modes' },
-        { to: '/voice-lab', icon: '🎙️', label: isAr ? 'مختبر الصوت' : 'Voice Lab' },
-        { to: '/ai-lab', icon: '🤖', label: isAr ? 'مختبر الذكاء' : 'AI Lab' },
-        { to: '/cover-gen-lab', icon: '🖼️', label: isAr ? 'مختبر الغلاف' : 'Cover Lab' },
-        { to: `${MASTER_PATH}/dashboard`, icon: '👑', label: isAr ? 'الإدارة ↗' : 'Admin ↗', end: true },
-      ]
-    : []
+  const mobileAdminLinks: NavItem[] = []
 
   const handleMobileMainScroll = (event: { currentTarget: HTMLElement }) => {
     const nextCompact = event.currentTarget.scrollTop > 12
@@ -1247,16 +1273,6 @@ function App() {
                     {profileOpen && (
                       <div className="header-profile-dropdown">
                         <button
-                          className="header-profile-action"
-                          onClick={() => {
-                            setProfileOpen(false)
-                            navigate('/profile')
-                          }}
-                          type="button"
-                        >
-                          {isAr ? '👤 الملف الشخصي' : '👤 Visit Profile'}
-                        </button>
-                        <button
                           className="header-profile-action danger"
                           onClick={handleSignOut}
                           type="button"
@@ -1280,7 +1296,7 @@ function App() {
                   </>
                 ) : (
                   <button className="sidebar-auth-btn" onClick={handleGuestSignIn} type="button">
-                    {isAr ? 'تسجيل الدخول / إنشاء حساب' : 'Sign In / Sign Up'}
+                    {isAr ? 'تسجيل الدخول' : 'Sign In'}
                   </button>
                 )}
               </div>
@@ -1416,7 +1432,7 @@ function App() {
                     onClick={handleGuestSignIn}
                     type="button"
                   >
-                    {isAr ? 'تسجيل الدخول / إنشاء حساب' : 'Sign In / Sign Up'}
+                    {isAr ? 'تسجيل الدخول' : 'Sign In'}
                   </button>
                 )}
               </div>
@@ -1445,19 +1461,7 @@ function App() {
                     )
                   })}
 
-                  {user.email === MASTER_EMAIL && MASTER_PATH && (
-                    <>
-                      <NavLink
-                        to={`${MASTER_PATH}/dashboard`}
-                        className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <span className="nav-icon">👑</span>
-                        <span className="nav-label">{isAr ? 'الإدارة ↗' : 'Admin ↗'}</span>
-                      </NavLink>
-                    </>
-                  )}
+
                 </nav>
               )}
 
@@ -1481,7 +1485,7 @@ function App() {
                       </button>
                     )}
                   </div>
-                  <NavLink to="/profile" className={({ isActive }) => `sidebar-user-chip${isActive ? ' active' : ''}`}>
+                  <div className="sidebar-user-chip" role="status" aria-label="Signed in user">
                     {user.photoURL ? (
                       <img src={user.photoURL} referrerPolicy="no-referrer" alt="" className="sidebar-user-avatar" />
                     ) : (
@@ -1492,7 +1496,7 @@ function App() {
                     <span className="sidebar-user-name">
                       {user.displayName || user.email?.split('@')[0]}
                     </span>
-                  </NavLink>
+                  </div>
                   <button onClick={handleSignOut} className="sidebar-signout-btn">{isAr ? 'تسجيل الخروج' : 'Sign Out'}</button>
                 </div>
               )}

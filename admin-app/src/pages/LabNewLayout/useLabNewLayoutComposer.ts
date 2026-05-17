@@ -10,6 +10,7 @@ import { useLabNewLayoutData } from './useLabNewLayoutWorkspace'
 import { useLabNewLayoutStore } from './useLabNewLayoutStore'
 
 const CHATBOT_BASE = (import.meta.env.VITE_CHATBOT_API_URL as string | undefined) || ''
+const MASTER_EMAIL = import.meta.env.VITE_MASTER_EMAIL as string | undefined
 const COMPOSER_PROJECT_SCOPE_ID = 'project'
 const DRAFT_SAVE_DEBOUNCE_MS = 450
 
@@ -688,6 +689,7 @@ const isTransientGenerationConnectivityError = (message: string): boolean => {
 export function useLabNewLayoutComposer() {
   const {
     authUid,
+    authEmail,
     studioProjectId,
     studioActiveFolderId,
     projectNewLayoutConfig,
@@ -695,6 +697,9 @@ export function useLabNewLayoutComposer() {
     updateProjectNewLayoutConfig,
   } = useLabNewLayoutData()
   const { showToast } = useToast()
+  const normalizedMasterEmail = (MASTER_EMAIL || '').trim().toLowerCase()
+  const normalizedAuthEmail = authEmail.trim().toLowerCase()
+  const isMasterAdminUser = normalizedMasterEmail.length > 0 && normalizedAuthEmail === normalizedMasterEmail
   const [activeModeId, setActiveModeId] = useState('video')
   const [promptText, setPromptText] = useState('')
   const [isPromptFocused, setIsPromptFocused] = useState(false)
@@ -1331,8 +1336,11 @@ export function useLabNewLayoutComposer() {
   }, [activeModeId, composerSettings.model])
 
   const toggleComposerAudio = useCallback(() => {
+    if (!isMasterAdminUser) {
+      return
+    }
     setComposerSettings((current) => ({ ...current, generateAudio: !current.generateAudio }))
-  }, [])
+  }, [isMasterAdminUser])
 
   const closeMenus = useCallback(() => {
     setTemplatesMenuOpen(false)
@@ -1635,6 +1643,10 @@ export function useLabNewLayoutComposer() {
       return
     }
 
+    if (!isMasterAdminUser) {
+      return
+    }
+
     if (activeModeId !== 'style-transfer' && !promptText.trim()) return
 
     const activeProjectId = (override?.projectId || studioProjectId || '').trim()
@@ -1928,6 +1940,7 @@ export function useLabNewLayoutComposer() {
     archiveVideoToFirebase,
     studioActiveFolderId,
     studioProjectId,
+    isMasterAdminUser,
     updateHistoryItem,
   ])
 
@@ -1996,5 +2009,6 @@ export function useLabNewLayoutComposer() {
     updatePromptText,
     history,
     buildCurrentRequest,
+    isMasterAdminUser,
   }
 }

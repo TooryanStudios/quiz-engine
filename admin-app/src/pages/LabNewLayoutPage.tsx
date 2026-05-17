@@ -2028,12 +2028,13 @@ function buildHistoryReferencePayload(entry: LabNewLayoutGalleryHistoryEntry): D
   if (!mediaUrl) return null
 
   const matchedMediaKey = Object.entries(entry.mediaUrls).find(([, url]) => url === mediaUrl)?.[0] || ''
-  // Determine kind by checking mediaUrls keys first (most reliable), then fall back to URL inference
-  const kind: 'image' | 'video' = matchedMediaKey.startsWith('video')
+  const kind: 'image' | 'video' = entry.resultUrl && mediaUrl === entry.resultUrl
     ? 'video'
-    : matchedMediaKey.startsWith('image')
-      ? 'image'
-      : inferReferenceKindFromUrl(mediaUrl)
+    : matchedMediaKey.startsWith('video')
+      ? 'video'
+      : matchedMediaKey.startsWith('image')
+        ? 'image'
+        : inferReferenceKindFromUrl(mediaUrl)
 
   return {
     url: mediaUrl,
@@ -5832,14 +5833,8 @@ function AssetsLibraryPanel() {
   const setAssetPreviewItem = useLabNewLayoutStore((state) => state.setAssetPreviewItem)
   const addComposerReference = useLabNewLayoutStore((state) => state.addComposerReference)
   const composerReferences = useLabNewLayoutStore((state) => state.composerReferences)
-  const pendingGenerationAssets = useLabNewLayoutStore((state) => state.pendingGenerationAssets)
   const { setCompareBeforeUrl, setCompareAfterUrl } = useLabNewLayoutData()
   const { showToast } = useToast()
-
-  const visibleItems = useMemo(() => {
-    const pendingIds = new Set(pendingGenerationAssets.map((item) => item.id))
-    return [...pendingGenerationAssets, ...items.filter((item) => !pendingIds.has(item.id))]
-  }, [items, pendingGenerationAssets])
 
   const handleAddToComposer = useCallback((item: (typeof items)[number]) => {
     if (composerReferences.some((ref) => ref.url === item.url)) {
@@ -5875,7 +5870,7 @@ function AssetsLibraryPanel() {
         <div className="lab-newlayout-history-toolbar">
           <div className="lab-newlayout-history-toolbar-stats">
             <span className="lab-newlayout-history-stat">Assets Library</span>
-            <span className="lab-newlayout-history-stat">{isAuthLoading ? 'Loading...' : user ? `${visibleItems.length} item${visibleItems.length === 1 ? '' : 's'}` : `${visibleItems.length} local item${visibleItems.length === 1 ? '' : 's'}`}</span>
+            <span className="lab-newlayout-history-stat">{isAuthLoading ? 'Loading...' : user ? `${items.length} item${items.length === 1 ? '' : 's'}` : `${items.length} local item${items.length === 1 ? '' : 's'}`}</span>
           </div>
         </div>
       </div>
@@ -5887,7 +5882,7 @@ function AssetsLibraryPanel() {
               <span>{error}</span>
             </div>
           </div>
-        ) : visibleItems.length === 0 ? (
+        ) : items.length === 0 ? (
           <div className="lab-newlayout-references-empty">
             <div className="lab-newlayout-references-plus-card lab-newlayout-references-plus-card--static">
               <span>No generated assets yet.</span>
@@ -5896,36 +5891,8 @@ function AssetsLibraryPanel() {
           </div>
         ) : (
           <div className="lab-newlayout-references-grid lab-newlayout-references-grid--active">
-            {visibleItems.map((item) => {
-              if ((item as PendingGenerationAsset).isPendingGeneration === true) {
-                const pendingItem = item as PendingGenerationAsset
-                return (
-                  <div
-                    key={pendingItem.id}
-                    className="lab-newlayout-reference-item lab-newlayout-reference-item--generating"
-                    aria-label="Generating image…"
-                    aria-live="polite"
-                  >
-                    <div
-                      className="lab-newlayout-reference-thumb lab-newlayout-reference-thumb--image lab-newlayout-reference-thumb--generating"
-                      style={pendingItem.referenceImageUrl ? { backgroundImage: `url(${pendingItem.referenceImageUrl})` } : undefined}
-                    >
-                      <div className="lab-newlayout-reference-generating-overlay">
-                        <span className="lab-newlayout-reference-generating-spinner" aria-hidden="true" />
-                        <span className="lab-newlayout-reference-generating-copy">Generating…</span>
-                      </div>
-                    </div>
-                    <div className="lab-newlayout-reference-meta">
-                      <div className="lab-newlayout-reference-title" title={pendingItem.name}>{pendingItem.name}</div>
-                      <div className="lab-newlayout-reference-subtitle">pending</div>
-                    </div>
-                  </div>
-                )
-              }
-
-              const mediaItem = item as (typeof items)[number]
-
-              const enrichedItem = mediaItem as typeof mediaItem & {
+            {items.map((item) => {
+              const enrichedItem = item as typeof item & {
                 folderId?: string | null
                 generationPrompt?: string
                 generationModel?: string
@@ -5938,19 +5905,19 @@ function AssetsLibraryPanel() {
 
               return (
                 <div
-                  key={mediaItem.id}
+                  key={item.id}
                   className="lab-newlayout-reference-item lab-newlayout-reference-item--openable is-draggable"
                   draggable
-                  onDragStart={(event) => handleDragStart(event, mediaItem)}
+                  onDragStart={(event) => handleDragStart(event, item)}
                   onClick={() => setAssetPreviewItem({
-                    id: mediaItem.id,
-                    url: mediaItem.url,
-                    kind: mediaItem.kind,
-                    name: mediaItem.name,
-                    thumbnailUrl: mediaItem.thumbnailUrl,
-                    projectId: mediaItem.projectId,
+                    id: item.id,
+                    url: item.url,
+                    kind: item.kind,
+                    name: item.name,
+                    thumbnailUrl: item.thumbnailUrl,
+                    projectId: item.projectId,
                     folderId: enrichedItem.folderId,
-                    createdAt: mediaItem.createdAt,
+                    createdAt: item.createdAt,
                     generationPrompt: enrichedItem.generationPrompt,
                     generationModel: enrichedItem.generationModel,
                     generationProvider: enrichedItem.generationProvider,
@@ -5960,40 +5927,40 @@ function AssetsLibraryPanel() {
                     generationRequestPayload: enrichedItem.generationRequestPayload,
                   })}
                 >
-                  {mediaItem.kind === 'video' ? (
-                    <video className="lab-newlayout-reference-thumb lab-newlayout-reference-thumb--video" src={buildVideoProxyUrl(mediaItem.url) || mediaItem.url} muted playsInline preload="metadata" />
+                  {item.kind === 'video' ? (
+                    <video className="lab-newlayout-reference-thumb lab-newlayout-reference-thumb--video" src={buildVideoProxyUrl(item.url) || item.url} muted playsInline preload="metadata" />
                   ) : (
-                    <img className="lab-newlayout-reference-thumb lab-newlayout-reference-thumb--image" src={mediaItem.url} alt={mediaItem.name} />
+                    <img className="lab-newlayout-reference-thumb lab-newlayout-reference-thumb--image" src={item.url} alt={item.name} />
                   )}
                   <button
                     type="button"
                     className="lab-newlayout-reference-add-composer"
-                  onClick={(event) => { event.stopPropagation(); handleAddToComposer(mediaItem) }}
+                  onClick={(event) => { event.stopPropagation(); handleAddToComposer(item) }}
                   title="Add to composer"
                 >
                   + Composer
                 </button>
-                {mediaItem.kind !== 'audio' ? (
+                {item.kind !== 'audio' ? (
                   <>
                     <button
                       type="button"
                       className="lab-newlayout-reference-compare-set-btn lab-newlayout-reference-compare-set-btn--before"
-                      onClick={(event) => { event.stopPropagation(); setCompareBeforeUrl(mediaItem.url) }}
+                      onClick={(event) => { event.stopPropagation(); setCompareBeforeUrl(item.url) }}
                       aria-label="Set as Before in comparison"
                       title="Set as Before"
                     >B</button>
                     <button
                       type="button"
                       className="lab-newlayout-reference-compare-set-btn lab-newlayout-reference-compare-set-btn--after"
-                      onClick={(event) => { event.stopPropagation(); setCompareAfterUrl(mediaItem.url) }}
+                      onClick={(event) => { event.stopPropagation(); setCompareAfterUrl(item.url) }}
                       aria-label="Set as After in comparison"
                       title="Set as After"
                     >A</button>
                   </>
                 ) : null}
                 <div className="lab-newlayout-reference-meta">
-                  <div className="lab-newlayout-reference-title" title={mediaItem.name}>{mediaItem.name}</div>
-                  <div className="lab-newlayout-reference-subtitle" title={mediaItem.url}>{mediaItem.kind}</div>
+                  <div className="lab-newlayout-reference-title" title={item.name}>{item.name}</div>
+                  <div className="lab-newlayout-reference-subtitle" title={item.url}>{item.kind}</div>
                 </div>
                 </div>
               )

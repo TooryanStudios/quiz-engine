@@ -2,6 +2,26 @@
 
 Separate admin app to manage quizzes, packs, and subscription billing.
 
+## ToorGen remediation implementation docs
+
+The detailed ToorGen implementation plan and sprint tracker are available here:
+
+- [TOORGEN_GREENFIELD_BOOTSTRAP.md](TOORGEN_GREENFIELD_BOOTSTRAP.md) — **START HERE**: Day-by-day build plan for a fresh ToorGen project with all fixes baked in
+- [TOORGEN_SECURITY_AND_PRIVACY.md](TOORGEN_SECURITY_AND_PRIVACY.md) — Comprehensive security architecture (auth, validation, file integrity, abuse prevention, privacy, encryption, compliance)
+- [TOORGEN_IMPLEMENTATION_PLAN.md](TOORGEN_IMPLEMENTATION_PLAN.md) — 16-week remediation roadmap
+- [TOORGEN_IMPLEMENTATION_TRACKER.md](TOORGEN_IMPLEMENTATION_TRACKER.md) — Sprint-ready tickets with Definition of Done
+- [TOORGEN_TECHNICAL_REMEDIATION_AND_ARCHITECTURE.md](TOORGEN_TECHNICAL_REMEDIATION_AND_ARCHITECTURE.md) — Architecture and technical design
+- [TOORGEN_RISK_REPORT.md](TOORGEN_RISK_REPORT.md) — Risk register and mitigations
+
+Recommended reading order:
+
+1. Greenfield bootstrap (if starting fresh)
+2. Security and privacy architecture (how to prevent every attack vector)
+3. Risk report (understand what we're fixing)
+4. Remediation and architecture guide (how to fix it)
+5. Implementation plan (overall roadmap)
+6. Sprint tracker (day-to-day execution)
+
 ## MSE video sequencer (fragmented MP4)
 
 The app includes an isolated `MSEVideoSequencer` component that streams a sequence
