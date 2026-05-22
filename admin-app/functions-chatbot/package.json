@@ -3,6 +3,9 @@
   "type": "module",
   "version": "1.0.0",
   "main": "index.js",
+  "scripts": {
+    "test:abuse-controls": "node ./tools/platform-abuse-control-test.mjs"
+  },
   "engines": {
     "node": "22"
   },
