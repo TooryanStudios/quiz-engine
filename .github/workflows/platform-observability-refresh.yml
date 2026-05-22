@@ -1,0 +1,84 @@
+name: Platform Observability Refresh
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      project_id:
+        description: "Target GCP project id"
+        required: false
+        default: "qyan-om"
+      tenant_ids:
+        description: "Optional comma-separated tenant IDs"
+        required: false
+        default: ""
+      alert_email:
+        description: "Optional alert email for auto-created notification channel"
+        required: false
+        default: ""
+      include_all_tenants:
+        description: "Include all-tenants dashboard"
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  refresh-platform-observability:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      GCP_AUTH_SECRET_NAME: ${{ vars.GCP_OBSERVABILITY_SECRET_NAME }}
+    defaults:
+      run:
+        working-directory: admin-app
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: admin-app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve workflow inputs
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.project_id }}" ]; then
+            echo "FIREBASE_PROJECT_ID=${{ github.event.inputs.project_id }}" >> "$GITHUB_ENV"
+          else
+            echo "FIREBASE_PROJECT_ID=qyan-om" >> "$GITHUB_ENV"
+          fi
+
+          if [ -n "${{ github.event.inputs.tenant_ids }}" ]; then
+            echo "PLATFORM_DASHBOARD_TENANT_IDS=${{ github.event.inputs.tenant_ids }}" >> "$GITHUB_ENV"
+          fi
+
+          if [ -n "${{ github.event.inputs.alert_email }}" ]; then
+            echo "PLATFORM_ALERT_EMAIL=${{ github.event.inputs.alert_email }}" >> "$GITHUB_ENV"
+          fi
+
+          if [ "${{ github.event.inputs.include_all_tenants }}" = "false" ]; then
+            echo "PLATFORM_DASHBOARD_INCLUDE_ALL_TENANTS=false" >> "$GITHUB_ENV"
+          fi
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets[env.GCP_AUTH_SECRET_NAME] }}
+
+      - name: Setup gcloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure gcloud project
+        run: gcloud config set project "$FIREBASE_PROJECT_ID"
+
+      - name: Refresh platform observability
+        run: npm run observability:platform:refresh
