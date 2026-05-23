@@ -20,6 +20,7 @@
     "sync:chatbot-server": "node ./scripts/sync-chatbot-server.mjs",
     "smoke:platform:e2e": "node ./functions-chatbot/tools/platform-e2e-smoke.mjs",
     "test:platform:abuse-controls": "node ./functions-chatbot/tools/platform-abuse-control-test.mjs",
+    "test:platform:abuse-confidence": "node ./scripts/platform-abuse-confidence-matrix.mjs",
     "secrets:platform:webhook:rotate": "node ./scripts/rotate-platform-webhook-secret.mjs",
     "alerts:platform:setup": "node ./scripts/setup-platform-alerting.mjs",
     "dashboards:platform:setup": "node ./scripts/setup-platform-dashboards.mjs",

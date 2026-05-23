@@ -267,7 +267,14 @@ const main = async () => {
   const testPadding = Number(process.env.PLATFORM_ABUSE_TEST_PADDING || 6);
   const maxCap = Number(process.env.PLATFORM_ABUSE_TEST_MAX_CAP || 500);
   const defaultConcurrency = Number(process.env.PLATFORM_ABUSE_TEST_CONCURRENCY || 8);
-  const cappedAttempts = (limit) => Math.max(1, Math.min(limit + testPadding, maxCap));
+  const attemptMultiplier = Math.max(1, Number(process.env.PLATFORM_ABUSE_TEST_ATTEMPT_MULTIPLIER || 1));
+  const minAttempts = Math.max(0, Number(process.env.PLATFORM_ABUSE_TEST_MIN_ATTEMPTS || 0));
+  const cappedAttempts = (limit) => {
+    const padded = limit + testPadding;
+    const scaled = Math.ceil(limit * attemptMultiplier);
+    const desired = Math.max(padded, scaled, minAttempts);
+    return Math.max(1, Math.min(desired, maxCap));
+  };
 
   const tests = [
     {
@@ -328,13 +335,22 @@ const main = async () => {
       name: "uploadCreate",
       maxAttempts: cappedAttempts(limitOrDefault("uploadCreateUserPerMinute", 80)),
       concurrency: Number(process.env.PLATFORM_ABUSE_TEST_CONCURRENCY_UPLOAD_CREATE || defaultConcurrency),
-      makeRequest: ({ authHeaders }) => requestRaw(`${baseUrl}/api/platform/uploads/sessions`, {
+      makeRequest: ({ attempt, authHeaders }) => requestRaw(`${baseUrl}/api/platform/uploads/sessions`, {
         method: "POST",
         headers: {
           ...authHeaders,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({}),
+        body: JSON.stringify({
+          fileName: `abuse-test-${attempt}.mp4`,
+          contentType: "video/mp4",
+          byteSize: 1024,
+          storagePathPrefix: "platform-uploads/abuse-tests",
+          projectId: `abuse-project-${uid}`,
+          workspaceId: "abuse-workspace",
+          prompt: "Abuse control upload create test",
+          goal: "Validate upload create rate limit",
+        }),
       }),
     },
     {
@@ -363,7 +379,9 @@ const main = async () => {
 
   console.error(`[abuse-test] baseUrl=${baseUrl}`);
   console.error(`[abuse-test] checks=${activeTests.map((test) => test.name).join(",")}`);
-  console.error(`[abuse-test] requestTimeoutMs=${requestTimeoutMs} defaultConcurrency=${defaultConcurrency} maxCap=${maxCap}`);
+  console.error(
+    `[abuse-test] requestTimeoutMs=${requestTimeoutMs} defaultConcurrency=${defaultConcurrency} maxCap=${maxCap} attemptMultiplier=${attemptMultiplier} minAttempts=${minAttempts}`,
+  );
 
   const checks = [];
   for (const test of activeTests) {
