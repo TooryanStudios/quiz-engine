@@ -15,13 +15,20 @@ import { fileURLToPath } from "url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const adminAppDir = resolve(__dirname, "..");
 
-const CHATBOT_SERVER_SRC = "C:\\Projects\\Tooryan Chatbot\\Chatbot\\server";
+const TRACKED_SERVER_SRC = resolve(adminAppDir, "functions-chatbot", "server-src");
+const LEGACY_CHATBOT_SERVER_SRC = "C:\\Projects\\Tooryan Chatbot\\Chatbot\\server";
 const DEST = resolve(adminAppDir, "functions-chatbot", "server");
 const PRESERVED_DIRS = ["seedance-references"];
 
+const CHATBOT_SERVER_SRC = existsSync(TRACKED_SERVER_SRC)
+  ? TRACKED_SERVER_SRC
+  : LEGACY_CHATBOT_SERVER_SRC;
+
 if (!existsSync(CHATBOT_SERVER_SRC)) {
-  console.error(`\nChatbot server not found at: ${CHATBOT_SERVER_SRC}`);
-  console.error("Copy the chatbot project first, or update the path in this script.\n");
+  console.error("\nChatbot server source not found.");
+  console.error(`Tried tracked source: ${TRACKED_SERVER_SRC}`);
+  console.error(`Tried legacy source: ${LEGACY_CHATBOT_SERVER_SRC}`);
+  console.error("Create functions-chatbot/server-src or update scripts/sync-chatbot-server.mjs.\n");
   process.exit(1);
 }
 
@@ -40,4 +47,8 @@ cpSync(CHATBOT_SERVER_SRC, DEST, { recursive: true });
 // Ensure the seedance-references directory exists even on a fresh install.
 mkdirSync(join(DEST, "seedance-references"), { recursive: true });
 
-console.log(`✅ Synced chatbot server → functions-chatbot/server/`);
+const sourceLabel = CHATBOT_SERVER_SRC === TRACKED_SERVER_SRC
+  ? "tracked functions-chatbot/server-src"
+  : "legacy external chatbot source";
+
+console.log(`✅ Synced chatbot server (${sourceLabel}) → functions-chatbot/server/`);
