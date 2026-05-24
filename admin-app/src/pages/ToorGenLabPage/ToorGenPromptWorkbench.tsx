@@ -4,6 +4,7 @@ import { collection, deleteDoc, doc, getDocs, limit, orderBy, query, serverTimes
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
 import { auth, db, storage } from '../../lib/firebase'
 import { saveUserPrefs } from '../../lib/adminRepo'
+import { getFirebaseAuthHeader } from '../../lib/firebaseAuthHeaders'
 import {
   createFolder,
   deleteFolder,
@@ -5678,10 +5679,14 @@ export default function ToorGenPromptWorkbench() {
     pushDirectSubmitFeed(`Submitting raw request to ${endpoint}...`)
 
     try {
+      const authHeaders = await getFirebaseAuthHeader()
       submittedAt = Date.now()
       const response = await fetch(apiUrl(endpoint), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders,
+        },
         body: JSON.stringify(requestBody),
       })
 
@@ -5689,6 +5694,10 @@ export default function ToorGenPromptWorkbench() {
       const payload = parseJsonSafely(rawBody)
 
       if (!response.ok) {
+        const trimmedRawBody = rawBody.trim()
+        const rawErrorMessage = (trimmedRawBody && trimmedRawBody !== '{}' && trimmedRawBody !== '[]')
+          ? trimmedRawBody.slice(0, 240)
+          : ''
         if (response.status >= 500) {
           markBackendDown()
         }
@@ -5696,7 +5705,7 @@ export default function ToorGenPromptWorkbench() {
           firstNonEmptyString(
             isRecord(payload) ? payload.error : undefined,
             isRecord(payload) ? payload.message : undefined,
-            rawBody.trim().slice(0, 240),
+            rawErrorMessage,
             `HTTP ${response.status}`,
           ),
         )
