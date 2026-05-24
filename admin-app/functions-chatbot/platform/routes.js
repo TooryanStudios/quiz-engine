@@ -1,3 +1,6 @@
+import { randomBytes } from "node:crypto";
+import { getStorage } from "firebase-admin/storage";
+import { ensurePlatformFirebaseAdminApp } from "./firebaseAdmin.js";
 import { getTaxonomySnapshot } from "./taxonomy.js";
 import { generateEnhancedPrompt } from "./promptEnhancer.js";
 
@@ -51,7 +54,26 @@ const resolveClientIp = (req) => {
   return (firstForwarded || fallback || "").replace(/^::ffff:/i, "").trim();
 };
 
-const rejectFromRateLimitDecision = (res, decision) => {
+const logPlatformEvent = (event, payload = {}) => {
+  console.log(JSON.stringify({
+    event: "platform.telemetry",
+    platform: {
+      event,
+      timestamp: new Date().toISOString(),
+      ...payload,
+    },
+  }));
+};
+
+const rejectFromRateLimitDecision = ({
+  req,
+  res,
+  decision,
+  endpoint,
+  ownerUid,
+  tenantId,
+  projectId,
+}) => {
   if (Number.isFinite(decision?.retryAfterSeconds) && decision.retryAfterSeconds > 0) {
     res.set("Retry-After", String(decision.retryAfterSeconds));
   }
@@ -67,6 +89,20 @@ const rejectFromRateLimitDecision = (res, decision) => {
   if (typeof decision?.resetAt === "string" && decision.resetAt) {
     res.set("X-RateLimit-Reset", decision.resetAt);
   }
+
+  logPlatformEvent("rate_limit_rejected", {
+    increment: 1,
+    endpoint: String(endpoint || "unknown"),
+    ownerUid: String(ownerUid || ""),
+    tenantId: String(tenantId || ""),
+    projectId: String(projectId || ""),
+    ipAddress: resolveClientIp(req),
+    status: Number(decision?.status) || 429,
+    code: String(decision?.code || "platform_rate_limited"),
+    retryAfterSeconds: Number(decision?.retryAfterSeconds) || 1,
+    limit: Number.isFinite(decision?.limit) ? decision.limit : null,
+    remaining: Number.isFinite(decision?.remaining) ? Math.max(0, decision.remaining) : null,
+  });
 
   return res.status(Number(decision?.status) || 429).json({
     error: decision?.error || "Rate limit exceeded.",
@@ -144,6 +180,162 @@ const sanitizeJobForResponse = (job) => {
     result: job.result,
     error: job.error,
     payload: job.payload,
+  };
+};
+
+const normalizeStorageBucketName = (value) => {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+  return normalized.replace(/^gs:\/\//i, "").replace(/\/$/, "");
+};
+
+const getLabStorageBucketName = (requestFirebaseConfig) => {
+  const requestBucket = normalizeStorageBucketName(requestFirebaseConfig?.storageBucket);
+  if (requestBucket) return requestBucket;
+
+  return normalizeStorageBucketName(
+    process.env.PLATFORM_UPLOADS_BUCKET
+      || process.env.FIREBASE_STORAGE_BUCKET
+      || process.env.STORAGE_BUCKET
+      || "",
+  );
+};
+
+const resolveLabSourceUrl = (req, rawUrl) => {
+  const normalized = String(rawUrl || "").trim();
+  if (!normalized) return "";
+
+  if (/^https?:\/\//i.test(normalized)) {
+    return normalized;
+  }
+
+  if (normalized.startsWith("/")) {
+    return `${req.protocol}://${req.get("host")}${normalized}`;
+  }
+
+  return "";
+};
+
+const normalizeSignedUrlTtlSec = (value, fallbackSec = 15 * 60) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallbackSec;
+  }
+
+  return Math.max(60, Math.min(Math.floor(parsed), 7 * 24 * 60 * 60));
+};
+
+const inferFileExtension = (mimeType, fallback = "bin") => {
+  const normalized = String(mimeType || "").toLowerCase();
+  if (normalized.includes("jpeg") || normalized.includes("jpg")) return "jpg";
+  if (normalized.includes("png")) return "png";
+  if (normalized.includes("webp")) return "webp";
+  if (normalized.includes("gif")) return "gif";
+  if (normalized.includes("avif")) return "avif";
+  if (normalized.includes("mp4")) return "mp4";
+  if (normalized.includes("webm")) return "webm";
+  if (normalized.includes("mpeg") || normalized.includes("mp3")) return "mp3";
+  if (normalized.includes("wav")) return "wav";
+  return fallback;
+};
+
+const buildLabObjectPath = ({ storagePathPrefix, kind, projectId, folderId, mimeType }) => {
+  const normalizedPrefix = String(storagePathPrefix || "")
+    .trim()
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "");
+
+  const normalizedKind = ["image", "video", "audio"].includes(String(kind || "").trim())
+    ? String(kind || "").trim()
+    : "asset";
+
+  const ext = inferFileExtension(mimeType, normalizedKind === "video" ? "mp4" : normalizedKind === "audio" ? "mp3" : "jpg");
+  const fileName = `${Date.now()}-${randomBytes(8).toString("hex")}.${ext}`;
+
+  const segments = [
+    normalizedPrefix || "lab-references",
+    normalizedKind,
+    String(projectId || "").trim() || null,
+    String(folderId || "").trim() || null,
+    fileName,
+  ].filter(Boolean);
+
+  return segments.join("/");
+};
+
+const parseFirebaseObjectReference = (sourceUrl) => {
+  const normalized = String(sourceUrl || "").trim();
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized.startsWith("gs://")) {
+    const withoutPrefix = normalized.slice(5);
+    const slashIndex = withoutPrefix.indexOf("/");
+    if (slashIndex < 0) return null;
+    const bucket = normalizeStorageBucketName(withoutPrefix.slice(0, slashIndex));
+    const objectPath = withoutPrefix.slice(slashIndex + 1);
+    if (!bucket || !objectPath) return null;
+    return { bucket, objectPath };
+  }
+
+  try {
+    const parsed = new URL(normalized);
+    const hostname = parsed.hostname.toLowerCase();
+
+    if (hostname === "firebasestorage.googleapis.com" && parsed.pathname.startsWith("/v0/b/")) {
+      const segments = parsed.pathname.split("/");
+      const bucket = normalizeStorageBucketName(segments[3] || "");
+      const objectIndex = segments.indexOf("o");
+      const encodedObject = objectIndex >= 0 ? segments.slice(objectIndex + 1).join("/") : "";
+      const objectPath = decodeURIComponent(encodedObject || "");
+      if (!bucket || !objectPath) return null;
+      return { bucket, objectPath };
+    }
+
+    if (hostname === "storage.googleapis.com") {
+      const segments = parsed.pathname.split("/").filter(Boolean);
+      const bucket = normalizeStorageBucketName(segments[0] || "");
+      const objectPath = segments.slice(1).join("/");
+      if (!bucket || !objectPath) return null;
+      return { bucket, objectPath: decodeURIComponent(objectPath) };
+    }
+
+    if (hostname.endsWith(".storage.googleapis.com")) {
+      const bucket = normalizeStorageBucketName(hostname.replace(/\.storage\.googleapis\.com$/i, ""));
+      const objectPath = decodeURIComponent(parsed.pathname.replace(/^\/+/, ""));
+      if (!bucket || !objectPath) return null;
+      return { bucket, objectPath };
+    }
+
+    if (hostname.endsWith(".firebasestorage.app")) {
+      const bucket = normalizeStorageBucketName(hostname);
+      const objectPath = decodeURIComponent(parsed.pathname.replace(/^\/+/, ""));
+      if (!bucket || !objectPath) return null;
+      return { bucket, objectPath };
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+};
+
+const createSignedReadUrl = async ({ bucket, objectPath, signedUrlTtlSec }) => {
+  const adminApp = await ensurePlatformFirebaseAdminApp();
+  const storage = getStorage(adminApp);
+  const bucketHandle = bucket ? storage.bucket(bucket) : storage.bucket();
+  const file = bucketHandle.file(objectPath);
+  const expiresAt = Date.now() + (normalizeSignedUrlTtlSec(signedUrlTtlSec) * 1000);
+  const [accessUrl] = await file.getSignedUrl({
+    action: "read",
+    version: "v4",
+    expires: expiresAt,
+  });
+
+  return {
+    accessUrl,
+    expiresAt,
   };
 };
 
@@ -307,7 +499,15 @@ export const registerPlatformInfraRoutes = ({
       });
 
       if (!decision.ok) {
-        return rejectFromRateLimitDecision(res, decision);
+        return rejectFromRateLimitDecision({
+          req,
+          res,
+          decision,
+          endpoint: "upload_create",
+          ownerUid: auth.uid,
+          tenantId: body.tenantId,
+          projectId: body.projectId,
+        });
       }
     }
 
@@ -348,7 +548,13 @@ export const registerPlatformInfraRoutes = ({
       });
 
       if (!decision.ok) {
-        return rejectFromRateLimitDecision(res, decision);
+        return rejectFromRateLimitDecision({
+          req,
+          res,
+          decision,
+          endpoint: "upload_mutate_complete",
+          ownerUid: auth.uid,
+        });
       }
     }
 
@@ -394,7 +600,13 @@ export const registerPlatformInfraRoutes = ({
       });
 
       if (!decision.ok) {
-        return rejectFromRateLimitDecision(res, decision);
+        return rejectFromRateLimitDecision({
+          req,
+          res,
+          decision,
+          endpoint: "upload_mutate_validation_result",
+          ownerUid: auth.uid,
+        });
       }
     }
 
@@ -435,7 +647,13 @@ export const registerPlatformInfraRoutes = ({
       });
 
       if (!decision.ok) {
-        return rejectFromRateLimitDecision(res, decision);
+        return rejectFromRateLimitDecision({
+          req,
+          res,
+          decision,
+          endpoint: "upload_get",
+          ownerUid: auth.uid,
+        });
       }
     }
 
@@ -473,7 +691,13 @@ export const registerPlatformInfraRoutes = ({
       });
 
       if (!decision.ok) {
-        return rejectFromRateLimitDecision(res, decision);
+        return rejectFromRateLimitDecision({
+          req,
+          res,
+          decision,
+          endpoint: "upload_list",
+          ownerUid: auth.uid,
+        });
       }
     }
 
@@ -515,7 +739,15 @@ export const registerPlatformInfraRoutes = ({
       });
 
       if (!decision.ok) {
-        return rejectFromRateLimitDecision(res, decision);
+        return rejectFromRateLimitDecision({
+          req,
+          res,
+          decision,
+          endpoint: "workflow_submit",
+          ownerUid: auth.uid,
+          tenantId: body.tenantId,
+          projectId: body.projectId,
+        });
       }
     }
 
@@ -544,7 +776,13 @@ export const registerPlatformInfraRoutes = ({
       });
 
       if (!decision.ok) {
-        return rejectFromRateLimitDecision(res, decision);
+        return rejectFromRateLimitDecision({
+          req,
+          res,
+          decision,
+          endpoint: "workflow_get",
+          ownerUid: auth.uid,
+        });
       }
     }
 
@@ -582,7 +820,13 @@ export const registerPlatformInfraRoutes = ({
       });
 
       if (!decision.ok) {
-        return rejectFromRateLimitDecision(res, decision);
+        return rejectFromRateLimitDecision({
+          req,
+          res,
+          decision,
+          endpoint: "workflow_list",
+          ownerUid: auth.uid,
+        });
       }
     }
 
@@ -623,5 +867,138 @@ export const registerPlatformInfraRoutes = ({
       ok: true,
       ...result,
     });
+  });
+
+  app.post("/api/lab/references/upload-by-url", async (req, res) => {
+    const auth = await verifyFirebaseAuth(req);
+    if (!auth.ok) {
+      return res.status(auth.status).json({ error: auth.error });
+    }
+
+    const sourceUrl = resolveLabSourceUrl(req, req.body?.url);
+    const kind = String(req.body?.kind || "asset").trim();
+    const storagePathPrefix = String(req.body?.storagePathPrefix || "").trim();
+    const projectId = String(req.body?.projectId || "").trim();
+    const folderId = String(req.body?.folderId || "").trim();
+    const requestedMimeType = String(req.body?.mimeType || "").trim();
+    const accessMode = String(req.body?.accessMode || "private-signed").trim().toLowerCase();
+    const signedUrlTtlSec = normalizeSignedUrlTtlSec(req.body?.signedUrlTtlSec, 15 * 60);
+    const bucketName = getLabStorageBucketName(req.body?.firebaseConfig);
+
+    if (!sourceUrl) {
+      return res.status(400).json({ error: "url must be an absolute http(s) URL or an absolute local path." });
+    }
+
+    if (!/^https?:\/\//i.test(sourceUrl)) {
+      return res.status(400).json({ error: "Only http(s) source URLs are supported." });
+    }
+
+    if (!bucketName) {
+      return res.status(400).json({ error: "storageBucket is required. Configure firebaseConfig.storageBucket or PLATFORM_UPLOADS_BUCKET." });
+    }
+
+    try {
+      const upstream = await fetch(sourceUrl, { method: "GET" });
+      if (!upstream.ok) {
+        return res.status(502).json({ error: `Failed to fetch source URL (${upstream.status}).` });
+      }
+
+      const contentType = requestedMimeType || upstream.headers.get("content-type") || "application/octet-stream";
+      const objectPath = buildLabObjectPath({
+        storagePathPrefix,
+        kind,
+        projectId,
+        folderId,
+        mimeType: contentType,
+      });
+
+      const data = Buffer.from(await upstream.arrayBuffer());
+      if (!data.length) {
+        return res.status(400).json({ error: "Fetched source URL is empty." });
+      }
+
+      const adminApp = await ensurePlatformFirebaseAdminApp();
+      const storage = getStorage(adminApp);
+      const bucket = storage.bucket(bucketName);
+      const file = bucket.file(objectPath);
+
+      await file.save(data, {
+        resumable: false,
+        contentType,
+        metadata: {
+          cacheControl: "private, max-age=0, no-store",
+        },
+      });
+
+      let firebaseUrl = `gs://${bucketName}/${objectPath}`;
+      let expiresAt = null;
+
+      if (accessMode === "private-signed") {
+        const signed = await createSignedReadUrl({
+          bucket: bucketName,
+          objectPath,
+          signedUrlTtlSec,
+        });
+        firebaseUrl = signed.accessUrl;
+        expiresAt = signed.expiresAt;
+      }
+
+      return res.status(200).json({
+        ok: true,
+        saved: {
+          sourceUrl,
+          objectPath,
+          storageBucket: bucketName,
+          firebaseUrl,
+          expiresAt,
+          accessMode,
+        },
+      });
+    } catch (error) {
+      return res.status(500).json({ error: error?.message || "Failed to save lab reference URL." });
+    }
+  });
+
+  app.post("/api/lab/references/resolve-access-urls", async (req, res) => {
+    const auth = await verifyFirebaseAuth(req);
+    if (!auth.ok) {
+      return res.status(auth.status).json({ error: auth.error });
+    }
+
+    const urls = Array.isArray(req.body?.urls)
+      ? req.body.urls.map((value) => String(value || "").trim()).filter(Boolean)
+      : [];
+    const signedUrlTtlSec = normalizeSignedUrlTtlSec(req.body?.signedUrlTtlSec, 15 * 60);
+
+    if (!urls.length) {
+      return res.status(400).json({ error: "urls[] is required." });
+    }
+
+    try {
+      const resolved = {};
+      for (const sourceUrl of urls) {
+        const parsed = parseFirebaseObjectReference(sourceUrl);
+        if (!parsed) {
+          continue;
+        }
+
+        const signed = await createSignedReadUrl({
+          bucket: parsed.bucket,
+          objectPath: parsed.objectPath,
+          signedUrlTtlSec,
+        });
+
+        resolved[sourceUrl] = {
+          sourceUrl,
+          accessUrl: signed.accessUrl,
+          expiresAt: signed.expiresAt,
+          isRefreshed: true,
+        };
+      }
+
+      return res.status(200).json({ ok: true, resolved });
+    } catch (error) {
+      return res.status(500).json({ error: error?.message || "Failed to resolve lab access URLs." });
+    }
   });
 };
