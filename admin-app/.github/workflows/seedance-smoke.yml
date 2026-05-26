@@ -1,0 +1,67 @@
+name: Seedance E2E Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/seedance-smoke.yml"
+      - "functions-chatbot/tools/seedance-e2e-smoke.mjs"
+      - "functions-chatbot/server-src/**"
+      - "functions-chatbot/server/**"
+      - "package.json"
+      - "package-lock.json"
+  schedule:
+    - cron: "17 */6 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  seedance-smoke:
+    runs-on: ubuntu-latest
+    env:
+      PLATFORM_BASE_URL: https://chatbot-blux3lwhuq-uc.a.run.app
+      PLATFORM_STAGING_BASE_URL: ${{ vars.PLATFORM_STAGING_BASE_URL || 'https://staging---chatbot-blux3lwhuq-uc.a.run.app' }}
+      FIREBASE_WEB_API_KEY: ${{ secrets.FIREBASE_WEB_API_KEY }}
+      SEEDANCE_SMOKE_MODEL: seedance-2.0-fast
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Materialize Firebase Admin Credentials
+        env:
+          FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -z "$FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON" ]; then
+            echo "Missing secret FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON"
+            exit 1
+          fi
+
+          SERVICE_ACCOUNT_PATH="$RUNNER_TEMP/firebase-admin-service-account.json"
+          printf '%s' "$FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON" > "$SERVICE_ACCOUNT_PATH"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$SERVICE_ACCOUNT_PATH" >> "$GITHUB_ENV"
+
+      - name: Validate Required Environment
+        run: |
+          if [ -z "$FIREBASE_WEB_API_KEY" ]; then
+            echo "Missing secret FIREBASE_WEB_API_KEY"
+            exit 1
+          fi
+          if [ -z "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
+            echo "Missing GOOGLE_APPLICATION_CREDENTIALS runtime path"
+            exit 1
+          fi
+
+      - name: Run Seedance Smoke
+        run: npm run smoke:seedance:e2e
