@@ -1,4 +1,4 @@
-import {phoneViewport} from './phoneViewport'
+import {phoneViewport,phoneLayoutBaseline} from './phoneViewport'
 import {useEffect, useState, type ReactNode} from 'react'
 import {House, CheckCheck, LayoutGrid, Inbox, Menu, NotebookPen, UserRound, FileText, Settings2, Globe2, Moon, Sun, LogOut, Bot, ArrowLeft} from 'lucide-react'
 import {HrDialog} from './HrDialog'
@@ -15,14 +15,16 @@ export function MobileNavigation({page,title,t,onNavigate,onBack,actions,name,is
  useEffect(()=>{
   const viewport=window.visualViewport
   let frame=0
+  let baseline={width:innerWidth,height:innerHeight}
   const resize=()=>{
    cancelAnimationFrame(frame)
    frame=requestAnimationFrame(()=>{
     const root=document.documentElement
     if(!matchMedia('(max-width:700px)').matches){root.style.removeProperty('--phone-height');root.style.removeProperty('--phone-top');root.removeAttribute('data-phone-keyboard');return}
     const editing=!!document.activeElement?.matches('input:not([type=checkbox]):not([type=radio]),textarea,[contenteditable=true]')
-    const size=phoneViewport(innerHeight,viewport?.height||innerHeight,viewport?.offsetTop||0,viewport?.scale||1,editing)
     if((viewport?.scale||1)>1.1)return
+    baseline=phoneLayoutBaseline(baseline,innerWidth,innerHeight,editing)
+    const size=phoneViewport(baseline.height,viewport?.height||innerHeight,viewport?.offsetTop||0,viewport?.scale||1,editing)
     root.style.setProperty('--phone-height',`${size.height}px`)
     root.style.setProperty('--phone-top',`${size.top}px`)
     root.toggleAttribute('data-phone-keyboard',size.keyboard)

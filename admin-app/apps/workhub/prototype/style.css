@@ -653,6 +653,7 @@ button.hr-request-expand:hover{color:var(--accent)}
 .files-manager .file-actions{justify-content:flex-end;padding-top:7px;border-top:1px solid var(--border);margin-top:7px}
 .files-manager .file-actions .icon-button{width:32px;height:32px}
 .files-manager .attach-url button.secondary{width:auto;padding:0 10px;font-size:13px}
+.files-manager .attach-url .file-link-submit{display:flex;align-items:center;justify-content:center;gap:8px;width:auto;min-height:40px;height:auto;padding:10px 14px;background:var(--accent);color:white;white-space:nowrap}
 .conversation .messages{display:flex;flex-direction:column-reverse;scroll-behavior:auto;overflow-anchor:auto;padding:8px 0}
 .discussion-history{flex:none;min-width:0}
 .conversation .message{margin:0 0 12px;padding:12px;background:var(--bg);border:0}

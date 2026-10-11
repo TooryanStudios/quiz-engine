@@ -459,6 +459,6 @@
 dialog.message-actions-sheet{border:0;color:var(--text);margin:auto;max-width:calc(100% - 32px)}
 dialog.message-actions-sheet::backdrop{background:#13172455}
 @media(max-width:700px){dialog.message-actions-sheet[open]{position:fixed;inset:auto 0;top:calc(var(--phone-top,0px) + var(--phone-height,100dvh));transform:translateY(-100%);margin:0;max-width:100%;max-height:calc(var(--phone-height,100dvh) - 20px)}}
-@media(max-width:700px){.attach-url>div{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:8px}.attach-url .file-link-submit{grid-column:1/-1;min-height:46px;border-radius:12px;font-size:16px;justify-content:center}}
+@media(max-width:700px){.attach-url>div{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:8px}.files-manager .attach-url .file-link-submit{grid-column:1/-1;width:100%;min-height:46px;border-radius:12px;font-size:16px;justify-content:center}}
 .discussion-message-time{display:block;clear:both;text-align:end;color:var(--muted);font-size:11px;padding-top:6px}
 @media(max-width:700px){.checklist-editor progress{appearance:none;border:0;border-radius:6px;overflow:hidden;height:5px;background:var(--border)}.checklist-editor progress::-webkit-progress-bar{background:var(--border)}.checklist-editor progress::-webkit-progress-value{background:var(--accent);border-radius:6px}}

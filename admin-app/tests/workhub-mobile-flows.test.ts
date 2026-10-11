@@ -1,10 +1,18 @@
 import {describe,it,expect} from 'vitest'
-import {phoneViewport} from '../apps/workhub/prototype/phoneViewport'
+import {phoneViewport,phoneLayoutBaseline} from '../apps/workhub/prototype/phoneViewport'
 import {inboxGroups,inboxGroupSize} from '../apps/workhub/prototype/inboxGroups'
 import {extraFinishTime} from '../functions/src/workhubHrAttendance'
 import type {WorkhubNotification} from '../src/lib/workhubRepo'
 
 describe('phone keyboard layout',()=>{
+ it('detects an Android keyboard even when both viewports shrink and resets after rotation',()=>{
+  const resting={width:390,height:844}
+  const typing=phoneLayoutBaseline(resting,390,510,true)
+  expect(phoneViewport(typing.height,510,0,1,true).keyboard).toBe(true)
+  const rotated=phoneLayoutBaseline(typing,844,390,true)
+  expect(phoneViewport(rotated.height,390,0,1,true).keyboard).toBe(false)
+  expect(phoneLayoutBaseline(typing,390,844,false)).toEqual(resting)
+ })
  it('tracks a panned visual viewport without moving navigation above the keyboard',()=>{
   expect(phoneViewport(844,510,96,1,true)).toEqual({height:510,top:96,keyboard:true})
   expect(phoneViewport(844,844,0,1,false)).toEqual({height:844,top:0,keyboard:false})
