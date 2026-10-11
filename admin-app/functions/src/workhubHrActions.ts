@@ -1,6 +1,9 @@
-import {omanWorkday,workdayDuration,approvedLeaveOn,manualWorkday,canStartExtraWork} from './workhubHrAttendance'
+import {omanWorkday,workdayDuration,approvedLeaveOn,manualWorkday,canStartExtraWork,extraFinishTime} from './workhubHrAttendance'
 import * as admin from 'firebase-admin'
 import {onCall,HttpsError} from 'firebase-functions/v2/https'
+function attendanceResponse(id:string,record:FirebaseFirestore.DocumentData){
+ return {...record,id,clockIn:record.clockIn?{seconds:record.clockIn.seconds}:null,clockOut:record.clockOut?{seconds:record.clockOut.seconds}:null}
+}
 export const workhubHrAction=onCall({invoker:"public"},async request=>{
  if(!request.auth)throw new HttpsError('unauthenticated','Sign in first.')
  const uid=request.auth.uid,{employeeId,action,requestId,status,location,note}=request.data||{}
@@ -68,24 +71,24 @@ export const workhubHrAction=onCall({invoker:"public"},async request=>{
    if(typeof sessionId!=='string'||!sessionId||sessionId.includes('/'))throw new HttpsError('invalid-argument','Select an extra-work session.')
    const ref=employeeRef.collection('attendance').doc(sessionId),record=(await tx.get(ref)).data()
    if(!record||record.kind!=='extraHours'||record.authorUid!==uid)throw new HttpsError('not-found','Extra-work session unavailable.')
-   if(record.clockOut){if(action==='finishExtraHours')return {finished:true};throw new HttpsError('failed-precondition','This session is already finished.')}
+   if(record.clockOut){if(action==='finishExtraHours')return {finished:true,record:attendanceResponse(sessionId,record)};throw new HttpsError('failed-precondition','This session is already finished.')}
    if(action==='prepareFinishExtra'){
     tx.update(ref,{finishCandidate:admin.firestore.Timestamp.now()});return {ready:true}
    }
-   if(!record.finishCandidate)throw new HttpsError('failed-precondition','Click Finish extra hours first.')
+   const finishTime=admin.firestore.Timestamp.fromDate(extraFinishTime(record.clockIn.toDate(),request.data.finishRequestedAt??record.finishCandidate?.toMillis(),new Date()))
    if(action==='detectExtraWork'){
     const {entityKeys}=request.data
     if(!Array.isArray(entityKeys)||entityKeys.length>10000||entityKeys.some(k=>typeof k!=='string'))throw new HttpsError('invalid-argument','Invalid project scope.')
-    const logs=await tx.get(db.collection('workhub_activity').where('createdAt','>=',record.clockIn).where('createdAt','<=',record.finishCandidate).orderBy('createdAt','desc').limit(1000))
+    const logs=await tx.get(db.collection('workhub_activity').where('createdAt','>=',record.clockIn).where('createdAt','<=',finishTime).orderBy('createdAt','desc').limit(1000))
     const allowed=new Set(entityKeys)
     return {items:logs.docs.flatMap(d=>{const r=d.data();return r.actorUid===uid&&['task','project','document','moodboard'].includes(r.entityType)&&allowed.has(r.entityType+':'+r.entityId)&&r.action!=='chat_message'&&typeof r.message==='string'?[r.message.slice(0,500)]:[]}).slice(0,30),limited:logs.size===1000}
    }
    const {workItems}=request.data
-   if(!Array.isArray(workItems)||!workItems.length||workItems.length>30||workItems.some((item:unknown)=>typeof item!=='string'||!item.trim()||item.length>500))throw new HttpsError('invalid-argument','Add 1–30 accomplishments, each up to 500 characters.')
-   const workedMinutes=Math.max(0,Math.floor((record.finishCandidate.toMillis()-record.clockIn.toMillis())/60000))
-   tx.update(ref,{clockOut:record.finishCandidate,workedMinutes,workItems:workItems.map((i:string)=>i.trim()),finishCandidate:admin.firestore.FieldValue.delete()})
+   if(!Array.isArray(workItems)||!workItems.length||workItems.length>30||workItems.some((item:unknown)=>typeof item!=='string'||!item.trim()||item.length>500))throw new HttpsError('invalid-argument','Add 1â€“30 accomplishments, each up to 500 characters.')
+   const workedMinutes=Math.max(0,Math.floor((finishTime.toMillis()-record.clockIn.toMillis())/60000))
+   tx.update(ref,{clockOut:finishTime,workedMinutes,workItems:workItems.map((i:string)=>i.trim()),finishCandidate:admin.firestore.FieldValue.delete()})
    tx.update(employeeRef,{activeExtraSessionId:admin.firestore.FieldValue.delete()})
-   return {finished:true,workedMinutes}
+   return {finished:true,workedMinutes,record:attendanceResponse(sessionId,{...record,clockOut:finishTime,workedMinutes,workItems:workItems.map((i:string)=>i.trim())})}
   }
   if(action==='extraHours')throw new HttpsError('failed-precondition','Reload WorkHub and use Start extra hours to record a live session.')
   if(action==='requestAttendance'){
@@ -121,10 +124,11 @@ export const workhubHrAction=onCall({invoker:"public"},async request=>{
    if(!['office','online','offsite'].includes(location)||typeof note!=='string'||note.length>1000||(location==='offsite'&&!note.trim()))throw new HttpsError('invalid-argument','Describe your off-site work and destination.')
    tx.create(ref,{authorUid:uid,date,clockIn:admin.firestore.Timestamp.fromDate(now),clockOut:null,location,note,lateMinutes,overtimeMinutes:0});p.attendance=[...(p.attendance||[]).filter((a:{id:string})=>a.id!==date),{id:date,date,present:true,lateMinutes,overtimeMinutes:0}];tx.update(employeeRef,{hrProfile:p,updatedAt:admin.firestore.FieldValue.serverTimestamp()});return {date}
   }
-  if(!r?.clockIn||r.clockOut)throw new HttpsError('failed-precondition','Clock in first, or your workday has already finished.')
+  if(r?.clockOut)return {date,record:attendanceResponse(date,r)}
+  if(!r?.clockIn)throw new HttpsError('failed-precondition','Clock in first, or your workday has already finished.')
   const {workedMinutes,overtimeMinutes}=workdayDuration(r.clockIn.toDate(),now,date)
   tx.update(ref,{clockOut:admin.firestore.Timestamp.fromDate(now),workedMinutes,overtimeMinutes})
   p.attendance=(p.attendance||[]).map((a:{id:string})=>a.id===date?{...a,overtimeMinutes}:a);tx.update(employeeRef,{hrProfile:p,updatedAt:admin.firestore.FieldValue.serverTimestamp()})
-  return {date}
+  return {date,record:attendanceResponse(date,{...r,clockOut:admin.firestore.Timestamp.fromDate(now),workedMinutes,overtimeMinutes})}
  })
 })

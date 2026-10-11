@@ -1,8 +1,11 @@
+import {usePhoneLayout} from './MobileNavigation'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ChevronDown, Check } from 'lucide-react'
 type Option={value:string;label:string;icon:ReactNode}
 export function CompactMenu({label,icon,options,value,onChange}:{label:string;icon:ReactNode;options:Option[];value:string;onChange:(value:string)=>void}) {
+ const phone=usePhoneLayout()
  const [open,setOpen]=useState(false);const [position,setPosition]=useState({top:0,left:0});const host=useRef<HTMLDivElement>(null)
  useEffect(()=>{const outside=(e:Event)=>{if(!host.current?.contains(e.target as Node))setOpen(false)};const escape=(e:KeyboardEvent)=>{if(e.key==='Escape')setOpen(false)};const exclusive=(e:Event)=>{if(e.target!==host.current)setOpen(false)};document.addEventListener('pointerdown',outside);document.addEventListener('keydown',escape);document.addEventListener('workhub-dropdown-open',exclusive);return()=>{document.removeEventListener('pointerdown',outside);document.removeEventListener('keydown',escape);document.removeEventListener('workhub-dropdown-open',exclusive)}},[])
+ if(phone)return <label className="native-compact-menu">{icon}<select aria-label={label} value={value} onChange={e=>onChange(e.target.value)}>{options.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
  return <div className="compact-menu" ref={host}><button className="compact-menu-trigger" aria-expanded={open} aria-haspopup="menu" onClick={()=>{if(!open){const rect=host.current!.getBoundingClientRect();setPosition({top:Math.min(rect.bottom+6,window.innerHeight-330),left:Math.max(8,Math.min(rect.left,window.innerWidth-230))})}if(!open)host.current?.dispatchEvent(new Event('workhub-dropdown-open',{bubbles:true}));setOpen(!open)}}>{icon}<span>{label}</span><ChevronDown size={14}/></button>{open&&<div className="compact-menu-options" style={{position:"fixed",top:position.top,left:position.left,insetInlineStart:"auto"}} role="menu">{options.map(option=><button role="menuitemradio" aria-checked={value===option.value} key={option.value} onClick={()=>{onChange(option.value);setOpen(false)}}>{option.icon}<span>{option.label}</span>{value===option.value&&<Check size={15}/>}</button>)}</div>}</div>
 }

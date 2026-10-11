@@ -656,5 +656,13 @@
   "new_subfolder": "New subfolder",
   "adjustFolderSettings": "Adjust settings",
   "dashboardPeople": "People",
-  "teamMember": "Team member"
+  "teamMember": "Team member",
+  "messageActions": "Message options",
+  "showMore": "Show more",
+  "hrFinishing": "Finishing…",
+  "hrFinished": "Work finished",
+  "hrExtraFinished": "Extra hours saved",
+  "hrFinishRetry": "Please try again. Your session is still open.",
+  "chatOptions": "Message options",
+  "chatMessagePlaceholder": "Message…"
 }

@@ -656,5 +656,13 @@
   "new_subfolder": "مجلد فرعي جديد",
   "adjustFolderSettings": "ضبط الإعدادات",
   "dashboardPeople": "فريق العمل",
-  "teamMember": "عضو الفريق"
+  "teamMember": "عضو الفريق",
+  "messageActions": "خيارات الرسالة",
+  "showMore": "عرض المزيد",
+  "hrFinishing": "جارٍ الإنهاء…",
+  "hrFinished": "تم إنهاء العمل",
+  "hrExtraFinished": "تم حفظ الساعات الإضافية",
+  "hrFinishRetry": "يرجى المحاولة مجدداً. لا تزال الجلسة مفتوحة.",
+  "chatOptions": "خيارات الرسالة",
+  "chatMessagePlaceholder": "رسالة…"
 }

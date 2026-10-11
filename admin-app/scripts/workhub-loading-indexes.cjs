@@ -8,6 +8,18 @@ const definitions = ['visibility', 'createdBy'].flatMap(scope => ['assigneeUid',
  ],
 })));
 definitions.push({collectionGroup: 'workhub_notifications', queryScope: 'COLLECTION', fields: [{fieldPath:'recipientUid',order:'ASCENDING'},{fieldPath:'createdAt',order:'DESCENDING'}]});
+for (const restricted of [false,true]) {
+ for (const kind of ['recent','thread','groups']) {
+  definitions.push({collectionGroup:'workhub_activity',queryScope:'COLLECTION',fields:[
+   {fieldPath:'workspaceId',order:'ASCENDING'},
+   {fieldPath:'visibility',order:'ASCENDING'},
+   ...(restricted?[{fieldPath:'memberUids',arrayConfig:'CONTAINS'}]:[]),
+   ...(kind==='thread'?[{fieldPath:'threadId',order:'ASCENDING'}]:[]),
+   {fieldPath:'action',order:'ASCENDING'},
+   ...(kind==='groups'?[]:[{fieldPath:'createdAt',order:'DESCENDING'}]),
+  ]});
+ }
+}
 async function main() {
  const mode = process.argv[2] || 'check';
  if (!['check', 'create'].includes(mode)) throw new Error('Use check or create.');

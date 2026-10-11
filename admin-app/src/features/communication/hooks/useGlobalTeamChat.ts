@@ -1,3 +1,4 @@
+import {cachedChatFeed,subscribeChatFeed} from './teamChatFeeds'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   createWorkhubActivity,
@@ -82,6 +83,8 @@ interface UseGlobalTeamChatParams {
   /** The active thread to show. Default 'everyone'. */
   threadId?: string
   /** Whether incoming messages in active thread should be auto-marked received/read. */
+  smart?: boolean
+  messageLimit?: number
   markAsReadActive?: boolean
 }
 
@@ -160,8 +163,10 @@ function extractMentionUids(text: string, approvedMembers: WorkhubMember[]) {
   return Array.from(result)
 }
 
-export function useGlobalTeamChat({ user, enabled, threadId = THREAD_EVERYONE, markAsReadActive = true }: UseGlobalTeamChatParams) {
+export function useGlobalTeamChat({ user, enabled, threadId = THREAD_EVERYONE, markAsReadActive = true, smart = false, messageLimit = 40 }: UseGlobalTeamChatParams) {
   const [members, setMembers] = useState<WorkhubMember[]>([])
+  const [directoryReady,setDirectoryReady]=useState(''),[threadReady,setThreadReady]=useState(''),[feedError,setFeedError]=useState('')
+  const [threadSize,setThreadSize]=useState(0)
   const [activity, setActivity] = useState<WorkhubActivity[]>([])
   const [activityReadyUid,setActivityReadyUid]=useState('')
   const [membersReadyUid,setMembersReadyUid]=useState('')
@@ -180,12 +185,22 @@ export function useGlobalTeamChat({ user, enabled, threadId = THREAD_EVERYONE, m
   }, [enabled, user?.uid])
 
   useEffect(() => {
-    if (!enabled || !user?.uid) {
-      setActivity([])
-      return
-    }
-    return subscribeWorkhubActivity(GLOBAL_CHAT_WORKSPACE_ID, user.uid, false, value=>{setActivity(value);setActivityReadyUid(user.uid)})
-  }, [enabled, user?.uid])
+    if (!enabled || !user?.uid) {setActivity([]);setDirectoryReady('');setThreadReady('');return}
+    if(!smart)return subscribeWorkhubActivity(GLOBAL_CHAT_WORKSPACE_ID, user.uid, false, value=>{setActivity(value);setActivityReadyUid(user.uid)})
+    const uid=user.uid,parts:WorkhubActivity[][]=[[],[],[],[]],ready=[false,false,false,false]
+    setFeedError('')
+    const feeds=[{kind:'recent' as const,count:120},{kind:'thread' as const,thread:threadId,count:messageLimit},{kind:'groups' as const},{kind:'typing' as const,thread:threadId,count:8}]
+    feeds.forEach((feed,index)=>{parts[index]=cachedChatFeed(uid,feed)?.rows||[]})
+    setActivity([...new Map(parts.flat().map(row=>[row.id,row])).values()])
+    const unsubscribes=feeds.map((feed,index)=>subscribeChatFeed(uid,feed,(rows,error)=>{
+      parts[index]=rows;ready[index]=true
+      setActivity([...new Map(parts.flat().map(row=>[row.id,row])).values()])
+      if(ready[0]&&ready[2]){setDirectoryReady(uid);setActivityReadyUid(uid)}
+      if(index===1){setThreadReady(uid+':'+threadId);setThreadSize(rows.length)}
+      if(error)setFeedError(error)
+    }))
+    return()=>unsubscribes.forEach(stop=>stop())
+  }, [enabled, user?.uid, smart, smart?threadId:'', smart?messageLimit:0])
 
   const membersByUid = useMemo(() => {
     const map: Record<string, WorkhubMember> = {}
@@ -590,7 +605,10 @@ export function useGlobalTeamChat({ user, enabled, threadId = THREAD_EVERYONE, m
   }, [enabled, user?.uid])
 
   return {
-    loading:enabled&&!!user?.uid&&activityReadyUid!==user.uid,
+    loading:enabled&&!!user?.uid&&(smart?threadReady!==user.uid+':'+threadId:activityReadyUid!==user.uid),
+    directoryLoading:smart&&directoryReady!==user?.uid,
+    hasMore:smart?threadSize>=messageLimit:messages.length>messageLimit,
+    error:feedError,
     membersLoading:enabled&&!!user?.uid&&membersReadyUid!==user.uid,
     activity,
     messages,

@@ -13,7 +13,7 @@ export function AttendanceQuickAccess({uid,t,onProfile}:{uid:string;t:(key:strin
  const root=useRef<HTMLDivElement>(null),trigger=useRef<HTMLButtonElement>(null)
  useEffect(()=>{
   if(!open)return
-  setLoaded(false);setError('')
+  if(!profiles.length)setLoaded(false);setError('')
   return onSnapshot(query(collection(db,'workhub_projects'),where('hrProfile.accountUid','==',uid)),snapshot=>{
    const rows=snapshot.docs.map(d=>({...d.data(),id:d.id} as WorkhubProject)).filter(p=>p.intent==='hr_employee_profile'&&p.hrProfile?.status!=='former')
    setProfiles(rows);setSelected(previous=>rows.some(p=>p.id===previous)?previous:rows[0]?.id||'');setLoaded(true)

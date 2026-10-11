@@ -26,3 +26,10 @@ export function missedClockOut(date:string,clockIn:unknown,clockOut:unknown,now:
 export function canStartExtraWork(regular:{clockIn?:unknown;clockOut?:unknown}|undefined,openRecords:{clockIn?:unknown}[]){
  return !!regular?.clockIn&&!!regular.clockOut&&!openRecords.some(record=>!!record.clockIn)
 }
+
+/** Finish is captured when the employee opens the completion screen, validated against server time. */
+export function extraFinishTime(start:Date,requested:unknown,now:Date){
+ const value=typeof requested==='number'&&Number.isFinite(requested)?requested:now.getTime()
+ // A slow form cannot backdate attendance arbitrarily; expired/device-skewed captures use server time.
+ return new Date(value>=start.getTime()&&value<=now.getTime()+5000&&value>=now.getTime()-30*60000?Math.min(value,now.getTime()):now.getTime())
+}

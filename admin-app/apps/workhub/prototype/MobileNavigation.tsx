@@ -1,3 +1,4 @@
+import {phoneViewport} from './phoneViewport'
 import {useEffect, useState, type ReactNode} from 'react'
 import {House, CheckCheck, LayoutGrid, Inbox, Menu, NotebookPen, UserRound, FileText, Settings2, Globe2, Moon, Sun, LogOut, Bot, ArrowLeft} from 'lucide-react'
 import {HrDialog} from './HrDialog'
@@ -13,13 +14,23 @@ export function MobileNavigation({page,title,t,onNavigate,onBack,actions,name,is
  const [more,setMore]=useState(false)
  useEffect(()=>{
   const viewport=window.visualViewport
+  let frame=0
   const resize=()=>{
-   if(!matchMedia('(max-width:700px)').matches)return
-   document.documentElement.style.setProperty('--phone-height',`${viewport?.height||innerHeight}px`)
-   document.documentElement.toggleAttribute('data-phone-keyboard',!!viewport&&innerHeight-viewport.height>150)
+   cancelAnimationFrame(frame)
+   frame=requestAnimationFrame(()=>{
+    const root=document.documentElement
+    if(!matchMedia('(max-width:700px)').matches){root.style.removeProperty('--phone-height');root.style.removeProperty('--phone-top');root.removeAttribute('data-phone-keyboard');return}
+    const editing=!!document.activeElement?.matches('input:not([type=checkbox]):not([type=radio]),textarea,[contenteditable=true]')
+    const size=phoneViewport(innerHeight,viewport?.height||innerHeight,viewport?.offsetTop||0,viewport?.scale||1,editing)
+    if((viewport?.scale||1)>1.1)return
+    root.style.setProperty('--phone-height',`${size.height}px`)
+    root.style.setProperty('--phone-top',`${size.top}px`)
+    root.toggleAttribute('data-phone-keyboard',size.keyboard)
+   })
   }
-  resize();viewport?.addEventListener('resize',resize);window.addEventListener('resize',resize)
-  return()=>{viewport?.removeEventListener('resize',resize);window.removeEventListener('resize',resize);document.documentElement.style.removeProperty('--phone-height');document.documentElement.removeAttribute('data-phone-keyboard')}
+  resize();viewport?.addEventListener('resize',resize);viewport?.addEventListener('scroll',resize);window.addEventListener('resize',resize);document.addEventListener('focusin',resize);document.addEventListener('focusout',resize)
+  return()=>{cancelAnimationFrame(frame);viewport?.removeEventListener('resize',resize);viewport?.removeEventListener('scroll',resize);window.removeEventListener('resize',resize);document.removeEventListener('focusin',resize);document.removeEventListener('focusout',resize);document.documentElement.style.removeProperty('--phone-height');document.documentElement.style.removeProperty('--phone-top');document.documentElement.removeAttribute('data-phone-keyboard')}
+
  },[])
  const visit=(id:string)=>{setMore(false);onNavigate(id)}
  return <>
@@ -28,11 +39,11 @@ export function MobileNavigation({page,title,t,onNavigate,onBack,actions,name,is
    <strong dir="auto">{title}</strong><div className="mobile-header-actions">{actions}</div>
   </header>
   <nav className="mobile-bottom-nav" aria-label={isAr?'التنقل الرئيسي':'Main navigation'}>
-   {([['home',House],['myWork',CheckCheck],['workspaces',LayoutGrid],['inbox',Inbox]] as const).map(([id,Icon])=><button key={id} aria-current={page===id?'page':undefined} onClick={()=>visit(id)}><span><Icon size={22}/>{id==='inbox'&&unread&&<i/>}</span><small>{t(id)}</small></button>)}
-   <button aria-expanded={more} aria-current={['myNotes','myProfile','documents','settings'].includes(page)?'page':undefined} onClick={()=>setMore(true)}><Menu size={22}/><small>{isAr?'المزيد':'More'}</small></button>
+   {([['home',House],['myWork',CheckCheck],['workspaces',LayoutGrid],['inbox',Inbox]] as const).map(([id,Icon])=><button key={id} aria-current={page===id?'page':undefined} onClick={()=>visit(id)}><span><Icon size={27}/>{id==='inbox'&&unread&&<i/>}</span><small>{t(id)}</small></button>)}
+   <button aria-expanded={more} aria-current={['myNotes','myProfile','documents','settings'].includes(page)?'page':undefined} onClick={()=>setMore(true)}><Menu size={27}/><small>{isAr?'المزيد':'More'}</small></button>
   </nav>
   {more&&<HrDialog title={isAr?'المزيد':'More'} onClose={()=>setMore(false)} className="mobile-more-dialog"><p className="mobile-account-name" dir="auto">{name}</p><div className="mobile-more-links">
-   {([['myNotes',NotebookPen],['myProfile',UserRound],['documents',FileText],['settings',Settings2]] as const).map(([id,Icon])=><button key={id} onClick={()=>visit(id)}><Icon size={22}/><span>{t(id)}</span></button>)}
+   {([['myNotes',NotebookPen],['myProfile',UserRound],['documents',FileText],['settings',Settings2]] as const).map(([id,Icon])=><button key={id} onClick={()=>visit(id)}><Icon size={27}/><span>{t(id)}</span></button>)}
    <button onClick={()=>{setMore(false);onAssistant()}}><Bot size={22}/><span>{t('agentTitle')}</span></button>
    <button onClick={onLanguage}><Globe2 size={22}/><span>{isAr?'English':'العربية'}</span></button>
    <button onClick={onTheme}>{dark?<Sun size={22}/>:<Moon size={22}/>}<span>{t(dark?'light':'dark')}</span></button>

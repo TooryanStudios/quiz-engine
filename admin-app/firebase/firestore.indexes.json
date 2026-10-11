@@ -1,5 +1,149 @@
 {
   "indexes": [
+{
+  "collectionGroup": "workhub_activity",
+  "queryScope": "COLLECTION",
+  "fields": [
+    {
+      "fieldPath": "workspaceId",
+      "order": "ASCENDING"
+    },
+    {
+      "fieldPath": "visibility",
+      "order": "ASCENDING"
+    },
+    {
+      "fieldPath": "action",
+      "order": "ASCENDING"
+    },
+    {
+      "fieldPath": "createdAt",
+      "order": "DESCENDING"
+    }
+  ]
+},
+{
+  "collectionGroup": "workhub_activity",
+  "queryScope": "COLLECTION",
+  "fields": [
+    {
+      "fieldPath": "workspaceId",
+      "order": "ASCENDING"
+    },
+    {
+      "fieldPath": "visibility",
+      "order": "ASCENDING"
+    },
+    {
+      "fieldPath": "threadId",
+      "order": "ASCENDING"
+    },
+    {
+      "fieldPath": "action",
+      "order": "ASCENDING"
+    },
+    {
+      "fieldPath": "createdAt",
+      "order": "DESCENDING"
+    }
+  ]
+},
+{
+  "collectionGroup": "workhub_activity",
+  "queryScope": "COLLECTION",
+  "fields": [
+    {
+      "fieldPath": "workspaceId",
+      "order": "ASCENDING"
+    },
+    {
+      "fieldPath": "visibility",
+      "order": "ASCENDING"
+    },
+    {
+      "fieldPath": "action",
+      "order": "ASCENDING"
+    }
+  ]
+},
+{
+  "collectionGroup": "workhub_activity",
+  "queryScope": "COLLECTION",
+  "fields": [
+    {
+      "fieldPath": "workspaceId",
+      "order": "ASCENDING"
+    },
+    {
+      "fieldPath": "visibility",
+      "order": "ASCENDING"
+    },
+    {
+      "fieldPath": "memberUids",
+      "arrayConfig": "CONTAINS"
+    },
+    {
+      "fieldPath": "action",
+      "order": "ASCENDING"
+    },
+    {
+      "fieldPath": "createdAt",
+      "order": "DESCENDING"
+    }
+  ]
+},
+{
+  "collectionGroup": "workhub_activity",
+  "queryScope": "COLLECTION",
+  "fields": [
+    {
+      "fieldPath": "workspaceId",
+      "order": "ASCENDING"
+    },
+    {
+      "fieldPath": "visibility",
+      "order": "ASCENDING"
+    },
+    {
+      "fieldPath": "memberUids",
+      "arrayConfig": "CONTAINS"
+    },
+    {
+      "fieldPath": "threadId",
+      "order": "ASCENDING"
+    },
+    {
+      "fieldPath": "action",
+      "order": "ASCENDING"
+    },
+    {
+      "fieldPath": "createdAt",
+      "order": "DESCENDING"
+    }
+  ]
+},
+{
+  "collectionGroup": "workhub_activity",
+  "queryScope": "COLLECTION",
+  "fields": [
+    {
+      "fieldPath": "workspaceId",
+      "order": "ASCENDING"
+    },
+    {
+      "fieldPath": "visibility",
+      "order": "ASCENDING"
+    },
+    {
+      "fieldPath": "memberUids",
+      "arrayConfig": "CONTAINS"
+    },
+    {
+      "fieldPath": "action",
+      "order": "ASCENDING"
+    }
+  ]
+},
     {"collectionGroup":"workhub_tasks","queryScope":"COLLECTION","fields":[{"fieldPath":"visibility","order":"ASCENDING"},{"fieldPath":"assigneeUid","order":"ASCENDING"}]},
     {"collectionGroup":"workhub_tasks","queryScope":"COLLECTION","fields":[{"fieldPath":"visibility","order":"ASCENDING"},{"fieldPath":"assigneeUids","arrayConfig":"CONTAINS"}]},
     {"collectionGroup":"workhub_tasks","queryScope":"COLLECTION","fields":[{"fieldPath":"createdBy","order":"ASCENDING"},{"fieldPath":"assigneeUid","order":"ASCENDING"}]},
