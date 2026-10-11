@@ -8,6 +8,8 @@ export interface WorkhubDetailFieldDefinition {
 }
 
 export const WORKHUB_INTENT_DETAIL_FIELDS: Record<WorkhubProjectIntent, WorkhubDetailFieldDefinition[]> = {
+  hr_departments_root: [],
+  hr_employees_root: [],
   project: [],
   proposal: [
     { label: 'Estimated value', descriptionKey: 'estimated value' },

@@ -7,10 +7,13 @@
     "sync:tinymce": "node ./scripts/sync-tinymce-assets.mjs",
     "dev": "npm run sync:tinymce && concurrently --restart-tries -1 --restart-after 2000 -n ui,api -c cyan,magenta \"vite\" \"node functions-chatbot/server/index.js\"",
     "dev:ui": "npm run sync:tinymce && vite",
+    "dev:workhub": "npm run sync:tinymce && vite --config apps/workhub/vite.config.ts",
     "dev:videdit": "npm run sync:tinymce && vite --config apps/videdit/vite.config.ts",
     "dev:api": "concurrently --restart-tries -1 --restart-after 2000 -n api -c magenta \"node functions-chatbot/server/index.js\"",
     "dev:games": "npm run sync:tinymce && vite --open /game-modes",
     "build": "npm run sync:tinymce && tsc -b && vite build",
+    "typecheck:workhub": "tsc --noEmit --project apps/workhub/tsconfig.json",
+    "build:workhub": "npm run sync:tinymce && npm run typecheck:workhub && vite build --config apps/workhub/vite.config.ts",
     "build:videdit": "npm run sync:tinymce && vite build --config apps/videdit/vite.config.ts",
     "test:workhub-templates": "vitest run tests/workhub-template-contracts.test.ts",
     "test:workhub-proscons": "vitest run tests/workhub-proscons-engine.test.ts",
@@ -31,7 +34,8 @@
     "deploy:all": "npm run build:deploy && npm run build:chatbot && npm run sync:chatbot-server && npm --prefix functions-chatbot install && firebase deploy --project qyan-om && npm run smoke:platform:e2e && npm run smoke:seedance:e2e",
     "deploy:hostgator": "npm run build && node deploy-to-hostgator.js",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "preview:workhub": "vite preview --config apps/workhub/vite.config.ts"
   },
   "dependencies": {
     "@cesdk/cesdk-js": "^1.74.0",

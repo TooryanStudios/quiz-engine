@@ -1,0 +1,1 @@
+{"extends":"../../../tsconfig.app.json","compilerOptions":{"tsBuildInfoFile":"../../../node_modules/.tmp/tsconfig.workhub-prototype.tsbuildinfo","resolveJsonModule":true,"noEmit":true},"include":["./*.tsx","./*.ts","./locales/*.json","../../../src/types/**/*.d.ts"]}

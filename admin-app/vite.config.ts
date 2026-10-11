@@ -147,6 +147,10 @@ export default defineConfig(({ mode: _mode }) => {
   },
   build: {
     rollupOptions: {
+      input: {
+        main: path.resolve(rootDir, 'index.html'),
+        workhub: path.resolve(rootDir, 'workhub.html'),
+      },
       output: {
         manualChunks: resolveManualChunk,
         assetFileNames: (assetInfo) => {

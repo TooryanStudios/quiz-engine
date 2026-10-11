@@ -45,6 +45,10 @@ service cloud.firestore {
       );
     }
 
+    function isWorkhubAdmin() {
+      return isMasterAdmin() || (isApprovedWorkhubMember() && workhubMemberDoc().data.role == 'admin');
+    }
+
     function isVisibleWorkhubEntity(data) {
       return data.visibility == 'workspace'
         || data.createdBy == request.auth.uid
@@ -253,14 +257,37 @@ service cloud.firestore {
 
     match /workhub_workspaces/{workspaceId} {
       allow read: if canAccessWorkhub();
-      allow create, update, delete: if isPrivilegedWorkhubMember();
+      allow create, update, delete: if isWorkhubAdmin();
     }
 
+    function hrProfileReader(data) {
+      return canAccessWorkhub() && (isPrivilegedWorkhubMember() || data.get('hrProfile', {}).get('accountUid', '') == request.auth.uid || data.get('hrProfile', {}).get('reportingToUid', '') == request.auth.uid);
+    }
+    match /workhub_projects/{projectId}/hrRequests/{requestId} {
+      function employee() { return get(/databases/$(database)/documents/workhub_projects/$(projectId)).data; }
+      allow read: if hrProfileReader(employee());
+      allow create: if canAccessWorkhub() && (isWorkhubAdmin() || employee().get('hrProfile', {}).get('accountUid', '') == request.auth.uid)
+        && request.resource.data.keys().hasOnly(['authorUid','kind','text','start','end','status','createdAt','leaveType','institution','onlineUrl','evidenceUrl'])
+        && request.resource.data.authorUid == request.auth.uid && request.resource.data.status == 'pending' && request.resource.data.createdAt == request.time
+        && request.resource.data.kind in ['leave','course','qualification','device','internet','phone','supplies','salary','other']
+        && request.resource.data.text is string && (request.resource.data.kind == 'leave' || request.resource.data.text.size() > 0) && request.resource.data.text.size() <= 10000
+        && request.resource.data.start is string && request.resource.data.end is string
+        && request.resource.data.institution is string && request.resource.data.institution.size() <= 500
+        && request.resource.data.onlineUrl is string && request.resource.data.onlineUrl.size() <= 2000
+        && request.resource.data.evidenceUrl is string && request.resource.data.evidenceUrl.size() <= 2000
+        && (request.resource.data.kind != 'leave' || (request.resource.data.start.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') && request.resource.data.end.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') && request.resource.data.end >= request.resource.data.start && request.resource.data.leaveType in ['annual','sick'] && (request.resource.data.leaveType != 'sick' || request.resource.data.evidenceUrl.matches('^https?://.+'))));
+      allow update, delete: if false;
+    }
+    match /workhub_projects/{projectId}/attendance/{date} {
+      allow read: if hrProfileReader(get(/databases/$(database)/documents/workhub_projects/$(projectId)).data);
+      allow write: if false;
+    }
     match /workhub_projects/{projectId} {
-      allow read: if isPrivilegedWorkhubMember() || (canAccessWorkhub() && isVisibleWorkhubEntity(resource.data));
-      allow create: if canAccessWorkhub() && respectsParentProjectScope(request.resource.data);
-      allow update: if canAccessWorkhub() && respectsParentProjectScope(request.resource.data);
-      allow delete: if canAccessWorkhub();
+      allow read: if isPrivilegedWorkhubMember() || (canAccessWorkhub() && (isVisibleWorkhubEntity(resource.data) || resource.data.get('hrProfile', {}).get('accountUid', '') == request.auth.uid || resource.data.get('hrProfile', {}).get('reportingToUid', '') == request.auth.uid));
+      allow create: if canAccessWorkhub() && respectsParentProjectScope(request.resource.data) && (request.resource.data.get('intent','') != 'hr_employee_profile' || isWorkhubAdmin());
+      allow update: if canAccessWorkhub() && respectsParentProjectScope(request.resource.data)
+        && ((resource.data.get('intent','') != 'hr_employee_profile' && request.resource.data.get('intent','') != 'hr_employee_profile' && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['hrProfile'])) || isWorkhubAdmin());
+      allow delete: if canAccessWorkhub() && (resource.data.get('intent','') != 'hr_employee_profile' || isWorkhubAdmin());
     }
 
     match /workhub_documents/{documentId} {

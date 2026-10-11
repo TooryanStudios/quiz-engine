@@ -13,6 +13,7 @@ interface TinyRichTextEditorProps {
   className?: string
   autoFocus?: boolean
   onReady?: (editor: TinyMCEEditor) => void
+  toolbarMode?: 'scrolling' | 'floating'
   toolbarContainerSelector?: string
 }
 
@@ -26,6 +27,7 @@ export function TinyRichTextEditor({
   className,
   autoFocus = false,
   onReady,
+  toolbarMode,
   toolbarContainerSelector,
 }: TinyRichTextEditorProps) {
   const editorRef = useRef<TinyMCEEditor | null>(null)
@@ -34,6 +36,7 @@ export function TinyRichTextEditor({
     minHeight,
     contentPaddingPx,
     placeholder,
+    toolbarMode,
     toolbarContainerSelector,
   })
 

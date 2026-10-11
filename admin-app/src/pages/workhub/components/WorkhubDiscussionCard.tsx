@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactElement } from 'react'
 import {
   createWorkhubNotifications,
   setWorkhubCommentLike,
@@ -48,7 +49,7 @@ function stripTrailingPunctuation(value: string): { link: string; trailing: stri
 
 function renderLinkedText(value: string) {
   if (!value) return null
-  const segments: Array<string | JSX.Element> = []
+  const segments: Array<string | ReactElement> = []
   let cursor = 0
   const matches = Array.from(value.matchAll(URL_PATTERN))
 

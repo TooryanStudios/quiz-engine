@@ -30,6 +30,8 @@ export interface TeamChatUser {
 }
 
 export interface TeamChatMessage {
+  attachments?: WorkhubActivity['attachments']
+  emailAttachmentState?: WorkhubActivity['emailAttachmentState']
   id: string
   text: string
   replyToActivityId?: string
@@ -112,6 +114,8 @@ function toMessage(item: WorkhubActivity, membersByUid: Record<string, WorkhubMe
   const member = membersByUid[item.actorUid]
   return {
     id: item.id,
+    attachments: item.attachments,
+    emailAttachmentState: item.emailAttachmentState,
     text: item.message || '',
     replyToActivityId: (item.replyToActivityId || '').trim() || undefined,
     imageUrl: (item.imageUrl || '').trim() || undefined,
@@ -159,6 +163,8 @@ function extractMentionUids(text: string, approvedMembers: WorkhubMember[]) {
 export function useGlobalTeamChat({ user, enabled, threadId = THREAD_EVERYONE, markAsReadActive = true }: UseGlobalTeamChatParams) {
   const [members, setMembers] = useState<WorkhubMember[]>([])
   const [activity, setActivity] = useState<WorkhubActivity[]>([])
+  const [activityReadyUid,setActivityReadyUid]=useState('')
+  const [membersReadyUid,setMembersReadyUid]=useState('')
   const [sending, setSending] = useState(false)
   const [tick, setTick] = useState(0)
   const typingPulseRef = useRef<Record<string, number>>({})
@@ -170,7 +176,7 @@ export function useGlobalTeamChat({ user, enabled, threadId = THREAD_EVERYONE, m
       setMembers([])
       return
     }
-    return subscribeAllWorkhubMembers(setMembers)
+    return subscribeAllWorkhubMembers(value=>{setMembers(value);setMembersReadyUid(user.uid)},()=>setMembersReadyUid(user.uid))
   }, [enabled, user?.uid])
 
   useEffect(() => {
@@ -178,7 +184,7 @@ export function useGlobalTeamChat({ user, enabled, threadId = THREAD_EVERYONE, m
       setActivity([])
       return
     }
-    return subscribeWorkhubActivity(GLOBAL_CHAT_WORKSPACE_ID, user.uid, false, setActivity)
+    return subscribeWorkhubActivity(GLOBAL_CHAT_WORKSPACE_ID, user.uid, false, value=>{setActivity(value);setActivityReadyUid(user.uid)})
   }, [enabled, user?.uid])
 
   const membersByUid = useMemo(() => {
@@ -584,6 +590,9 @@ export function useGlobalTeamChat({ user, enabled, threadId = THREAD_EVERYONE, m
   }, [enabled, user?.uid])
 
   return {
+    loading:enabled&&!!user?.uid&&activityReadyUid!==user.uid,
+    membersLoading:enabled&&!!user?.uid&&membersReadyUid!==user.uid,
+    activity,
     messages,
     unreadStampByThread,
     threadSnapshotById,

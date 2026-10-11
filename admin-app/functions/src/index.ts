@@ -1,9 +1,19 @@
+export {workhubProjectAction} from './workhubProjectActions'
+export {workhubHrAction} from './workhubHrActions'
 ﻿import * as admin from 'firebase-admin'
 import { onCall, HttpsError } from 'firebase-functions/v2/https'
 import { defineString } from 'firebase-functions/params'
 import * as functionsV1 from 'firebase-functions/v1'
 import nodemailer from 'nodemailer'
 import sharp from 'sharp'
+import { createChatReplyAddress } from './workhubEmailReply'
+import { readEmailWorkspace } from './workhubEmailContext'
+import { buildChatEmail } from './workhubChatEmail'
+import { ChatAttachment } from './workhubEmailAttachments'
+export { processWorkhubEmailAttachments, accessWorkhubEmailAttachment } from './workhubEmailFiles'
+export { receiveWorkhubEmailReply } from './workhubEmailReply'
+import { createHash } from 'node:crypto'
+import { canInviteWorkhubMember, resolveWorkhubJoinStatus } from './workhubAccessPolicy'
 
 
 admin.initializeApp()
@@ -81,6 +91,8 @@ async function deliverEmailMessage(params: {
   subject: string
   text: string
   html: string
+  replyTo?: string
+  attachments?: Array<{ filename: string; content: Buffer; contentType: string }>
 }) {
   const from = smtpFromParam.value().trim()
   if (!from) {
@@ -162,10 +174,11 @@ async function deliverEmailMessage(params: {
   await transporter.sendMail({
     from,
     to: validRecipients,
-    replyTo: replyTo || undefined,
+    replyTo: params.replyTo || replyTo || undefined,
     subject: params.subject,
     text: params.text,
     html: params.html,
+    attachments: params.attachments,
   })
 
   await statsRef.set({
@@ -181,14 +194,16 @@ async function sendNotificationEmail(params: {
   subject: string
   text: string
   html: string
+  replyTo?: string
+  attachments?: Array<{ filename: string; content: Buffer; contentType: string }>
 }) {
   if (!parseBooleanEnv(emailNotificationsEnabledParam.value(), false)) {
     return false
   }
 
   try {
-    await deliverEmailMessage(params)
-    return true
+    const delivery = await deliverEmailMessage(params)
+    return !delivery.suppressed
   } catch (error) {
     console.error('[email] Failed to send notification email.', error)
     return false
@@ -227,6 +242,7 @@ type WorkhubNotificationRecord = {
   message?: string
   threadId?: string
   commentPreview?: string
+  activityId?: string
   delivery?: 'in_app' | 'both' | string
   read?: boolean
   createdAt?: admin.firestore.Timestamp | { seconds?: number; nanoseconds?: number } | null
@@ -407,7 +423,7 @@ function shouldEmailWorkhubNotification(notification: WorkhubNotificationRecord)
     return true
   }
 
-  if (action === 'chat_message_high') {
+  if (action === 'chat_message_high' || action === 'chat_message') {
     return true
   }
 
@@ -432,9 +448,7 @@ async function notifyMemberAboutWorkhubNotification(notification: WorkhubNotific
 
   const recipientPromise = getWorkhubMemberContact(recipientUid)
   const actorPromise = getWorkhubMemberContact(actorUid)
-  const workspacePromise = workspaceId
-    ? getOptionalDoc<WorkhubWorkspaceRecord>(`workhub_workspaces/${workspaceId}`)
-    : Promise.resolve(null)
+  const workspacePromise = readEmailWorkspace<WorkhubWorkspaceRecord>(workspaceId, getOptionalDoc)
   const projectPromise = entityType === 'project'
     ? getOptionalDoc<WorkhubProjectRecord>(`workhub_projects/${entityId}`)
     : Promise.resolve(null)
@@ -552,7 +566,18 @@ async function notifyMemberAboutWorkhubNotification(notification: WorkhubNotific
     `Manage email preferences: ${preferencesUrl}`,
   ]
 
-  await sendNotificationEmail({
+  const replyTo = await createChatReplyAddress(notification, recipient.email)
+  if (normalizedAction === 'chat_message' || isUrgentChat) {
+    const activity = notification.activityId
+      ? await getOptionalDoc<{ message?: string; imageUrl?: string; attachments?: ChatAttachment[] }>(`workhub_activity/${notification.activityId}`)
+      : null
+    const imageUrl = activity?.imageUrl || ''
+    const chatText = commentPreview || activity?.message || 'New message'
+    const content = imageUrl && !chatText.includes(imageUrl) ? `${chatText}\nImage: ${imageUrl}` : chatText
+    return sendNotificationEmail({ to: recipient.email, replyTo, ...buildChatEmail(actorName, content, isUrgentChat, `${appBaseUrl}/messages`) })
+  }
+  const sent = await sendNotificationEmail({
+    replyTo,
     to: recipient.email,
     subject,
     text: plainLines.join('\n'),
@@ -569,7 +594,7 @@ async function notifyMemberAboutWorkhubNotification(notification: WorkhubNotific
     }),
   })
 
-  return true
+  return sent
 }
 
 async function notifyAdminAboutWorkhubAccessRequest(params: {
@@ -1031,24 +1056,29 @@ export const requestWorkhubAccess = onCall({ region: 'us-central1', cors: true }
   const photoURL = typeof request.auth.token.picture === 'string' ? request.auth.token.picture : ''
   const ref = workhubMemberRef(uid)
 
-  let hasWorkspaceInvite = false
-  if (normalizedEmail) {
-    const invitedWorkspaceSnap = await admin
-      .firestore()
-      .collection('workhub_workspaces')
-      .where('invitedEmails', 'array-contains', normalizedEmail)
-      .limit(1)
-      .get()
-    hasWorkspaceInvite = !invitedWorkspaceSnap.empty
-  }
-
   const { member, shouldNotifyAdmin } = await admin.firestore().runTransaction(async (tx) => {
     const snap = await tx.get(ref)
     const existing = snap.exists ? (snap.data() as Partial<WorkhubMemberRecord>) : null
+    const invites = normalizedEmail && request.auth?.token.email_verified === true
+      ? await tx.get(admin.firestore().collection('workhub_workspaces').where('invitedEmails', 'array-contains', normalizedEmail))
+      : null
+    const hasWorkspaceInvite = !!invites && !invites.empty
     const isMasterEmail = !!email && email === masterEmailParam.value()
-    const autoApproved = isMasterEmail || hasWorkspaceInvite
-    const nextStatus: WorkhubMemberStatus = autoApproved ? 'approved' : normalizeWorkhubStatus(existing?.status)
+    const autoApproved = isMasterEmail || (hasWorkspaceInvite && existing?.status !== 'suspended')
+    const nextStatus = resolveWorkhubJoinStatus(existing?.status, isMasterEmail, hasWorkspaceInvite)
     const nextRole: WorkhubMemberRole = isMasterEmail ? 'admin' : normalizeWorkhubRole(existing?.role)
+
+    if (autoApproved && invites) {
+      for (const workspace of invites.docs) {
+        const invitationKey = createHash('sha256').update(normalizedEmail).digest('hex')
+        tx.update(workspace.ref, {
+          accessMemberUids: admin.firestore.FieldValue.arrayUnion(uid),
+          invitedEmails: admin.firestore.FieldValue.arrayRemove(normalizedEmail),
+          [`invitationHistory.${invitationKey}.email`]: normalizedEmail,
+          [`invitationHistory.${invitationKey}.status`]: 'accepted',
+        })
+      }
+    }
 
     tx.set(ref, {
       email,
@@ -1065,9 +1095,7 @@ export const requestWorkhubAccess = onCall({ region: 'us-central1', cors: true }
       approvedBy: nextStatus === 'approved'
         ? (existing?.approvedBy ?? (isMasterEmail ? uid : 'workspace_invite'))
         : null,
-      suspendedAt: null,
-      suspendedBy: null,
-      suspendedReason: null,
+      ...(nextStatus !== 'suspended' ? { suspendedAt: null, suspendedBy: null, suspendedReason: null } : {}),
       lastSeenAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true })
 
@@ -1091,12 +1119,98 @@ export const requestWorkhubAccess = onCall({ region: 'us-central1', cors: true }
       uid,
       email,
       displayName,
-      hasWorkspaceInvite,
-    })
+      hasWorkspaceInvite: false,
+    }).catch((error) => console.error('[workhub request] Admin notification failed after saving request', error))
   }
 
   return { member }
 })
+
+type WorkhubInvitationInput = { email: string; workspaceId: string; action?: 'send' | 'revoke' }
+
+export const manageWorkhubInvitation = onCall<WorkhubInvitationInput>(
+  { region: 'us-central1', cors: true },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in to manage invitations.')
+    const actor = await workhubMemberRef(request.auth.uid).get()
+    const masterEmail = masterEmailParam.value().trim().toLowerCase()
+    const master = request.auth.token.admin === true
+      || (!!masterEmail && String(request.auth.token.email || '').toLowerCase() === masterEmail)
+    if (!canInviteWorkhubMember(master, actor.data()?.status, actor.data()?.role)) {
+      throw new HttpsError('permission-denied', 'Only WorkHub administrators can invite members.')
+    }
+    const email = toValidEmail(typeof request.data?.email === 'string' ? request.data.email.toLowerCase() : '')
+    const workspaceId = typeof request.data?.workspaceId === 'string' ? request.data.workspaceId.trim() : ''
+    const action = request.data?.action || 'send'
+    if (!email || !workspaceId || workspaceId.includes('/') || !['send', 'revoke'].includes(action)) {
+      throw new HttpsError('invalid-argument', 'Enter a valid email and choose a workspace.')
+    }
+    const workspaceRef = admin.firestore().doc(`workhub_workspaces/${workspaceId}`)
+    const workspace = await workspaceRef.get()
+    if (!workspace.exists) throw new HttpsError('not-found', 'Workspace no longer exists.')
+    const invitationKey = createHash('sha256').update(email).digest('hex')
+    const historyPath = `invitationHistory.${invitationKey}`
+    if (action === 'revoke') {
+      await workspaceRef.update({
+        invitedEmails: admin.firestore.FieldValue.arrayRemove(email),
+        [`${historyPath}.email`]: email,
+        [`${historyPath}.status`]: 'revoked',
+      })
+      return { emailSent: false, message: 'Invitation revoked. Existing membership is unchanged.' }
+    }
+    const workspaceName = String(workspace.data()?.name || 'your workspace')
+    const recipient = await admin.auth().getUserByEmail(email).catch((error) => {
+      if (error.code === 'auth/user-not-found') return null
+      throw error
+    })
+    if (recipient?.disabled) throw new HttpsError('failed-precondition', 'This account is disabled. Resolve its account status before inviting it.')
+    await admin.firestore().runTransaction(async (tx) => {
+      const recipientRef = recipient ? workhubMemberRef(recipient.uid) : null
+      const profile = recipientRef ? await tx.get(recipientRef) : null
+      if (profile?.data()?.status === 'suspended') {
+        throw new HttpsError('failed-precondition', 'This member is suspended. Reactivate them before sending an invitation.')
+      }
+      tx.update(workspaceRef, {
+        [historyPath]: {
+          email, status: recipient?.emailVerified ? 'accepted' : 'pending',
+          delivery: 'sending', sentAt: admin.firestore.FieldValue.serverTimestamp(), invitedBy: request.auth!.uid,
+        },
+      })
+      if (recipient && recipient.emailVerified && recipientRef) {
+        tx.set(recipientRef, {
+          email, displayName: profile?.data()?.displayName || recipient.displayName || email,
+          photoURL: recipient.photoURL || '', status: 'approved',
+          role: profile?.data()?.role || 'member',
+          requestedAt: profile?.data()?.requestedAt || admin.firestore.FieldValue.serverTimestamp(),
+          approvedAt: profile?.data()?.approvedAt || admin.firestore.FieldValue.serverTimestamp(),
+          approvedBy: profile?.data()?.approvedBy || request.auth!.uid,
+        }, { merge: true })
+        tx.update(workspaceRef, {
+          accessMemberUids: admin.firestore.FieldValue.arrayUnion(recipient.uid),
+          invitedEmails: admin.firestore.FieldValue.arrayRemove(email),
+        })
+      } else {
+        tx.update(workspaceRef, { invitedEmails: admin.firestore.FieldValue.arrayUnion(email) })
+      }
+    })
+    const url = 'https://qyan-om.web.app/workhub/join'
+    try {
+      const delivery = await deliverEmailMessage({
+        to: email,
+        subject: `You're invited to ${workspaceName} on WorkHub`,
+        text: `You have been invited to ${workspaceName} on WorkHub. Open ${url} and sign in with ${email}. Your invitation grants member access to this workspace. If prompted, select Request company access to accept your invitation.`,
+        html: `<p>You have been invited to <strong>${escapeHtml(workspaceName)}</strong> on WorkHub.</p><p><a href="${url}">Open WorkHub</a> and sign in with <strong>${escapeHtml(email)}</strong>.</p><p>Your invitation grants member access to this workspace. If prompted, select Request company access to accept your invitation.</p>`,
+      })
+      await workspaceRef.update({ [`${historyPath}.delivery`]: delivery.suppressed ? 'failed' : 'sent' })
+      if (delivery.suppressed) return { emailSent: false, message: 'Invitation saved, but the email limit was reached. Share the join link or retry sending later.' }
+      return { emailSent: true, message: `Invitation email sent to ${email}.` }
+    } catch (error) {
+      console.error('[workhub invitation] Email delivery failed', error)
+      await workspaceRef.update({ [`${historyPath}.delivery`]: 'failed' })
+      return { emailSent: false, message: 'Invitation saved, but email delivery failed. Share the WorkHub link or retry sending the invitation.' }
+    }
+  },
+)
 
 type SetWorkhubMemberStatusRequest = {
   uid: string
@@ -1466,7 +1580,10 @@ export const onWorkhubNotificationCreated = functionsV1
   .onCreate(async (snap) => {
     const notification = snap.data() as WorkhubNotificationRecord | undefined
     if (!notification) return
-    await notifyMemberAboutWorkhubNotification(notification)
+    const sent = await notifyMemberAboutWorkhubNotification(notification)
+    if (sent && notification.action === 'chat_message') {
+      await snap.ref.update({ escalationEmailSentAt: admin.firestore.FieldValue.serverTimestamp() })
+    }
   })
 
 export const processUnreadChatEmailEscalations = functionsV1

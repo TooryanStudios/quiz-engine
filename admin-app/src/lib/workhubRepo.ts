@@ -1,4 +1,5 @@
-import { addDoc, arrayRemove, arrayUnion, collection, deleteDoc, deleteField, doc, getDoc, getDocs, limit, onSnapshot as firestoreOnSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
+import { finishQueuedCreation } from './workhubQueuedCreation'
+import { addDoc, arrayRemove, arrayUnion, collection, deleteDoc, deleteField, doc, getDoc, getDocs, limit, onSnapshot as firestoreOnSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, updateDoc, writeBatch, where } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { db, functions } from './firebase'
 import {
@@ -24,6 +25,8 @@ export type WorkhubProjectIntent =
   | 'marketing_content_stream'
   | 'hr_requisition'
   | 'hr_onboarding_track'
+  | 'hr_departments_root'
+  | 'hr_employees_root'
   | 'hr_department_unit'
   | 'hr_sub_department_unit'
   | 'hr_employee_profile'
@@ -73,6 +76,13 @@ export interface WorkhubWorkspace {
   accessMemberUids?: string[]
   memberAccessLevels?: Record<string, 'full' | 'custom'>
   invitedEmails?: string[]
+  invitationHistory?: Record<string, {
+    email: string
+    status: 'pending' | 'accepted' | 'revoked'
+    delivery?: 'sending' | 'sent' | 'failed'
+    sentAt?: unknown
+    invitedBy?: string
+  }>
   moodBoardEnabled?: boolean
   activityWindowDays?: 7 | 14 | 30
   createdBy: string
@@ -80,6 +90,10 @@ export interface WorkhubWorkspace {
 }
 
 export interface WorkhubProject {
+  planSettings?:{ownerUids:string[];requirements:string;state?:'planning'|'active'|'revised'|'cancelled';sourceWorkspaceId?:string;sourceParentProjectId?:string;implementationRootId?:string}
+  hrDepartment?:{headUid:string;code:string}
+  hrProfile?: import('./workhubHr').HrProfile
+  icon?: string
   id: string
   workspaceId: string
   parentProjectId?: string | null
@@ -244,6 +258,7 @@ export interface WorkhubDocument {
   tabs?: WorkhubDocumentTab[]
   masterPage?: WorkhubDocumentMasterPage
   checklist?: WorkhubDocumentChecklistItem[]
+  attachmentTitles?: Record<string,string>
   attachments?: string[]
   links?: string[]
   editedBy?: WorkhubDocumentEditEntry[]
@@ -297,6 +312,7 @@ export interface WorkhubTask {
   id: string
   workspaceId: string
   projectId: string
+  approvalByUid?:Record<string,{decision:'approved'|'rejected';source:string;activityId:string;at:unknown}>
   milestoneId?: string | null
   sortOrder?: number
   title: string
@@ -365,6 +381,8 @@ export interface WorkhubActivity {
   memberUids?: string[]
   createdAt?: unknown
   // Chat-specific fields
+  attachments?: Array<{ id: string; emailId: string; name: string; size: number; contentType: string; provider: 'resend'; driveUrl?: string; driveSaveState?: 'saving' | 'failed' }>
+  emailAttachmentState?: 'pending' | 'ready' | 'failed'
   threadId?: string
   replyToActivityId?: string
   imageUrl?: string
@@ -383,6 +401,7 @@ export type WorkhubChatMessagePriority = 'normal' | 'high'
 export type WorkhubChatMessageDeliveryState = 'ok' | 'failed'
 
 export interface WorkhubNotification {
+  dismissed?: boolean
   id: string
   workspaceId: string
   recipientUid: string
@@ -673,16 +692,21 @@ export function subscribeOwnWorkhubMember(uid: string, onData: (member: WorkhubM
   )
 }
 
-export function subscribeAllWorkhubMembers(onData: (members: WorkhubMember[]) => void) {
+export function subscribeAllWorkhubMembers(onData: (members: WorkhubMember[]) => void, onError?: (error: Error) => void) {
+  const handleError = (error: unknown) => {
+    const failure = error instanceof Error ? error : new Error('Could not load WorkHub members and join requests.')
+    if (onError) onError(failure)
+    else onData([])
+  }
   return safeListen(
     () => onSnapshot(
       membersCol,
       (snap) => {
         onData(sortMembers(snap.docs.map((item) => ({ uid: item.id, ...item.data() } as WorkhubMember))))
       },
-      () => onData([]),
+      handleError,
     ),
-    () => onData([]),
+    () => handleError(new Error('Could not start loading WorkHub members and join requests.')),
   )
 }
 
@@ -690,6 +714,11 @@ export async function requestWorkhubAccess(): Promise<WorkhubMember> {
   const fn = httpsCallable<undefined, { member: WorkhubMember }>(functions, 'requestWorkhubAccess')
   const result = await fn()
   return result.data.member
+}
+
+export async function manageWorkhubInvitation(input: { email: string; workspaceId: string; action: 'send' | 'revoke' }) {
+  const fn = httpsCallable<typeof input, { emailSent: boolean; message: string }>(functions, 'manageWorkhubInvitation')
+  return (await fn(input)).data
 }
 
 export async function setWorkhubMemberStatus(input: { uid: string; status: WorkhubMemberStatus; role?: WorkhubMemberRole; reason?: string }): Promise<WorkhubMember> {
@@ -752,8 +781,9 @@ export async function createWorkhubWorkspace(input: { name: string; description:
   if (input.templateId) {
     payload.templateId = input.templateId
   }
-  const docRef = await addDoc(workspacesCol, payload)
-  return docRef.id
+  const docRef = doc(workspacesCol);const batch=writeBatch(db);batch.set(docRef,payload)
+  if(input.type==='hr'||input.templateId==='hr')for(const [kind,name] of [['departments','Departments'],['employees','Employees']])batch.set(doc(projectsCol,`hr-${docRef.id}-${kind}`),hrRootData(docRef.id,kind,name,input.createdBy))
+  await batch.commit();return docRef.id
 }
 
 export async function updateWorkhubWorkspace(
@@ -969,9 +999,12 @@ export function subscribeWorkhubProjects(workspaceId: string, currentUid: string
 }
 
 export async function createWorkhubProject(input: {
+  planSettings?:WorkhubProject['planSettings']
   workspaceId: string
   parentProjectId?: string | null
   intent?: WorkhubProjectIntent
+  hrDepartment?:{headUid:string;code:string}
+  hrProfile?: import('./workhubHr').HrProfile
   mainPanelView?: 'tasks' | 'dashboard' | 'dashboard_with_details'
   valueAmount?: number
   valueCurrency?: string
@@ -993,12 +1026,16 @@ export async function createWorkhubProject(input: {
   priority?: WorkhubProjectPriority
   clientId?: string
   createdBy: string
-}): Promise<string> {
-  const docRef = await addDoc(projectsCol, {
+}, onQueued?: (id: string) => void): Promise<string> {
+  const docRef = doc(projectsCol)
+  const pendingWrite = setDoc(docRef, {
     workspaceId: input.workspaceId,
     parentProjectId: input.parentProjectId || null,
     sortOrder: Date.now(),
     intent: input.intent || 'project',
+    ...(input.planSettings?{planSettings:input.planSettings}:{}),
+    ...(input.hrDepartment?{hrDepartment:input.hrDepartment}:{}),
+    ...(input.hrProfile?{hrProfile:input.hrProfile}:{}),
     mainPanelView: input.mainPanelView || 'tasks',
     valueAmount: typeof input.valueAmount === 'number' && Number.isFinite(input.valueAmount) ? Math.max(0, input.valueAmount) : 0,
     valueCurrency: (input.valueCurrency || 'OMR').trim().toUpperCase(),
@@ -1024,10 +1061,10 @@ export async function createWorkhubProject(input: {
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })
-  return docRef.id
+  return finishQueuedCreation(docRef.id, pendingWrite, onQueued)
 }
 
-export async function updateWorkhubProject(projectId: string, patch: Partial<Pick<WorkhubProject, 'parentProjectId' | 'sortOrder' | 'intent' | 'mainPanelView' | 'taskItemDisplayMode' | 'valueAmount' | 'valueCurrency' | 'tenderNumber' | 'proposalId' | 'technicalProposalUrl' | 'financialProposalUrl' | 'name' | 'description' | 'color' | 'notes' | 'attachments' | 'attachmentTitles' | 'notesUpdatedBy' | 'visibility' | 'memberUids' | 'storageMethod' | 'projectStartDate' | 'projectDeadline' | 'projectType' | 'submissionTime' | 'proposalServices' | 'priority' | 'clientId' | 'taskStatuses'>>) {
+export async function updateWorkhubProject(projectId: string, patch: Partial<Pick<WorkhubProject, 'planSettings' | 'hrDepartment' | 'parentProjectId' | 'sortOrder' | 'intent' | 'mainPanelView' | 'taskItemDisplayMode' | 'valueAmount' | 'valueCurrency' | 'tenderNumber' | 'proposalId' | 'technicalProposalUrl' | 'financialProposalUrl' | 'name' | 'description' | 'color' | 'notes' | 'attachments' | 'attachmentTitles' | 'notesUpdatedBy' | 'visibility' | 'memberUids' | 'storageMethod' | 'projectStartDate' | 'projectDeadline' | 'projectType' | 'submissionTime' | 'proposalServices' | 'priority' | 'clientId' | 'taskStatuses'>>) {
   const payload: Record<string, unknown> = {
     ...patch,
     updatedAt: serverTimestamp(),
@@ -1147,7 +1184,7 @@ export async function createWorkhubDocument(input: {
   notifyMode?: 'all' | 'selected' | 'none'
   notifyUids?: string[]
   createdBy: string
-}): Promise<string> {
+}, onQueued?: (id: string) => void): Promise<string> {
   const normalizedTabs = Array.isArray(input.tabs)
     ? input.tabs.map((tab) => ({
         id: String(tab.id || '').trim(),
@@ -1157,7 +1194,8 @@ export async function createWorkhubDocument(input: {
       })).filter((tab) => tab.id)
     : undefined
 
-  const docRef = await addDoc(documentsCol, {
+  const docRef = doc(documentsCol)
+  const pendingWrite = setDoc(docRef, {
     workspaceId: input.workspaceId,
     projectId: input.projectId || null,
     sortOrder: Date.now(),
@@ -1179,7 +1217,7 @@ export async function createWorkhubDocument(input: {
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })
-  return docRef.id
+  return finishQueuedCreation(docRef.id, pendingWrite, onQueued)
 }
 
 export async function getWorkhubDocumentByShareToken(token: string): Promise<WorkhubDocument | null> {
@@ -1207,7 +1245,7 @@ export class WorkhubDocumentConflictError extends Error {
   }
 }
 
-type WorkhubDocumentUpdatePatch = Partial<Pick<WorkhubDocument, 'projectId' | 'sortOrder' | 'hasOutgoingReferences' | 'referenceSourceDocumentId' | 'referenceSourceWorkspaceId' | 'referenceSourceProjectId' | 'referenceTabIds' | 'icon' | 'title' | 'body' | 'tabs' | 'masterPage' | 'checklist' | 'attachments' | 'links' | 'editedBy' | 'isLocked' | 'lockedBy' | 'lockedAt' | 'shareToken' | 'shareEnabled' | 'visibility' | 'memberUids' | 'editMemberUids' | 'notifyMode' | 'notifyUids'>>
+type WorkhubDocumentUpdatePatch = Partial<Pick<WorkhubDocument, 'projectId' | 'sortOrder' | 'hasOutgoingReferences' | 'referenceSourceDocumentId' | 'referenceSourceWorkspaceId' | 'referenceSourceProjectId' | 'referenceTabIds' | 'icon' | 'title' | 'body' | 'tabs' | 'masterPage' | 'checklist' | 'attachments' | 'attachmentTitles' | 'links' | 'editedBy' | 'isLocked' | 'lockedBy' | 'lockedAt' | 'shareToken' | 'shareEnabled' | 'visibility' | 'memberUids' | 'editMemberUids' | 'notifyMode' | 'notifyUids'>>
 
 function getWorkhubTimestampMs(value: unknown): number {
   if (!value) return 0
@@ -1435,7 +1473,7 @@ export async function createWorkhubTask(input: {
   notifyMode?: 'all' | 'selected' | 'none'
   notifyUids?: string[]
   createdBy: string
-}): Promise<string> {
+}, onQueued?: (id: string) => void): Promise<string> {
   const payload = stripUndefinedDeep({
     workspaceId: input.workspaceId,
     projectId: input.projectId,
@@ -1460,8 +1498,9 @@ export async function createWorkhubTask(input: {
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })
-  const docRef = await addDoc(tasksCol, payload)
-  return docRef.id
+  const docRef = doc(tasksCol)
+  const pendingWrite = setDoc(docRef, payload)
+  return finishQueuedCreation(docRef.id, pendingWrite, onQueued)
 }
 
 export async function saveWorkhubTaskNotifyPrefs(
@@ -2135,7 +2174,7 @@ export async function createWorkhubMoodBoard(input: {
   visibility?: WorkhubVisibility
   memberUids?: string[]
   createdBy: string
-}): Promise<string> {
+}, onQueued?: (id: string) => void): Promise<string> {
   const defaultTabs: WorkhubMoodBoardTab[] = [{ id: 'tab-main', title: 'Board' }]
   const nextPanelVariant = input.panelVariant || 'classic'
   const nextFlowSettings = nextPanelVariant === 'v2'
@@ -2151,7 +2190,8 @@ export async function createWorkhubMoodBoard(input: {
       cons: [],
     })
     : null
-  const ref = await addDoc(collection(db, 'workhub_mood_boards'), {
+  const ref = doc(collection(db, 'workhub_mood_boards'))
+  const pendingWrite = setDoc(ref, {
     workspaceId: input.workspaceId,
     entityType: input.entityType,
     entityId: input.entityId,
@@ -2174,7 +2214,7 @@ export async function createWorkhubMoodBoard(input: {
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })
-  return ref.id
+  return finishQueuedCreation(ref.id, pendingWrite, onQueued)
 }
 
 export async function updateWorkhubMoodBoardChecklist(
@@ -2574,3 +2614,65 @@ export async function deleteWorkhubMilestone(milestoneId: string): Promise<void>
   await deleteDoc(doc(db, 'workhub_milestones', milestoneId))
 }
 
+// Publish membership changes to both current and removed members.
+export async function saveWorkhubChatGroup(workspaceId:string,actorUid:string,group:{id:string;name:string;memberUids:string[]},previous?:{id:string;name:string;memberUids:string[]}) {
+ await addDoc(activityCol,{workspaceId,actorUid,entityType:'workspace',entityId:workspaceId,action:'chat_group_upsert',message:JSON.stringify(group),visibility:'restricted',memberUids:Array.from(new Set([...group.memberUids,...(previous?.memberUids||[])])),receivedByUids:[],readByUids:[],createdAt:serverTimestamp()})
+}
+
+export async function updateWorkhubMoodBoardFiles(boardId:string,images:WorkhubMoodBoardImage[]) {
+ await runTransaction(db,async transaction=>{
+  const boardRef=doc(db,'workhub_mood_boards',boardId);const snapshot=await transaction.get(boardRef)
+  if(!snapshot.exists())throw new Error('Board unavailable')
+  const board=snapshot.data() as WorkhubMoodBoard
+  const byUrl=new Map(images.map(image=>[image.url,image]))
+  const nodes=(board.flowNodes||[]).filter(node=>typeof node.data?.imageUrl!=='string'||byUrl.has(node.data.imageUrl)).map(node=>typeof node.data?.imageUrl==='string'?{...node,data:{...node.data,label:byUrl.get(node.data.imageUrl)?.label||''}}:node)
+  if(board.panelVariant==='flow'||nodes.length){
+   const urls=new Set(nodes.flatMap(node=>typeof node.data?.imageUrl==='string'?[node.data.imageUrl]:[]))
+   images.filter(image=>!urls.has(image.url)&&/\.(png|jpe?g|webp|gif|svg|avif)(?:[?#]|$)/i.test(image.url)).forEach(image=>nodes.push({id:image.id||crypto.randomUUID(),type:'imageNode',position:{x:image.x||0,y:image.y||0},data:{kind:'image',imageUrl:image.url,label:image.label||''}}))
+  }
+  const ids=new Set(nodes.map(node=>node.id));transaction.update(boardRef,{images,flowNodes:nodes,flowEdges:(board.flowEdges||[]).filter(edge=>ids.has(edge.source)&&ids.has(edge.target)),updatedAt:serverTimestamp()})
+ })
+}
+
+export async function saveWorkhubHrProfile(projectId:string,profile:import('./workhubHr').HrProfile,actorUid:string,message:string,expectedUpdatedAt:number){
+ await runTransaction(db,async transaction=>{
+  const target=doc(projectsCol,projectId);const snapshot=await transaction.get(target)
+  if(!snapshot.exists())throw new Error('Employee unavailable')
+  const current=snapshot.data();const stamp=current.updatedAt?.toMillis?.()||0
+  if(stamp!==expectedUpdatedAt)throw new Error('This employee was updated. Reopen the profile before saving.')
+  const history=[...(current.hrProfile?.history||[]),{at:new Date().toISOString(),actor:actorUid,message}]
+  transaction.update(target,{hrProfile:{...profile,history},visibility:'restricted',memberUids:Array.from(new Set([...(current.memberUids||[]).filter((uid:string)=>uid!==current.hrProfile?.accountUid&&uid!==current.hrProfile?.reportingToUid),current.createdBy,actorUid,profile.accountUid,profile.reportingToUid].filter(Boolean))),updatedAt:serverTimestamp()})
+ })
+}
+
+export async function workhubHrAction(input:Record<string,unknown>){return (await httpsCallable<Record<string,unknown>,Record<string,unknown>>(functions,'workhubHrAction')(input)).data}
+
+function hrRootData(workspaceId:string,kind:string,name:string,uid:string){return {workspaceId,parentProjectId:null,intent:'hr_'+kind+'_root',name,description:'',notes:'',color:'#7060cf',visibility:'workspace',memberUids:[],storageMethod:'firebase',mainPanelView:'dashboard',createdBy:uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp(),sortOrder:kind==='departments'?0:1}}
+export async function ensureWorkhubHrStructure(workspaceId:string,uid:string){
+ const existing=await getDocs(query(projectsCol,where('workspaceId','==',workspaceId)))
+ const roots=['departments','employees'].map(kind=>{const found=existing.docs.find(d=>d.data().intent==='hr_'+kind+'_root')||existing.docs.find(d=>!d.data().parentProjectId&&String(d.data().name).toLowerCase()===kind);return {kind,id:found?.id||`hr-${workspaceId}-${kind}`,found:!!found}})
+ await runTransaction(db,async tx=>{const snapshots=await Promise.all(roots.map(root=>tx.get(doc(projectsCol,root.id))));roots.forEach((root,n)=>{const ref=doc(projectsCol,root.id);if(!snapshots[n].exists())tx.set(ref,hrRootData(workspaceId,root.kind,root.kind==='departments'?'Departments':'Employees',uid));else if(snapshots[n].data()?.intent!=='hr_'+root.kind+'_root')tx.update(ref,{intent:'hr_'+root.kind+'_root',mainPanelView:'dashboard',updatedAt:serverTimestamp()})})})
+ return {departmentsId:roots[0].id,employeesId:roots[1].id}
+}
+
+/** Provision a master admin's own attendance record once; never reuse a report's profile. */
+export async function ensureOwnHrProfile(workspaceId:string,uid:string,name:string,email:string){
+ const existing=await getDocs(query(projectsCol,where('hrProfile.accountUid','==',uid)))
+ if(!existing.empty)return existing.docs[0].id
+ const {employeesId}=await ensureWorkhubHrStructure(workspaceId,uid)
+ const {emptyHrProfile}=await import('./workhubHr')
+ const ref=doc(projectsCol,`hr-self-${uid}`)
+ await runTransaction(db,async tx=>{
+  const snapshot=await tx.get(ref)
+  if(snapshot.exists())return
+  tx.set(ref,{workspaceId,parentProjectId:employeesId,intent:'hr_employee_profile',mainPanelView:'dashboard',name,description:'',color:'#7460d6',visibility:'restricted',memberUids:[uid],storageMethod:'firebase',createdBy:uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp(),sortOrder:Date.now(),hrProfile:{...emptyHrProfile(),accountUid:uid,email}})
+ })
+ return ref.id
+}
+
+export async function implementWorkhubPlan(projectId:string,workspaceId:string,parentProjectId:string){
+ const result=await httpsCallable(functions,'workhubProjectAction')({action:'implement',projectId,workspaceId,parentProjectId});return result.data
+}
+export async function deleteWorkhubProjectTree(projectId:string){
+ await httpsCallable(functions,'workhubProjectAction')({action:'delete',projectId})
+}

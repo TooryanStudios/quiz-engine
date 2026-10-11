@@ -17,6 +17,7 @@ import { Dialog } from './components/Dialog'
 import { MSEVideoSequencer } from './components/MSEVideoSequencer'
 import { VFXContainer } from './components/VFXContainer'
 import { LoginPage } from './pages/LoginPage'
+import { WorkhubJoinPage } from './pages/workhub/WorkhubJoinPage'
 import { communicationFeatureFlags } from './features/communication/config'
 import { InAppNotificationCenter } from './features/communication/components/InAppNotificationCenter'
 import { ChatDock } from './features/communication/components/ChatDock'
@@ -299,8 +300,8 @@ function StandaloneDevRedirect({
 
 function AppBrandMark() {
   return (
-    <div className="app-loading-brand" aria-label="QYan Gaming">
-      Q<span>Yan</span> Gaming
+    <div className="app-loading-brand" aria-label="WorkHub">
+      Work<span>Hub</span>
     </div>
   )
 }
@@ -644,9 +645,11 @@ function App() {
     return () => { clearTimeout(authTimeout); unsub() }
   }, [isLocalDevHost, navigate])
 
-  // Real-time blocked-user enforcement: sign out immediately if status becomes 'blocked'
+  // WorkHub membership is enforced by WorkHub; Lab approval is a separate scope.
   useEffect(() => {
     if (!user) return
+    if (location.pathname === '/workhub' || location.pathname.startsWith('/workhub/')
+      || (location.pathname === '/login' && new URLSearchParams(location.search).get('returnTo')?.startsWith('/workhub'))) return
     const unsub = subscribeUserDoc(user.uid, (profile) => {
       const runtimeStatus = ((profile as { status?: string } | null)?.status || '').toLowerCase()
 
@@ -675,7 +678,7 @@ function App() {
       }
     })
     return unsub
-  }, [user])
+  }, [user, location.pathname, location.search])
 
   // Close burger + profile when route changes
   useEffect(() => {
@@ -842,7 +845,7 @@ function App() {
                   note={isAr ? 'جارٍ تحميل WorkHub…' : 'Loading WorkHub…'}
                 />
               }>
-                <RequireAuth
+                {location.pathname === '/workhub/login' ? <LoginPage /> : <RequireAuth
                   user={user}
                   loadingFallback={
                     <AppLoadingScreen
@@ -851,8 +854,8 @@ function App() {
                     />
                   }
                 >
-                  <WorkHubRoutePage />
-                </RequireAuth>
+                  {location.pathname === '/workhub/join' ? <WorkhubJoinPage user={user as User} /> : <WorkHubRoutePage />}
+                </RequireAuth>}
               </Suspense>
             </ErrorBoundary>
             <Dialog />
@@ -1227,7 +1230,7 @@ function App() {
             <header className={`mobile-shell-header${mobileHeaderCompact ? ' is-compact' : ''}`}>
               <div className="mobile-shell-header-main">
                 <button className="mobile-shell-brand" onClick={() => navigate('/dashboard')} type="button">
-                  Q<span>Yan</span> Gaming
+                  Work<span>Hub</span>
                 </button>
                 <div className="mobile-shell-heading">
                   <strong className="mobile-shell-page-title">{mobileHeaderTitle}</strong>
@@ -1417,7 +1420,7 @@ function App() {
           <div className={`admin-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
             <aside className="admin-sidebar">
               <div className="sidebar-header">
-                <h1 className="sidebar-brand sidebar-brand--clickable" onClick={() => navigate('/dashboard')}>Q<span>Yan</span> Gaming</h1>
+                <h1 className="sidebar-brand sidebar-brand--clickable" onClick={() => navigate('/dashboard')}>Work<span>Hub</span></h1>
                 {user ? (
                   <button
                     className="sidebar-collapse-btn"

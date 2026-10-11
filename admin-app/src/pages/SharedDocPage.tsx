@@ -118,7 +118,7 @@ export default function SharedDocPage() {
     <div className="shared-doc-shell">
       <header className="shared-doc-header">
         <div className="shared-doc-header-left">
-          <span className="shared-doc-brand">QYan WorkHub</span>
+          <span className="shared-doc-brand">WorkHub</span>
           {isLocked && <span className="shared-doc-lock-badge">🔒 Locked</span>}
         </div>
         <div className="shared-doc-header-right">

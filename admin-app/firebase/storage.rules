@@ -68,6 +68,14 @@ service firebase.storage {
       return request.auth != null;
     }
 
+    match /workhub-hr/{employeeId}/{uploaderUid}/{fileName} {
+      function employee() { return firestore.get(/databases/(default)/documents/workhub_projects/$(employeeId)).data; }
+      function hrAdmin() { return request.auth.token.get('admin', false) == true || firestore.get(/databases/(default)/documents/workhub_members/$(request.auth.uid)).data.role == 'admin'; }
+      allow read: if request.auth != null && (hrAdmin() || employee().get('hrProfile', {}).get('accountUid', '') == request.auth.uid || employee().get('hrProfile', {}).get('reportingToUid', '') == request.auth.uid);
+      allow create: if request.auth != null && request.auth.uid == uploaderUid && (hrAdmin() || employee().get('hrProfile', {}).get('accountUid', '') == request.auth.uid) && request.resource.size < 20 * 1024 * 1024;
+      allow update, delete: if request.auth != null && hrAdmin();
+    }
+
     // WorkHub task/checklist attachments
     match /workhub-attachments/{allPaths=**} {
       allow read: if true;

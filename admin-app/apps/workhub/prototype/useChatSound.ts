@@ -1,0 +1,7 @@
+import { useEffect, useRef } from 'react'
+export function useChatSound(notifications:{id:string;action?:string;read?:boolean}[],uid?:string,ready=false) {
+ const seen=useRef<Set<string>|null>(null);const audio=useRef<AudioContext|null>(null)
+ useEffect(()=>{seen.current=null;return()=>{audio.current?.close();audio.current=null}},[uid])
+ useEffect(()=>{const unlock=()=>{if(!audio.current)audio.current=new AudioContext();void audio.current.resume().catch(()=>{})};document.addEventListener('pointerdown',unlock);return()=>document.removeEventListener('pointerdown',unlock)},[])
+ useEffect(()=>{if(!uid||!ready)return;const messages=notifications.filter(n=>n.action==='chat_message'||n.action==='chat_message_high');if(!seen.current){seen.current=new Set(messages.map(n=>n.id));return}const received=messages.some(n=>!seen.current!.has(n.id)&&!n.read);messages.forEach(n=>seen.current!.add(n.id));const context=audio.current;if(!received||!context||context.state!=='running')return;const oscillator=context.createOscillator();const gain=context.createGain();oscillator.connect(gain);gain.connect(context.destination);oscillator.frequency.setValueAtTime(660,context.currentTime);oscillator.frequency.setValueAtTime(880,context.currentTime+.1);gain.gain.setValueAtTime(.07,context.currentTime);gain.gain.exponentialRampToValueAtTime(.001,context.currentTime+.25);oscillator.start();oscillator.stop(context.currentTime+.26)},[notifications,uid,ready])
+}

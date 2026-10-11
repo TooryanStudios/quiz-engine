@@ -147,18 +147,19 @@ export function TemplateCreateDialog(props: {
   clientOptions: WorkhubClient[]
   busyKey: string
   canCreate: boolean
+  validationError?: string
   onCreateClientInline: (name: string) => Promise<string | null>
   onDraftChange: (patch: Partial<WorkhubTemplateCreationDraft>) => void
   onClose: () => void
   onCreate: () => void
 }) {
-  if (!props.isOpen || !props.intent) return null
-
   const [quickClientName, setQuickClientName] = useState('')
 
   useEffect(() => {
     setQuickClientName('')
   }, [props.intent, props.isOpen])
+
+  if (!props.isOpen || !props.intent) return null
 
   const intentMeta = getTemplateCreationIntentMeta(props.intent, props.workspaceTemplateId)
 
@@ -179,6 +180,7 @@ export function TemplateCreateDialog(props: {
             props.onCreate()
           }}
         >
+          {props.validationError&&<p role="alert" className="error-note">{props.validationError}</p>}
           {props.intent === 'project' && (
             <>
               <label className="workhub-icon-field">
@@ -232,7 +234,7 @@ export function TemplateCreateDialog(props: {
                   <input
                     value={props.draft.proposalId}
                     onChange={(event) => props.onDraftChange({ proposalId: event.target.value })}
-                    placeholder="e.g. QYAN-PR-117"
+                    placeholder="e.g. WH-PR-117"
                   />
                 </label>
               </div>

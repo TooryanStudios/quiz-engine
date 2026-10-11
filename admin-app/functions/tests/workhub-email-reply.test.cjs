@@ -1,0 +1,25 @@
+const { test } = require('node:test')
+const assert = require('node:assert/strict')
+const { Webhook } = require('svix')
+const { senderAddress, replyText } = require('../lib/workhubEmailReply.js')
+const { randomBytes } = require('node:crypto')
+
+test('extracts only the new reply, preserving Arabic and multiline text', () => {
+  assert.equal(replyText('تم إنجاز المهمة\r\nشكراً\r\n\r\nOn Friday, Alex wrote:\r\n> old message'), 'تم إنجاز المهمة\nشكراً')
+  assert.equal(replyText('Thanks\n\n> quoted message'), 'Thanks')
+  assert.equal(replyText('New message\n-----Original Message-----\nFrom: person'), 'New message')
+  assert.equal(replyText('> only quoted text'), '')
+})
+test('normalizes sender mailbox for exact recipient comparison', () => {
+  assert.equal(senderAddress('Person <MEMBER@example.com>'), 'member@example.com')
+  assert.notEqual(senderAddress('attacker@example.com'), 'member@example.com')
+})
+test('verifies a signed webhook and rejects body tampering and expired signatures', () => {
+  const webhook = new Webhook('whsec_' + randomBytes(32).toString('base64'))
+  const payload = JSON.stringify({ type: 'email.received', data: { email_id: 'test-id' } })
+  const now = new Date()
+  const headers = date => ({ 'svix-id': 'msg_test', 'svix-timestamp': String(Math.floor(date.getTime()/1000)), 'svix-signature': webhook.sign('msg_test', date, payload) })
+  assert.doesNotThrow(() => webhook.verify(payload, headers(now)))
+  assert.throws(() => webhook.verify(payload.replace('test-id', 'attacker-id'), headers(now)))
+  assert.throws(() => webhook.verify(payload, headers(new Date(Date.now()-10*60*1000))))
+})

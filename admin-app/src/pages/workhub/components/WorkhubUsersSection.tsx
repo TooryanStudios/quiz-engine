@@ -1,8 +1,13 @@
-import { type Dispatch, type SetStateAction } from 'react'
+import { useState, type Dispatch, type SetStateAction } from 'react'
+import './WorkhubUsersSection.css'
+import { Pencil } from 'lucide-react'
+import { WorkhubMemberPanel } from './WorkhubMemberPanel'
+import { WorkhubInvitations } from './WorkhubInvitations'
+import { buildWorkhubInvitations } from '../invitationModel'
 import { type WorkhubMember, type WorkhubWorkspace } from '../../../lib/workhubRepo'
 import { type WorkhubUserAccessDraft, type WorkhubUserAccessMode } from '../accessTypes'
 
-interface WorkhubUsersSectionProps {
+export interface WorkhubUsersSectionProps {
   userWorkspaceFilter: string
   setUserWorkspaceFilter: Dispatch<SetStateAction<string>>
   expandedUserPickerUid: string | null
@@ -19,21 +24,25 @@ interface WorkhubUsersSectionProps {
   userAccessDraftDirtyByUid: Record<string, boolean>
   memberNameDraftByUid: Record<string, string>
   setMemberNameDraftByUid: Dispatch<SetStateAction<Record<string, string>>>
-  handleSaveMemberDisplayName: (targetUid: string) => Promise<void>
+  handleSaveMemberDisplayName: (targetUid: string) => Promise<boolean>
   handleApproveRequestGlobal: (targetUid: string) => Promise<void>
-  handleMemberModeration: (targetUid: string, status: 'approved' | 'suspended', role?: 'member' | 'manager' | 'admin', reason?: string) => Promise<void>
+  handleMemberModeration: (targetUid: string, status: 'approved' | 'suspended', role?: 'member' | 'manager' | 'admin', reason?: string) => Promise<boolean>
   handleSetUserAccessModeDraft: (targetUid: string, mode: WorkhubUserAccessMode) => void
   handleToggleUserWorkspaceDraft: (targetUid: string, workspaceId: string, enabled: boolean) => void
   handleSetUserWorkspaceLevelDraft: (targetUid: string, workspaceId: string, level: 'full' | 'custom') => void
   handleDiscardUserAccessDraft: (targetUid: string) => void
-  handleSaveUserAccessDraft: (targetUid: string) => Promise<void>
+  handleSaveUserAccessDraft: (targetUid: string) => Promise<boolean>
   selectedWorkspaceId: string
+  membersLoading: boolean
+  membersError: string | null
+  onRetryMembers: () => void
+  canInvite: boolean
+  allMembers: WorkhubMember[]
 }
 
 export function WorkhubUsersSection({
   userWorkspaceFilter,
   setUserWorkspaceFilter,
-  expandedUserPickerUid,
   setExpandedUserPickerUid,
   visibleWorkspaces,
   workspaceDisplayNameById,
@@ -56,18 +65,56 @@ export function WorkhubUsersSection({
   handleDiscardUserAccessDraft,
   handleSaveUserAccessDraft,
   selectedWorkspaceId,
+  membersLoading,
+  membersError,
+  onRetryMembers,
+  canInvite,
+  allMembers,
 }: WorkhubUsersSectionProps) {
+  const [search, setSearch] = useState('')
+  const [activeTab, setActiveTab] = useState<'members' | 'invitations' | 'requests'>('members')
+  const invitations = buildWorkhubInvitations(visibleWorkspaces, allMembers)
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [editingUid, setEditingUid] = useState<string | null>(null)
+  const existingMembers = userManagementMembers.filter((item) => item.status !== 'pending')
+  const normalizedSearch = search.trim().toLowerCase()
+  const filteredMembers = existingMembers.filter((item) => (
+    (statusFilter === 'all' || item.status === statusFilter)
+    && (!normalizedSearch || `${item.displayName || ''} ${item.email || ''}`.toLowerCase().includes(normalizedSearch))
+  )).sort((a, b) => {
+    const order = { pending: 0, approved: 1, suspended: 2 }
+    return (order[a.status] ?? 3) - (order[b.status] ?? 3)
+      || (a.displayName || a.email || a.uid).localeCompare(b.displayName || b.email || b.uid)
+  })
+  const statusOptions = [
+    { value: 'all', label: 'All members', count: existingMembers.length },
+    { value: 'approved', label: 'Active', count: userManagementApprovedMembers.length },
+    { value: 'suspended', label: 'Suspended', count: userManagementMembers.filter((item) => item.status === 'suspended').length },
+  ]
   return (
-    <main className="workhub-section-stack">
+    <main className="workhub-section-stack workhub-users-page">
       <section className="workhub-panel workhub-user-management-panel">
         <div className="workhub-panel-head compact">
           <div>
             <h2>User management</h2>
-            <p>Approve requests and choose access mode per user: Full or Workspace-based.</p>
+            <p>People and workspace access</p>
           </div>
           <div className="workhub-user-management-tools">
+            <WorkhubInvitations workspaces={visibleWorkspaces} members={allMembers} canInvite={canInvite} mode="toolbar" />
+          </div>
+        </div>
+        <div className="workhub-users-navigation" role="group" aria-label="User management views">
+          <button type="button" aria-pressed={activeTab === 'members'} onClick={() => setActiveTab('members')}>Members <span>{allMembers.filter((item) => item.status !== 'pending').length}</span></button>
+          <button type="button" aria-pressed={activeTab === 'invitations'} onClick={() => setActiveTab('invitations')}>Invitations <span>{invitations.length}</span></button>
+          <button type="button" aria-pressed={activeTab === 'requests'} onClick={() => setActiveTab('requests')}>Join requests <span>{userManagementPendingMembers.length}</span></button>
+        </div>
+        {activeTab === 'members' && <div className="workhub-users-filterbar">
+            <input aria-label="Find a member" type="search" placeholder="Search name or email" value={search} onChange={(event) => setSearch(event.target.value)} />
+            <select aria-label="Member status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              {statusOptions.map((option) => <option key={option.value} value={option.value}>{option.label} ({option.count})</option>)}
+            </select>
             <label>
-              <span>Workspace scope</span>
+              <span className="workhub-users-visually-hidden">Workspace scope</span>
               <select
                 value={userWorkspaceFilter}
                 onChange={(event) => {
@@ -81,229 +128,119 @@ export function WorkhubUsersSection({
                 ))}
               </select>
             </label>
-          </div>
-        </div>
+        </div>}
 
-        <div className="workhub-members-section">
+        {activeTab === 'invitations' && <WorkhubInvitations workspaces={visibleWorkspaces} members={allMembers} canInvite={canInvite} mode="list" />}
+        {membersError && <div className="workhub-users-load-error" role="alert">
+          <strong>Could not load members and join requests.</strong>
+          <p>{membersError}</p>
+          <button type="button" className="workhub-ghost-mini" onClick={onRetryMembers}>Retry loading</button>
+        </div>}
+        {membersLoading && <p role="status">Loading members and join requests…</p>}
+        {activeTab === 'requests' && <section className="workhub-users-requests" aria-label="Join requests">
           <div className="workhub-members-section-head">
-            <strong>Members</strong>
+            <h3>Join requests</h3>
+            <span className="workhub-pending-badge">{membersLoading || membersError ? '—' : userManagementPendingMembers.length} pending</span>
+          </div>
+          <p className="workhub-users-access-help">Requests from all workspaces appear here. Approve a request, then edit the member to assign workspace access.</p>
+          {!membersLoading && !membersError && userManagementPendingMembers.length === 0 && (
+            <p className="workhub-empty-state">No join requests waiting for approval. Share the WorkHub sign-in link above. New users appear here after signing in; invited users join their assigned workspace directly.</p>
+          )}
+          {userManagementPendingMembers.map((item) => {
+            const locked = !!normalizedMasterEmail && item.email.trim().toLowerCase() === normalizedMasterEmail
+            const busy = !!busyKey || membersLoading || !!membersError
+            return <article key={item.uid} className="workhub-users-request-row" aria-label={`Join request from ${item.displayName || item.email}`}>
+              <div className="workhub-member-avatar settings-avatar" aria-hidden="true">{(item.displayName || item.email || '?').slice(0, 1).toUpperCase()}</div>
+              <div className="workhub-member-identity">
+                <strong className="workhub-member-name">{item.displayName || item.email}</strong>
+                <span className="workhub-member-email">{item.email}</span>
+              </div>
+              <div className="workhub-users-request-actions">
+                <button type="button" className="workhub-approve-btn" disabled={busy || locked}
+                  onClick={() => { void handleApproveRequestGlobal(item.uid) }}>Approve</button>
+                <button type="button" className="workhub-decline-btn" disabled={busy || locked}
+                  onClick={() => { void handleMemberModeration(item.uid, 'suspended', item.role, 'Access request declined by administrator.') }}>Decline</button>
+              </div>
+            </article>
+          })}
+        </section>}
+        {activeTab === 'members' && <div className="workhub-members-section">
+          <div className="workhub-members-section-head">
+            <strong aria-live="polite">{filteredMembers.length} of {existingMembers.length} members</strong>
             <span className="workhub-members-count">
               {userManagementApprovedMembers.length} active
-              {userManagementPendingMembers.length > 0 && (
-                <span className="workhub-pending-badge">{userManagementPendingMembers.length} pending</span>
-              )}
             </span>
           </div>
-          {userManagementMembers.length === 0 && (
-            <div className="workhub-empty-state">No members match this scope.</div>
+          {!membersLoading && !membersError && filteredMembers.length === 0 && (
+            <div className="workhub-empty-state">
+              <strong>{existingMembers.length === 0 ? 'No members in this workspace scope.' : 'No members match these filters.'}</strong>
+              {(search || statusFilter !== 'all' || userWorkspaceFilter !== 'all') && (
+                <button type="button" className="workhub-ghost-mini" onClick={() => {
+                  setSearch(''); setStatusFilter('all'); setUserWorkspaceFilter('all')
+                }}>Clear filters</button>
+              )}
+            </div>
           )}
           <div className="workhub-member-list">
-            {userManagementMembers.map((item) => {
+            {filteredMembers.map((item) => {
               const isPending = item.status === 'pending'
+              const isEditing = editingUid === item.uid
               const isSuspended = item.status === 'suspended'
-              const isMasterTarget = !!normalizedMasterEmail && (item.email || '').trim().toLowerCase() === normalizedMasterEmail
               const summary = memberWorkspaceSummaryByUid[item.uid] || { count: 0, names: [] }
-              const effectiveAccess = userAccessEffectiveByUid[item.uid] || { mode: 'workspace_based' as WorkhubUserAccessMode, workspaceById: {} }
-              const accessMode = effectiveAccess.mode
-              const isPickerOpen = expandedUserPickerUid === item.uid
-              const isBusyRequest = busyKey === `member-request:${item.uid}`
-              const isSavingAccess = busyKey === `user-access-save:${item.uid}`
-              const isSavingName = busyKey === `member-name:${item.uid}`
-              const hasDraftChanges = userAccessDraftDirtyByUid[item.uid] || false
-              const memberNameDraft = memberNameDraftByUid[item.uid] ?? (item.displayName || '')
-              const hasNameDraftChange = memberNameDraft.trim().length > 0 && memberNameDraft.trim() !== (item.displayName || '').trim()
               const initials = (item.displayName || item.email || '?')
                 .split(' ').map((word: string) => word[0]).slice(0, 2).join('').toUpperCase()
               return (
-                <div key={item.uid} className="workhub-member-row-wrap">
-                  <div className={`workhub-member-row settings-row${isPending ? ' is-pending' : ''}${isSuspended ? ' is-suspended' : ''}`}>
+                <article key={item.uid} className="workhub-member-row-wrap" aria-label={item.displayName || item.email || item.uid}>
+                  <div className={`workhub-member-row settings-row${isPending ? ' is-pending' : ''}${isSuspended ? ' is-suspended' : ''}${isEditing ? ' is-selected' : ''}`}>
                     <div className="workhub-member-avatar settings-avatar" aria-hidden="true">{initials}</div>
                     <div className="workhub-member-identity">
                       <span className="workhub-member-name">{item.displayName || item.email || item.uid}</span>
                       <span className="workhub-member-email">{item.email || '—'}</span>
-                      <div className="workhub-inline-row" style={{ marginTop: 6, gap: 6 }}>
-                        <input
-                          type="text"
-                          value={memberNameDraft}
-                          disabled={isSavingName || isMasterTarget}
-                          onChange={(event) => {
-                            const nextValue = event.target.value
-                            setMemberNameDraftByUid((current) => ({ ...current, [item.uid]: nextValue }))
-                          }}
-                          placeholder="Set display name"
-                          style={{ minWidth: 170 }}
-                        />
-                        <button
-                          type="button"
-                          className="workhub-primary-mini"
-                          disabled={isSavingName || isMasterTarget || !hasNameDraftChange}
-                          onClick={() => { void handleSaveMemberDisplayName(item.uid) }}
-                        >
-                          {isSavingName ? 'Saving…' : 'Save name'}
-                        </button>
-                      </div>
+                      <span className="workhub-users-role">{item.role}{item.status === 'approved' ? ' · Active' : ''}</span>
                     </div>
                     <div className="workhub-member-workspaces">
                       <span className="workhub-ws-count-label">
                         {summary.count > 0 ? `${summary.count} workspace${summary.count === 1 ? '' : 's'}` : <span className="workhub-muted">No workspaces</span>}
                       </span>
+                      <span className="workhub-users-workspace-names" title={summary.names.join(', ')}>
+                        {isPending ? 'Awaiting approval' : isSuspended ? 'Access suspended' : summary.names.length ? summary.names.slice(0, 2).join(', ') + (summary.names.length > 2 ? ` +${summary.names.length - 2} more` : '') : 'Assign access to get started'}
+                      </span>
                     </div>
-                    <div className="workhub-member-actions">
-                      {isPending ? (
-                        <>
-                          <span className="workhub-status-pill pending">Pending request</span>
-                          <button
-                            type="button"
-                            className="workhub-approve-btn"
-                            disabled={isBusyRequest || isMasterTarget}
-                            onClick={() => { void handleApproveRequestGlobal(item.uid) }}
-                            title="Approve user"
-                          >
-                            {isBusyRequest ? '…' : 'Approve'}
-                          </button>
-                          <button
-                            type="button"
-                            className="workhub-decline-btn"
-                            disabled={isBusyRequest || isMasterTarget}
-                            onClick={() => { void handleMemberModeration(item.uid, 'suspended', item.role) }}
-                            title="Decline request"
-                          >
-                            Reject
-                          </button>
-                        </>
-                      ) : isSuspended ? (
-                        <>
-                          <span className="workhub-status-pill suspended">Suspended</span>
-                          <button
-                            type="button"
-                            className="workhub-approve-btn"
-                            disabled={isBusyRequest || isMasterTarget}
-                            onClick={() => { void handleMemberModeration(item.uid, 'approved', item.role) }}
-                            title="Re-approve user"
-                          >
-                            Reactivate
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <div className="workhub-user-mode-toggle" title="Access mode">
-                            <button
-                              type="button"
-                              className={`workhub-user-mode-btn${accessMode === 'full' ? ' is-active' : ''}`}
-                              disabled={isSavingAccess || isMasterTarget}
-                              onClick={() => {
-                                setExpandedUserPickerUid(null)
-                                handleSetUserAccessModeDraft(item.uid, 'full')
-                              }}
-                            >
-                              Full
-                            </button>
-                            <button
-                              type="button"
-                              className={`workhub-user-mode-btn${accessMode === 'workspace_based' ? ' is-active' : ''}`}
-                              disabled={isSavingAccess || isMasterTarget}
-                              onClick={() => {
-                                handleSetUserAccessModeDraft(item.uid, 'workspace_based')
-                                setExpandedUserPickerUid(item.uid)
-                              }}
-                            >
-                              Workspace
-                            </button>
-                          </div>
-                          {accessMode === 'workspace_based' ? (
-                            <button
-                              type="button"
-                              className={`workhub-ws-count-btn${isPickerOpen ? ' is-open' : ''}`}
-                              disabled={isSavingAccess || isMasterTarget}
-                              onClick={() => setExpandedUserPickerUid(isPickerOpen ? null : item.uid)}
-                            >
-                              Manage access
-                              <span className="workhub-ws-count-chevron">{isPickerOpen ? '▲' : '▼'}</span>
-                            </button>
-                          ) : (
-                            <span className="workhub-user-mode-pill">All workspaces</span>
-                          )}
-                          <button
-                            type="button"
-                            className="workhub-ghost-mini"
-                            disabled={!hasDraftChanges || isSavingAccess || isMasterTarget}
-                            onClick={() => handleDiscardUserAccessDraft(item.uid)}
-                          >
-                            Discard
-                          </button>
-                          <button
-                            type="button"
-                            className="workhub-primary-mini"
-                            disabled={!hasDraftChanges || isSavingAccess || isMasterTarget}
-                            onClick={() => { void handleSaveUserAccessDraft(item.uid) }}
-                          >
-                            {isSavingAccess ? 'Saving…' : 'Save'}
-                          </button>
-                          <button
-                            type="button"
-                            className="workhub-decline-btn"
-                            disabled={isBusyRequest || isMasterTarget}
-                            onClick={() => { void handleMemberModeration(item.uid, 'suspended', item.role) }}
-                            title="Suspend user"
-                          >
-                            Suspend
-                          </button>
-                        </>
-                      )}
-                      {isMasterTarget && <span className="workhub-user-mode-pill">Master (locked)</span>}
-                    </div>
+                    <button type="button" className={`workhub-users-edit-button${isEditing ? ' is-editing' : ''}`}
+                      aria-label={`Edit ${item.displayName || item.email || item.uid}`}
+                      id={`workhub-edit-${item.uid}`} title="Edit member" aria-haspopup="dialog" aria-expanded={isEditing}
+                      disabled={!!busyKey}
+                      onClick={() => setEditingUid(item.uid)}>
+                      <Pencil size={16} />
+                    </button>
                   </div>
-                  {isPickerOpen && accessMode === 'workspace_based' && (
-                    <div className="workhub-ws-picker">
-                      <div className="workhub-ws-picker-title">Workspace access for {item.displayName || item.email}</div>
-                      <div className="workhub-ws-picker-list">
-                        {visibleWorkspaces.map((workspace) => {
-                          const workspaceEntry = effectiveAccess.workspaceById[workspace.id] || { enabled: false, level: 'custom' as const }
-                          const isChecked = workspaceEntry.enabled
-                          const accessLevel = workspaceEntry.level
-                          return (
-                            <div key={workspace.id} className="workhub-ws-picker-row">
-                              <input
-                                type="checkbox"
-                                checked={isChecked}
-                                disabled={isSavingAccess}
-                                onChange={(event) => handleToggleUserWorkspaceDraft(item.uid, workspace.id, event.target.checked)}
-                              />
-                              <span className="workhub-ws-picker-name">{workspaceDisplayNameById[workspace.id] || workspace.name}</span>
-                              {isChecked && (
-                                <div className="workhub-access-level-toggle workhub-ws-access-level-toggle" title="Access level for this workspace">
-                                  <button
-                                    type="button"
-                                    className={`workhub-access-level-btn${accessLevel === 'full' ? ' is-active' : ''}`}
-                                    disabled={isSavingAccess}
-                                    onClick={() => handleSetUserWorkspaceLevelDraft(item.uid, workspace.id, 'full')}
-                                  >
-                                    Full
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className={`workhub-access-level-btn${accessLevel === 'custom' ? ' is-active' : ''}`}
-                                    disabled={isSavingAccess}
-                                    onClick={() => handleSetUserWorkspaceLevelDraft(item.uid, workspace.id, 'custom')}
-                                  >
-                                    Custom
-                                  </button>
-                                </div>
-                              )}
-                              {isChecked && workspaceEntry.invited && <span className="workhub-ws-picker-badge">Invited</span>}
-                              {workspace.id === selectedWorkspaceId && <span className="workhub-ws-picker-badge current">Current</span>}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                </article>
               )
             })}
           </div>
-        </div>
+        </div>}
       </section>
+      {editingUid && allMembers.find((member) => member.uid === editingUid) && <WorkhubMemberPanel
+        key={editingUid}
+        member={allMembers.find((member) => member.uid === editingUid)!}
+        visibleWorkspaces={visibleWorkspaces}
+        workspaceDisplayNameById={workspaceDisplayNameById}
+        normalizedMasterEmail={normalizedMasterEmail}
+        userAccessEffectiveByUid={userAccessEffectiveByUid}
+        userAccessDraftDirtyByUid={userAccessDraftDirtyByUid}
+        memberNameDraftByUid={memberNameDraftByUid}
+        setMemberNameDraftByUid={setMemberNameDraftByUid}
+        busyKey={busyKey}
+        handleSaveMemberDisplayName={handleSaveMemberDisplayName}
+        handleMemberModeration={handleMemberModeration}
+        handleSetUserAccessModeDraft={handleSetUserAccessModeDraft}
+        handleToggleUserWorkspaceDraft={handleToggleUserWorkspaceDraft}
+        handleSetUserWorkspaceLevelDraft={handleSetUserWorkspaceLevelDraft}
+        handleDiscardUserAccessDraft={handleDiscardUserAccessDraft}
+        handleSaveUserAccessDraft={handleSaveUserAccessDraft}
+        selectedWorkspaceId={selectedWorkspaceId}
+        onClose={() => { setEditingUid(null); setExpandedUserPickerUid(null) }}
+      />}
     </main>
   )
 }

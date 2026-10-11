@@ -359,7 +359,7 @@ export function ProjectSettingsDialog(props: {
                     name="projectSettingsProposalId"
                     value={props.settingsProposalId}
                     onChange={(event) => props.onProposalIdChange(event.target.value)}
-                    placeholder="e.g. QYAN-PR-117"
+                    placeholder="e.g. WH-PR-117"
                   />
                 </label>
               )}

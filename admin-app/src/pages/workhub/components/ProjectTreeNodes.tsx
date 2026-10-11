@@ -444,11 +444,9 @@ export const ProjectTreeNodes = memo(function ProjectTreeNodes({
         const hasProgressTasks = totalTaskCount > 0
         const progressPercent = hasProgressTasks ? Math.max(6, Math.round((doneTaskCount / totalTaskCount) * 100)) : 0
         const effectiveIntent = projectIntentById[node.id] || 'project'
-        const folderFallbackClosed = '🗂️'
-        const folderFallbackOpen = '📂'
-        const intentIcon = effectiveIntent === 'project'
-          ? (hasExpandableChildren ? (isExpanded ? folderFallbackOpen : folderFallbackClosed) : (projectIntentIconById[node.id] || folderFallbackClosed))
-          : (projectIntentIconById[node.id] || folderFallbackClosed)
+        const intentIcon = node.icon?.trim() || (effectiveIntent === 'project'
+          ? (isExpanded && hasExpandableChildren ? '📂' : '📁')
+          : (projectIntentIconById[node.id] || '📁'))
         const intentIconKind = intentIcon === '🚀' ? 'project' : 'folder'
         const countdownMeta = formatCountdownMeta(node.projectDeadline, node.submissionTime)
         const nodeColorMeaning = projectColorMeanings.find((m) => m.color.toLowerCase() === (node.color || '').toLowerCase())

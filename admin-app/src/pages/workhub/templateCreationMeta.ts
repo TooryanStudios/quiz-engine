@@ -24,6 +24,8 @@ export interface WorkhubTemplateCreationIntentMeta {
 }
 
 const WORKHUB_TEMPLATE_CREATION_INTENT_META: Record<WorkhubTemplateCreationIntent, WorkhubTemplateCreationIntentMeta> = {
+  hr_departments_root:{icon:'🏢',title:'Departments',subtitle:'Department hierarchy and heads.',submitLabel:'Create departments section',subjectLabel:'Departments',actionLabel:'Departments',defaults:{priority:'medium',projectType:'other'}},
+  hr_employees_root:{icon:'👥',title:'Employees',subtitle:'Employee directory grouped by department.',submitLabel:'Create employees section',subjectLabel:'Employees',actionLabel:'Employees',defaults:{priority:'medium',projectType:'other'}},
   project: {
     icon: '📁',
     title: 'Create Folder',

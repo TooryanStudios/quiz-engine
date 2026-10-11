@@ -131,7 +131,7 @@ export function useWorkhubAccessHandlers({
 
   const handleSaveUserAccessDraft = useCallback(async (uid: string) => {
     const draft = userAccessDraftByUid[uid]
-    if (!draft || !userAccessDraftDirtyByUid[uid]) return
+    if (!draft || !userAccessDraftDirtyByUid[uid]) return true
     setBusyKey(`user-access-save:${uid}`)
     try {
       const memberEmail = (memberEmailByUid[uid] || '').trim().toLowerCase()
@@ -180,9 +180,11 @@ export function useWorkhubAccessHandlers({
         return next
       })
       showToast({ type: 'success', message: 'User access settings saved.' })
+      return true
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not save user access settings.'
       showToast({ type: 'error', message })
+      return false
     } finally {
       setBusyKey('')
     }

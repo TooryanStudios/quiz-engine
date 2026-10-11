@@ -69,8 +69,7 @@ function normalizeLabel(value: string): string {
 
 function normalizeCurrency(value: string | undefined): string {
   const normalized = (value || '').trim().toUpperCase().replace(/[^A-Z]/g, '')
-  const next = normalized === 'USD' ? 'OMR' : normalized
-  return (next || 'OMR').slice(0, 3)
+  return (normalized || 'OMR').slice(0, 3)
 }
 
 function parseMonetaryNumberFromText(value: string): number {

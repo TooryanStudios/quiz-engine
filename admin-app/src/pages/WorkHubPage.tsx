@@ -1,8 +1,10 @@
+import { buildInitialTemplateCreationDraft, buildTemplateCreationDescription } from './workhub/templateCreationData'
 import 'img-comparison-slider'
 import 'img-comparison-slider/dist/styles.css'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
 import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import type { ReactElement } from 'react'
 import { Link, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 import { auth, storage } from '../lib/firebase'
 import { markSignOut } from '../lib/signOutState'
@@ -666,187 +668,6 @@ function getIntentMonetaryValueLabel(intent: WorkhubProjectIntent): string {
   }
 }
 
-function buildInitialTemplateCreationDraft(intent: WorkhubTemplateCreationIntent): WorkhubTemplateCreationDraft {
-  const base: WorkhubTemplateCreationDraft = {
-    name: '',
-    description: '',
-    employeeId: '',
-    authorityLevel: '',
-    roleProfile: '',
-    referenceUrl: '',
-    clientId: '',
-    tenderNumber: '',
-    proposalId: '',
-    startDate: '',
-    deadline: getCurrentDateInputValue(),
-    submissionTime: DEFAULT_SUBMISSION_TIME,
-    priority: 'medium',
-    leadSource: '',
-    qualificationNotes: '',
-    billingCycle: '',
-    paymentOwner: '',
-    campaignChannel: '',
-    campaignObjective: '',
-    cadence: '',
-    department: '',
-    departmentCode: '',
-    headEmployeeId: '',
-    parentDepartment: '',
-    departmentEmail: '',
-    departmentPhone: '',
-    approvalOwner: '',
-    leaveType: '',
-    cycleOwner: '',
-    primaryKpi: '',
-    programType: '',
-    certificationName: '',
-    certificationIssuer: '',
-    payrollId: '',
-    nameArabic: '',
-    gender: '',
-    birthday: '',
-    subDepartment: '',
-    jobTitle: '',
-    jobGrade: '',
-    employmentStatus: '',
-    workMode: '',
-    employmentType: '',
-    basicSalary: '',
-    salaryAllowances: '',
-    salaryDeductions: '',
-    paymentFrequency: '',
-    availableLeaveDays: '',
-    usedLeaveDays: '',
-    hireDate: '',
-    exitDate: '',
-    managerEmployeeId: '',
-    emergencyContact: '',
-    passportNumber: '',
-    nationalId: '',
-    bankAccount: '',
-    hiringManager: '',
-    onboardingOwner: '',
-    budgetAmount: '',
-  }
-  const intentMeta = getTemplateCreationIntentMeta(intent)
-  return {
-    ...base,
-    priority: intentMeta.defaults.priority,
-    billingCycle: intentMeta.defaults.billingCycle || '',
-  }
-}
-
-function buildTemplateCreationDescription(intent: WorkhubTemplateCreationIntent, draft: WorkhubTemplateCreationDraft): string {
-  const lines: string[] = []
-  if (draft.description.trim()) lines.push(draft.description.trim())
-
-  switch (intent) {
-    case 'proposal':
-      if (draft.tenderNumber.trim()) lines.push(`Tender number: ${draft.tenderNumber.trim()}`)
-      if (draft.proposalId.trim()) lines.push(`Proposal ID: ${draft.proposalId.trim()}`)
-      if (draft.budgetAmount.trim()) lines.push(`Estimated value: ${draft.budgetAmount.trim()}`)
-      break
-    case 'lead':
-      if (draft.leadSource.trim()) lines.push(`Lead source: ${draft.leadSource.trim()}`)
-      if (draft.qualificationNotes.trim()) lines.push(`Qualification notes: ${draft.qualificationNotes.trim()}`)
-      break
-    case 'finance_invoice_stream':
-      if (draft.billingCycle.trim()) lines.push(`Billing cycle: ${draft.billingCycle.trim()}`)
-      if (draft.paymentOwner.trim()) lines.push(`Approval owner: ${draft.paymentOwner.trim()}`)
-      break
-    case 'finance_payment_cycle':
-      if (draft.paymentOwner.trim()) lines.push(`Payment owner: ${draft.paymentOwner.trim()}`)
-      break
-    case 'marketing_campaign':
-      if (draft.campaignObjective.trim()) lines.push(`Campaign objective: ${draft.campaignObjective.trim()}`)
-      if (draft.campaignChannel.trim()) lines.push(`Primary channel: ${draft.campaignChannel.trim()}`)
-      break
-    case 'marketing_content_stream':
-      if (draft.campaignChannel.trim()) lines.push(`Channel: ${draft.campaignChannel.trim()}`)
-      if (draft.cadence.trim()) lines.push(`Cadence: ${draft.cadence.trim()}`)
-      break
-    case 'hr_requisition':
-      if (draft.department.trim()) lines.push(`Department: ${draft.department.trim()}`)
-      if (draft.hiringManager.trim()) lines.push(`Hiring manager: ${draft.hiringManager.trim()}`)
-      break
-    case 'hr_onboarding_track':
-      if (draft.onboardingOwner.trim()) lines.push(`Onboarding owner: ${draft.onboardingOwner.trim()}`)
-      break
-    case 'hr_department_unit':
-      if (draft.departmentCode.trim()) lines.push(`Department code: ${draft.departmentCode.trim()}`)
-      if (draft.headEmployeeId.trim()) lines.push(`Head employee ID: ${draft.headEmployeeId.trim()}`)
-      if (draft.departmentEmail.trim()) lines.push(`Department email: ${draft.departmentEmail.trim()}`)
-      if (draft.departmentPhone.trim()) lines.push(`Department phone: ${draft.departmentPhone.trim()}`)
-      break
-    case 'hr_sub_department_unit':
-      if (draft.departmentCode.trim()) lines.push(`Department code: ${draft.departmentCode.trim()}`)
-      if (draft.parentDepartment.trim()) lines.push(`Parent department: ${draft.parentDepartment.trim()}`)
-      if (draft.headEmployeeId.trim()) lines.push(`Head employee ID: ${draft.headEmployeeId.trim()}`)
-      break
-    case 'hr_employee_profile':
-      if (draft.employeeId.trim()) lines.push(`Employee ID: ${draft.employeeId.trim()}`)
-      if (draft.payrollId.trim()) lines.push(`Payroll ID: ${draft.payrollId.trim()}`)
-      if (draft.name.trim()) lines.push(`Name in English: ${draft.name.trim()}`)
-      if (draft.nameArabic.trim()) lines.push(`Name in Arabic: ${draft.nameArabic.trim()}`)
-      if (draft.gender.trim()) lines.push(`Gender: ${draft.gender.trim()}`)
-      if (draft.birthday.trim()) lines.push(`Birthday: ${draft.birthday.trim()}`)
-      if (draft.department.trim()) lines.push(`Department: ${draft.department.trim()}`)
-      if (draft.subDepartment.trim()) lines.push(`Sub-department: ${draft.subDepartment.trim()}`)
-      if (draft.jobTitle.trim()) lines.push(`Job title: ${draft.jobTitle.trim()}`)
-      if (draft.jobGrade.trim()) lines.push(`Job grade: ${draft.jobGrade.trim()}`)
-      if (draft.authorityLevel.trim()) lines.push(`Authority level: ${draft.authorityLevel.trim()}`)
-      if (draft.roleProfile.trim()) lines.push(`Role profile: ${draft.roleProfile.trim()}`)
-      if (draft.employmentStatus.trim()) lines.push(`Employee status: ${draft.employmentStatus.trim()}`)
-      if (draft.workMode.trim()) lines.push(`Work mode: ${draft.workMode.trim()}`)
-      if (draft.employmentType.trim()) lines.push(`Employment type: ${draft.employmentType.trim()}`)
-      if (draft.basicSalary.trim()) lines.push(`Basic salary: ${draft.basicSalary.trim()}`)
-      if (draft.salaryAllowances.trim()) lines.push(`Salary allowances: ${draft.salaryAllowances.trim()}`)
-      if (draft.salaryDeductions.trim()) lines.push(`Salary deductions: ${draft.salaryDeductions.trim()}`)
-      if (draft.paymentFrequency.trim()) lines.push(`Payment frequency: ${draft.paymentFrequency.trim()}`)
-      if (draft.availableLeaveDays.trim()) lines.push(`Available leave days: ${draft.availableLeaveDays.trim()}`)
-      if (draft.usedLeaveDays.trim()) lines.push(`Used leave days: ${draft.usedLeaveDays.trim()}`)
-      if (draft.hireDate.trim()) lines.push(`Hire date: ${draft.hireDate.trim()}`)
-      if (draft.exitDate.trim()) lines.push(`Exit date: ${draft.exitDate.trim()}`)
-      if (draft.managerEmployeeId.trim()) lines.push(`Manager employee ID: ${draft.managerEmployeeId.trim()}`)
-      if (draft.emergencyContact.trim()) lines.push(`Emergency contact: ${draft.emergencyContact.trim()}`)
-      if (draft.passportNumber.trim()) lines.push(`Passport number: ${draft.passportNumber.trim()}`)
-      if (draft.nationalId.trim()) lines.push(`National ID: ${draft.nationalId.trim()}`)
-      if (draft.bankAccount.trim()) lines.push(`Bank account: ${draft.bankAccount.trim()}`)
-      if (draft.referenceUrl.trim()) lines.push(`CV link: ${draft.referenceUrl.trim()}`)
-      break
-    case 'hr_leave_case':
-      if (draft.employeeId.trim()) lines.push(`Employee ID: ${draft.employeeId.trim()}`)
-      if (draft.department.trim()) lines.push(`Department: ${draft.department.trim()}`)
-      if (draft.approvalOwner.trim()) lines.push(`Approver: ${draft.approvalOwner.trim()}`)
-      if (draft.leaveType.trim()) lines.push(`Leave type: ${draft.leaveType.trim()}`)
-      break
-    case 'hr_kpi_cycle':
-      if (draft.cycleOwner.trim()) lines.push(`Cycle owner: ${draft.cycleOwner.trim()}`)
-      if (draft.department.trim()) lines.push(`Department: ${draft.department.trim()}`)
-      if (draft.cadence.trim()) lines.push(`Cadence: ${draft.cadence.trim()}`)
-      if (draft.primaryKpi.trim()) lines.push(`Primary KPI: ${draft.primaryKpi.trim()}`)
-      break
-    case 'hr_initiative_program':
-      if (draft.cycleOwner.trim()) lines.push(`Program owner: ${draft.cycleOwner.trim()}`)
-      if (draft.department.trim()) lines.push(`Department: ${draft.department.trim()}`)
-      if (draft.programType.trim()) lines.push(`Program type: ${draft.programType.trim()}`)
-      if (draft.cadence.trim()) lines.push(`Cadence: ${draft.cadence.trim()}`)
-      break
-    case 'hr_learning_certification':
-      if (draft.employeeId.trim()) lines.push(`Employee ID: ${draft.employeeId.trim()}`)
-      if (draft.certificationName.trim()) lines.push(`Certification: ${draft.certificationName.trim()}`)
-      if (draft.certificationIssuer.trim()) lines.push(`Issuer: ${draft.certificationIssuer.trim()}`)
-      if (draft.referenceUrl.trim()) lines.push(`Evidence link: ${draft.referenceUrl.trim()}`)
-      if (draft.deadline.trim()) lines.push(`Renewal date: ${draft.deadline.trim()}`)
-      break
-    case 'project':
-    default:
-      break
-  }
-
-  return lines.join('\n')
-}
-
 // ── URL helpers ────────────────────────────────────────────────────────────
 type WorkhubCanonicalSection = 'home' | 'users' | 'tasks' | 'notes' | 'dashboard' | 'clients'
 type WorkhubParsedRouteKind = 'root' | 'workspace' | 'project' | 'document' | 'moodboard' | 'task'
@@ -864,13 +685,37 @@ type WorkhubPersistedRouteMap = Record<string, string>
 
 const WORKHUB_WORKSPACE_SECTIONS = new Set<WorkhubCanonicalSection>(['home', 'users', 'tasks', 'notes', 'dashboard', 'clients'])
 const WORKHUB_LEGACY_SECTIONS = new Set<string>([...WORKHUB_WORKSPACE_SECTIONS, 'moodboard'])
+const WORKHUB_ROUTE_BASE = '/workhub'
+const WORKHUB_ROUTE_BASE_V2 = '/workhub-v2'
 
 function isWorkhubWorkspaceSection(value: string): value is WorkhubCanonicalSection {
   return WORKHUB_WORKSPACE_SECTIONS.has(value as WorkhubCanonicalSection)
 }
 
+function isWorkhubRoutePath(pathname: string): boolean {
+  return pathname === WORKHUB_ROUTE_BASE
+    || pathname.startsWith(`${WORKHUB_ROUTE_BASE}/`)
+    || pathname === WORKHUB_ROUTE_BASE_V2
+    || pathname.startsWith(`${WORKHUB_ROUTE_BASE_V2}/`)
+}
+
+function resolveWorkhubRouteBasePath(pathname = ''): string {
+  const candidatePathname = pathname || (typeof window !== 'undefined' ? window.location.pathname : '')
+  if (candidatePathname === WORKHUB_ROUTE_BASE_V2 || candidatePathname.startsWith(`${WORKHUB_ROUTE_BASE_V2}/`)) {
+    return WORKHUB_ROUTE_BASE_V2
+  }
+  return WORKHUB_ROUTE_BASE
+}
+
+function getWorkhubRouteSegments(pathname: string): string[] {
+  const basePath = resolveWorkhubRouteBasePath(pathname)
+  if (pathname === basePath) return []
+  if (!pathname.startsWith(`${basePath}/`)) return []
+  return pathname.slice(basePath.length + 1).split('/').filter(Boolean)
+}
+
 function parseLegacyWorkhubPathname(pathname: string): Pick<WorkhubParsedRoute, 'wsId' | 'projId' | 'section' | 'entityId'> {
-  const parts = pathname.replace(/^\/workhub\/?/, '').split('/').filter(Boolean)
+  const parts = getWorkhubRouteSegments(pathname)
   let wsId = ''
   let projId = 'all'
   let section = ''
@@ -898,7 +743,7 @@ function parseLegacyWorkhubPathname(pathname: string): Pick<WorkhubParsedRoute, 
 }
 
 function parseWorkhubPathname(pathname: string, search = ''): WorkhubParsedRoute {
-  const parts = pathname.replace(/^\/workhub\/?/, '').split('/').filter(Boolean)
+  const parts = getWorkhubRouteSegments(pathname)
   const searchParams = new URLSearchParams(search)
   const contextProjectId = (searchParams.get('p') || '').trim()
   const normalizedContextProjectId = contextProjectId && contextProjectId !== 'all' ? contextProjectId : 'all'
@@ -1000,7 +845,8 @@ function buildWorkhubEntityRouteSearch(projId: string): string {
 }
 
 function buildWorkhubPathname(wsId: string, projId: string, section: string, entityId = ''): string {
-  if (!wsId) return '/workhub'
+  const basePath = resolveWorkhubRouteBasePath()
+  if (!wsId) return basePath
 
   const encodedWorkspaceId = encodeURIComponent(wsId)
   const encodedProjectId = projId && projId !== 'all' ? encodeURIComponent(projId) : ''
@@ -1008,31 +854,31 @@ function buildWorkhubPathname(wsId: string, projId: string, section: string, ent
   const normalizedSection = isWorkhubWorkspaceSection(section) ? section : 'dashboard'
 
   if (normalizedSection === 'notes' && encodedEntityId) {
-    return `/workhub/w/${encodedWorkspaceId}/d/${encodedEntityId}${buildWorkhubEntityRouteSearch(projId)}`
+    return `${basePath}/w/${encodedWorkspaceId}/d/${encodedEntityId}${buildWorkhubEntityRouteSearch(projId)}`
   }
 
   if (section === 'moodboard' && encodedEntityId) {
-    return `/workhub/w/${encodedWorkspaceId}/m/${encodedEntityId}${buildWorkhubEntityRouteSearch(projId)}`
+    return `${basePath}/w/${encodedWorkspaceId}/m/${encodedEntityId}${buildWorkhubEntityRouteSearch(projId)}`
   }
 
   if (normalizedSection === 'tasks' && encodedEntityId) {
-    return `/workhub/w/${encodedWorkspaceId}/t/${encodedEntityId}${buildWorkhubEntityRouteSearch(projId)}`
+    return `${basePath}/w/${encodedWorkspaceId}/t/${encodedEntityId}${buildWorkhubEntityRouteSearch(projId)}`
   }
 
   if ((normalizedSection === 'tasks' || normalizedSection === 'dashboard') && encodedProjectId) {
-    return `/workhub/w/${encodedWorkspaceId}/p/${encodedProjectId}`
+    return `${basePath}/w/${encodedWorkspaceId}/p/${encodedProjectId}`
   }
 
   const search = buildWorkhubRouteSearch(projId)
   if (normalizedSection === 'users') {
-    return `/workhub/u/${encodedWorkspaceId}${search}`
+    return `${basePath}/u/${encodedWorkspaceId}${search}`
   }
 
   if (normalizedSection === 'dashboard') {
-    return `/workhub/w/${encodedWorkspaceId}${search}`
+    return `${basePath}/w/${encodedWorkspaceId}${search}`
   }
 
-  return `/workhub/w/${encodedWorkspaceId}/s/${normalizedSection}${search}`
+  return `${basePath}/w/${encodedWorkspaceId}/s/${normalizedSection}${search}`
 }
 
 function resolveMoodboardPanelMode(panelVariant?: string | null): 'classic' | 'v2' | 'flow' | 'proscons' {
@@ -1080,7 +926,7 @@ function writePersistedWorkhubRouteMap(storageKey: string, routeMap: WorkhubPers
 
 function normalizePersistedWorkhubRoute(value: string): string {
   const { pathname, search } = splitPersistedWorkhubRoute(value)
-  if (!pathname.startsWith('/workhub')) return ''
+  if (!isWorkhubRoutePath(pathname)) return ''
   const parsedRoute = parseWorkhubPathname(pathname, search)
   if (!parsedRoute.wsId) return ''
   return buildWorkhubPathname(parsedRoute.wsId, parsedRoute.projId, parsedRoute.section, parsedRoute.entityId)
@@ -1151,6 +997,8 @@ export default function WorkHubPage() {
   const [memberLoading, setMemberLoading] = useState(true)
   const [requestingAccess, setRequestingAccess] = useState(false)
   const [members, setMembers] = useState<WorkhubMember[]>([])
+  const [membersLoading, setMembersLoading] = useState(true)
+  const [membersError, setMembersError] = useState<string | null>(null)
   const [workspaces, setWorkspaces] = useState<WorkhubWorkspace[]>([])
   const [clients, setClients] = useState<WorkhubClient[]>([])
   const [projects, setProjects] = useState<WorkhubProject[]>([])
@@ -1289,7 +1137,7 @@ export default function WorkHubPage() {
   const [dragStatusId, setDragStatusId] = useState('')
   const [dropTargetKey, setDropTargetKey] = useState('')
   const [bootstrappingMasterAccess, setBootstrappingMasterAccess] = useState(false)
-  const [masterBootstrapAttempted, setMasterBootstrapAttempted] = useState(false)
+  const accessBootstrapAttempted = useRef(false)
   const [accessVisibility, setAccessVisibility] = useState<WorkhubVisibility>('workspace')
   const [accessMemberUids, setAccessMemberUids] = useState<string[]>([])
   const [expandedProjectIds, setExpandedProjectIds] = useState<string[]>([])
@@ -1611,13 +1459,13 @@ export default function WorkHubPage() {
         setMember(null)
         setMemberLoading(false)
         setBootstrappingMasterAccess(false)
-        setMasterBootstrapAttempted(false)
-        navigateRef.current('/login', { replace: true, state: { returnTo: '/workhub' } })
+        accessBootstrapAttempted.current = false
+        navigateRef.current('/workhub/login?returnTo=%2Fworkhub', { replace: true, state: { returnTo: '/workhub' } })
         return
       }
       setMemberLoading(true)
       setBootstrappingMasterAccess(false)
-      setMasterBootstrapAttempted(false)
+      accessBootstrapAttempted.current = false
       setUserEmail(user.email || '')
       setUserName(user.displayName || user.email?.split('@')[0] || 'Member')
       unsubMember = subscribeOwnWorkhubMember(user.uid, (next) => {
@@ -1634,7 +1482,16 @@ export default function WorkHubPage() {
 
   useEffect(() => {
     if (!member || member.status !== 'approved') return
-    const unsubMembers = subscribeAllWorkhubMembers(setMembers)
+    setMembersLoading(true)
+    setMembersError(null)
+    const unsubMembers = subscribeAllWorkhubMembers((next) => {
+      setMembers(next)
+      setMembersLoading(false)
+      setMembersError(null)
+    }, (error) => {
+      setMembersLoading(false)
+      setMembersError(error.message)
+    })
     const unsubWorkspaces = subscribeWorkhubWorkspaces(setWorkspaces)
     return () => {
       unsubMembers()
@@ -2881,6 +2738,8 @@ export default function WorkHubPage() {
     }
 
     setBusyKey(`project-create:${kind}`)
+    let queuedId = ''
+    let created = false
     try {
       const projectId = await createWorkhubProject({
         workspaceId: selectedWorkspaceId,
@@ -2893,7 +2752,19 @@ export default function WorkHubPage() {
         memberUids: inheritedAccess.memberUids,
         storageMethod: 'firebase',
         createdBy: localUid,
+      }, (projectId) => {
+        queuedId = projectId
+      setSelectedProjectId(projectId)
+      setSelectedNoteProjectId(projectId)
+      setSelectedDocumentId('')
+      setSelectedMoodBoardId('')
+      setSelectedTaskId('')
+      setActiveSection('tasks')
+      setProjectsGroupExpanded(true)
+      setSidebarCollapsed(false)
+      setPendingTreeInlineRename({ itemType: 'project', itemId: projectId })
       })
+      created = true
 
       await createWorkhubActivity({
         workspaceId: selectedWorkspaceId,
@@ -2904,19 +2775,16 @@ export default function WorkHubPage() {
         message: `Created ${kind} ${defaultName}`,
         visibility: inheritedAccess.visibility,
         memberUids: inheritedAccess.memberUids,
-      })
+      }).catch(error => console.warn('Item saved; activity log could not be recorded.', error))
 
-      setSelectedProjectId(projectId)
-      setSelectedNoteProjectId(projectId)
-      setSelectedDocumentId('')
-      setSelectedMoodBoardId('')
-      setSelectedTaskId('')
-      setActiveSection('tasks')
-      setProjectsGroupExpanded(true)
-      setSidebarCollapsed(false)
-      setPendingTreeInlineRename({ itemType: 'project', itemId: projectId })
       showToast({ type: 'success', message: `${kind === 'folder' ? 'Folder' : 'Project'} created.` })
     } catch {
+      if (!created && queuedId) {
+        setPendingTreeInlineRename(current => current?.itemId === queuedId ? null : current)
+        setSelectedProjectId(current => current === queuedId ? 'all' : current)
+        setSelectedDocumentId(current => current === queuedId ? '' : current)
+        setSelectedMoodBoardId(current => current === queuedId ? '' : current)
+      }
       showToast({ type: 'error', message: `Could not create ${kind}.` })
     } finally {
       setBusyKey('')
@@ -2953,6 +2821,8 @@ export default function WorkHubPage() {
     const defaultTitle = type === 'note' ? 'New note' : 'New document'
 
     setBusyKey(`${type}:create:menu`)
+    let queuedId = ''
+    let created = false
     try {
       const documentId = await createWorkhubDocument({
         workspaceId: selectedWorkspaceId,
@@ -2966,7 +2836,17 @@ export default function WorkHubPage() {
         notifyMode,
         notifyUids,
         createdBy: localUid,
+      }, (documentId) => {
+        queuedId = documentId
+      setSelectedProjectId(resolvedProjectId)
+      setSelectedNoteProjectId(resolvedProjectId)
+      setSelectedDocumentId(documentId)
+      setSelectedMoodBoardId('')
+      setSelectedTaskId('')
+      setActiveSection('notes')
+      setPendingTreeInlineRename({ itemType: 'document', itemId: documentId })
       })
+      created = true
 
       await createWorkhubActivity({
         workspaceId: selectedWorkspaceId,
@@ -2977,17 +2857,16 @@ export default function WorkHubPage() {
         message: `Created ${type} ${defaultTitle}`,
         visibility,
         memberUids,
-      })
+      }).catch(error => console.warn('Item saved; activity log could not be recorded.', error))
 
-      setSelectedProjectId(resolvedProjectId)
-      setSelectedNoteProjectId(resolvedProjectId)
-      setSelectedDocumentId(documentId)
-      setSelectedMoodBoardId('')
-      setSelectedTaskId('')
-      setActiveSection('notes')
-      setPendingTreeInlineRename({ itemType: 'document', itemId: documentId })
       showToast({ type: 'success', message: `${type === 'note' ? 'Note' : 'Document'} created.` })
     } catch {
+      if (!created && queuedId) {
+        setPendingTreeInlineRename(current => current?.itemId === queuedId ? null : current)
+        setSelectedProjectId(current => current === queuedId ? 'all' : current)
+        setSelectedDocumentId(current => current === queuedId ? '' : current)
+        setSelectedMoodBoardId(current => current === queuedId ? '' : current)
+      }
       showToast({ type: 'error', message: `Could not create ${type}.` })
     } finally {
       setBusyKey('')
@@ -4303,7 +4182,7 @@ export default function WorkHubPage() {
     }
   }, [activeSection, selectedProjectEffectiveIntent, settingsProjectMainPanelView])
 
-  function renderDashboardProjectCard(project: WorkhubProject, depth = 0): JSX.Element {
+  function renderDashboardProjectCard(project: WorkhubProject, depth = 0): ReactElement {
     const intentMeta = projectIntentMetaById[project.id] || getTemplateCreationIntentMeta(resolveEffectiveProjectIntent(project, workspaceByIdForFiltering, selectedWorkspaceTemplateIntentSet), selectedWorkspaceTemplateId)
     const progress = workspaceTaskProgressByProjectId[project.id] || { done: 0, total: 0 }
     const completionPercent = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0
@@ -4476,13 +4355,8 @@ export default function WorkHubPage() {
     if (userWorkspaceFilter === 'all') return members
     const selectedFilterWorkspace = visibleWorkspaces.find((item) => item.id === userWorkspaceFilter)
     if (!selectedFilterWorkspace) return members
-    const scopedUids = new Set(normalizeMemberUids(selectedFilterWorkspace.accessMemberUids || []))
-    return members.filter((item) => item.status === 'pending' || scopedUids.has(item.uid))
+    return members.filter((item) => item.status === 'pending' || canAccessWorkspace(selectedFilterWorkspace, item.uid, item.email || '', false))
   }, [members, userWorkspaceFilter, visibleWorkspaces])
-  const userManagementPendingMembers = useMemo(
-    () => userManagementMembers.filter((item) => item.status === 'pending'),
-    [userManagementMembers],
-  )
   const userManagementApprovedMembers = useMemo(
     () => userManagementMembers.filter((item) => item.status === 'approved'),
     [userManagementMembers],
@@ -5137,6 +5011,8 @@ export default function WorkHubPage() {
     ].join('\n')
 
     setBusyKey('report:create')
+    let queuedId = ''
+    let created = false
     try {
       const documentId = await createWorkhubDocument({
         workspaceId: selectedWorkspaceId,
@@ -5150,7 +5026,17 @@ export default function WorkHubPage() {
         notifyMode: 'none',
         notifyUids: [],
         createdBy: currentUid,
+      }, (documentId) => {
+        queuedId = documentId
+      setSelectedProjectId(fallbackProjectId)
+      setSelectedNoteProjectId(fallbackProjectId)
+      setSelectedDocumentId(documentId)
+      setSelectedMoodBoardId('')
+      setSelectedTaskId('')
+      setActiveSection('notes')
+      setPendingTreeInlineRename({ itemType: 'document', itemId: documentId })
       })
+      created = true
 
       await createWorkhubActivity({
         workspaceId: selectedWorkspaceId,
@@ -5161,16 +5047,16 @@ export default function WorkHubPage() {
         message: `Created report ${title}`,
         visibility: 'workspace',
         memberUids: [],
-      })
+      }).catch(error => console.warn('Item saved; activity log could not be recorded.', error))
 
-      setSelectedProjectId(fallbackProjectId)
-      setSelectedNoteProjectId(fallbackProjectId)
-      setSelectedDocumentId(documentId)
-      setSelectedMoodBoardId('')
-      setSelectedTaskId('')
-      setActiveSection('notes')
       showToast({ type: 'success', message: 'Report item created in Notes.' })
     } catch {
+      if (!created && queuedId) {
+        setPendingTreeInlineRename(current => current?.itemId === queuedId ? null : current)
+        setSelectedProjectId(current => current === queuedId ? 'all' : current)
+        setSelectedDocumentId(current => current === queuedId ? '' : current)
+        setSelectedMoodBoardId(current => current === queuedId ? '' : current)
+      }
       showToast({ type: 'error', message: 'Could not create report item.' })
     } finally {
       setBusyKey('')
@@ -6071,8 +5957,9 @@ export default function WorkHubPage() {
 
     if (!workspaceId) {
       setSelectedWorkspaceId('')
-      if (location.pathname !== '/workhub') {
-        navigate('/workhub')
+      const rootPath = buildWorkhubPathname('', 'all', 'dashboard')
+      if (location.pathname !== rootPath) {
+        navigate(rootPath)
       }
       return
     }
@@ -6170,8 +6057,6 @@ export default function WorkHubPage() {
     openDocumentCreateDialog,
     closeDocumentCreateDialog,
     handleCreateDocument,
-    createDocumentQuick,
-    createNoteQuick,
   } = useWorkhubDocumentCreation({
     currentUserUid: currentUid,
     selectedWorkspaceId,
@@ -6202,68 +6087,41 @@ export default function WorkHubPage() {
     workspaceProjectById,
   })
 
-  const createTaskQuick = useCallback(async (projectId: string) => {
-    if (!auth.currentUser || !selectedWorkspaceId || !projectId) return
-    const targetProject = visibleProjectById[projectId]
-    if (!targetProject) return
-
-    setBusyKey('task')
-    try {
-      const taskId = await createWorkhubTask({
-        workspaceId: selectedWorkspaceId,
-        projectId,
-        title: 'New task',
-        description: '',
-        visibility: targetProject.visibility || 'workspace',
-        memberUids: targetProject.memberUids || [],
-        status: defaultTaskStatusId,
-        priority: 'medium',
-        assigneeUid: auth.currentUser.uid,
-        startDate: undefined,
-        dueDate: '',
-        createdBy: auth.currentUser.uid,
-      })
-
-      setSelectedTaskId(taskId)
-      setSelectedDocumentId('')
-      setSelectedMoodBoardId('')
-      setActiveSection('tasks')
-      setProjectsGroupExpanded(true)
-      setSidebarCollapsed(false)
-
-      showToast({ type: 'success', message: 'Task created.' })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Could not create task.'
-      showToast({ type: 'error', message })
-    } finally {
-      setBusyKey('')
-    }
-  }, [auth.currentUser, selectedWorkspaceId, visibleProjectById, defaultTaskStatusId, showToast, setBusyKey])
-
   const createMoodBoardQuick = useCallback(async (projectId: string) => {
     if (!auth.currentUser || !selectedWorkspaceId || !projectId) return
     const targetProject = visibleProjectById[projectId]
     if (!targetProject) return
 
     setBusyKey('moodboard')
+    let queuedId = ''
+    let created = false
     try {
-      const moodBoardId = await createWorkhubMoodBoard({
+      await createWorkhubMoodBoard({
         workspaceId: selectedWorkspaceId,
         entityType: 'project',
         entityId: projectId,
         title: 'New mood board',
         createdBy: auth.currentUser.uid,
-      })
-
+      }, (moodBoardId) => {
+        queuedId = moodBoardId
       setSelectedMoodBoardId(moodBoardId)
       setSelectedDocumentId('')
       setSelectedTaskId('')
       setActiveSection('moodboard')
       setProjectsGroupExpanded(true)
       setSidebarCollapsed(false)
+      setPendingTreeInlineRename({ itemType: 'moodboard', itemId: moodBoardId })
+      })
+      created = true
 
       showToast({ type: 'success', message: 'Mood board created.' })
     } catch (error) {
+      if (!created && queuedId) {
+        setPendingTreeInlineRename(current => current?.itemId === queuedId ? null : current)
+        setSelectedProjectId(current => current === queuedId ? 'all' : current)
+        setSelectedDocumentId(current => current === queuedId ? '' : current)
+        setSelectedMoodBoardId(current => current === queuedId ? '' : current)
+      }
       const message = error instanceof Error ? error.message : 'Could not create mood board.'
       showToast({ type: 'error', message })
     } finally {
@@ -6282,13 +6140,13 @@ export default function WorkHubPage() {
     try {
       switch (type) {
         case 'task':
-          await createTaskQuick(addItemProjectId)
+          focusQuickAddInline(addItemProjectId)
           break
         case 'document':
-          await createDocumentQuick(addItemProjectId)
+          await handleQuickCreateDocumentLikeFromContext('document', addItemProjectId)
           break
         case 'note':
-          await createNoteQuick(addItemProjectId)
+          await handleQuickCreateDocumentLikeFromContext('note', addItemProjectId)
           break
         case 'moodboard':
           await createMoodBoardQuick(addItemProjectId)
@@ -6298,7 +6156,7 @@ export default function WorkHubPage() {
     } catch (error) {
       // Error handling is done in the individual creation hooks
     }
-  }, [addItemProjectId, createTaskQuick, createDocumentQuick, createNoteQuick, createMoodBoardQuick, handleCreateItemType, workspaceProjectById])
+  }, [addItemProjectId, focusQuickAddInline, handleQuickCreateDocumentLikeFromContext, createMoodBoardQuick, handleCreateItemType, workspaceProjectById])
   const settingsMilestones = useWorkhubMilestones({
     projectId: projectAccessDialogId || null,
     workspaceId: selectedWorkspaceId,
@@ -7620,18 +7478,18 @@ export default function WorkHubPage() {
   }, [selectedProjectSubmissionTimeDraft, selectedProjectTypeDraft])
 
   useEffect(() => {
-    if (!auth.currentUser || !isMasterAdmin) return
-    if (member?.status === 'approved' && member.role === 'admin') {
+    if (!auth.currentUser) return
+    if (member?.status === 'suspended') {
       setBootstrappingMasterAccess(false)
       return
     }
-    if (memberLoading || masterBootstrapAttempted) return
+    if (memberLoading || accessBootstrapAttempted.current) return
     let cancelled = false
     const loadingTimeout = window.setTimeout(() => {
       if (cancelled) return
       setBootstrappingMasterAccess(false)
     }, 8000)
-    setMasterBootstrapAttempted(true)
+    accessBootstrapAttempted.current = true
     setBootstrappingMasterAccess(true)
     void requestWorkhubAccess()
       .then((nextMember) => {
@@ -7640,7 +7498,7 @@ export default function WorkHubPage() {
       })
       .catch((error) => {
         if (cancelled) return
-        const message = error instanceof Error ? error.message : 'Could not prepare your WorkHub admin access.'
+        const message = error instanceof Error ? error.message : 'Could not submit your WorkHub access request. Please retry.'
         showToast({ type: 'error', message })
       })
       .finally(() => {
@@ -7652,7 +7510,7 @@ export default function WorkHubPage() {
       cancelled = true
       clearTimeout(loadingTimeout)
     }
-  }, [isMasterAdmin, masterBootstrapAttempted, member?.role, member?.status, memberLoading, showToast])
+  }, [member?.role, member?.status, memberLoading, showToast])
 
   async function handleRequestAccess() {
     setRequestingAccess(true)
@@ -8987,20 +8845,14 @@ export default function WorkHubPage() {
 
   async function handleSaveMemberDisplayName(targetUid: string) {
     const targetMember = memberByUid[targetUid]
-    if (!targetMember) return
-
-    const targetEmail = (targetMember.email || '').trim().toLowerCase()
-    if (normalizedMasterEmail && targetEmail === normalizedMasterEmail) {
-      showToast({ type: 'error', message: 'Master account name cannot be changed.' })
-      return
-    }
+    if (!targetMember) return false
 
     const draftValue = (memberNameDraftByUid[targetUid] ?? (targetMember.displayName || '')).trim()
     if (!draftValue) {
       showToast({ type: 'error', message: 'Display name cannot be empty.' })
-      return
+      return false
     }
-    if (draftValue === (targetMember.displayName || '').trim()) return
+    if (draftValue === (targetMember.displayName || '').trim()) return true
 
     setBusyKey(`member-name:${targetUid}`)
     try {
@@ -9010,9 +8862,11 @@ export default function WorkHubPage() {
         [targetUid]: updated.displayName || draftValue,
       }))
       showToast({ type: 'success', message: 'Member name updated.' })
+      return true
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not update member name.'
       showToast({ type: 'error', message })
+      return false
     } finally {
       setBusyKey('')
     }
@@ -9023,7 +8877,7 @@ export default function WorkHubPage() {
     const targetEmail = (targetMember?.email || '').trim().toLowerCase()
     if (normalizedMasterEmail && targetEmail === normalizedMasterEmail) {
       showToast({ type: 'error', message: 'Master admin status cannot be changed.' })
-      return
+      return false
     }
 
     let suspensionReason = reason.trim()
@@ -9031,7 +8885,7 @@ export default function WorkHubPage() {
       suspensionReason = (window.prompt('Suspension reason (required):', 'Access suspended by administrator.') || '').trim()
       if (!suspensionReason) {
         showToast({ type: 'info', message: 'Suspension cancelled: reason is required.' })
-        return
+        return false
       }
     }
 
@@ -9063,9 +8917,11 @@ export default function WorkHubPage() {
         })
       }
       showToast({ type: 'success', message: `Member ${status}.` })
+      return true
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not update member.'
       showToast({ type: 'error', message })
+      return false
     } finally {
       setBusyKey('')
     }
@@ -9942,10 +9798,11 @@ export default function WorkHubPage() {
     setProjectsGroupExpanded(true)
     setSidebarCollapsed(false)
     if (selectedWorkspaceId) {
-      navigate(`/workhub/w/${encodeURIComponent(selectedWorkspaceId)}/s/tasks?p=${encodeURIComponent(projectId)}`)
+      const basePath = resolveWorkhubRouteBasePath(location.pathname)
+      navigate(`${basePath}/w/${encodeURIComponent(selectedWorkspaceId)}/s/tasks?p=${encodeURIComponent(projectId)}`)
     }
     closeMobileWorkspacePanel()
-  }, [closeMobileWorkspacePanel, navigate, selectedWorkspaceId, setGearMenuOpen, setSelectedProjectId, setSelectedNoteProjectId, setSelectedDocumentId, setSelectedTaskId, setSelectedMoodBoardId, setActiveSection, setActiveWorkspaceTab, setProjectsGroupExpanded, setSidebarCollapsed])
+  }, [closeMobileWorkspacePanel, location.pathname, navigate, selectedWorkspaceId, setGearMenuOpen, setSelectedProjectId, setSelectedNoteProjectId, setSelectedDocumentId, setSelectedTaskId, setSelectedMoodBoardId, setActiveSection, setActiveWorkspaceTab, setProjectsGroupExpanded, setSidebarCollapsed])
 
   const handleMobileDocumentSelect = useCallback((documentId: string) => {
     setGearMenuOpen(false)
@@ -9993,7 +9850,7 @@ export default function WorkHubPage() {
   const openMoodBoardVariantForCurrentScope = useCallback(async (panelVariant: 'classic' | 'flow' | 'proscons') => {
     if (!selectedWorkspaceId) {
       showToast({ type: 'info', message: 'Select a workspace first.' })
-      navigate('/workhub')
+      navigate(buildWorkhubPathname('', 'all', 'dashboard'))
       return
     }
 
@@ -10129,8 +9986,10 @@ export default function WorkHubPage() {
       ? normalizeMemberUids(targetProject?.memberUids?.length ? targetProject.memberUids : [targetProject?.createdBy || currentUid])
       : []
 
+    let queuedId = ''
+    let created = false
     try {
-      const newId = await createWorkhubMoodBoard({
+      await createWorkhubMoodBoard({
         workspaceId: selectedWorkspaceId,
         entityType,
         entityId: normalizedEntityId,
@@ -10139,8 +9998,8 @@ export default function WorkHubPage() {
         visibility: boardVisibility,
         memberUids: boardMemberUids,
         createdBy: currentUid,
-      })
-
+      }, (newId) => {
+        queuedId = newId
       if (entityType === 'project') {
         const lineage = collectProjectLineage(normalizedEntityId, workspaceProjectById)
         if (lineage.length > 0) {
@@ -10166,7 +10025,18 @@ export default function WorkHubPage() {
       if (`${location.pathname}${location.search}` !== nextPath) {
         navigate(nextPath)
       }
+      if (entityType === 'project') setPendingTreeInlineRename({ itemType: 'moodboard', itemId: newId })
+      })
+      created = true
+
+
     } catch (error) {
+      if (!created && queuedId) {
+        setPendingTreeInlineRename(current => current?.itemId === queuedId ? null : current)
+        setSelectedProjectId(current => current === queuedId ? 'all' : current)
+        setSelectedDocumentId(current => current === queuedId ? '' : current)
+        setSelectedMoodBoardId(current => current === queuedId ? '' : current)
+      }
       console.error('Failed to create moodboard variant', error)
       showToast({ type: 'error', message: 'Could not create board. Please try again.' })
     }
@@ -10283,8 +10153,8 @@ export default function WorkHubPage() {
       <div className="workhub-shell">
         <div className="workhub-center-card">
           <div className="workhub-spinner" />
-          <h1>Loading WorkHub</h1>
-          <p>Preparing your private company workspace.</p>
+          <h1>Preparing your WorkHub access</h1>
+          <p>Checking invitations and registering your access request.</p>
           <WorkhubStyles phoneMaxWidth={WORKHUB_PHONE_MAX_WIDTH} />
         </div>
       </div>
@@ -10297,10 +10167,10 @@ export default function WorkHubPage() {
         <div className="workhub-center-card">
           <span className="workhub-badge">Private Internal Tool</span>
           <h1>Welcome to WorkHub</h1>
-          <p>This area is restricted to approved company members. Request access once and your administrators can approve you.</p>
+          <p>We could not finish setting up your access. Retry to accept your workspace invitation or send a join request to your administrators.</p>
           <div className="workhub-center-actions">
             <button className="workhub-primary-btn" disabled={requestingAccess} onClick={handleRequestAccess}>
-              {requestingAccess ? 'Requesting…' : 'Request company access'}
+              {requestingAccess ? 'Requesting…' : 'Retry access request'}
             </button>
             <Link to="/dashboard" className="workhub-secondary-link">Back to admin app</Link>
           </div>
@@ -12210,7 +12080,12 @@ export default function WorkHubPage() {
                   visibleWorkspaces={visibleWorkspaces}
                   workspaceDisplayNameById={workspaceDisplayNameById}
                   userManagementApprovedMembers={userManagementApprovedMembers}
-                  userManagementPendingMembers={userManagementPendingMembers}
+                  userManagementPendingMembers={pendingMembers}
+                  membersLoading={membersLoading}
+                  membersError={membersError}
+                  canInvite={isMasterAdmin || member.role === 'admin'}
+                  allMembers={members}
+                  onRetryMembers={() => setDataReloadNonce((value) => value + 1)}
                   userManagementMembers={userManagementMembers}
                   normalizedMasterEmail={normalizedMasterEmail}
                   memberWorkspaceSummaryByUid={memberWorkspaceSummaryByUid}
@@ -12710,6 +12585,22 @@ export default function WorkHubPage() {
         <AddItemDialog
           isOpen={addItemDialogOpen}
           projectId={addItemProjectId}
+          contextName={workspaceProjectById[addItemProjectId]?.name || selectedWorkspace?.name}
+          extraActions={[
+            { id: 'folder', icon: '📁', label: 'Folder', description: 'Create a folder inside this item', group: 'Create', disabled: !selectedWorkspaceId, onClick: () => { void handleQuickCreateProjectFromContext('folder', addItemProjectId) } },
+            { id: 'project', icon: '📁', label: selectedWorkspaceScopeType === 'hr' ? 'Organization unit' : selectedWorkspaceScopeType === 'finance' ? 'Ledger' : 'Project', description: 'Create a new container inside this item', group: 'Create', disabled: !selectedWorkspaceId, onClick: () => { void handleQuickCreateProjectFromContext('project', addItemProjectId) } },
+            { id: 'report', icon: '📊', label: 'Report', description: 'Create a report for this item', group: 'Create', disabled: !selectedWorkspaceId, onClick: () => { void handleCreatePipelineReportDocument(addItemProjectId) } },
+            ...workspaceTemplateCreateActions.filter(action => action.intent !== 'project').map(action => ({ id: action.id, icon: action.icon, label: action.label, description: `Add to ${workspaceProjectById[addItemProjectId]?.name || 'this workspace'}`, group: 'Create' as const, disabled: !selectedWorkspaceId, onClick: () => openWorkspaceTypeCreateDialog(action.intent, addItemProjectId) })),
+            { id: 'flow', icon: '🧭', label: 'Flow Project Lab', description: 'Create a visual workflow', group: 'Tools', onClick: () => { void createAndOpenMoodBoardVariantForEntity('flow', addItemProjectId ? 'project' : 'workspace', addItemProjectId || '__workspace__') } },
+            { id: 'proscons', icon: '⚖', label: 'Pros and Cons', description: 'Compare benefits and drawbacks', group: 'Tools', onClick: () => { void createAndOpenMoodBoardVariantForEntity('proscons', addItemProjectId ? 'project' : 'workspace', addItemProjectId || '__workspace__') } },
+            ...(addItemProjectId ? [
+              { id: 'rename', icon: '✏', label: 'Rename', description: 'Rename the selected item', group: 'Manage' as const, onClick: () => setPendingTreeInlineRename({ itemType: 'project', itemId: addItemProjectId }) },
+              { id: 'move', icon: '↔', label: 'Move folder', description: 'Move the selected item to another location', group: 'Manage' as const, onClick: () => openProjectMoveDialog(addItemProjectId) },
+              { id: 'copy', icon: '🔗', label: 'Copy folder URL', description: 'Copy a direct link to this item', group: 'Manage' as const, onClick: () => { void copyProjectDeepLink(addItemProjectId) } },
+              ...(canSeeAllProjects ? [{ id: 'settings', icon: '⚙️', label: 'Folder settings', description: 'Configure this item and its access', group: 'Manage' as const, onClick: () => setProjectAccessDialogId(addItemProjectId) }] : []),
+              { id: 'delete', icon: '🗑', label: 'Delete folder', description: 'Remove this item', group: 'Manage' as const, onClick: () => { void handleDeleteProjectFromTree(addItemProjectId) } },
+            ] : []),
+          ]}
           canCreateTask={canCreateTasksForIntent(projectIntentById[addItemProjectId] || 'project')}
           onClose={closeAddItemDialog}
           onCreateTask={() => { void handleCreateItem('task') }}

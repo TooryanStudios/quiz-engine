@@ -16378,6 +16378,20 @@ const WorkhubStyles = memo(function WorkhubStyles({ phoneMaxWidth = 767 }: Workh
       .workhub-modal.workhub-global-finder-modal {
         width: min(720px, calc(100vw - 24px));
       }
+      .workhub-modal.workhub-add-item-dialog {
+        box-sizing: border-box;
+        width: min(720px, calc(100vw - 24px));
+        max-height: calc(100dvh - 48px);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .workhub-add-item-dialog .workhub-modal-head { flex-shrink: 0; }
+      .workhub-add-item-dialog .workhub-modal-body { overflow-y: auto; min-height: 0; }
+      .workhub-add-item-dialog .workhub-add-item-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .workhub-add-item-option { text-align: start; }
+      .workhub-add-item-option:disabled { opacity: .5; cursor: not-allowed; }
+      @media (max-width: 520px) { .workhub-add-item-dialog .workhub-add-item-options { grid-template-columns: 1fr; } }
       .workhub-add-item-options {
         display: flex;
         flex-direction: column;

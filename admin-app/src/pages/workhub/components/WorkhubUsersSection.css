@@ -1,0 +1,127 @@
+.workhub-users-page .workhub-user-management-panel { padding: 20px; gap: 0; overflow: hidden; }
+.workhub-users-page .workhub-panel-head { flex: 0 0 auto; margin-bottom: 16px; gap: 16px; }
+.workhub-users-page .workhub-panel-head h2 { font-size: 1.15rem; letter-spacing: -.025em; }
+.workhub-users-page .workhub-panel-head p { font-size: .8rem; margin-top: 4px; }
+.workhub-users-navigation { display: flex; gap: 24px; border-bottom: 1px solid #e6ebf3; flex: 0 0 auto; }
+.workhub-users-navigation button { display: flex; align-items: center; gap: 8px; padding: 10px 0 12px; background: none; border: 0; border-bottom: 2px solid transparent; color: #62718b; font-size: .84rem; cursor: pointer; }
+.workhub-users-navigation button[aria-pressed="true"] { color: #354fc5; border-bottom-color: #5369dc; font-weight: 650; }
+.workhub-users-navigation span { padding: 2px 7px; border-radius: 6px; background: #f0f3f9; font-size: .7rem; }
+.workhub-users-filterbar { display: grid; grid-template-columns: minmax(180px, 1fr) 160px 220px; gap: 10px; padding: 14px 0; flex: 0 0 auto; }
+.workhub-users-filterbar input { min-width: 0; width: 100%; }
+.workhub-users-filterbar input, .workhub-users-filterbar select { padding: 8px 10px; height: 36px; font-size: .8rem; border: 1px solid #dfe5ef; border-radius: 8px; background: #fff; color: #33445f; }
+.workhub-users-filterbar label { min-width: 0; }
+.workhub-users-filterbar select { width: 100%; min-width: 0; }
+.workhub-users-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.workhub-users-page .workhub-members-section { flex: 1 1 auto; min-height: 0; gap: 8px; }
+.workhub-users-page .workhub-members-section-head { flex: 0 0 auto; }
+.workhub-users-page .workhub-members-section-head strong { font-size: .72rem; font-weight: 500; color: #718096; }
+.workhub-users-page .workhub-member-list { flex: 1 1 auto; min-height: 0; overflow: auto; gap: 0; }
+.workhub-users-page .workhub-member-row-wrap { flex: 0 0 auto; }
+.workhub-users-page .workhub-member-row.settings-row { display: grid; grid-template-columns: 38px minmax(140px, 1fr) minmax(150px, .8fr) 34px; padding: 12px 10px; gap: 12px; border: 0; border-bottom: 1px solid #edf0f5; border-radius: 0; }
+.workhub-users-page .workhub-member-row.settings-row.is-suspended { opacity: 1; background: #fafbfc; }
+.workhub-users-page .workhub-member-name { font-size: .87rem; }
+.workhub-users-page .workhub-member-email { font-size: .76rem; color: #6a7991; }
+.workhub-users-role { font-size: .67rem; color: #718096; text-transform: capitalize; margin-top: 3px; }
+.workhub-users-page .workhub-member-workspaces { display: grid; gap: 4px; text-align: left; }
+.workhub-users-workspace-names { color: #718096; font-size: .73rem; overflow-wrap: anywhere; }
+.workhub-users-page .workhub-member-actions { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-start; }
+.workhub-users-name-editor { font-size: .78rem; margin-top: 8px; }
+.workhub-users-name-editor summary { cursor: pointer; }
+.workhub-users-name-editor .workhub-inline-row { flex-wrap: wrap; }
+.workhub-users-edit-button { opacity: 0; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; background: #fff; border: 1px solid #dfe5ef; border-radius: 7px; color: #4660be; cursor: pointer; }
+.workhub-member-row:hover .workhub-users-edit-button, .workhub-member-row:focus-within .workhub-users-edit-button, .workhub-users-edit-button.is-editing { opacity: 1; }
+.workhub-users-access-help { font-size: .8rem; color: #6a7991; }
+.workhub-users-requests { overflow: auto; padding-top: 16px; }
+.workhub-users-request-row { display: grid; grid-template-columns: 36px 1fr auto; align-items: center; gap: 12px; padding: 14px 8px; border-bottom: 1px solid #edf0f5; }
+.workhub-users-request-actions, .workhub-invitations-buttons { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.workhub-invitations-buttons button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.workhub-invitations-toolbar { position: relative; }
+.workhub-invitations-list { padding-top: 10px; }
+.workhub-invitations-list .workhub-empty-state { padding: 40px 16px; }
+.workhub-invitations-list, .workhub-invitations-list > article { min-width: 0; }
+.workhub-invitations.workhub-invitations-list { overflow: auto; }
+.workhub-invitation-row { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(100px, .5fr) auto; align-items: center; gap: 16px; padding: 14px 8px; border-bottom: 1px solid #edf0f5; font-size: .82rem; }
+.workhub-invitation-row span, .workhub-invitation-row small { display: block; margin-top: 4px; color: #6a7991; }
+.workhub-invitation-row .workhub-invite-badge { display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: .7rem; background: #fff5d6; color: #89681d; }
+.workhub-invitation-row .workhub-invite-badge.accepted { background: #ebf7ef; color: #357c4f; }
+.workhub-invitation-row .workhub-invite-badge.revoked { background: #f0f2f5; color: #718096; }
+.workhub-invite-notice { font-size: .8rem; padding: 10px; border-radius: 8px; background: #edf7ef; color: #286740; }
+.workhub-invitations-toolbar > .workhub-invite-notice { position: absolute; z-index: 3; top: 30px; right: 0; width: min(380px, 80vw); border: 1px solid #dbe8de; box-shadow: 0 8px 28px #20304018; }
+.workhub-invite-notice.is-error, .workhub-users-load-error { padding: 12px; background: #fff3f2; color: #96382e; font-size: .8rem; }
+.workhub-invite-overlay { position: fixed; inset: 0; background: #18273d66; backdrop-filter: blur(3px); z-index: 10000; }
+.workhub-invite-dialog { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(480px, calc(100vw - 32px)); max-height: 90vh; overflow: auto; box-sizing: border-box; padding: 28px; border-radius: 16px; background: #fff; box-shadow: 0 24px 90px #17264140; color: #243650; font-family: inherit; z-index: 10001; }
+.workhub-invite-dialog h2 { font-size: 1.2rem; margin: 0 0 8px; }
+.workhub-invite-dialog p { font-size: .82rem; color: #6a7991; line-height: 1.6; }
+.workhub-invite-close { position: absolute; top: 16px; right: 16px; border: 0; background: none; color: #718096; cursor: pointer; }
+.workhub-invitation-form { display: grid; gap: 16px; margin-top: 24px; }
+.workhub-invitation-form label { display: grid; gap: 7px; font-size: .82rem; font-weight: 550; }
+.workhub-invitation-form input, .workhub-invitation-form select { width: 100%; box-sizing: border-box; padding: 11px; border: 1px solid #dfe5ef; border-radius: 8px; background: #fff; color: #243650; }
+.workhub-invitation-form button { padding: 9px 14px; border: 1px solid #dfe5ef; border-radius: 8px; background: #fff; cursor: pointer; }
+.workhub-invitation-form .workhub-invitations-buttons { justify-content: flex-end; }
+.workhub-invitation-form .workhub-invite-submit { background: #5264d9; border-color: #5264d9; color: #fff; }
+.workhub-invitation-form button:disabled { opacity: .5; cursor: default; }
+.workhub-users-page button:focus-visible { outline: 2px solid #5369dc; outline-offset: 3px; }
+@media (hover: none) { .workhub-users-edit-button { opacity: 1; } }
+@media (max-width: 640px) {
+ .workhub-users-page .workhub-user-management-panel { padding: 12px; }
+ .workhub-users-page .workhub-panel-head { flex-wrap: wrap; }
+ .workhub-users-filterbar { grid-template-columns: 1fr 1fr; }
+ .workhub-users-filterbar input { grid-column: 1 / -1; }
+ .workhub-users-filterbar label { margin-left: 0; }
+ .workhub-users-navigation { gap: 16px; }
+ .workhub-users-navigation button { font-size: .76rem; }
+ .workhub-users-page .workhub-member-row.settings-row { grid-template-columns: 32px minmax(0, 1fr) 32px; }
+ .workhub-users-page .workhub-member-workspaces { grid-column: 2; display: grid; }
+ .workhub-users-edit-button { grid-column: 3; grid-row: 1; opacity: 1; }
+ .workhub-users-page .workhub-member-actions { grid-column: 1 / -1; }
+ .workhub-invitation-row { grid-template-columns: 1fr auto; }
+ .workhub-invitation-row > .workhub-invitations-buttons { grid-column: 1 / -1; }
+}
+.workhub-users-page .workhub-member-row.settings-row.is-selected { background: #edf1ff; box-shadow: inset 3px 0 #5264d9; }
+.workhub-member-panel-overlay { position: fixed; inset: 0; background: #17243b26; z-index: 10000; }
+.workhub-member-panel { position: fixed; inset: 0 0 0 auto; width: min(510px, 100vw); background: #fff; color: #243650; box-shadow: -12px 0 60px #17264126; z-index: 10001; display: flex; flex-direction: column; font-family: inherit; outline: none; }
+.workhub-member-panel * { box-sizing: border-box; }
+.workhub-member-panel-header { display: flex; justify-content: space-between; align-items: center; padding: 24px 26px 18px; }
+.workhub-member-panel-eyebrow { font-size: 10px; letter-spacing: .14em; font-weight: 700; color: #718096; }
+.workhub-member-panel-header h2 { margin: 6px 0 0; font-size: 21px; letter-spacing: -.03em; }
+.workhub-member-panel button { cursor: pointer; font: inherit; }
+.workhub-member-panel button:disabled { opacity: .5; cursor: default; }
+.workhub-member-panel button:focus-visible, .workhub-member-panel input:focus-visible, .workhub-member-panel select:focus-visible, .workhub-member-panel textarea:focus-visible { outline: 2px solid #5264d9; outline-offset: 3px; }
+.workhub-member-panel-close { display: grid; place-items: center; border: 1px solid #e6ebf3; background: #fff; border-radius: 8px; width: 34px; height: 34px; color: #62718b; }
+.workhub-member-panel-person { margin: 0 26px; padding: 16px; display: flex; align-items: center; gap: 13px; border: 1px solid #dbe2ff; border-radius: 12px; background: #f4f6ff; }
+.workhub-member-panel-avatar { width: 44px; height: 44px; flex: 0 0 auto; border-radius: 12px; background: #5264d9; color: #fff; display: grid; place-items: center; font-size: 15px; font-weight: 650; }
+.workhub-member-panel-person > div:last-child { min-width: 0; }
+.workhub-member-panel-person strong, .workhub-member-panel-person span { display: block; overflow-wrap: anywhere; }
+.workhub-member-panel-person strong { font-size: 14px; }
+.workhub-member-panel-person span { font-size: 12px; color: #62718b; margin-top: 4px; }
+.workhub-member-panel-person small { display: flex; align-items: center; gap: 4px; color: #5264d9; font-size: 11px; margin-top: 7px; text-transform: capitalize; }
+.workhub-member-panel-description { font-size: 12px; color: #718096; line-height: 1.6; padding: 12px 26px 16px; margin: 0; border-bottom: 1px solid #edf0f5; }
+.workhub-member-panel-body { flex: 1; min-height: 0; overflow-y: auto; padding: 22px 26px; }
+.workhub-member-panel fieldset { border: 0; padding: 0; margin: 0 0 26px; min-width: 0; }
+.workhub-member-panel legend { font-size: 13px; font-weight: 650; margin-bottom: 14px; }
+.workhub-member-panel-field { display: grid; gap: 7px; font-size: 12px; color: #62718b; margin-bottom: 14px; }
+.workhub-member-panel input:not([type="checkbox"]), .workhub-member-panel select, .workhub-member-panel textarea { font: inherit; font-size: 13px; padding: 10px 12px; border: 1px solid #dfe5ef; border-radius: 8px; color: #243650; background: #fff; min-width: 0; width: 100%; }
+.workhub-member-panel-modes { display: flex; padding: 4px; border-radius: 9px; background: #f1f3f8; gap: 4px; }
+.workhub-member-panel-modes button { flex: 1; padding: 9px 6px; border: 0; border-radius: 6px; font-size: 12px; background: transparent; color: #62718b; }
+.workhub-member-panel-modes button[aria-pressed="true"] { background: #fff; color: #4258c1; box-shadow: 0 1px 4px #24365018; font-weight: 600; }
+.workhub-member-panel-hint { font-size: 12px; line-height: 1.6; color: #718096; margin: 12px 0; }
+.workhub-member-panel-notice { display: flex; align-items: center; gap: 9px; font-size: 12px; line-height: 1.6; background: #f4f6ff; border-radius: 8px; padding: 12px; }
+.workhub-member-panel-notice svg { flex-shrink: 0; }
+.workhub-member-panel-workspaces { display: grid; gap: 8px; }
+.workhub-member-panel-workspace { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid #e6ebf3; border-radius: 9px; padding: 12px; }
+.workhub-member-panel-workspace.is-enabled { border-color: #d9dff5; background: #fafbff; }
+.workhub-member-panel-workspace label { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; font-size: 13px; cursor: pointer; }
+.workhub-member-panel-workspace label span { overflow-wrap: anywhere; }
+.workhub-member-panel-workspace small { display: block; font-size: 10px; color: #8591a7; margin-top: 4px; }
+.workhub-member-panel-workspace input { accent-color: #5264d9; width: 16px; height: 16px; flex-shrink: 0; }
+.workhub-member-panel-workspace select { width: 94px; padding: 6px; font-size: 12px; flex-shrink: 0; }
+.workhub-member-panel-footer { flex-shrink: 0; border-top: 1px solid #e6ebf3; padding: 18px 26px; background: #fff; }
+.workhub-member-panel-footer-actions { display: flex; align-items: center; gap: 8px; }
+.workhub-member-panel-footer-actions > span { flex: 1; font-size: 11px; color: #718096; }
+.workhub-member-panel-footer button { padding: 9px 12px; border: 1px solid #dfe5ef; border-radius: 8px; color: #46536c; font-size: 12px; background: #fff; }
+.workhub-member-panel-footer .workhub-member-panel-save { background: #5264d9; border-color: #5264d9; color: #fff; }
+.workhub-member-panel-error { font-size: 12px; color: #a13737; background: #fff1f1; padding: 10px; border-radius: 8px; }
+.workhub-member-panel-confirm { margin-bottom: 14px; padding: 12px; background: #fffaed; border: 1px solid #f2e3b7; border-radius: 8px; font-size: 12px; }
+.workhub-member-panel-confirm p { color: #7e7052; margin: 6px 0 10px; }
+.workhub-member-panel-confirm button + button { margin-left: 8px; }
+@media (max-width: 480px) { .workhub-member-panel-header, .workhub-member-panel-body, .workhub-member-panel-footer { padding: 18px; } .workhub-member-panel-person { margin: 0 18px; } .workhub-member-panel-description { padding: 12px 18px; } }

@@ -8,6 +8,7 @@ export interface UseTinyRichTextEditorConfigInput {
   minHeight?: number
   contentPaddingPx?: number
   placeholder?: string
+  toolbarMode?: 'scrolling' | 'floating'
   toolbarContainerSelector?: string
 }
 
@@ -22,6 +23,7 @@ export function useTinyRichTextEditorConfig({
   minHeight = 520,
   contentPaddingPx = 12,
   placeholder = 'Start writing...',
+  toolbarMode = 'scrolling',
   toolbarContainerSelector,
 }: UseTinyRichTextEditorConfigInput): UseTinyRichTextEditorConfigOutput {
   const deploymentModeRaw = (import.meta.env.VITE_TINYMCE_DEPLOYMENT_MODE as string | undefined)?.trim().toLowerCase()
@@ -42,7 +44,7 @@ export function useTinyRichTextEditorConfig({
     resize: false,
     min_height: minHeight,
     // Use horizontal scroll on narrow screens instead of wrapping controls.
-    toolbar_mode: 'scrolling',
+    toolbar_mode: toolbarMode,
     toolbar_sticky: true,
     ...(toolbarContainerSelector ? { fixed_toolbar_container: toolbarContainerSelector, toolbar_sticky: false } : {}),
     browser_spellcheck: true,
@@ -151,7 +153,7 @@ export function useTinyRichTextEditorConfig({
       '::-webkit-scrollbar-thumb { background: #c2d0e8; border-radius: 99px; }',
       '::-webkit-scrollbar-thumb:hover { background: #a0b4d6; }',
     ].join(' '),
-  }), [contentPaddingPx, disabled, minHeight, placeholder, toolbarContainerSelector])
+  }), [contentPaddingPx, disabled, minHeight, placeholder, toolbarContainerSelector, toolbarMode])
 
   return { apiKey, scriptSrc, init }
 }

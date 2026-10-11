@@ -77,7 +77,7 @@ export function useWorkhubSelectedProjectContext({
   const projectSelectorIconById = useMemo(
     () => Object.fromEntries(visibleWorkspaceProjects.map((item) => {
       const effectiveIntent = projectIntentById[item.id] || 'project'
-      const icon = effectiveIntent === 'project' ? '📁' : (projectIntentMetaById[item.id]?.icon || '📁')
+      const icon = item.icon?.trim() || (effectiveIntent === 'project' ? '📁' : (projectIntentMetaById[item.id]?.icon || '📁'))
       return [item.id, icon]
     })) as Record<string, string>,
     [projectIntentById, projectIntentMetaById, visibleWorkspaceProjects],

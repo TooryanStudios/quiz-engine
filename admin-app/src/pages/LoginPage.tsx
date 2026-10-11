@@ -63,10 +63,12 @@ export function LoginPage() {
   const hasNavigatedRef = useRef(false)
   const searchParams = new URLSearchParams(location.search)
   const returnTo = (location.state as { returnTo?: string } | null)?.returnTo || searchParams.get('returnTo')
+  const isWorkhubLogin = location.pathname === '/workhub/login' || (typeof returnTo === 'string' && returnTo.startsWith('/workhub'))
   const shouldShowLocalDomainHint = isLocalDevHost && /(authorized domains|localhost|مصرح|الدومين)/i.test(error)
 
   useEffect(() => {
     const deniedReason = localStorage.getItem(accessDeniedReasonKey)
+    if (isWorkhubLogin) { localStorage.removeItem(accessDeniedReasonKey); return }
     if (!deniedReason) return
     if (deniedReason === 'pending') {
       setError('Your account is pending approval by the Lab administrator. Access will be enabled once approved.')
@@ -76,7 +78,7 @@ export function LoginPage() {
       setError('Your account is currently blocked. Contact the administrator.')
     }
     localStorage.removeItem(accessDeniedReasonKey)
-  }, [])
+  }, [isWorkhubLogin])
   const getPostLoginPath = () => {
     if (typeof returnTo === 'string' && returnTo.startsWith('/')) {
       const normalized = returnTo.trim()
@@ -85,7 +87,7 @@ export function LoginPage() {
       }
       return normalized
     }
-    return '/dashboard'
+    return isWorkhubLogin ? '/workhub/join' : '/dashboard'
   }
 
   useEffect(() => {
@@ -264,8 +266,8 @@ export function LoginPage() {
 
         {/* Title */}
         <div className="lp-title-wrap">
-          <div className="lp-brand-name">Q<span>Yan</span> Gaming</div>
-          <div key={tagIdx} className="lp-tagline">{TAGLINES[tagIdx]}</div>
+          <div className="lp-brand-name">WorkHub</div>
+          <div key={tagIdx} className="lp-tagline">{isWorkhubLogin ? 'Your team. Your workspace.' : TAGLINES[tagIdx]}</div>
         </div>
 
         <div className="lp-divider" />
@@ -281,7 +283,7 @@ export function LoginPage() {
           </div>
         )}
 
-        {isLocalDevHost && (
+        {isLocalDevHost && !isWorkhubLogin && (
           <div className="lp-authdiag" role="status" aria-live="polite">
             <div className="lp-authdiag-title">Auth diagnostics</div>
             <div className="lp-authdiag-grid">
@@ -325,11 +327,11 @@ export function LoginPage() {
         </button>
 
         <div className="lp-access-note" role="note">
-          Access is restricted to approved users only.
+          {isWorkhubLogin ? 'Invited? Sign in with the invited email to join your workspace. New here? Signing in sends a join request to your administrators.' : 'Access is restricted to approved users only.'}
         </div>
 
         <div className="lp-footer">
-          <span>© 2026 QYan · صُنع بشغف 💜</span>
+          <span>© 2026 WorkHub · صُنع بشغف 💜</span>
           <div className="lp-theme-btns">
             <button className={`lp-theme-btn${theme === 'dark' ? ' active' : ''}`} onClick={() => setTheme('dark')}>🌙</button>
             <button className={`lp-theme-btn${theme === 'light' ? ' active' : ''}`} onClick={() => setTheme('light')}>☀️</button>
