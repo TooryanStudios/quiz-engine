@@ -106,12 +106,13 @@ async function main() {
   { glob: '/login', path: '/workhub-app/legacy-login.html' },
   ...(original.config?.rewrites || []).filter(rule => !['/workhub','/workhub/**','/login'].includes(rule.glob))
  ], headers: [
+  { glob: '/workhub-app/assets/**', headers: { 'Cache-Control': 'public, max-age=31536000, immutable' } },
   { glob: '/workhub', headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' } },
   { glob: '/workhub/**', headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' } },
   { glob: '/workhub-app/index.html', headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' } },
   { glob: '/login', headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' } },
   { glob: '/workhub-app/legacy-login.html', headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' } },
-  ...(original.config?.headers || []).filter(rule => !['/workhub','/workhub/**','/workhub-app/index.html','/login','/workhub-app/legacy-login.html'].includes(rule.glob))
+  ...(original.config?.headers || []).filter(rule => !['/workhub-app/assets/**','/workhub','/workhub/**','/workhub-app/index.html','/login','/workhub-app/legacy-login.html'].includes(rule.glob))
  ] };
  if(mode === 'plan') { console.log(JSON.stringify({previousVersion:originalVersion,preservedFiles:previous.length,newAssets:uploads.size,rewrites:config.rewrites}));return; }
  if(mode !== 'release') throw new Error('Use inspect, plan, or release.');

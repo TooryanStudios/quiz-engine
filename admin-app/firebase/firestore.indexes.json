@@ -1,5 +1,10 @@
 {
   "indexes": [
+    {"collectionGroup":"workhub_tasks","queryScope":"COLLECTION","fields":[{"fieldPath":"visibility","order":"ASCENDING"},{"fieldPath":"assigneeUid","order":"ASCENDING"}]},
+    {"collectionGroup":"workhub_tasks","queryScope":"COLLECTION","fields":[{"fieldPath":"visibility","order":"ASCENDING"},{"fieldPath":"assigneeUids","arrayConfig":"CONTAINS"}]},
+    {"collectionGroup":"workhub_tasks","queryScope":"COLLECTION","fields":[{"fieldPath":"createdBy","order":"ASCENDING"},{"fieldPath":"assigneeUid","order":"ASCENDING"}]},
+    {"collectionGroup":"workhub_tasks","queryScope":"COLLECTION","fields":[{"fieldPath":"createdBy","order":"ASCENDING"},{"fieldPath":"assigneeUids","arrayConfig":"CONTAINS"}]},
+    {"collectionGroup":"workhub_notifications","queryScope":"COLLECTION","fields":[{"fieldPath":"recipientUid","order":"ASCENDING"},{"fieldPath":"createdAt","order":"DESCENDING"}]},
     {
       "collectionGroup": "reference_library",
       "queryScope": "COLLECTION_GROUP",
