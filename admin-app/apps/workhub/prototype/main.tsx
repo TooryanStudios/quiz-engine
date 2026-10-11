@@ -193,7 +193,7 @@ export default function WorkhubLayout() {
 
  const conversationWorkspace=item?live.workspaces.find(w=>w.id===item.workspace):workspace
 
- const conversation=useLiveConversation(conversationWorkspace,chat?undefined:item,live.user?.uid||'',live.privileged,live.approved&&!chat&&!!item&&detailsOpen&&panel==='discussion',live.items,commentLimit)
+ const conversation=useLiveConversation(conversationWorkspace,chat?undefined:item,live.user?.uid||'',live.privileged,live.approved&&!chat&&!!item&&detailsOpen,live.items,commentLimit)
 
  const panelRef=useRef<HTMLElement>(null)
  useEffect(()=>{const target=panelRef.current;if(!target||chat||!detailsOpen)return;let timer:ReturnType<typeof setTimeout>;const observer=new ResizeObserver(()=>{clearTimeout(timer);timer=setTimeout(()=>{const rect=target.getBoundingClientRect();try{localStorage.setItem('workhub-details-panel-size',JSON.stringify({width:rect.width,height:rect.height}))}catch{}},200)});observer.observe(target);return()=>{observer.disconnect();clearTimeout(timer)}},[detailsOpen,chat])
