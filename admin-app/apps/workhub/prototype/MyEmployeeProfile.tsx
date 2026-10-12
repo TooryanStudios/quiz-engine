@@ -7,7 +7,7 @@ import {resolveWorkhubWorkspaceTemplateIdForWorkspace} from '../../../src/pages/
 import {HrWorkspace} from './HrWorkspace'
 import type {WorkhubProject,WorkhubWorkspace,WorkhubMember} from '../../../src/lib/workhubRepo'
 import type {Item} from './data'
-export function MyEmployeeProfile({uid,people,t,masterAdmin=false,availableWorkspaces=[]}:{masterAdmin?:boolean;availableWorkspaces?:WorkhubWorkspace[];uid:string;people:WorkhubMember[];t:(k:string)=>string}){
+export function MyEmployeeProfile({uid,people,t,masterAdmin=false,privileged=false,availableWorkspaces=[]}:{masterAdmin?:boolean;privileged?:boolean;availableWorkspaces?:WorkhubWorkspace[];uid:string;people:WorkhubMember[];t:(k:string)=>string}){
  const provisioning=useRef('')
  const [creating,setCreating]=useState(false)
  const explicitSelection=useRef('')
@@ -25,5 +25,5 @@ export function MyEmployeeProfile({uid,people,t,masterAdmin=false,availableWorks
   ensureOwnHrProfile(hr.id,uid,auth.currentUser?.displayName||auth.currentUser?.email||t('myProfile'),auth.currentUser?.email||'').catch(e=>setError(e instanceof Error?e.message:t('saveFailed'))).finally(()=>setCreating(false))
  },[loaded,masterAdmin,uid,profiles,availableWorkspaces,error])
  const employee=profiles.find(i=>i.id===selected),workspace=employee?availableWorkspaces.find(w=>w.id===employee.workspace)||workspaces[employee.workspace]:undefined
- return <>{error&&<p role="alert" className="error-note">{error}</p>}{profiles.length>1&&<div className="library-tabs">{profiles.map(i=><button key={i.id} aria-pressed={selected===i.id} onClick={()=>{explicitSelection.current=i.id;setSelected(i.id)}}>{i.title}</button>)}</div>}{!loaded||creating?<LoadingSkeleton label={t('loading')}/>:employee&&workspace?<HrWorkspace key={employee.id} initialTab={new URLSearchParams(location.search).get('hrTab')==='attendance'?'attendance':undefined} personal initialEmployee={employee.id} workspace={workspace} items={profiles.filter(i=>i.workspace===workspace.id)} people={people} canManage={false} t={t}/>:!loaded?<LoadingSkeleton label={t('loading')}/>:<p className="empty">{t('hrNoAssignedProfile')}</p>}</>
+ return <>{error&&<p role="alert" className="error-note">{error}</p>}{profiles.length>1&&<div className="library-tabs">{profiles.map(i=><button key={i.id} aria-pressed={selected===i.id} onClick={()=>{explicitSelection.current=i.id;setSelected(i.id)}}>{i.title}</button>)}</div>}{!loaded||creating?<LoadingSkeleton label={t('loading')}/>:employee&&workspace?<HrWorkspace key={employee.id} initialTab={new URLSearchParams(location.search).get('hrTab')==='attendance'?'attendance':undefined} personal initialEmployee={employee.id} workspace={workspace} items={profiles.filter(i=>i.workspace===workspace.id)} people={people} canManage={false} workViewerUid={uid} canSeeAllWork={privileged} workspaces={availableWorkspaces} allItems={profiles} t={t}/>:!loaded?<LoadingSkeleton label={t('loading')}/>:<p className="empty">{t('hrNoAssignedProfile')}</p>}</>
 }
