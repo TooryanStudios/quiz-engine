@@ -1,5 +1,13 @@
 {
   "indexes": [
+    {
+      "collectionGroup": "companyRecords",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "accessUids", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "updatedAt", "order": "DESCENDING" }
+      ]
+    },
 {
   "collectionGroup": "workhub_activity",
   "queryScope": "COLLECTION",

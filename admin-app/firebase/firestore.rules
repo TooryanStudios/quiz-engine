@@ -247,6 +247,12 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Company records and their append-only audit histories are served by
+    // workhubCompanyAction, which enforces per-record access and approval rules.
+    match /workhub_company/{document=**} {
+      allow read, write: if false;
+    }
+
     match /workhub_members/{userId} {
       allow read: if isSignedIn() && (
         request.auth.uid == userId

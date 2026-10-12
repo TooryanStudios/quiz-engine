@@ -5,6 +5,9 @@ import {collection,onSnapshot,query,where} from 'firebase/firestore'
 import {db} from '../../../src/lib/firebase'
 import type {WorkhubProject} from '../../../src/lib/workhubRepo'
 import {HrAttendance} from './HrAttendance'
+import {useAttendanceRecords} from './attendanceState'
+
+function AttendanceActiveDot({employeeId}:{employeeId:string}){const {records}=useAttendanceRecords(employeeId);if(!records.some(r=>r.clockIn&&!r.clockOut))return null;return <i className="attendance-active-dot" aria-label="Work in progress"/>}
 
 export function AttendanceQuickAccess({uid,t,onProfile}:{uid:string;t:(key:string)=>string;onProfile:()=>void}){
  const [open,setOpen]=useState(false),[profiles,setProfiles]=useState<WorkhubProject[]>([]),[selected,setSelected]=useState(''),[loaded,setLoaded]=useState(false),[error,setError]=useState('')
@@ -12,8 +15,7 @@ export function AttendanceQuickAccess({uid,t,onProfile}:{uid:string;t:(key:strin
  useEffect(()=>{const show=(event:Event)=>{setSelected((event as CustomEvent<string>).detail);setExtra(true);setOpen(true)};window.addEventListener('workhub-open-extra',show);return()=>window.removeEventListener('workhub-open-extra',show)},[])
  const root=useRef<HTMLDivElement>(null),trigger=useRef<HTMLButtonElement>(null)
  useEffect(()=>{
-  if(!open)return
-  if(!profiles.length)setLoaded(false);setError('')
+  setError('')
   return onSnapshot(query(collection(db,'workhub_projects'),where('hrProfile.accountUid','==',uid)),snapshot=>{
    const rows=snapshot.docs.map(d=>({...d.data(),id:d.id} as WorkhubProject)).filter(p=>p.intent==='hr_employee_profile'&&p.hrProfile?.status!=='former')
    setProfiles(rows);setSelected(previous=>rows.some(p=>p.id===previous)?previous:rows[0]?.id||'');setLoaded(true)
@@ -28,7 +30,7 @@ export function AttendanceQuickAccess({uid,t,onProfile}:{uid:string;t:(key:strin
  },[open])
  const employee=profiles.find(p=>p.id===selected)
  return <div ref={root} className="attendance-quick-menu">
-  <button ref={trigger} className="icon-button quiet" title={t('hrQuickAttendance')} aria-label={t('hrQuickAttendance')} aria-expanded={open} aria-haspopup="dialog" onClick={()=>{setExtra(false);setOpen(!open)}}><Clock3 size={21}/></button>
+  <button ref={trigger} className={'icon-button quiet attendance-clock-trigger'+(open?' open':'')} title={t('hrQuickAttendance')} aria-label={t('hrQuickAttendance')} aria-expanded={open} aria-haspopup="dialog" onClick={()=>{setExtra(false);setOpen(!open)}}><span><Clock3 size={21}/>{employee&&<AttendanceActiveDot employeeId={employee.id}/>}</span></button>
   {open&&<section className="attendance-quick-panel" role="dialog" aria-label={t('hrQuickAttendance')}>
    <header>{extra&&<button className="icon-button quiet" aria-label={t('hrBackAttendance')} onClick={()=>setExtra(false)}><ArrowLeft size={18}/></button>}<strong>{t('hrQuickAttendance')}</strong><button className="icon-button quiet" aria-label={t('close')} onClick={()=>{setOpen(false);trigger.current?.focus()}}><X size={18}/></button></header>
    <div className="attendance-quick-body">{!loaded?<div className="attendance-loading" role="status" aria-label={t('loading')}><div/><div/><div/></div>:error?<p role="alert">{error}</p>:<>

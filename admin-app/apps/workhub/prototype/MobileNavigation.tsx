@@ -1,16 +1,16 @@
 import {phoneViewport,phoneLayoutBaseline} from './phoneViewport'
 import {useEffect, useState, type ReactNode} from 'react'
-import {House, CheckCheck, LayoutGrid, Inbox, Menu, NotebookPen, UserRound, FileText, Settings2, Globe2, Moon, Sun, LogOut, Bot, ArrowLeft} from 'lucide-react'
+import {Building2,House, CheckCheck, LayoutGrid, Inbox, Menu, NotebookPen, UserRound, FileText, Settings2, Globe2, Moon, Sun, LogOut, Bot, ArrowLeft,Shield} from 'lucide-react'
 import {HrDialog} from './HrDialog'
 
-type Props={page:string;title:string;t:(key:string)=>string;onNavigate:(page:string)=>void;onBack?:()=>void;actions:ReactNode;name:string;isAr:boolean;dark:boolean;onLanguage:()=>void;onTheme:()=>void;onSignOut:()=>void;onAssistant:()=>void;unread:boolean}
+type Props={page:string;title:string;t:(key:string)=>string;onNavigate:(page:string)=>void;onBack?:()=>void;actions:ReactNode;name:string;email:string;isAr:boolean;dark:boolean;masterAdmin?:boolean;onLanguage:()=>void;onTheme:()=>void;onSignOut:()=>void;onAssistant:()=>void;unread:boolean}
 export function usePhoneLayout(){
  const [phone,setPhone]=useState(()=>matchMedia('(max-width:700px)').matches)
  useEffect(()=>{const query=matchMedia('(max-width:700px)');const update=()=>setPhone(query.matches);query.addEventListener('change',update);return()=>query.removeEventListener('change',update)},[])
  return phone
 }
 /** Phone navigation stays separate from the desktop rail and its preferences. */
-export function MobileNavigation({page,title,t,onNavigate,onBack,actions,name,isAr,dark,onLanguage,onTheme,onSignOut,onAssistant,unread}:Props){
+export function MobileNavigation({page,title,t,onNavigate,onBack,actions,name,email,isAr,dark,masterAdmin=false,onLanguage,onTheme,onSignOut,onAssistant,unread}:Props){
  const [more,setMore]=useState(false)
  useEffect(()=>{
   const viewport=window.visualViewport
@@ -42,10 +42,10 @@ export function MobileNavigation({page,title,t,onNavigate,onBack,actions,name,is
   </header>
   <nav className="mobile-bottom-nav" aria-label={isAr?'التنقل الرئيسي':'Main navigation'}>
    {([['home',House],['myWork',CheckCheck],['workspaces',LayoutGrid],['inbox',Inbox]] as const).map(([id,Icon])=><button key={id} aria-current={page===id?'page':undefined} onClick={()=>visit(id)}><span><Icon size={27}/>{id==='inbox'&&unread&&<i/>}</span><small>{t(id)}</small></button>)}
-   <button aria-expanded={more} aria-current={['myNotes','myProfile','documents','settings'].includes(page)?'page':undefined} onClick={()=>setMore(true)}><Menu size={27}/><small>{isAr?'المزيد':'More'}</small></button>
+   <button aria-expanded={more} aria-current={['myNotes','myProfile','documents','settings','company'].includes(page)?'page':undefined} onClick={()=>setMore(true)}><Menu size={27}/><small>{isAr?'المزيد':'More'}</small></button>
   </nav>
-  {more&&<HrDialog title={isAr?'المزيد':'More'} onClose={()=>setMore(false)} className="mobile-more-dialog"><p className="mobile-account-name" dir="auto">{name}</p><div className="mobile-more-links">
-   {([['myNotes',NotebookPen],['myProfile',UserRound],['documents',FileText],['settings',Settings2]] as const).map(([id,Icon])=><button key={id} onClick={()=>visit(id)}><Icon size={27}/><span>{t(id)}</span></button>)}
+  {more&&<HrDialog title={isAr?'المزيد':'More'} onClose={()=>setMore(false)} className="mobile-more-dialog"><p className="mobile-account-name" dir="auto">{name}<small>{email}</small></p><div className="mobile-more-links">
+   {([['myNotes',NotebookPen],['myProfile',UserRound],['documents',FileText],['company',Building2],...(masterAdmin?[['users',Shield] as const]:[]),['settings',Settings2]] as const).map(([id,Icon])=><button key={id} onClick={()=>visit(id)}><Icon size={27}/><span>{t(id)}</span></button>)}
    <button onClick={()=>{setMore(false);onAssistant()}}><Bot size={22}/><span>{t('agentTitle')}</span></button>
    <button onClick={onLanguage}><Globe2 size={22}/><span>{isAr?'English':'العربية'}</span></button>
    <button onClick={onTheme}>{dark?<Sun size={22}/>:<Moon size={22}/>}<span>{t(dark?'light':'dark')}</span></button>

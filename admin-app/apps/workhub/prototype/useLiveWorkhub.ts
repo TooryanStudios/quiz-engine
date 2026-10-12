@@ -38,7 +38,7 @@ export function useLiveWorkhub(request:WorkhubLoadRequest) {
   if(!scope)return
   return onSnapshot(collection(db,'workhub_workspaces'),{includeMetadataChanges:true},snap=>{if(snap.metadata.fromCache&&snap.empty&&navigator.onLine)return;setWorkspaceState({scope,items:snap.docs.map(d=>({...d.data(),id:d.id} as WorkhubWorkspace))});report('workspaces')},error=>{report('workspaces',error);setWorkspaceState({scope,items:[]})})
  },[scope])
- const peopleNeeded=!!scope&&(request.all||!!request.selectedId||['myWork','workspaces','myProfile','documents'].includes(request.page))
+ const peopleNeeded=!!scope&&(request.all||!!request.selectedId||['myWork','workspaces','myProfile','documents','company','users'].includes(request.page))
  useEffect(()=>{
   if(!peopleNeeded)return
   return onSnapshot(collection(db,'workhub_members'),snap=>{setPeopleState({scope,items:snap.docs.map(d=>({...d.data(),uid:d.id} as WorkhubMember))});report('people')},error=>{setPeopleState({scope,items:[]});report('people',error)})
@@ -121,7 +121,7 @@ export function useLiveWorkhub(request:WorkhubLoadRequest) {
   if(auth.currentUser?.uid!==user.uid)return []
   return workspaces.flatMap(w=>adaptWorkspaceItems(w,Object.fromEntries(Object.entries(merged).map(([key,rows])=>[key,Object.values(rows).filter(row=>row.workspaceId===w.id)])) as WorkspaceData,user.uid,privileged)).map(i=>(i.type==='board'?'moodboard':i.type)+':'+i.entityId)
  }
- return {user,member,workspaces,items,loading,directoryLoading,loadedWorkspaceIds,loadEntityKeys,errors,approved,privileged,notificationsReady:notificationState.uid===user?.uid&&notificationState.full===fullInbox,people:peopleState.scope===scope?peopleState.items:[],notifications:approved&&notificationState.uid===user?.uid?notificationState.items.filter(n=>n.workspaceId==='__communication_global__'||workspaces.some(w=>w.id===n.workspaceId)):[]}
+ return {user,member,workspaces,items,loading,directoryLoading,loadedWorkspaceIds,loadEntityKeys,errors,approved,privileged,notificationsReady:notificationState.uid===user?.uid&&notificationState.full===fullInbox,people:peopleState.scope===scope?peopleState.items:[],notifications:approved&&notificationState.uid===user?.uid?notificationState.items.filter(n=>n.workspaceId==='__communication_global__'||n.workspaceId==='__company__'||workspaces.some(w=>w.id===n.workspaceId)):[]}
 
 }
 

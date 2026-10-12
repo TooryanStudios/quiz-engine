@@ -7,6 +7,7 @@ const definitions = ['visibility', 'createdBy'].flatMap(scope => ['assigneeUid',
   {fieldPath: assignee, ...(assignee === 'assigneeUids' ? {arrayConfig: 'CONTAINS'} : {order: 'ASCENDING'})},
  ],
 })));
+definitions.push({collectionGroup:'companyRecords',queryScope:'COLLECTION',fields:[{fieldPath:'accessUids',arrayConfig:'CONTAINS'},{fieldPath:'updatedAt',order:'DESCENDING'}]});
 definitions.push({collectionGroup: 'workhub_notifications', queryScope: 'COLLECTION', fields: [{fieldPath:'recipientUid',order:'ASCENDING'},{fieldPath:'createdAt',order:'DESCENDING'}]});
 for (const restricted of [false,true]) {
  for (const kind of ['recent','thread','groups']) {
