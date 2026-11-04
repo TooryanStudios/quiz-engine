@@ -2,7 +2,7 @@ import {useEffect,useState} from 'react'
 import {collection,onSnapshot} from 'firebase/firestore'
 import {auth,db} from '../../../src/lib/firebase'
 
-export type AttendanceRecord={id:string;date:string;kind?:string;clockIn?:{seconds:number};clockOut?:{seconds:number};location:string;note:string;lateMinutes:number;overtimeMinutes:number;workedMinutes?:number;reasons?:string[];workItems?:string[];projectName?:string}
+export type AttendanceRecord={id:string;date:string;kind?:string;clockIn?:{seconds:number};clockOut?:{seconds:number};location:string;note:string;lateMinutes:number;overtimeMinutes:number;workedMinutes?:number;autoClosed?:boolean;reasons?:string[];workItems?:string[];projectName?:string}
 const cache=new Map<string,AttendanceRecord[]>()
 const confirmed=new Map<string,AttendanceRecord>()
 const event='workhub-attendance-saved'

@@ -687,5 +687,8 @@
   "hrExtraFinished": "Extra hours saved",
   "hrFinishRetry": "Please try again. Your session is still open.",
   "chatOptions": "Message options",
-  "chatMessagePlaceholder": "Message…"
+  "chatMessagePlaceholder": "Message…",
+  "hrWeekend": "It's the weekend. Start work is available Sunday to Thursday.",
+  "hrWorkHoursPassed": "Working hours ended at 5:00 PM. Press Finish work so your hours are recorded correctly.",
+  "hrAutoClosed": "Closed automatically at the schedule end. Send a missing attendance request if you worked longer."
 }

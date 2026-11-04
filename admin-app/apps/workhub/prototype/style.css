@@ -418,6 +418,9 @@ button.dashboard-stat{text-align:start;color:var(--text);cursor:pointer}button.d
 .hr-location-tabs button[aria-pressed=true]{background:var(--soft);color:var(--text);font-weight:600}
 .hr-leave-message{padding:16px;border-radius:12px;background:var(--soft);line-height:1.6}
 .hr-leave-message small{display:block;margin-top:5px}
+.hr-weekend-message{display:flex;align-items:center;gap:8px}
+.hr-overdue-warning{display:flex;align-items:flex-start;gap:8px;margin:10px 0 0;padding:12px 14px;border:1px solid var(--warning);border-radius:12px;background:var(--surface);color:var(--text);font-size:13px;line-height:1.6}.hr-overdue-warning svg{flex-shrink:0;color:var(--warning);margin-top:2px}
+.hr-auto-closed{font-style:normal;color:var(--warning)}
 
 [data-theme=dark] .sidebar{background:#191919;border:0}
 [data-theme=dark] .topbar,[data-theme=dark] .workspace-layout>.workspace-navigation,[data-theme=dark] .profile{border:0;box-shadow:none}

@@ -1,9 +1,9 @@
-import {beforeEach,describe,it,expect,vi} from 'vitest'
+import {afterEach,beforeEach,describe,it,expect,vi} from 'vitest'
 const state=vi.hoisted(()=>({records:new Map<string,any>(),updates:[] as any[]}))
 vi.mock('../functions/node_modules/firebase-admin/lib/index.js',()=>{
  class Timestamp{seconds:number;constructor(private millis:number){this.seconds=Math.floor(millis/1000)}toMillis(){return this.millis}toDate(){return new Date(this.millis)}static fromDate(date:Date){return new Timestamp(date.getTime())}static now(){return new Timestamp(Date.now())}}
  const reference=(path:string):any=>({path,doc:(id:string)=>reference(path+'/'+id),collection:(name:string)=>reference(path+'/'+name),get:async()=>({data:()=>state.records.get(path)})})
- const firestore=Object.assign(()=>({collection:reference,runTransaction:(fn:any)=>fn({get:(ref:any)=>ref.get(),update:(ref:any,value:any)=>state.updates.push({path:ref.path,value})})}),{Timestamp,FieldValue:{delete:()=>null,serverTimestamp:()=>Timestamp.now()}})
+ const firestore=Object.assign(()=>({collection:reference,runTransaction:(fn:any)=>fn({get:(ref:any)=>ref.get(),update:(ref:any,value:any)=>state.updates.push({path:ref.path,value}),create:(ref:any,value:any)=>state.updates.push({path:ref.path,value,created:true})})}),{Timestamp,FieldValue:{delete:()=>null,serverTimestamp:()=>Timestamp.now()}})
  return {firestore}
 })
 import * as admin from '../functions/node_modules/firebase-admin/lib/index.js'
@@ -50,5 +50,33 @@ describe('attendance completion transaction',()=>{
   state.records.set('workhub_projects/employee',{intent:'hr_employee_profile',hrProfile:{accountUid:'other'}})
   await expect(call({auth:{uid:'user',token:{}},data:{employeeId:'employee',action:'clockOut'}})).rejects.toMatchObject({code:'permission-denied'})
   expect(state.updates).toHaveLength(0)
+ })
+})
+
+describe('regular attendance schedule',()=>{
+ afterEach(()=>{vi.useRealTimers()})
+ const user={auth:{uid:'user',token:{}}}
+ it('does not start work on the weekend',async()=>{
+  vi.useFakeTimers({toFake:['Date']});vi.setSystemTime(new Date('2026-11-06T05:00:00Z'))
+  await expect(call({...user,data:{employeeId:'employee',action:'clockIn',location:'office',note:''}})).rejects.toMatchObject({code:'failed-precondition'})
+  expect(state.updates).toHaveLength(0)
+ })
+ it('rejects new extra-hours sessions',async()=>{
+  await expect(call({...user,data:{employeeId:'employee',action:'startExtraHours',reasons:['urgent']}})).rejects.toMatchObject({code:'failed-precondition'})
+ })
+ it('finishes yesterday\'s shift when work runs past midnight',async()=>{
+  vi.useFakeTimers({toFake:['Date']});vi.setSystemTime(new Date('2026-11-04T20:30:00Z')) // 00:30 Oman on 5 Nov
+  state.records.set('workhub_projects/employee/attendance/2026-11-04',{date:'2026-11-04',clockIn:timestamp('2026-11-04T04:00:00Z'),clockOut:null})
+  const result=await call({...user,data:{employeeId:'employee',action:'clockOut'}})
+  expect(result.record.id).toBe('2026-11-04')
+  expect(result.record.workedMinutes).toBe(990)
+  expect(state.updates[0].path).toBe('workhub_projects/employee/attendance/2026-11-04')
+ })
+ it('closes a forgotten shift at the schedule end before starting today',async()=>{
+  vi.useFakeTimers({toFake:['Date']});vi.setSystemTime(new Date('2026-11-05T04:00:00Z'))
+  state.records.set('workhub_projects/employee/attendance/2026-11-04',{date:'2026-11-04',clockIn:timestamp('2026-11-04T04:00:00Z'),clockOut:null})
+  await call({...user,data:{employeeId:'employee',action:'clockIn',location:'office',note:''}})
+  expect(state.updates[0]).toMatchObject({path:'workhub_projects/employee/attendance/2026-11-04',value:{autoClosed:true,workedMinutes:540}})
+  expect(state.updates[1]).toMatchObject({path:'workhub_projects/employee/attendance/2026-11-05',created:true})
  })
 })

@@ -15,6 +15,8 @@ export { processWorkhubEmailAttachments, accessWorkhubEmailAttachment } from './
 export { receiveWorkhubEmailReply } from './workhubEmailReply'
 import { createHash } from 'node:crypto'
 import { canInviteWorkhubMember, resolveWorkhubJoinStatus } from './workhubAccessPolicy'
+import { onSchedule } from 'firebase-functions/v2/scheduler'
+import { runAttendanceReminders } from './workhubAttendanceReminders'
 
 
 admin.initializeApp()
@@ -1571,6 +1573,16 @@ export const sendStudioOrgInviteEmail = onCall<SendStudioOrgInviteEmailRequest, 
       toEmail,
       message: `Invite email sent to ${toEmail}.`,
     }
+  },
+)
+
+// Warns employees who are still clocked in after working hours (in app and by email)
+// and closes shifts that were left open overnight.
+export const workhubAttendanceReminders = onSchedule(
+  { schedule: 'every 15 minutes', timeZone: 'Asia/Muscat', maxInstances: 1 },
+  async () => {
+    const sent = await runAttendanceReminders(new Date(), (params) => deliverEmailMessage(params))
+    if (sent.length) console.log('[attendance reminders]', JSON.stringify(sent))
   },
 )
 

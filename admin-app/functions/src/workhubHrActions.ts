@@ -1,4 +1,4 @@
-import {omanWorkday,workdayDuration,approvedLeaveOn,manualWorkday,canStartExtraWork,extraFinishTime} from './workhubHrAttendance'
+import {omanWorkday,omanDateShift,workdayDuration,approvedLeaveOn,manualWorkday,canStartExtraWork,extraFinishTime,autoCloseTime,EXTRA_HOURS_ENABLED} from './workhubHrAttendance'
 import * as admin from 'firebase-admin'
 import {onCall,HttpsError} from 'firebase-functions/v2/https'
 function attendanceResponse(id:string,record:FirebaseFirestore.DocumentData){
@@ -38,7 +38,7 @@ export const workhubHrAction=onCall({invoker:"public"},async request=>{
     if(status==='approved'){
      let times;try{times=manualWorkday(r.date,r.start,r.end,new Date())}catch(e){throw new HttpsError('invalid-argument',(e as Error).message)}
      const attendanceRef=employeeRef.collection('attendance').doc(r.date),existing=(await tx.get(attendanceRef)).data()
-     if(existing?.clockOut)throw new HttpsError('already-exists','This day already has completed attendance.')
+     if(existing?.clockOut&&!existing.autoClosed)throw new HttpsError('already-exists','This day already has completed attendance.')
      if(approvedLeaveOn(p.leaves||[],r.date))throw new HttpsError('failed-precondition','This day has approved leave.')
      tx.set(attendanceRef,{authorUid:p.accountUid,date:r.date,clockIn:admin.firestore.Timestamp.fromDate(times.from),clockOut:admin.firestore.Timestamp.fromDate(times.to),location:r.location,note:r.text,lateMinutes:times.lateMinutes,overtimeMinutes:times.overtimeMinutes,workedMinutes:times.workedMinutes,manual:true,requestId,approvedBy:uid,approvedAt:admin.firestore.FieldValue.serverTimestamp()})
      p.attendance=[...(p.attendance||[]).filter((a:{id:string})=>a.id!==r.date),{id:r.date,date:r.date,present:true,lateMinutes:times.lateMinutes,overtimeMinutes:times.overtimeMinutes}]
@@ -56,6 +56,7 @@ export const workhubHrAction=onCall({invoker:"public"},async request=>{
   }
   if(p.status==='former')throw new HttpsError('failed-precondition','Attendance is only available to active employees.');if(p.accountUid!==uid)throw new HttpsError('permission-denied','Only the assigned employee can clock in or out.')
   if(action==='startExtraHours'){
+   if(!EXTRA_HOURS_ENABLED)throw new HttpsError('failed-precondition','Extra hours are turned off.')
    const {reasons}=request.data
    if(!Array.isArray(reasons)||!reasons.length||reasons.length>5||reasons.some((r:unknown)=>!['urgent','catchup','research','meeting','other'].includes(String(r))))throw new HttpsError('invalid-argument','Select a reason for extra work.')
    const now=new Date(),{date}=omanWorkday(now),regular=(await tx.get(employeeRef.collection('attendance').doc(date))).data()
@@ -98,14 +99,17 @@ export const workhubHrAction=onCall({invoker:"public"},async request=>{
    if(approvedLeaveOn(p.leaves||[],date))throw new HttpsError('failed-precondition','This day has approved leave.')
    const attendance=(await tx.get(employeeRef.collection('attendance').doc(date))).data()
    const ref=employeeRef.collection('hrRequests').doc('attendance-'+date),pending=(await tx.get(ref)).data()
-   if(attendance?.clockOut)throw new HttpsError('already-exists','This day already has completed attendance.')
+   if(attendance?.clockOut&&!attendance.autoClosed)throw new HttpsError('already-exists','This day already has completed attendance.')
    if(pending?.status==='pending')throw new HttpsError('already-exists','Attendance for this day is already awaiting approval.')
    tx.set(ref,{authorUid:uid,kind:'attendance',date,start,end,location,text:reason.trim(),status:'pending',createdAt:admin.firestore.FieldValue.serverTimestamp()})
    return {status:'pending'}
   }
   if(!['clockIn','clockOut','markOff','clearOff'].includes(action))throw new HttpsError('invalid-argument','Invalid attendance action.')
-  const now=new Date(),{date,lateMinutes}=omanWorkday(now)
+  const now=new Date(),{date,lateMinutes,weekend}=omanWorkday(now)
   const ref=employeeRef.collection('attendance').doc(date),record=await tx.get(ref),r=record.data()
+  // A shift that ran past midnight, or was never finished, lives on the previous day's record.
+  const previousDate=omanDateShift(date,-1),previousRef=employeeRef.collection('attendance').doc(previousDate),previous=(await tx.get(previousRef)).data()
+  const previousOpen=previous?.clockIn&&!previous.clockOut&&previous.kind!=='extraHours'?previous:null
   if(action==='clearOff'){
    if(!r||r.location!=='off'||r.clockIn)throw new HttpsError('failed-precondition','Only an off-day record can be cleared.')
    tx.delete(ref);p.attendance=(p.attendance||[]).filter((a:{id:string})=>a.id!==date);tx.update(employeeRef,{hrProfile:p,updatedAt:admin.firestore.FieldValue.serverTimestamp()});return {date}
@@ -121,14 +125,25 @@ export const workhubHrAction=onCall({invoker:"public"},async request=>{
   if(action==='clockIn'){
    if(employee.activeExtraSessionId)throw new HttpsError('failed-precondition','Finish your extra-work session before starting regular work.')
    if(r)throw new HttpsError('already-exists','You have already clocked in today.')
+   if(weekend)throw new HttpsError('failed-precondition','Friday and Saturday are weekend days. Start work is available Sunday to Thursday.')
    if(!['office','online','offsite'].includes(location)||typeof note!=='string'||note.length>1000||(location==='offsite'&&!note.trim()))throw new HttpsError('invalid-argument','Describe your off-site work and destination.')
+   if(previousOpen){
+    const closeAt=autoCloseTime(previousDate,previousOpen.clockIn.toDate(),now)
+    if(!closeAt)throw new HttpsError('failed-precondition','Finish your previous shift before starting a new one.')
+    const times=workdayDuration(previousOpen.clockIn.toDate(),closeAt,previousDate)
+    tx.update(previousRef,{clockOut:admin.firestore.Timestamp.fromDate(closeAt),...times,autoClosed:true})
+    p.attendance=(p.attendance||[]).map((a:{id:string})=>a.id===previousDate?{...a,overtimeMinutes:times.overtimeMinutes}:a)
+   }
    tx.create(ref,{authorUid:uid,date,clockIn:admin.firestore.Timestamp.fromDate(now),clockOut:null,location,note,lateMinutes,overtimeMinutes:0});p.attendance=[...(p.attendance||[]).filter((a:{id:string})=>a.id!==date),{id:date,date,present:true,lateMinutes,overtimeMinutes:0}];tx.update(employeeRef,{hrProfile:p,updatedAt:admin.firestore.FieldValue.serverTimestamp()});return {date}
   }
-  if(r?.clockOut)return {date,record:attendanceResponse(date,r)}
-  if(!r?.clockIn)throw new HttpsError('failed-precondition','Clock in first, or your workday has already finished.')
-  const {workedMinutes,overtimeMinutes}=workdayDuration(r.clockIn.toDate(),now,date)
-  tx.update(ref,{clockOut:admin.firestore.Timestamp.fromDate(now),workedMinutes,overtimeMinutes})
-  p.attendance=(p.attendance||[]).map((a:{id:string})=>a.id===date?{...a,overtimeMinutes}:a);tx.update(employeeRef,{hrProfile:p,updatedAt:admin.firestore.FieldValue.serverTimestamp()})
-  return {date,record:attendanceResponse(date,{...r,clockOut:admin.firestore.Timestamp.fromDate(now),workedMinutes,overtimeMinutes})}
+  // Finish today's shift; after midnight, finish the shift that is still open from yesterday.
+  const late=!r?.clockIn&&previousOpen&&!autoCloseTime(previousDate,previousOpen.clockIn.toDate(),now)
+  const shiftDate=late?previousDate:date,shiftRef=late?previousRef:ref,shift=late?previousOpen:r
+  if(shift?.clockOut)return {date,record:attendanceResponse(date,shift)}
+  if(!shift?.clockIn)throw new HttpsError('failed-precondition','Clock in first, or your workday has already finished.')
+  const {workedMinutes,overtimeMinutes}=workdayDuration(shift.clockIn.toDate(),now,shiftDate)
+  tx.update(shiftRef,{clockOut:admin.firestore.Timestamp.fromDate(now),workedMinutes,overtimeMinutes})
+  p.attendance=(p.attendance||[]).map((a:{id:string})=>a.id===shiftDate?{...a,overtimeMinutes}:a);tx.update(employeeRef,{hrProfile:p,updatedAt:admin.firestore.FieldValue.serverTimestamp()})
+  return {date:shiftDate,record:attendanceResponse(shiftDate,{...shift,clockOut:admin.firestore.Timestamp.fromDate(now),workedMinutes,overtimeMinutes})}
  })
 })
