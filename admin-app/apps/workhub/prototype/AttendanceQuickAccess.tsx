@@ -13,6 +13,7 @@ export function AttendanceQuickAccess({uid,t,onProfile}:{uid:string;t:(key:strin
  const [open,setOpen]=useState(false),[profiles,setProfiles]=useState<WorkhubProject[]>([]),[selected,setSelected]=useState(''),[loaded,setLoaded]=useState(false),[error,setError]=useState('')
  const [extra,setExtra]=useState(false),[footer,setFooter]=useState<HTMLDivElement|null>(null)
  useEffect(()=>{const show=(event:Event)=>{setSelected((event as CustomEvent<string>).detail);setExtra(true);setOpen(true)};window.addEventListener('workhub-open-extra',show);return()=>window.removeEventListener('workhub-open-extra',show)},[])
+ useEffect(()=>{const show=(event:Event)=>{const id=(event as CustomEvent<string>).detail;if(id)setSelected(id);setExtra(false);setOpen(true)};window.addEventListener('workhub-open-attendance',show);return()=>window.removeEventListener('workhub-open-attendance',show)},[])
  const root=useRef<HTMLDivElement>(null),trigger=useRef<HTMLButtonElement>(null)
  useEffect(()=>{
   setError('')

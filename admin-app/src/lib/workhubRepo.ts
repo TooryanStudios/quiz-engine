@@ -406,7 +406,7 @@ export interface WorkhubNotification {
   workspaceId: string
   recipientUid: string
   actorUid: string
-  entityType: 'workspace' | 'project' | 'task' | 'comment' | 'member' | 'document' | 'moodboard'
+  entityType: 'workspace' | 'project' | 'task' | 'comment' | 'member' | 'document' | 'moodboard' | 'attendance'
   entityId: string
   action: string
   message: string

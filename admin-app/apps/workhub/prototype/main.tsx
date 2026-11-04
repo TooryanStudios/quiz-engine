@@ -257,6 +257,7 @@ export default function WorkhubLayout() {
  const openNotification=(n:WorkhubNotification)=>{
   void markWorkhubNotificationRead(n.id).catch(()=>setAuthError(t('saveFailed')))
   if(n.threadId||n.workspaceId==='__communication_global__'){setTaskRequest(undefined);setNotificationThread(n.threadId||'everyone');setChat(true);return}
+  if(n.entityType==='attendance'){window.dispatchEvent(new CustomEvent('workhub-open-attendance',{detail:n.entityId}));return}
   if(n.workspaceId==='__company__'&&n.targetPath){const url=new URL(n.targetPath,location.origin);openCompany(url.searchParams.get('section')||'',url.searchParams.get('record')||'');return}
   const target=notificationItem(n,live.items)
   const route=notificationRoute(n)

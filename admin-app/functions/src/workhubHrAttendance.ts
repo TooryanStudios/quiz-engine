@@ -1,8 +1,18 @@
+/** Extra-hours sessions are switched off; existing open sessions can still be finished. */
+export const EXTRA_HOURS_ENABLED=false
+/** Oman schedule: Sunday–Thursday, 08:00–17:00 (UTC+4, no daylight saving). */
+export const WORK_START_MINUTES=480,WORK_END_MINUTES=1020
+const OMAN_OFFSET=4*3600000
+/** Friday and Saturday are the weekend in Oman. */
+export function omanWeekend(date:string){const day=new Date(date+'T00:00:00Z').getUTCDay();return day===5||day===6}
+export function omanDateShift(date:string,days:number){return new Date(Date.parse(date+'T00:00:00Z')+days*86400000).toISOString().slice(0,10)}
 export function omanWorkday(now:Date){
- const local=new Date(now.getTime()+4*3600000),date=local.toISOString().slice(0,10)
- const minutes=local.getUTCHours()*60+local.getUTCMinutes()
- return {date,lateMinutes:Math.max(0,minutes-480)}
+ const local=new Date(now.getTime()+OMAN_OFFSET),date=local.toISOString().slice(0,10)
+ const minutes=local.getUTCHours()*60+local.getUTCMinutes(),weekend=omanWeekend(date)
+ return {date,weekend,minutes,lateMinutes:weekend?0:Math.max(0,minutes-WORK_START_MINUTES)}
 }
+/** The scheduled end of a workday as an absolute time. */
+export function workdayEnd(date:string){return new Date(Date.parse(date+'T00:00:00Z')-OMAN_OFFSET+WORK_END_MINUTES*60000)}
 export function workdayDuration(start:Date,end:Date,date:string){
  const workedMinutes=Math.max(0,Math.floor((end.getTime()-start.getTime())/60000))
  const overtimeMinutes=Math.max(0,Math.floor((end.getTime()-Math.max(start.getTime(),Date.parse(date+'T17:00:00+04:00')))/60000))
@@ -22,9 +32,22 @@ export function manualWorkday(date:string,start:string,end:string,now:Date){
 export function missedClockOut(date:string,clockIn:unknown,clockOut:unknown,now:Date){
  return !!clockIn&&!clockOut&&now.getTime()>=Date.parse(date+'T22:00:00+04:00')
 }
+/** Working hours are over and the shift is still open: warn the employee (workdays only). */
+export function workHoursPassed(date:string,clockIn:unknown,clockOut:unknown,now:Date){
+ return !!clockIn&&!clockOut&&!omanWeekend(date)&&now.getTime()>=workdayEnd(date).getTime()
+}
+/**
+ * A shift left open after its day has ended (04:00 the next morning) is closed at the
+ * scheduled end time, or at clock-in if the employee started after it, so a forgotten
+ * finish never counts the whole night. The employee can request a correction.
+ */
+export function autoCloseTime(date:string,clockIn:Date,now:Date){
+ if(now.getTime()<Date.parse(omanDateShift(date,1)+'T04:00:00+04:00'))return null
+ return new Date(Math.max(clockIn.getTime(),workdayEnd(date).getTime()))
+}
 
 export function canStartExtraWork(regular:{clockIn?:unknown;clockOut?:unknown}|undefined,openRecords:{clockIn?:unknown}[]){
- return !!regular?.clockIn&&!!regular.clockOut&&!openRecords.some(record=>!!record.clockIn)
+ return EXTRA_HOURS_ENABLED&&!!regular?.clockIn&&!!regular.clockOut&&!openRecords.some(record=>!!record.clockIn)
 }
 
 /** Finish is captured when the employee opens the completion screen, validated against server time. */
